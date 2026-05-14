@@ -161,41 +161,21 @@ class OutletRejectionController extends Controller
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('warehouse_id', $request->warehouse_id)
                         ->orderByDesc('date')
+                        ->orderByDesc('id')
                         ->orderByDesc('created_at')
                         ->first();
 
-                    $macCostSmallUnit = $lastCostHistory ? $lastCostHistory->mac : 0;
+                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
                 }
 
-                // Convert MAC cost from small unit to selected unit
-                $macCostConverted = 0;
-                if ($macCostSmallUnit > 0) {
-                    // Get item unit conversions
-                    $itemData = DB::table('items')
-                        ->where('id', $item['item_id'])
-                        ->first();
-
-                    if ($itemData) {
-                        $selectedUnitId = $item['unit_id'];
-                        
-                        // Check if selected unit is small unit
-                        if ($selectedUnitId == $itemData->small_unit_id) {
-                            $macCostConverted = $macCostSmallUnit;
-                        }
-                        // Check if selected unit is medium unit
-                        elseif ($selectedUnitId == $itemData->medium_unit_id && $itemData->small_conversion_qty) {
-                            $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
-                        }
-                        // Check if selected unit is large unit
-                        elseif ($selectedUnitId == $itemData->large_unit_id && $itemData->small_conversion_qty) {
-                            $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
-                        }
-                        else {
-                            // If no conversion found, use small unit cost
-                            $macCostConverted = $macCostSmallUnit;
-                        }
-                    }
-                }
+                $itemData = DB::table('items')
+                    ->where('id', $item['item_id'])
+                    ->first();
+                $macCostConverted = $this->convertMacSmallToLineUnit(
+                    (float) $macCostSmallUnit,
+                    $itemData,
+                    (int) $item['unit_id']
+                );
 
                 OutletRejectionItem::create([
                     'outlet_rejection_id' => $rejection->id,
@@ -405,17 +385,25 @@ class OutletRejectionController extends Controller
                     ->where('item_id', $item['item_id'])
                     ->first();
 
-                $macCost = 0;
+                $macCostSmallUnit = 0;
                 if ($inventoryItem) {
                     $lastCostHistory = DB::table('food_inventory_cost_histories')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('warehouse_id', $request->warehouse_id)
                         ->orderByDesc('date')
+                        ->orderByDesc('id')
                         ->orderByDesc('created_at')
                         ->first();
 
-                    $macCost = $lastCostHistory ? $lastCostHistory->mac : 0;
+                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
                 }
+
+                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
+                $macCostConverted = $this->convertMacSmallToLineUnit(
+                    $macCostSmallUnit,
+                    $itemData,
+                    (int) $item['unit_id']
+                );
 
                 OutletRejectionItem::create([
                     'outlet_rejection_id' => $rejection->id,
@@ -426,7 +414,7 @@ class OutletRejectionController extends Controller
                     'rejection_reason' => $item['rejection_reason'],
                     'item_condition' => $item['item_condition'],
                     'condition_notes' => $item['condition_notes'],
-                    'mac_cost' => $macCost
+                    'mac_cost' => $macCostConverted
                 ]);
             }
 
@@ -753,96 +741,123 @@ class OutletRejectionController extends Controller
             ]);
         }
 
-        // Convert qty to small/medium/large units
+        // Convert qty to small/medium/large units (prefer unit_id match; fallback to legacy unit name)
         $unit = DB::table('units')->where('id', $item->unit_id)->first();
-        $qtyInput = $item->qty_received;
-        $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-        
+        $qtyInput = (float) $item->qty_received;
+        $qty_small = 0;
+        $qty_medium = 0;
+        $qty_large = 0;
+
         $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+        $unitMedium = $itemMaster->medium_unit_id
+            ? DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name')
+            : null;
+        $unitLarge = $itemMaster->large_unit_id
+            ? DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name')
+            : null;
         $smallConv = $itemMaster->small_conversion_qty ?: 1;
         $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
 
-        if ($unit->name === $unitSmall) {
+        $lineUnitId = (int) $item->unit_id;
+        $qtyById = false;
+        if ($lineUnitId === (int) $itemMaster->small_unit_id) {
             $qty_small = $qtyInput;
             $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
             $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-        } elseif ($unit->name === $unitMedium) {
+            $qtyById = true;
+        } elseif (! empty($itemMaster->medium_unit_id) && $lineUnitId === (int) $itemMaster->medium_unit_id) {
             $qty_medium = $qtyInput;
             $qty_small = $qty_medium * $smallConv;
             $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-        } elseif ($unit->name === $unitLarge) {
+            $qtyById = true;
+        } elseif (! empty($itemMaster->large_unit_id) && $lineUnitId === (int) $itemMaster->large_unit_id) {
             $qty_large = $qtyInput;
             $qty_medium = $qty_large * $mediumConv;
             $qty_small = $qty_medium * $smallConv;
-        } else {
+            $qtyById = true;
+        }
+
+        if (! $qtyById && $unit && $unitSmall) {
+            if ($unit->name === $unitSmall) {
+                $qty_small = $qtyInput;
+                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+            } elseif ($unitMedium && $unit->name === $unitMedium) {
+                $qty_medium = $qtyInput;
+                $qty_small = $qty_medium * $smallConv;
+                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+            } elseif ($unitLarge && $unit->name === $unitLarge) {
+                $qty_large = $qtyInput;
+                $qty_medium = $qty_large * $mediumConv;
+                $qty_small = $qty_medium * $smallConv;
+            } else {
+                Log::warning('Outlet rejection qty: unit not mapped to item UOM; treating qty as small unit', [
+                    'rejection_id' => $rejection->id,
+                    'item_id' => $item->item_id,
+                    'unit_id' => $item->unit_id,
+                ]);
+                $qty_small = $qtyInput;
+            }
+        } elseif (! $qtyById) {
             $qty_small = $qtyInput;
         }
 
         // Get warehouse division ID from item master
         $warehouseDivisionId = $itemMaster->warehouse_division_id;
-        
+
         Log::info('Warehouse division info', [
             'warehouse_id' => $rejection->warehouse_id,
             'warehouse_division_id' => $warehouseDivisionId,
-            'item_master' => $itemMaster
+            'item_master' => $itemMaster,
         ]);
-        
+
         // Get existing stock
         $existingStock = DB::table('food_inventory_stocks')
             ->where('inventory_item_id', $inventoryItem->id)
             ->where('warehouse_id', $rejection->warehouse_id)
             ->first();
 
-        // Convert item cost to small unit based on rejection item unit
-        $item_mac_cost_small_unit = $item->mac_cost;
-        
-        // Get rejection item unit
-        $rejectionUnit = DB::table('units')->where('id', $item->unit_id)->first();
-        
-        // If rejection item unit is not small unit, convert it
-        if ($rejectionUnit->name !== $unitSmall) {
-            if ($rejectionUnit->name === $unitMedium) {
-                // Convert from medium to small unit
-                $item_mac_cost_small_unit = $item->mac_cost / $smallConv;
-                Log::info('Converting cost from medium to small unit', [
-                    'original_cost' => $item->mac_cost,
-                    'small_conversion' => $smallConv,
-                    'converted_cost' => $item_mac_cost_small_unit
-                ]);
-            } elseif ($rejectionUnit->name === $unitLarge) {
-                // Convert from large to small unit
-                $item_mac_cost_small_unit = $item->mac_cost / ($smallConv * $mediumConv);
-                Log::info('Converting cost from large to small unit', [
-                    'original_cost' => $item->mac_cost,
-                    'small_conversion' => $smallConv,
-                    'medium_conversion' => $mediumConv,
-                    'converted_cost' => $item_mac_cost_small_unit
-                ]);
+        $lineMacSmall = $this->convertMacFromLineUnitToSmall((float) $item->mac_cost, $lineUnitId, $itemMaster);
+        $baselineMac = $this->resolveBaselineMacPerSmall((int) $inventoryItem->id, (int) $rejection->warehouse_id, $existingStock);
+
+        $item_mac_cost_small_unit = $lineMacSmall;
+        if ($baselineMac !== null && $baselineMac > 0) {
+            if ($lineMacSmall <= 0 || ! is_finite($lineMacSmall)) {
+                $item_mac_cost_small_unit = $baselineMac;
+            } else {
+                $ratio = $lineMacSmall / $baselineMac;
+                if ($ratio > 100.0 || $ratio < 0.01) {
+                    Log::warning('Outlet rejection: mac_cost per small diverges from stock/history baseline; using baseline', [
+                        'rejection_id' => $rejection->id,
+                        'outlet_rejection_item_id' => $item->id,
+                        'inventory_item_id' => $inventoryItem->id,
+                        'warehouse_id' => $rejection->warehouse_id,
+                        'line_mac_small' => $lineMacSmall,
+                        'baseline_mac' => $baselineMac,
+                        'ratio' => $ratio,
+                    ]);
+                    $item_mac_cost_small_unit = $baselineMac;
+                }
             }
-        } else {
-            Log::info('Cost already in small unit, no conversion needed', [
-                'original_cost' => $item->mac_cost
-            ]);
         }
-        
+
         // Calculate MAC (Moving Average Cost) in small unit
-        $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-        $nilai_lama = $existingStock ? $existingStock->value : 0;
+        $qty_lama = $existingStock ? (float) $existingStock->qty_small : 0;
+        $nilai_lama = $existingStock ? (float) $existingStock->value : 0;
         $qty_baru = $qty_small;
         $nilai_baru = $qty_small * $item_mac_cost_small_unit;
         $total_qty = $qty_lama + $qty_baru;
         $total_nilai = $nilai_lama + $nilai_baru;
         $mac = $total_qty > 0 ? $total_nilai / $total_qty : $item_mac_cost_small_unit;
-        
+
         Log::info('MAC calculation with small unit conversion', [
             'qty_lama' => $qty_lama,
             'nilai_lama' => $nilai_lama,
             'qty_baru' => $qty_baru,
             'item_mac_cost_original' => $item->mac_cost,
             'item_mac_cost_small_unit' => $item_mac_cost_small_unit,
-            'rejection_unit_name' => $rejectionUnit->name,
+            'line_mac_small_raw' => $lineMacSmall,
+            'baseline_mac' => $baselineMac,
             'small_unit_name' => $unitSmall,
             'medium_unit_name' => $unitMedium,
             'large_unit_name' => $unitLarge,
@@ -852,7 +867,7 @@ class OutletRejectionController extends Controller
             'total_qty' => $total_qty,
             'total_nilai' => $total_nilai,
             'mac' => $mac,
-            'existing_stock' => $existingStock
+            'existing_stock' => $existingStock,
         ]);
 
         // Update or insert stock
@@ -981,10 +996,10 @@ class OutletRejectionController extends Controller
             ->where('inventory_item_id', $inventoryItem->id)
             ->where('warehouse_id', $rejection->warehouse_id)
             ->orderByDesc('date')
-            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->first();
 
-        $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+        $old_cost = $lastCostHistory ? (float) $lastCostHistory->new_cost : 0;
 
         Log::info('Inserting cost history with small unit costs', [
             'inventory_item_id' => $inventoryItem->id,
@@ -1153,19 +1168,18 @@ class OutletRejectionController extends Controller
                     $lastCostHistory = DB::table('food_inventory_cost_histories')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')->orderByDesc('created_at')->first();
-                    $macCostSmallUnit = $lastCostHistory ? $lastCostHistory->mac : 0;
+                        ->orderByDesc('date')
+                        ->orderByDesc('id')
+                        ->orderByDesc('created_at')
+                        ->first();
+                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
                 }
                 $itemData = DB::table('items')->where('id', $item['item_id'])->first();
-                $macCostConverted = $macCostSmallUnit;
-                if ($itemData && $macCostSmallUnit > 0) {
-                    $selectedUnitId = $item['unit_id'];
-                    if ($selectedUnitId == $itemData->medium_unit_id && $itemData->small_conversion_qty) {
-                        $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
-                    } elseif ($selectedUnitId == $itemData->large_unit_id && $itemData->small_conversion_qty) {
-                        $macCostConverted = $macCostSmallUnit * $itemData->small_conversion_qty;
-                    }
-                }
+                $macCostConverted = $this->convertMacSmallToLineUnit(
+                    (float) $macCostSmallUnit,
+                    $itemData,
+                    (int) $item['unit_id']
+                );
 
                 OutletRejectionItem::create([
                     'outlet_rejection_id' => $rejection->id,
@@ -1230,14 +1244,23 @@ class OutletRejectionController extends Controller
 
             foreach ($request->items as $item) {
                 $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-                $macCost = 0;
+                $macCostSmallUnit = 0;
                 if ($inventoryItem) {
                     $lastCostHistory = DB::table('food_inventory_cost_histories')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')->orderByDesc('created_at')->first();
-                    $macCost = $lastCostHistory ? $lastCostHistory->mac : 0;
+                        ->orderByDesc('date')
+                        ->orderByDesc('id')
+                        ->orderByDesc('created_at')
+                        ->first();
+                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
                 }
+                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
+                $macCostConverted = $this->convertMacSmallToLineUnit(
+                    $macCostSmallUnit,
+                    $itemData,
+                    (int) $item['unit_id']
+                );
                 OutletRejectionItem::create([
                     'outlet_rejection_id' => $rejection->id,
                     'item_id' => $item['item_id'],
@@ -1247,7 +1270,7 @@ class OutletRejectionController extends Controller
                     'rejection_reason' => $item['rejection_reason'] ?? null,
                     'item_condition' => $item['item_condition'],
                     'condition_notes' => $item['condition_notes'] ?? null,
-                    'mac_cost' => $macCost
+                    'mac_cost' => $macCostConverted
                 ]);
             }
             DB::commit();
@@ -1571,6 +1594,88 @@ class OutletRejectionController extends Controller
             ->get();
 
         return $deliveryOrders;
+    }
+
+    /**
+     * MAC per small untuk nilai yang disimpan di outlet_rejection_items (sesuai unit baris).
+     */
+    private function convertMacSmallToLineUnit(float $macPerSmall, ?object $itemMaster, int $selectedUnitId): float
+    {
+        if ($macPerSmall <= 0 || ! $itemMaster) {
+            return $macPerSmall;
+        }
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        if ($selectedUnitId === (int) $itemMaster->small_unit_id) {
+            return $macPerSmall;
+        }
+        if (! empty($itemMaster->medium_unit_id) && $selectedUnitId === (int) $itemMaster->medium_unit_id) {
+            return $macPerSmall * $smallConv;
+        }
+        if (! empty($itemMaster->large_unit_id) && $selectedUnitId === (int) $itemMaster->large_unit_id) {
+            return $macPerSmall * $smallConv * $mediumConv;
+        }
+
+        return $macPerSmall;
+    }
+
+    /**
+     * Konversi mac_cost baris rejection (per unit baris) → per unit kecil.
+     */
+    private function convertMacFromLineUnitToSmall(float $macOnLine, int $lineUnitId, object $itemMaster): float
+    {
+        if ($macOnLine <= 0) {
+            return 0.0;
+        }
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        if ($lineUnitId === (int) $itemMaster->small_unit_id) {
+            return $macOnLine;
+        }
+        if (! empty($itemMaster->medium_unit_id) && $lineUnitId === (int) $itemMaster->medium_unit_id && $smallConv > 0) {
+            return $macOnLine / $smallConv;
+        }
+        if (! empty($itemMaster->large_unit_id) && $lineUnitId === (int) $itemMaster->large_unit_id && $smallConv > 0 && $mediumConv > 0) {
+            return $macOnLine / ($smallConv * $mediumConv);
+        }
+
+        return $macOnLine;
+    }
+
+    /**
+     * Baseline MAC per small dari stok (value/qty) atau histori — dipakai menjaga posting rejection dari mac_cost baris yang salah skala.
+     */
+    private function resolveBaselineMacPerSmall(int $inventoryItemId, int $warehouseId, $existingStock): ?float
+    {
+        if ($existingStock) {
+            $qty = (float) ($existingStock->qty_small ?? 0);
+            $val = (float) ($existingStock->value ?? 0);
+            if ($qty > 0 && $val >= 0) {
+                $implied = $val / $qty;
+                if ($implied > 0 && is_finite($implied)) {
+                    return $implied;
+                }
+            }
+            $lc = (float) ($existingStock->last_cost_small ?? 0);
+            if ($lc > 0 && is_finite($lc)) {
+                return $lc;
+            }
+        }
+
+        $last = DB::table('food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first();
+        if ($last) {
+            $m = (float) ($last->mac ?? 0);
+            if ($m > 0 && is_finite($m)) {
+                return $m;
+            }
+        }
+
+        return null;
     }
 
     // Helper untuk insert notifikasi

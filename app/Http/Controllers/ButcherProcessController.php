@@ -381,7 +381,10 @@ class ButcherProcessController extends Controller
                 try {
                     // Ambil small_conversion_qty dari item PCS
                     $pcsItemModel = \App\Models\Item::find($item['pcs_item_id']);
-                    $pcsSmallConv = $pcsItemModel ? ($pcsItemModel->small_conversion_qty ?: 1) : 1;
+                    if (! $pcsItemModel) {
+                        throw new \RuntimeException('PCS item master tidak ditemukan untuk item_id '.$item['pcs_item_id']);
+                    }
+                    $pcsSmallConv = $pcsItemModel->small_conversion_qty ?: 1;
                     // Ambil mac_pcs dari request jika ada, fallback ke hasil hitung
                     $macPcs = isset($item['mac_pcs']) ? $item['mac_pcs'] : ($costPerGram * $pcsSmallConv);
                     $serialNumber = 'BTR-' . date('Ymd') . '-' . $butcherProcess->id . '-' . str_pad($idx+1, 3, '0', STR_PAD_LEFT);
@@ -421,7 +424,7 @@ class ButcherProcessController extends Controller
                         'mac_pcs' => $macPcs,
                     ]);
 
-                    // Update inventory for pcs item (increase)
+                    // Update inventory for pcs item (increase) — qty_small harus dalam unit kecil (gram), bukan 1:1 dengan pcs
                     $pcsInventoryItem = FoodInventoryItem::where('item_id', $item['pcs_item_id'])->first();
                     $pcsInventory = FoodInventoryStock::firstOrCreate(
                         [
@@ -430,17 +433,21 @@ class ButcherProcessController extends Controller
                         ],
                         ['qty_small' => 0, 'qty_medium' => 0, 'qty_large' => 0]
                     );
+                    [$dSmall, $dMedium, $dLarge] = $this->butcherPcsQtyDeltas(
+                        $pcsItemModel,
+                        (int) $item['unit_id'],
+                        (float) $item['pcs_qty']
+                    );
                     $pcsInventory->update([
-                        'qty_small' => $pcsInventory->qty_small + $item['pcs_qty'],
-                        'qty_medium' => $pcsInventory->qty_medium + $item['pcs_qty'],
-                        'qty_large' => $pcsInventory->qty_large + $item['pcs_qty']
+                        'qty_small' => $pcsInventory->qty_small + $dSmall,
+                        'qty_medium' => $pcsInventory->qty_medium + $dMedium,
+                        'qty_large' => $pcsInventory->qty_large + $dLarge
                     ]);
                     $saldo_qty_small_pcs = $pcsInventory->qty_small;
                     $saldo_qty_medium_pcs = $pcsInventory->qty_medium;
                     $saldo_qty_large_pcs = $pcsInventory->qty_large;
-                    $saldo_value_pcs = ($saldo_qty_small_pcs * $macPcs)
-                        + ($saldo_qty_medium_pcs * $macPcs)
-                        + ($saldo_qty_large_pcs * $macPcs);
+                    $costPerSmall = $pcsSmallConv > 0 ? $macPcs / $pcsSmallConv : $macPcs;
+                    $saldo_value_pcs = $saldo_qty_small_pcs * $costPerSmall;
                     // Insert ke FoodInventoryCard (PCS)
                     \App\Models\FoodInventoryCard::create([
                         'inventory_item_id' => $pcsInventoryItem->id ?? null,
@@ -448,11 +455,11 @@ class ButcherProcessController extends Controller
                         'date' => now()->toDateString(),
                         'reference_type' => 'butcher_process',
                         'reference_id' => $butcherProcess->id,
-                        'in_qty_small' => $item['pcs_qty'],
-                        'in_qty_medium' => $item['pcs_qty'],
-                        'in_qty_large' => $item['pcs_qty'],
-                        'cost_per_small' => $macPcs,
-                        'value_in' => $item['pcs_qty'] * $macPcs,
+                        'in_qty_small' => $dSmall,
+                        'in_qty_medium' => $dMedium,
+                        'in_qty_large' => $dLarge,
+                        'cost_per_small' => $costPerSmall,
+                        'value_in' => $dSmall * $costPerSmall,
                         'saldo_qty_small' => $saldo_qty_small_pcs,
                         'saldo_qty_medium' => $saldo_qty_medium_pcs,
                         'saldo_qty_large' => $saldo_qty_large_pcs,
@@ -592,8 +599,16 @@ class ButcherProcessController extends Controller
                 if ($pcsInventoryItem) {
                     $pcsStock = \App\Models\FoodInventoryStock::where('inventory_item_id', $pcsInventoryItem->id)
                         ->where('warehouse_id', $warehouseId)->first();
-                    if ($pcsStock) {
-                        $pcsStock->qty_small -= $item->pcs_qty;
+                    $pcsItemModel = Item::find($item->pcs_item_id);
+                    if ($pcsStock && $pcsItemModel) {
+                        [$ds, $dm, $dl] = $this->butcherPcsQtyDeltas(
+                            $pcsItemModel,
+                            (int) $item->unit_id,
+                            (float) $item->pcs_qty
+                        );
+                        $pcsStock->qty_small -= $ds;
+                        $pcsStock->qty_medium -= $dm;
+                        $pcsStock->qty_large -= $dl;
                         $pcsStock->save();
                     }
                     // Hapus kartu stok IN PCS
@@ -810,6 +825,45 @@ class ButcherProcessController extends Controller
         });
 
         return response()->json($units);
+    }
+
+    /**
+     * Konversi qty input butcher (sesuai unit_id baris) ke delta stok per tier UOM master item PCS.
+     *
+     * @return array{0: float, 1: float, 2: float} [delta_small, delta_medium, delta_large]
+     */
+    private function butcherPcsQtyDeltas(Item $pcsItem, int $lineUnitId, float $qtyInput): array
+    {
+        $smallConv = (float) ($pcsItem->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($pcsItem->medium_conversion_qty ?: 1);
+
+        if ($lineUnitId === (int) $pcsItem->small_unit_id) {
+            $dSmall = $qtyInput;
+            $dMedium = $smallConv > 0 ? $dSmall / $smallConv : 0;
+            $dLarge = ($smallConv > 0 && $mediumConv > 0) ? $dSmall / ($smallConv * $mediumConv) : 0;
+
+            return [$dSmall, $dMedium, $dLarge];
+        }
+        if (! empty($pcsItem->medium_unit_id) && $lineUnitId === (int) $pcsItem->medium_unit_id) {
+            $dMedium = $qtyInput;
+            $dSmall = $dMedium * $smallConv;
+            $dLarge = $mediumConv > 0 ? $dMedium / $mediumConv : 0;
+
+            return [$dSmall, $dMedium, $dLarge];
+        }
+        if (! empty($pcsItem->large_unit_id) && $lineUnitId === (int) $pcsItem->large_unit_id) {
+            $dLarge = $qtyInput;
+            $dMedium = $dLarge * $mediumConv;
+            $dSmall = $dMedium * $smallConv;
+
+            return [$dSmall, $dMedium, $dLarge];
+        }
+        // Fallback: anggap qty dalam unit medium (pcs) seperti alur lama
+        $dMedium = $qtyInput;
+        $dSmall = $dMedium * $smallConv;
+        $dLarge = $mediumConv > 0 ? $dMedium / $mediumConv : 0;
+
+        return [$dSmall, $dMedium, $dLarge];
     }
 
     private function generateUniqueSerialNumber(): string

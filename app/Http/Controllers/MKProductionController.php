@@ -502,6 +502,16 @@ class MKProductionController extends Controller
                 ->where('inventory_item_id', $prodInventoryId)
                 ->where('warehouse_id', $request->warehouse_id)
                 ->first();
+            $oldCostProdForHistory = DB::table('food_inventory_cost_histories')
+                ->where('inventory_item_id', $prodInventoryId)
+                ->where('warehouse_id', $request->warehouse_id)
+                ->orderByDesc('date')
+                ->orderByDesc('id')
+                ->value('new_cost');
+            if ($oldCostProdForHistory === null && $stock) {
+                $oldCostProdForHistory = $stock->last_cost_small ?? 0;
+            }
+            $oldCostProdForHistory = (float) ($oldCostProdForHistory ?? 0);
             $last_cost_small = 0;
             // Hitung MAC dari total cost bahan baku dibagi qty hasil produksi
             $total_bom_cost = 0;
@@ -591,6 +601,21 @@ class MKProductionController extends Controller
                 'description' => "Hasil produksi $qty_jadi x $item_id (MK Production)",
                 'created_at' => now(),
                 'updated_at' => now(),
+            ]);
+            $macResult = isset($mac) ? (float) $mac : (float) $last_cost_small;
+            $warehouseDivisionIdProd = $itemMaster->warehouse_division_id ?? null;
+            DB::table('food_inventory_cost_histories')->insert([
+                'inventory_item_id' => $prodInventoryId,
+                'warehouse_id' => $request->warehouse_id,
+                'warehouse_division_id' => $warehouseDivisionIdProd,
+                'date' => $production_date,
+                'old_cost' => $oldCostProdForHistory,
+                'new_cost' => $last_cost_small,
+                'mac' => $macResult,
+                'type' => 'mk_production',
+                'reference_type' => 'mk_production',
+                'reference_id' => $productionId,
+                'created_at' => now(),
             ]);
             // Activity log CREATE
             DB::table('activity_logs')->insert([
