@@ -1932,17 +1932,30 @@ class PosSyncController extends Controller
 
             $hasStockCutCol = Schema::hasColumn('item_bom', 'stock_cut');
 
+            /*
+             * item_bom di ERP cukup sering punya beberapa baris untuk pasangan
+             * (item_id, material_item_id, unit_id) yang sama (PK hanya di kolom `id`).
+             * pos_item_bom di POS memakai PRIMARY KEY (item_id, material_item_id, unit_id),
+             * jadi insert tanpa agregasi: baris kedua gagal (ter-log), qty bisa salah,
+             * dan jumlah baris di lokal < jumlah baris di item_bom.
+             */
+            $stockCutSelect = $hasStockCutCol
+                ? DB::raw('MIN(COALESCE(ib.stock_cut, 0)) as stock_cut')
+                : DB::raw('0 as stock_cut');
+
             $rows = DB::table('item_bom as ib')
                 ->join('items as parent', 'parent.id', '=', 'ib.item_id')
                 ->where('parent.status', 'active')
                 ->select(
                     'ib.item_id',
                     'ib.material_item_id',
-                    'ib.qty',
                     'ib.unit_id',
-                    $hasStockCutCol ? DB::raw('COALESCE(ib.stock_cut, 0) as stock_cut') : DB::raw('0 as stock_cut')
+                    DB::raw('SUM(ib.qty) as qty'),
+                    $stockCutSelect
                 )
+                ->groupBy('ib.item_id', 'ib.material_item_id', 'ib.unit_id')
                 ->orderBy('ib.item_id')
+                ->orderBy('ib.material_item_id')
                 ->get();
 
             $formatted = array_map(function ($row) {
