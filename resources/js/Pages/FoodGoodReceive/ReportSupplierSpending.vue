@@ -41,16 +41,16 @@
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Gudang</label>
             <select
-              v-model="filters.warehouse_outlet_id"
+              v-model="filters.warehouse_id"
               class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 px-3 py-2"
             >
               <option value="">Semua gudang</option>
               <option
-                v-for="wo in (warehouse_outlets || [])"
-                :key="wo.id"
-                :value="String(wo.id)"
+                v-for="w in (warehouses || [])"
+                :key="w.id"
+                :value="String(w.id)"
               >
-                {{ wo.name }}
+                {{ w.name }}
               </option>
             </select>
           </div>
@@ -62,7 +62,7 @@
             >
               <option value="">Semua divisi</option>
               <option
-                v-for="wd in (warehouse_divisions || [])"
+                v-for="wd in filteredWarehouseDivisions"
                 :key="wd.id"
                 :value="String(wd.id)"
               >
@@ -92,7 +92,7 @@
             />
           </div>
 
-          <div class="md:col-span-2 lg:col-span-5 flex gap-2">
+          <div class="md:col-span-2 lg:col-span-7 flex gap-2">
             <button
               type="submit"
               class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -330,7 +330,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Multiselect from 'vue-multiselect'
@@ -345,7 +345,7 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  warehouse_outlets: {
+  warehouses: {
     type: Array,
     default: () => []
   },
@@ -370,14 +370,24 @@ const props = defineProps({
 const filters = ref({
   date_from: props.filters.date_from || '',
   date_to: props.filters.date_to || '',
-  warehouse_outlet_id: props.filters.warehouse_outlet_id != null && props.filters.warehouse_outlet_id !== ''
-    ? String(props.filters.warehouse_outlet_id)
-    : '',
-  warehouse_division_id: props.filters.warehouse_division_id != null && props.filters.warehouse_division_id !== ''
-    ? String(props.filters.warehouse_division_id)
-    : '',
+  warehouse_id:
+    props.filters.warehouse_id != null && props.filters.warehouse_id !== ''
+      ? String(props.filters.warehouse_id)
+      : '',
+  warehouse_division_id:
+    props.filters.warehouse_division_id != null && props.filters.warehouse_division_id !== ''
+      ? String(props.filters.warehouse_division_id)
+      : '',
   supplier_id: null,
   search: props.filters.search || ''
+})
+
+const filteredWarehouseDivisions = computed(() => {
+  const all = props.warehouse_divisions || []
+  if (!filters.value.warehouse_id) {
+    return all
+  }
+  return all.filter((d) => String(d.warehouse_id) === String(filters.value.warehouse_id))
 })
 
 const syncFiltersFromProps = () => {
@@ -385,8 +395,8 @@ const syncFiltersFromProps = () => {
   filters.value.date_from = f.date_from || ''
   filters.value.date_to = f.date_to || ''
   filters.value.search = f.search || ''
-  filters.value.warehouse_outlet_id =
-    f.warehouse_outlet_id != null && f.warehouse_outlet_id !== '' ? String(f.warehouse_outlet_id) : ''
+  filters.value.warehouse_id =
+    f.warehouse_id != null && f.warehouse_id !== '' ? String(f.warehouse_id) : ''
   filters.value.warehouse_division_id =
     f.warehouse_division_id != null && f.warehouse_division_id !== '' ? String(f.warehouse_division_id) : ''
   const sid = f.supplier_id
@@ -404,6 +414,19 @@ watch(
   () => [props.filters, props.suppliers],
   () => syncFiltersFromProps(),
   { deep: true, immediate: true }
+)
+
+watch(
+  () => filters.value.warehouse_id,
+  (newWh) => {
+    if (!newWh || !filters.value.warehouse_division_id) return
+    const div = (props.warehouse_divisions || []).find(
+      (d) => String(d.id) === String(filters.value.warehouse_division_id)
+    )
+    if (div && String(div.warehouse_id) !== String(newWh)) {
+      filters.value.warehouse_division_id = ''
+    }
+  }
 )
 
 const expandedSuppliers = ref({})
@@ -457,7 +480,7 @@ const loadData = () => {
     date_to: filters.value.date_to,
     supplier_id: filters.value.supplier_id?.id || filters.value.supplier_id,
     search: filters.value.search,
-    warehouse_outlet_id: filters.value.warehouse_outlet_id || undefined,
+    warehouse_id: filters.value.warehouse_id || undefined,
     warehouse_division_id: filters.value.warehouse_division_id || undefined
   }, {
     preserveState: true,
@@ -469,7 +492,7 @@ const clearFilters = () => {
   filters.value = {
     date_from: '',
     date_to: '',
-    warehouse_outlet_id: '',
+    warehouse_id: '',
     warehouse_division_id: '',
     supplier_id: null,
     search: ''
@@ -495,7 +518,7 @@ const exportToExcel = () => {
   const supplierId = filters.value.supplier_id?.id ?? filters.value.supplier_id
   if (supplierId) params.append('supplier_id', supplierId)
   if (filters.value.search) params.append('search', filters.value.search)
-  if (filters.value.warehouse_outlet_id) params.append('warehouse_outlet_id', filters.value.warehouse_outlet_id)
+  if (filters.value.warehouse_id) params.append('warehouse_id', filters.value.warehouse_id)
   if (filters.value.warehouse_division_id) params.append('warehouse_division_id', filters.value.warehouse_division_id)
   const url = route('food-good-receive.report-supplier-spending.export') + '?' + params.toString()
   window.open(url, '_blank')
