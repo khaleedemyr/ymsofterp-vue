@@ -21,7 +21,7 @@
         <p class="text-sm text-gray-500 mb-4">
           Isi filter (tanggal wajib), lalu klik <strong>Muat data</strong>. Halaman pertama tidak memanggil query sampai Anda memuat data.
         </p>
-        <form @submit.prevent="loadData" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <form @submit.prevent="loadData" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
             <input
@@ -37,6 +37,38 @@
               type="date"
               class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
             />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Gudang</label>
+            <select
+              v-model="filters.warehouse_outlet_id"
+              class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 px-3 py-2"
+            >
+              <option value="">Semua gudang</option>
+              <option
+                v-for="wo in (warehouse_outlets || [])"
+                :key="wo.id"
+                :value="String(wo.id)"
+              >
+                {{ wo.name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Divisi gudang</label>
+            <select
+              v-model="filters.warehouse_division_id"
+              class="w-full border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 px-3 py-2"
+            >
+              <option value="">Semua divisi</option>
+              <option
+                v-for="wd in (warehouse_divisions || [])"
+                :key="wd.id"
+                :value="String(wd.id)"
+              >
+                {{ wd.name }}
+              </option>
+            </select>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
@@ -313,6 +345,14 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  warehouse_outlets: {
+    type: Array,
+    default: () => []
+  },
+  warehouse_divisions: {
+    type: Array,
+    default: () => []
+  },
   summary: {
     type: Object,
     default: () => ({})
@@ -330,6 +370,12 @@ const props = defineProps({
 const filters = ref({
   date_from: props.filters.date_from || '',
   date_to: props.filters.date_to || '',
+  warehouse_outlet_id: props.filters.warehouse_outlet_id != null && props.filters.warehouse_outlet_id !== ''
+    ? String(props.filters.warehouse_outlet_id)
+    : '',
+  warehouse_division_id: props.filters.warehouse_division_id != null && props.filters.warehouse_division_id !== ''
+    ? String(props.filters.warehouse_division_id)
+    : '',
   supplier_id: null,
   search: props.filters.search || ''
 })
@@ -339,6 +385,10 @@ const syncFiltersFromProps = () => {
   filters.value.date_from = f.date_from || ''
   filters.value.date_to = f.date_to || ''
   filters.value.search = f.search || ''
+  filters.value.warehouse_outlet_id =
+    f.warehouse_outlet_id != null && f.warehouse_outlet_id !== '' ? String(f.warehouse_outlet_id) : ''
+  filters.value.warehouse_division_id =
+    f.warehouse_division_id != null && f.warehouse_division_id !== '' ? String(f.warehouse_division_id) : ''
   const sid = f.supplier_id
   if (sid == null || sid === '') {
     filters.value.supplier_id = null
@@ -406,7 +456,9 @@ const loadData = () => {
     date_from: filters.value.date_from,
     date_to: filters.value.date_to,
     supplier_id: filters.value.supplier_id?.id || filters.value.supplier_id,
-    search: filters.value.search
+    search: filters.value.search,
+    warehouse_outlet_id: filters.value.warehouse_outlet_id || undefined,
+    warehouse_division_id: filters.value.warehouse_division_id || undefined
   }, {
     preserveState: true,
     preserveScroll: true
@@ -417,6 +469,8 @@ const clearFilters = () => {
   filters.value = {
     date_from: '',
     date_to: '',
+    warehouse_outlet_id: '',
+    warehouse_division_id: '',
     supplier_id: null,
     search: ''
   }
@@ -441,6 +495,8 @@ const exportToExcel = () => {
   const supplierId = filters.value.supplier_id?.id ?? filters.value.supplier_id
   if (supplierId) params.append('supplier_id', supplierId)
   if (filters.value.search) params.append('search', filters.value.search)
+  if (filters.value.warehouse_outlet_id) params.append('warehouse_outlet_id', filters.value.warehouse_outlet_id)
+  if (filters.value.warehouse_division_id) params.append('warehouse_division_id', filters.value.warehouse_division_id)
   const url = route('food-good-receive.report-supplier-spending.export') + '?' + params.toString()
   window.open(url, '_blank')
 }

@@ -164,17 +164,32 @@ class FoodGoodReceiveReportController extends Controller
             ->orderBy('name')
             ->get();
 
+        $warehouseOutlets = DB::table('warehouse_outlets')
+            ->select('id', 'name', 'outlet_id')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        $warehouseDivisions = DB::table('warehouse_division')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         $filtersPayload = [
             'date_from' => $request->input('date_from'),
             'date_to' => $request->input('date_to'),
             'supplier_id' => $request->input('supplier_id'),
             'search' => $request->input('search'),
+            'warehouse_outlet_id' => $request->input('warehouse_outlet_id'),
+            'warehouse_division_id' => $request->input('warehouse_division_id'),
         ];
 
         if (! $request->boolean('load')) {
             return Inertia::render('FoodGoodReceive/ReportSupplierSpending', [
                 'supplierReports' => [],
                 'suppliers' => $suppliers,
+                'warehouse_outlets' => $warehouseOutlets,
+                'warehouse_divisions' => $warehouseDivisions,
                 'summary' => [
                     'total_suppliers' => 0,
                     'total_transactions' => 0,
@@ -188,11 +203,13 @@ class FoodGoodReceiveReportController extends Controller
         $request->validate([
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
+            'warehouse_outlet_id' => 'nullable|integer|exists:warehouse_outlets,id',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
         ]);
 
         $rows = $this->getSupplierSpendingRows($request);
 
-        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values());
+        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values(), $request);
 
         $supplierReports = $rows
             ->groupBy('supplier_id')
@@ -262,6 +279,8 @@ class FoodGoodReceiveReportController extends Controller
         return Inertia::render('FoodGoodReceive/ReportSupplierSpending', [
             'supplierReports' => $supplierReports,
             'suppliers' => $suppliers,
+            'warehouse_outlets' => $warehouseOutlets,
+            'warehouse_divisions' => $warehouseDivisions,
             'summary' => $summary,
             'filters' => $filtersPayload,
             'data_loaded' => true,
@@ -273,11 +292,13 @@ class FoodGoodReceiveReportController extends Controller
         $request->validate([
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
+            'warehouse_outlet_id' => 'nullable|integer|exists:warehouse_outlets,id',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
         ]);
 
         $rows = $this->getSupplierSpendingRows($request);
 
-        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values());
+        $itemsByGr = $this->getSupplierSpendingLineItems($rows->pluck('good_receive_id')->unique()->values(), $request);
 
         $emptyLine = [
             'item_name' => '',
@@ -360,6 +381,7 @@ class FoodGoodReceiveReportController extends Controller
         $dates = $this->supplierSpendingResolvedDates($request);
 
         $sub = DB::table('food_good_receives as gr')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->select('gr.po_id')
             ->whereNotNull('gr.po_id');
 
@@ -372,8 +394,34 @@ class FoodGoodReceiveReportController extends Controller
         if ($request->filled('supplier_id')) {
             $sub->where('gr.supplier_id', $request->supplier_id);
         }
+        if ($request->filled('warehouse_outlet_id')) {
+            $sub->where('po.warehouse_outlet_id', $request->warehouse_outlet_id);
+        }
+        $this->applySupplierSpendingDivisionExistsFilter($request, $sub);
 
         return $sub->distinct();
+    }
+
+    /**
+     * Filter GR by divisi gudang (sumber PR → pr_foods.warehouse_division_id), konsisten dengan grouping item di GR Form.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query  Query yang sudah memakai alias `gr` untuk food_good_receives
+     */
+    protected function applySupplierSpendingDivisionExistsFilter(Request $request, $query): void
+    {
+        if (! $request->filled('warehouse_division_id')) {
+            return;
+        }
+        $divId = (int) $request->warehouse_division_id;
+        $query->whereExists(function ($ex) use ($divId) {
+            $ex->select(DB::raw('1'))
+                ->from('food_good_receive_items as gri_div')
+                ->join('purchase_order_food_items as poi_div', 'gri_div.po_item_id', '=', 'poi_div.id')
+                ->join('pr_food_items as pfi_div', 'poi_div.pr_food_item_id', '=', 'pfi_div.id')
+                ->join('pr_foods as pr_div', 'pfi_div.pr_food_id', '=', 'pr_div.id')
+                ->whereColumn('gri_div.good_receive_id', 'gr.id')
+                ->where('pr_div.warehouse_division_id', $divId);
+        });
     }
 
     /**
@@ -441,13 +489,13 @@ class FoodGoodReceiveReportController extends Controller
      *
      * @return Collection<int|string, \Illuminate\Support\Collection<int, array<string, mixed>>>
      */
-    protected function getSupplierSpendingLineItems(Collection $grIds): Collection
+    protected function getSupplierSpendingLineItems(Collection $grIds, ?Request $request = null): Collection
     {
         if ($grIds->isEmpty()) {
             return collect();
         }
 
-        $lines = DB::table('food_good_receive_items as gri')
+        $linesQuery = DB::table('food_good_receive_items as gri')
             ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
             ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
@@ -458,7 +506,13 @@ class FoodGoodReceiveReportController extends Controller
             ->leftJoin('food_floor_orders as fo', 'poi.ro_id', '=', 'fo.id')
             ->leftJoin('tbl_data_outlet as tout', 'tout.id_outlet', '=', 'fo.id_outlet')
             ->leftJoin('users as u_fo', 'u_fo.id', '=', 'fo.user_id')
-            ->whereIn('gri.good_receive_id', $grIds->all())
+            ->whereIn('gri.good_receive_id', $grIds->all());
+
+        if ($request && $request->filled('warehouse_division_id')) {
+            $linesQuery->where('pr.warehouse_division_id', (int) $request->warehouse_division_id);
+        }
+
+        $lines = $linesQuery
             ->orderBy('gri.id')
             ->select(
                 'gri.good_receive_id',
@@ -580,6 +634,18 @@ class FoodGoodReceiveReportController extends Controller
 
         if ($request->filled('supplier_id')) {
             $query->where('gr.supplier_id', $request->supplier_id);
+        }
+
+        if ($request->filled('warehouse_outlet_id')) {
+            $query->where('po.warehouse_outlet_id', $request->warehouse_outlet_id);
+        }
+        if ($request->filled('warehouse_division_id')) {
+            $divId = (int) $request->warehouse_division_id;
+            $query->join('pr_food_items as pfi_div_line', 'poi.pr_food_item_id', '=', 'pfi_div_line.id')
+                ->join('pr_foods as pr_div_line', function ($join) use ($divId) {
+                    $join->on('pfi_div_line.pr_food_id', '=', 'pr_div_line.id')
+                        ->where('pr_div_line.warehouse_division_id', '=', $divId);
+                });
         }
 
         if ($request->filled('search')) {
