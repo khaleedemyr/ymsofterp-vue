@@ -12,7 +12,8 @@ class CostReportHoController extends Controller
 {
     private function cacheKeyCostRows(string $bulan): string
     {
-        return 'cost_report_ho:cost_rows:' . $bulan;
+        // v2: agregasi per gudang saja (tanpa divisi / tanpa join GR bobot).
+        return 'cost_report_ho:cost_rows_v2:' . $bulan;
     }
 
     public function index(Request $request)
@@ -96,11 +97,11 @@ class CostReportHoController extends Controller
     }
 
     /**
-     * Pohon gudang + divisi (master), tanpa angka — placeholder tab Perbandingan COGS Ideal.
+     * Struktur tab Perbandingan COGS Ideal: gudang saja (tanpa divisi).
      *
      * @return array<int, array<string, mixed>>
      */
-    private function buildCogsIdealHoSkeletonRows(string $bulan): array
+    private function buildCogsIdealHoSkeletonRows(string $_bulan): array
     {
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
@@ -108,33 +109,13 @@ class CostReportHoController extends Controller
             ->select('id', 'name', 'code')
             ->get();
 
-        $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
-        $divisionsByWarehouse = [];
-        if (! empty($warehouseIds)) {
-            $divisionsByWarehouse = DB::table('warehouse_division')
-                ->whereIn('warehouse_id', $warehouseIds)
-                ->where('status', 'active')
-                ->orderBy('name')
-                ->select('id', 'name', 'warehouse_id')
-                ->get()
-                ->groupBy('warehouse_id');
-        }
-
         $rows = [];
         foreach ($warehouses as $wh) {
-            $wid = (int) $wh->id;
-            $divs = [];
-            foreach (($divisionsByWarehouse[$wid] ?? collect()) as $div) {
-                $divs[] = [
-                    'division_id' => (int) $div->id,
-                    'division_name' => $div->name,
-                ];
-            }
             $rows[] = [
-                'warehouse_id' => $wid,
+                'warehouse_id' => (int) $wh->id,
                 'warehouse_name' => $wh->name,
                 'warehouse_code' => $wh->code ?? null,
-                'divisions' => $divs,
+                'divisions' => [],
             ];
         }
 
@@ -148,7 +129,6 @@ class CostReportHoController extends Controller
     {
         $bulanCarbon = Carbon::parse($bulan . '-01');
         $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
-        $tanggalAkhirBulanSebelumnya = $bulanCarbon->copy()->subMonth()->format('Y-m-t');
 
         $warehouses = DB::table('warehouses')
             ->where('status', 'active')
@@ -168,88 +148,32 @@ class CostReportHoController extends Controller
             $tanggal1BulanIni
         );
 
-        $grDivisionWeights = $this->loadHoGrDivisionWeightsUpToDate($tanggalAkhirBulanSebelumnya, $warehouseIds);
-
-        $beginByWarehouseDivision = [];
-        foreach ($stockRows->unique(fn ($row) => (int) $row->warehouse_id . '|' . (int) $row->inventory_item_id) as $row) {
-            $wh = (int) $row->warehouse_id;
-            $ii = (int) $row->inventory_item_id;
-            $k = $wh . '|' . $ii;
-            $val = (float) ($beginByWhItem[$k] ?? 0);
-
-            $weights = $grDivisionWeights[$k] ?? [];
-            $sumW = array_sum($weights);
-            if ($sumW > 0) {
-                $keys = array_keys($weights);
-                $allocated = 0.0;
-                $lastIdx = count($keys) - 1;
-                foreach ($keys as $idx => $divKey) {
-                    $w = (float) ($weights[$divKey] ?? 0);
-                    if ($idx === $lastIdx) {
-                        $share = round(max(0, $val - $allocated), 2);
-                    } else {
-                        $share = round($val * ($w / $sumW), 2);
-                        $allocated += $share;
-                    }
-                    $aggKey = $wh . '|' . $divKey;
-                    $beginByWarehouseDivision[$aggKey] = ($beginByWarehouseDivision[$aggKey] ?? 0) + $share;
-                }
-            } else {
-                $divId = $row->warehouse_division_id !== null && $row->warehouse_division_id !== ''
-                    ? (int) $row->warehouse_division_id
-                    : null;
-                $divKey = $divId !== null ? (string) $divId : 'none';
-                $aggKey = $wh . '|' . $divKey;
-                $beginByWarehouseDivision[$aggKey] = ($beginByWarehouseDivision[$aggKey] ?? 0) + $val;
-            }
+        $beginByWarehouse = [];
+        foreach ($beginByWhItem as $k => $v) {
+            $parts = explode('|', $k, 2);
+            $wid = (int) ($parts[0] ?? 0);
+            $beginByWarehouse[$wid] = ($beginByWarehouse[$wid] ?? 0) + (float) $v;
         }
-
-        $divisionsByWarehouse = DB::table('warehouse_division')
-            ->whereIn('warehouse_id', $warehouseIds)
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->select('id', 'name', 'warehouse_id')
-            ->get()
-            ->groupBy('warehouse_id');
 
         $rows = [];
         foreach ($warehouses as $wh) {
             $wid = (int) $wh->id;
-            $divs = [];
-            $total = 0.0;
-            foreach (($divisionsByWarehouse[$wid] ?? collect()) as $div) {
-                $ak = $wid . '|' . (string) $div->id;
-                $amt = round((float) ($beginByWarehouseDivision[$ak] ?? 0), 2);
-                $total += $amt;
-                $divs[] = [
-                    'division_id' => (int) $div->id,
-                    'division_name' => $div->name,
-                    'begin_inventory' => $amt,
-                ];
-            }
-            $noneKey = $wid . '|none';
-            $noneAmt = round((float) ($beginByWarehouseDivision[$noneKey] ?? 0), 2);
-            if ($noneAmt !== 0.0) {
-                $total += $noneAmt;
-                $divs[] = [
-                    'division_id' => null,
-                    'division_name' => 'Tanpa divisi (item)',
-                    'begin_inventory' => $noneAmt,
-                ];
-            }
-
             $rows[] = [
                 'warehouse_id' => $wid,
                 'warehouse_name' => $wh->name,
                 'warehouse_code' => $wh->code ?? null,
-                'begin_inventory' => round($total, 2),
-                'divisions' => $divs,
+                'begin_inventory' => round((float) ($beginByWarehouse[$wid] ?? 0), 2),
+                'divisions' => [],
             ];
         }
 
         return $rows;
     }
 
+    /**
+     * Satu baris per (warehouse_id, inventory_item_id) dari food_inventory_stocks — tanpa join master item
+     * agar tidak ada duplikasi baris stok.
+     */
     private function loadHoStockRows(array $warehouseIds)
     {
         if (empty($warehouseIds)) {
@@ -257,71 +181,16 @@ class CostReportHoController extends Controller
         }
 
         return DB::table('food_inventory_stocks as s')
-            ->join('food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
-            ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->whereIn('s.warehouse_id', $warehouseIds)
             ->select(
                 's.warehouse_id',
-                'fi.id as inventory_item_id',
-                'fi.item_id',
+                's.inventory_item_id',
                 's.qty_small',
-                's.last_cost_small',
-                'i.warehouse_division_id'
+                's.last_cost_small'
             )
-            ->distinct()
-            ->get();
-    }
-
-    /**
-     * Bobot pembagian nilai per divisi gudang dari akumulasi baris GR (qty × harga PO) s/d tanggal cutoff,
-     * per pasangan (warehouse_id, inventory_item_id). Divisi diambil dari PR (pr_foods.warehouse_division_id),
-     * fallback ke items.warehouse_division_id — selaras join laporan Supplier Spending GR.
-     *
-     * @return array<string, array<string, float>> key luar "warehouse_id|inventory_item_id", key dalam id divisi atau "none"
-     */
-    private function loadHoGrDivisionWeightsUpToDate(string $cutoffDate, array $warehouseIds): array
-    {
-        if (empty($warehouseIds)) {
-            return [];
-        }
-
-        $rows = DB::table('food_good_receive_items as gri')
-            ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
-            ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
-            ->leftJoin('pr_food_items as pfi', 'poi.pr_food_item_id', '=', 'pfi.id')
-            ->leftJoin('pr_foods as pr', 'pfi.pr_food_id', '=', 'pr.id')
-            ->leftJoin('warehouse_division as wd', 'pr.warehouse_division_id', '=', 'wd.id')
-            ->join('food_inventory_items as fi', 'gri.item_id', '=', 'fi.item_id')
-            ->join('items as i', 'gri.item_id', '=', 'i.id')
-            ->whereDate('gr.receive_date', '<=', $cutoffDate)
-            ->whereNotNull('gri.po_item_id')
-            ->whereRaw(
-                'COALESCE(wd.warehouse_id, pr.warehouse_id) IN (' . implode(',', array_map('intval', $warehouseIds)) . ')'
-            )
-            ->groupBy(
-                DB::raw('COALESCE(wd.warehouse_id, pr.warehouse_id)'),
-                DB::raw('fi.id'),
-                DB::raw('COALESCE(pr.warehouse_division_id, i.warehouse_division_id)')
-            )
-            ->select(
-                DB::raw('COALESCE(wd.warehouse_id, pr.warehouse_id) as stock_warehouse_id'),
-                'fi.id as inventory_item_id',
-                DB::raw('COALESCE(pr.warehouse_division_id, i.warehouse_division_id) as split_division_id'),
-                DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as line_weight')
-            )
-            ->get();
-
-        $out = [];
-        foreach ($rows as $r) {
-            $wh = (int) $r->stock_warehouse_id;
-            $ii = (int) $r->inventory_item_id;
-            $divRaw = $r->split_division_id;
-            $divKey = $divRaw !== null && $divRaw !== '' ? (string) (int) $divRaw : 'none';
-            $wk = $wh . '|' . $ii;
-            $out[$wk][$divKey] = ($out[$wk][$divKey] ?? 0) + (float) ($r->line_weight ?? 0);
-        }
-
-        return $out;
+            ->get()
+            ->unique(fn ($r) => (int) $r->warehouse_id . '|' . (int) $r->inventory_item_id)
+            ->values();
     }
 
     /**
