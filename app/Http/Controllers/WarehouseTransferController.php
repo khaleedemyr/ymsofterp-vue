@@ -146,6 +146,7 @@ class WarehouseTransferController extends Controller
                 if (!$stockFrom) {
                     throw new \Exception('Stok tidak ditemukan di gudang asal');
                 }
+                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
@@ -170,10 +171,10 @@ class WarehouseTransferController extends Controller
                 $qty_lama = $stockTo->qty_small;
                 $nilai_lama = $stockTo->value;
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $nilai_baru = $qty_small * $incomingCostPerSmall;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $incomingCostPerSmall;
                 // Update stok tujuan
                 $stockTo->qty_small = $total_qty;
                 $stockTo->qty_medium += $qty_medium;
@@ -194,14 +195,14 @@ class WarehouseTransferController extends Controller
                     'out_qty_small' => $qty_small,
                     'out_qty_medium' => $qty_medium,
                     'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'value_out' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockFrom->qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large,
-                    'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $stockFrom->qty_small * $incomingCostPerSmall,
                     'description' => 'Transfer ke Gudang ' . $warehouseToName,
                 ]);
 
@@ -215,30 +216,24 @@ class WarehouseTransferController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'value_in' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockTo->qty_small,
                     'saldo_qty_medium' => $stockTo->qty_medium,
                     'saldo_qty_large' => $stockTo->qty_large,
-                    'saldo_value' => $stockTo->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $total_nilai,
                     'description' => 'Transfer dari Gudang ' . $warehouseFromName,
                 ]);
                 // Insert cost history untuk warehouse tujuan pakai MAC
-                $lastCostHistory = \DB::table('food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('warehouse_id', $validated['warehouse_to_id'])
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                $old_cost = $qty_lama > 0 ? ((float) $nilai_lama / (float) $qty_lama) : 0;
                 \DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventory_item_id,
                     'warehouse_id' => $validated['warehouse_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
+                    'new_cost' => $incomingCostPerSmall,
                     'mac' => $mac,
                     'type' => 'warehouse_transfer',
                     'reference_type' => 'warehouse_transfer',
@@ -532,11 +527,15 @@ class WarehouseTransferController extends Controller
                 // Update stok asal (kurangi)
                 $stockFrom = FoodInventoryStock::where('inventory_item_id', $inventory_item_id)
                     ->where('warehouse_id', $validated['warehouse_from_id'])->first();
+                if (!$stockFrom) {
+                    throw new \Exception('Stok tidak ditemukan di gudang asal');
+                }
+                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
                 $stockFrom->save();
-                // Update stok tujuan (tambah)
+                // Update stok tujuan (tambah) — sama dengan store: MAC dari nilai/qty, bukan jumlah tier
                 $stockTo = FoodInventoryStock::firstOrCreate(
                     [
                         'inventory_item_id' => $inventory_item_id,
@@ -552,15 +551,20 @@ class WarehouseTransferController extends Controller
                         'last_cost_large' => 0,
                     ]
                 );
-                $stockTo->qty_small += $qty_small;
+                $qty_lama = $stockTo->qty_small;
+                $nilai_lama = $stockTo->value;
+                $qty_baru = $qty_small;
+                $nilai_baru = $qty_small * $incomingCostPerSmall;
+                $total_qty = $qty_lama + $qty_baru;
+                $total_nilai = $nilai_lama + $nilai_baru;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $incomingCostPerSmall;
+                $stockTo->qty_small = $total_qty;
                 $stockTo->qty_medium += $qty_medium;
                 $stockTo->qty_large += $qty_large;
-                $stockTo->last_cost_small = $stockFrom->last_cost_small;
+                $stockTo->last_cost_small = $mac;
                 $stockTo->last_cost_medium = $stockFrom->last_cost_medium;
                 $stockTo->last_cost_large = $stockFrom->last_cost_large;
-                $stockTo->value = ($stockTo->qty_small * $stockTo->last_cost_small)
-                    + ($stockTo->qty_medium * $stockTo->last_cost_medium)
-                    + ($stockTo->qty_large * $stockTo->last_cost_large);
+                $stockTo->value = $total_nilai;
                 $stockTo->save();
                 // Insert kartu stok OUT (asal)
                 FoodInventoryCard::create([
@@ -572,14 +576,14 @@ class WarehouseTransferController extends Controller
                     'out_qty_small' => $qty_small,
                     'out_qty_medium' => $qty_medium,
                     'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'value_out' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockFrom->qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large,
-                    'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $stockFrom->qty_small * $incomingCostPerSmall,
                     'description' => 'Transfer ke Gudang ' . $warehouseToName,
                 ]);
                 // Insert kartu stok IN (tujuan)
@@ -592,30 +596,24 @@ class WarehouseTransferController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'value_in' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockTo->qty_small,
                     'saldo_qty_medium' => $stockTo->qty_medium,
                     'saldo_qty_large' => $stockTo->qty_large,
-                    'saldo_value' => $stockTo->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $total_nilai,
                     'description' => 'Transfer dari Gudang ' . $warehouseFromName,
                 ]);
                 // Insert cost history untuk warehouse tujuan
-                $lastCostHistory = \DB::table('food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('warehouse_id', $validated['warehouse_to_id'])
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                $old_cost = $qty_lama > 0 ? ((float) $nilai_lama / (float) $qty_lama) : 0;
                 \DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventory_item_id,
                     'warehouse_id' => $validated['warehouse_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
+                    'new_cost' => $incomingCostPerSmall,
                     'mac' => $mac,
                     'type' => 'warehouse_transfer',
                     'reference_type' => 'warehouse_transfer',
@@ -852,6 +850,7 @@ class WarehouseTransferController extends Controller
                 if (!$stockFrom) {
                     throw new \Exception('Stok tidak ditemukan di gudang asal');
                 }
+                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
@@ -876,10 +875,10 @@ class WarehouseTransferController extends Controller
                 $qty_lama = $stockTo->qty_small;
                 $nilai_lama = $stockTo->value;
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $stockFrom->last_cost_small;
+                $nilai_baru = $qty_small * $incomingCostPerSmall;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $stockFrom->last_cost_small;
+                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $incomingCostPerSmall;
 
                 $stockTo->qty_small = $total_qty;
                 $stockTo->qty_medium += $qty_medium;
@@ -899,14 +898,14 @@ class WarehouseTransferController extends Controller
                     'out_qty_small' => $qty_small,
                     'out_qty_medium' => $qty_medium,
                     'out_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_out' => $qty_small * $stockFrom->last_cost_small,
+                    'value_out' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockFrom->qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large,
-                    'saldo_value' => $stockFrom->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $stockFrom->qty_small * $incomingCostPerSmall,
                     'description' => 'Transfer ke Gudang ' . $warehouseToName,
                 ]);
 
@@ -919,30 +918,24 @@ class WarehouseTransferController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $stockFrom->last_cost_small,
+                    'cost_per_small' => $incomingCostPerSmall,
                     'cost_per_medium' => $stockFrom->last_cost_medium,
                     'cost_per_large' => $stockFrom->last_cost_large,
-                    'value_in' => $qty_small * $stockFrom->last_cost_small,
+                    'value_in' => $qty_small * $incomingCostPerSmall,
                     'saldo_qty_small' => $stockTo->qty_small,
                     'saldo_qty_medium' => $stockTo->qty_medium,
                     'saldo_qty_large' => $stockTo->qty_large,
-                    'saldo_value' => $stockTo->qty_small * $stockFrom->last_cost_small,
+                    'saldo_value' => $total_nilai,
                     'description' => 'Transfer dari Gudang ' . $warehouseFromName,
                 ]);
 
-                $lastCostHistory = \DB::table('food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventory_item_id)
-                    ->where('warehouse_id', $validated['warehouse_to_id'])
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->first();
-                $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+                $old_cost = $qty_lama > 0 ? ((float) $nilai_lama / (float) $qty_lama) : 0;
                 \DB::table('food_inventory_cost_histories')->insert([
                     'inventory_item_id' => $inventory_item_id,
                     'warehouse_id' => $validated['warehouse_to_id'],
                     'date' => $validated['transfer_date'],
                     'old_cost' => $old_cost,
-                    'new_cost' => $stockFrom->last_cost_small,
+                    'new_cost' => $incomingCostPerSmall,
                     'mac' => $mac,
                     'type' => 'warehouse_transfer',
                     'reference_type' => 'warehouse_transfer',
@@ -977,5 +970,23 @@ class WarehouseTransferController extends Controller
                 'message' => 'Gagal menyimpan data: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Biaya per unit kecil dari saldo (value / qty_small) bila konsisten; fallback last_cost_small.
+     * Dipakai transfer supaya insert cost history tidak mengikuti last_cost_small yang sudah ngaco vs nilai stok.
+     */
+    private function foodStockImpliedCostPerSmall($stock): float
+    {
+        $q = (float) ($stock->qty_small ?? 0);
+        $v = (float) ($stock->value ?? 0);
+        if ($q > 0 && $v >= 0) {
+            $implied = $v / $q;
+            if (is_finite($implied) && $implied > 0) {
+                return $implied;
+            }
+        }
+
+        return max(0.0, (float) ($stock->last_cost_small ?? 0));
     }
 } 

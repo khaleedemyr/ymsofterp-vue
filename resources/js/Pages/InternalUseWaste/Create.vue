@@ -1,71 +1,119 @@
 <template>
   <AppLayout>
-    <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 md:px-8">
-      <div class="w-full max-w-lg bg-white rounded-2xl shadow-2xl p-8">
-        <h1 class="text-2xl font-bold mb-8 flex items-center gap-2 text-green-700">
+    <div class="min-h-screen bg-gray-50 py-8 px-4 md:px-8">
+      <div class="w-full max-w-4xl mx-auto bg-white rounded-2xl shadow-2xl p-6 md:p-8">
+        <h1 class="text-2xl font-bold mb-6 flex items-center gap-2 text-green-700">
           <i class="fa-solid fa-recycle text-green-500"></i> Input Internal Use & Waste
         </h1>
+        <p class="text-sm text-gray-600 mb-6">Satu dokumen bisa berisi banyak item. Tanggal, tipe, warehouse, dan ruko (jika internal use) sama untuk semua baris.</p>
         <form @submit.prevent="submit" class="space-y-5">
-          <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Tipe</label>
-            <select v-model="form.type" class="input input-bordered w-full" required>
-              <option value="">Pilih Tipe</option>
-              <option value="internal_use">Internal Use</option>
-              <option value="spoil">Spoil</option>
-              <option value="waste">Waste</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Tanggal</label>
-            <input type="date" v-model="form.date" class="input input-bordered w-full" required />
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Warehouse</label>
-            <select v-model="form.warehouse_id" class="input input-bordered w-full" required>
-              <option value="">Pilih Warehouse</option>
-              <option v-for="w in props.warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
-            </select>
-          </div>
-          <div v-if="form.type === 'internal_use'">
-            <label class="block text-xs font-bold text-gray-600 mb-1">Ruko</label>
-            <select v-model="form.ruko_id" class="input input-bordered w-full" required>
-              <option value="">Pilih Ruko</option>
-              <option v-for="r in props.rukos" :key="r.id_ruko" :value="r.id_ruko">{{ r.nama_ruko }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Item</label>
-            <select v-model="form.item_id" class="input input-bordered w-full" required>
-              <option value="">Pilih Item</option>
-              <option v-for="i in props.items" :key="i.id" :value="i.id">{{ i.name }}</option>
-            </select>
-          </div>
-          <div class="flex gap-2">
-            <div class="flex-1">
-              <label class="block text-xs font-bold text-gray-600 mb-1">Qty</label>
-              <input type="number" min="0" v-model.number="form.qty" class="input input-bordered w-full" required />
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">Tipe</label>
+              <select v-model="form.type" class="input input-bordered w-full" required>
+                <option value="">Pilih Tipe</option>
+                <option value="internal_use">Internal Use</option>
+                <option value="spoil">Spoil</option>
+                <option value="waste">Waste</option>
+              </select>
             </div>
-            <div style="min-width:120px">
-              <label class="block text-xs font-bold text-gray-600 mb-1">Unit</label>
-              <select v-model="form.unit_id" class="input input-bordered w-full" required>
-                <option value="">Pilih Unit</option>
-                <option v-for="u in unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">Tanggal</label>
+              <input v-model="form.date" type="date" class="input input-bordered w-full" required />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 mb-1">Warehouse</label>
+              <select v-model="form.warehouse_id" class="input input-bordered w-full" required>
+                <option value="">Pilih Warehouse</option>
+                <option v-for="w in props.warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+            <div v-if="form.type === 'internal_use'">
+              <label class="block text-xs font-bold text-gray-600 mb-1">Ruko</label>
+              <select v-model="form.ruko_id" class="input input-bordered w-full" required>
+                <option value="">Pilih Ruko</option>
+                <option v-for="r in props.rukos" :key="r.id_ruko" :value="r.id_ruko">{{ r.nama_ruko }}</option>
               </select>
             </div>
           </div>
           <div>
-            <label class="block text-xs font-bold text-gray-600 mb-1">Catatan</label>
-            <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Catatan tambahan"></textarea>
+            <label class="block text-xs font-bold text-gray-600 mb-1">Catatan dokumen</label>
+            <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Opsional, berlaku untuk seluruh dokumen"></textarea>
           </div>
+
+          <div class="border-t pt-4">
+            <div class="flex justify-between items-center mb-3">
+              <span class="font-bold text-gray-700">Daftar item</span>
+              <button type="button" class="btn btn-sm bg-green-600 text-white rounded-lg px-3 py-1" @click="addRow">
+                <i class="fa fa-plus mr-1"></i> Baris item
+              </button>
+            </div>
+            <div class="space-y-4">
+              <div
+                v-for="(line, idx) in form.items"
+                :key="line._key"
+                class="border rounded-xl p-4 bg-gray-50/80 grid grid-cols-1 md:grid-cols-12 gap-3 items-end"
+              >
+                <div class="md:col-span-5">
+                  <label class="block text-xs font-bold text-gray-600 mb-1">Item</label>
+                  <Multiselect
+                    :model-value="line.selectedItem"
+                    :options="props.items || []"
+                    :searchable="true"
+                    :close-on-select="true"
+                    :show-labels="false"
+                    :allow-empty="true"
+                    placeholder="Ketik untuk mencari item..."
+                    label="name"
+                    track-by="id"
+                    class="iuw-multiselect"
+                    @select="(sel) => onItemSelect(sel, idx)"
+                    @remove="() => onItemRemove(idx)"
+                  >
+                    <template #noResult>
+                      <span class="text-sm text-gray-500 px-2 py-1">Tidak ada hasil</span>
+                    </template>
+                  </Multiselect>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-xs font-bold text-gray-600 mb-1">Qty</label>
+                  <input v-model.number="line.qty" type="number" min="0" step="any" class="input input-bordered w-full" required />
+                </div>
+                <div class="md:col-span-3">
+                  <label class="block text-xs font-bold text-gray-600 mb-1">Unit</label>
+                  <select v-model="line.unit_id" class="input input-bordered w-full" required>
+                    <option value="">Pilih Unit</option>
+                    <option v-for="u in line.unitOptions" :key="u.id" :value="u.id">{{ u.name }}</option>
+                  </select>
+                </div>
+                <div class="md:col-span-2 flex gap-1">
+                  <button
+                    v-if="form.items.length > 1"
+                    type="button"
+                    class="btn btn-sm bg-red-100 text-red-700 rounded-lg px-2"
+                    title="Hapus baris"
+                    @click="removeRow(idx)"
+                  >
+                    <i class="fa fa-times"></i>
+                  </button>
+                </div>
+                <div class="md:col-span-12">
+                  <label class="block text-xs font-bold text-gray-600 mb-1">Catatan baris</label>
+                  <input v-model="line.notes" type="text" class="input input-bordered w-full" placeholder="Opsional" />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="flex justify-end gap-2 mt-8">
             <button type="button" class="btn btn-ghost px-6 py-2 rounded-lg" @click="goBack">Batal</button>
-            <button type="submit" class="btn bg-gradient-to-r from-green-500 to-green-700 text-white px-8 py-2 rounded-lg font-bold shadow hover:shadow-xl transition-all" :disabled="loading">
-              <span v-if="loading">
-                <i class="fa fa-spinner fa-spin"></i> Menyimpan...
-              </span>
-              <span v-else>
-                Simpan
-              </span>
+            <button
+              type="submit"
+              class="btn bg-gradient-to-r from-green-500 to-green-700 text-white px-8 py-2 rounded-lg font-bold shadow hover:shadow-xl transition-all"
+              :disabled="loading"
+            >
+              <span v-if="loading"> <i class="fa fa-spinner fa-spin"></i> Menyimpan... </span>
+              <span v-else> Simpan </span>
             </button>
           </div>
         </form>
@@ -76,81 +124,131 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
 import axios from 'axios'
+import { router } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   warehouses: Array,
   items: Array,
-  rukos: Array
+  rukos: Array,
 })
+
+let _keySeq = 1
+function newLine() {
+  return {
+    _key: `l-${_keySeq++}`,
+    selectedItem: null,
+    item_id: '',
+    qty: '',
+    unit_id: '',
+    notes: '',
+    unitOptions: [],
+  }
+}
 
 const form = ref({
   type: '',
   date: new Date().toISOString().slice(0, 10),
   warehouse_id: '',
   ruko_id: '',
-  item_id: '',
-  qty: '',
-  unit_id: '',
-  notes: ''
+  notes: '',
+  items: [newLine()],
 })
 
-const unitOptions = ref([])
 const loading = ref(false)
 
-watch(() => form.value.item_id, async (newVal) => {
-  if (newVal) {
-    const res = await axios.get(`/internal-use-waste/item/${newVal}/units`)
-    unitOptions.value = res.data.units
-    form.value.unit_id = ''
-  } else {
-    unitOptions.value = []
-    form.value.unit_id = ''
+watch(
+  () => form.value.type,
+  (t) => {
+    if (t !== 'internal_use') form.value.ruko_id = ''
   }
-})
+)
 
-watch(() => form.value.type, (newVal) => {
-  if (newVal !== 'internal_use') {
-    form.value.ruko_id = ''
+function addRow() {
+  form.value.items.push(newLine())
+}
+
+function removeRow(idx) {
+  if (form.value.items.length <= 1) return
+  form.value.items.splice(idx, 1)
+}
+
+async function onItemSelect(sel, idx) {
+  const line = form.value.items[idx]
+  line.selectedItem = sel
+  line.item_id = sel && sel.id != null ? sel.id : ''
+  line.unit_id = ''
+  line.unitOptions = []
+  if (!line.item_id) return
+  try {
+    const res = await axios.get(route('internal-use-waste.item-units', line.item_id))
+    line.unitOptions = res.data.units || []
+  } catch {
+    line.unitOptions = []
   }
-})
+}
+
+function onItemRemove(idx) {
+  const line = form.value.items[idx]
+  line.selectedItem = null
+  line.item_id = ''
+  line.unit_id = ''
+  line.unitOptions = []
+}
+
+function buildPayload() {
+  return {
+    type: form.value.type,
+    date: form.value.date,
+    warehouse_id: form.value.warehouse_id,
+    ruko_id: form.value.type === 'internal_use' ? form.value.ruko_id : null,
+    notes: form.value.notes || null,
+    items: form.value.items.map((l) => ({
+      item_id: Number(l.item_id),
+      qty: Number(l.qty),
+      unit_id: Number(l.unit_id),
+      notes: l.notes || null,
+    })),
+  }
+}
 
 async function submit() {
+  for (const l of form.value.items) {
+    if (!l.item_id || !l.unit_id || l.qty === '' || l.qty == null || Number(l.qty) <= 0) {
+      Swal.fire({ icon: 'warning', title: 'Lengkapi semua baris', text: 'Setiap baris wajib punya item, qty, dan unit.' })
+      return
+    }
+  }
   loading.value = true
   try {
-    await router.post(route('internal-use-waste.store'), form.value, {
+    await router.post(route('internal-use-waste.store'), buildPayload(), {
       onSuccess: () => {
         Swal.fire({
           icon: 'success',
           title: 'Berhasil',
           text: 'Data berhasil disimpan!',
           timer: 1500,
-          showConfirmButton: false
+          showConfirmButton: false,
         })
-        loading.value = false
       },
-      onError: (errors) => {
+      onError: () => {
         Swal.fire({
           icon: 'error',
           title: 'Gagal',
           text: 'Gagal menyimpan data. Silakan cek input Anda.',
         })
-        loading.value = false
       },
       onFinish: () => {
         loading.value = false
-      }
+      },
     })
-  } catch (e) {
+  } catch {
     loading.value = false
-    Swal.fire({
-      icon: 'error',
-      title: 'Gagal',
-      text: 'Terjadi kesalahan sistem.',
-    })
+    Swal.fire({ icon: 'error', title: 'Gagal', text: 'Terjadi kesalahan sistem.' })
   }
 }
 
@@ -169,4 +267,14 @@ function goBack() {
 .btn-ghost {
   @apply bg-gray-100 hover:bg-gray-200;
 }
-</style> 
+
+.iuw-multiselect :deep(.multiselect__tags) {
+  min-height: 42px;
+  border-radius: 0.375rem;
+  border-color: #e5e7eb;
+}
+.iuw-multiselect :deep(.multiselect__input),
+.iuw-multiselect :deep(.multiselect__single) {
+  font-size: 0.875rem;
+}
+</style>

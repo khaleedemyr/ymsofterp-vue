@@ -1249,10 +1249,12 @@ Route::get('/internal-use-waste/report', [App\Http\Controllers\InternalUseWasteC
 Route::get('/internal-use-waste/report-waste-spoil', [App\Http\Controllers\InternalUseWasteController::class, 'reportWasteSpoil'])->name('internal-use-waste.report-waste-spoil');
 Route::get('/internal-use-waste/create', [InternalUseWasteController::class, 'create'])->name('internal-use-waste.create');
 Route::post('/internal-use-waste', [InternalUseWasteController::class, 'store'])->name('internal-use-waste.store');
+Route::get('/internal-use-waste/{id}/edit', [InternalUseWasteController::class, 'edit'])->name('internal-use-waste.edit');
+Route::put('/internal-use-waste/{id}', [InternalUseWasteController::class, 'update'])->name('internal-use-waste.update');
 
 Route::get('/internal-use-waste/{id}', [InternalUseWasteController::class, 'show'])->name('internal-use-waste.show');
 Route::delete('/internal-use-waste/{id}', [InternalUseWasteController::class, 'destroy'])->name('internal-use-waste.destroy');
-Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
+Route::get('/internal-use-waste/item/{id}/units', [App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits'])->name('internal-use-waste.item-units');
 
 
 Route::get('/delivery-order', [DeliveryOrderController::class, 'index'])->name('delivery-order.index');

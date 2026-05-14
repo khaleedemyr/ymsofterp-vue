@@ -150,23 +150,13 @@ class OutletRejectionController extends Controller
 
             // Create items
             foreach ($request->items as $item) {
-                // Get MAC cost from food_inventory_cost_histories (in small unit)
                 $inventoryItem = DB::table('food_inventory_items')
                     ->where('item_id', $item['item_id'])
                     ->first();
 
-                $macCostSmallUnit = 0;
-                if ($inventoryItem) {
-                    $lastCostHistory = DB::table('food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->orderByDesc('created_at')
-                        ->first();
-
-                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
-                }
+                $macCostSmallUnit = $inventoryItem
+                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
+                    : 0.0;
 
                 $itemData = DB::table('items')
                     ->where('id', $item['item_id'])
@@ -380,23 +370,13 @@ class OutletRejectionController extends Controller
 
             // Create new items
             foreach ($request->items as $item) {
-                // Get MAC cost from food_inventory_cost_histories
                 $inventoryItem = DB::table('food_inventory_items')
                     ->where('item_id', $item['item_id'])
                     ->first();
 
-                $macCostSmallUnit = 0;
-                if ($inventoryItem) {
-                    $lastCostHistory = DB::table('food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->orderByDesc('created_at')
-                        ->first();
-
-                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
-                }
+                $macCostSmallUnit = $inventoryItem
+                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
+                    : 0.0;
 
                 $itemData = DB::table('items')->where('id', $item['item_id'])->first();
                 $macCostConverted = $this->convertMacSmallToLineUnit(
@@ -967,15 +947,15 @@ class OutletRejectionController extends Controller
                  'out_qty_small' => 0,
                  'out_qty_medium' => 0,
                  'out_qty_large' => 0,
-                 'cost_per_small' => $mac,
-                 'cost_per_medium' => $mac * $smallConv,
-                 'cost_per_large' => $mac * $smallConv * $mediumConv,
-                 'value_in' => $qty_small * $mac,
+                 'cost_per_small' => $item_mac_cost_small_unit,
+                 'cost_per_medium' => $item_mac_cost_small_unit * $smallConv,
+                 'cost_per_large' => $item_mac_cost_small_unit * $smallConv * $mediumConv,
+                 'value_in' => $nilai_baru,
                  'value_out' => 0,
                  'saldo_qty_small' => $saldo_qty_small,
                  'saldo_qty_medium' => $saldo_qty_medium,
                  'saldo_qty_large' => $saldo_qty_large,
-                 'saldo_value' => $saldo_qty_small * $mac,
+                 'saldo_value' => $total_nilai,
                  'description' => 'Outlet Rejection - ' . $item->rejection_reason,
                  'created_at' => now(),
              ];
@@ -991,15 +971,8 @@ class OutletRejectionController extends Controller
                  'inventory_item_id' => $inventoryItem->id
              ]);
 
-        // Insert cost history
-        $lastCostHistory = DB::table('food_inventory_cost_histories')
-            ->where('inventory_item_id', $inventoryItem->id)
-            ->where('warehouse_id', $rejection->warehouse_id)
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->first();
-
-        $old_cost = $lastCostHistory ? (float) $lastCostHistory->new_cost : 0;
+        // Insert cost history (old_cost = rata saldo sebelum gabung; new_cost = biaya layer masuk; mac = MAC baru)
+        $old_cost = $qty_lama > 0 ? ((float) $nilai_lama / (float) $qty_lama) : 0.0;
 
         Log::info('Inserting cost history with small unit costs', [
             'inventory_item_id' => $inventoryItem->id,
@@ -1007,12 +980,11 @@ class OutletRejectionController extends Controller
             'warehouse_division_id' => $warehouseDivisionId,
             'date' => $rejection->rejection_date,
             'old_cost_small_unit' => $old_cost,
-            'new_cost_small_unit' => $mac,
+            'new_cost_small_unit' => $item_mac_cost_small_unit,
             'mac_small_unit' => $mac,
             'type' => 'outlet_rejection',
             'reference_type' => 'outlet_rejection',
             'reference_id' => $rejection->id,
-            'last_cost_history' => $lastCostHistory
         ]);
 
         DB::table('food_inventory_cost_histories')->insert([
@@ -1021,7 +993,7 @@ class OutletRejectionController extends Controller
             'warehouse_division_id' => $warehouseDivisionId,
             'date' => $rejection->rejection_date,
             'old_cost' => $old_cost,
-            'new_cost' => $mac,
+            'new_cost' => $item_mac_cost_small_unit,
             'mac' => $mac,
             'type' => 'outlet_rejection',
             'reference_type' => 'outlet_rejection',
@@ -1163,17 +1135,9 @@ class OutletRejectionController extends Controller
 
             foreach ($request->items as $item) {
                 $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-                $macCostSmallUnit = 0;
-                if ($inventoryItem) {
-                    $lastCostHistory = DB::table('food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->orderByDesc('created_at')
-                        ->first();
-                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
-                }
+                $macCostSmallUnit = $inventoryItem
+                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
+                    : 0.0;
                 $itemData = DB::table('items')->where('id', $item['item_id'])->first();
                 $macCostConverted = $this->convertMacSmallToLineUnit(
                     (float) $macCostSmallUnit,
@@ -1244,17 +1208,9 @@ class OutletRejectionController extends Controller
 
             foreach ($request->items as $item) {
                 $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-                $macCostSmallUnit = 0;
-                if ($inventoryItem) {
-                    $lastCostHistory = DB::table('food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $request->warehouse_id)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->orderByDesc('created_at')
-                        ->first();
-                    $macCostSmallUnit = $lastCostHistory ? (float) $lastCostHistory->mac : 0;
-                }
+                $macCostSmallUnit = $inventoryItem
+                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
+                    : 0.0;
                 $itemData = DB::table('items')->where('id', $item['item_id'])->first();
                 $macCostConverted = $this->convertMacSmallToLineUnit(
                     $macCostSmallUnit,
@@ -1640,6 +1596,23 @@ class OutletRejectionController extends Controller
         }
 
         return $macOnLine;
+    }
+
+    /**
+     * MAC per small untuk prefilled mac_cost draft: stok (value/qty) lalu histori (sama resolveBaselineMacPerSmall).
+     */
+    private function defaultMacSmallFromStockOrHistory(int $inventoryItemId, int $warehouseId): float
+    {
+        $stockRow = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->first();
+        $b = $this->resolveBaselineMacPerSmall($inventoryItemId, $warehouseId, $stockRow);
+        if ($b !== null && $b > 0 && is_finite($b)) {
+            return $b;
+        }
+
+        return 0.0;
     }
 
     /**
