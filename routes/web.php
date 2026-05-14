@@ -1032,6 +1032,7 @@ Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportControl
 Route::get('/cost-report-ho', [\App\Http\Controllers\CostReportHoController::class, 'index'])->name('cost-report-ho.index');
 Route::get('/cost-report-ho/tab-data', [\App\Http\Controllers\CostReportHoController::class, 'tabData'])->name('cost-report-ho.tab-data');
 Route::post('/cost-report-ho/clear-cache', [\App\Http\Controllers\CostReportHoController::class, 'clearCache'])->name('cost-report-ho.clear-cache');
+Route::get('/cost-report-ho/trace-begin', [\App\Http\Controllers\CostReportHoController::class, 'traceBegin'])->name('cost-report-ho.trace-begin');
 
 Route::get('/internal-use-waste-report', [\App\Http\Controllers\InternalUseWasteReportController::class, 'index'])->name('internal-use-waste-report.index');
 Route::get('/internal-use-waste-report/export', [\App\Http\Controllers\InternalUseWasteReportController::class, 'export'])->name('internal-use-waste-report.export');

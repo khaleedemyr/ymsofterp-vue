@@ -41,6 +41,16 @@
             <i :class="clearingCache ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-rotate'" class="mr-2"></i>
             Clear cache
           </button>
+          <a
+            v-if="filters.bulan"
+            :href="traceBeginUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex items-center text-sm text-slate-700 border border-slate-300 rounded-md px-3 py-2 hover:bg-slate-50"
+          >
+            <i class="fa-solid fa-magnifying-glass-chart mr-2 text-slate-500"></i>
+            Trace JSON (baris begin terbesar)
+          </a>
         </div>
       </div>
 
@@ -140,7 +150,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { router } from '@inertiajs/vue3'
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -155,6 +165,14 @@ const activeTab = ref('cost')
 const costRowsData = ref(props.costRows || [])
 const comparisonRowsData = ref([])
 const loadedTabs = ref({})
+
+const traceBeginUrl = computed(() => {
+  const b = filters.value.bulan
+  if (!b) {
+    return '#'
+  }
+  return route('cost-report-ho.trace-begin', { bulan: b, limit: 100 })
+})
 
 watch(
   () => props.filters,
