@@ -26,7 +26,7 @@ class OutletSerialReceiveController extends Controller
                 'h.status',
                 'h.notes',
                 'h.created_by',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'o.nama_outlet as outlet_name',
                 'h.created_at',
                 DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')
@@ -312,7 +312,7 @@ class OutletSerialReceiveController extends Controller
         $header = DB::table('outlet_serial_receive_headers as h')
             ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
-            ->select('h.*', 'u.name as created_by_name', 'o.nama_outlet as outlet_name')
+            ->select('h.*', 'u.nama_lengkap as created_by_name', 'o.nama_outlet as outlet_name')
             ->where('h.id', $id)
             ->whereNull('h.deleted_at')
             ->first();
@@ -426,7 +426,7 @@ class OutletSerialReceiveController extends Controller
                 'h.status',
                 'h.notes',
                 'h.created_by',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'o.nama_outlet as outlet_name',
                 'h.created_at',
                 DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')
@@ -481,7 +481,7 @@ class OutletSerialReceiveController extends Controller
         $header = DB::table('outlet_serial_receive_headers as h')
             ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
-            ->select('h.*', 'u.name as created_by_name', 'o.nama_outlet as outlet_name')
+            ->select('h.*', 'u.nama_lengkap as created_by_name', 'o.nama_outlet as outlet_name')
             ->where('h.id', $id)
             ->whereNull('h.deleted_at')
             ->first();
