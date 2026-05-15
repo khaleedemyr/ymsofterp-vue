@@ -203,7 +203,7 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
-            { name: 'Dashboard Sales Outlet', route: '/outlet-dashboard', icon: 'fa-store', group: 'Outlet Management', order: 0 },
+            { name: () => 'Dashboard Sales Outlet', icon: 'fa-solid fa-store', route: '/outlet-dashboard', code: 'outlet_dashboard' },
             { name: () => 'POS Design Sync Monitor', icon: 'fa-solid fa-arrows-rotate', route: '/admin/pos-design-sync-monitor', code: 'pos_design_sync_monitor' },
             { name: () => 'Laporan Void Bill POS', icon: 'fa-solid fa-file-circle-xmark', route: '/pos-void-bill-report', code: 'pos_void_bill_report' },
             { name: () => 'Request Order (RO)', icon: 'fa-solid fa-calendar-check', route: '/floor-order', code: 'floor_order' },
@@ -438,6 +438,7 @@ const menuGroups = [
                 name: () => 'Cek Resep BOM',
                 icon: 'fa-solid fa-magnifying-glass',
                 route: '/stock-cut/recipe-checker',
+                code: 'recipe_checker',
             },
             {
                 name: () => 'Report Rekap Diskon',
