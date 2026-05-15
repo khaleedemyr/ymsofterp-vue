@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PurchaseRequisition;
+use App\Models\PrKasbon;
 use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\PurchaseRequisitionApprovalFlow;
@@ -1757,6 +1758,17 @@ class PurchaseRequisitionController extends Controller
             return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
         }
 
+        // Kasbon: optional nilai & termin dari approver (validasi di luar transaksi agar 422 tidak tertangkap catch umum)
+        $kasbonPatch = null;
+        if ($purchaseRequisition->mode === 'kasbon') {
+            if ($request->filled('kasbon_amount') || $request->filled('kasbon_termin')) {
+                $kasbonPatch = $request->validate([
+                    'kasbon_amount' => 'required|integer|in:500000,1000000,1500000,2000000,2500000,3000000',
+                    'kasbon_termin' => 'required|integer|in:1,2,3',
+                ]);
+            }
+        }
+
         try {
             // Use database transaction to ensure atomicity
             DB::beginTransaction();
@@ -1778,6 +1790,24 @@ class PurchaseRequisitionController extends Controller
                     ], 400);
                 }
                 return back()->withErrors(['error' => 'Only submitted purchase requisitions can be approved.']);
+            }
+
+            if ($kasbonPatch !== null) {
+                $purchaseRequisition->update([
+                    'amount' => $kasbonPatch['kasbon_amount'],
+                    'kasbon_termin' => (int) $kasbonPatch['kasbon_termin'],
+                ]);
+                $kasbonItem = PurchaseRequisitionItem::query()
+                    ->where('purchase_requisition_id', $purchaseRequisition->id)
+                    ->orderBy('id')
+                    ->first();
+                if ($kasbonItem) {
+                    $kasbonItem->update([
+                        'unit_price' => $kasbonPatch['kasbon_amount'],
+                        'subtotal' => $kasbonPatch['kasbon_amount'],
+                    ]);
+                }
+                $purchaseRequisition->refresh();
             }
             
             // Get current approver
@@ -1968,6 +1998,31 @@ class PurchaseRequisitionController extends Controller
                     'approved_ssd_by' => auth()->id(),
                     'approved_ssd_at' => now(),
                 ]);
+
+                // Kasbon: catat ke tabel pr_kasbons (buat tabel lewat SQL: database/sql/create_pr_kasbons.sql)
+                if ($purchaseRequisition->mode === 'kasbon') {
+                    $purchaseRequisition->refresh();
+                    $totalAmount = (float) ($purchaseRequisition->amount ?? 0);
+                    $terminTotal = max(1, min(3, (int) ($purchaseRequisition->kasbon_termin ?? 1)));
+                    $installmentAmount = $terminTotal > 0
+                        ? round($totalAmount / $terminTotal, 2)
+                        : $totalAmount;
+                    if (! PrKasbon::query()->where('purchase_requisition_id', $purchaseRequisition->id)->exists()) {
+                        PrKasbon::query()->create([
+                            'purchase_requisition_id' => $purchaseRequisition->id,
+                            'pr_number' => $purchaseRequisition->pr_number,
+                            'outlet_id' => $purchaseRequisition->outlet_id,
+                            'division_id' => $purchaseRequisition->division_id,
+                            'employee_user_id' => $purchaseRequisition->created_by,
+                            'total_amount' => $totalAmount,
+                            'termin_total' => $terminTotal,
+                            'installment_amount' => $installmentAmount,
+                            'paid_installments' => 0,
+                            'status' => 'active',
+                            'approved_at' => now(),
+                        ]);
+                    }
+                }
                 
                 // Send notification to creator that PR is fully approved
                 $this->sendNotificationToCreator($purchaseRequisition, 'approved');

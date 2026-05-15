@@ -194,6 +194,7 @@ const menuGroups = [
             { name: () => 'Report Hasil Test', icon: 'fa-solid fa-chart-line', route: '/enroll-test-report', code: 'enroll_test_report' },
             { name: () => 'Manajemen Cuti', icon: 'fa-solid fa-calendar-days', route: '/leave-management', code: 'leave_management' },
             { name: () => 'Report Travel & Kasbon', icon: 'fa-solid fa-plane', route: '/travel-kasbon-report', code: 'travel_kasbon_report' },
+            { name: () => 'Report Kasbon', icon: 'fa-solid fa-money-bill-transfer', route: '/report-kasbon', code: 'report_kasbon' },
         ],
     },
     {

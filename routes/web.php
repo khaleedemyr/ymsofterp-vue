@@ -850,6 +850,9 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // Travel & Kasbon Report
     Route::get('/travel-kasbon-report', [\App\Http\Controllers\TravelKasbonReportController::class, 'index'])->name('travel-kasbon-report.index');
 
+    // Report Kasbon (cicilan / pr_kasbons)
+    Route::get('/report-kasbon', [\App\Http\Controllers\KasbonReportController::class, 'index'])->name('report-kasbon.index');
+
     // Good Receive routes
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');
     Route::post('/food-good-receive/fetch-po', [FoodGoodReceiveController::class, 'fetchPO'])->name('food-good-receive.fetch-po');

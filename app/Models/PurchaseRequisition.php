@@ -137,6 +137,12 @@ class PurchaseRequisition extends Model
         return $this->hasMany(PurchaseRequisitionItem::class);
     }
 
+    /** Pelacakan cicilan kasbon (tabel `pr_kasbons`, isi saat PR kasbon fully approved) */
+    public function prKasbon()
+    {
+        return $this->hasOne(PrKasbon::class, 'purchase_requisition_id');
+    }
+
     public function approvalFlows()
     {
         return $this->hasMany(PurchaseRequisitionApprovalFlow::class)->orderedByLevel();
