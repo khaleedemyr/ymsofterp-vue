@@ -159,11 +159,17 @@
                     <span>Note</span>
                   </div>
                 </th>
+                <th v-if="isStockIn" class="px-6 py-4 text-left text-xs font-bold text-white uppercase tracking-wider">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-barcode text-indigo-200"></i>
+                    <span>Serial</span>
+                  </div>
+                </th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-100">
               <tr v-if="!adjustment.items || adjustment.items.length === 0">
-                <td colspan="4" class="px-6 py-12 text-center">
+                <td :colspan="isStockIn ? 5 : 4" class="px-6 py-12 text-center">
                   <div class="flex flex-col items-center justify-center">
                     <div class="p-4 bg-gray-100 rounded-full mb-4">
                       <i class="fa-solid fa-inbox text-4xl text-gray-400"></i>
@@ -190,6 +196,13 @@
                 </td>
                 <td class="px-6 py-4">
                   <div class="text-sm text-gray-700 max-w-md">{{ item.note || '-' }}</div>
+                </td>
+                <td v-if="isStockIn" class="px-6 py-4">
+                  <div class="flex flex-col gap-1 min-w-[140px]">
+                    <button type="button" class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200" @click="generateSerial(item)">Generate Serial</button>
+                    <button type="button" class="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700 hover:bg-gray-200" @click="showSerials(item)">Lihat Serial ({{ serialSummary[item.id] || 0 }})</button>
+                    <button type="button" class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50" :disabled="(serialInUse[item.id] || 0) > 0" @click="rollbackSerial(item)">Rollback Serial</button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -327,7 +340,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Head, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
@@ -340,6 +353,10 @@ const props = defineProps({
 
 const approvalNote = ref('')
 const loading = ref(false)
+const serialSummary = ref({})
+const serialInUse = ref({})
+
+const isStockIn = computed(() => props.adjustment?.type === 'in')
 
 const canApprove = computed(() => {
   if (!props.user) return false
@@ -478,4 +495,192 @@ function getApproverName(userId) {
   // Backend should include approver names in the response
   return `User ID: ${userId}`
 }
+
+const loadSerialSummary = async () => {
+  if (!isStockIn.value || !props.adjustment?.id) return
+  try {
+    const { data } = await axios.get(`/api/food-inventory-adjustment/${props.adjustment.id}/serial-summary`)
+    const mapped = {}
+    const inUseMap = {}
+    ;(data || []).forEach((row) => {
+      mapped[row.adjustment_item_id] = Number(row.total || 0)
+      inUseMap[row.adjustment_item_id] = Number(row.in_use || 0)
+    })
+    serialSummary.value = mapped
+    serialInUse.value = inUseMap
+  } catch {
+    serialSummary.value = {}
+    serialInUse.value = {}
+  }
+}
+
+const generateSerial = async (item) => {
+  try {
+    const { data } = await axios.get(`/api/food-inventory-adjustment-items/${item.id}/serial-units`)
+    const units = data?.units || []
+    if (!units.length) {
+      await Swal.fire('Info', 'Unit konversi item tidak ditemukan.', 'info')
+      return
+    }
+    const options = units.reduce((acc, unit) => {
+      acc[unit.unit_id] = `${unit.unit_name} (qty: ${unit.converted_qty})`
+      return acc
+    }, {})
+    const selected = await Swal.fire({
+      title: `Generate Serial - ${item.item?.name || 'Item'}`,
+      html: `Qty adjustment: <b>${data.qty_received}</b> ${data.received_unit_name || ''}`,
+      input: 'select',
+      inputOptions: options,
+      inputPlaceholder: 'Pilih unit',
+      showCancelButton: true,
+      confirmButtonText: 'Lanjut',
+      cancelButtonText: 'Batal',
+      inputValidator: (value) => (!value ? 'Unit wajib dipilih' : undefined),
+    })
+    if (!selected.isConfirmed) return
+
+    const unitSelected = units.find((u) => Number(u.unit_id) === Number(selected.value))
+    const baseQty = Number(unitSelected?.converted_qty ?? 0)
+    const baseUnitName = unitSelected?.unit_name || ''
+
+    let allUnits = []
+    try {
+      const { data: fetchedUnits } = await axios.get('/api/fgr-serial/units')
+      allUnits = fetchedUnits || []
+    } catch (_) { /* ignore */ }
+
+    const unitOptionsHtml = allUnits.map((u) => `<option value="${u.id}">${u.name}</option>`).join('')
+
+    const { value: formValues, isConfirmed } = await Swal.fire({
+      title: 'Konversi Unit (Opsional)',
+      html: `
+        <div style="text-align:left;font-size:14px;">
+          <div style="margin-bottom:10px;"><strong>Unit terpilih:</strong> ${baseUnitName}<br><strong>Qty hasil konversi:</strong> ${baseQty}</div>
+          <div style="margin-bottom:10px;">
+            <label style="font-weight:600;display:block;margin-bottom:4px;">Mode:</label>
+            <label style="cursor:pointer;margin-right:12px;"><input type="radio" name="swal-conv-mode" value="no" checked> Tanpa Konversi</label>
+            <label style="cursor:pointer;"><input type="radio" name="swal-conv-mode" value="yes"> Konversi Unit</label>
+          </div>
+          <div id="swal-conv-wrapper" style="display:none;margin-bottom:10px;">
+            <div style="margin-bottom:8px;">
+              <label style="font-weight:600;display:block;margin-bottom:4px;">Unit Tujuan Serial:</label>
+              <select id="swal-repack-unit" class="swal2-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+                <option value="">-- Pilih Unit --</option>
+                ${unitOptionsHtml}
+              </select>
+            </div>
+            <div>
+              <label style="font-weight:600;display:block;margin-bottom:4px;">1 <span id="swal-target-unit-label">[unit tujuan]</span> = berapa ${baseUnitName}?</label>
+              <input type="number" id="swal-repack-qty" min="0.01" step="0.01" value="1" class="swal2-input" style="width:100%;margin:0;">
+            </div>
+          </div>
+          <div style="margin-top:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
+            <span style="font-weight:600;">Jumlah serial:</span> <span id="swal-serial-count">${baseQty}</span>
+          </div>
+        </div>
+      `,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, generate',
+      cancelButtonText: 'Batal',
+      didOpen: () => {
+        const radios = document.querySelectorAll('input[name="swal-conv-mode"]')
+        const convWrapper = document.getElementById('swal-conv-wrapper')
+        const unitSelect = document.getElementById('swal-repack-unit')
+        const qtyInput = document.getElementById('swal-repack-qty')
+        const countDisplay = document.getElementById('swal-serial-count')
+        const targetUnitLabel = document.getElementById('swal-target-unit-label')
+        const updateCount = () => {
+          const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no'
+          if (mode === 'yes') {
+            const repackQty = Math.max(0.01, parseFloat(qtyInput.value) || 1)
+            countDisplay.textContent = Math.ceil(baseQty / repackQty)
+          } else {
+            countDisplay.textContent = baseQty
+          }
+        }
+        radios.forEach((r) => r.addEventListener('change', (e) => {
+          convWrapper.style.display = e.target.value === 'yes' ? 'block' : 'none'
+          updateCount()
+        }))
+        unitSelect?.addEventListener('change', () => {
+          targetUnitLabel.textContent = unitSelect.options[unitSelect.selectedIndex]?.text || '[unit tujuan]'
+        })
+        qtyInput?.addEventListener('input', updateCount)
+      },
+      preConfirm: () => {
+        const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no'
+        if (mode === 'yes') {
+          const repackUnitId = document.getElementById('swal-repack-unit')?.value
+          const repackQty = parseFloat(document.getElementById('swal-repack-qty')?.value) || 0
+          if (!repackUnitId) {
+            Swal.showValidationMessage('Pilih unit tujuan terlebih dahulu')
+            return false
+          }
+          if (repackQty <= 0) {
+            Swal.showValidationMessage('Qty konversi harus lebih dari 0')
+            return false
+          }
+          return { repack_unit_id: parseInt(repackUnitId, 10), repack_qty: repackQty }
+        }
+        return { repack_unit_id: null, repack_qty: null }
+      },
+    })
+
+    if (!isConfirmed || !formValues) return
+
+    const response = await axios.post(`/api/food-inventory-adjustment-items/${item.id}/generate-serials`, {
+      unit_id: Number(selected.value),
+      repack_unit_id: formValues.repack_unit_id,
+      repack_qty: formValues.repack_qty,
+    })
+    await Swal.fire('Berhasil', response.data?.message || 'Serial berhasil dibuat.', 'success')
+    await loadSerialSummary()
+  } catch (error) {
+    await Swal.fire('Error', error?.response?.data?.message || 'Gagal generate serial.', 'error')
+  }
+}
+
+const showSerials = async (item) => {
+  try {
+    const { data } = await axios.get(`/api/food-inventory-adjustment-items/${item.id}/serials`)
+    if (!data?.length) {
+      await Swal.fire('Info', 'Belum ada serial untuk item ini.', 'info')
+      return
+    }
+    const rowsHtml = data.slice(0, 200).map((row, idx) =>
+      `<tr><td class="border px-2 py-1">${idx + 1}</td><td class="border px-2 py-1 font-mono">${row.serial_number}</td><td class="border px-2 py-1">${row.unit_name || '-'}</td></tr>`
+    ).join('')
+    await Swal.fire({
+      title: `Serial - ${item.item?.name || 'Item'}`,
+      html: `<table class="w-full text-sm"><thead><tr class="bg-gray-100"><th class="border px-2 py-1">#</th><th class="border px-2 py-1">Serial</th><th class="border px-2 py-1">Unit</th></tr></thead><tbody>${rowsHtml}</tbody></table>`,
+      width: 640,
+    })
+  } catch (error) {
+    await Swal.fire('Error', error?.response?.data?.message || 'Gagal memuat serial.', 'error')
+  }
+}
+
+const rollbackSerial = async (item) => {
+  const confirm = await Swal.fire({
+    title: 'Rollback Serial?',
+    text: 'Semua serial baris ini akan dihapus.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, rollback',
+    cancelButtonText: 'Batal',
+  })
+  if (!confirm.isConfirmed) return
+  try {
+    const { data } = await axios.delete(`/api/food-inventory-adjustment-items/${item.id}/serials`)
+    await Swal.fire('Berhasil', data?.message || 'Serial dihapus.', 'success')
+    await loadSerialSummary()
+  } catch (error) {
+    await Swal.fire('Error', error?.response?.data?.message || 'Gagal rollback serial.', 'error')
+  }
+}
+
+onMounted(() => {
+  loadSerialSummary()
+})
 </script> 

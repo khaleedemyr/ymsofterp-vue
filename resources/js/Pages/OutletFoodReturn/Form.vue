@@ -126,6 +126,29 @@
           </div>
         </div>
 
+        <!-- Serial mode -->
+        <div v-if="form.outlet_food_good_receive_id" class="bg-white rounded-xl shadow-lg p-6 mb-6 border" :class="serialMode ? 'border-orange-300' : 'border-gray-200'">
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="text-sm font-medium text-gray-700"><i class="fa-solid fa-qrcode mr-1 text-orange-500"></i> Mode Nomor Seri</span>
+            <input type="checkbox" v-model="serialMode" class="sr-only peer" />
+            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-orange-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+          </label>
+          <div v-if="serialMode" class="mt-3 space-y-2">
+            <input ref="serialInputRef" v-model="serialInput" @keypress.enter.prevent="scanSerial" type="text" placeholder="Scan / ketik serial lalu Enter..." class="w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500" :disabled="serialScanning" />
+            <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackOk ? 'text-green-600' : 'text-red-600'">{{ serialFeedback }}</p>
+            <div v-if="scannedSerials.length" class="space-y-2">
+              <p class="text-xs font-semibold text-orange-700">{{ scannedSerials.length }} serial</p>
+              <div v-for="(s, idx) in scannedSerials" :key="s.serial_number" class="flex justify-between items-center border border-orange-200 rounded-lg p-2 bg-orange-50 text-sm">
+                <div>
+                  <span class="font-mono font-semibold">{{ s.serial_number }}</span>
+                  <span class="block text-gray-600">{{ s.item_name }} — {{ s.qty }} {{ s.unit_name }}</span>
+                </div>
+                <button type="button" class="text-red-500" @click="removeSerial(idx)"><i class="fa fa-trash"></i></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Items Section -->
         <div v-if="selectedGoodReceive" class="bg-white rounded-xl shadow-lg p-6">
           <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -218,7 +241,7 @@
           </button>
           <button 
             type="submit" 
-            :disabled="loading || selectedItems.length === 0"
+            :disabled="loading || (selectedItems.length === 0 && scannedSerials.length === 0)"
             class="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span v-if="loading">
@@ -237,7 +260,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { router } from '@inertiajs/vue3'
-import { ref, reactive, watch, computed, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
 
@@ -246,6 +269,18 @@ const props = defineProps({
   outlets: Array,
   warehouseOutlets: Array,
   goodReceives: Array
+})
+
+const serialMode = ref(false)
+const serialInput = ref('')
+const serialInputRef = ref(null)
+const serialScanning = ref(false)
+const serialFeedback = ref('')
+const serialFeedbackOk = ref(false)
+const scannedSerials = ref([])
+
+watch(serialMode, (on) => {
+  if (on) nextTick(() => serialInputRef.value?.focus())
 })
 
 const loading = ref(false)
@@ -449,17 +484,66 @@ async function loadGoodReceiveItems() {
   }
 }
 
+async function scanSerial() {
+  const sn = serialInput.value.trim()
+  if (!sn || !form.outlet_id || !form.warehouse_outlet_id) return
+  if (scannedSerials.value.some((s) => s.serial_number === sn)) {
+    serialFeedback.value = 'Serial sudah discan.'
+    serialFeedbackOk.value = false
+    return
+  }
+  serialScanning.value = true
+  serialFeedback.value = ''
+  try {
+    const { data } = await axios.post('/outlet-food-return/validate-serial', {
+      serial_number: sn,
+      outlet_id: form.outlet_id,
+      warehouse_outlet_id: form.warehouse_outlet_id,
+      outlet_food_good_receive_id: form.outlet_food_good_receive_id || null,
+    })
+    if (!data.valid) {
+      serialFeedback.value = data.message || 'Serial tidak valid.'
+      serialFeedbackOk.value = false
+      return
+    }
+    const s = data.serial
+    scannedSerials.value.push({
+      serial_id: s.id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      item_name: s.item_name,
+      unit_id: s.unit_id,
+      unit_name: s.unit_name,
+      qty: s.qty,
+      gr_item_id: s.gr_item_id,
+    })
+    serialInput.value = ''
+    serialFeedback.value = 'Serial ditambahkan.'
+    serialFeedbackOk.value = true
+    nextTick(() => serialInputRef.value?.focus())
+  } catch (e) {
+    serialFeedback.value = 'Gagal validasi serial.'
+    serialFeedbackOk.value = false
+  } finally {
+    serialScanning.value = false
+  }
+}
+
+function removeSerial(idx) {
+  scannedSerials.value.splice(idx, 1)
+}
+
 async function submitForm() {
-  if (selectedItems.value.length === 0) {
+  if (selectedItems.value.length === 0 && scannedSerials.value.length === 0) {
     Swal.fire({
       icon: 'warning',
       title: 'Peringatan',
-      text: 'Pilih minimal satu item untuk di-return'
+      text: 'Pilih minimal satu item qty atau scan serial untuk di-return'
     })
     return
   }
   
-  // Validate quantities
+  if (selectedItems.value.length > 0) {
   for (const itemId of selectedItems.value) {
     const quantity = returnQuantities[itemId]
     const item = availableItems.value.find(i => i.gr_item_id == itemId)
@@ -482,6 +566,7 @@ async function submitForm() {
       return
     }
   }
+  }
   
   loading.value = true
   
@@ -495,10 +580,20 @@ async function submitForm() {
         unit_id: item.unit_id
       }
     })
+
+    const serial_items = scannedSerials.value.map((s) => ({
+      serial_id: s.serial_id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      unit_id: s.unit_id,
+      qty: s.qty,
+      gr_item_id: s.gr_item_id,
+    }))
     
     const response = await axios.post('/outlet-food-return', {
       ...form,
-      items: items
+      items: items.length ? items : undefined,
+      serial_items: serial_items.length ? serial_items : undefined,
     })
     
     if (response.data.success) {

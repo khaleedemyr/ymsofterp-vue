@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\OutletFoodReturnSerialService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -39,6 +40,7 @@ class HeadOfficeReturnController extends Controller
                 'ofr.return_date',
                 'ofr.status',
                 'ofr.notes',
+                'ofr.return_mode',
                 'ofr.created_at',
                 'ofr.approved_at',
                 'ofr.rejection_at',
@@ -119,6 +121,7 @@ class HeadOfficeReturnController extends Controller
                 'ofr.return_date',
                 'ofr.status',
                 'ofr.notes',
+                'ofr.return_mode',
                 'ofr.created_at',
                 'ofr.approved_at',
                 'ofr.rejection_at',
@@ -196,6 +199,7 @@ class HeadOfficeReturnController extends Controller
             ->get();
 
         $return->items = $items;
+        $return->serialItems = app(OutletFoodReturnSerialService::class)->loadSerialItems((int) $id);
         return response()->json(['success' => true, 'return' => $return]);
     }
 
@@ -223,6 +227,7 @@ class HeadOfficeReturnController extends Controller
                 'ofr.return_date',
                 'ofr.status',
                 'ofr.notes',
+                'ofr.return_mode',
                 'ofr.created_at',
                 'ofr.approved_at',
                 'ofr.rejection_at',
@@ -257,10 +262,13 @@ class HeadOfficeReturnController extends Controller
             ->where('ofri.outlet_food_return_id', $id)
             ->get();
 
+        $serialItems = app(OutletFoodReturnSerialService::class)->loadSerialItems((int) $id);
+
         return Inertia::render('HeadOfficeReturn/Show', [
             'user' => $user,
             'return' => $return,
-            'items' => $items
+            'items' => $items,
+            'serialItems' => $serialItems,
         ]);
     }
 
@@ -304,6 +312,12 @@ class HeadOfficeReturnController extends Controller
                 ->where('ofri.outlet_food_return_id', $id)
                 ->get();
             
+            $serialService = app(OutletFoodReturnSerialService::class);
+            $serialRows = $serialService->loadSerialItems((int) $id);
+            foreach ($serialRows as $serialRow) {
+                $serialService->processSerialOnApprove($return, $serialRow, (int) $id, (int) Auth::id(), 'Approved by Head Office');
+            }
+
             // Process each return item for stock reduction
             foreach ($returnItems as $item) {
                 // Convert return quantity to small unit
@@ -424,7 +438,9 @@ class HeadOfficeReturnController extends Controller
             if ($return->status !== 'pending') {
                 return response()->json(['success' => false, 'message' => 'Return sudah diproses'], 400);
             }
-            
+
+            app(OutletFoodReturnSerialService::class)->releaseReservationsOnReject((int) $id);
+
             // Update return status to rejected
             DB::table('outlet_food_returns')
                 ->where('id', $id)

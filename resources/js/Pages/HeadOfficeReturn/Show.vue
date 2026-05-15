@@ -62,6 +62,12 @@
               {{ getStatusText(returnData.status) }}
             </span>
           </div>
+          <div v-if="returnData.return_mode && returnData.return_mode !== 'normal'">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+            <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">
+              {{ returnData.return_mode === 'serial' ? 'Serial' : 'Campuran' }}
+            </span>
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Dibuat Oleh</label>
             <p class="text-sm text-gray-900">{{ returnData.created_by_name }}</p>
@@ -92,10 +98,35 @@
         </div>
       </div>
 
-      <!-- Return Items -->
-      <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+      <!-- Serial Items -->
+      <div v-if="serialItems.length" class="bg-orange-50 rounded-lg shadow-sm border border-orange-200 overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-orange-200">
+          <h2 class="text-lg font-semibold text-gray-900"><i class="fa fa-qrcode mr-1 text-orange-600"></i> Nomor Seri</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-orange-100">
+            <thead class="bg-orange-100/50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase">Serial</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase">Item</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-600 uppercase">Qty</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-orange-50">
+              <tr v-for="s in serialItems" :key="s.id">
+                <td class="px-6 py-3 font-mono text-sm">{{ s.serial_number }}</td>
+                <td class="px-6 py-3 text-sm">{{ s.item_name }}</td>
+                <td class="px-6 py-3 text-sm">{{ s.return_qty }} {{ s.unit_name }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Return Items (Qty) -->
+      <div v-if="items.length" class="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Item yang Di-return</h2>
+          <h2 class="text-lg font-semibold text-gray-900">Item yang Di-return (Qty)</h2>
         </div>
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
@@ -133,13 +164,12 @@
             </tbody>
           </table>
         </div>
+      </div>
 
-        <!-- Empty State -->
-        <div v-if="items.length === 0" class="text-center py-12">
-          <i class="fa fa-inbox text-4xl text-gray-300 mb-4"></i>
-          <h3 class="text-lg font-medium text-gray-900 mb-2">Tidak ada item</h3>
-          <p class="text-gray-500">Belum ada item yang di-return</p>
-        </div>
+      <div v-if="!items.length && !serialItems.length" class="bg-white rounded-lg shadow-sm border text-center py-12">
+        <i class="fa fa-inbox text-4xl text-gray-300 mb-4"></i>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Tidak ada item</h3>
+        <p class="text-gray-500">Belum ada baris return</p>
       </div>
     </div>
 
@@ -190,16 +220,19 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link, router } from '@inertiajs/vue3'
 import { ref } from 'vue'
+import axios from 'axios'
 import Swal from 'sweetalert2'
 
 const props = defineProps({
   user: Object,
   return: Object,
-  items: Array
+  items: Array,
+  serialItems: { type: Array, default: () => [] },
 })
 
 const returnData = props.return
 const items = props.items
+const serialItems = props.serialItems
 const showReject = ref(false)
 const rejectReason = ref('')
 

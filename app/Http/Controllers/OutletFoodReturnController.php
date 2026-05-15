@@ -34,6 +34,7 @@ class OutletFoodReturnController extends Controller
                 'ofr.return_date',
                 'ofr.status',
                 'ofr.notes',
+                'ofr.return_mode',
                 'ofgr.number as gr_number',
                 'o.nama_outlet',
                 'wo.name as warehouse_outlet_name',
@@ -237,86 +238,119 @@ class OutletFoodReturnController extends Controller
         return response()->json($items);
     }
 
-    public function store(Request $request)
+    public function validateSerialForOFR(Request $request)
     {
         $request->validate([
-            'outlet_food_good_receive_id' => 'required|integer|exists:outlet_food_good_receives,id',
-            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
-            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
-            'return_date' => 'required|date',
-            'items' => 'required|array|min:1',
-            'items.*.gr_item_id' => 'required|integer',
-            'items.*.item_id' => 'required|integer',
-            'items.*.return_qty' => 'required|numeric|min:0.01',
-            'items.*.unit_id' => 'required|integer',
-            'notes' => 'nullable|string'
+            'serial_number' => 'required|string|max:50',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
+            'outlet_food_good_receive_id' => 'nullable|integer',
         ]);
+
+        $serialNumber = trim($request->serial_number);
+        $outletId = (string) $request->outlet_id;
+        $warehouseOutletId = (int) $request->warehouse_outlet_id;
+        $grId = $request->filled('outlet_food_good_receive_id') ? (int) $request->outlet_food_good_receive_id : null;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.unit_id',
+                's.is_out',
+                's.is_received',
+                's.out_outlet_id',
+                's.out_warehouse_outlet_id',
+                's.repack_unit_id',
+                's.repack_qty',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
+            )
+            ->first();
+
+        if (! $serial) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+        if (! $serial->is_received) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri belum diterima di outlet (belum GR Serial).']);
+        }
+        if ((string) $serial->out_outlet_id !== $outletId) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak berada di outlet yang dipilih.']);
+        }
+        if ((int) $serial->out_warehouse_outlet_id !== $warehouseOutletId) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak berada di warehouse outlet yang dipilih.']);
+        }
+
+        $pending = DB::table('outlet_food_return_serial_items as osi')
+            ->join('outlet_food_returns as ofr', 'ofr.id', '=', 'osi.outlet_food_return_id')
+            ->where('osi.serial_id', $serial->id)
+            ->where('ofr.status', 'pending')
+            ->exists();
+        if ($pending) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sedang dipakai di return lain yang belum di-approve.']);
+        }
+
+        $grItemId = null;
+        if ($grId) {
+            $grItem = DB::table('outlet_food_good_receive_items')
+                ->where('outlet_food_good_receive_id', $grId)
+                ->where('item_id', $serial->item_id)
+                ->where('received_qty', '>', 0)
+                ->first();
+            if (! $grItem) {
+                return response()->json(['valid' => false, 'message' => 'Item serial tidak ada di Good Receive yang dipilih.']);
+            }
+            $grItemId = $grItem->id;
+        }
+
+        $qty = 1.0;
+        $unitId = $serial->unit_id;
+        $unitName = $serial->unit_name ?? '';
+        if ($serial->repack_qty && $serial->repack_unit_id) {
+            $qty = (float) $serial->repack_qty;
+            $unitId = $serial->repack_unit_id;
+            $unitName = $serial->repack_unit_name ?? $unitName;
+        }
+
+        return response()->json([
+            'valid' => true,
+            'message' => 'Nomor seri valid.',
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'qty' => $qty,
+                'gr_item_id' => $grItemId,
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $this->validateOutletFoodReturnStoreRequest($request);
 
         try {
             DB::beginTransaction();
-            
-            // Generate return number
-            $dateStr = date('Ymd', strtotime($request->return_date));
-            $countToday = DB::table('outlet_food_returns')
-                ->whereDate('return_date', $request->return_date)
-                ->count();
-            $returnNumber = 'RET-' . $dateStr . '-' . str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
-            
-            // Create return record
-            $returnId = DB::table('outlet_food_returns')->insertGetId([
-                'return_number' => $returnNumber,
-                'outlet_food_good_receive_id' => $request->outlet_food_good_receive_id,
-                'outlet_id' => $request->outlet_id,
-                'warehouse_outlet_id' => $request->warehouse_outlet_id,
-                'return_date' => $request->return_date,
-                'notes' => $request->notes,
-                'status' => 'pending', // Status pending, menunggu approval gudang
-                'created_by' => Auth::id(),
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
-            
-            // Process each return item
-            foreach ($request->items as $item) {
-                // Get item master data
-                $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                if (!$itemMaster) {
-                    throw new \Exception('Item tidak ditemukan: ' . $item['item_id']);
-                }
-                
-                // Get inventory item
-                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
-                if (!$inventoryItem) {
-                    throw new \Exception('Inventory item tidak ditemukan: ' . $item['item_id']);
-                }
-                
-                // Convert return quantity to small unit
-                $returnQty = $item['return_qty'];
-                $unitId = $item['unit_id'];
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                
-                $qty_small = 0;
-                if ($unitId == $itemMaster->small_unit_id) {
-                    $qty_small = $returnQty;
-                } elseif ($unitId == $itemMaster->medium_unit_id) {
-                    $qty_small = $returnQty * $smallConv;
-                } elseif ($unitId == $itemMaster->large_unit_id) {
-                    $qty_small = $returnQty * $smallConv * $mediumConv;
-                }
-                
-                // Create return item record (without stock reduction)
-                DB::table('outlet_food_return_items')->insert([
-                    'outlet_food_return_id' => $returnId,
-                    'outlet_food_good_receive_item_id' => $item['gr_item_id'],
-                    'item_id' => $item['item_id'],
-                    'unit_id' => $item['unit_id'],
-                    'return_qty' => $returnQty,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
+
+            $returnId = $this->createOutletFoodReturnHeader($request);
+
+            if (! empty($request->serial_items)) {
+                $this->saveSerialItemsForOFR($returnId, $request->serial_items, $request);
             }
-            
+
+            if (! empty($request->items)) {
+                $this->saveQtyItemsForOFR($returnId, $request->items);
+            }
+
             DB::commit();
             
             return response()->json([
@@ -366,6 +400,13 @@ class OutletFoodReturnController extends Controller
                 ->where('ofri.outlet_food_return_id', $id)
                 ->get();
             
+            $serialRows = DB::table('outlet_food_return_serial_items')
+                ->where('outlet_food_return_id', $id)
+                ->get();
+            foreach ($serialRows as $serialRow) {
+                $this->processSerialReturnForOFR($return, $serialRow, $id);
+            }
+
             // Process each return item for stock reduction
             foreach ($returnItems as $item) {
                 // Convert return quantity to small unit
@@ -485,6 +526,7 @@ class OutletFoodReturnController extends Controller
                 'ofr.return_date',
                 'ofr.status',
                 'ofr.notes',
+                'ofr.return_mode',
                 'ofgr.number as gr_number',
                 'o.nama_outlet',
                 'wo.name as warehouse_outlet_name',
@@ -593,6 +635,7 @@ class OutletFoodReturnController extends Controller
             ->get();
 
         $return->items = $items;
+        $return->serialItems = $this->loadSerialItemsForOFR($id);
         $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         return response()->json([
@@ -636,7 +679,8 @@ class OutletFoodReturnController extends Controller
             ->get();
             
         $return->items = $items;
-        
+        $return->serialItems = $this->loadSerialItemsForOFR($id);
+
         return Inertia::render('OutletFoodReturn/Detail', [
             'return' => $return
         ]);
@@ -671,17 +715,24 @@ class OutletFoodReturnController extends Controller
 
             DB::beginTransaction();
             
-            // Get return items
-            $returnItems = DB::table('outlet_food_return_items')
-                ->where('outlet_food_return_id', $id)
-                ->get();
-            
-            // Rollback inventory for each item
-            foreach ($returnItems as $item) {
-                $this->rollbackInventory($item, $return->outlet_id, $return->warehouse_outlet_id);
+            if ($return->status === 'approved') {
+                $returnItems = DB::table('outlet_food_return_items')
+                    ->where('outlet_food_return_id', $id)
+                    ->get();
+                foreach ($returnItems as $item) {
+                    $this->rollbackInventory($item, $return->outlet_id, $return->warehouse_outlet_id);
+                }
+                $serialRows = DB::table('outlet_food_return_serial_items')
+                    ->where('outlet_food_return_id', $id)
+                    ->get();
+                foreach ($serialRows as $serialRow) {
+                    $this->rollbackSerialInventoryForOFR($serialRow, $return);
+                }
+            } else {
+                $this->rollbackSerialReservationForOFR($id);
             }
-            
-            // Delete return items
+
+            DB::table('outlet_food_return_serial_items')->where('outlet_food_return_id', $id)->delete();
             DB::table('outlet_food_return_items')->where('outlet_food_return_id', $id)->delete();
             
             // Delete return
@@ -713,6 +764,311 @@ class OutletFoodReturnController extends Controller
                 'message' => 'Gagal menghapus return: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function validateOutletFoodReturnStoreRequest(Request $request): void
+    {
+        $request->validate([
+            'outlet_food_good_receive_id' => 'required|integer|exists:outlet_food_good_receives,id',
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
+            'return_date' => 'required|date',
+            'notes' => 'nullable|string',
+            'items' => 'nullable|array',
+            'items.*.gr_item_id' => 'required_with:items|integer',
+            'items.*.item_id' => 'required_with:items|integer',
+            'items.*.return_qty' => 'required_with:items|numeric|min:0.01',
+            'items.*.unit_id' => 'required_with:items|integer',
+            'serial_items' => 'nullable|array',
+            'serial_items.*.serial_id' => 'required_with:serial_items|integer',
+            'serial_items.*.serial_number' => 'required_with:serial_items|string',
+            'serial_items.*.item_id' => 'required_with:serial_items|integer',
+            'serial_items.*.unit_id' => 'nullable|integer',
+            'serial_items.*.qty' => 'nullable|numeric|min:0.01',
+            'serial_items.*.gr_item_id' => 'nullable|integer',
+        ]);
+
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+        if (! $hasItems && ! $hasSerials) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'items' => ['Minimal satu baris item qty atau nomor seri harus diisi.'],
+            ]);
+        }
+    }
+
+    private function resolveReturnMode(Request $request): string
+    {
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+        if ($hasItems && $hasSerials) {
+            return 'mixed';
+        }
+        if ($hasSerials) {
+            return 'serial';
+        }
+
+        return 'normal';
+    }
+
+    private function createOutletFoodReturnHeader(Request $request): int
+    {
+        $dateStr = date('Ymd', strtotime($request->return_date));
+        $countToday = DB::table('outlet_food_returns')
+            ->whereDate('return_date', $request->return_date)
+            ->count();
+        $returnNumber = 'RET-'.$dateStr.'-'.str_pad($countToday + 1, 4, '0', STR_PAD_LEFT);
+
+        return DB::table('outlet_food_returns')->insertGetId([
+            'return_number' => $returnNumber,
+            'outlet_food_good_receive_id' => $request->outlet_food_good_receive_id,
+            'outlet_id' => $request->outlet_id,
+            'warehouse_outlet_id' => $request->warehouse_outlet_id,
+            'return_date' => $request->return_date,
+            'notes' => $request->notes,
+            'return_mode' => $this->resolveReturnMode($request),
+            'status' => 'pending',
+            'created_by' => Auth::id(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function saveQtyItemsForOFR(int $returnId, array $items): void
+    {
+        foreach ($items as $item) {
+            $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
+            if (! $itemMaster) {
+                throw new \Exception('Item tidak ditemukan: '.$item['item_id']);
+            }
+            $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
+            if (! $inventoryItem) {
+                throw new \Exception('Inventory item tidak ditemukan: '.$item['item_id']);
+            }
+
+            DB::table('outlet_food_return_items')->insert([
+                'outlet_food_return_id' => $returnId,
+                'outlet_food_good_receive_item_id' => $item['gr_item_id'],
+                'item_id' => $item['item_id'],
+                'unit_id' => $item['unit_id'],
+                'return_qty' => $item['return_qty'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function saveSerialItemsForOFR(int $returnId, array $serialItems, Request $request): void
+    {
+        $now = now();
+        foreach ($serialItems as $row) {
+            $serialId = (int) $row['serial_id'];
+            $serial = DB::table('inventory_item_serials')->where('id', $serialId)->first();
+            if (! $serial || ! $serial->is_received) {
+                throw new \Exception('Serial '.$row['serial_number'].' tidak valid untuk return.');
+            }
+            if ((string) $serial->out_outlet_id !== (string) $request->outlet_id
+                || (int) $serial->out_warehouse_outlet_id !== (int) $request->warehouse_outlet_id) {
+                throw new \Exception('Serial '.$row['serial_number'].' tidak sesuai outlet/warehouse.');
+            }
+
+            $qty = (float) ($row['qty'] ?? 1);
+            $unitId = $row['unit_id'] ?? $serial->unit_id;
+            $unitName = DB::table('units')->where('id', $unitId)->value('name');
+            $itemMaster = DB::table('items')->where('id', $row['item_id'])->first();
+            $qtySmall = $this->convertQtyToSmallForOFR($qty, (int) $unitId, $itemMaster);
+
+            $grItemId = $row['gr_item_id'] ?? null;
+            if (! $grItemId && $request->outlet_food_good_receive_id) {
+                $grItemId = DB::table('outlet_food_good_receive_items')
+                    ->where('outlet_food_good_receive_id', $request->outlet_food_good_receive_id)
+                    ->where('item_id', $row['item_id'])
+                    ->value('id');
+            }
+
+            DB::table('outlet_food_return_serial_items')->insert([
+                'outlet_food_return_id' => $returnId,
+                'serial_id' => $serialId,
+                'serial_number' => $row['serial_number'],
+                'item_id' => $row['item_id'],
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'return_qty' => $qty,
+                'qty_small' => $qtySmall,
+                'outlet_food_good_receive_item_id' => $grItemId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('inventory_item_serials')->where('id', $serialId)->update([
+                'out_outlet_food_return_id' => $returnId,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    private function loadSerialItemsForOFR(int $returnId)
+    {
+        return DB::table('outlet_food_return_serial_items as osi')
+            ->leftJoin('items as i', 'i.id', '=', 'osi.item_id')
+            ->where('osi.outlet_food_return_id', $returnId)
+            ->select('osi.*', 'i.name as item_name', 'i.sku')
+            ->orderBy('osi.id')
+            ->get();
+    }
+
+    private function processSerialReturnForOFR($return, $serialRow, int $returnId): void
+    {
+        $itemMaster = DB::table('items')->where('id', $serialRow->item_id)->first();
+        if (! $itemMaster) {
+            throw new \Exception("Item master tidak ditemukan untuk serial {$serialRow->serial_number}");
+        }
+
+        $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $serialRow->item_id)->first();
+        if (! $inventoryItem) {
+            throw new \Exception("Inventory item tidak ditemukan: {$serialRow->item_id}");
+        }
+
+        $returnQty = (float) $serialRow->return_qty;
+        $unitId = (int) $serialRow->unit_id;
+        $qty_small = (float) $serialRow->qty_small;
+        if ($qty_small <= 0) {
+            $qty_small = $this->convertQtyToSmallForOFR($returnQty, $unitId, $itemMaster);
+        }
+
+        $currentStock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('id_outlet', $return->outlet_id)
+            ->where('warehouse_outlet_id', $return->warehouse_outlet_id)
+            ->first();
+
+        if (! $currentStock || $currentStock->qty_small < $qty_small) {
+            throw new \Exception("Stok tidak mencukupi untuk serial {$serialRow->serial_number}.");
+        }
+
+        DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('id_outlet', $return->outlet_id)
+            ->where('warehouse_outlet_id', $return->warehouse_outlet_id)
+            ->update([
+                'qty_small' => $currentStock->qty_small - $qty_small,
+                'updated_at' => now(),
+            ]);
+
+        if ($serialRow->outlet_food_good_receive_item_id) {
+            $grItem = DB::table('outlet_food_good_receive_items')
+                ->where('id', $serialRow->outlet_food_good_receive_item_id)
+                ->first();
+            if ($grItem) {
+                DB::table('outlet_food_good_receive_items')
+                    ->where('id', $serialRow->outlet_food_good_receive_item_id)
+                    ->update([
+                        'remaining_qty' => $grItem->remaining_qty + $returnQty,
+                        'received_qty' => $grItem->received_qty - $returnQty,
+                        'updated_at' => now(),
+                    ]);
+            }
+        }
+
+        DB::table('outlet_food_inventory_cards')->insert([
+            'inventory_item_id' => $serialRow->item_id,
+            'id_outlet' => $return->outlet_id,
+            'warehouse_outlet_id' => $return->warehouse_outlet_id,
+            'date' => $return->return_date,
+            'reference_type' => 'outlet_food_return',
+            'reference_id' => $returnId,
+            'out_qty_small' => $qty_small,
+            'cost_per_small' => $currentStock->last_cost_small,
+            'value_out' => $qty_small * $currentStock->last_cost_small,
+            'saldo_qty_small' => $currentStock->qty_small - $qty_small,
+            'saldo_value' => ($currentStock->qty_small - $qty_small) * $currentStock->last_cost_small,
+            'description' => 'Stock Out - Outlet Food Return Serial (Approved)',
+            'created_at' => now(),
+        ]);
+
+        $now = now();
+        DB::table('inventory_item_serials')->where('id', $serialRow->serial_id)->update([
+            'is_received' => 0,
+            'out_outlet_food_return_id' => null,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('inventory_serial_movements')->insert([
+            'serial_id' => $serialRow->serial_id,
+            'serial_number' => $serialRow->serial_number,
+            'movement_type' => 'ofrt_out',
+            'outlet_food_return_id' => $returnId,
+            'item_id' => $serialRow->item_id,
+            'qty' => $returnQty,
+            'unit_id' => $serialRow->unit_id,
+            'moved_by' => Auth::id(),
+            'moved_at' => $now,
+            'notes' => 'Outlet food return serial',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
+    private function rollbackSerialReservationForOFR(int $returnId): void
+    {
+        DB::table('inventory_item_serials')
+            ->where('out_outlet_food_return_id', $returnId)
+            ->update([
+                'out_outlet_food_return_id' => null,
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function rollbackSerialInventoryForOFR($serialRow, $return): void
+    {
+        $virtual = (object) [
+            'item_id' => $serialRow->item_id,
+            'unit_id' => $serialRow->unit_id,
+            'return_qty' => $serialRow->return_qty,
+            'outlet_food_return_id' => $return->id,
+        ];
+        $this->rollbackInventory($virtual, $return->outlet_id, $return->warehouse_outlet_id);
+
+        if ($serialRow->outlet_food_good_receive_item_id) {
+            $grItem = DB::table('outlet_food_good_receive_items')
+                ->where('id', $serialRow->outlet_food_good_receive_item_id)
+                ->first();
+            if ($grItem) {
+                DB::table('outlet_food_good_receive_items')
+                    ->where('id', $serialRow->outlet_food_good_receive_item_id)
+                    ->update([
+                        'remaining_qty' => max(0, $grItem->remaining_qty - $serialRow->return_qty),
+                        'received_qty' => $grItem->received_qty + $serialRow->return_qty,
+                        'updated_at' => now(),
+                    ]);
+            }
+        }
+
+        DB::table('inventory_item_serials')->where('id', $serialRow->serial_id)->update([
+            'is_received' => 1,
+            'out_outlet_food_return_id' => null,
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function convertQtyToSmallForOFR(float $qty, int $unitId, ?object $itemMaster): float
+    {
+        if (! $itemMaster) {
+            return $qty;
+        }
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        if ($unitId === (int) $itemMaster->small_unit_id) {
+            return $qty;
+        }
+        if (! empty($itemMaster->medium_unit_id) && $unitId === (int) $itemMaster->medium_unit_id) {
+            return $qty * $smallConv;
+        }
+        if (! empty($itemMaster->large_unit_id) && $unitId === (int) $itemMaster->large_unit_id) {
+            return $qty * $smallConv * $mediumConv;
+        }
+
+        return $qty;
     }
 
     private function rollbackInventory($item, $outletId, $warehouseOutletId)

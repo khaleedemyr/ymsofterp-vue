@@ -113,6 +113,9 @@
               <tr v-for="returnItem in returns.data" :key="returnItem.id" class="hover:bg-gray-50">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="text-sm font-medium text-gray-900">{{ returnItem.return_number }}</div>
+                  <span v-if="returnItem.return_mode && returnItem.return_mode !== 'normal'" class="block mt-1 text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 w-fit">
+                    {{ returnItem.return_mode === 'serial' ? 'Serial' : 'Mixed' }}
+                  </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="text-sm text-gray-900">{{ returnItem.nama_outlet }}</div>

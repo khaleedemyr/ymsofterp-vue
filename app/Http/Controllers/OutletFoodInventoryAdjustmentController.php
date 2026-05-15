@@ -1401,68 +1401,24 @@ class OutletFoodInventoryAdjustmentController extends Controller
             if ($adj->status === 'approved') {
                 foreach ($adj->items as $item) {
                     $inventoryItem = OutletFoodInventoryItem::where('item_id', $item->item_id)->first();
-                    if (!$inventoryItem) continue;
-                    $inventory_item_id = $inventoryItem->id;
+                    if (!$inventoryItem) {
+                        continue;
+                    }
                     $itemMaster = Item::find($item->item_id);
-                    $unit = $item->unit;
-                    $qty_input = $item->qty;
-                    $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                    $unitSmall = optional($itemMaster->smallUnit)->name;
-                    $unitMedium = optional($itemMaster->mediumUnit)->name;
-                    $unitLarge = optional($itemMaster->largeUnit)->name;
-                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                    if ($unit === $unitSmall) {
-                        $qty_small = $qty_input;
-                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    } elseif ($unit === $unitMedium) {
-                        $qty_medium = $qty_input;
-                        $qty_small = $qty_medium * $smallConv;
-                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    } elseif ($unit === $unitLarge) {
-                        $qty_large = $qty_input;
-                        $qty_medium = $qty_large * $mediumConv;
-                        $qty_small = $qty_medium * $smallConv;
-                    } else {
-                        $qty_small = $qty_input;
+                    if (!$itemMaster) {
+                        continue;
                     }
-                    // Rollback stock - harus menggunakan warehouse_outlet_id juga untuk konsistensi
-                    $stock = OutletFoodInventoryStock::where('inventory_item_id', $inventory_item_id)
-                        ->where('id_outlet', $adj->id_outlet)
-                        ->where('warehouse_outlet_id', $adj->warehouse_outlet_id)
-                        ->first();
-                    
-                    if ($stock) {
-                        // Rollback logic: kebalikan dari processInventory
-                        // Jika type 'in' (stock ditambahkan saat approve), saat delete dikurangi
-                        // Jika type 'out' (stock dikurangi saat approve), saat delete ditambahkan
-                        if ($adj->type === 'in') {
-                            $stock->qty_small -= $qty_small;
-                            $stock->qty_medium -= $qty_medium;
-                            $stock->qty_large -= $qty_large;
-                        } else {
-                            $stock->qty_small += $qty_small;
-                            $stock->qty_medium += $qty_medium;
-                            $stock->qty_large += $qty_large;
-                        }
-                        $stock->value = ($stock->qty_small * $stock->last_cost_small)
-                            + ($stock->qty_medium * $stock->last_cost_medium)
-                            + ($stock->qty_large * $stock->last_cost_large);
-                        $stock->save();
-                    } else {
-                        \Log::warning('OutletFoodInventoryAdjustment destroy - Stock not found for rollback:', [
-                            'adjustment_id' => $id,
-                            'inventory_item_id' => $inventory_item_id,
-                            'outlet_id' => $adj->id_outlet,
-                            'warehouse_outlet_id' => $adj->warehouse_outlet_id
-                        ]);
-                    }
-                    OutletFoodInventoryCard::where('reference_type', 'outlet_stock_adjustment')
-                        ->where('reference_id', $adj->id)
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->delete();
+                    ['qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large] =
+                        $this->convertAdjustmentQty($itemMaster, $item->unit, (float) $item->qty);
+                    $this->applyOutletAdjustmentToStock($adj, $inventoryItem->id, $itemMaster, $qty_small, $qty_medium, $qty_large, true);
                 }
+                DB::table('outlet_food_inventory_cost_histories')
+                    ->where('reference_type', 'outlet_stock_adjustment')
+                    ->where('reference_id', $adj->id)
+                    ->delete();
+                OutletFoodInventoryCard::where('reference_type', 'outlet_stock_adjustment')
+                    ->where('reference_id', $adj->id)
+                    ->delete();
             }
             
             // Store data for activity log before deletion
@@ -1546,14 +1502,17 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     private function processInventory($adjustmentId)
     {
-        $header = DB::table('outlet_food_inventory_adjustments')->where('id', $adjustmentId)->first();
-        $warehouseOutletId = $header ? $header->warehouse_outlet_id : null;
         $adj = OutletFoodInventoryAdjustment::with(['items', 'outlet'])->find($adjustmentId);
-        if (!$adj) return;
+        if (!$adj) {
+            return;
+        }
         foreach ($adj->items as $item) {
             $inventoryItem = OutletFoodInventoryItem::where('item_id', $item->item_id)->first();
             if (!$inventoryItem) {
                 $itemMaster = Item::find($item->item_id);
+                if (!$itemMaster) {
+                    continue;
+                }
                 $inventoryItem = OutletFoodInventoryItem::create([
                     'item_id' => $item->item_id,
                     'small_unit_id' => $itemMaster->small_unit_id,
@@ -1563,85 +1522,191 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     'updated_at' => now(),
                 ]);
             }
-            $inventory_item_id = $inventoryItem->id;
             $itemMaster = Item::find($item->item_id);
-            $unit = $item->unit;
-            $qty_input = $item->qty;
-            $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-            $unitSmall = optional($itemMaster->smallUnit)->name;
-            $unitMedium = optional($itemMaster->mediumUnit)->name;
-            $unitLarge = optional($itemMaster->largeUnit)->name;
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-            } elseif ($unit === $unitMedium) {
-                $qty_medium = $qty_input;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-            } elseif ($unit === $unitLarge) {
-                $qty_large = $qty_input;
-                $qty_medium = $qty_large * $mediumConv;
-                $qty_small = $qty_medium * $smallConv;
-            } else {
-                $qty_small = $qty_input;
+            if (!$itemMaster) {
+                continue;
             }
-            $stock = OutletFoodInventoryStock::firstOrCreate(
-                [
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $adj->id_outlet,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                ],
-                [
-                    'qty_small' => 0,
-                    'qty_medium' => 0,
-                    'qty_large' => 0,
-                    'value' => 0,
-                    'last_cost_small' => 0,
-                    'last_cost_medium' => 0,
-                    'last_cost_large' => 0,
-                ]
-            );
-            if ($adj->type === 'in') {
-                $stock->qty_small += $qty_small;
-                $stock->qty_medium += $qty_medium;
-                $stock->qty_large += $qty_large;
-            } else {
-                $stock->qty_small -= $qty_small;
-                $stock->qty_medium -= $qty_medium;
-                $stock->qty_large -= $qty_large;
-            }
-            $stock->value = ($stock->qty_small * $stock->last_cost_small)
-                + ($stock->qty_medium * $stock->last_cost_medium)
-                + ($stock->qty_large * $stock->last_cost_large);
-            $stock->save();
-            OutletFoodInventoryCard::create([
-                'inventory_item_id' => $inventory_item_id,
+            ['qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large] =
+                $this->convertAdjustmentQty($itemMaster, $item->unit, (float) $item->qty);
+            $this->applyOutletAdjustmentToStock($adj, $inventoryItem->id, $itemMaster, $qty_small, $qty_medium, $qty_large, false);
+        }
+    }
+
+    private function convertAdjustmentQty($itemMaster, string $unit, float $qty_input): array
+    {
+        $qty_small = 0;
+        $qty_medium = 0;
+        $qty_large = 0;
+        $unitSmall = optional($itemMaster->smallUnit)->name;
+        $unitMedium = optional($itemMaster->mediumUnit)->name;
+        $unitLarge = optional($itemMaster->largeUnit)->name;
+        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+        if ($unit === $unitSmall) {
+            $qty_small = $qty_input;
+            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+        } elseif ($unit === $unitMedium) {
+            $qty_medium = $qty_input;
+            $qty_small = $qty_medium * $smallConv;
+            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+        } elseif ($unit === $unitLarge) {
+            $qty_large = $qty_input;
+            $qty_medium = $qty_large * $mediumConv;
+            $qty_small = $qty_medium * $smallConv;
+        } else {
+            $qty_small = $qty_input;
+        }
+
+        return compact('qty_small', 'qty_medium', 'qty_large', 'smallConv', 'mediumConv');
+    }
+
+    private function resolveMacFromOutletStock($stock): float
+    {
+        $qty = (float) ($stock->qty_small ?? 0);
+        $value = (float) ($stock->value ?? 0);
+        if ($qty > 0) {
+            return $value / $qty;
+        }
+
+        return (float) ($stock->last_cost_small ?? 0);
+    }
+
+    private function insertOutletCostHistory(
+        int $inventoryItemId,
+        int $outletId,
+        ?int $warehouseOutletId,
+        string $date,
+        float $oldCost,
+        float $newCost,
+        float $mac,
+        int $adjustmentId
+    ): void {
+        DB::table('outlet_food_inventory_cost_histories')->insert([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'date' => $date,
+            'old_cost' => $oldCost,
+            'new_cost' => $newCost,
+            'mac' => $mac,
+            'type' => 'outlet_stock_adjustment',
+            'reference_type' => 'outlet_stock_adjustment',
+            'reference_id' => $adjustmentId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    /**
+     * @param  bool  $reverse  true saat rollback delete (kebalikan tipe adjustment)
+     */
+    private function applyOutletAdjustmentToStock(
+        $adj,
+        int $inventoryItemId,
+        $itemMaster,
+        float $qty_small,
+        float $qty_medium,
+        float $qty_large,
+        bool $reverse = false
+    ): void {
+        $isIn = $reverse ? ($adj->type === 'out') : ($adj->type === 'in');
+        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+        $warehouseOutletId = $adj->warehouse_outlet_id;
+
+        $stock = OutletFoodInventoryStock::firstOrCreate(
+            [
+                'inventory_item_id' => $inventoryItemId,
                 'id_outlet' => $adj->id_outlet,
                 'warehouse_outlet_id' => $warehouseOutletId,
-                'date' => $adj->date,
-                'reference_type' => 'outlet_stock_adjustment',
-                'reference_id' => $adj->id,
-                'in_qty_small' => $adj->type === 'in' ? $qty_small : 0,
-                'in_qty_medium' => $adj->type === 'in' ? $qty_medium : 0,
-                'in_qty_large' => $adj->type === 'in' ? $qty_large : 0,
-                'out_qty_small' => $adj->type === 'out' ? $qty_small : 0,
-                'out_qty_medium' => $adj->type === 'out' ? $qty_medium : 0,
-                'out_qty_large' => $adj->type === 'out' ? $qty_large : 0,
-                'cost_per_small' => $stock->last_cost_small,
-                'cost_per_medium' => $stock->last_cost_medium,
-                'cost_per_large' => $stock->last_cost_large,
-                'value_in' => $adj->type === 'in' ? $qty_small * $stock->last_cost_small : 0,
-                'value_out' => $adj->type === 'out' ? $qty_small * $stock->last_cost_small : 0,
-                'saldo_qty_small' => $stock->qty_small,
-                'saldo_qty_medium' => $stock->qty_medium,
-                'saldo_qty_large' => $stock->qty_large,
-                'saldo_value' => $stock->value,
-                'description' => 'Outlet Stock Adjustment',
-            ]);
+            ],
+            [
+                'qty_small' => 0,
+                'qty_medium' => 0,
+                'qty_large' => 0,
+                'value' => 0,
+                'last_cost_small' => 0,
+                'last_cost_medium' => 0,
+                'last_cost_large' => 0,
+            ]
+        );
+
+        $qty_lama = (float) $stock->qty_small;
+        $nilai_lama = (float) $stock->value;
+        $mac_lama = $this->resolveMacFromOutletStock($stock);
+
+        if ($isIn) {
+            $nilai_baru = $qty_small * $mac_lama;
+            $total_qty = $qty_lama + $qty_small;
+            $total_nilai = $nilai_lama + $nilai_baru;
+            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $mac_lama;
+            $stock->qty_small = $total_qty;
+            $stock->qty_medium += $qty_medium;
+            $stock->qty_large += $qty_large;
+            $stock->value = $total_nilai;
+            $stock->last_cost_small = $mac;
+            $stock->last_cost_medium = $mac * $smallConv;
+            $stock->last_cost_large = $stock->last_cost_medium * $mediumConv;
+            $txnCost = $mac_lama;
+        } else {
+            $mac = $mac_lama;
+            $nilai_keluar = $qty_small * $mac;
+            $total_qty = max(0, $qty_lama - $qty_small);
+            $total_nilai = max(0, $nilai_lama - $nilai_keluar);
+            $stock->qty_small = $total_qty;
+            $stock->qty_medium = max(0, (float) $stock->qty_medium - $qty_medium);
+            $stock->qty_large = max(0, (float) $stock->qty_large - $qty_large);
+            $stock->value = $total_nilai;
+            $txnCost = $mac;
         }
+        $stock->save();
+
+        if (!$reverse) {
+            $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('id_outlet', $adj->id_outlet)
+                ->when($warehouseOutletId, fn ($q) => $q->where('warehouse_outlet_id', $warehouseOutletId))
+                ->orderByDesc('date')
+                ->orderByDesc('created_at')
+                ->first();
+            $old_cost = $lastCostHistory ? (float) $lastCostHistory->new_cost : 0;
+            $this->insertOutletCostHistory(
+                $inventoryItemId,
+                (int) $adj->id_outlet,
+                $warehouseOutletId ? (int) $warehouseOutletId : null,
+                $adj->date,
+                $old_cost,
+                $txnCost,
+                $mac,
+                (int) $adj->id
+            );
+        }
+
+        OutletFoodInventoryCard::create([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $adj->id_outlet,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'date' => $adj->date,
+            'reference_type' => 'outlet_stock_adjustment',
+            'reference_id' => $adj->id,
+            'in_qty_small' => $isIn ? $qty_small : 0,
+            'in_qty_medium' => $isIn ? $qty_medium : 0,
+            'in_qty_large' => $isIn ? $qty_large : 0,
+            'out_qty_small' => $isIn ? 0 : $qty_small,
+            'out_qty_medium' => $isIn ? 0 : $qty_medium,
+            'out_qty_large' => $isIn ? 0 : $qty_large,
+            'cost_per_small' => $txnCost,
+            'cost_per_medium' => $txnCost * $smallConv,
+            'cost_per_large' => $txnCost * $smallConv * $mediumConv,
+            'value_in' => $isIn ? $qty_small * $mac_lama : 0,
+            'value_out' => $isIn ? 0 : $qty_small * $mac_lama,
+            'saldo_qty_small' => $stock->qty_small,
+            'saldo_qty_medium' => $stock->qty_medium,
+            'saldo_qty_large' => $stock->qty_large,
+            'saldo_value' => $stock->value,
+            'description' => $reverse ? 'Rollback Outlet Stock Adjustment' : 'Outlet Stock Adjustment',
+        ]);
     }
 
     /**

@@ -19,6 +19,7 @@ class OutletFoodReturn extends Model
         'warehouse_outlet_id',
         'return_date',
         'notes',
+        'return_mode',
         'status',
         'created_by',
         'updated_by'

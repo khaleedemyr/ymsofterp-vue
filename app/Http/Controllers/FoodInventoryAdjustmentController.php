@@ -13,6 +13,8 @@ use App\Models\FoodInventoryCard;
 use App\Models\Warehouse;
 use App\Models\Item;
 use App\Services\NotificationService;
+use App\Support\InventorySerialInUse;
+use Illuminate\Support\Str;
 
 class FoodInventoryAdjustmentController extends Controller
 {
@@ -393,61 +395,35 @@ class FoodInventoryAdjustmentController extends Controller
             }
             
             $adj = FoodInventoryAdjustment::with(['items'])->findOrFail($id);
-            // Jika sudah approved, rollback inventory
+            // Jika sudah approved, rollback inventory (kebalikan dari approve)
             if ($adj->status === 'approved') {
                 foreach ($adj->items as $item) {
                     $inventoryItem = \App\Models\FoodInventoryItem::where('item_id', $item->item_id)->first();
-                    if (!$inventoryItem) continue;
-                    $inventory_item_id = $inventoryItem->id;
+                    if (!$inventoryItem) {
+                        continue;
+                    }
                     $itemMaster = \App\Models\Item::find($item->item_id);
-                    $unit = $item->unit;
-                    $qty_input = $item->qty;
-                    $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                    $unitSmall = optional($itemMaster->smallUnit)->name;
-                    $unitMedium = optional($itemMaster->mediumUnit)->name;
-                    $unitLarge = optional($itemMaster->largeUnit)->name;
-                    $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                    $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                    if ($unit === $unitSmall) {
-                        $qty_small = $qty_input;
-                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    } elseif ($unit === $unitMedium) {
-                        $qty_medium = $qty_input;
-                        $qty_small = $qty_medium * $smallConv;
-                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    } elseif ($unit === $unitLarge) {
-                        $qty_large = $qty_input;
-                        $qty_medium = $qty_large * $mediumConv;
-                        $qty_small = $qty_medium * $smallConv;
-                    } else {
-                        $qty_small = $qty_input;
+                    if (!$itemMaster) {
+                        continue;
                     }
-                    $stock = \App\Models\FoodInventoryStock::where('inventory_item_id', $inventory_item_id)
-                        ->where('warehouse_id', $adj->warehouse_id)->first();
-                    if ($stock) {
-                        if ($adj->type === 'in') {
-                            // Rollback stock in: kurangi stok
-                            $stock->qty_small -= $qty_small;
-                            $stock->qty_medium -= $qty_medium;
-                            $stock->qty_large -= $qty_large;
-                        } else {
-                            // Rollback stock out: tambahkan stok
-                            $stock->qty_small += $qty_small;
-                            $stock->qty_medium += $qty_medium;
-                            $stock->qty_large += $qty_large;
-                        }
-                        $stock->value = ($stock->qty_small * $stock->last_cost_small)
-                            + ($stock->qty_medium * $stock->last_cost_medium)
-                            + ($stock->qty_large * $stock->last_cost_large);
-                        $stock->save();
-                    }
-                    // Hapus kartu stok
-                    \App\Models\FoodInventoryCard::where('reference_type', 'stock_adjustment')
-                        ->where('reference_id', $adj->id)
-                        ->where('inventory_item_id', $inventory_item_id)
+                    ['qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large] =
+                        $this->convertAdjustmentQty($itemMaster, $item->unit, (float) $item->qty);
+                    $this->applyWarehouseAdjustmentToStock($adj, $inventoryItem->id, $itemMaster, $qty_small, $qty_medium, $qty_large, true);
+                }
+                $itemIds = $adj->items->pluck('id')->filter()->values()->all();
+                if (!empty($itemIds)) {
+                    DB::table('inventory_item_serials')
+                        ->where('source_type', 'stock_adjustment')
+                        ->whereIn('source_item_id', $itemIds)
                         ->delete();
                 }
+                DB::table('food_inventory_cost_histories')
+                    ->where('reference_type', 'stock_adjustment')
+                    ->where('reference_id', $adj->id)
+                    ->delete();
+                \App\Models\FoodInventoryCard::where('reference_type', 'stock_adjustment')
+                    ->where('reference_id', $adj->id)
+                    ->delete();
             }
             // Hapus detail dan header
             $adj->items()->delete();
@@ -823,15 +799,20 @@ class FoodInventoryAdjustmentController extends Controller
         return $prefix . str_pad($next, 4, '0', STR_PAD_LEFT);
     }
 
-    // Proses update inventory setelah approved
+    // Proses update inventory setelah approved (MAC selaras Good Receive)
     private function processInventory($adjustmentId)
     {
         $adj = FoodInventoryAdjustment::with(['items', 'warehouse'])->find($adjustmentId);
-        if (!$adj) return;
+        if (!$adj) {
+            return;
+        }
         foreach ($adj->items as $item) {
             $inventoryItem = \App\Models\FoodInventoryItem::where('item_id', $item->item_id)->first();
             if (!$inventoryItem) {
                 $itemMaster = \App\Models\Item::find($item->item_id);
+                if (!$itemMaster) {
+                    continue;
+                }
                 $inventoryItem = \App\Models\FoodInventoryItem::create([
                     'item_id' => $item->item_id,
                     'small_unit_id' => $itemMaster->small_unit_id,
@@ -841,94 +822,569 @@ class FoodInventoryAdjustmentController extends Controller
                     'updated_at' => now(),
                 ]);
             }
-            $inventory_item_id = $inventoryItem->id;
             $itemMaster = \App\Models\Item::find($item->item_id);
-            $unit = $item->unit;
-            $qty_input = $item->qty;
-            $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-            $unitSmall = optional($itemMaster->smallUnit)->name;
-            $unitMedium = optional($itemMaster->mediumUnit)->name;
-            $unitLarge = optional($itemMaster->largeUnit)->name;
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-            } elseif ($unit === $unitMedium) {
-                $qty_medium = $qty_input;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-            } elseif ($unit === $unitLarge) {
-                $qty_large = $qty_input;
-                $qty_medium = $qty_large * $mediumConv;
-                $qty_small = $qty_medium * $smallConv;
-            } else {
-                $qty_small = $qty_input;
+            if (!$itemMaster) {
+                continue;
             }
-            // Update stok sesuai tipe (in/out)
-            $stock = \App\Models\FoodInventoryStock::firstOrCreate(
-                [
-                    'inventory_item_id' => $inventory_item_id,
-                    'warehouse_id' => $adj->warehouse_id
-                ],
-                [
-                    'qty_small' => 0,
-                    'qty_medium' => 0,
-                    'qty_large' => 0,
-                    'value' => 0,
-                    'last_cost_small' => 0,
-                    'last_cost_medium' => 0,
-                    'last_cost_large' => 0,
-                ]
-            );
-            if ($adj->type === 'in') {
-                $stock->qty_small += $qty_small;
-                $stock->qty_medium += $qty_medium;
-                $stock->qty_large += $qty_large;
-            } else {
-                $stock->qty_small -= $qty_small;
-                $stock->qty_medium -= $qty_medium;
-                $stock->qty_large -= $qty_large;
-            }
-            // Update value dan cost jika stock in
-            if ($adj->type === 'in') {
-                // Asumsi cost pakai last_cost_small
-                $cost = $stock->last_cost_small;
-                $stock->value = ($stock->qty_small * $stock->last_cost_small)
-                    + ($stock->qty_medium * $stock->last_cost_medium)
-                    + ($stock->qty_large * $stock->last_cost_large);
-            } else {
-                $stock->value = ($stock->qty_small * $stock->last_cost_small)
-                    + ($stock->qty_medium * $stock->last_cost_medium)
-                    + ($stock->qty_large * $stock->last_cost_large);
-            }
-            $stock->save();
-            // Insert kartu stok
-            \App\Models\FoodInventoryCard::create([
-                'inventory_item_id' => $inventory_item_id,
-                'warehouse_id' => $adj->warehouse_id,
-                'date' => $adj->date,
-                'reference_type' => 'stock_adjustment',
-                'reference_id' => $adj->id,
-                'in_qty_small' => $adj->type === 'in' ? $qty_small : 0,
-                'in_qty_medium' => $adj->type === 'in' ? $qty_medium : 0,
-                'in_qty_large' => $adj->type === 'in' ? $qty_large : 0,
-                'out_qty_small' => $adj->type === 'out' ? $qty_small : 0,
-                'out_qty_medium' => $adj->type === 'out' ? $qty_medium : 0,
-                'out_qty_large' => $adj->type === 'out' ? $qty_large : 0,
-                'cost_per_small' => $stock->last_cost_small,
-                'cost_per_medium' => $stock->last_cost_medium,
-                'cost_per_large' => $stock->last_cost_large,
-                'value_in' => $adj->type === 'in' ? $qty_small * $stock->last_cost_small : 0,
-                'value_out' => $adj->type === 'out' ? $qty_small * $stock->last_cost_small : 0,
-                'saldo_qty_small' => $stock->qty_small,
-                'saldo_qty_medium' => $stock->qty_medium,
-                'saldo_qty_large' => $stock->qty_large,
-                'saldo_value' => $stock->value,
-                'description' => 'Stock Adjustment',
-            ]);
+            ['qty_small' => $qty_small, 'qty_medium' => $qty_medium, 'qty_large' => $qty_large] =
+                $this->convertAdjustmentQty($itemMaster, $item->unit, (float) $item->qty);
+            $this->applyWarehouseAdjustmentToStock($adj, $inventoryItem->id, $itemMaster, $qty_small, $qty_medium, $qty_large, false);
         }
+    }
+
+    private function convertAdjustmentQty($itemMaster, string $unit, float $qty_input): array
+    {
+        $qty_small = 0;
+        $qty_medium = 0;
+        $qty_large = 0;
+        $unitSmall = optional($itemMaster->smallUnit)->name;
+        $unitMedium = optional($itemMaster->mediumUnit)->name;
+        $unitLarge = optional($itemMaster->largeUnit)->name;
+        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+        if ($unit === $unitSmall) {
+            $qty_small = $qty_input;
+            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+        } elseif ($unit === $unitMedium) {
+            $qty_medium = $qty_input;
+            $qty_small = $qty_medium * $smallConv;
+            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+        } elseif ($unit === $unitLarge) {
+            $qty_large = $qty_input;
+            $qty_medium = $qty_large * $mediumConv;
+            $qty_small = $qty_medium * $smallConv;
+        } else {
+            $qty_small = $qty_input;
+        }
+
+        return compact('qty_small', 'qty_medium', 'qty_large', 'smallConv', 'mediumConv');
+    }
+
+    private function resolveMacFromStock($stock): float
+    {
+        $qty = (float) ($stock->qty_small ?? 0);
+        $value = (float) ($stock->value ?? 0);
+        if ($qty > 0) {
+            return $value / $qty;
+        }
+
+        return (float) ($stock->last_cost_small ?? 0);
+    }
+
+    private function resolveWarehouseDivisionId(int $inventoryItemId, int $warehouseId): ?int
+    {
+        $last = DB::table('food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->orderByDesc('date')
+            ->orderByDesc('created_at')
+            ->first();
+
+        return $last->warehouse_division_id ?? null;
+    }
+
+    private function insertWarehouseCostHistory(
+        int $inventoryItemId,
+        int $warehouseId,
+        string $date,
+        float $oldCost,
+        float $newCost,
+        float $mac,
+        int $adjustmentId,
+        ?int $warehouseDivisionId = null
+    ): void {
+        $row = [
+            'inventory_item_id' => $inventoryItemId,
+            'warehouse_id' => $warehouseId,
+            'date' => $date,
+            'old_cost' => $oldCost,
+            'new_cost' => $newCost,
+            'mac' => $mac,
+            'type' => 'stock_adjustment',
+            'reference_type' => 'stock_adjustment',
+            'reference_id' => $adjustmentId,
+            'created_at' => now(),
+        ];
+        if ($warehouseDivisionId) {
+            $row['warehouse_division_id'] = $warehouseDivisionId;
+        }
+        DB::table('food_inventory_cost_histories')->insert($row);
+    }
+
+    /**
+     * @param  bool  $reverse  true saat rollback delete (kebalikan tipe adjustment)
+     */
+    private function applyWarehouseAdjustmentToStock(
+        $adj,
+        int $inventoryItemId,
+        $itemMaster,
+        float $qty_small,
+        float $qty_medium,
+        float $qty_large,
+        bool $reverse = false
+    ): void {
+        $isIn = $reverse ? ($adj->type === 'out') : ($adj->type === 'in');
+        $smallConv = $itemMaster->small_conversion_qty ?: 1;
+        $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+        $stock = \App\Models\FoodInventoryStock::firstOrCreate(
+            [
+                'inventory_item_id' => $inventoryItemId,
+                'warehouse_id' => $adj->warehouse_id,
+            ],
+            [
+                'qty_small' => 0,
+                'qty_medium' => 0,
+                'qty_large' => 0,
+                'value' => 0,
+                'last_cost_small' => 0,
+                'last_cost_medium' => 0,
+                'last_cost_large' => 0,
+            ]
+        );
+
+        $qty_lama = (float) $stock->qty_small;
+        $nilai_lama = (float) $stock->value;
+        $mac_lama = $this->resolveMacFromStock($stock);
+
+        if ($isIn) {
+            $nilai_baru = $qty_small * $mac_lama;
+            $total_qty = $qty_lama + $qty_small;
+            $total_nilai = $nilai_lama + $nilai_baru;
+            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $mac_lama;
+            $stock->qty_small = $total_qty;
+            $stock->qty_medium += $qty_medium;
+            $stock->qty_large += $qty_large;
+            $stock->value = $total_nilai;
+            $stock->last_cost_small = $mac;
+            $stock->last_cost_medium = $mac * $smallConv;
+            $stock->last_cost_large = $stock->last_cost_medium * $mediumConv;
+            $txnCost = $mac_lama;
+        } else {
+            $mac = $mac_lama;
+            $nilai_keluar = $qty_small * $mac;
+            $total_qty = max(0, $qty_lama - $qty_small);
+            $total_nilai = max(0, $nilai_lama - $nilai_keluar);
+            $stock->qty_small = $total_qty;
+            $stock->qty_medium = max(0, (float) $stock->qty_medium - $qty_medium);
+            $stock->qty_large = max(0, (float) $stock->qty_large - $qty_large);
+            $stock->value = $total_nilai;
+            $txnCost = $mac;
+        }
+        $stock->save();
+
+        if (!$reverse) {
+            $lastCostHistory = DB::table('food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('warehouse_id', $adj->warehouse_id)
+                ->orderByDesc('date')
+                ->orderByDesc('created_at')
+                ->first();
+            $old_cost = $lastCostHistory ? (float) $lastCostHistory->new_cost : 0;
+            $warehouseDivisionId = $this->resolveWarehouseDivisionId($inventoryItemId, (int) $adj->warehouse_id);
+            $this->insertWarehouseCostHistory(
+                $inventoryItemId,
+                (int) $adj->warehouse_id,
+                $adj->date,
+                $old_cost,
+                $txnCost,
+                $mac,
+                (int) $adj->id,
+                $warehouseDivisionId
+            );
+        }
+
+        \App\Models\FoodInventoryCard::create([
+            'inventory_item_id' => $inventoryItemId,
+            'warehouse_id' => $adj->warehouse_id,
+            'date' => $adj->date,
+            'reference_type' => 'stock_adjustment',
+            'reference_id' => $adj->id,
+            'in_qty_small' => $isIn ? $qty_small : 0,
+            'in_qty_medium' => $isIn ? $qty_medium : 0,
+            'in_qty_large' => $isIn ? $qty_large : 0,
+            'out_qty_small' => $isIn ? 0 : $qty_small,
+            'out_qty_medium' => $isIn ? 0 : $qty_medium,
+            'out_qty_large' => $isIn ? 0 : $qty_large,
+            'cost_per_small' => $txnCost,
+            'cost_per_medium' => $txnCost * $smallConv,
+            'cost_per_large' => $txnCost * $smallConv * $mediumConv,
+            'value_in' => $isIn ? $qty_small * $mac_lama : 0,
+            'value_out' => $isIn ? 0 : $qty_small * $mac_lama,
+            'saldo_qty_small' => $stock->qty_small,
+            'saldo_qty_medium' => $stock->qty_medium,
+            'saldo_qty_large' => $stock->qty_large,
+            'saldo_value' => $stock->value,
+            'description' => $reverse ? 'Rollback Stock Adjustment' : 'Stock Adjustment',
+        ]);
+    }
+
+    public function adjustmentSerialSummary($adjustmentId)
+    {
+        $adj = DB::table('food_inventory_adjustments')->where('id', $adjustmentId)->first();
+        if (!$adj || $adj->type !== 'in') {
+            return response()->json([]);
+        }
+
+        $case = InventorySerialInUse::mysqlSumInUseCase('s');
+        $summary = DB::table('inventory_item_serials as s')
+            ->select(
+                's.source_item_id as adjustment_item_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("{$case} as in_use")
+            )
+            ->where('s.source_type', 'stock_adjustment')
+            ->where('s.source_id', $adjustmentId)
+            ->groupBy('s.source_item_id')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    public function serialUnits($adjustmentItemId)
+    {
+        $line = $this->loadAdjustmentItemForSerials((int) $adjustmentItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris adjustment tidak ditemukan'], 404);
+        }
+        if ($line->adjustment_type !== 'in') {
+            return response()->json(['message' => 'Generate serial hanya untuk Stock In'], 422);
+        }
+
+        $receivedUnitId = $this->resolveAdjustmentItemUnitId($line);
+        if (!$receivedUnitId) {
+            return response()->json(['message' => 'Unit baris tidak bisa dipetakan ke master item.'], 422);
+        }
+
+        $smallConv = (float) ($line->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($line->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($line->qty ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ($receivedUnitId === (int) $line->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ($receivedUnitId === (int) $line->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $unitIds = collect([
+            $line->small_unit_id,
+            $line->medium_unit_id,
+            $line->large_unit_id,
+        ])->filter()->unique()->values();
+
+        $unitsMaster = DB::table('units')->whereIn('id', $unitIds)->pluck('name', 'id');
+
+        $units = [];
+        foreach ($unitIds as $unitId) {
+            $unitIdInt = (int) $unitId;
+            $convertedQty = $qtySmall;
+            if ($unitIdInt === (int) $line->medium_unit_id) {
+                $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+            } elseif ($unitIdInt === (int) $line->large_unit_id) {
+                $divider = $smallConv * $mediumConv;
+                $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+            }
+            $units[] = [
+                'unit_id' => $unitIdInt,
+                'unit_name' => $unitsMaster[$unitIdInt] ?? "Unit {$unitIdInt}",
+                'converted_qty' => round($convertedQty, 4),
+            ];
+        }
+
+        return response()->json([
+            'adjustment_item_id' => (int) $line->id,
+            'item_name' => $line->item_name,
+            'qty_received' => round($qtyReceived, 4),
+            'received_unit_name' => $line->unit_name,
+            'units' => $units,
+        ]);
+    }
+
+    public function generateSerials(Request $request, $adjustmentItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'required|integer|exists:units,id',
+            'repack_unit_id' => 'nullable|integer|exists:units,id',
+            'repack_qty' => 'nullable|numeric|min:0.01',
+        ]);
+
+        $line = $this->loadAdjustmentItemForSerials((int) $adjustmentItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris adjustment tidak ditemukan'], 404);
+        }
+        if ($line->adjustment_type !== 'in') {
+            return response()->json(['message' => 'Generate serial hanya untuk Stock In'], 422);
+        }
+
+        $targetUnitId = (int) $validated['unit_id'];
+        $validUnitIds = collect([$line->small_unit_id, $line->medium_unit_id, $line->large_unit_id])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!in_array($targetUnitId, $validUnitIds, true)) {
+            return response()->json(['message' => 'Unit tidak sesuai konversi item'], 422);
+        }
+
+        $receivedUnitId = $this->resolveAdjustmentItemUnitId($line);
+        $smallConv = (float) ($line->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($line->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($line->qty ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ($receivedUnitId === (int) $line->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ($receivedUnitId === (int) $line->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $convertedQty = $qtySmall;
+        if ($targetUnitId === (int) $line->medium_unit_id) {
+            $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+        } elseif ($targetUnitId === (int) $line->large_unit_id) {
+            $divider = $smallConv * $mediumConv;
+            $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+        }
+
+        $repackUnitId = $request->input('repack_unit_id');
+        $repackQty = (float) $request->input('repack_qty', 0);
+
+        if ($repackUnitId && $repackQty > 0) {
+            $serialCount = (int) ceil($convertedQty / $repackQty);
+        } else {
+            $repackUnitId = null;
+            $repackQty = null;
+            $serialCount = (int) round($convertedQty);
+            if ($serialCount <= 0 || abs($convertedQty - $serialCount) > 0.00001) {
+                return response()->json([
+                    'message' => 'Qty hasil konversi harus bilangan bulat positif agar bisa generate serial.',
+                    'converted_qty' => round($convertedQty, 4),
+                ], 422);
+            }
+        }
+
+        if ($serialCount <= 0) {
+            return response()->json(['message' => 'Jumlah serial yang akan digenerate harus lebih dari 0.'], 422);
+        }
+
+        $warehouseId = (int) $line->warehouse_id;
+        $inventoryItemId = DB::table('food_inventory_items')->where('item_id', $line->item_id)->value('id');
+        if (!$inventoryItemId) {
+            return response()->json(['message' => 'Master food_inventory_items belum ada untuk item ini.'], 422);
+        }
+
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->first();
+        $costSmall = 0.0;
+        if ($stock && (float) $stock->qty_small > 0) {
+            $costSmall = (float) $stock->value / (float) $stock->qty_small;
+        } elseif ($stock) {
+            $costSmall = (float) ($stock->last_cost_small ?? 0);
+        }
+        $costMedium = $costSmall * $smallConv;
+        $costLarge = $costMedium * $mediumConv;
+
+        DB::beginTransaction();
+        try {
+            if (InventorySerialInUse::existsInUseFor(function ($q) use ($line, $targetUnitId) {
+                $q->where('source_type', 'stock_adjustment')
+                    ->where('source_item_id', $line->id)
+                    ->where('unit_id', $targetUnitId);
+            })) {
+                DB::rollBack();
+
+                return response()->json(['message' => InventorySerialInUse::failureMessage()], 422);
+            }
+
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'stock_adjustment')
+                ->where('source_item_id', $line->id)
+                ->where('unit_id', $targetUnitId)
+                ->delete();
+
+            $now = now();
+            $rows = [];
+            for ($i = 0; $i < $serialCount; $i++) {
+                $rows[] = [
+                    'source_type' => 'stock_adjustment',
+                    'source_id' => $line->adjustment_id,
+                    'source_item_id' => $line->id,
+                    'warehouse_id' => $warehouseId,
+                    'inventory_item_id' => $inventoryItemId,
+                    'item_id' => $line->item_id,
+                    'unit_id' => $targetUnitId,
+                    'serial_number' => $this->generateUniqueAdjustmentSerialNumber(),
+                    'source_qty' => $qtyReceived,
+                    'source_unit_id' => $receivedUnitId,
+                    'generated_qty_unit' => $convertedQty,
+                    'cost_small' => $costSmall,
+                    'cost_medium' => $costMedium,
+                    'cost_large' => $costLarge,
+                    'ref_gr_number' => $line->adjustment_number,
+                    'ref_po_number' => null,
+                    'ref_pr_number' => null,
+                    'repack_unit_id' => $repackUnitId,
+                    'repack_qty' => $repackQty,
+                    'generated_by' => Auth::id(),
+                    'generated_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            DB::table('inventory_item_serials')->insert($rows);
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil generate {$serialCount} serial.",
+                'total' => $serialCount,
+                'converted_qty' => round($convertedQty, 4),
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function serialList($adjustmentItemId)
+    {
+        $line = $this->loadAdjustmentItemForSerials((int) $adjustmentItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris adjustment tidak ditemukan'], 404);
+        }
+
+        $rows = DB::table('inventory_item_serials as s')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.ref_gr_number as adjustment_number',
+                's.generated_at',
+                's.repack_unit_id',
+                's.repack_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
+            )
+            ->where('s.source_type', 'stock_adjustment')
+            ->where('s.source_item_id', $adjustmentItemId)
+            ->orderBy('s.id')
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    public function rollbackSerials(Request $request, $adjustmentItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'nullable|integer|exists:units,id',
+        ]);
+
+        $line = $this->loadAdjustmentItemForSerials((int) $adjustmentItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris adjustment tidak ditemukan'], 404);
+        }
+        if ($line->adjustment_type !== 'in') {
+            return response()->json(['message' => 'Rollback serial hanya untuk Stock In'], 422);
+        }
+
+        $query = DB::table('inventory_item_serials')
+            ->where('source_type', 'stock_adjustment')
+            ->where('source_item_id', $adjustmentItemId);
+
+        if (!empty($validated['unit_id'])) {
+            $query->where('unit_id', (int) $validated['unit_id']);
+        }
+
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($adjustmentItemId, $validated) {
+            $q->where('source_type', 'stock_adjustment')->where('source_item_id', $adjustmentItemId);
+            if (!empty($validated['unit_id'])) {
+                $q->where('unit_id', (int) $validated['unit_id']);
+            }
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
+        }
+
+        $deleted = $query->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Rollback serial berhasil. Terhapus: {$deleted}",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    private function loadAdjustmentItemForSerials(int $adjustmentItemId): ?object
+    {
+        return DB::table('food_inventory_adjustment_items as ai')
+            ->join('food_inventory_adjustments as adj', 'adj.id', '=', 'ai.adjustment_id')
+            ->join('items as i', 'i.id', '=', 'ai.item_id')
+            ->leftJoin('units as u_small', 'u_small.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as u_medium', 'u_medium.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as u_large', 'u_large.id', '=', 'i.large_unit_id')
+            ->select(
+                'ai.id',
+                'ai.adjustment_id',
+                'ai.item_id',
+                'ai.qty',
+                'ai.unit as unit_name',
+                'adj.type as adjustment_type',
+                'adj.warehouse_id',
+                'adj.number as adjustment_number',
+                'adj.status as adjustment_status',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'u_small.name as small_unit_name',
+                'u_medium.name as medium_unit_name',
+                'u_large.name as large_unit_name'
+            )
+            ->where('ai.id', $adjustmentItemId)
+            ->first();
+    }
+
+    private function resolveAdjustmentItemUnitId(object $line): ?int
+    {
+        $unitName = trim((string) $line->unit_name);
+        if ($unitName !== '' && $unitName === (string) $line->small_unit_name) {
+            return (int) $line->small_unit_id;
+        }
+        if ($unitName !== '' && $unitName === (string) $line->medium_unit_name) {
+            return (int) $line->medium_unit_id;
+        }
+        if ($unitName !== '' && $unitName === (string) $line->large_unit_name) {
+            return (int) $line->large_unit_id;
+        }
+
+        return $line->small_unit_id ? (int) $line->small_unit_id : null;
+    }
+
+    private function generateUniqueAdjustmentSerialNumber(): string
+    {
+        $prefix = 'A' . now()->format('ymdHi');
+
+        for ($i = 0; $i < 10; $i++) {
+            $serial = $prefix . strtoupper(Str::random(4));
+            if (!DB::table('inventory_item_serials')->where('serial_number', $serial)->exists()) {
+                return $serial;
+            }
+        }
+
+        return $prefix . strtoupper(Str::random(6));
     }
 }
 

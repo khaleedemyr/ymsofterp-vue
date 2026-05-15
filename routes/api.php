@@ -421,6 +421,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-food-return/get-warehouse-outlets', [\App\Http\Controllers\OutletFoodReturnController::class, 'getWarehouseOutlets']);
         Route::get('/outlet-food-return/get-good-receives', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceives']);
         Route::get('/outlet-food-return/get-good-receive-items', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceiveItems']);
+        Route::post('/outlet-food-return/validate-serial', [\App\Http\Controllers\OutletFoodReturnController::class, 'validateSerialForOFR']);
         Route::get('/outlet-food-return/{id}', [\App\Http\Controllers\OutletFoodReturnController::class, 'apiShow']);
         Route::post('/outlet-food-return', [\App\Http\Controllers\OutletFoodReturnController::class, 'store']);
         Route::post('/outlet-food-return/{id}/approve', [\App\Http\Controllers\OutletFoodReturnController::class, 'approve']);

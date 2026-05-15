@@ -114,7 +114,12 @@
               </tr>
               <tr v-for="row in props.returns.data" :key="row.id">
                 <td class="px-6 py-3">{{ formatDate(row.return_date) }}</td>
-                <td class="px-6 py-3">{{ row.return_number }}</td>
+                <td class="px-6 py-3">
+                  <div>{{ row.return_number }}</div>
+                  <span v-if="row.return_mode && row.return_mode !== 'normal'" class="block mt-1 text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-700 w-fit">
+                    {{ row.return_mode === 'serial' ? 'Serial' : 'Mixed' }}
+                  </span>
+                </td>
                 <td class="px-6 py-3">{{ row.gr_number }}</td>
                 <td class="px-6 py-3">{{ row.nama_outlet }}</td>
                 <td class="px-6 py-3">{{ row.warehouse_outlet_name }}</td>
@@ -314,3 +319,6 @@ function formatDate(date) {
   return new Date(date).toLocaleDateString('id-ID')
 }
 </script>
+
+
+

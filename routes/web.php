@@ -1313,6 +1313,11 @@ Route::post('/user-roles/bulk-assign', [\App\Http\Controllers\UserRoleController
 Route::resource('food-inventory-adjustment', \App\Http\Controllers\FoodInventoryAdjustmentController::class);
 Route::post('/food-inventory-adjustment/{id}/approve', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'approve'])->name('food-inventory-adjustment.approve');
 Route::post('/food-inventory-adjustment/{id}/reject', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'reject'])->name('food-inventory-adjustment.reject');
+Route::get('/api/food-inventory-adjustment/{id}/serial-summary', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'adjustmentSerialSummary'])->name('food-inventory-adjustment.serial-summary');
+Route::get('/api/food-inventory-adjustment-items/{id}/serial-units', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'serialUnits'])->name('food-inventory-adjustment-item.serial-units');
+Route::post('/api/food-inventory-adjustment-items/{id}/generate-serials', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'generateSerials'])->name('food-inventory-adjustment-item.generate-serials');
+Route::get('/api/food-inventory-adjustment-items/{id}/serials', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'serialList'])->name('food-inventory-adjustment-item.serial-list');
+Route::delete('/api/food-inventory-adjustment-items/{id}/serials', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'rollbackSerials'])->name('food-inventory-adjustment-item.rollback-serials');
 
 // Dynamic Inspection Routes
 Route::resource('dynamic-inspections', \App\Http\Controllers\DynamicInspectionController::class);
@@ -1557,6 +1562,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('retail-non-food-payment/rollback', [\App\Http\Controllers\RetailNonFoodPaymentController::class, 'rollback'])->name('retail-non-food-payment.rollback');
     
     // Outlet Food Return
+    Route::post('outlet-food-return/validate-serial', [\App\Http\Controllers\OutletFoodReturnController::class, 'validateSerialForOFR'])->name('outlet-food-return.validate-serial');
     Route::resource('outlet-food-return', \App\Http\Controllers\OutletFoodReturnController::class);
     Route::get('outlet-food-return/get-warehouse-outlets', [\App\Http\Controllers\OutletFoodReturnController::class, 'getWarehouseOutlets'])->name('outlet-food-return.get-warehouse-outlets');
     Route::get('outlet-food-return/get-good-receives', [\App\Http\Controllers\OutletFoodReturnController::class, 'getGoodReceives'])->name('outlet-food-return.get-good-receives');
