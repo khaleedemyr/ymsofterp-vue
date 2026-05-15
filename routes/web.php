@@ -1319,6 +1319,11 @@ Route::post('/api/food-inventory-adjustment-items/{id}/generate-serials', [\App\
 Route::get('/api/food-inventory-adjustment-items/{id}/serials', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'serialList'])->name('food-inventory-adjustment-item.serial-list');
 Route::delete('/api/food-inventory-adjustment-items/{id}/serials', [\App\Http\Controllers\FoodInventoryAdjustmentController::class, 'rollbackSerials'])->name('food-inventory-adjustment-item.rollback-serials');
 
+Route::get('/serial-tracking', [\App\Http\Controllers\SerialTrackingController::class, 'index'])->name('serial-tracking.index');
+Route::get('/api/serial-tracking/documents', [\App\Http\Controllers\SerialTrackingController::class, 'searchDocuments'])->name('serial-tracking.documents');
+Route::get('/api/serial-tracking/document-serials', [\App\Http\Controllers\SerialTrackingController::class, 'documentSerials'])->name('serial-tracking.document-serials');
+Route::get('/api/serial-tracking/lookup', [\App\Http\Controllers\SerialTrackingController::class, 'lookupSerial'])->name('serial-tracking.lookup');
+
 // Dynamic Inspection Routes
 Route::resource('dynamic-inspections', \App\Http\Controllers\DynamicInspectionController::class);
 Route::post('dynamic-inspections/store-subject', [\App\Http\Controllers\DynamicInspectionController::class, 'storeSubject'])->name('dynamic-inspections.store-subject');

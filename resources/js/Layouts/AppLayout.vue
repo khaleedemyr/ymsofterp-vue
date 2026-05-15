@@ -363,6 +363,12 @@ const menuGroups = [
                 code: 'warehouse_mac_tracking',
             },
             {
+                name: () => 'Tracking Nomor Seri',
+                icon: 'fa-solid fa-barcode',
+                route: '/serial-tracking',
+                code: 'serial_tracking',
+            },
+            {
                 name: () => 'Outlet Stock Report',
                 icon: 'fa-solid fa-chart-line',
                 route: '/outlet-stock-report',
