@@ -878,6 +878,13 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'apiReport']);
         Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails']);
 
+        // Serial Tracking (approval-app)
+        Route::get('/serial-tracking/meta', [\App\Http\Controllers\SerialTrackingController::class, 'apiMeta']);
+        Route::get('/serial-tracking/documents', [\App\Http\Controllers\SerialTrackingController::class, 'searchDocuments']);
+        Route::get('/serial-tracking/document-serials', [\App\Http\Controllers\SerialTrackingController::class, 'documentSerials']);
+        Route::get('/serial-tracking/pending-outlet-receive', [\App\Http\Controllers\SerialTrackingController::class, 'pendingOutletReceive']);
+        Route::get('/serial-tracking/lookup', [\App\Http\Controllers\SerialTrackingController::class, 'lookupSerial']);
+
         // Outlet Serial Receive (approval-app)
         Route::get('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiIndex']);
         Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiShow']);

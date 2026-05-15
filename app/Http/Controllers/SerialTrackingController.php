@@ -102,8 +102,35 @@ class SerialTrackingController extends Controller
     ]);
   }
 
+  /** Meta untuk mobile app (outlet filter, source types). */
+  public function apiMeta()
+  {
+    $user = auth()->user();
+    $isHQ = ($user->id_outlet ?? null) == '1';
+
+    $outlets = [];
+    if ($isHQ) {
+      $outlets = DB::table('tbl_data_outlet')
+        ->where('status', 'A')
+        ->select('id_outlet as id', 'nama_outlet as name')
+        ->orderBy('nama_outlet')
+        ->get();
+    }
+
+    return response()->json([
+      'is_hq' => $isHQ,
+      'user_outlet_id' => $user->id_outlet ?? null,
+      'outlets' => $outlets,
+      'source_types' => collect(self::GENERATION_SOURCES)->map(fn ($cfg, $key) => [
+        'value' => $key,
+        'label' => $cfg['label'],
+      ])->values(),
+    ]);
+  }
+
   /**
    * Serial sudah keluar via DO tetapi belum diterima outlet (GR Nomor Seri).
+   * Response dikelompokkan per Delivery Order (expandable di UI).
    */
   public function pendingOutletReceive(Request $request)
   {
@@ -115,13 +142,116 @@ class SerialTrackingController extends Controller
       'warehouse_outlet_id' => 'nullable|integer',
       'date_from' => 'nullable|date',
       'date_to' => 'nullable|date',
-      'per_page' => 'nullable|integer|min:10|max:200',
+      'per_page' => 'nullable|integer|min:5|max:100',
     ]);
 
     $user = auth()->user();
     $isHQ = ($user->id_outlet ?? null) == '1';
-    $perPage = (int) $request->get('per_page', 50);
+    $perPage = (int) $request->get('per_page', 20);
 
+    $baseQuery = $this->pendingOutletSerialsQuery($request, $user, $isHQ);
+
+    $totalPending = (clone $baseQuery)->count();
+    $distinctDo = (clone $baseQuery)->distinct()->count('s.out_delivery_order_id');
+    $distinctOutlet = (clone $baseQuery)->distinct()->count('s.out_outlet_id');
+
+    $doQuery = (clone $baseQuery)
+      ->select(
+        's.out_delivery_order_id as do_id',
+        'do.number as do_number',
+        'do.created_at as do_date',
+        DB::raw('MAX(s.out_at) as last_out_at'),
+        DB::raw('COUNT(*) as pending_serial_count'),
+        's.out_outlet_id as outlet_id',
+        'o.nama_outlet as outlet_name',
+        's.out_warehouse_outlet_id as warehouse_outlet_id',
+        'wo.name as warehouse_outlet_name'
+      )
+      ->groupBy(
+        's.out_delivery_order_id',
+        'do.number',
+        'do.created_at',
+        's.out_outlet_id',
+        'o.nama_outlet',
+        's.out_warehouse_outlet_id',
+        'wo.name'
+      )
+      ->orderByDesc(DB::raw('MAX(COALESCE(s.out_at, do.created_at))'));
+
+    $doPaginated = $doQuery->paginate($perPage);
+    $doIds = collect($doPaginated->items())->pluck('do_id')->filter()->values();
+
+    $serialsByDo = collect();
+    if ($doIds->isNotEmpty()) {
+      $serialsByDo = (clone $baseQuery)
+        ->whereIn('s.out_delivery_order_id', $doIds)
+        ->orderBy('do.number')
+        ->orderBy('s.serial_number')
+        ->get()
+        ->groupBy('do_id');
+    }
+
+    $data = collect($doPaginated->items())->map(function ($doRow) use ($serialsByDo) {
+      $displayDate = $doRow->last_out_at ?? $doRow->do_date;
+      $daysPending = $displayDate
+        ? (int) \Carbon\Carbon::parse($displayDate)->diffInDays(now())
+        : null;
+
+      $serials = collect($serialsByDo->get($doRow->do_id, []))->map(function ($row) {
+        return [
+          'serial_id' => $row->serial_id,
+          'serial_number' => $row->serial_number,
+          'item_id' => $row->item_id,
+          'item_name' => $row->item_name,
+          'item_sku' => $row->item_sku,
+          'unit_name' => $row->unit_name,
+        ];
+      })->values();
+
+      return [
+        'do_id' => $doRow->do_id,
+        'do_number' => $doRow->do_number,
+        'do_date' => $doRow->do_date,
+        'last_out_at' => $doRow->last_out_at,
+        'display_date' => $displayDate,
+        'days_pending' => $daysPending,
+        'pending_serial_count' => (int) $doRow->pending_serial_count,
+        'outlet_id' => $doRow->outlet_id,
+        'outlet_name' => $doRow->outlet_name ?? '-',
+        'warehouse_outlet_id' => $doRow->warehouse_outlet_id,
+        'warehouse_outlet_name' => $doRow->warehouse_outlet_name ?? '-',
+        'do_url' => '/delivery-order/' . $doRow->do_id,
+        'serials' => $serials,
+      ];
+    });
+
+    $warehouseOutlets = [];
+    if ($isHQ && $request->filled('outlet_id')) {
+      $warehouseOutlets = DB::table('warehouse_outlets')
+        ->where('outlet_id', $request->outlet_id)
+        ->where('status', 'active')
+        ->select('id', 'name')
+        ->orderBy('name')
+        ->get();
+    }
+
+    return response()->json([
+      'data' => $data,
+      'total' => $doPaginated->total(),
+      'current_page' => $doPaginated->currentPage(),
+      'last_page' => $doPaginated->lastPage(),
+      'per_page' => $doPaginated->perPage(),
+      'summary' => [
+        'total_serials' => $totalPending,
+        'distinct_do' => $distinctDo,
+        'distinct_outlet' => $distinctOutlet,
+      ],
+      'warehouse_outlets' => $warehouseOutlets,
+    ]);
+  }
+
+  private function pendingOutletSerialsQuery(Request $request, $user, bool $isHQ)
+  {
     $query = DB::table('inventory_item_serials as s')
       ->join('delivery_orders as do', 'do.id', '=', 's.out_delivery_order_id')
       ->leftJoin('items as i', 'i.id', '=', 's.item_id')
@@ -157,9 +287,7 @@ class SerialTrackingController extends Controller
         'o.nama_outlet as outlet_name',
         's.out_warehouse_outlet_id as warehouse_outlet_id',
         'wo.name as warehouse_outlet_name'
-      )
-      ->orderByDesc('s.out_at')
-      ->orderByDesc('do.created_at');
+      );
 
     if (!$isHQ) {
       $query->where('s.out_outlet_id', $user->id_outlet);
@@ -208,62 +336,7 @@ class SerialTrackingController extends Controller
       });
     }
 
-    $totalPending = (clone $query)->count();
-    $distinctDo = (clone $query)->distinct()->count('s.out_delivery_order_id');
-    $distinctOutlet = (clone $query)->distinct()->count('s.out_outlet_id');
-
-    $paginated = $query->paginate($perPage);
-
-    $data = collect($paginated->items())->map(function ($row) {
-      $doDate = $row->out_at ?? $row->do_date;
-      $daysPending = null;
-      if ($doDate) {
-        $daysPending = (int) \Carbon\Carbon::parse($doDate)->diffInDays(now());
-      }
-
-      return [
-        'serial_id' => $row->serial_id,
-        'serial_number' => $row->serial_number,
-        'item_name' => $row->item_name,
-        'item_sku' => $row->item_sku,
-        'unit_name' => $row->unit_name,
-        'do_id' => $row->do_id,
-        'do_number' => $row->do_number,
-        'do_date' => $row->do_date,
-        'out_at' => $row->out_at,
-        'display_date' => $doDate,
-        'days_pending' => $daysPending,
-        'outlet_id' => $row->outlet_id,
-        'outlet_name' => $row->outlet_name ?? '-',
-        'warehouse_outlet_id' => $row->warehouse_outlet_id,
-        'warehouse_outlet_name' => $row->warehouse_outlet_name ?? '-',
-        'do_url' => '/delivery-order/' . $row->do_id,
-      ];
-    });
-
-    $warehouseOutlets = [];
-    if ($isHQ && $request->filled('outlet_id')) {
-      $warehouseOutlets = DB::table('warehouse_outlets')
-        ->where('outlet_id', $request->outlet_id)
-        ->where('status', 'active')
-        ->select('id', 'name')
-        ->orderBy('name')
-        ->get();
-    }
-
-    return response()->json([
-      'data' => $data,
-      'total' => $paginated->total(),
-      'current_page' => $paginated->currentPage(),
-      'last_page' => $paginated->lastPage(),
-      'per_page' => $paginated->perPage(),
-      'summary' => [
-        'total_serials' => $totalPending,
-        'distinct_do' => $distinctDo,
-        'distinct_outlet' => $distinctOutlet,
-      ],
-      'warehouse_outlets' => $warehouseOutlets,
-    ]);
+    return $query;
   }
 
   public function searchDocuments(Request $request)

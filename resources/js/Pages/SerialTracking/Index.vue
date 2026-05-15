@@ -192,7 +192,7 @@
       <div v-show="activeTab === 'pending'" class="space-y-6">
         <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
           <i class="fa-solid fa-circle-info mr-1"></i>
-          Daftar serial yang <strong>sudah keluar via Delivery Order</strong> tetapi <strong>belum diterima outlet</strong> melalui GR Nomor Seri.
+          Daftar <strong>Delivery Order</strong> yang sudah dispatch serial tetapi <strong>belum diterima outlet</strong> (GR Nomor Seri). Klik baris DO untuk melihat nomor seri yang belum di-GR.
         </div>
 
         <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
@@ -255,39 +255,79 @@
           </div>
         </div>
 
-        <div v-if="pendingList.length" class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-x-auto">
+        <div v-if="pendingDoList.length" class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-x-auto">
           <table class="w-full min-w-[960px] text-sm">
             <thead class="bg-amber-600 text-white">
               <tr>
-                <th class="px-4 py-3 text-left">Nomor Seri</th>
-                <th class="px-4 py-3 text-left">Item</th>
+                <th class="px-3 py-3 w-10"></th>
                 <th class="px-4 py-3 text-left">Delivery Order</th>
                 <th class="px-4 py-3 text-left">Tgl DO / Keluar</th>
                 <th class="px-4 py-3 text-left">Outlet</th>
                 <th class="px-4 py-3 text-left">Warehouse Outlet</th>
+                <th class="px-4 py-3 text-center">Belum GR</th>
                 <th class="px-4 py-3 text-center">Hari</th>
                 <th class="px-4 py-3 text-center">Aksi</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
-              <tr v-for="row in pendingList" :key="row.serial_id" class="hover:bg-amber-50">
-                <td class="px-4 py-3 font-mono font-semibold text-indigo-700">{{ row.serial_number }}</td>
-                <td class="px-4 py-3">{{ row.item_name }}</td>
-                <td class="px-4 py-3">
-                  <a :href="row.do_url" class="font-mono font-semibold text-amber-700 hover:underline" target="_blank">{{ row.do_number }}</a>
-                </td>
-                <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(row.display_date) }}</td>
-                <td class="px-4 py-3">{{ row.outlet_name }}</td>
-                <td class="px-4 py-3">{{ row.warehouse_outlet_name }}</td>
-                <td class="px-4 py-3 text-center">
-                  <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="row.days_pending > 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'">
-                    {{ row.days_pending ?? '-' }}
-                  </span>
-                </td>
-                <td class="px-4 py-3 text-center">
-                  <button type="button" class="text-xs text-indigo-600 hover:underline font-semibold" @click="trackPendingSerial(row.serial_number)">Lacak</button>
-                </td>
-              </tr>
+            <tbody>
+              <template v-for="doRow in pendingDoList" :key="doRow.do_id">
+                <tr
+                  class="border-t border-gray-100 cursor-pointer hover:bg-amber-50 transition-colors"
+                  :class="isPendingDoExpanded(doRow.do_id) ? 'bg-amber-50/80' : ''"
+                  @click="togglePendingDo(doRow.do_id)"
+                >
+                  <td class="px-3 py-3 text-center text-amber-700">
+                    <i class="fa-solid transition-transform" :class="isPendingDoExpanded(doRow.do_id) ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
+                  </td>
+                  <td class="px-4 py-3">
+                    <a :href="doRow.do_url" class="font-mono font-semibold text-amber-700 hover:underline" target="_blank" @click.stop>{{ doRow.do_number }}</a>
+                  </td>
+                  <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(doRow.display_date) }}</td>
+                  <td class="px-4 py-3">{{ doRow.outlet_name }}</td>
+                  <td class="px-4 py-3">{{ doRow.warehouse_outlet_name }}</td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                      {{ doRow.pending_serial_count }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-center">
+                    <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="doRow.days_pending > 7 ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'">
+                      {{ doRow.days_pending ?? '-' }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-center" @click.stop>
+                    <a :href="doRow.do_url" class="text-xs text-amber-700 hover:underline font-semibold" target="_blank">Buka DO</a>
+                  </td>
+                </tr>
+                <tr v-if="isPendingDoExpanded(doRow.do_id)" class="bg-gray-50">
+                  <td colspan="8" class="px-4 py-3">
+                    <div class="rounded-xl border border-amber-200 overflow-hidden">
+                      <table class="w-full text-sm">
+                        <thead class="bg-amber-100/80 text-amber-900">
+                          <tr>
+                            <th class="px-4 py-2 text-left">Nomor Seri</th>
+                            <th class="px-4 py-2 text-left">Item</th>
+                            <th class="px-4 py-2 text-left">SKU</th>
+                            <th class="px-4 py-2 text-left">Unit</th>
+                            <th class="px-4 py-2 text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-amber-100 bg-white">
+                          <tr v-for="sn in doRow.serials" :key="sn.serial_id" class="hover:bg-amber-50/50">
+                            <td class="px-4 py-2 font-mono font-semibold text-indigo-700">{{ sn.serial_number }}</td>
+                            <td class="px-4 py-2">{{ sn.item_name || '-' }}</td>
+                            <td class="px-4 py-2 text-gray-500">{{ sn.item_sku || '-' }}</td>
+                            <td class="px-4 py-2">{{ sn.unit_name || '-' }}</td>
+                            <td class="px-4 py-2 text-center">
+                              <button type="button" class="text-xs text-indigo-600 hover:underline font-semibold" @click="trackPendingSerial(sn.serial_number)">Lacak</button>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
           <div v-if="pendingPagination.last_page > 1" class="flex justify-center gap-2 p-4 border-t">
@@ -296,7 +336,7 @@
             <button type="button" class="px-3 py-1 text-sm rounded border disabled:opacity-40" :disabled="pendingPagination.current_page >= pendingPagination.last_page" @click="loadPending(pendingPagination.current_page + 1)">Next</button>
           </div>
         </div>
-        <p v-else-if="pendingLoaded && !pendingLoading" class="text-center text-gray-500 py-8">Tidak ada serial menunggu GR outlet.</p>
+        <p v-else-if="pendingLoaded && !pendingLoading" class="text-center text-gray-500 py-8">Tidak ada DO dengan serial menunggu GR outlet.</p>
         <div v-if="pendingLoading" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Memuat...</div>
       </div>
 
@@ -395,7 +435,8 @@ const pendingFilters = reactive({
   date_from: '',
   date_to: '',
 })
-const pendingList = ref([])
+const pendingDoList = ref([])
+const expandedDoIds = ref({})
 const pendingSummary = reactive({ total_serials: 0, distinct_do: 0, distinct_outlet: 0 })
 const pendingPagination = reactive({ current_page: 1, last_page: 1 })
 const pendingWarehouseOutlets = ref([])
@@ -504,7 +545,7 @@ const loadPending = async (page = 1) => {
   try {
     const params = {
       page,
-      per_page: 50,
+      per_page: 20,
       outlet_id: pendingFilters.outlet_id || undefined,
       warehouse_outlet_id: pendingFilters.warehouse_outlet_id || undefined,
       do_number: pendingFilters.do_number || undefined,
@@ -514,7 +555,8 @@ const loadPending = async (page = 1) => {
       date_to: pendingFilters.date_to || undefined,
     }
     const { data } = await axios.get('/api/serial-tracking/pending-outlet-receive', { params })
-    pendingList.value = data.data || []
+    pendingDoList.value = data.data || []
+    expandedDoIds.value = {}
     pendingSummary.total_serials = data.summary?.total_serials ?? data.total ?? 0
     pendingSummary.distinct_do = data.summary?.distinct_do ?? 0
     pendingSummary.distinct_outlet = data.summary?.distinct_outlet ?? 0
@@ -524,7 +566,8 @@ const loadPending = async (page = 1) => {
       pendingWarehouseOutlets.value = data.warehouse_outlets
     }
   } catch {
-    pendingList.value = []
+    pendingDoList.value = []
+    expandedDoIds.value = {}
     pendingSummary.total_serials = 0
     pendingSummary.distinct_do = 0
     pendingSummary.distinct_outlet = 0
@@ -550,7 +593,8 @@ const resetPending = () => {
   pendingFilters.date_from = ''
   pendingFilters.date_to = ''
   pendingWarehouseOutlets.value = []
-  pendingList.value = []
+  pendingDoList.value = []
+  expandedDoIds.value = {}
   pendingLoaded.value = false
   pendingSummary.total_serials = 0
   pendingSummary.distinct_do = 0
@@ -561,6 +605,15 @@ const trackPendingSerial = (sn) => {
   activeTab.value = 'serial'
   serialQuery.value = sn
   lookupSerial()
+}
+
+const isPendingDoExpanded = (doId) => !!expandedDoIds.value[doId]
+
+const togglePendingDo = (doId) => {
+  expandedDoIds.value = {
+    ...expandedDoIds.value,
+    [doId]: !expandedDoIds.value[doId],
+  }
 }
 
 const formatDate = (d) => (d ? new Date(d).toLocaleDateString('id-ID') : '-')
