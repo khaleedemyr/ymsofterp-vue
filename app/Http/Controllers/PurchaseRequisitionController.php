@@ -1763,8 +1763,8 @@ class PurchaseRequisitionController extends Controller
         if ($purchaseRequisition->mode === 'kasbon') {
             if ($request->filled('kasbon_amount') || $request->filled('kasbon_termin')) {
                 $kasbonPatch = $request->validate([
-                    'kasbon_amount' => 'required|integer|in:500000,1000000,1500000,2000000,2500000,3000000',
-                    'kasbon_termin' => 'required|integer|in:1,2,3',
+                    'kasbon_amount' => 'required|integer|min:1|max:999999999999',
+                    'kasbon_termin' => 'required|integer|min:1|max:255',
                 ]);
             }
         }
@@ -2003,7 +2003,7 @@ class PurchaseRequisitionController extends Controller
                 if ($purchaseRequisition->mode === 'kasbon') {
                     $purchaseRequisition->refresh();
                     $totalAmount = (float) ($purchaseRequisition->amount ?? 0);
-                    $terminTotal = max(1, min(3, (int) ($purchaseRequisition->kasbon_termin ?? 1)));
+                    $terminTotal = max(1, min(255, (int) ($purchaseRequisition->kasbon_termin ?? 1)));
                     $installmentAmount = $terminTotal > 0
                         ? round($totalAmount / $terminTotal, 2)
                         : $totalAmount;

@@ -855,6 +855,9 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::post('/report-kasbon/{id}/installment', [\App\Http\Controllers\KasbonReportController::class, 'recordInstallment'])
         ->whereNumber('id')
         ->name('report-kasbon.record-installment');
+    Route::post('/report-kasbon/{id}/installment/reverse', [\App\Http\Controllers\KasbonReportController::class, 'reverseInstallment'])
+        ->whereNumber('id')
+        ->name('report-kasbon.reverse-installment');
 
     // Good Receive routes
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');

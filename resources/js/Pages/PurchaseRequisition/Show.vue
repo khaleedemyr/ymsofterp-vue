@@ -193,12 +193,47 @@
               Informasi Kasbon
             </h2>
             <div class="space-y-4">
-              <div>
-                <label class="text-sm font-medium text-gray-600 mb-2 block">Nilai Kasbon</label>
-                <p class="text-lg font-semibold text-gray-900">
-                  {{ formatCurrency(modeSpecificData.kasbon_amount || 0) }}
+              <template v-if="canApprove">
+                <p class="text-xs text-gray-600 mb-3">
+                  Anda dapat mengetik nilai kasbon dan termin sebelum menyetujui (tidak terbatas pada pilihan pengaju). Perubahan disimpan saat klik Approve.
                 </p>
-              </div>
+                <div>
+                  <label class="text-sm font-medium text-gray-600 mb-2 block">Nilai Kasbon (Rp)</label>
+                  <input
+                    v-model="kasbonApproveAmountInput"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="contoh: 2750000"
+                    class="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  />
+                  <p class="text-xs text-gray-500 mt-1">Angka saja; pemisah ribuan boleh.</p>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-gray-600 mb-2 block">Termin potong gaji</label>
+                  <input
+                    v-model="kasbonApproveTerminInput"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="contoh: 4"
+                    class="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  />
+                  <p class="text-xs text-gray-500 mt-1">Jumlah kali potong (1–255).</p>
+                </div>
+              </template>
+              <template v-else>
+                <div>
+                  <label class="text-sm font-medium text-gray-600 mb-2 block">Nilai Kasbon</label>
+                  <p class="text-lg font-semibold text-gray-900">
+                    {{ formatCurrency(modeSpecificData.kasbon_amount || 0) }}
+                  </p>
+                </div>
+                <div v-if="modeSpecificData.kasbon_termin != null">
+                  <label class="text-sm font-medium text-gray-600 mb-2 block">Termin potong gaji</label>
+                  <p class="text-lg font-semibold text-gray-900">{{ modeSpecificData.kasbon_termin }}x</p>
+                </div>
+              </template>
               <div v-if="modeSpecificData.kasbon_reason">
                 <label class="text-sm font-medium text-gray-600 mb-2 block">Reason / Alasan Kasbon</label>
                 <div class="text-gray-900 bg-gray-50 p-3 rounded-lg border border-gray-200 whitespace-pre-wrap">{{ modeSpecificData.kasbon_reason }}</div>
@@ -817,11 +852,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   purchaseRequisition: Object,
@@ -836,6 +872,23 @@ const showRejectModal = ref(false)
 const rejectionReason = ref('')
 const showLightbox = ref(false)
 const lightboxImage = ref(null)
+
+const kasbonApproveAmountInput = ref('')
+const kasbonApproveTerminInput = ref('')
+
+watch(
+  () => [props.purchaseRequisition?.id, props.modeSpecificData?.kasbon_amount, props.modeSpecificData?.kasbon_termin],
+  () => {
+    if (props.purchaseRequisition?.mode !== 'kasbon' || !props.modeSpecificData) {
+      return
+    }
+    const a = props.modeSpecificData.kasbon_amount
+    const t = props.modeSpecificData.kasbon_termin
+    kasbonApproveAmountInput.value = a != null && a !== '' ? String(Number(a)) : ''
+    kasbonApproveTerminInput.value = t != null && t !== '' ? String(Number(t)) : '1'
+  },
+  { immediate: true }
+)
 
 // Computed properties for permissions
 const canEdit = computed(() => {
@@ -1129,7 +1182,30 @@ const submitRequisition = () => {
 }
 
 const approveRequisition = () => {
-  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/approve`)
+  const payload = {}
+  if (props.purchaseRequisition.mode === 'kasbon') {
+    const amt = parseInt(String(kasbonApproveAmountInput.value ?? '').replace(/[^\d]/g, ''), 10)
+    const term = parseInt(String(kasbonApproveTerminInput.value ?? '').replace(/[^\d]/g, ''), 10)
+    if (!Number.isFinite(amt) || amt < 1) {
+      Swal.fire({ icon: 'warning', title: 'Nilai kasbon tidak valid', text: 'Masukkan nominal (angka, minimal Rp 1).', confirmButtonColor: '#F59E0B' })
+      return
+    }
+    if (amt > 999999999999) {
+      Swal.fire({ icon: 'warning', title: 'Nilai kasbon terlalu besar', text: 'Nominal melebihi batas yang diizinkan.', confirmButtonColor: '#F59E0B' })
+      return
+    }
+    if (!Number.isFinite(term) || term < 1) {
+      Swal.fire({ icon: 'warning', title: 'Termin tidak valid', text: 'Masukkan jumlah termin (minimal 1).', confirmButtonColor: '#F59E0B' })
+      return
+    }
+    if (term > 255) {
+      Swal.fire({ icon: 'warning', title: 'Termin tidak valid', text: 'Termin maksimal 255.', confirmButtonColor: '#F59E0B' })
+      return
+    }
+    payload.kasbon_amount = amt
+    payload.kasbon_termin = term
+  }
+  router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/approve`, payload)
 }
 
 const rejectRequisition = () => {

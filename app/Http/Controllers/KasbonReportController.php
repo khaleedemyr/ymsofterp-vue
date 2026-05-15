@@ -45,7 +45,8 @@ class KasbonReportController extends Controller
 
         $summary = (clone $query)->selectRaw(
             "COUNT(*) as total_rows, " .
-            "SUM(CASE WHEN k.status = 'active' THEN 1 ELSE 0 END) as active_count, " .
+            "SUM(CASE WHEN k.status <> 'completed' AND nfp.id IS NOT NULL AND nfp.status = 'paid' THEN 1 ELSE 0 END) as active_count, " .
+            "SUM(CASE WHEN k.status <> 'completed' AND (nfp.id IS NULL OR nfp.status IS NULL OR nfp.status <> 'paid') THEN 1 ELSE 0 END) as waiting_transfer_count, " .
             "SUM(CASE WHEN k.status = 'completed' THEN 1 ELSE 0 END) as completed_count, " .
             "COALESCE(SUM(k.total_amount), 0) as sum_total_amount"
         )->first();
@@ -74,6 +75,13 @@ class KasbonReportController extends Controller
                 'nfp.payment_number as nfp_payment_number',
                 'nfp.status as nfp_payment_status',
                 DB::raw('COALESCE(nfp.approved_at, nfp.approved_gm_finance_at, nfp.approved_finance_manager_at) as nfp_transfer_approved_at'),
+                DB::raw(
+                    "CASE " .
+                    "WHEN k.status = 'completed' THEN 'completed' " .
+                    "WHEN nfp.id IS NULL OR nfp.status IS NULL OR nfp.status <> 'paid' THEN 'waiting_transfer' " .
+                    "ELSE 'active' " .
+                    "END as tracker_status"
+                ),
             ])
             ->orderByDesc('k.approved_at')
             ->orderByDesc('k.id')
@@ -86,6 +94,7 @@ class KasbonReportController extends Controller
             'summary' => [
                 'total_rows' => (int) ($summary->total_rows ?? 0),
                 'active_count' => (int) ($summary->active_count ?? 0),
+                'waiting_transfer_count' => (int) ($summary->waiting_transfer_count ?? 0),
                 'completed_count' => (int) ($summary->completed_count ?? 0),
                 'sum_total_amount' => (float) ($summary->sum_total_amount ?? 0),
             ],
@@ -142,7 +151,20 @@ class KasbonReportController extends Controller
         });
         $query->leftJoin('non_food_payments as nfp', 'nfp.id', '=', 'nfp_idx.latest_nfp_id');
 
-        if ($status !== 'all') {
+        if ($status === 'active') {
+            $query->where('k.status', '!=', 'completed')
+                ->whereNotNull('nfp.id')
+                ->where('nfp.status', 'paid');
+        } elseif ($status === 'waiting_transfer') {
+            $query->where('k.status', '!=', 'completed')
+                ->where(function ($q) {
+                    $q->whereNull('nfp.id')
+                        ->orWhereNull('nfp.status')
+                        ->orWhere('nfp.status', '<>', 'paid');
+                });
+        } elseif ($status === 'completed') {
+            $query->where('k.status', 'completed');
+        } elseif ($status !== 'all') {
             $query->where('k.status', $status);
         }
         if ($divisionId) {
@@ -189,6 +211,17 @@ class KasbonReportController extends Controller
                 if ($k->status === 'completed' || $paid >= $termin) {
                     throw new \RuntimeException('Kasbon sudah lunas, tidak bisa menambah cicilan.');
                 }
+
+                $latestNfp = DB::table('non_food_payments')
+                    ->where('purchase_requisition_id', $k->purchase_requisition_id)
+                    ->whereNotIn('status', ['rejected', 'cancelled'])
+                    ->orderByDesc('id')
+                    ->first();
+                if (! $latestNfp || ($latestNfp->status ?? '') !== 'paid') {
+                    throw new \RuntimeException(
+                        'Non Food Payment untuk PR ini belum berstatus paid. Catat cicilan setelah transfer selesai (NFP paid).'
+                    );
+                }
                 $newPaid = $paid + 1;
                 $paidAt = ! empty($validated['paid_at'])
                     ? Carbon::parse($validated['paid_at'])->startOfDay()
@@ -221,6 +254,57 @@ class KasbonReportController extends Controller
         }
 
         return redirect()->back()->with('success', 'Pembayaran cicilan berhasil dicatat.');
+    }
+
+    /**
+     * Batalkan 1x pencatatan cicilan terakhir (turunkan paid_installments, status aktif jika sebelumnya completed).
+     */
+    public function reverseInstallment(Request $request, int $id)
+    {
+        $this->assertUserCanAccessReportKasbon();
+        abort_unless(Schema::hasTable('pr_kasbons'), 404);
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            DB::transaction(function () use ($id, $validated) {
+                $k = PrKasbon::query()->lockForUpdate()->findOrFail($id);
+                $termin = max(1, (int) $k->termin_total);
+                $paid = (int) $k->paid_installments;
+                if ($paid <= 0) {
+                    throw new \RuntimeException('Belum ada cicilan yang tercatat, tidak ada yang dibatalkan.');
+                }
+
+                $newPaid = $paid - 1;
+                $user = Auth::user();
+                $uname = $user && ($user->nama_lengkap ?? null)
+                    ? $user->nama_lengkap
+                    : (($user && ($user->name ?? null)) ? $user->name : 'user #' . Auth::id());
+                $line = '[' . now()->format('Y-m-d H:i') . '] Pembatalan 1x cicilan (menjadi ' . $newPaid . '/' . $termin . ') oleh ' . $uname;
+                if (! empty($validated['notes'])) {
+                    $line .= ' — ' . trim($validated['notes']);
+                }
+                $mergedNotes = trim(($k->notes ? $k->notes . "\n" : '') . $line);
+                if (strlen($mergedNotes) > 2000) {
+                    $mergedNotes = substr($mergedNotes, -2000);
+                }
+
+                $k->update([
+                    'paid_installments' => $newPaid,
+                    'last_installment_at' => null,
+                    'status' => $newPaid >= $termin ? 'completed' : 'active',
+                    'notes' => $mergedNotes,
+                ]);
+            });
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            abort(404);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['installment' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Pencatatan cicilan terakhir berhasil dibatalkan.');
     }
 
     /**

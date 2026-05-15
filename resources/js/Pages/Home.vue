@@ -47,11 +47,9 @@ const showPrApprovalModal = ref(false);
 const selectedPrApproval = ref(null);
 const prApprovalBudgetInfo = ref(null);
 const prModeSpecificData = ref(null);
-/** PR kasbon — opsi sama seperti PurchaseRequisition/Create; approver boleh ubah saat approve */
-const prKasbonAmountOptions = [500000, 1000000, 1500000, 2000000, 2500000, 3000000];
-const prKasbonTerminOptions = [1, 2, 3];
-const prApprovalKasbonEditAmount = ref(0);
-const prApprovalKasbonEditTermin = ref(1);
+/** PR kasbon — approver isi bebas (angka); pengaju tetap pakai pilihan di halaman Create/Edit PR */
+const prApprovalKasbonAmountInput = ref('');
+const prApprovalKasbonTerminInput = ref('');
 const selectedPrApprovals = ref(new Set()); // For multi-select
 const isSelectingPrApprovals = ref(false); // Toggle select mode
 const showLightbox = ref(false);
@@ -1817,8 +1815,10 @@ async function showPrApprovalDetails(prId) {
             prModeSpecificData.value = response.data.mode_specific_data || null;
             if (response.data.purchase_requisition?.mode === 'kasbon' && response.data.mode_specific_data) {
                 const m = response.data.mode_specific_data;
-                prApprovalKasbonEditAmount.value = Number(m.kasbon_amount) || 0;
-                prApprovalKasbonEditTermin.value = Number(m.kasbon_termin) || 1;
+                prApprovalKasbonAmountInput.value =
+                    m.kasbon_amount != null && m.kasbon_amount !== '' ? String(Number(m.kasbon_amount)) : '';
+                prApprovalKasbonTerminInput.value =
+                    m.kasbon_termin != null && m.kasbon_termin !== '' ? String(Number(m.kasbon_termin)) : '1';
             }
             
             // Debug logging
@@ -2024,22 +2024,40 @@ async function approvePr(prId) {
     try {
         const payload = {};
         if (selectedPrApproval.value?.mode === 'kasbon') {
-            const amt = Number(prApprovalKasbonEditAmount.value);
-            const term = Number(prApprovalKasbonEditTermin.value);
-            if (!prKasbonAmountOptions.includes(amt)) {
+            const amt = parseInt(String(prApprovalKasbonAmountInput.value ?? '').replace(/[^\d]/g, ''), 10);
+            const term = parseInt(String(prApprovalKasbonTerminInput.value ?? '').replace(/[^\d]/g, ''), 10);
+            if (!Number.isFinite(amt) || amt < 1) {
                 await Swal.fire({
                     icon: 'warning',
                     title: 'Nilai kasbon tidak valid',
-                    text: 'Silakan pilih nilai kasbon dari daftar yang tersedia.',
+                    text: 'Masukkan nominal kasbon (angka, minimal Rp 1).',
                     confirmButtonColor: '#F59E0B',
                 });
                 return;
             }
-            if (!prKasbonTerminOptions.includes(term)) {
+            if (amt > 999999999999) {
+                await Swal.fire({
+                    icon: 'warning',
+                    title: 'Nilai kasbon terlalu besar',
+                    text: 'Nominal melebihi batas yang diizinkan.',
+                    confirmButtonColor: '#F59E0B',
+                });
+                return;
+            }
+            if (!Number.isFinite(term) || term < 1) {
                 await Swal.fire({
                     icon: 'warning',
                     title: 'Termin tidak valid',
-                    text: 'Silakan pilih termin 1x, 2x, atau 3x.',
+                    text: 'Masukkan jumlah termin potong gaji (minimal 1).',
+                    confirmButtonColor: '#F59E0B',
+                });
+                return;
+            }
+            if (term > 255) {
+                await Swal.fire({
+                    icon: 'warning',
+                    title: 'Termin tidak valid',
+                    text: 'Termin maksimal 255 (batas sistem).',
                     confirmButtonColor: '#F59E0B',
                 });
                 return;
@@ -7681,28 +7699,32 @@ watch(locale, () => {
                             Informasi Kasbon
                         </h4>
                         <p class="text-xs text-gray-600 dark:text-gray-400 mb-4">
-                            Sebagai approver Anda dapat menyesuaikan nilai kasbon dan termin sebelum menyetujui. Perubahan disimpan ke PR saat Anda klik Approve.
+                            Sebagai approver Anda dapat mengetik nilai kasbon dan termin apa pun sebelum menyetujui (tidak terbatas pada pilihan pengaju). Perubahan disimpan ke PR saat Anda klik Approve.
                         </p>
                         <div class="space-y-4">
                             <div>
-                                <label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Nilai Kasbon</label>
-                                <select
-                                    v-model.number="prApprovalKasbonEditAmount"
+                                <label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Nilai Kasbon (Rp)</label>
+                                <input
+                                    v-model="prApprovalKasbonAmountInput"
+                                    type="text"
+                                    inputmode="numeric"
+                                    autocomplete="off"
+                                    placeholder="contoh: 2750000 atau 2.750.000"
                                     class="w-full max-w-md rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                >
-                                    <option v-for="a in prKasbonAmountOptions" :key="a" :value="a">
-                                        Rp {{ new Intl.NumberFormat('id-ID').format(a) }}
-                                    </option>
-                                </select>
+                                />
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Angka saja; pemisah ribuan (titik/koma) boleh, akan diabaikan.</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Termin potong gaji</label>
-                                <select
-                                    v-model.number="prApprovalKasbonEditTermin"
+                                <input
+                                    v-model="prApprovalKasbonTerminInput"
+                                    type="text"
+                                    inputmode="numeric"
+                                    autocomplete="off"
+                                    placeholder="contoh: 4"
                                     class="w-full max-w-xs rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                >
-                                    <option v-for="t in prKasbonTerminOptions" :key="t" :value="t">{{ t }}x</option>
-                                </select>
+                                />
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Jumlah kali potong gaji (1–255).</p>
                             </div>
                             <div v-if="prModeSpecificData.kasbon_reason">
                                 <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Reason / Alasan Kasbon</div>

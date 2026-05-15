@@ -8,7 +8,7 @@
             Report Kasbon
           </h1>
           <p class="text-gray-600 mt-2">
-            Pelacakan kasbon yang sudah disetujui: total cicilan, sudah terbayar berapa kali, sisa termin, dan kapan pembayaran/transfer di Non Food Payment di-approve.
+            Pelacakan kasbon yang sudah disetujui PR: badge menunggu transfer sampai Non Food Payment berstatus paid, lalu aktif untuk pencatatan cicilan gaji.
           </p>
         </div>
 
@@ -45,7 +45,8 @@
                   class="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-orange-500"
                 >
                   <option value="all">Semua</option>
-                  <option value="active">Aktif (masih ada cicilan)</option>
+                  <option value="waiting_transfer">Menunggu transfer (NFP belum paid)</option>
+                  <option value="active">Aktif (NFP paid, masih ada cicilan)</option>
                   <option value="completed">Selesai</option>
                 </select>
               </div>
@@ -108,20 +109,24 @@
             </form>
           </div>
 
-          <div v-if="summary" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div v-if="summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div class="bg-white rounded-xl shadow p-4">
               <p class="text-sm text-gray-600">Total baris</p>
               <p class="text-2xl font-bold text-gray-900">{{ summary.total_rows }}</p>
             </div>
             <div class="bg-white rounded-xl shadow p-4">
-              <p class="text-sm text-gray-600">Status aktif</p>
+              <p class="text-sm text-gray-600">Menunggu transfer</p>
+              <p class="text-2xl font-bold text-slate-600">{{ summary.waiting_transfer_count ?? 0 }}</p>
+            </div>
+            <div class="bg-white rounded-xl shadow p-4">
+              <p class="text-sm text-gray-600">Aktif (NFP paid)</p>
               <p class="text-2xl font-bold text-orange-600">{{ summary.active_count }}</p>
             </div>
             <div class="bg-white rounded-xl shadow p-4">
               <p class="text-sm text-gray-600">Selesai</p>
               <p class="text-2xl font-bold text-green-600">{{ summary.completed_count }}</p>
             </div>
-            <div class="bg-white rounded-xl shadow p-4">
+            <div class="bg-white rounded-xl shadow p-4 sm:col-span-2 lg:col-span-1">
               <p class="text-sm text-gray-600">Jumlah nominal total</p>
               <p class="text-2xl font-bold text-gray-900">{{ formatRp(summary.sum_total_amount) }}</p>
             </div>
@@ -162,9 +167,9 @@
                     <td class="px-4 py-3 text-center">
                       <span
                         class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium"
-                        :class="row.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'"
+                        :class="trackerStatusBadgeClass(row.tracker_status)"
                       >
-                        {{ row.status }}
+                        {{ trackerStatusLabel(row.tracker_status) }}
                       </span>
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{{ formatDate(row.approved_at) }}</td>
@@ -187,6 +192,14 @@
                           @click="openPayModal(row)"
                         >
                           Catat cicilan
+                        </button>
+                        <button
+                          v-if="canReverseInstallment(row)"
+                          type="button"
+                          class="text-sm font-medium text-red-700 border border-red-300 bg-red-50 hover:bg-red-100 px-2 py-1 rounded"
+                          @click="reverseLastInstallment(row)"
+                        >
+                          Batalkan cicilan terakhir
                         </button>
                         <a
                           v-if="row.purchase_requisition_id"
@@ -286,6 +299,7 @@
 import { reactive, ref, watch } from 'vue';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const page = usePage();
 
@@ -307,10 +321,26 @@ const payForm = useForm({
   notes: '',
 });
 
+function trackerStatusLabel(code) {
+  if (code === 'waiting_transfer') return 'menunggu transfer';
+  if (code === 'completed') return 'selesai';
+  return 'aktif';
+}
+
+function trackerStatusBadgeClass(code) {
+  if (code === 'completed') return 'bg-green-100 text-green-800';
+  if (code === 'waiting_transfer') return 'bg-slate-200 text-slate-800';
+  return 'bg-orange-100 text-orange-800';
+}
+
 function canRecordInstallment(row) {
   const termin = Number(row.termin_total) || 0;
   const paid = Number(row.paid_installments) || 0;
-  return row.status === 'active' && paid < termin;
+  return row.tracker_status === 'active' && paid < termin;
+}
+
+function canReverseInstallment(row) {
+  return (Number(row.paid_installments) || 0) > 0;
 }
 
 function openPayModal(row) {
@@ -336,6 +366,32 @@ function submitInstallment() {
       closePayModal();
     },
   });
+}
+
+async function reverseLastInstallment(row) {
+  const paid = Number(row.paid_installments) || 0;
+  const termin = Number(row.termin_total) || 0;
+  if (paid <= 0) return;
+
+  const { isConfirmed, value } = await Swal.fire({
+    title: 'Batalkan cicilan terakhir?',
+    html: `<p class="text-left text-sm text-gray-600">Angka <strong>Sudah bayar</strong> akan turun dari <strong>${paid}/${termin}</strong> menjadi <strong>${paid - 1}/${termin}</strong>. Badge status mengikuti NFP (menunggu transfer / aktif / selesai).</p>`,
+    input: 'textarea',
+    inputPlaceholder: 'Alasan pembatalan (opsional)',
+    inputAttributes: { maxlength: '500' },
+    showCancelButton: true,
+    confirmButtonText: 'Ya, batalkan 1x',
+    cancelButtonText: 'Tutup',
+    confirmButtonColor: '#dc2626',
+  });
+
+  if (!isConfirmed) return;
+
+  router.post(
+    `/report-kasbon/${row.id}/installment/reverse`,
+    { notes: (value && String(value).trim()) || '' },
+    { preserveScroll: true }
+  );
 }
 
 const form = reactive({
