@@ -238,6 +238,16 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-warehouse-food-items/{id}/serials', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'serialList']);
         Route::delete('/retail-warehouse-food-items/{id}/serials', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'rollbackSerials']);
 
+        // Delivery Order (approval-app — mirror web /delivery-order + /api/packing-list/…)
+        Route::get('/delivery-orders', [\App\Http\Controllers\DeliveryOrderController::class, 'apiIndex']);
+        Route::get('/delivery-orders/create-data', [\App\Http\Controllers\DeliveryOrderController::class, 'apiCreateData']);
+        Route::get('/delivery-orders/{id}/struk', [\App\Http\Controllers\DeliveryOrderController::class, 'strukData'])->whereNumber('id');
+        Route::get('/delivery-orders/{id}', [\App\Http\Controllers\DeliveryOrderController::class, 'apiShow'])->whereNumber('id');
+        Route::post('/delivery-orders', [\App\Http\Controllers\DeliveryOrderController::class, 'store']);
+        Route::delete('/delivery-orders/{id}', [\App\Http\Controllers\DeliveryOrderController::class, 'destroy'])->whereNumber('id');
+        Route::get('/packing-list/{id}/items', [\App\Http\Controllers\DeliveryOrderController::class, 'getPackingListItems']);
+        Route::post('/delivery-order/validate-serial', [\App\Http\Controllers\DeliveryOrderController::class, 'validateSerial']);
+
         // MK Production serial routes
         Route::post('/mk-production/{id}/generate-serials', [\App\Http\Controllers\MKProductionController::class, 'generateSerials']);
         Route::get('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList']);

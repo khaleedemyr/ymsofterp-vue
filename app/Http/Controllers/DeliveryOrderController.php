@@ -1401,28 +1401,50 @@ class DeliveryOrderController extends Controller
 
     public function destroy($id)
     {
+        $wantsJson = request()->expectsJson() || request()->wantsJson();
+
         DB::beginTransaction();
         try {
             $user = auth()->user();
-            
+
             // Cek authorization: hanya superadmin atau user dengan division_id=11
             $isSuperAdmin = $user && $user->id_role === '5af56935b011a';
             $isWarehouseDivision11 = $user && $user->division_id == 11;
-            
+
             if (!$isSuperAdmin && !$isWarehouseDivision11) {
+                if ($wantsJson) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda tidak memiliki akses untuk menghapus Delivery Order. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.',
+                    ], 403);
+                }
+
                 return redirect()->back()->with('error', 'Anda tidak memiliki akses untuk menghapus Delivery Order. Hanya superadmin atau user dengan division warehouse yang dapat menghapus.');
             }
-            
+
             $order = DB::table('delivery_orders')->where('id', $id)->first();
             if (!$order) {
+                if ($wantsJson) {
+                    return response()->json(['success' => false, 'message' => 'Delivery Order tidak ditemukan'], 404);
+                }
+
                 return redirect()->route('delivery-order.index')->with('error', 'Delivery Order tidak ditemukan');
             }
             $items = DB::table('delivery_order_items')->where('delivery_order_id', $id)->get();
-            $packingList = DB::table('food_packing_lists')->where('id', $order->packing_list_id)->first();
+            $packingList = null;
+            if (!empty($order->packing_list_id) && (int) $order->packing_list_id > 0) {
+                $packingList = DB::table('food_packing_lists')->where('id', $order->packing_list_id)->first();
+            }
             $warehouseDivisionId = $packingList->warehouse_division_id ?? null;
             $warehouseId = null;
             if ($warehouseDivisionId) {
                 $warehouseId = DB::table('warehouse_division')->where('id', $warehouseDivisionId)->value('warehouse_id');
+            }
+            if (!$warehouseId && $order->ro_supplier_gr_id) {
+                $warehouseId = 1;
+            }
+            if (!$warehouseId) {
+                $warehouseId = DB::table('warehouses')->value('id');
             }
             // Rollback inventory
             foreach ($items as $item) {
@@ -1524,9 +1546,24 @@ class DeliveryOrderController extends Controller
                 'created_at' => now(),
             ]);
             DB::commit();
+
+            if ($wantsJson) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Delivery Order berhasil dihapus',
+                ]);
+            }
+
             return redirect()->route('delivery-order.index')->with('success', 'Delivery Order berhasil dihapus');
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($wantsJson) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 500);
+            }
+
             return redirect()->back()->with('error', $e->getMessage());
         }
     }
@@ -2462,5 +2499,194 @@ class DeliveryOrderController extends Controller
                 'effective_qty' => $effectiveQty,
             ]
         ], 200);
+    }
+
+    /**
+     * API: list delivery orders (approval-app / mobile), same data as web index setelah Load Data.
+     */
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $canDelete = ($user && $user->id_role === '5af56935b011a') || ($user && (int) $user->division_id === 11);
+
+        $search = $request->get('search', '') ?? '';
+        $dateFrom = $request->get('date_from', $request->get('dateFrom', '')) ?? '';
+        $dateTo = $request->get('date_to', $request->get('dateTo', '')) ?? '';
+        $perPage = (int) $request->get('per_page', 15);
+        $perPage = min(100, max(5, $perPage));
+
+        $orders = $this->getDeliveryOrdersOptimized($search, $dateFrom, $dateTo, $perPage);
+        $rows = array_map(function ($r) {
+            return (array) $r;
+        }, $orders['data']);
+
+        return response()->json([
+            'success' => true,
+            'data' => $rows,
+            'current_page' => $orders['current_page'],
+            'last_page' => $orders['last_page'],
+            'per_page' => $orders['per_page'],
+            'total' => $orders['total'],
+            'from' => $orders['from'],
+            'to' => $orders['to'],
+            'can_delete' => $canDelete,
+        ]);
+    }
+
+    /**
+     * API: data untuk form buat DO (packing list + RO supplier GR + warehouse divisions).
+     */
+    public function apiCreateData()
+    {
+        $usedPackingListIds = DB::table('delivery_orders')->whereNotNull('packing_list_id')->pluck('packing_list_id')->toArray();
+
+        $today = date('Y-m-d');
+        $oneWeekAgo = date('Y-m-d', strtotime('-7 days'));
+
+        $packingListsQuery = DB::table('food_packing_lists as pl')
+            ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'pl.created_by', '=', 'u.id')
+            ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59']);
+
+        if (!empty($usedPackingListIds)) {
+            $packingListsQuery->whereNotIn('pl.id', $usedPackingListIds);
+        }
+
+        $packingLists = $packingListsQuery->select(
+            'pl.id',
+            'pl.packing_number',
+            'pl.created_at',
+            'fo.order_number as floor_order_number',
+            'fo.tanggal as floor_order_date',
+            'fo.id_outlet as outlet_id',
+            'fo.warehouse_outlet_id',
+            'o.nama_outlet',
+            'u.nama_lengkap as creator_name',
+            'wd.name as division_name',
+            'wd.id as warehouse_division_id',
+            'w.id as warehouse_id',
+            'w.name as warehouse_name',
+            'wo.name as warehouse_outlet_name'
+        )
+            ->orderByDesc('pl.created_at')
+            ->get()
+            ->toArray();
+
+        $roSupplierGRs = DB::table('food_good_receives as gr')
+            ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as fo', 'po.source_id', '=', 'fo.id')
+            ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
+            ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
+            ->where('po.source_type', 'ro_supplier')
+            ->whereBetween('gr.receive_date', [$oneWeekAgo, $today])
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('delivery_orders as do')
+                    ->whereRaw('do.ro_supplier_gr_id = gr.id');
+            })
+            ->select(
+                'gr.id as gr_id',
+                'gr.gr_number as packing_number',
+                'gr.receive_date as created_at',
+                'fo.order_number as floor_order_number',
+                'fo.tanggal as floor_order_date',
+                'fo.id_outlet as outlet_id',
+                'fo.warehouse_outlet_id',
+                'o.nama_outlet',
+                'u.nama_lengkap as creator_name',
+                DB::raw("'Perishable' as division_name"),
+                DB::raw('1 as warehouse_division_id'),
+                DB::raw('1 as warehouse_id'),
+                DB::raw("'Warehouse 1' as warehouse_name"),
+                'wo.name as warehouse_outlet_name',
+                DB::raw("'ro_supplier_gr' as source_type"),
+                's.name as supplier_name'
+            )
+            ->orderByDesc('gr.receive_date')
+            ->get()
+            ->toArray();
+
+        $warehouseDivisions = DB::table('warehouse_division')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get()
+            ->toArray();
+
+        return response()->json([
+            'success' => true,
+            'packing_lists' => $packingLists,
+            'ro_supplier_grs' => $roSupplierGRs,
+            'warehouse_divisions' => $warehouseDivisions,
+        ]);
+    }
+
+    /**
+     * API: detail satu DO + baris item (sama Inertia DeliveryOrder/Show).
+     */
+    public function apiShow($id)
+    {
+        $order = DB::table('delivery_orders as do')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('food_floor_orders as fo', 'do.floor_order_id', '=', 'fo.id')
+            ->leftJoin('users as u', 'do.created_by', '=', 'u.id')
+            ->select(
+                'do.*',
+                'pl.packing_number',
+                'fo.order_number as floor_order_number',
+                'pl.created_at as packing_date',
+                'fo.tanggal as floor_order_date',
+                'u.nama_lengkap as created_by_name'
+            )
+            ->where('do.id', $id)
+            ->first();
+
+        if (!$order) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('delivery_order_items as doi')
+            ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
+            ->select(
+                'doi.id',
+                'doi.item_id',
+                'i.name as item_name',
+                'doi.qty_packing_list',
+                'doi.qty_scan',
+                'doi.unit',
+                'doi.serial_numbers'
+            )
+            ->where('doi.delivery_order_id', $id)
+            ->get();
+
+        if (($order->scan_mode ?? 'barcode') === 'serial') {
+            $items = $items->map(function ($item) use ($id) {
+                $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
+                $item->serial_list = [];
+                if (!empty($serialNumbers)) {
+                    $item->serial_list = DB::table('inventory_item_serials as s')
+                        ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+                        ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+                        ->whereIn('s.serial_number', $serialNumbers)
+                        ->where('s.item_id', $item->item_id)
+                        ->select('s.id', 's.serial_number', 's.out_at', 's.repack_unit_id', 's.repack_qty', 'ru.name as repack_unit_name', 'u.name as unit_name')
+                        ->get()
+                        ->toArray();
+                }
+
+                return $item;
+            });
+        }
+
+        return response()->json([
+            'success' => true,
+            'order' => $order,
+            'items' => $items,
+        ]);
     }
 } 
