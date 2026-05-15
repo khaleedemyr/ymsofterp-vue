@@ -852,6 +852,9 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
 
     // Report Kasbon (cicilan / pr_kasbons)
     Route::get('/report-kasbon', [\App\Http\Controllers\KasbonReportController::class, 'index'])->name('report-kasbon.index');
+    Route::post('/report-kasbon/{id}/installment', [\App\Http\Controllers\KasbonReportController::class, 'recordInstallment'])
+        ->whereNumber('id')
+        ->name('report-kasbon.record-installment');
 
     // Good Receive routes
     Route::get('/food-good-receive', [FoodGoodReceiveController::class, 'index'])->name('food-good-receive.index');

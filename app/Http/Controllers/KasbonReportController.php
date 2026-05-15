@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PrKasbon;
+use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
@@ -12,6 +15,8 @@ class KasbonReportController extends Controller
 {
     public function index(Request $request)
     {
+        $this->assertUserCanAccessReportKasbon();
+
         if (! Schema::hasTable('pr_kasbons')) {
             return Inertia::render('Reports/KasbonReport', [
                 'tableMissing' => true,
@@ -66,6 +71,9 @@ class KasbonReportController extends Controller
                 'd.nama_divisi as division_name',
                 'emp.nama_lengkap as employee_name',
                 'pr.status as pr_status',
+                'nfp.payment_number as nfp_payment_number',
+                'nfp.status as nfp_payment_status',
+                DB::raw('COALESCE(nfp.approved_at, nfp.approved_gm_finance_at, nfp.approved_finance_manager_at) as nfp_transfer_approved_at'),
             ])
             ->orderByDesc('k.approved_at')
             ->orderByDesc('k.id')
@@ -123,6 +131,17 @@ class KasbonReportController extends Controller
             ->leftJoin('users as emp', 'emp.id', '=', 'k.employee_user_id')
             ->leftJoin('tbl_data_divisi as d', 'd.id', '=', 'k.division_id');
 
+        $nfpLatestSub = DB::table('non_food_payments')
+            ->select('purchase_requisition_id', DB::raw('MAX(id) as latest_nfp_id'))
+            ->whereNotNull('purchase_requisition_id')
+            ->whereNotIn('status', ['rejected', 'cancelled'])
+            ->groupBy('purchase_requisition_id');
+
+        $query->leftJoinSub($nfpLatestSub, 'nfp_idx', function ($join) {
+            $join->on('pr.id', '=', 'nfp_idx.purchase_requisition_id');
+        });
+        $query->leftJoin('non_food_payments as nfp', 'nfp.id', '=', 'nfp_idx.latest_nfp_id');
+
         if ($status !== 'all') {
             $query->where('k.status', $status);
         }
@@ -147,6 +166,86 @@ class KasbonReportController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * Catat 1x pembayaran cicilan manual (naikkan paid_installments, set completed jika sudah penuh).
+     */
+    public function recordInstallment(Request $request, int $id)
+    {
+        $this->assertUserCanAccessReportKasbon();
+        abort_unless(Schema::hasTable('pr_kasbons'), 404);
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string|max:500',
+            'paid_at' => 'nullable|date',
+        ]);
+
+        try {
+            DB::transaction(function () use ($id, $validated) {
+                $k = PrKasbon::query()->lockForUpdate()->findOrFail($id);
+                $termin = max(1, (int) $k->termin_total);
+                $paid = (int) $k->paid_installments;
+                if ($k->status === 'completed' || $paid >= $termin) {
+                    throw new \RuntimeException('Kasbon sudah lunas, tidak bisa menambah cicilan.');
+                }
+                $newPaid = $paid + 1;
+                $paidAt = ! empty($validated['paid_at'])
+                    ? Carbon::parse($validated['paid_at'])->startOfDay()
+                    : now();
+
+                $user = Auth::user();
+                $uname = $user && ($user->nama_lengkap ?? null)
+                    ? $user->nama_lengkap
+                    : (($user && ($user->name ?? null)) ? $user->name : 'user #' . Auth::id());
+                $line = '[' . now()->format('Y-m-d H:i') . '] Cicilan ' . $newPaid . '/' . $termin . ' dicatat oleh ' . $uname;
+                if (! empty($validated['notes'])) {
+                    $line .= ' — ' . trim($validated['notes']);
+                }
+                $mergedNotes = trim(($k->notes ? $k->notes . "\n" : '') . $line);
+                if (strlen($mergedNotes) > 2000) {
+                    $mergedNotes = substr($mergedNotes, -2000);
+                }
+
+                $k->update([
+                    'paid_installments' => $newPaid,
+                    'last_installment_at' => $paidAt,
+                    'status' => $newPaid >= $termin ? 'completed' : 'active',
+                    'notes' => $mergedNotes,
+                ]);
+            });
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            abort(404);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['installment' => $e->getMessage()]);
+        }
+
+        return redirect()->back()->with('success', 'Pembayaran cicilan berhasil dicatat.');
+    }
+
+    /**
+     * Sama seperti visibilitas menu Report Kasbon (erp_permission report_kasbon_view).
+     */
+    private function assertUserCanAccessReportKasbon(): void
+    {
+        $uid = Auth::id();
+        abort_unless($uid, 403);
+
+        $user = Auth::user();
+        if ($user && (($user->id_role ?? null) === '5af56935b011a' || (int) ($user->id_jabatan ?? 0) === 160)) {
+            return;
+        }
+
+        $ok = DB::table('erp_user_role as ur')
+            ->join('erp_role_permission as rp', 'rp.role_id', '=', 'ur.role_id')
+            ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+            ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+            ->where('ur.user_id', $uid)
+            ->where('m.code', 'report_kasbon')
+            ->where('p.code', 'report_kasbon_view')
+            ->exists();
+
+        abort_unless($ok, 403);
     }
 
     private function divisions()
