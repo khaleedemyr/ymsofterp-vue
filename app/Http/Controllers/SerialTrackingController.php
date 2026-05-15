@@ -79,11 +79,190 @@ class SerialTrackingController extends Controller
 
   public function index()
   {
+    $user = auth()->user();
+    $isHQ = ($user->id_outlet ?? null) == '1';
+
+    $outlets = [];
+    if ($isHQ) {
+      $outlets = DB::table('tbl_data_outlet')
+        ->where('status', 'A')
+        ->select('id_outlet as id', 'nama_outlet as name')
+        ->orderBy('nama_outlet')
+        ->get();
+    }
+
     return Inertia::render('SerialTracking/Index', [
       'sourceTypes' => collect(self::GENERATION_SOURCES)->map(fn ($cfg, $key) => [
         'value' => $key,
         'label' => $cfg['label'],
       ])->values(),
+      'outlets' => $outlets,
+      'isHQ' => $isHQ,
+      'userOutletId' => $user->id_outlet ?? null,
+    ]);
+  }
+
+  /**
+   * Serial sudah keluar via DO tetapi belum diterima outlet (GR Nomor Seri).
+   */
+  public function pendingOutletReceive(Request $request)
+  {
+    $request->validate([
+      'search' => 'nullable|string|max:100',
+      'serial_number' => 'nullable|string|max:50',
+      'do_number' => 'nullable|string|max:50',
+      'outlet_id' => 'nullable|string|max:20',
+      'warehouse_outlet_id' => 'nullable|integer',
+      'date_from' => 'nullable|date',
+      'date_to' => 'nullable|date',
+      'per_page' => 'nullable|integer|min:10|max:200',
+    ]);
+
+    $user = auth()->user();
+    $isHQ = ($user->id_outlet ?? null) == '1';
+    $perPage = (int) $request->get('per_page', 50);
+
+    $query = DB::table('inventory_item_serials as s')
+      ->join('delivery_orders as do', 'do.id', '=', 's.out_delivery_order_id')
+      ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+      ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+      ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 's.out_outlet_id')
+      ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 's.out_warehouse_outlet_id')
+      ->where(function ($q) {
+        $q->where('s.is_out', 1)->orWhereNotNull('s.out_delivery_order_id');
+      })
+      ->where(function ($q) {
+        $q->where('s.is_received', 0)->orWhereNull('s.is_received');
+      })
+      ->where(function ($q) {
+        $q->whereNull('s.received_outlet_gr_id')->orWhere('s.received_outlet_gr_id', 0);
+      })
+      ->whereNotExists(function ($sub) {
+        $sub->select(DB::raw(1))
+          ->from('outlet_serial_receive_items as osri')
+          ->whereColumn('osri.serial_id', 's.id');
+      })
+      ->select(
+        's.id as serial_id',
+        's.serial_number',
+        's.item_id',
+        'i.name as item_name',
+        'i.sku as item_sku',
+        'u.name as unit_name',
+        's.out_at',
+        's.out_delivery_order_id as do_id',
+        'do.number as do_number',
+        'do.created_at as do_date',
+        's.out_outlet_id as outlet_id',
+        'o.nama_outlet as outlet_name',
+        's.out_warehouse_outlet_id as warehouse_outlet_id',
+        'wo.name as warehouse_outlet_name'
+      )
+      ->orderByDesc('s.out_at')
+      ->orderByDesc('do.created_at');
+
+    if (!$isHQ) {
+      $query->where('s.out_outlet_id', $user->id_outlet);
+    } elseif ($request->filled('outlet_id')) {
+      $query->where('s.out_outlet_id', $request->outlet_id);
+    }
+
+    if ($request->filled('warehouse_outlet_id')) {
+      $query->where('s.out_warehouse_outlet_id', (int) $request->warehouse_outlet_id);
+    }
+
+    if ($request->filled('do_number')) {
+      $query->where('do.number', 'like', '%' . trim($request->do_number) . '%');
+    }
+
+    if ($request->filled('serial_number')) {
+      $query->where('s.serial_number', 'like', '%' . trim($request->serial_number) . '%');
+    }
+
+    if ($request->filled('search')) {
+      $search = '%' . trim($request->search) . '%';
+      $query->where(function ($q) use ($search) {
+        $q->where('s.serial_number', 'like', $search)
+          ->orWhere('do.number', 'like', $search)
+          ->orWhere('i.name', 'like', $search)
+          ->orWhere('o.nama_outlet', 'like', $search)
+          ->orWhere('wo.name', 'like', $search);
+      });
+    }
+
+    if ($request->filled('date_from')) {
+      $query->where(function ($q) use ($request) {
+        $q->whereDate('s.out_at', '>=', $request->date_from)
+          ->orWhere(function ($q2) use ($request) {
+            $q2->whereNull('s.out_at')->whereDate('do.created_at', '>=', $request->date_from);
+          });
+      });
+    }
+
+    if ($request->filled('date_to')) {
+      $query->where(function ($q) use ($request) {
+        $q->whereDate('s.out_at', '<=', $request->date_to)
+          ->orWhere(function ($q2) use ($request) {
+            $q2->whereNull('s.out_at')->whereDate('do.created_at', '<=', $request->date_to);
+          });
+      });
+    }
+
+    $totalPending = (clone $query)->count();
+    $distinctDo = (clone $query)->distinct()->count('s.out_delivery_order_id');
+    $distinctOutlet = (clone $query)->distinct()->count('s.out_outlet_id');
+
+    $paginated = $query->paginate($perPage);
+
+    $data = collect($paginated->items())->map(function ($row) {
+      $doDate = $row->out_at ?? $row->do_date;
+      $daysPending = null;
+      if ($doDate) {
+        $daysPending = (int) \Carbon\Carbon::parse($doDate)->diffInDays(now());
+      }
+
+      return [
+        'serial_id' => $row->serial_id,
+        'serial_number' => $row->serial_number,
+        'item_name' => $row->item_name,
+        'item_sku' => $row->item_sku,
+        'unit_name' => $row->unit_name,
+        'do_id' => $row->do_id,
+        'do_number' => $row->do_number,
+        'do_date' => $row->do_date,
+        'out_at' => $row->out_at,
+        'display_date' => $doDate,
+        'days_pending' => $daysPending,
+        'outlet_id' => $row->outlet_id,
+        'outlet_name' => $row->outlet_name ?? '-',
+        'warehouse_outlet_id' => $row->warehouse_outlet_id,
+        'warehouse_outlet_name' => $row->warehouse_outlet_name ?? '-',
+        'do_url' => '/delivery-order/' . $row->do_id,
+      ];
+    });
+
+    $warehouseOutlets = [];
+    if ($isHQ && $request->filled('outlet_id')) {
+      $warehouseOutlets = DB::table('warehouse_outlets')
+        ->where('outlet_id', $request->outlet_id)
+        ->where('status', 'active')
+        ->select('id', 'name')
+        ->orderBy('name')
+        ->get();
+    }
+
+    return response()->json([
+      'data' => $data,
+      'total' => $paginated->total(),
+      'current_page' => $paginated->currentPage(),
+      'last_page' => $paginated->lastPage(),
+      'per_page' => $paginated->perPage(),
+      'summary' => [
+        'total_serials' => $totalPending,
+        'distinct_do' => $distinctDo,
+        'distinct_outlet' => $distinctOutlet,
+      ],
+      'warehouse_outlets' => $warehouseOutlets,
     ]);
   }
 
@@ -468,16 +647,48 @@ class SerialTrackingController extends Controller
 
   private function appendTimelineEvent(array &$events, array &$dedupeKeys, array $event): void
   {
-    $key = implode('|', [
-      $event['movement_type'] ?? '',
-      $event['document_number'] ?? '',
-      (string) ($event['at'] ?? ''),
-    ]);
+    $key = $this->timelineDedupeKey($event);
     if (isset($dedupeKeys[$key])) {
       return;
     }
     $dedupeKeys[$key] = true;
     $events[] = $event;
+  }
+
+  /** Dedupe per jenis + nomor dokumen (bukan per timestamp) agar DO/GR tidak dobel. */
+  private function timelineDedupeKey(array $event): string
+  {
+    $type = (string) ($event['movement_type'] ?? '');
+    $docNum = strtolower(trim((string) ($event['document_number'] ?? '')));
+
+    $dedupeByDocOnly = [
+      'out', 'return', 'outlet_receive', 'generated',
+      'transfer_out', 'transfer_in', 'wt_out', 'wt_in', 'iwt_out', 'iwt_in',
+      'whs_out', 'whs_in', 'whs_return', 'rws_out', 'rws_return',
+      'iuw_out', 'iuw_return', 'orj_out', 'orj_in', 'ofrt_out', 'ofrt_in',
+    ];
+
+    if ($docNum !== '' && in_array($type, $dedupeByDocOnly, true)) {
+      return $type . '|' . $docNum;
+    }
+
+    return $type . '|' . $docNum . '|' . (string) ($event['at'] ?? '');
+  }
+
+  private function hasTimelineEvent(array $events, string $movementType, ?string $documentNumber = null): bool
+  {
+    $doc = $documentNumber ? strtolower(trim($documentNumber)) : '';
+
+    foreach ($events as $ev) {
+      if (($ev['movement_type'] ?? '') !== $movementType) {
+        continue;
+      }
+      if ($doc === '' || strtolower(trim((string) ($ev['document_number'] ?? ''))) === $doc) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private function appendDoFromSerialRecord(array &$events, array &$dedupeKeys, object $serial): void
@@ -487,6 +698,12 @@ class SerialTrackingController extends Controller
     }
 
     $doId = $serial->out_delivery_order_id;
+    $doNumberPreview = $serial->out_do_number
+      ?? ($doId ? DB::table('delivery_orders')->where('id', $doId)->value('number') : null);
+    if ($this->hasTimelineEvent($events, 'out', $doNumberPreview)) {
+      return;
+    }
+
     $doNumber = $serial->out_do_number
       ?? ($doId ? DB::table('delivery_orders')->where('id', $doId)->value('number') : null);
 
@@ -524,24 +741,7 @@ class SerialTrackingController extends Controller
       ->get();
 
     foreach ($rows as $row) {
-      if (!empty($row->delivery_order_id)) {
-        $doNumber = $row->delivery_order_number
-          ?: DB::table('delivery_orders')->where('id', $row->delivery_order_id)->value('number');
-
-        $this->appendTimelineEvent($events, $dedupeKeys, [
-          'at' => $row->created_at,
-          'movement_type' => 'out',
-          'label' => self::MOVEMENT_LABELS['out'],
-          'document_label' => 'Delivery Order',
-          'document_number' => $doNumber,
-          'document_url' => '/delivery-order/' . $row->delivery_order_id,
-          'notes' => 'Referensi dari GR Nomor Seri Outlet',
-          'qty' => $row->qty,
-          'unit_name' => $serial->unit_name ?? null,
-          'moved_by_name' => null,
-        ]);
-      }
-
+      // DO sudah tercatat di inventory_serial_movements — cukup tampilkan GR outlet di sini.
       $this->appendTimelineEvent($events, $dedupeKeys, [
         'at' => $row->header_created_at ?? $row->receive_date ?? $row->created_at,
         'movement_type' => 'outlet_receive',
@@ -571,6 +771,10 @@ class SerialTrackingController extends Controller
     foreach ($rows as $row) {
       $nums = json_decode($row->serial_numbers, true);
       if (!is_array($nums) || !in_array($serial->serial_number, $nums, true)) {
+        continue;
+      }
+
+      if ($this->hasTimelineEvent($events, 'out', $row->do_number)) {
         continue;
       }
 

@@ -1323,6 +1323,7 @@ Route::get('/serial-tracking', [\App\Http\Controllers\SerialTrackingController::
 Route::get('/api/serial-tracking/documents', [\App\Http\Controllers\SerialTrackingController::class, 'searchDocuments'])->name('serial-tracking.documents');
 Route::get('/api/serial-tracking/document-serials', [\App\Http\Controllers\SerialTrackingController::class, 'documentSerials'])->name('serial-tracking.document-serials');
 Route::get('/api/serial-tracking/lookup', [\App\Http\Controllers\SerialTrackingController::class, 'lookupSerial'])->name('serial-tracking.lookup');
+Route::get('/api/serial-tracking/pending-outlet-receive', [\App\Http\Controllers\SerialTrackingController::class, 'pendingOutletReceive'])->name('serial-tracking.pending-outlet-receive');
 
 // Dynamic Inspection Routes
 Route::resource('dynamic-inspections', \App\Http\Controllers\DynamicInspectionController::class);

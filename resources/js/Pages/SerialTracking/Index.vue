@@ -29,6 +29,15 @@
         >
           <i class="fa-solid fa-magnifying-glass mr-1"></i> Per Nomor Seri
         </button>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors"
+          :class="activeTab === 'pending' ? 'border-amber-600 text-amber-700' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          @click="switchToPendingTab"
+        >
+          <i class="fa-solid fa-clock mr-1"></i> Belum GR Outlet
+          <span v-if="pendingSummary.total_serials > 0" class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800">{{ pendingSummary.total_serials }}</span>
+        </button>
       </div>
 
       <!-- Tab: Per Dokumen -->
@@ -179,6 +188,118 @@
         </div>
       </div>
 
+      <!-- Tab: Belum GR Outlet (sudah DO, belum terima) -->
+      <div v-show="activeTab === 'pending'" class="space-y-6">
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+          <i class="fa-solid fa-circle-info mr-1"></i>
+          Daftar serial yang <strong>sudah keluar via Delivery Order</strong> tetapi <strong>belum diterima outlet</strong> melalui GR Nomor Seri.
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            <div v-if="isHQ">
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Outlet</label>
+              <select v-model="pendingFilters.outlet_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" @change="onPendingOutletChange">
+                <option value="">Semua outlet</option>
+                <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+              </select>
+            </div>
+            <div v-if="isHQ && pendingWarehouseOutlets.length">
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Warehouse Outlet</label>
+              <select v-model="pendingFilters.warehouse_outlet_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Semua WH outlet</option>
+                <option v-for="w in pendingWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">No. DO</label>
+              <input v-model="pendingFilters.do_number" type="text" placeholder="D02..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" @keyup.enter="loadPending(1)" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Nomor Seri</label>
+              <input v-model="pendingFilters.serial_number" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" @keyup.enter="loadPending(1)" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Cari umum</label>
+              <input v-model="pendingFilters.search" type="text" placeholder="serial, DO, item, outlet..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" @keyup.enter="loadPending(1)" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">DO / keluar dari</label>
+              <input v-model="pendingFilters.date_from" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">sampai</label>
+              <input v-model="pendingFilters.date_to" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <button type="button" class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50" :disabled="pendingLoading" @click="loadPending(1)">
+              <i class="fa-solid fa-search mr-1"></i> Tampilkan
+            </button>
+            <button type="button" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200" @click="resetPending">Reset</button>
+          </div>
+        </div>
+
+        <div v-if="pendingLoaded" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-white rounded-xl border border-amber-200 p-4 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase font-semibold">Total Serial</p>
+            <p class="text-2xl font-bold text-amber-700">{{ pendingSummary.total_serials }}</p>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase font-semibold">Jumlah DO</p>
+            <p class="text-2xl font-bold text-gray-800">{{ pendingSummary.distinct_do }}</p>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+            <p class="text-xs text-gray-500 uppercase font-semibold">Jumlah Outlet</p>
+            <p class="text-2xl font-bold text-gray-800">{{ pendingSummary.distinct_outlet }}</p>
+          </div>
+        </div>
+
+        <div v-if="pendingList.length" class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-x-auto">
+          <table class="w-full min-w-[960px] text-sm">
+            <thead class="bg-amber-600 text-white">
+              <tr>
+                <th class="px-4 py-3 text-left">Nomor Seri</th>
+                <th class="px-4 py-3 text-left">Item</th>
+                <th class="px-4 py-3 text-left">Delivery Order</th>
+                <th class="px-4 py-3 text-left">Tgl DO / Keluar</th>
+                <th class="px-4 py-3 text-left">Outlet</th>
+                <th class="px-4 py-3 text-left">Warehouse Outlet</th>
+                <th class="px-4 py-3 text-center">Hari</th>
+                <th class="px-4 py-3 text-center">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              <tr v-for="row in pendingList" :key="row.serial_id" class="hover:bg-amber-50">
+                <td class="px-4 py-3 font-mono font-semibold text-indigo-700">{{ row.serial_number }}</td>
+                <td class="px-4 py-3">{{ row.item_name }}</td>
+                <td class="px-4 py-3">
+                  <a :href="row.do_url" class="font-mono font-semibold text-amber-700 hover:underline" target="_blank">{{ row.do_number }}</a>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(row.display_date) }}</td>
+                <td class="px-4 py-3">{{ row.outlet_name }}</td>
+                <td class="px-4 py-3">{{ row.warehouse_outlet_name }}</td>
+                <td class="px-4 py-3 text-center">
+                  <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="row.days_pending > 7 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'">
+                    {{ row.days_pending ?? '-' }}
+                  </span>
+                </td>
+                <td class="px-4 py-3 text-center">
+                  <button type="button" class="text-xs text-indigo-600 hover:underline font-semibold" @click="trackPendingSerial(row.serial_number)">Lacak</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="pendingPagination.last_page > 1" class="flex justify-center gap-2 p-4 border-t">
+            <button type="button" class="px-3 py-1 text-sm rounded border disabled:opacity-40" :disabled="pendingPagination.current_page <= 1" @click="loadPending(pendingPagination.current_page - 1)">Prev</button>
+            <span class="px-3 py-1 text-sm text-gray-600">{{ pendingPagination.current_page }} / {{ pendingPagination.last_page }}</span>
+            <button type="button" class="px-3 py-1 text-sm rounded border disabled:opacity-40" :disabled="pendingPagination.current_page >= pendingPagination.last_page" @click="loadPending(pendingPagination.current_page + 1)">Next</button>
+          </div>
+        </div>
+        <p v-else-if="pendingLoaded && !pendingLoading" class="text-center text-gray-500 py-8">Tidak ada serial menunggu GR outlet.</p>
+        <div v-if="pendingLoading" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Memuat...</div>
+      </div>
+
       <!-- Modal serial per dokumen -->
       <div v-if="selectedDoc" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" @click.self="closeDocumentSerials">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
@@ -235,6 +356,9 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
   sourceTypes: { type: Array, default: () => [] },
+  outlets: { type: Array, default: () => [] },
+  isHQ: { type: Boolean, default: false },
+  userOutletId: { type: [String, Number], default: null },
 })
 
 const activeTab = ref('document')
@@ -261,6 +385,22 @@ const serialLoading = ref(false)
 const serialDetail = ref(null)
 const serialTimeline = ref([])
 const serialSuggestions = ref([])
+
+const pendingFilters = reactive({
+  outlet_id: '',
+  warehouse_outlet_id: '',
+  do_number: '',
+  serial_number: '',
+  search: '',
+  date_from: '',
+  date_to: '',
+})
+const pendingList = ref([])
+const pendingSummary = reactive({ total_serials: 0, distinct_do: 0, distinct_outlet: 0 })
+const pendingPagination = reactive({ current_page: 1, last_page: 1 })
+const pendingWarehouseOutlets = ref([])
+const pendingLoading = ref(false)
+const pendingLoaded = ref(false)
 
 const searchDocuments = async (page = 1) => {
   if (!docFilters.source_type) return
@@ -346,6 +486,78 @@ const lookupSerial = async () => {
 
 const trackFromList = (sn) => {
   closeDocumentSerials()
+  activeTab.value = 'serial'
+  serialQuery.value = sn
+  lookupSerial()
+}
+
+const switchToPendingTab = () => {
+  activeTab.value = 'pending'
+  if (!pendingLoaded.value) {
+    loadPending(1)
+  }
+}
+
+const loadPending = async (page = 1) => {
+  pendingLoading.value = true
+  pendingLoaded.value = true
+  try {
+    const params = {
+      page,
+      per_page: 50,
+      outlet_id: pendingFilters.outlet_id || undefined,
+      warehouse_outlet_id: pendingFilters.warehouse_outlet_id || undefined,
+      do_number: pendingFilters.do_number || undefined,
+      serial_number: pendingFilters.serial_number || undefined,
+      search: pendingFilters.search || undefined,
+      date_from: pendingFilters.date_from || undefined,
+      date_to: pendingFilters.date_to || undefined,
+    }
+    const { data } = await axios.get('/api/serial-tracking/pending-outlet-receive', { params })
+    pendingList.value = data.data || []
+    pendingSummary.total_serials = data.summary?.total_serials ?? data.total ?? 0
+    pendingSummary.distinct_do = data.summary?.distinct_do ?? 0
+    pendingSummary.distinct_outlet = data.summary?.distinct_outlet ?? 0
+    pendingPagination.current_page = data.current_page || 1
+    pendingPagination.last_page = data.last_page || 1
+    if (data.warehouse_outlets) {
+      pendingWarehouseOutlets.value = data.warehouse_outlets
+    }
+  } catch {
+    pendingList.value = []
+    pendingSummary.total_serials = 0
+    pendingSummary.distinct_do = 0
+    pendingSummary.distinct_outlet = 0
+  } finally {
+    pendingLoading.value = false
+  }
+}
+
+const onPendingOutletChange = () => {
+  pendingFilters.warehouse_outlet_id = ''
+  pendingWarehouseOutlets.value = []
+  if (pendingFilters.outlet_id) {
+    loadPending(1)
+  }
+}
+
+const resetPending = () => {
+  pendingFilters.outlet_id = ''
+  pendingFilters.warehouse_outlet_id = ''
+  pendingFilters.do_number = ''
+  pendingFilters.serial_number = ''
+  pendingFilters.search = ''
+  pendingFilters.date_from = ''
+  pendingFilters.date_to = ''
+  pendingWarehouseOutlets.value = []
+  pendingList.value = []
+  pendingLoaded.value = false
+  pendingSummary.total_serials = 0
+  pendingSummary.distinct_do = 0
+  pendingSummary.distinct_outlet = 0
+}
+
+const trackPendingSerial = (sn) => {
   activeTab.value = 'serial'
   serialQuery.value = sn
   lookupSerial()
