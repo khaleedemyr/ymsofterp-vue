@@ -316,6 +316,8 @@ class SerialTrackingController extends Controller
 
   private function resolveCurrentStatus(object $serial): array
   {
+    $outletReceive = $this->findOutletSerialReceive($serial);
+
     if (!empty($serial->out_outlet_food_return_id)) {
       return ['code' => 'returned_outlet', 'label' => 'Return outlet', 'color' => 'orange'];
     }
@@ -325,26 +327,35 @@ class SerialTrackingController extends Controller
     if (!empty($serial->out_warehouse_sale_id)) {
       return ['code' => 'warehouse_sale', 'label' => 'Penjualan antar gudang', 'color' => 'purple'];
     }
-    if (!empty($serial->is_transferred) || !empty($serial->transfer_id)) {
+    if ($this->isTruthy($serial->is_transferred ?? null) || !empty($serial->transfer_id)) {
       return ['code' => 'transferred', 'label' => 'Sudah ditransfer', 'color' => 'indigo'];
     }
-    if (!empty($serial->is_received) || !empty($serial->received_outlet_gr_id)) {
-      $receiveNumber = null;
-      if (!empty($serial->received_outlet_gr_id)) {
+    if ($outletReceive || $this->isTruthy($serial->is_received ?? null) || !empty($serial->received_outlet_gr_id)) {
+      $receiveNumber = $outletReceive->gr_number ?? null;
+      if (!$receiveNumber && !empty($serial->received_outlet_gr_id)) {
         $receiveNumber = DB::table('outlet_serial_receive_headers')
           ->where('id', $serial->received_outlet_gr_id)
           ->value('number');
       }
+
       return [
         'code' => 'received_outlet',
         'label' => 'Diterima outlet' . ($receiveNumber ? " ({$receiveNumber})" : ''),
         'color' => 'green',
       ];
     }
-    if (!empty($serial->is_out) || !empty($serial->out_delivery_order_id)) {
+    if (
+      $this->isTruthy($serial->is_out ?? null)
+      || !empty($serial->out_delivery_order_id)
+      || !empty($outletReceive?->delivery_order_id)
+    ) {
+      $doNumber = $serial->out_do_number
+        ?? $outletReceive->delivery_order_number
+        ?? null;
+
       return [
         'code' => 'out_do',
-        'label' => 'Keluar via DO' . ($serial->out_do_number ? " ({$serial->out_do_number})" : ''),
+        'label' => 'Keluar via DO' . ($doNumber ? " ({$doNumber})" : ''),
         'color' => 'amber',
       ];
     }
@@ -355,9 +366,10 @@ class SerialTrackingController extends Controller
   private function buildTimeline(object $serial): array
   {
     $events = [];
+    $dedupeKeys = [];
 
     $sourceMeta = $this->resolveSourceMeta($serial->source_type, $serial->source_id);
-    $events[] = [
+    $this->appendTimelineEvent($events, $dedupeKeys, [
       'at' => $serial->generated_at ?? $serial->created_at,
       'movement_type' => 'generated',
       'label' => self::MOVEMENT_LABELS['generated'],
@@ -366,14 +378,17 @@ class SerialTrackingController extends Controller
       'document_url' => $sourceMeta['url'],
       'notes' => $serial->ref_gr_number ? "Ref GR: {$serial->ref_gr_number}" : null,
       'qty' => null,
-      'unit_name' => $serial->unit_name,
+      'unit_name' => $serial->unit_name ?? null,
       'moved_by_name' => null,
-    ];
+    ]);
 
     $movements = DB::table('inventory_serial_movements as m')
       ->leftJoin('users as u', 'u.id', '=', 'm.moved_by')
       ->leftJoin('units as un', 'un.id', '=', 'm.unit_id')
-      ->where('m.serial_id', $serial->id)
+      ->where(function ($q) use ($serial) {
+        $q->where('m.serial_id', $serial->id)
+          ->orWhere('m.serial_number', $serial->serial_number);
+      })
       ->orderBy('m.moved_at')
       ->orderBy('m.id')
       ->select('m.*', 'u.nama_lengkap as moved_by_name', 'un.name as unit_name')
@@ -381,7 +396,7 @@ class SerialTrackingController extends Controller
 
     foreach ($movements as $m) {
       $ref = $this->resolveMovementReference($m);
-      $events[] = [
+      $this->appendTimelineEvent($events, $dedupeKeys, [
         'at' => $m->moved_at ?? $m->created_at,
         'movement_type' => $m->movement_type,
         'label' => self::MOVEMENT_LABELS[$m->movement_type] ?? $m->movement_type,
@@ -392,14 +407,18 @@ class SerialTrackingController extends Controller
         'qty' => $m->qty,
         'unit_name' => $m->unit_name,
         'moved_by_name' => $m->moved_by_name,
-      ];
+      ]);
     }
 
-    if (!empty($serial->is_received) && !empty($serial->received_outlet_gr_id)) {
+    $this->appendDoFromSerialRecord($events, $dedupeKeys, $serial);
+    $this->appendFromOutletSerialReceive($events, $dedupeKeys, $serial);
+    $this->appendFromDeliveryOrderItems($events, $dedupeKeys, $serial);
+
+    if ($this->isTruthy($serial->is_received ?? null) && !empty($serial->received_outlet_gr_id)) {
       $hdr = DB::table('outlet_serial_receive_headers')->where('id', $serial->received_outlet_gr_id)->first();
       if ($hdr) {
-        $events[] = [
-          'at' => $hdr->receive_date ?? $hdr->created_at,
+        $this->appendTimelineEvent($events, $dedupeKeys, [
+          'at' => $serial->received_at ?? $hdr->receive_date ?? $hdr->created_at,
           'movement_type' => 'outlet_receive',
           'label' => self::MOVEMENT_LABELS['outlet_receive'],
           'document_label' => 'GR Nomor Seri Outlet',
@@ -407,9 +426,9 @@ class SerialTrackingController extends Controller
           'document_url' => '/outlet-serial-receive/' . $hdr->id,
           'notes' => $hdr->notes,
           'qty' => null,
-          'unit_name' => $serial->unit_name,
+          'unit_name' => $serial->unit_name ?? null,
           'moved_by_name' => null,
-        ];
+        ]);
       }
     }
 
@@ -418,6 +437,156 @@ class SerialTrackingController extends Controller
     });
 
     return array_values($events);
+  }
+
+  private function isTruthy($value): bool
+  {
+    return in_array((string) $value, ['1', 'true', 'yes'], true) || $value === 1 || $value === true;
+  }
+
+  private function findOutletSerialReceive(object $serial): ?object
+  {
+    return DB::table('outlet_serial_receive_items as si')
+      ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+      ->whereNull('h.deleted_at')
+      ->where(function ($q) use ($serial) {
+        $q->where('si.serial_id', $serial->id)
+          ->orWhere('si.serial_number', $serial->serial_number);
+      })
+      ->orderByDesc('si.id')
+      ->select(
+        'h.id as header_id',
+        'h.number as gr_number',
+        'h.receive_date',
+        'h.created_at as header_created_at',
+        'si.delivery_order_id',
+        'si.delivery_order_number',
+        'si.created_at as item_created_at'
+      )
+      ->first();
+  }
+
+  private function appendTimelineEvent(array &$events, array &$dedupeKeys, array $event): void
+  {
+    $key = implode('|', [
+      $event['movement_type'] ?? '',
+      $event['document_number'] ?? '',
+      (string) ($event['at'] ?? ''),
+    ]);
+    if (isset($dedupeKeys[$key])) {
+      return;
+    }
+    $dedupeKeys[$key] = true;
+    $events[] = $event;
+  }
+
+  private function appendDoFromSerialRecord(array &$events, array &$dedupeKeys, object $serial): void
+  {
+    if (!$this->isTruthy($serial->is_out ?? null) && empty($serial->out_delivery_order_id)) {
+      return;
+    }
+
+    $doId = $serial->out_delivery_order_id;
+    $doNumber = $serial->out_do_number
+      ?? ($doId ? DB::table('delivery_orders')->where('id', $doId)->value('number') : null);
+
+    $this->appendTimelineEvent($events, $dedupeKeys, [
+      'at' => $serial->out_at ?? $serial->updated_at ?? $serial->created_at,
+      'movement_type' => 'out',
+      'label' => self::MOVEMENT_LABELS['out'],
+      'document_label' => 'Delivery Order',
+      'document_number' => $doNumber,
+      'document_url' => $doId ? '/delivery-order/' . $doId : null,
+      'notes' => 'Tercatat pada data serial (flag keluar gudang)',
+      'qty' => null,
+      'unit_name' => $serial->unit_name ?? null,
+      'moved_by_name' => null,
+    ]);
+  }
+
+  private function appendFromOutletSerialReceive(array &$events, array &$dedupeKeys, object $serial): void
+  {
+    $rows = DB::table('outlet_serial_receive_items as si')
+      ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+      ->whereNull('h.deleted_at')
+      ->where(function ($q) use ($serial) {
+        $q->where('si.serial_id', $serial->id)
+          ->orWhere('si.serial_number', $serial->serial_number);
+      })
+      ->orderBy('si.created_at')
+      ->select(
+        'si.*',
+        'h.number as gr_number',
+        'h.receive_date',
+        'h.created_at as header_created_at',
+        'h.notes as header_notes'
+      )
+      ->get();
+
+    foreach ($rows as $row) {
+      if (!empty($row->delivery_order_id)) {
+        $doNumber = $row->delivery_order_number
+          ?: DB::table('delivery_orders')->where('id', $row->delivery_order_id)->value('number');
+
+        $this->appendTimelineEvent($events, $dedupeKeys, [
+          'at' => $row->created_at,
+          'movement_type' => 'out',
+          'label' => self::MOVEMENT_LABELS['out'],
+          'document_label' => 'Delivery Order',
+          'document_number' => $doNumber,
+          'document_url' => '/delivery-order/' . $row->delivery_order_id,
+          'notes' => 'Referensi dari GR Nomor Seri Outlet',
+          'qty' => $row->qty,
+          'unit_name' => $serial->unit_name ?? null,
+          'moved_by_name' => null,
+        ]);
+      }
+
+      $this->appendTimelineEvent($events, $dedupeKeys, [
+        'at' => $row->header_created_at ?? $row->receive_date ?? $row->created_at,
+        'movement_type' => 'outlet_receive',
+        'label' => self::MOVEMENT_LABELS['outlet_receive'],
+        'document_label' => 'GR Nomor Seri Outlet',
+        'document_number' => $row->gr_number,
+        'document_url' => '/outlet-serial-receive/' . $row->header_id,
+        'notes' => $row->header_notes,
+        'qty' => $row->qty,
+        'unit_name' => $serial->unit_name ?? null,
+        'moved_by_name' => null,
+      ]);
+    }
+  }
+
+  private function appendFromDeliveryOrderItems(array &$events, array &$dedupeKeys, object $serial): void
+  {
+    $rows = DB::table('delivery_order_items as doi')
+      ->join('delivery_orders as do', 'do.id', '=', 'doi.delivery_order_id')
+      ->where('doi.item_id', $serial->item_id)
+      ->whereNotNull('doi.serial_numbers')
+      ->where('doi.serial_numbers', 'like', '%' . $serial->serial_number . '%')
+      ->select('doi.delivery_order_id', 'doi.serial_numbers', 'do.number as do_number', 'do.created_at')
+      ->orderBy('do.created_at')
+      ->get();
+
+    foreach ($rows as $row) {
+      $nums = json_decode($row->serial_numbers, true);
+      if (!is_array($nums) || !in_array($serial->serial_number, $nums, true)) {
+        continue;
+      }
+
+      $this->appendTimelineEvent($events, $dedupeKeys, [
+        'at' => $row->created_at,
+        'movement_type' => 'out',
+        'label' => self::MOVEMENT_LABELS['out'],
+        'document_label' => 'Delivery Order',
+        'document_number' => $row->do_number,
+        'document_url' => '/delivery-order/' . $row->delivery_order_id,
+        'notes' => 'Tercatat di detail item DO (scan serial)',
+        'qty' => null,
+        'unit_name' => $serial->unit_name ?? null,
+        'moved_by_name' => null,
+      ]);
+    }
   }
 
   private function resolveMovementReference(object $m): array
