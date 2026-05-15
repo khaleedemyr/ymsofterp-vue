@@ -31,7 +31,9 @@
           </button>
           <button
             @click="generateSerial"
-            class="group inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
+            :disabled="serialInUse > 0"
+            :title="serialInUse > 0 ? 'Ada serial yang sudah digunakan — tidak bisa generate ulang.' : ''"
+            class="group inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
           >
             <i class="fas fa-barcode text-lg"></i>
             <span>Generate Serial</span>
@@ -45,7 +47,9 @@
           </button>
           <button
             @click="rollbackSerial"
-            class="group inline-flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
+            :disabled="serialInUse > 0"
+            :title="serialInUse > 0 ? 'Ada serial yang sudah digunakan — tidak bisa rollback.' : ''"
+            class="group inline-flex items-center gap-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 font-semibold transform hover:-translate-y-0.5"
           >
             <i class="fas fa-rotate-left text-lg"></i>
             <span>Rollback Serial</span>
@@ -437,6 +441,7 @@ const showLabelModal = ref(false)
 const barcodes = ref([])
 const selectedBarcode = ref('')
 const serialTotal = ref(0)
+const serialInUse = ref(0)
 const labelData = ref({
   itemName: '',
   volume: '',
@@ -512,8 +517,10 @@ const loadSerialSummary = async () => {
   try {
     const { data } = await axios.get(`/api/mk-production/${props.prod.id}/serial-summary`)
     serialTotal.value = Number(data?.total || 0)
+    serialInUse.value = Number(data?.in_use || 0)
   } catch (error) {
     serialTotal.value = 0
+    serialInUse.value = 0
   }
 }
 

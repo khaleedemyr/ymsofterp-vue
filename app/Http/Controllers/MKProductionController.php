@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Support\InventorySerialInUse;
 
 class MKProductionController extends Controller
 {
@@ -855,8 +856,15 @@ class MKProductionController extends Controller
             ->where('source_id', $id)
             ->count();
 
+        $inUse = InventorySerialInUse::whereMarkedInUse(
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'mk_production')
+                ->where('source_id', $id)
+        )->count();
+
         return response()->json([
             'total' => $total,
+            'in_use' => $inUse,
         ]);
     }
 
@@ -883,6 +891,16 @@ class MKProductionController extends Controller
 
     public function rollbackSerials($id)
     {
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($id) {
+            $q->where('source_type', 'mk_production')
+                ->where('source_id', $id);
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
+        }
+
         $deleted = DB::table('inventory_item_serials')
             ->where('source_type', 'mk_production')
             ->where('source_id', $id)
@@ -948,6 +966,17 @@ class MKProductionController extends Controller
 
         DB::beginTransaction();
         try {
+            if (InventorySerialInUse::existsInUseFor(function ($q) use ($prod) {
+                $q->where('source_type', 'mk_production')
+                    ->where('source_id', $prod->id);
+            })) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => InventorySerialInUse::failureMessage(),
+                ], 422);
+            }
+
             DB::table('inventory_item_serials')
                 ->where('source_type', 'mk_production')
                 ->where('source_id', $prod->id)

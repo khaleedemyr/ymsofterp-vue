@@ -874,6 +874,12 @@ Route::get('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveControll
 Route::delete('/api/food-good-receive-items/{id}/serials', [FoodGoodReceiveController::class, 'rollbackSerials'])->name('food-good-receive.rollback-serials');
 Route::get('/api/fgr-serial/units', [FoodGoodReceiveController::class, 'getSerialUnits'])->name('fgr-serial.units');
 
+Route::get('/api/retail-warehouse-food/{id}/serial-summary', [RetailWarehouseFoodController::class, 'serialSummary'])->name('retail-warehouse-food.serial-summary');
+Route::get('/api/retail-warehouse-food-items/{id}/serial-units', [RetailWarehouseFoodController::class, 'serialUnits'])->name('retail-warehouse-food.serial-units');
+Route::post('/api/retail-warehouse-food-items/{id}/generate-serials', [RetailWarehouseFoodController::class, 'generateSerials'])->name('retail-warehouse-food.generate-serials');
+Route::get('/api/retail-warehouse-food-items/{id}/serials', [RetailWarehouseFoodController::class, 'serialList'])->name('retail-warehouse-food.serial-list');
+Route::delete('/api/retail-warehouse-food-items/{id}/serials', [RetailWarehouseFoodController::class, 'rollbackSerials'])->name('retail-warehouse-food.rollback-serials');
+
     // Food Good Receive Report routes
     Route::get('/food-good-receive-report', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'index'])->name('food-good-receive.report');
     Route::get('/food-good-receive-report/export', [\App\Http\Controllers\FoodGoodReceiveReportController::class, 'export'])->name('food-good-receive.report.export');

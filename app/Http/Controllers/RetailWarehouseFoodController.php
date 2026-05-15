@@ -4,8 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Models\RetailWarehouseFood;
 use App\Models\RetailWarehouseFoodItem;
+use App\Support\InventorySerialInUse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class RetailWarehouseFoodController extends Controller
@@ -219,8 +223,10 @@ class RetailWarehouseFoodController extends Controller
                 'transaction_date' => 'required|date',
                 'items' => 'required|array|min:1',
                 'items.*.item_name' => 'required|string',
+                'items.*.item_id' => 'nullable|integer|exists:items,id',
                 'items.*.qty' => 'required|numeric|min:0',
                 'items.*.unit' => 'required|string',
+                'items.*.unit_id' => 'nullable|integer|exists:units,id',
                 'items.*.price' => 'required|numeric|min:0',
                 'notes' => 'nullable|string',
                 'payment_method' => 'required|in:cash,contra_bon',
@@ -440,14 +446,21 @@ class RetailWarehouseFoodController extends Controller
                 ]);
                 
                 // 9. Simpan item retail warehouse food
-                RetailWarehouseFoodItem::create([
+                $row = [
                     'retail_warehouse_food_id' => $retailWarehouseFood->id,
                     'item_name' => $item['item_name'],
                     'qty' => $item['qty'],
                     'unit' => $item['unit'],
                     'price' => $item['price'],
-                    'subtotal' => $item['qty'] * $item['price']
-                ]);
+                    'subtotal' => $item['qty'] * $item['price'],
+                ];
+                if (Schema::hasColumn('retail_warehouse_food_items', 'item_id')) {
+                    $row['item_id'] = $itemMaster->id;
+                }
+                if (Schema::hasColumn('retail_warehouse_food_items', 'unit_id')) {
+                    $row['unit_id'] = $item['unit_id'] ?? null;
+                }
+                RetailWarehouseFoodItem::create($row);
             }
 
             // Upload invoices jika ada
@@ -532,6 +545,11 @@ class RetailWarehouseFoodController extends Controller
             $retailWarehouseFood = RetailWarehouseFood::findOrFail($id);
 
             DB::beginTransaction();
+
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'retail_warehouse_food')
+                ->where('source_id', $retailWarehouseFood->id)
+                ->delete();
 
             // Get items to rollback inventory
             $items = $retailWarehouseFood->items;
@@ -722,6 +740,417 @@ class RetailWarehouseFoodController extends Controller
         
         $total = $query->sum('total_amount');
         return response()->json(['total' => $total]);
+    }
+
+    /**
+     * Serial summary per baris (sama pola dengan Food Good Receive).
+     */
+    public function serialSummary($retailId)
+    {
+        RetailWarehouseFood::findOrFail($retailId);
+
+        $case = InventorySerialInUse::mysqlSumInUseCase('s');
+        $summary = DB::table('inventory_item_serials as s')
+            ->select(
+                's.source_item_id as retail_warehouse_food_item_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("{$case} as in_use")
+            )
+            ->where('s.source_type', 'retail_warehouse_food')
+            ->where('s.source_id', $retailId)
+            ->groupBy('s.source_item_id')
+            ->get();
+
+        return response()->json($summary);
+    }
+
+    /**
+     * Unit + qty konversi untuk generate serial (mirror FoodGoodReceiveController::serialUnits).
+     */
+    public function serialUnits($retailWarehouseFoodItemId)
+    {
+        $line = $this->loadRwfLineForSerials((int) $retailWarehouseFoodItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris transaksi tidak ditemukan'], 404);
+        }
+        if (!$line->received_unit_id) {
+            return response()->json(['message' => 'Unit baris tidak bisa dipetakan ke master item.'], 422);
+        }
+
+        $receivedName = DB::table('units')->where('id', $line->received_unit_id)->value('name');
+
+        $smallConv = (float) ($line->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($line->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($line->qty_received ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ((int) $line->received_unit_id === (int) $line->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ((int) $line->received_unit_id === (int) $line->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $unitIds = collect([
+            $line->small_unit_id,
+            $line->medium_unit_id,
+            $line->large_unit_id,
+        ])->filter()->unique()->values();
+
+        $unitsMaster = DB::table('units')
+            ->whereIn('id', $unitIds)
+            ->pluck('name', 'id');
+
+        $units = [];
+        foreach ($unitIds as $unitId) {
+            $unitIdInt = (int) $unitId;
+            $convertedQty = $qtySmall;
+            if ($unitIdInt === (int) $line->medium_unit_id) {
+                $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+            } elseif ($unitIdInt === (int) $line->large_unit_id) {
+                $divider = $smallConv * $mediumConv;
+                $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+            }
+
+            $units[] = [
+                'unit_id' => $unitIdInt,
+                'unit_name' => $unitsMaster[$unitIdInt] ?? "Unit {$unitIdInt}",
+                'converted_qty' => round($convertedQty, 4),
+            ];
+        }
+
+        return response()->json([
+            'retail_warehouse_food_item_id' => (int) $line->id,
+            'item_name' => $line->item_name,
+            'qty_received' => round($qtyReceived, 4),
+            'received_unit_name' => $receivedName,
+            'units' => $units,
+        ]);
+    }
+
+    /**
+     * Generate serial untuk satu baris RWF (skema insert sama Food Good Receive).
+     */
+    public function generateSerials(Request $request, $retailWarehouseFoodItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'required|integer|exists:units,id',
+            'repack_unit_id' => 'nullable|integer|exists:units,id',
+            'repack_qty' => 'nullable|numeric|min:0.01',
+        ]);
+
+        $line = $this->loadRwfLineForSerials((int) $retailWarehouseFoodItemId);
+        if (!$line) {
+            return response()->json(['message' => 'Baris transaksi tidak ditemukan'], 404);
+        }
+        if (!$line->received_unit_id) {
+            return response()->json(['message' => 'Unit baris tidak bisa dipetakan ke master item.'], 422);
+        }
+
+        $targetUnitId = (int) $validated['unit_id'];
+        $validUnitIds = collect([$line->small_unit_id, $line->medium_unit_id, $line->large_unit_id])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if (!in_array($targetUnitId, $validUnitIds, true)) {
+            return response()->json(['message' => 'Unit tidak sesuai konversi item'], 422);
+        }
+
+        $smallConv = (float) ($line->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($line->medium_conversion_qty ?: 1);
+        $qtyReceived = (float) ($line->qty_received ?: 0);
+
+        $qtySmall = $qtyReceived;
+        if ((int) $line->received_unit_id === (int) $line->medium_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv;
+        } elseif ((int) $line->received_unit_id === (int) $line->large_unit_id) {
+            $qtySmall = $qtyReceived * $smallConv * $mediumConv;
+        }
+
+        $convertedQty = $qtySmall;
+        if ($targetUnitId === (int) $line->medium_unit_id) {
+            $convertedQty = $smallConv > 0 ? ($qtySmall / $smallConv) : 0;
+        } elseif ($targetUnitId === (int) $line->large_unit_id) {
+            $divider = $smallConv * $mediumConv;
+            $convertedQty = $divider > 0 ? ($qtySmall / $divider) : 0;
+        }
+
+        $repackUnitId = $request->input('repack_unit_id');
+        $repackQty = (float) $request->input('repack_qty', 0);
+
+        if ($repackUnitId && $repackQty > 0) {
+            $serialCount = (int) ceil($convertedQty / $repackQty);
+        } else {
+            $repackUnitId = null;
+            $repackQty = null;
+            $serialCount = (int) round($convertedQty);
+            if ($serialCount <= 0 || abs($convertedQty - $serialCount) > 0.00001) {
+                return response()->json([
+                    'message' => 'Qty hasil konversi harus bilangan bulat positif agar bisa generate serial.',
+                    'converted_qty' => round($convertedQty, 4),
+                ], 422);
+            }
+        }
+
+        if ($serialCount <= 0) {
+            return response()->json([
+                'message' => 'Jumlah serial yang akan digenerate harus lebih dari 0.',
+            ], 422);
+        }
+
+        $warehouseId = (int) $line->warehouse_id;
+        if (!$warehouseId) {
+            $warehouseId = (int) (DB::table('warehouses')->value('id') ?: 0);
+        }
+
+        $inventoryItemId = DB::table('food_inventory_items')
+            ->where('item_id', $line->item_id)
+            ->value('id');
+
+        if (!$inventoryItemId) {
+            return response()->json(['message' => 'Master food_inventory_items belum ada untuk item ini. Simpan transaksi retail warehouse food dulu.'], 422);
+        }
+
+        $price = (float) ($line->line_price ?: 0);
+        $priceUnitId = (int) ($line->po_item_unit_id ?: $line->received_unit_id);
+        $costSmall = $price;
+        if ($priceUnitId === (int) $line->large_unit_id) {
+            $divider = ($smallConv ?: 1) * ($mediumConv ?: 1);
+            $costSmall = $divider > 0 ? ($price / $divider) : 0;
+        } elseif ($priceUnitId === (int) $line->medium_unit_id) {
+            $costSmall = ($smallConv ?: 1) > 0 ? ($price / ($smallConv ?: 1)) : 0;
+        }
+        $costMedium = $costSmall * ($smallConv ?: 1);
+        $costLarge = $costMedium * ($mediumConv ?: 1);
+
+        DB::beginTransaction();
+        try {
+            if (InventorySerialInUse::existsInUseFor(function ($q) use ($line, $targetUnitId) {
+                $q->where('source_type', 'retail_warehouse_food')
+                    ->where('source_item_id', $line->id)
+                    ->where('unit_id', $targetUnitId);
+            })) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => InventorySerialInUse::failureMessage(),
+                ], 422);
+            }
+
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'retail_warehouse_food')
+                ->where('source_item_id', $line->id)
+                ->where('unit_id', $targetUnitId)
+                ->delete();
+
+            $now = now();
+            $rows = [];
+            for ($i = 0; $i < $serialCount; $i++) {
+                $rows[] = [
+                    'source_type' => 'retail_warehouse_food',
+                    'source_id' => $line->retail_warehouse_food_id,
+                    'source_item_id' => $line->id,
+                    'warehouse_id' => $warehouseId,
+                    'inventory_item_id' => $inventoryItemId,
+                    'item_id' => $line->item_id,
+                    'unit_id' => $targetUnitId,
+                    'serial_number' => $this->generateUniqueRwfSerialNumber(),
+                    'source_qty' => $qtyReceived,
+                    'source_unit_id' => (int) $line->received_unit_id,
+                    'generated_qty_unit' => $convertedQty,
+                    'cost_small' => $costSmall,
+                    'cost_medium' => $costMedium,
+                    'cost_large' => $costLarge,
+                    'ref_gr_number' => $line->retail_number,
+                    'ref_po_number' => null,
+                    'ref_pr_number' => null,
+                    'repack_unit_id' => $repackUnitId,
+                    'repack_qty' => $repackQty,
+                    'generated_by' => Auth::id(),
+                    'generated_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            DB::table('inventory_item_serials')->insert($rows);
+            DB::commit();
+
+            $repackUnitName = $repackUnitId
+                ? DB::table('units')->where('id', $repackUnitId)->value('name')
+                : null;
+            $fmtRepackQty = $repackQty !== null ? rtrim(rtrim(number_format($repackQty, 4, '.', ''), '0'), '.') : '';
+            $modeLabel = $repackUnitName
+                ? "(1 {$repackUnitName} = {$fmtRepackQty} unit asal)"
+                : '(tanpa konversi)';
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil generate {$serialCount} serial {$modeLabel}.",
+                'total' => $serialCount,
+                'converted_qty' => round($convertedQty, 4),
+                'repack_unit_id' => $repackUnitId,
+                'repack_qty' => $repackQty,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function serialList($retailWarehouseFoodItemId)
+    {
+        if (!$this->loadRwfLineForSerials((int) $retailWarehouseFoodItemId)) {
+            return response()->json(['message' => 'Baris transaksi tidak ditemukan'], 404);
+        }
+
+        $rows = DB::table('inventory_item_serials as s')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->select(
+                's.id',
+                's.serial_number',
+                's.ref_gr_number as gr_number',
+                's.ref_po_number as po_number',
+                's.ref_pr_number as pr_number',
+                's.generated_at',
+                's.repack_unit_id',
+                's.repack_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
+            )
+            ->where('s.source_type', 'retail_warehouse_food')
+            ->where('s.source_item_id', $retailWarehouseFoodItemId)
+            ->orderBy('s.id')
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    public function rollbackSerials(Request $request, $retailWarehouseFoodItemId)
+    {
+        $validated = $request->validate([
+            'unit_id' => 'nullable|integer|exists:units,id',
+        ]);
+
+        if (!$this->loadRwfLineForSerials((int) $retailWarehouseFoodItemId)) {
+            return response()->json(['message' => 'Baris transaksi tidak ditemukan'], 404);
+        }
+
+        $query = DB::table('inventory_item_serials')
+            ->where('source_type', 'retail_warehouse_food')
+            ->where('source_item_id', $retailWarehouseFoodItemId);
+
+        if (!empty($validated['unit_id'])) {
+            $query->where('unit_id', (int) $validated['unit_id']);
+        }
+
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($retailWarehouseFoodItemId, $validated) {
+            $q->where('source_type', 'retail_warehouse_food')
+                ->where('source_item_id', $retailWarehouseFoodItemId);
+            if (!empty($validated['unit_id'])) {
+                $q->where('unit_id', (int) $validated['unit_id']);
+            }
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
+        }
+
+        $deleted = $query->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Rollback serial berhasil. Terhapus: {$deleted}",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    /**
+     * Baris RWF + item master untuk logika serial (mirror join GR).
+     */
+    private function loadRwfLineForSerials(int $rwfItemId): ?object
+    {
+        $q = DB::table('retail_warehouse_food_items as rwfi')
+            ->join('retail_warehouse_food as rwf', 'rwf.id', '=', 'rwfi.retail_warehouse_food_id');
+
+        if (Schema::hasColumn('retail_warehouse_food_items', 'item_id')) {
+            $q->join('items as i', 'i.id', '=', 'rwfi.item_id');
+        } else {
+            $q->join('items as i', 'i.name', '=', 'rwfi.item_name');
+        }
+
+        $select = [
+            'rwfi.id',
+            'rwfi.retail_warehouse_food_id',
+            'rwfi.qty',
+            'rwfi.price as line_price',
+            'rwfi.unit as unit_label',
+            'rwf.retail_number',
+            'rwf.warehouse_id',
+            'i.id as item_id',
+            'i.name as item_name',
+            'i.small_unit_id',
+            'i.medium_unit_id',
+            'i.large_unit_id',
+            'i.small_conversion_qty',
+            'i.medium_conversion_qty',
+        ];
+        if (Schema::hasColumn('retail_warehouse_food_items', 'unit_id')) {
+            $select[] = 'rwfi.unit_id as rwfi_unit_id';
+        }
+
+        $row = $q->select($select)
+            ->where('rwfi.id', $rwfItemId)
+            ->first();
+
+        if (!$row) {
+            return null;
+        }
+
+        $receivedUnitId = null;
+        if (Schema::hasColumn('retail_warehouse_food_items', 'unit_id') && !empty($row->rwfi_unit_id)) {
+            $receivedUnitId = (int) $row->rwfi_unit_id;
+        } else {
+            $label = trim((string) $row->unit_label);
+            foreach ([$row->small_unit_id, $row->medium_unit_id, $row->large_unit_id] as $uid) {
+                if (!$uid) {
+                    continue;
+                }
+                $uname = DB::table('units')->where('id', $uid)->value('name');
+                if ($uname && strcasecmp(trim((string) $uname), $label) === 0) {
+                    $receivedUnitId = (int) $uid;
+                    break;
+                }
+            }
+        }
+
+        $row->received_unit_id = $receivedUnitId;
+        $row->qty_received = (float) ($row->qty ?: 0);
+        $row->po_item_unit_id = $receivedUnitId;
+
+        return $row;
+    }
+
+    private function generateUniqueRwfSerialNumber(): string
+    {
+        $prefix = 'W' . now()->format('ymdHi');
+
+        for ($i = 0; $i < 10; $i++) {
+            $serial = $prefix . strtoupper(Str::random(4));
+            $exists = DB::table('inventory_item_serials')
+                ->where('serial_number', $serial)
+                ->exists();
+            if (!$exists) {
+                return $serial;
+            }
+        }
+
+        return $prefix . strtoupper(Str::random(6));
     }
 }
 

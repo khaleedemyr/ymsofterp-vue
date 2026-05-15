@@ -10,9 +10,11 @@ class RetailWarehouseFoodItem extends Model
     protected $guarded = [];
     protected $fillable = [
         'retail_warehouse_food_id',
+        'item_id',
         'item_name',
         'qty',
         'unit',
+        'unit_id',
         'price',
         'subtotal'
     ];

@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\FoodInventoryItem;
 use App\Models\GoodReceive;
 use Illuminate\Support\Str;
+use App\Support\InventorySerialInUse;
 
 class ButcherProcessController extends Controller
 {
@@ -646,11 +647,16 @@ class ButcherProcessController extends Controller
 
     public function serialSummary($id)
     {
-        $summary = DB::table('inventory_item_serials')
-            ->select('source_item_id as butcher_process_item_id', DB::raw('COUNT(*) as total'))
-            ->where('source_type', 'butcher_process')
-            ->where('source_id', $id)
-            ->groupBy('source_item_id')
+        $case = InventorySerialInUse::mysqlSumInUseCase('s');
+        $summary = DB::table('inventory_item_serials as s')
+            ->select(
+                's.source_item_id as butcher_process_item_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("{$case} as in_use")
+            )
+            ->where('s.source_type', 'butcher_process')
+            ->where('s.source_id', $id)
+            ->groupBy('s.source_item_id')
             ->get();
 
         return response()->json($summary);
@@ -721,6 +727,17 @@ class ButcherProcessController extends Controller
 
         DB::beginTransaction();
         try {
+            if (InventorySerialInUse::existsInUseFor(function ($q) use ($butcherItem) {
+                $q->where('source_type', 'butcher_process')
+                    ->where('source_item_id', $butcherItem->id);
+            })) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => InventorySerialInUse::failureMessage(),
+                ], 422);
+            }
+
             DB::table('inventory_item_serials')
                 ->where('source_type', 'butcher_process')
                 ->where('source_item_id', $butcherItem->id)
@@ -802,6 +819,16 @@ class ButcherProcessController extends Controller
 
     public function rollbackSerials($id)
     {
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($id) {
+            $q->where('source_type', 'butcher_process')
+                ->where('source_item_id', $id);
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
+        }
+
         $deleted = DB::table('inventory_item_serials')
             ->where('source_type', 'butcher_process')
             ->where('source_item_id', $id)

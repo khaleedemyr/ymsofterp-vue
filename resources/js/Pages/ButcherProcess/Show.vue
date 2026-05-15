@@ -106,9 +106,19 @@
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             <div class="flex flex-col gap-1">
-                              <button @click="generateSerial(item)" class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200">Generate</button>
+                              <button
+                                @click="generateSerial(item)"
+                                :disabled="(serialInUse[item.id] || 0) > 0"
+                                :title="(serialInUse[item.id] || 0) > 0 ? 'Ada serial yang sudah digunakan — tidak bisa generate ulang.' : ''"
+                                class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-700 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >Generate</button>
                               <button @click="showSerials(item)" class="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700 hover:bg-gray-200">Lihat ({{ serialSummary[item.id] || 0 }})</button>
-                              <button @click="rollbackSerial(item)" class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200">Rollback</button>
+                              <button
+                                @click="rollbackSerial(item)"
+                                :disabled="(serialInUse[item.id] || 0) > 0"
+                                :title="(serialInUse[item.id] || 0) > 0 ? 'Ada serial yang sudah digunakan — tidak bisa rollback.' : ''"
+                                class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >Rollback</button>
                             </div>
                           </td>
                         </tr>
@@ -291,6 +301,7 @@ const selectedItems = ref([])
 const barcodes = ref({}) // Object untuk menyimpan barcodes per item
 const selectedBarcodes = ref({}) // Object untuk menyimpan barcode yang dipilih per item
 const serialSummary = ref({})
+const serialInUse = ref({})
 const labelData = ref({
   processDate: '',
   batchNumber: ''
@@ -381,12 +392,16 @@ const loadSerialSummary = async () => {
   try {
     const { data } = await axios.get(`/api/butcher-processes/${props.butcherProcess.id}/serial-summary`)
     const mapped = {}
+    const inUse = {}
     ;(data || []).forEach((row) => {
       mapped[row.butcher_process_item_id] = Number(row.total || 0)
+      inUse[row.butcher_process_item_id] = Number(row.in_use || 0)
     })
     serialSummary.value = mapped
+    serialInUse.value = inUse
   } catch (error) {
     serialSummary.value = {}
+    serialInUse.value = {}
   }
 }
 

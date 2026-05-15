@@ -10,6 +10,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Support\InventorySerialInUse;
 
 class RepackController extends Controller
 {
@@ -528,7 +529,16 @@ class RepackController extends Controller
             ->where('source_id', $id)
             ->count();
 
-        return response()->json(['total' => $total]);
+        $inUse = InventorySerialInUse::whereMarkedInUse(
+            DB::table('inventory_item_serials')
+                ->where('source_type', 'repack')
+                ->where('source_id', $id)
+        )->count();
+
+        return response()->json([
+            'total' => $total,
+            'in_use' => $inUse,
+        ]);
     }
 
     public function serialList($id)
@@ -552,6 +562,16 @@ class RepackController extends Controller
 
     public function rollbackSerials($id)
     {
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($id) {
+            $q->where('source_type', 'repack')
+                ->where('source_id', $id);
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
+        }
+
         $deleted = DB::table('inventory_item_serials')
             ->where('source_type', 'repack')
             ->where('source_id', $id)

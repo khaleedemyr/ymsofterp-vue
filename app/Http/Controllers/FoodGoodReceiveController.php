@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use App\Models\ActivityLog;
+use App\Support\InventorySerialInUse;
 use Carbon\Carbon;
 
 class FoodGoodReceiveController extends Controller
@@ -943,11 +944,16 @@ class FoodGoodReceiveController extends Controller
 
     public function serialSummary($goodReceiveId)
     {
-        $summary = DB::table('inventory_item_serials')
-            ->select('source_item_id as good_receive_item_id', DB::raw('COUNT(*) as total'))
-            ->where('source_type', 'good_receive')
-            ->where('source_id', $goodReceiveId)
-            ->groupBy('source_item_id')
+        $case = InventorySerialInUse::mysqlSumInUseCase('s');
+        $summary = DB::table('inventory_item_serials as s')
+            ->select(
+                's.source_item_id as good_receive_item_id',
+                DB::raw('COUNT(*) as total'),
+                DB::raw("{$case} as in_use")
+            )
+            ->where('s.source_type', 'good_receive')
+            ->where('s.source_id', $goodReceiveId)
+            ->groupBy('s.source_item_id')
             ->get();
 
         return response()->json($summary);
@@ -1156,6 +1162,18 @@ class FoodGoodReceiveController extends Controller
 
         DB::beginTransaction();
         try {
+            if (InventorySerialInUse::existsInUseFor(function ($q) use ($grItem, $targetUnitId) {
+                $q->where('source_type', 'good_receive')
+                    ->where('source_item_id', $grItem->id)
+                    ->where('unit_id', $targetUnitId);
+            })) {
+                DB::rollBack();
+
+                return response()->json([
+                    'message' => InventorySerialInUse::failureMessage(),
+                ], 422);
+            }
+
             DB::table('inventory_item_serials')
                 ->where('source_type', 'good_receive')
                 ->where('source_item_id', $grItem->id)
@@ -1229,6 +1247,19 @@ class FoodGoodReceiveController extends Controller
 
         if (!empty($validated['unit_id'])) {
             $query->where('unit_id', (int) $validated['unit_id']);
+        }
+
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($goodReceiveItemId, $validated) {
+            $q->where('source_type', 'good_receive')
+                ->where('source_item_id', $goodReceiveItemId);
+            if (! empty($validated['unit_id'])) {
+                $q->where('unit_id', (int) $validated['unit_id']);
+            }
+        })) {
+            return response()->json([
+                'success' => false,
+                'message' => InventorySerialInUse::failureMessage(),
+            ], 422);
         }
 
         $deleted = $query->delete();

@@ -232,6 +232,12 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/food-good-receive-items/{id}/serials', [\App\Http\Controllers\FoodGoodReceiveController::class, 'serialList']);
         Route::delete('/food-good-receive-items/{id}/serials', [\App\Http\Controllers\FoodGoodReceiveController::class, 'rollbackSerials']);
 
+        Route::get('/retail-warehouse-food/{id}/serial-summary', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'serialSummary']);
+        Route::get('/retail-warehouse-food-items/{id}/serial-units', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'serialUnits']);
+        Route::post('/retail-warehouse-food-items/{id}/generate-serials', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'generateSerials']);
+        Route::get('/retail-warehouse-food-items/{id}/serials', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'serialList']);
+        Route::delete('/retail-warehouse-food-items/{id}/serials', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'rollbackSerials']);
+
         // MK Production serial routes
         Route::post('/mk-production/{id}/generate-serials', [\App\Http\Controllers\MKProductionController::class, 'generateSerials']);
         Route::get('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList']);

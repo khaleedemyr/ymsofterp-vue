@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue';
+import { onMounted, ref } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import JsBarcode from 'jsbarcode';
 import jsPDF from 'jspdf';
@@ -11,7 +11,10 @@ const props = defineProps({
   barcodes: Array,
 });
 
-onMounted(() => {
+/** Serial yang sudah dipakai — rollback tidak diizinkan dari UI */
+const serialInUse = ref(0);
+
+onMounted(async () => {
   props.barcodes.forEach((barcode, index) => {
     JsBarcode(`#barcode-${index}`, barcode.barcode, {
       format: "CODE128",
@@ -20,6 +23,12 @@ onMounted(() => {
       displayValue: true
     });
   });
+  try {
+    const { data } = await axios.get(`/api/repack/${props.repack.id}/serial-summary`);
+    serialInUse.value = Number(data?.in_use || 0);
+  } catch (_) {
+    serialInUse.value = 0;
+  }
 });
 
 const print = () => {
@@ -126,7 +135,12 @@ const rollbackSerial = async () => {
           <button @click="downloadAllPdf" class="bg-indigo-500 text-white px-4 py-2 rounded-lg">
             <i class="fa-solid fa-file-pdf mr-2"></i> Download All PDF 10x5
           </button>
-          <button @click="rollbackSerial" class="bg-red-500 text-white px-4 py-2 rounded-lg">
+          <button
+            @click="rollbackSerial"
+            :disabled="serialInUse > 0"
+            :title="serialInUse > 0 ? 'Ada serial yang sudah digunakan — tidak bisa rollback.' : ''"
+            class="bg-red-500 text-white px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <i class="fa-solid fa-rotate-left mr-2"></i> Rollback Serial
           </button>
           <button @click="print" class="bg-blue-500 text-white px-4 py-2 rounded-lg">

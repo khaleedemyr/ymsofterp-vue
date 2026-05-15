@@ -64,7 +64,9 @@
                   </button>
                   <button
                     type="button"
-                    class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200"
+                    class="px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    :disabled="(serialInUse[item.id] || 0) > 0"
+                    :title="(serialInUse[item.id] || 0) > 0 ? 'Ada serial yang sudah digunakan — tidak bisa rollback.' : ''"
                     @click="rollbackSerial(item)"
                   >
                     Rollback Serial
@@ -92,6 +94,8 @@ const props = defineProps({
 });
 const emit = defineEmits(['close']);
 const serialSummary = ref({});
+/** Jumlah serial per item GR yang sudah dipakai (DO / transfer / terima outlet). */
+const serialInUse = ref({});
 
 function formatRupiah(val) {
   if (!val) return '-';
@@ -103,12 +107,16 @@ const loadSerialSummary = async () => {
   try {
     const { data } = await axios.get(`/api/food-good-receive/${props.gr.id}/serial-summary`);
     const mapped = {};
+    const inUseMap = {};
     (data || []).forEach((row) => {
       mapped[row.good_receive_item_id] = Number(row.total || 0);
+      inUseMap[row.good_receive_item_id] = Number(row.in_use || 0);
     });
     serialSummary.value = mapped;
+    serialInUse.value = inUseMap;
   } catch (error) {
     serialSummary.value = {};
+    serialInUse.value = {};
   }
 };
 
