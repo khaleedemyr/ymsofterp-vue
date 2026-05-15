@@ -1109,6 +1109,17 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees'])->name('api.approval-app.attendance-report.employees');
         Route::get('/attendance-report/detail', [\App\Http\Controllers\AttendanceReportController::class, 'detail'])->name('api.approval-app.attendance-report.detail');
         Route::get('/attendance-report/shift-info', [\App\Http\Controllers\AttendanceReportController::class, 'shiftInfo'])->name('api.approval-app.attendance-report.shift-info');
+
+        // Report Kasbon (PR kasbon / cicilan — selaras web)
+        Route::get('/report-kasbon', [\App\Http\Controllers\KasbonReportController::class, 'apiIndex'])->name('api.approval-app.report-kasbon');
+        Route::get('/report-kasbon/export', [\App\Http\Controllers\KasbonReportController::class, 'exportExcel'])->name('api.approval-app.report-kasbon.export');
+        Route::post('/report-kasbon/{id}/installment', [\App\Http\Controllers\KasbonReportController::class, 'recordInstallment'])
+            ->whereNumber('id')
+            ->name('api.approval-app.report-kasbon.record-installment');
+        Route::post('/report-kasbon/{id}/installment/reverse', [\App\Http\Controllers\KasbonReportController::class, 'reverseInstallment'])
+            ->whereNumber('id')
+            ->name('api.approval-app.report-kasbon.reverse-installment');
+
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
         Route::post('/employee-resignation/{id}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject']);

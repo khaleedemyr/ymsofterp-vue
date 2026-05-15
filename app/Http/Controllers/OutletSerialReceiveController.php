@@ -27,6 +27,7 @@ class OutletSerialReceiveController extends Controller
                 'h.notes',
                 'h.created_by',
                 'u.nama_lengkap as created_by_name',
+                'u.avatar as created_by_avatar',
                 'o.nama_outlet as outlet_name',
                 'h.created_at',
                 DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')
@@ -427,6 +428,7 @@ class OutletSerialReceiveController extends Controller
                 'h.notes',
                 'h.created_by',
                 'u.nama_lengkap as created_by_name',
+                'u.avatar as created_by_avatar',
                 'o.nama_outlet as outlet_name',
                 'h.created_at',
                 DB::raw('(SELECT COUNT(*) FROM outlet_serial_receive_items WHERE header_id = h.id) as total_serials')

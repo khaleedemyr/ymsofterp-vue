@@ -73,7 +73,6 @@
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Outlet</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Warehouse</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Harga</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Sumber</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
@@ -87,12 +86,6 @@
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.outlet_name || row.outlet_id }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_name || '-' }}</td>
                 <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.cost_small) }}</td>
-                <td class="px-4 py-3">
-                  <span :class="row.cost_source === 'fgr_modal_12pct' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-600'"
-                    class="inline-block px-2 py-0.5 text-xs font-medium rounded-md">
-                    {{ formatCostSource(row.cost_source) }}
-                  </span>
-                </td>
               </tr>
             </tbody>
             <tfoot>
@@ -101,7 +94,6 @@
                 <td class="px-4 py-3 text-right font-bold text-gray-800">{{ fmtQty(totalQty) }}</td>
                 <td colspan="4"></td>
                 <td class="px-4 py-3 text-right font-bold text-gray-800">{{ formatRupiah(totalCost) }}</td>
-                <td></td>
               </tr>
             </tfoot>
           </table>
@@ -142,13 +134,6 @@ function fmtQty(val) {
   let s = Number(val).toFixed(4)
   s = s.replace(/\.?0+$/, '')
   return s
-}
-
-function formatCostSource(src) {
-  if (!src) return '-'
-  if (src === 'fgr_modal_12pct') return 'FGR (Modal+12%)'
-  if (src === 'item_prices') return 'Item Price'
-  return src
 }
 
 async function onDelete() {

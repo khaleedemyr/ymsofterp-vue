@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\KasbonReportExport;
 use App\Models\PrKasbon;
 use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
@@ -10,6 +11,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class KasbonReportController extends Controller
 {
@@ -17,8 +19,80 @@ class KasbonReportController extends Controller
     {
         $this->assertUserCanAccessReportKasbon();
 
+        return Inertia::render('Reports/KasbonReport', $this->kasbonReportViewModel($request));
+    }
+
+    /**
+     * Approval app (JSON): sama filter & struktur data dengan halaman web.
+     */
+    public function apiIndex(Request $request)
+    {
+        $this->assertUserCanAccessReportKasbon();
+
+        return response()->json($this->kasbonReportViewModel($request));
+    }
+
+    /**
+     * Export Excel (filter sama dengan index). Dipakai web (session) dan approval-app (Bearer).
+     */
+    public function exportExcel(Request $request)
+    {
+        $this->assertUserCanAccessReportKasbon();
+        abort_unless(Schema::hasTable('pr_kasbons'), 404);
+
+        $dateFrom = $request->input('date_from') ?: now()->startOfMonth()->format('Y-m-d');
+        $dateTo = $request->input('date_to') ?: now()->endOfMonth()->format('Y-m-d');
+        $query = $this->buildKasbonReportQuery($request, $dateFrom, $dateTo);
+
+        $rows = (clone $query)
+            ->select([
+                'k.id',
+                'k.purchase_requisition_id',
+                'k.pr_number',
+                'k.outlet_id',
+                'k.division_id',
+                'k.employee_user_id',
+                'k.total_amount',
+                'k.termin_total',
+                'k.installment_amount',
+                'k.paid_installments',
+                'k.status',
+                'k.approved_at',
+                'k.last_installment_at',
+                'k.created_at',
+                'k.updated_at',
+                'o.nama_outlet as outlet_name',
+                'd.nama_divisi as division_name',
+                'emp.nama_lengkap as employee_name',
+                'pr.status as pr_status',
+                'nfp.payment_number as nfp_payment_number',
+                'nfp.status as nfp_payment_status',
+                DB::raw('COALESCE(nfp.approved_at, nfp.approved_gm_finance_at, nfp.approved_finance_manager_at) as nfp_transfer_approved_at'),
+                DB::raw(
+                    "CASE " .
+                    "WHEN k.status = 'completed' THEN 'completed' " .
+                    "WHEN nfp.id IS NULL OR nfp.status IS NULL OR nfp.status <> 'paid' THEN 'waiting_transfer' " .
+                    "ELSE 'active' " .
+                    "END as tracker_status"
+                ),
+            ])
+            ->orderByDesc('k.approved_at')
+            ->orderByDesc('k.id')
+            ->limit(15000)
+            ->get();
+
+        $filename = 'report_kasbon_' . now()->format('Ymd_His') . '.xlsx';
+
+        return Excel::download(new KasbonReportExport($rows), $filename);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function kasbonReportViewModel(Request $request): array
+    {
         if (! Schema::hasTable('pr_kasbons')) {
-            return Inertia::render('Reports/KasbonReport', [
+            return [
                 'tableMissing' => true,
                 'kasbons' => [],
                 'summary' => null,
@@ -33,7 +107,7 @@ class KasbonReportController extends Controller
                     'to' => null,
                 ],
                 'filters' => $this->defaultFilters($request),
-            ]);
+            ];
         }
 
         $perPage = min(100, max(5, (int) $request->input('per_page', 15)));
@@ -88,7 +162,7 @@ class KasbonReportController extends Controller
             ->paginate($perPage, ['*'], 'page', $page)
             ->withQueryString();
 
-        return Inertia::render('Reports/KasbonReport', [
+        return [
             'tableMissing' => false,
             'kasbons' => $paginator->items(),
             'summary' => [
@@ -114,7 +188,7 @@ class KasbonReportController extends Controller
                 'per_page' => $perPage,
                 'page' => $page,
             ]),
-        ]);
+        ];
     }
 
     private function defaultFilters(Request $request): array
@@ -198,6 +272,8 @@ class KasbonReportController extends Controller
         $this->assertUserCanAccessReportKasbon();
         abort_unless(Schema::hasTable('pr_kasbons'), 404);
 
+        $wantsJson = $request->expectsJson();
+
         $validated = $request->validate([
             'notes' => 'nullable|string|max:500',
             'paid_at' => 'nullable|date',
@@ -250,7 +326,15 @@ class KasbonReportController extends Controller
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             abort(404);
         } catch (\RuntimeException $e) {
+            if ($wantsJson) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
             return back()->withErrors(['installment' => $e->getMessage()]);
+        }
+
+        if ($wantsJson) {
+            return response()->json(['success' => true, 'message' => 'Pembayaran cicilan berhasil dicatat.']);
         }
 
         return redirect()->back()->with('success', 'Pembayaran cicilan berhasil dicatat.');
@@ -263,6 +347,8 @@ class KasbonReportController extends Controller
     {
         $this->assertUserCanAccessReportKasbon();
         abort_unless(Schema::hasTable('pr_kasbons'), 404);
+
+        $wantsJson = $request->expectsJson();
 
         $validated = $request->validate([
             'notes' => 'nullable|string|max:500',
@@ -301,7 +387,15 @@ class KasbonReportController extends Controller
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             abort(404);
         } catch (\RuntimeException $e) {
+            if ($wantsJson) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
             return back()->withErrors(['installment' => $e->getMessage()]);
+        }
+
+        if ($wantsJson) {
+            return response()->json(['success' => true, 'message' => 'Pencatatan cicilan terakhir berhasil dibatalkan.']);
         }
 
         return redirect()->back()->with('success', 'Pencatatan cicilan terakhir berhasil dibatalkan.');

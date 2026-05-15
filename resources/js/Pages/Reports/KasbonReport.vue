@@ -1,7 +1,7 @@
 <template>
   <AppLayout title="Report Kasbon">
-    <div class="py-8 px-4">
-      <div class="max-w-7xl mx-auto">
+    <div class="py-8 px-4 sm:px-6 lg:px-8 w-full max-w-none">
+      <div class="w-full">
         <div class="mb-6">
           <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">
             <i class="fa-solid fa-money-bill-transfer text-orange-500"></i>
@@ -98,13 +98,22 @@
                   class="w-full border border-gray-300 rounded-md px-3 py-2"
                 />
               </div>
-              <div class="md:col-span-4 flex gap-2">
+              <div class="md:col-span-4 flex flex-wrap gap-2 items-center">
                 <button type="submit" class="bg-orange-600 text-white px-6 py-2 rounded-md hover:bg-orange-700">
                   <i class="fa fa-filter mr-2"></i>Filter
                 </button>
                 <button type="button" class="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600" @click="resetFilters">
                   <i class="fa fa-redo mr-2"></i>Reset
                 </button>
+                <a
+                  v-if="!tableMissing"
+                  :href="exportExcelHref"
+                  class="inline-flex items-center bg-emerald-600 text-white px-6 py-2 rounded-md hover:bg-emerald-700"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <i class="fa fa-file-excel mr-2"></i>Export Excel
+                </a>
               </div>
             </form>
           </div>
@@ -147,10 +156,7 @@
                     <th class="px-4 py-3 text-left font-medium text-gray-600">Terakhir dicatat</th>
                     <th class="px-4 py-3 text-center font-medium text-gray-600">Status</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-600">Approve PR</th>
-                    <th class="px-4 py-3 text-left font-medium text-gray-600">
-                      Approve transfer
-                      <span class="block text-xs font-normal text-gray-500">Non Food Payment</span>
-                    </th>
+                    <th class="px-4 py-3 text-left font-medium text-gray-600">Approve transfer</th>
                     <th class="px-4 py-3 text-left font-medium text-gray-600">Aksi</th>
                   </tr>
                 </thead>
@@ -296,7 +302,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -402,6 +408,18 @@ const form = reactive({
   date_to: props.filters.date_to ?? '',
   search: props.filters.search ?? '',
   per_page: Number(props.filters.per_page) || 15,
+});
+
+const exportExcelHref = computed(() => {
+  const p = new URLSearchParams();
+  p.set('status', form.status || 'all');
+  if (form.division_id) p.set('division_id', form.division_id);
+  if (form.outlet_id) p.set('outlet_id', form.outlet_id);
+  if (form.date_from) p.set('date_from', form.date_from);
+  if (form.date_to) p.set('date_to', form.date_to);
+  if (form.search && String(form.search).trim()) p.set('search', String(form.search).trim());
+  const qs = p.toString();
+  return route('report-kasbon.export') + (qs ? `?${qs}` : '');
 });
 
 watch(

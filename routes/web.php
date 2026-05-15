@@ -852,6 +852,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
 
     // Report Kasbon (cicilan / pr_kasbons)
     Route::get('/report-kasbon', [\App\Http\Controllers\KasbonReportController::class, 'index'])->name('report-kasbon.index');
+    Route::get('/report-kasbon/export', [\App\Http\Controllers\KasbonReportController::class, 'exportExcel'])->name('report-kasbon.export');
     Route::post('/report-kasbon/{id}/installment', [\App\Http\Controllers\KasbonReportController::class, 'recordInstallment'])
         ->whereNumber('id')
         ->name('report-kasbon.record-installment');
