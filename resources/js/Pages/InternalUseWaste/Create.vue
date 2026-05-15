@@ -49,7 +49,17 @@
               <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-indigo-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
             </label>
             <div v-if="serialMode" class="mt-3 space-y-2">
-              <input ref="serialInputRef" v-model="serialInput" @keypress="handleSerialKeyPress" type="text" placeholder="Scan nomor seri..." class="input input-bordered w-full" :disabled="serialScanning" />
+              <label class="block text-xs font-bold text-indigo-700 mb-1">Scan nomor seri</label>
+              <input
+                ref="serialInputRef"
+                v-model="serialInput"
+                @keypress="handleSerialKeyPress"
+                type="text"
+                placeholder="Arahkan scanner ke sini lalu scan, atau ketik lalu Enter..."
+                class="input input-bordered w-full border-indigo-300 focus:ring-indigo-400"
+                :disabled="serialScanning || !form.warehouse_id"
+              />
+              <p v-if="!form.warehouse_id" class="text-xs text-amber-600">Pilih warehouse terlebih dahulu agar serial bisa divalidasi.</p>
               <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackSuccess ? 'text-green-600' : 'text-red-600'">{{ serialFeedback }}</p>
               <div v-if="scannedSerials.length" class="space-y-2">
                 <p class="text-xs font-semibold text-indigo-700">{{ scannedSerials.length }} serial discan</p>
@@ -152,7 +162,7 @@ import { router } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   warehouses: Array,
@@ -183,6 +193,18 @@ const form = ref({
 })
 
 const loading = ref(false)
+
+const serialMode = ref(false)
+const serialInput = ref('')
+const serialInputRef = ref(null)
+const serialScanning = ref(false)
+const serialFeedback = ref('')
+const serialFeedbackSuccess = ref(false)
+const scannedSerials = ref([])
+
+watch(serialMode, (on) => {
+  if (on) nextTick(() => serialInputRef.value?.focus())
+})
 
 watch(
   () => form.value.type,
@@ -284,25 +306,55 @@ function handleSerialKeyPress(e) {
 }
 
 function buildPayload() {
-  return {
+  const qtyItems = form.value.items
+    .filter((l) => l.item_id && l.unit_id && l.qty !== '' && l.qty != null && Number(l.qty) > 0)
+    .map((l) => ({
+      item_id: Number(l.item_id),
+      qty: Number(l.qty),
+      unit_id: Number(l.unit_id),
+      notes: l.notes || null,
+    }))
+  const payload = {
     type: form.value.type,
     date: form.value.date,
     warehouse_id: form.value.warehouse_id,
     ruko_id: form.value.type === 'internal_use' ? form.value.ruko_id : null,
     notes: form.value.notes || null,
-    items: form.value.items.map((l) => ({
-      item_id: Number(l.item_id),
-      qty: Number(l.qty),
-      unit_id: Number(l.unit_id),
-      notes: l.notes || null,
-    })),
   }
+  if (qtyItems.length) payload.items = qtyItems
+  if (scannedSerials.value.length) {
+    payload.serial_items = scannedSerials.value.map((s) => ({
+      serial_id: s.serial_id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      unit_id: s.unit_id,
+      unit_name: s.unit_name,
+      qty: s.qty,
+      qty_small: s.qty_small,
+    }))
+  }
+  return payload
 }
 
 async function submit() {
+  const qtyItems = form.value.items.filter(
+    (l) => l.item_id && l.unit_id && l.qty !== '' && l.qty != null && Number(l.qty) > 0
+  )
+  const hasSerials = scannedSerials.value.length > 0
+
+  if (!qtyItems.length && !hasSerials) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Data kosong',
+      text: 'Minimal 1 baris item (qty) atau 1 nomor seri yang discan.',
+    })
+    return
+  }
+
   for (const l of form.value.items) {
-    if (!l.item_id || !l.unit_id || l.qty === '' || l.qty == null || Number(l.qty) <= 0) {
-      Swal.fire({ icon: 'warning', title: 'Lengkapi semua baris', text: 'Setiap baris wajib punya item, qty, dan unit.' })
+    if (!l.item_id) continue
+    if (!l.unit_id || l.qty === '' || l.qty == null || Number(l.qty) <= 0) {
+      Swal.fire({ icon: 'warning', title: 'Lengkapi baris item', text: 'Baris yang punya item wajib diisi qty dan unit.' })
       return
     }
   }
