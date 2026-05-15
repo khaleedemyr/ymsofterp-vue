@@ -33,8 +33,38 @@
             <textarea v-model="form.note" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
         </div>
+
+        <div class="mb-4 border rounded-lg p-4" :class="serialMode ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'">
+          <label class="flex items-center justify-between cursor-pointer">
+            <span class="text-sm font-medium text-gray-700"><i class="fa-solid fa-qrcode mr-1 text-indigo-500"></i> Mode Nomor Seri</span>
+            <input type="checkbox" v-model="serialMode" class="sr-only peer" />
+            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-indigo-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+          </label>
+          <div v-if="serialMode" class="mt-3 space-y-2">
+            <label class="block text-xs font-bold text-indigo-700">Scan nomor seri (gudang asal)</label>
+            <input ref="serialInputRef" v-model="serialInput" @keypress="handleSerialKeyPress" type="text" placeholder="Scan / ketik serial lalu Enter..." class="w-full rounded-lg border-indigo-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500" :disabled="serialScanning || !form.source_warehouse_id" />
+            <p v-if="!form.source_warehouse_id" class="text-xs text-amber-600">Pilih gudang asal terlebih dahulu.</p>
+            <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackSuccess ? 'text-green-600' : 'text-red-600'">{{ serialFeedback }}</p>
+            <div v-if="scannedSerials.length" class="space-y-2">
+              <p class="text-xs font-semibold text-indigo-700">{{ scannedSerials.length }} serial discan</p>
+              <div v-for="(s, sIdx) in scannedSerials" :key="s.serial_number" class="flex flex-wrap gap-2 justify-between items-center border border-indigo-200 rounded-lg p-2 bg-white text-sm">
+                <div>
+                  <span class="font-mono font-semibold">{{ s.serial_number }}</span>
+                  <span class="block text-gray-600">{{ s.item_name }} — {{ s.qty }} {{ s.unit_name }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <label class="text-xs text-gray-500">Harga</label>
+                  <input type="number" min="0" step="any" v-model.number="s.price" @input="updateSerialSubtotal(sIdx)" class="w-24 rounded border-gray-300 text-sm" />
+                  <span class="text-indigo-700 font-semibold">{{ formatNumber(s.subtotal) }}</span>
+                  <button type="button" class="text-red-600" @click="removeSerial(sIdx)"><i class="fa fa-times"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item (qty)</label>
           <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">
             Pilih gudang asal dan tujuan terlebih dahulu, dan pastikan tidak sama.
           </div>
@@ -143,13 +173,26 @@
   </AppLayout>
 </template>
 <script setup>
-import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useForm, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 const props = defineProps({ warehouses: Array });
 const loading = ref(false);
+
+const serialMode = ref(false);
+const serialInput = ref('');
+const serialInputRef = ref(null);
+const serialScanning = ref(false);
+const serialFeedback = ref('');
+const serialFeedbackSuccess = ref(false);
+const scannedSerials = ref([]);
+
+watch(serialMode, (on) => {
+  if (on) nextTick(() => serialInputRef.value?.focus());
+});
+
 const form = useForm({
   source_warehouse_id: '',
   target_warehouse_id: '',
@@ -244,17 +287,100 @@ function updateTotal(idx) {
 function formatNumber(val) { if (val == null) return 0; if (Number(val) % 1 === 0) return Number(val); return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
 const canInputItem = computed(() => { return form.source_warehouse_id && form.target_warehouse_id && form.source_warehouse_id !== form.target_warehouse_id; });
 function formatStockDisplay(item) { if (!item.stock) return 'Stok: 0'; const small = Number(item.stock.qty_small || 0); const medium = Number(item.stock.qty_medium || 0); const large = Number(item.stock.qty_large || 0); return `Stok: ${formatNumber(small)} ${item.stock.unit_small || ''} | ${formatNumber(medium)} ${item.stock.unit_medium || ''} | ${formatNumber(large)} ${item.stock.unit_large || ''}`; }
+
+async function onSerialScan() {
+  const input = serialInput.value.trim();
+  if (!input) return;
+  if (!form.source_warehouse_id) {
+    serialFeedback.value = 'Pilih gudang asal dulu';
+    serialFeedbackSuccess.value = false;
+    return;
+  }
+  if (scannedSerials.value.some((s) => s.serial_number === input)) {
+    serialFeedback.value = `Serial "${input}" sudah discan`;
+    serialFeedbackSuccess.value = false;
+    serialInput.value = '';
+    return;
+  }
+  serialScanning.value = true;
+  try {
+    const res = await axios.post(route('warehouse-sales.validate-serial'), {
+      serial_number: input,
+      source_warehouse_id: form.source_warehouse_id,
+    });
+    if (res.data.valid) {
+      const serial = res.data.serial;
+      scannedSerials.value.push({
+        serial_id: serial.id,
+        serial_number: serial.serial_number,
+        item_id: serial.item_id,
+        item_name: serial.item_name,
+        unit_id: serial.unit_id,
+        unit_name: serial.unit_name,
+        qty: serial.qty,
+        qty_small: serial.qty_small,
+        price: serial.price,
+        subtotal: serial.subtotal,
+      });
+      serialFeedback.value = `Serial "${input}" valid`;
+      serialFeedbackSuccess.value = true;
+    } else {
+      serialFeedback.value = res.data.message || 'Serial tidak valid';
+      serialFeedbackSuccess.value = false;
+    }
+  } catch {
+    serialFeedback.value = 'Gagal validasi serial';
+    serialFeedbackSuccess.value = false;
+  } finally {
+    serialScanning.value = false;
+    serialInput.value = '';
+    nextTick(() => serialInputRef.value?.focus());
+  }
+}
+
+function handleSerialKeyPress(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    onSerialScan();
+  }
+}
+
+function removeSerial(idx) {
+  scannedSerials.value.splice(idx, 1);
+}
+
+function updateSerialSubtotal(idx) {
+  const s = scannedSerials.value[idx];
+  s.subtotal = (Number(s.qty) || 0) * (Number(s.price) || 0);
+}
+
 async function onSubmit() {
-  // Validasi sebelum submit
   if (!form.source_warehouse_id || !form.target_warehouse_id || form.source_warehouse_id === form.target_warehouse_id) {
     alert('Gudang asal dan tujuan harus diisi dan tidak boleh sama!');
     return;
   }
+
+  const qtyItems = form.items.filter((item) => item.item_id && item.selected_unit && item.qty && Number(item.qty) > 0);
+  const hasSerials = scannedSerials.value.length > 0;
+
+  if (!qtyItems.length && !hasSerials) {
+    alert('Minimal 1 baris item (qty) atau 1 nomor seri yang discan.');
+    return;
+  }
+
   for (const [idx, item] of form.items.entries()) {
-    if (!item.item_id) { alert(`Item ke-${idx + 1} belum dipilih!`); return; }
+    if (!item.item_id) continue;
     if (!item.selected_unit) { alert(`Unit item ke-${idx + 1} belum dipilih!`); return; }
     if (!item.qty || item.qty <= 0) { alert(`Qty item ke-${idx + 1} harus diisi!`); return; }
     if (item.stock && item.qty > item.stock.qty_small) { alert(`Qty item ke-${idx + 1} melebihi stok!`); return; }
+  }
+
+  if (hasSerials) {
+    const invalid = scannedSerials.value.filter((s) => !s.price || s.price <= 0);
+    if (invalid.length) {
+      alert('Semua serial harus memiliki harga lebih dari 0.');
+      return;
+    }
   }
   const result = await Swal.fire({
     title: 'Simpan Data?',
@@ -275,11 +401,36 @@ async function onSubmit() {
       didOpen: () => { Swal.showLoading(); }
     });
     loading.value = true;
-    form.post(route('warehouse-sales.store'), {
+
+    const payloadItems = qtyItems.map((item) => ({
+      item_id: item.item_id,
+      qty: Number(item.qty),
+      selected_unit: item.selected_unit,
+      price: Number(item.price),
+      note: item.note || null,
+    }));
+
+    form.transform((data) => ({
+      ...data,
+      items: payloadItems.length ? payloadItems : [],
+      serial_items: hasSerials
+        ? scannedSerials.value.map((s) => ({
+            serial_id: s.serial_id,
+            serial_number: s.serial_number,
+            item_id: s.item_id,
+            unit_id: s.unit_id,
+            unit_name: s.unit_name,
+            qty: s.qty,
+            qty_small: s.qty_small,
+            price: s.price,
+            subtotal: s.subtotal,
+          }))
+        : [],
+    })).post(route('warehouse-sales.store'), {
       onFinish: () => {
         loading.value = false;
         Swal.close();
-      }
+      },
     });
   }
 }

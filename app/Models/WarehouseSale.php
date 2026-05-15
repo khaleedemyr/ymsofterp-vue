@@ -16,6 +16,7 @@ class WarehouseSale extends Model
         'target_warehouse_id',
         'date',
         'note',
+        'sale_mode',
         'status',
         'created_by',
         'updated_by',

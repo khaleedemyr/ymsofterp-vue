@@ -1354,6 +1354,7 @@ Route::get('/inventory/po-price-change-report', [CostControlController::class, '
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/warehouse-sales', [WarehouseSaleController::class, 'index'])->name('warehouse-sales.index');
     Route::get('/warehouse-sales/create', [WarehouseSaleController::class, 'create'])->name('warehouse-sales.create');
+    Route::post('/warehouse-sales/validate-serial', [WarehouseSaleController::class, 'validateSerialForWHS'])->name('warehouse-sales.validate-serial');
     Route::post('/warehouse-sales', [WarehouseSaleController::class, 'store'])->name('warehouse-sales.store');
     Route::get('/warehouse-sales/{warehouseSale}', [WarehouseSaleController::class, 'show'])->name('warehouse-sales.show');
     Route::delete('/warehouse-sales/{warehouseSale}', [WarehouseSaleController::class, 'destroy'])->name('warehouse-sales.destroy');

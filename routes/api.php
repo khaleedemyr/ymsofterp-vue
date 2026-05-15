@@ -733,6 +733,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/warehouse-sales/create-data', [\App\Http\Controllers\WarehouseSaleController::class, 'apiCreate']);
         Route::get('/warehouse-sales/item-price', [\App\Http\Controllers\WarehouseSaleController::class, 'getItemPrice']);
         Route::get('/warehouse-sales/search-items', [\App\Http\Controllers\WarehouseSaleController::class, 'apiSearchItems']);
+        Route::post('/warehouse-sales/validate-serial', [\App\Http\Controllers\WarehouseSaleController::class, 'validateSerialForWHS']);
         Route::get('/warehouse-sales/{id}', [\App\Http\Controllers\WarehouseSaleController::class, 'apiShow']);
         Route::post('/warehouse-sales', [\App\Http\Controllers\WarehouseSaleController::class, 'apiStore']);
         Route::delete('/warehouse-sales/{id}', [\App\Http\Controllers\WarehouseSaleController::class, 'apiDestroy']);

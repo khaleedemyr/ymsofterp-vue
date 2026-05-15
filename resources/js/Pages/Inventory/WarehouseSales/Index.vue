@@ -31,7 +31,17 @@
               <td colspan="8" class="text-center py-10 text-gray-400">Belum ada data Penjualan Antar Gudang.</td>
             </tr>
             <tr v-for="sale in sales.data" :key="sale.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-mono font-semibold text-blue-700">{{ sale.number }}</td>
+              <td class="px-6 py-3 font-mono font-semibold text-blue-700">
+                {{ sale.number }}
+                <span
+                  v-if="sale.sale_mode && sale.sale_mode !== 'normal'"
+                  class="mt-1 block px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                  :class="{
+                    'bg-indigo-100 text-indigo-700': sale.sale_mode === 'serial',
+                    'bg-purple-100 text-purple-700': sale.sale_mode === 'mixed',
+                  }"
+                >{{ saleModeLabel(sale.sale_mode) }}</span>
+              </td>
               <td class="px-6 py-3">{{ formatDate(sale.date) }}</td>
               <td class="px-6 py-3">{{ sale.source_warehouse?.name }}</td>
               <td class="px-6 py-3">{{ sale.target_warehouse?.name }}</td>
@@ -94,6 +104,12 @@ function formatDate(date) {
   if (!date) return '-';
   const d = new Date(date);
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function saleModeLabel(mode) {
+  if (mode === 'serial') return 'Serial';
+  if (mode === 'mixed') return 'Campuran';
+  return null;
 }
 
 function goToPage(url) {

@@ -18,7 +18,17 @@
             <div class="space-y-3">
               <div>
                 <label class="block text-sm font-medium text-gray-500">Nomor</label>
-                <div class="mt-1 text-gray-900">{{ sale.number }}</div>
+                <div class="mt-1 text-gray-900 flex flex-wrap items-center gap-2">
+                  {{ sale.number }}
+                  <span
+                    v-if="sale.sale_mode && sale.sale_mode !== 'normal'"
+                    class="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                    :class="{
+                      'bg-indigo-100 text-indigo-700': sale.sale_mode === 'serial',
+                      'bg-purple-100 text-purple-700': sale.sale_mode === 'mixed',
+                    }"
+                  >{{ saleModeLabel(sale.sale_mode) }}</span>
+                </div>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-500">Tanggal</label>
@@ -60,8 +70,34 @@
         </div>
       </div>
 
+      <div v-if="serialItems.length" class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h2 class="text-lg font-semibold text-indigo-700 mb-4">Detail Nomor Seri</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-full divide-y divide-gray-200">
+            <thead class="bg-indigo-50">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Serial</th>
+                <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700 uppercase">Item</th>
+                <th class="px-3 py-2 text-right text-xs font-bold text-indigo-700 uppercase">Qty</th>
+                <th class="px-3 py-2 text-right text-xs font-bold text-indigo-700 uppercase">Harga</th>
+                <th class="px-3 py-2 text-right text-xs font-bold text-indigo-700 uppercase">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+              <tr v-for="(s, idx) in serialItems" :key="idx">
+                <td class="px-3 py-2 font-mono text-sm">{{ s.serial_number }}</td>
+                <td class="px-3 py-2 text-sm">{{ s.item_name }}</td>
+                <td class="px-3 py-2 text-sm text-right">{{ formatNumber(s.qty) }} {{ s.unit_name }}</td>
+                <td class="px-3 py-2 text-sm text-right">{{ formatNumber(s.price) }}</td>
+                <td class="px-3 py-2 text-sm text-right font-semibold text-indigo-700">{{ formatNumber(s.subtotal) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="bg-white rounded-lg shadow-sm p-6">
-        <h2 class="text-lg font-semibold text-gray-700 mb-4">Detail Item</h2>
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Detail Item (qty)</h2>
         <div class="overflow-x-auto">
           <table class="w-full min-w-full divide-y divide-gray-200">
             <thead class="bg-gradient-to-r from-blue-50 to-blue-100">
@@ -75,6 +111,9 @@
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-if="!sale.items || !sale.items.length">
+                <td colspan="6" class="px-3 py-6 text-center text-gray-400">Tidak ada item qty</td>
+              </tr>
               <tr v-for="item in sale.items" :key="item.id">
                 <td class="px-3 py-2">
                   <div class="text-sm font-medium text-gray-900">{{ item.item?.name }}</div>
@@ -99,8 +138,15 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
-  sale: Object
+  sale: Object,
+  serialItems: { type: Array, default: () => [] },
 });
+
+function saleModeLabel(mode) {
+  if (mode === 'serial') return 'Serial';
+  if (mode === 'mixed') return 'Campuran';
+  return null;
+}
 
 function goBack() {
   router.visit('/warehouse-sales');
@@ -111,7 +157,7 @@ function formatDate(date) {
   return new Date(date).toLocaleDateString('id-ID', {
     day: '2-digit',
     month: 'long',
-    year: 'numeric'
+    year: 'numeric',
   });
 }
 
@@ -120,7 +166,7 @@ function formatNumber(val) {
   if (Number(val) % 1 === 0) return Number(val);
   return Number(val).toLocaleString('id-ID', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2
+    maximumFractionDigits: 2,
   });
 }
-</script> 
+</script>
