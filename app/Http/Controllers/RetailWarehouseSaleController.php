@@ -79,27 +79,45 @@ class RetailWarehouseSaleController extends Controller
 
     public function store(Request $request)
     {
-        
-        // Validate request
-        $request->validate([
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+
+        if (! $hasItems && ! $hasSerials) {
+            return response()->json(['success' => false, 'message' => 'Minimal harus ada 1 item (qty) atau 1 nomor seri.'], 422);
+        }
+
+        $rules = [
             'customer_id' => 'required|exists:customers,id',
             'sale_date' => 'required|date',
             'warehouse_id' => 'required|exists:warehouses,id',
             'warehouse_division_id' => 'nullable|exists:warehouse_division,id',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
-            'items.*.qty' => 'required|numeric|min:0.01',
-            'items.*.price' => 'required|numeric|min:0',
             'total_amount' => 'required|numeric|min:0',
-            'notes' => 'nullable|string'
-        ]);
-        
+            'notes' => 'nullable|string',
+        ];
+        if ($hasItems) {
+            $rules['items'] = 'required|array|min:1';
+            $rules['items.*.item_id'] = 'required|exists:items,id';
+            $rules['items.*.qty'] = 'required|numeric|min:0.01';
+            $rules['items.*.price'] = 'required|numeric|min:0';
+        }
+        if ($hasSerials) {
+            $rules['serial_items'] = 'required|array|min:1';
+            $rules['serial_items.*.serial_id'] = 'required|integer';
+            $rules['serial_items.*.serial_number'] = 'required|string';
+            $rules['serial_items.*.item_id'] = 'required|exists:items,id';
+            $rules['serial_items.*.qty'] = 'required|numeric|min:0.01';
+            $rules['serial_items.*.qty_small'] = 'required|numeric|min:0';
+            $rules['serial_items.*.price'] = 'required|numeric|min:0';
+            $rules['serial_items.*.subtotal'] = 'required|numeric|min:0';
+        }
+        $request->validate($rules);
+
+        $saleMode = $hasItems && $hasSerials ? 'mixed' : ($hasSerials ? 'serial' : 'normal');
+
         DB::beginTransaction();
         try {
-            // Generate number
             $number = $this->generateSaleNumber();
-            
-            // Insert retail warehouse sale
+
             $saleId = DB::table('retail_warehouse_sales')->insertGetId([
                 'number' => $number,
                 'customer_id' => $request->customer_id,
@@ -108,28 +126,38 @@ class RetailWarehouseSaleController extends Controller
                 'warehouse_division_id' => $request->warehouse_division_id,
                 'total_amount' => $request->total_amount,
                 'notes' => $request->notes,
+                'sale_mode' => $saleMode,
                 'status' => 'completed',
                 'created_by' => auth()->id(),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
 
-            // Insert items
-            foreach ($request->items as $item) {
-                DB::table('retail_warehouse_sale_items')->insert([
-                    'retail_warehouse_sale_id' => $saleId,
-                    'item_id' => $item['item_id'],
-                    'barcode' => $item['barcode'] ?? null,
-                    'qty' => $item['qty'],
-                    'unit' => $item['unit'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+            if ($hasSerials) {
+                $this->processSerialItemsForRWS(
+                    $saleId,
+                    (int) $request->warehouse_id,
+                    $request->serial_items,
+                    $request->sale_date ?? now()->toDateString()
+                );
+            }
 
-                // Update inventory stock
-                $this->updateInventoryStock($item, $request->warehouse_id, $saleId);
+            if ($hasItems) {
+                foreach ($request->items as $item) {
+                    DB::table('retail_warehouse_sale_items')->insert([
+                        'retail_warehouse_sale_id' => $saleId,
+                        'item_id' => $item['item_id'],
+                        'barcode' => $item['barcode'] ?? null,
+                        'qty' => $item['qty'],
+                        'unit' => $item['unit'],
+                        'price' => $item['price'],
+                        'subtotal' => $item['subtotal'],
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $this->updateInventoryStock($item, $request->warehouse_id, $saleId);
+                }
             }
 
             // Log activity
@@ -195,9 +223,19 @@ class RetailWarehouseSaleController extends Controller
             ->where('rwsi.retail_warehouse_sale_id', $id)
             ->get();
 
+        $serialItems = DB::table('retail_warehouse_sale_serial_items as rwss')
+            ->leftJoin('items as i', 'rwss.item_id', '=', 'i.id')
+            ->select(
+                'rwss.*',
+                'i.name as item_name'
+            )
+            ->where('rwss.retail_warehouse_sale_id', $id)
+            ->get();
+
         return Inertia::render('RetailWarehouseSale/Show', [
             'sale' => $sale,
-            'items' => $items
+            'items' => $items,
+            'serialItems' => $serialItems,
         ]);
     }
 
@@ -218,14 +256,20 @@ class RetailWarehouseSaleController extends Controller
                 return redirect()->route('retail-warehouse-sale.index')->with('error', 'Retail Warehouse Sale tidak ditemukan');
             }
 
-            $items = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->get();
+            $saleMode = $sale->sale_mode ?? 'normal';
 
-            // Rollback inventory
-            foreach ($items as $item) {
-                $this->rollbackInventoryStock($item, $sale->warehouse_id);
+            if (in_array($saleMode, ['serial', 'mixed'], true)) {
+                $this->rollbackSerialItemsForRWS($sale);
             }
 
-            // Delete items
+            $items = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->get();
+            if ($saleMode !== 'serial') {
+                foreach ($items as $item) {
+                    $this->rollbackInventoryStock($item, $sale->warehouse_id);
+                }
+            }
+
+            DB::table('retail_warehouse_sale_serial_items')->where('retail_warehouse_sale_id', $id)->delete();
             DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->delete();
             
             // Delete sale
@@ -759,10 +803,20 @@ class RetailWarehouseSaleController extends Controller
             ->where('rwsi.retail_warehouse_sale_id', $id)
             ->get();
 
+        $serialItems = DB::table('retail_warehouse_sale_serial_items as rwss')
+            ->leftJoin('items as i', 'rwss.item_id', '=', 'i.id')
+            ->select(
+                'rwss.*',
+                'i.name as item_name'
+            )
+            ->where('rwss.retail_warehouse_sale_id', $id)
+            ->get();
+
         return response()->json([
             'success' => true,
             'sale' => $sale,
             'items' => $items,
+            'serial_items' => $serialItems,
             'can_delete' => $canDelete,
         ]);
     }
@@ -785,10 +839,20 @@ class RetailWarehouseSaleController extends Controller
 
         DB::beginTransaction();
         try {
-            $items = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->get();
-            foreach ($items as $item) {
-                $this->rollbackInventoryStock($item, $sale->warehouse_id);
+            $saleMode = $sale->sale_mode ?? 'normal';
+
+            if (in_array($saleMode, ['serial', 'mixed'], true)) {
+                $this->rollbackSerialItemsForRWS($sale);
             }
+
+            $items = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->get();
+            if ($saleMode !== 'serial') {
+                foreach ($items as $item) {
+                    $this->rollbackInventoryStock($item, $sale->warehouse_id);
+                }
+            }
+
+            DB::table('retail_warehouse_sale_serial_items')->where('retail_warehouse_sale_id', $id)->delete();
             DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $id)->delete();
             DB::table('retail_warehouse_sales')->where('id', $id)->delete();
 
@@ -867,5 +931,285 @@ class RetailWarehouseSaleController extends Controller
                 'name' => $sale->division_name
             ]
         ]);
+    }
+
+    /**
+     * Validasi nomor seri untuk penjualan warehouse retail.
+     */
+    public function validateSerialForRWS(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string',
+            'warehouse_id' => 'required|integer',
+        ]);
+
+        $serialNumber = trim($request->serial_number);
+        $warehouseId = (int) $request->warehouse_id;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->join('items as i', 's.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.warehouse_id',
+                's.is_out',
+                's.is_transferred',
+                's.repack_unit_id',
+                's.repack_qty',
+                's.unit_id',
+                'i.name as item_name',
+                'i.sku',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
+            )
+            ->first();
+
+        if (! $serial) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+
+        if ($serial->is_out) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sudah keluar gudang (sudah dipakai DO / penjualan).']);
+        }
+
+        if ($serial->is_transferred) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sudah pernah di-transfer.']);
+        }
+
+        if ((int) $serial->warehouse_id !== $warehouseId) {
+            $whName = DB::table('warehouses')->where('id', $serial->warehouse_id)->value('name') ?? $serial->warehouse_id;
+
+            return response()->json([
+                'valid' => false,
+                'message' => "Serial berada di gudang {$whName}, bukan gudang yang dipilih.",
+            ]);
+        }
+
+        $qty = 1.0;
+        $unitId = $serial->unit_id;
+        $unitName = $serial->unit_name ?? '';
+        if ($serial->repack_qty && $serial->repack_unit_id) {
+            $qty = (float) $serial->repack_qty;
+            $unitId = $serial->repack_unit_id;
+            $unitName = $serial->repack_unit_name ?? $unitName;
+        }
+
+        $smallConv = $serial->small_conversion_qty ?: 1;
+        $mediumConv = $serial->medium_conversion_qty ?: 1;
+        $qty_small = $qty;
+        if ($unitId == $serial->medium_unit_id) {
+            $qty_small = $qty * $smallConv;
+        } elseif ($unitId == $serial->large_unit_id) {
+            $qty_small = $qty * $smallConv * $mediumConv;
+        }
+
+        $price = DB::table('item_prices')
+            ->where('item_id', $serial->item_id)
+            ->where(function ($q) {
+                $q->where('region_id', 1)
+                    ->orWhere('availability_price_type', 'all');
+            })
+            ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
+            ->value('price');
+
+        $price = $price ? (float) $price : 0;
+
+        return response()->json([
+            'valid' => true,
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'sku' => $serial->sku,
+                'qty' => $qty,
+                'qty_small' => $qty_small,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'price' => $price,
+                'subtotal' => $price * $qty,
+            ],
+        ]);
+    }
+
+    private function processSerialItemsForRWS(int $saleId, int $warehouseId, array $serialItems, string $saleDate): void
+    {
+        $now = now();
+        $userId = auth()->id();
+
+        foreach ($serialItems as $si) {
+            $serialRow = DB::table('inventory_item_serials')
+                ->where('id', $si['serial_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $serialRow) {
+                throw new \Exception('Serial tidak ditemukan: ' . ($si['serial_number'] ?? ''));
+            }
+            if ($serialRow->is_out) {
+                throw new \Exception('Serial sudah keluar: ' . $si['serial_number']);
+            }
+            if ((int) $serialRow->warehouse_id !== $warehouseId) {
+                throw new \Exception('Serial tidak di gudang penjualan: ' . $si['serial_number']);
+            }
+
+            $unitName = $si['unit_name'] ?? DB::table('units')->where('id', $si['unit_id'] ?? null)->value('name') ?? '';
+
+            DB::table('retail_warehouse_sale_serial_items')->insert([
+                'retail_warehouse_sale_id' => $saleId,
+                'serial_id' => $si['serial_id'],
+                'serial_number' => $si['serial_number'],
+                'item_id' => $si['item_id'],
+                'unit_id' => $si['unit_id'] ?? null,
+                'unit_name' => $unitName,
+                'qty' => $si['qty'],
+                'qty_small' => $si['qty_small'],
+                'price' => $si['price'],
+                'subtotal' => $si['subtotal'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $stockItem = [
+                'item_id' => $si['item_id'],
+                'qty' => $si['qty'],
+                'unit' => $unitName,
+            ];
+            $this->updateInventoryStock($stockItem, $warehouseId, $saleId);
+
+            DB::table('inventory_item_serials')->where('id', $si['serial_id'])->update([
+                'is_out' => 1,
+                'out_at' => $now,
+                'out_retail_warehouse_sale_id' => $saleId,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si['serial_id'],
+                'serial_number' => $si['serial_number'],
+                'movement_type' => 'rws_out',
+                'retail_warehouse_sale_id' => $saleId,
+                'item_id' => $si['item_id'],
+                'qty' => $si['qty'],
+                'unit_id' => $si['unit_id'] ?? null,
+                'moved_by' => $userId,
+                'moved_at' => $now,
+                'notes' => 'Penjualan Warehouse Retail',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    private function rollbackSerialItemsForRWS(object $sale): void
+    {
+        $now = now();
+        $userId = auth()->id();
+        $saleId = (int) $sale->id;
+        $warehouseId = (int) $sale->warehouse_id;
+
+        $serialItems = DB::table('retail_warehouse_sale_serial_items')
+            ->where('retail_warehouse_sale_id', $saleId)
+            ->get();
+
+        foreach ($serialItems as $si) {
+            $itemMaster = DB::table('items')->where('id', $si->item_id)->first();
+            if (! $itemMaster) {
+                continue;
+            }
+
+            $unit = $si->unit_name;
+            $qty_input = (float) $si->qty;
+            $qty_small = 0;
+            $qty_medium = 0;
+            $qty_large = 0;
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+            $smallConv = $itemMaster->small_conversion_qty ?: 1;
+            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
+
+            if ($unit === $unitSmall) {
+                $qty_small = $qty_input;
+                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+            } elseif ($unit === $unitMedium) {
+                $qty_medium = $qty_input;
+                $qty_small = $qty_medium * $smallConv;
+                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+            } elseif ($unit === $unitLarge) {
+                $qty_large = $qty_input;
+                $qty_medium = $qty_large * $mediumConv;
+                $qty_small = $qty_medium * $smallConv;
+            } else {
+                $qty_small = (float) ($si->qty_small ?? $qty_input);
+            }
+
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $si->item_id)->first();
+            if ($inventoryItem) {
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                if ($stock) {
+                    DB::table('food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $stock->qty_small + $qty_small,
+                            'qty_medium' => $stock->qty_medium + $qty_medium,
+                            'qty_large' => $stock->qty_large + $qty_large,
+                            'updated_at' => $now,
+                        ]);
+                }
+            }
+
+            DB::table('inventory_item_serials')
+                ->where('id', $si->serial_id)
+                ->update([
+                    'is_out' => 0,
+                    'out_at' => null,
+                    'out_retail_warehouse_sale_id' => null,
+                    'updated_at' => $now,
+                ]);
+
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si->serial_id,
+                'serial_number' => $si->serial_number,
+                'movement_type' => 'rws_return',
+                'retail_warehouse_sale_id' => $saleId,
+                'item_id' => $si->item_id,
+                'qty' => $si->qty,
+                'unit_id' => $si->unit_id,
+                'moved_by' => $userId,
+                'moved_at' => $now,
+                'notes' => 'Rollback penjualan retail dihapus',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        DB::table('inventory_item_serials')
+            ->where('out_retail_warehouse_sale_id', $saleId)
+            ->update([
+                'is_out' => 0,
+                'out_at' => null,
+                'out_retail_warehouse_sale_id' => null,
+                'updated_at' => $now,
+            ]);
+
+        DB::table('food_inventory_cards')
+            ->where('reference_type', 'retail_warehouse_sale')
+            ->where('reference_id', $saleId)
+            ->where('warehouse_id', $warehouseId)
+            ->delete();
     }
 } 

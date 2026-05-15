@@ -379,6 +379,7 @@ Route::prefix('approval-app')->group(function () {
         // Warehouse Transfer (Approval App)
         Route::get('/warehouse-transfers', [WarehouseTransferController::class, 'apiIndex']);
         Route::get('/warehouse-transfers/{id}', [WarehouseTransferController::class, 'apiShow']);
+        Route::post('/warehouse-transfers/validate-serial', [WarehouseTransferController::class, 'validateSerialForWT']);
         Route::post('/warehouse-transfers', [WarehouseTransferController::class, 'apiStore']);
 
         // Internal Warehouse Transfer (Approval App - transfer antar gudang dalam 1 outlet)
@@ -755,6 +756,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-warehouse-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'getItemUnits']);
         Route::get('/retail-warehouse-food/{id}', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'apiShow']);
         Route::post('/retail-warehouse-food', [\App\Http\Controllers\RetailWarehouseFoodController::class, 'store']);
+        Route::post('/retail-warehouse-sale/validate-serial', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'validateSerialForRWS']);
         Route::post('/retail-warehouse-sale', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'store']);
         Route::post('/retail-warehouse-sale/search-items', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItems']);
         Route::post('/retail-warehouse-sale/search-items-by-name', [\App\Http\Controllers\RetailWarehouseSaleController::class, 'searchItemsByName']);

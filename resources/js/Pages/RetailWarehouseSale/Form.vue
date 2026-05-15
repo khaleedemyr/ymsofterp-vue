@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -30,13 +30,23 @@ const searchResults = ref([]);
 const showSearchResults = ref(false);
 const selectedSearchIndex = ref(-1);
 
+const serialMode = ref(false);
+const serialInput = ref('');
+const serialInputRef = ref(null);
+const serialScanning = ref(false);
+const serialFeedback = ref('');
+const serialFeedbackSuccess = ref(false);
+const scannedSerials = ref([]);
+
 const filteredDivisions = computed(() => {
   if (!form.value.warehouse_id) return [];
   return props.warehouseDivisions.filter(div => div.warehouse_id == form.value.warehouse_id);
 });
 
 const totalAmount = computed(() => {
-  return form.value.items.reduce((total, item) => total + (item.subtotal || 0), 0);
+  const itemsTotal = form.value.items.reduce((total, item) => total + (item.subtotal || 0), 0);
+  const serialTotal = scannedSerials.value.reduce((total, s) => total + (Number(s.subtotal) || 0), 0);
+  return itemsTotal + serialTotal;
 });
 
 // Debounce function
@@ -275,6 +285,104 @@ function onCustomerCreated(customer) {
   showCustomerModal.value = false;
 }
 
+function playBeep(success) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = success ? 880 : 300;
+    osc.type = success ? 'sine' : 'square';
+    gain.gain.value = 0.3;
+    osc.start();
+    osc.stop(ctx.currentTime + (success ? 0.12 : 0.25));
+  } catch (e) {}
+}
+
+async function onSerialScan() {
+  const input = serialInput.value.trim();
+  if (!input) return;
+
+  if (!form.value.warehouse_id) {
+    serialFeedback.value = 'Pilih warehouse dulu';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+    return;
+  }
+
+  if (scannedSerials.value.some(s => s.serial_number === input)) {
+    serialFeedback.value = `Serial "${input}" sudah discan`;
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+    serialInput.value = '';
+    return;
+  }
+
+  serialScanning.value = true;
+  try {
+    const response = await fetch('/retail-warehouse-sale/validate-serial', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+      },
+      body: JSON.stringify({
+        serial_number: input,
+        warehouse_id: form.value.warehouse_id,
+      })
+    });
+    const res = await response.json();
+
+    if (res.valid) {
+      const serial = res.serial;
+      scannedSerials.value.push({
+        serial_id: serial.id,
+        serial_number: serial.serial_number,
+        item_id: serial.item_id,
+        item_name: serial.item_name,
+        unit_id: serial.unit_id,
+        unit_name: serial.unit_name,
+        qty: serial.qty,
+        qty_small: serial.qty_small,
+        price: serial.price,
+        subtotal: serial.subtotal,
+      });
+      serialFeedback.value = `Serial "${input}" valid`;
+      serialFeedbackSuccess.value = true;
+      playBeep(true);
+    } else {
+      serialFeedback.value = res.message || 'Serial tidak valid';
+      serialFeedbackSuccess.value = false;
+      playBeep(false);
+    }
+  } catch (e) {
+    serialFeedback.value = 'Gagal validasi serial';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+  } finally {
+    serialScanning.value = false;
+    serialInput.value = '';
+    nextTick(() => serialInputRef.value?.focus());
+  }
+}
+
+function removeSerial(idx) {
+  scannedSerials.value.splice(idx, 1);
+}
+
+function updateSerialSubtotal(idx) {
+  const s = scannedSerials.value[idx];
+  s.subtotal = (Number(s.qty) || 0) * (Number(s.price) || 0);
+}
+
+function handleSerialKeyPress(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    onSerialScan();
+  }
+}
+
 async function submitForm() {
   if (!form.value.customer_id) {
     Swal.fire('Error', 'Pilih customer terlebih dahulu!', 'error');
@@ -286,31 +394,57 @@ async function submitForm() {
     return;
   }
 
-  if (form.value.items.length === 0) {
-    Swal.fire('Error', 'Tidak ada item yang dipilih!', 'error');
+  const hasItems = form.value.items.length > 0;
+  const hasSerials = scannedSerials.value.length > 0;
+
+  if (!hasItems && !hasSerials) {
+    Swal.fire('Error', 'Minimal harus ada 1 item (qty) atau 1 nomor seri!', 'error');
     return;
   }
 
-  // Validate all items have price
-  const invalidItems = form.value.items.filter(item => !item.price || item.price <= 0);
-  if (invalidItems.length > 0) {
-    Swal.fire('Error', 'Semua item harus memiliki harga!', 'error');
-    return;
+  if (hasItems) {
+    const invalidItems = form.value.items.filter(item => !item.price || item.price <= 0);
+    if (invalidItems.length > 0) {
+      Swal.fire('Error', 'Semua item harus memiliki harga!', 'error');
+      return;
+    }
+  }
+
+  if (hasSerials) {
+    const invalidSerials = scannedSerials.value.filter(s => !s.price || s.price <= 0);
+    if (invalidSerials.length > 0) {
+      Swal.fire('Error', 'Semua serial harus memiliki harga!', 'error');
+      return;
+    }
   }
 
   isSubmitting.value = true;
 
   try {
+    const payload = {
+      ...form.value,
+      items: hasItems ? form.value.items : [],
+      serial_items: hasSerials ? scannedSerials.value.map(s => ({
+        serial_id: s.serial_id,
+        serial_number: s.serial_number,
+        item_id: s.item_id,
+        unit_id: s.unit_id,
+        unit_name: s.unit_name,
+        qty: s.qty,
+        qty_small: s.qty_small,
+        price: s.price,
+        subtotal: s.subtotal,
+      })) : [],
+      total_amount: totalAmount.value,
+    };
+
     const response = await fetch('/retail-warehouse-sale', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
       },
-      body: JSON.stringify({
-        ...form.value,
-        total_amount: totalAmount.value
-      })
+      body: JSON.stringify(payload)
     });
 
     const result = await response.json();
@@ -439,6 +573,32 @@ async function refreshItemPrice(index) {
               <textarea v-model="form.notes" rows="3" class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
             </div>
 
+            <!-- Mode Serial -->
+            <div class="mb-4 border rounded-lg p-4" :class="serialMode ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'">
+              <label class="flex items-center justify-between cursor-pointer">
+                <span class="text-sm font-medium text-gray-700">
+                  <i class="fa-solid fa-qrcode mr-1 text-indigo-500"></i>
+                  Mode Nomor Seri
+                </span>
+                <input type="checkbox" v-model="serialMode" class="sr-only peer">
+                <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-indigo-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+              </label>
+              <div v-if="serialMode" class="mt-3 space-y-2">
+                <input
+                  ref="serialInputRef"
+                  v-model="serialInput"
+                  @keypress="handleSerialKeyPress"
+                  type="text"
+                  placeholder="Scan nomor seri..."
+                  class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  :disabled="serialScanning"
+                />
+                <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackSuccess ? 'text-green-600' : 'text-red-600'">
+                  {{ serialFeedback }}
+                </p>
+              </div>
+            </div>
+
             <!-- Barcode Scanner -->
             <div class="mb-4">
               <label class="block text-sm font-medium text-gray-700 mb-2">Scan Barcode</label>
@@ -527,12 +687,41 @@ async function refreshItemPrice(index) {
               </div>
             </div>
 
-            <div v-if="form.items.length === 0" class="text-center py-10 text-gray-400">
-              <i class="fa-solid fa-barcode text-4xl mb-4"></i>
-              <p>Scan barcode item untuk menambahkan ke penjualan</p>
+            <div v-if="scannedSerials.length > 0" class="mb-6">
+              <h3 class="text-sm font-semibold text-indigo-700 mb-2">Nomor Seri ({{ scannedSerials.length }})</h3>
+              <div class="space-y-3">
+                <div v-for="(s, sIdx) in scannedSerials" :key="s.serial_number" class="border border-indigo-200 rounded-lg p-4 bg-indigo-50/20">
+                  <div class="flex justify-between items-start mb-2">
+                    <div>
+                      <p class="font-mono font-semibold text-indigo-800">{{ s.serial_number }}</p>
+                      <p class="text-sm text-gray-600">{{ s.item_name }}</p>
+                      <p class="text-xs text-gray-500">{{ s.qty }} {{ s.unit_name }}</p>
+                    </div>
+                    <button @click="removeSerial(sIdx)" type="button" class="text-red-500 hover:text-red-700">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs text-gray-500 mb-1">Harga</label>
+                      <input v-model.number="s.price" @input="updateSerialSubtotal(sIdx)" type="number" min="0" step="100" class="w-full rounded border-gray-300 text-sm" />
+                    </div>
+                    <div class="text-right flex items-end justify-end">
+                      <span class="font-semibold text-indigo-600 text-sm">
+                        {{ new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(s.subtotal) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-if="form.items.length === 0 && scannedSerials.length === 0" class="text-center py-10 text-gray-400">
+              <i class="fa-solid fa-barcode text-4xl mb-4"></i>
+              <p>Scan barcode atau nomor seri untuk menambahkan item</p>
+            </div>
+
+            <div v-if="form.items.length > 0" class="space-y-4">
               <div v-for="(item, index) in form.items" :key="index" class="border border-gray-200 rounded-lg p-4">
                 <div class="flex justify-between items-start mb-3">
                   <div class="flex-1">

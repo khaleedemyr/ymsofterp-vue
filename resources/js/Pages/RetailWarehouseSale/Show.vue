@@ -7,7 +7,14 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   sale: Object,
   items: Array,
+  serialItems: { type: Array, default: () => [] },
 });
+
+function saleModeLabel(mode) {
+  if (mode === 'serial') return 'Serial';
+  if (mode === 'mixed') return 'Campuran';
+  return 'Qty';
+}
 
 function goBack() {
   router.visit(route('retail-warehouse-sale.index'));
@@ -84,6 +91,14 @@ function printReceipt() {
               <div>
                 <label class="block text-sm font-medium text-gray-500">No. Penjualan</label>
                 <p class="text-lg font-bold text-blue-600">{{ sale.number }}</p>
+                <span
+                  v-if="sale.sale_mode && sale.sale_mode !== 'normal'"
+                  class="mt-1 inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  :class="{
+                    'bg-indigo-100 text-indigo-700': sale.sale_mode === 'serial',
+                    'bg-purple-100 text-purple-700': sale.sale_mode === 'mixed',
+                  }"
+                >{{ saleModeLabel(sale.sale_mode) }}</span>
               </div>
 
               <div>
@@ -169,11 +184,37 @@ function printReceipt() {
           <div class="bg-white rounded-2xl shadow-2xl p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-4">Item Penjualan</h2>
             
-            <div v-if="items.length === 0" class="text-center py-10 text-gray-400">
+            <div v-if="serialItems.length > 0" class="mb-6">
+              <h3 class="text-sm font-semibold text-indigo-700 mb-3">Detail Nomor Seri</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                  <thead class="bg-indigo-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Serial</th>
+                      <th class="px-3 py-2 text-left">Item</th>
+                      <th class="px-3 py-2 text-right">Qty</th>
+                      <th class="px-3 py-2 text-right">Harga</th>
+                      <th class="px-3 py-2 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(s, idx) in serialItems" :key="idx" class="border-t border-gray-100">
+                      <td class="px-3 py-2 font-mono">{{ s.serial_number }}</td>
+                      <td class="px-3 py-2">{{ s.item_name }}</td>
+                      <td class="px-3 py-2 text-right">{{ s.qty }} {{ s.unit_name }}</td>
+                      <td class="px-3 py-2 text-right">{{ formatCurrency(s.price) }}</td>
+                      <td class="px-3 py-2 text-right font-semibold">{{ formatCurrency(s.subtotal) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-if="items.length === 0 && serialItems.length === 0" class="text-center py-10 text-gray-400">
               Tidak ada item dalam penjualan ini
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-if="items.length > 0" class="space-y-4">
               <div v-for="(item, index) in items" :key="index" class="border border-gray-200 rounded-lg p-4">
                 <div class="flex justify-between items-start mb-3">
                   <div class="flex-1">

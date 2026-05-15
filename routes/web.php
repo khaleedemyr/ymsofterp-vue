@@ -1784,6 +1784,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Retail Warehouse Sales
 Route::get('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleController::class, 'index'])->name('retail-warehouse-sale.index');
 Route::get('/retail-warehouse-sale/create', [App\Http\Controllers\RetailWarehouseSaleController::class, 'create'])->name('retail-warehouse-sale.create');
+Route::post('/retail-warehouse-sale/validate-serial', [App\Http\Controllers\RetailWarehouseSaleController::class, 'validateSerialForRWS'])->name('retail-warehouse-sale.validate-serial');
 Route::post('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleController::class, 'store'])->name('retail-warehouse-sale.store');
 Route::get('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'show'])->name('retail-warehouse-sale.show');
 Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWarehouseSaleController::class, 'print'])->name('retail-warehouse-sale.print');

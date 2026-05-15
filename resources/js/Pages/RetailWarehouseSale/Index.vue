@@ -33,6 +33,12 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
+function saleModeLabel(mode) {
+  if (mode === 'serial') return 'Serial';
+  if (mode === 'mixed') return 'Campuran';
+  return null;
+}
+
 // Watch untuk auto search
 watch(
   () => props.filters,
@@ -233,7 +239,17 @@ function getVisiblePages() {
               <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data penjualan.</td>
             </tr>
             <tr v-for="sale in sales.data" :key="sale.id" class="hover:bg-blue-50 transition shadow-sm">
-              <td class="px-6 py-3 font-semibold">{{ sale.number }}</td>
+              <td class="px-6 py-3 font-semibold">
+                {{ sale.number }}
+                <span
+                  v-if="sale.sale_mode && sale.sale_mode !== 'normal'"
+                  class="mt-1 block px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                  :class="{
+                    'bg-indigo-100 text-indigo-700': sale.sale_mode === 'serial',
+                    'bg-purple-100 text-purple-700': sale.sale_mode === 'mixed',
+                  }"
+                >{{ saleModeLabel(sale.sale_mode) }}</span>
+              </td>
               <td class="px-6 py-3">
                 <div>
                   <div class="font-semibold">{{ sale.customer_name }}</div>
