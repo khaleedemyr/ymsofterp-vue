@@ -1265,6 +1265,7 @@ Route::get('/internal-use-waste', [InternalUseWasteController::class, 'index'])-
 Route::get('/internal-use-waste/report', [App\Http\Controllers\InternalUseWasteController::class, 'report'])->name('internal-use-waste.report');
 Route::get('/internal-use-waste/report-waste-spoil', [App\Http\Controllers\InternalUseWasteController::class, 'reportWasteSpoil'])->name('internal-use-waste.report-waste-spoil');
 Route::get('/internal-use-waste/create', [InternalUseWasteController::class, 'create'])->name('internal-use-waste.create');
+Route::post('/internal-use-waste/validate-serial', [InternalUseWasteController::class, 'validateSerialForIUW'])->name('internal-use-waste.validate-serial');
 Route::post('/internal-use-waste', [InternalUseWasteController::class, 'store'])->name('internal-use-waste.store');
 Route::get('/internal-use-waste/{id}/edit', [InternalUseWasteController::class, 'edit'])->name('internal-use-waste.edit');
 Route::put('/internal-use-waste/{id}', [InternalUseWasteController::class, 'update'])->name('internal-use-waste.update');

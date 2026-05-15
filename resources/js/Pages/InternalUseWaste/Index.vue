@@ -89,7 +89,17 @@
               <td colspan="9" class="text-center py-10 text-green-300">Tidak ada data.</td>
             </tr>
             <tr v-for="row in props.rows" :key="row.id" class="hover:bg-green-50/40">
-              <td class="px-4 py-3 text-sm text-gray-600">{{ documentId(row) }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">
+                {{ documentId(row) }}
+                <span
+                  v-if="row.document_mode && row.document_mode !== 'normal'"
+                  class="mt-1 block px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
+                  :class="{
+                    'bg-indigo-100 text-indigo-700': row.document_mode === 'serial',
+                    'bg-purple-100 text-purple-700': row.document_mode === 'mixed',
+                  }"
+                >{{ documentModeLabel(row.document_mode) }}</span>
+              </td>
               <td class="px-4 py-3">{{ formatDate(row.date) }}</td>
               <td class="px-4 py-3">{{ typeLabel(row.type) }}</td>
               <td class="px-4 py-3">{{ row.warehouse_name }}</td>
@@ -101,7 +111,12 @@
                 <button type="button" class="inline-flex items-center btn btn-xs bg-green-100 text-green-800 hover:bg-green-200 rounded px-2 py-1 font-semibold transition" @click="goDetail(documentId(row))">
                   <i class="fa fa-eye mr-1"></i> Detail
                 </button>
-                <button type="button" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition ml-1" @click="goEdit(documentId(row))">
+                <button
+                  v-if="!row.document_mode || row.document_mode === 'normal'"
+                  type="button"
+                  class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition ml-1"
+                  @click="goEdit(documentId(row))"
+                >
                   <i class="fa fa-pen mr-1"></i> Edit
                 </button>
                 <button
@@ -303,6 +318,12 @@ function typeLabel(type) {
   if (type === 'spoil') return 'Spoil'
   if (type === 'waste') return 'Waste'
   return type
+}
+
+function documentModeLabel(mode) {
+  if (mode === 'serial') return 'Serial'
+  if (mode === 'mixed') return 'Campuran'
+  return null
 }
 </script>
 

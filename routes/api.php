@@ -888,6 +888,7 @@ Route::prefix('approval-app')->group(function () {
         // Route yang terpotong dihapus
         Route::get('/internal-use-waste/item/{id}/units', [\App\Http\Controllers\InternalUseWasteController::class, 'getItemUnits']);
         Route::get('/internal-use-waste/{id}', [\App\Http\Controllers\InternalUseWasteController::class, 'apiShow']);
+        Route::post('/internal-use-waste/validate-serial', [\App\Http\Controllers\InternalUseWasteController::class, 'validateSerialForIUW']);
         Route::post('/internal-use-waste', [\App\Http\Controllers\InternalUseWasteController::class, 'apiStore']);
         Route::delete('/internal-use-waste/{id}', [\App\Http\Controllers\InternalUseWasteController::class, 'apiDestroy']);
 

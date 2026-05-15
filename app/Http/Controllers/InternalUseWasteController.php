@@ -25,7 +25,8 @@ class InternalUseWasteController extends Controller
                 'items.name as item_name',
                 'units.name as unit_name',
                 'tbl_data_ruko.nama_ruko',
-                'iuw_h.notes as header_notes'
+                'iuw_h.notes as header_notes',
+                'iuw_h.document_mode'
             );
 
         if ($request->filled('type')) {
@@ -99,6 +100,12 @@ class InternalUseWasteController extends Controller
             abort(404, 'Data tidak ditemukan');
         }
 
+        if (in_array($header->document_mode ?? 'normal', ['serial', 'mixed'], true)) {
+            return redirect()
+                ->route('internal-use-waste.show', $headerId)
+                ->with('error', 'Dokumen mode serial/campuran tidak dapat diedit. Hapus lalu buat baru.');
+        }
+
         $lines = DB::table('internal_use_wastes')
             ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
             ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
@@ -137,6 +144,11 @@ class InternalUseWasteController extends Controller
         DB::beginTransaction();
         try {
             $headerId = $this->insertHeaderFromRequest($request);
+
+            if (! empty($request->serial_items)) {
+                $this->processSerialItemsForIUW($request, $headerId, $request->serial_items);
+            }
+
             $itemsPayload = $this->normalizeItemsPayload($request);
             foreach ($itemsPayload as $row) {
                 $this->insertLineAndApplyStock($request, $headerId, $row);
@@ -158,6 +170,13 @@ class InternalUseWasteController extends Controller
         $headerId = $this->resolveHeaderIdFromAnyId($id);
         if (! $headerId) {
             abort(404, 'Data tidak ditemukan');
+        }
+
+        $existingHeader = DB::table('internal_use_waste_headers')->where('id', $headerId)->first();
+        if ($existingHeader && in_array($existingHeader->document_mode ?? 'normal', ['serial', 'mixed'], true)) {
+            return redirect()
+                ->route('internal-use-waste.show', $headerId)
+                ->with('error', 'Dokumen mode serial/campuran tidak dapat diedit. Hapus lalu buat baru.');
         }
 
         $this->mergeLegacySingleItemPayload($request);
@@ -232,10 +251,18 @@ class InternalUseWasteController extends Controller
             )
             ->get();
 
+        $serialItems = DB::table('internal_use_waste_serial_items as iuws')
+            ->leftJoin('items as i', 'iuws.item_id', '=', 'i.id')
+            ->where('iuws.internal_use_waste_header_id', $headerId)
+            ->orderBy('iuws.id')
+            ->select('iuws.*', 'i.name as item_name')
+            ->get();
+
         return inertia('InternalUseWaste/Show', [
             'headerId' => (int) $headerId,
             'header' => $header,
             'lines' => $lines,
+            'serialItems' => $serialItems,
         ]);
     }
 
@@ -255,14 +282,25 @@ class InternalUseWasteController extends Controller
 
         DB::beginTransaction();
         try {
-            $lines = DB::table('internal_use_wastes')->where('header_id', $headerId)->orderBy('id')->get();
-            if ($lines->isEmpty()) {
+            $header = DB::table('internal_use_waste_headers')->where('id', $headerId)->first();
+            if (! $header) {
                 return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
             }
 
-            foreach ($lines as $line) {
-                $this->rollbackOneLine($line);
+            $documentMode = $header->document_mode ?? 'normal';
+
+            if (in_array($documentMode, ['serial', 'mixed'], true)) {
+                $this->rollbackSerialItemsForIUW($header);
             }
+
+            $lines = DB::table('internal_use_wastes')->where('header_id', $headerId)->orderBy('id')->get();
+            if ($documentMode !== 'serial') {
+                foreach ($lines as $line) {
+                    $this->rollbackOneLine($line);
+                }
+            }
+
+            DB::table('internal_use_waste_serial_items')->where('internal_use_waste_header_id', $headerId)->delete();
             DB::table('internal_use_wastes')->where('header_id', $headerId)->delete();
             DB::table('internal_use_waste_headers')->where('id', $headerId)->delete();
 
@@ -419,7 +457,8 @@ class InternalUseWasteController extends Controller
                 'tbl_data_ruko.nama_ruko',
                 'creator_user.nama_lengkap as creator_name',
                 'creator_user.avatar as creator_avatar',
-                'iuw_h.notes as header_notes'
+                'iuw_h.notes as header_notes',
+                'iuw_h.document_mode'
             )
             ->orderByDesc('internal_use_wastes.date')
             ->orderByDesc('internal_use_wastes.id');
@@ -516,11 +555,111 @@ class InternalUseWasteController extends Controller
             )
             ->get();
 
+        $serialItems = DB::table('internal_use_waste_serial_items as iuws')
+            ->leftJoin('items as i', 'iuws.item_id', '=', 'i.id')
+            ->where('iuws.internal_use_waste_header_id', $headerId)
+            ->orderBy('iuws.id')
+            ->select('iuws.*', 'i.name as item_name')
+            ->get();
+
         return response()->json([
             'success' => true,
             'header' => $header,
             'lines' => $lines,
+            'serial_items' => $serialItems,
             'can_delete' => $canDelete,
+        ]);
+    }
+
+    public function validateSerialForIUW(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string',
+            'warehouse_id' => 'required|integer',
+        ]);
+
+        $serialNumber = trim($request->serial_number);
+        $warehouseId = (int) $request->warehouse_id;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->join('items as i', 's.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.warehouse_id',
+                's.is_out',
+                's.is_transferred',
+                's.repack_unit_id',
+                's.repack_qty',
+                's.unit_id',
+                'i.name as item_name',
+                'i.sku',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
+            )
+            ->first();
+
+        if (! $serial) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+
+        if ($serial->is_out) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sudah keluar gudang (sudah dipakai DO / penjualan / internal use).']);
+        }
+
+        if ($serial->is_transferred) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sudah pernah di-transfer.']);
+        }
+
+        if ((int) $serial->warehouse_id !== $warehouseId) {
+            $whName = DB::table('warehouses')->where('id', $serial->warehouse_id)->value('name') ?? $serial->warehouse_id;
+
+            return response()->json([
+                'valid' => false,
+                'message' => "Serial berada di gudang {$whName}, bukan gudang yang dipilih.",
+            ]);
+        }
+
+        $qty = 1.0;
+        $unitId = $serial->unit_id;
+        $unitName = $serial->unit_name ?? '';
+        if ($serial->repack_qty && $serial->repack_unit_id) {
+            $qty = (float) $serial->repack_qty;
+            $unitId = $serial->repack_unit_id;
+            $unitName = $serial->repack_unit_name ?? $unitName;
+        }
+
+        $smallConv = $serial->small_conversion_qty ?: 1;
+        $mediumConv = $serial->medium_conversion_qty ?: 1;
+        $qty_small = $qty;
+        if ($unitId == $serial->medium_unit_id) {
+            $qty_small = $qty * $smallConv;
+        } elseif ($unitId == $serial->large_unit_id) {
+            $qty_small = $qty * $smallConv * $mediumConv;
+        }
+
+        return response()->json([
+            'valid' => true,
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'sku' => $serial->sku,
+                'qty' => $qty,
+                'qty_small' => $qty_small,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+            ],
         ]);
     }
 
@@ -532,6 +671,11 @@ class InternalUseWasteController extends Controller
         DB::beginTransaction();
         try {
             $headerId = $this->insertHeaderFromRequest($request);
+
+            if (! empty($request->serial_items)) {
+                $this->processSerialItemsForIUW($request, $headerId, $request->serial_items);
+            }
+
             $itemsPayload = $this->normalizeItemsPayload($request);
             foreach ($itemsPayload as $row) {
                 $this->insertLineAndApplyStock($request, $headerId, $row);
@@ -637,23 +781,63 @@ class InternalUseWasteController extends Controller
 
     private function validateDocumentRequest(Request $request, bool $isUpdate): void
     {
-        $request->validate([
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+
+        if (! $hasItems && ! $hasSerials) {
+            throw ValidationException::withMessages([
+                'items' => ['Minimal harus ada 1 baris item (qty) atau 1 nomor seri.'],
+            ]);
+        }
+
+        $rules = [
             'type' => 'required|in:internal_use,spoil,waste',
             'date' => 'required|date',
             'warehouse_id' => 'required|integer',
             'ruko_id' => 'nullable|integer',
             'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|integer',
-            'items.*.qty' => 'required|numeric|min:0.01',
-            'items.*.unit_id' => 'required|integer',
-            'items.*.notes' => 'nullable|string',
-        ]);
+        ];
+
+        if ($hasItems) {
+            $rules['items'] = 'required|array|min:1';
+            $rules['items.*.item_id'] = 'required|integer';
+            $rules['items.*.qty'] = 'required|numeric|min:0.01';
+            $rules['items.*.unit_id'] = 'required|integer';
+            $rules['items.*.notes'] = 'nullable|string';
+        }
+
+        if ($hasSerials) {
+            $rules['serial_items'] = 'required|array|min:1';
+            $rules['serial_items.*.serial_id'] = 'required|integer';
+            $rules['serial_items.*.serial_number'] = 'required|string';
+            $rules['serial_items.*.item_id'] = 'required|integer';
+            $rules['serial_items.*.qty'] = 'required|numeric|min:0.01';
+            $rules['serial_items.*.qty_small'] = 'required|numeric|min:0';
+            $rules['serial_items.*.unit_id'] = 'nullable|integer';
+        }
+
+        $request->validate($rules);
+
         if ($request->type === 'internal_use' && empty($request->ruko_id)) {
             throw ValidationException::withMessages([
                 'ruko_id' => ['Ruko wajib untuk tipe Internal Use.'],
             ]);
         }
+    }
+
+    private function resolveDocumentMode(Request $request): string
+    {
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+
+        if ($hasItems && $hasSerials) {
+            return 'mixed';
+        }
+        if ($hasSerials) {
+            return 'serial';
+        }
+
+        return 'normal';
     }
 
     /**
@@ -683,6 +867,7 @@ class InternalUseWasteController extends Controller
             'warehouse_id' => (int) $request->warehouse_id,
             'ruko_id' => $request->type === 'internal_use' ? $request->ruko_id : null,
             'notes' => $request->notes,
+            'document_mode' => $this->resolveDocumentMode($request),
             'created_by' => Auth::id(),
             'created_at' => now(),
             'updated_at' => now(),
@@ -877,6 +1062,219 @@ class InternalUseWasteController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function processSerialItemsForIUW(Request $request, int $headerId, array $serialItems): void
+    {
+        $now = now();
+        $userId = Auth::id();
+        $warehouseId = (int) $request->warehouse_id;
+        $typeLabel = $request->type;
+
+        foreach ($serialItems as $si) {
+            $serialRow = DB::table('inventory_item_serials')
+                ->where('id', $si['serial_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $serialRow) {
+                throw new \Exception('Serial tidak ditemukan: ' . ($si['serial_number'] ?? ''));
+            }
+            if ($serialRow->is_out) {
+                throw new \Exception('Serial sudah keluar: ' . $si['serial_number']);
+            }
+            if ((int) $serialRow->warehouse_id !== $warehouseId) {
+                throw new \Exception('Serial tidak di gudang yang dipilih: ' . $si['serial_number']);
+            }
+
+            $unitId = (int) ($si['unit_id'] ?? 0);
+            $unitName = $si['unit_name'] ?? DB::table('units')->where('id', $unitId)->value('name') ?? '';
+            $qty = (float) $si['qty'];
+            $qty_small = (float) $si['qty_small'];
+
+            $itemMaster = DB::table('items')->where('id', $si['item_id'])->first();
+            if (! $itemMaster) {
+                throw new \Exception('Item tidak ditemukan untuk serial ' . $si['serial_number']);
+            }
+
+            if ($unitId > 0) {
+                [$qty_small, $qty_medium, $qty_large] = $this->computeQtyTiers($itemMaster, $unitId, $qty);
+            } else {
+                $qty_medium = 0;
+                $qty_large = 0;
+            }
+
+            DB::table('internal_use_waste_serial_items')->insert([
+                'internal_use_waste_header_id' => $headerId,
+                'serial_id' => $si['serial_id'],
+                'serial_number' => $si['serial_number'],
+                'item_id' => $si['item_id'],
+                'unit_id' => $unitId ?: null,
+                'unit_name' => $unitName,
+                'qty' => $qty,
+                'qty_small' => $qty_small,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $si['item_id'])->first();
+            if (! $inventoryItem) {
+                throw new \Exception('Inventory item not found for item_id: ' . $si['item_id']);
+            }
+            $inventory_item_id = $inventoryItem->id;
+
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('warehouse_id', $warehouseId)
+                ->first();
+            if (! $stock) {
+                throw new \Exception('Stok tidak ditemukan di gudang untuk serial ' . $si['serial_number']);
+            }
+            if ($qty_small > $stock->qty_small) {
+                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+                throw new \Exception("Qty serial melebihi stok ({$itemMaster->name}). Stok: {$stock->qty_small} {$unitSmall}");
+            }
+
+            DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id)
+                ->where('warehouse_id', $warehouseId)
+                ->update([
+                    'qty_small' => $stock->qty_small - $qty_small,
+                    'qty_medium' => $stock->qty_medium - $qty_medium,
+                    'qty_large' => $stock->qty_large - $qty_large,
+                    'updated_at' => $now,
+                ]);
+
+            DB::table('food_inventory_cards')->insert([
+                'inventory_item_id' => $inventory_item_id,
+                'warehouse_id' => $warehouseId,
+                'date' => $request->date,
+                'reference_type' => 'internal_use_waste',
+                'reference_id' => $headerId,
+                'out_qty_small' => $qty_small,
+                'out_qty_medium' => $qty_medium,
+                'out_qty_large' => $qty_large,
+                'cost_per_small' => $stock->last_cost_small,
+                'cost_per_medium' => $stock->last_cost_medium,
+                'cost_per_large' => $stock->last_cost_large,
+                'value_out' => $qty_small * $stock->last_cost_small,
+                'saldo_qty_small' => $stock->qty_small - $qty_small,
+                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
+                'saldo_qty_large' => $stock->qty_large - $qty_large,
+                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                'description' => 'Stock Out Serial - ' . $typeLabel . ' (' . $si['serial_number'] . ')',
+                'created_at' => $now,
+            ]);
+
+            DB::table('inventory_item_serials')->where('id', $si['serial_id'])->update([
+                'is_out' => 1,
+                'out_at' => $now,
+                'out_internal_use_waste_id' => $headerId,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si['serial_id'],
+                'serial_number' => $si['serial_number'],
+                'movement_type' => 'iuw_out',
+                'internal_use_waste_header_id' => $headerId,
+                'item_id' => $si['item_id'],
+                'qty' => $qty,
+                'unit_id' => $unitId ?: null,
+                'moved_by' => $userId,
+                'moved_at' => $now,
+                'notes' => 'Internal Use & Waste',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    private function rollbackSerialItemsForIUW(object $header): void
+    {
+        $now = now();
+        $userId = Auth::id();
+        $headerId = (int) $header->id;
+        $warehouseId = (int) $header->warehouse_id;
+
+        $serialItems = DB::table('internal_use_waste_serial_items')
+            ->where('internal_use_waste_header_id', $headerId)
+            ->get();
+
+        foreach ($serialItems as $si) {
+            $itemMaster = DB::table('items')->where('id', $si->item_id)->first();
+            if (! $itemMaster) {
+                continue;
+            }
+
+            $unitId = (int) ($si->unit_id ?? 0);
+            $qty = (float) $si->qty;
+            $qty_small = (float) ($si->qty_small ?? 0);
+
+            if ($unitId > 0) {
+                [$qty_small, $qty_medium, $qty_large] = $this->computeQtyTiers($itemMaster, $unitId, $qty);
+            } else {
+                $qty_medium = 0;
+                $qty_large = 0;
+            }
+
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $si->item_id)->first();
+            if ($inventoryItem) {
+                $stock = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+                if ($stock) {
+                    DB::table('food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $stock->qty_small + $qty_small,
+                            'qty_medium' => $stock->qty_medium + $qty_medium,
+                            'qty_large' => $stock->qty_large + $qty_large,
+                            'updated_at' => $now,
+                        ]);
+                }
+            }
+
+            DB::table('inventory_item_serials')
+                ->where('id', $si->serial_id)
+                ->update([
+                    'is_out' => 0,
+                    'out_at' => null,
+                    'out_internal_use_waste_id' => null,
+                    'updated_at' => $now,
+                ]);
+
+            DB::table('inventory_serial_movements')->insert([
+                'serial_id' => $si->serial_id,
+                'serial_number' => $si['serial_number'],
+                'movement_type' => 'iuw_return',
+                'internal_use_waste_header_id' => $headerId,
+                'item_id' => $si->item_id,
+                'qty' => $qty,
+                'unit_id' => $unitId ?: null,
+                'moved_by' => $userId,
+                'moved_at' => $now,
+                'notes' => 'Rollback internal use/waste dihapus',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        DB::table('inventory_item_serials')
+            ->where('out_internal_use_waste_id', $headerId)
+            ->update([
+                'is_out' => 0,
+                'out_at' => null,
+                'out_internal_use_waste_id' => null,
+                'updated_at' => $now,
+            ]);
+
+        DB::table('food_inventory_cards')
+            ->where('reference_type', 'internal_use_waste')
+            ->where('reference_id', $headerId)
+            ->where('warehouse_id', $warehouseId)
+            ->delete();
     }
 }
 

@@ -41,6 +41,29 @@
             <textarea v-model="form.notes" class="input input-bordered w-full" rows="2" placeholder="Opsional, berlaku untuk seluruh dokumen"></textarea>
           </div>
 
+
+          <div class="mb-4 border rounded-lg p-4" :class="serialMode ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'">
+            <label class="flex items-center justify-between cursor-pointer">
+              <span class="text-sm font-medium text-gray-700"><i class="fa-solid fa-qrcode mr-1 text-indigo-500"></i> Mode Nomor Seri</span>
+              <input type="checkbox" v-model="serialMode" class="sr-only peer" />
+              <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-indigo-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+            <div v-if="serialMode" class="mt-3 space-y-2">
+              <input ref="serialInputRef" v-model="serialInput" @keypress="handleSerialKeyPress" type="text" placeholder="Scan nomor seri..." class="input input-bordered w-full" :disabled="serialScanning" />
+              <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackSuccess ? 'text-green-600' : 'text-red-600'">{{ serialFeedback }}</p>
+              <div v-if="scannedSerials.length" class="space-y-2">
+                <p class="text-xs font-semibold text-indigo-700">{{ scannedSerials.length }} serial discan</p>
+                <div v-for="(s, sIdx) in scannedSerials" :key="s.serial_number" class="flex justify-between items-center border border-indigo-200 rounded-lg p-2 bg-white text-sm">
+                  <div>
+                    <span class="font-mono font-semibold">{{ s.serial_number }}</span>
+                    <span class="block text-gray-600">{{ s.item_name }} — {{ s.qty }} {{ s.unit_name }}</span>
+                  </div>
+                  <button type="button" class="text-red-600" @click="removeSerial(sIdx)"><i class="fa fa-times"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="border-t pt-4">
             <div class="flex justify-between items-center mb-3">
               <span class="font-bold text-gray-700">Daftar item</span>
@@ -198,6 +221,66 @@ function onItemRemove(idx) {
   line.item_id = ''
   line.unit_id = ''
   line.unitOptions = []
+}
+
+
+async function onSerialScan() {
+  const input = serialInput.value.trim()
+  if (!input) return
+  if (!form.value.warehouse_id) {
+    serialFeedback.value = 'Pilih warehouse dulu'
+    serialFeedbackSuccess.value = false
+    return
+  }
+  if (scannedSerials.value.some((s) => s.serial_number === input)) {
+    serialFeedback.value = `Serial "${input}" sudah discan`
+    serialFeedbackSuccess.value = false
+    serialInput.value = ''
+    return
+  }
+  serialScanning.value = true
+  try {
+    const res = await axios.post(route('internal-use-waste.validate-serial'), {
+      serial_number: input,
+      warehouse_id: form.value.warehouse_id,
+    })
+    if (res.data.valid) {
+      const serial = res.data.serial
+      scannedSerials.value.push({
+        serial_id: serial.id,
+        serial_number: serial.serial_number,
+        item_id: serial.item_id,
+        item_name: serial.item_name,
+        unit_id: serial.unit_id,
+        unit_name: serial.unit_name,
+        qty: serial.qty,
+        qty_small: serial.qty_small,
+      })
+      serialFeedback.value = `Serial "${input}" valid`
+      serialFeedbackSuccess.value = true
+    } else {
+      serialFeedback.value = res.data.message || 'Serial tidak valid'
+      serialFeedbackSuccess.value = false
+    }
+  } catch {
+    serialFeedback.value = 'Gagal validasi serial'
+    serialFeedbackSuccess.value = false
+  } finally {
+    serialScanning.value = false
+    serialInput.value = ''
+    nextTick(() => serialInputRef.value?.focus())
+  }
+}
+
+function removeSerial(idx) {
+  scannedSerials.value.splice(idx, 1)
+}
+
+function handleSerialKeyPress(e) {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    onSerialScan()
+  }
 }
 
 function buildPayload() {
