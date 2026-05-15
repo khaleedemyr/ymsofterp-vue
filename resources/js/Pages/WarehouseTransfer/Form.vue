@@ -14,6 +14,14 @@ const props = defineProps({
 
 const isEdit = computed(() => !!props.editData);
 
+const serialMode = ref(false);
+const serialInput = ref('');
+const serialInputRef = ref(null);
+const serialScanning = ref(false);
+const serialFeedback = ref('');
+const serialFeedbackSuccess = ref(false);
+const scannedSerials = ref([]);
+
 const form = useForm({
   transfer_date: props.editData?.transfer_date || '',
   warehouse_from_id: props.editData?.warehouse_from_id || '',
@@ -45,31 +53,115 @@ function removeItem(idx) {
   if (form.items.length === 1) return;
   form.items.splice(idx, 1);
 }
-function onSubmit() {
-  // Log debug qty dan stok
-  for (const [idx, item] of form.items.entries()) {
-    console.log('DEBUG VALIDASI QTY', { item, stock: item.stock, qty: item.qty, unit: item.selected_unit || item.unit });
-    const qty = Number(item.qty || 0);
-    let stock = 0;
-    const unit = item.selected_unit || item.unit;
-    if (unit === item.stock?.unit_small) {
-      stock = Number(item.stock?.qty_small || 0);
-    } else if (unit === item.stock?.unit_medium) {
-      stock = Number(item.stock?.qty_medium || 0);
-    } else if (unit === item.stock?.unit_large) {
-      stock = Number(item.stock?.qty_large || 0);
-    } else {
-      stock = 0;
-    }
-    if (qty > stock) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Gagal!',
-        text: `Qty item \"${item.item_name}\" melebihi stok di gudang asal untuk unit ${unit} (${stock})`,
+function playBeep(success) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = success ? 880 : 300;
+    osc.type = success ? 'sine' : 'square';
+    gain.gain.value = 0.3;
+    osc.start();
+    osc.stop(ctx.currentTime + (success ? 0.12 : 0.25));
+  } catch (e) {}
+}
+
+async function onSerialScan() {
+  const input = serialInput.value.trim();
+  if (!input) return;
+
+  if (!form.warehouse_from_id) {
+    serialFeedback.value = 'Pilih gudang asal dulu';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+    return;
+  }
+
+  if (scannedSerials.value.some(s => s.serial_number === input)) {
+    serialFeedback.value = `Serial "${input}" sudah discan`;
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+    serialInput.value = '';
+    return;
+  }
+
+  serialScanning.value = true;
+  try {
+    const res = await axios.post(route('warehouse-transfer.validate-serial'), {
+      serial_number: input,
+      warehouse_from_id: form.warehouse_from_id,
+    });
+
+    if (res.data.valid) {
+      const serial = res.data.serial;
+      scannedSerials.value.push({
+        serial_id: serial.id,
+        serial_number: serial.serial_number,
+        item_id: serial.item_id,
+        item_name: serial.item_name,
+        unit_id: serial.unit_id,
+        unit_name: serial.unit_name,
+        qty: serial.qty,
+        qty_small: serial.qty_small,
       });
-      return;
+      serialFeedback.value = `Serial "${input}" valid`;
+      serialFeedbackSuccess.value = true;
+      playBeep(true);
+    } else {
+      serialFeedback.value = res.data.message || 'Serial tidak valid';
+      serialFeedbackSuccess.value = false;
+      playBeep(false);
+    }
+  } catch (e) {
+    serialFeedback.value = e.response?.data?.message || 'Gagal validasi serial';
+    serialFeedbackSuccess.value = false;
+    playBeep(false);
+  } finally {
+    serialScanning.value = false;
+    serialInput.value = '';
+    nextTick(() => serialInputRef.value?.focus());
+  }
+}
+
+function removeSerial(idx) {
+  scannedSerials.value.splice(idx, 1);
+}
+
+function onSubmit() {
+  const hasNormalItems = form.items.some(i => i.item_id);
+  const hasSerials = scannedSerials.value.length > 0;
+
+  if (!hasNormalItems && !hasSerials) {
+    Swal.fire({ icon: 'error', title: 'Gagal!', text: 'Minimal harus ada 1 item (mode qty) atau 1 nomor seri (mode serial).' });
+    return;
+  }
+
+  if (hasNormalItems) {
+    for (const item of form.items) {
+      if (!item.item_id) continue;
+      const qty = Number(item.qty || 0);
+      let stock = 0;
+      const unit = item.selected_unit || item.unit;
+      if (unit === item.stock?.unit_small) {
+        stock = Number(item.stock?.qty_small || 0);
+      } else if (unit === item.stock?.unit_medium) {
+        stock = Number(item.stock?.qty_medium || 0);
+      } else if (unit === item.stock?.unit_large) {
+        stock = Number(item.stock?.qty_large || 0);
+      }
+      if (qty > stock) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal!',
+          text: `Qty item "${item.item_name}" melebihi stok di gudang asal untuk unit ${unit} (${stock})`,
+        });
+        return;
+      }
     }
   }
+
   Swal.fire({
     title: isEdit.value ? 'Menyimpan Perubahan...' : 'Menyimpan Data...',
     text: 'Mohon tunggu sebentar',
@@ -78,8 +170,22 @@ function onSubmit() {
     showConfirmButton: false,
     didOpen: () => { Swal.showLoading(); }
   });
+
+  const payload = {
+    ...form.data(),
+    items: hasNormalItems ? form.items.filter(i => i.item_id) : [],
+    serial_items: hasSerials ? scannedSerials.value.map(s => ({
+      serial_id: s.serial_id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      unit_id: s.unit_id,
+      qty: s.qty,
+      qty_small: s.qty_small,
+    })) : [],
+  };
+
   if (isEdit.value) {
-    form.put(`/warehouse-transfer/${props.editData.id}`, {
+    form.transform(() => payload).put(`/warehouse-transfer/${props.editData.id}`, {
       onSuccess: () => {
         Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Data berhasil diupdate', timer: 1500, showConfirmButton: false }).then(() => { router.visit('/warehouse-transfer'); });
       },
@@ -88,7 +194,7 @@ function onSubmit() {
       }
     });
   } else {
-    form.post('/warehouse-transfer', {
+    router.post('/warehouse-transfer', payload, {
       onSuccess: () => {
         Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Data berhasil disimpan', timer: 1500, showConfirmButton: false }).then(() => { router.visit('/warehouse-transfer'); });
       },
@@ -360,8 +466,72 @@ onUnmounted(() => {
           <textarea v-model="form.notes" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"></textarea>
           <div v-if="form.errors.notes" class="text-xs text-red-500 mt-1">{{ form.errors.notes }}</div>
         </div>
+        <div v-if="!isEdit" class="border rounded-lg p-4" :class="serialMode ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <i class="fa fa-qrcode text-indigo-500 text-lg"></i>
+              <div>
+                <div class="font-medium text-gray-800">Mode Nomor Seri</div>
+                <div class="text-xs text-gray-500">Scan nomor seri dari gudang asal (bisa dikombinasi dengan mode qty)</div>
+              </div>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" v-model="serialMode" class="sr-only peer">
+              <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+          <div v-if="serialMode" class="mt-4 space-y-3">
+            <div class="flex gap-2">
+              <input
+                ref="serialInputRef"
+                type="text"
+                v-model="serialInput"
+                @keydown.enter.prevent="onSerialScan"
+                :disabled="serialScanning || !canInputItem"
+                placeholder="Scan atau ketik nomor seri..."
+                class="flex-1 rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500"
+              />
+              <button type="button" @click="onSerialScan" :disabled="serialScanning || !canInputItem"
+                class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 transition disabled:opacity-50">
+                <i :class="serialScanning ? 'fa fa-spinner fa-spin' : 'fa fa-search'"></i>
+              </button>
+            </div>
+            <div v-if="serialFeedback" class="px-3 py-2 rounded-lg text-sm font-medium"
+              :class="serialFeedbackSuccess ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
+              <i :class="serialFeedbackSuccess ? 'fa fa-check-circle' : 'fa fa-exclamation-circle'" class="mr-1"></i>
+              {{ serialFeedback }}
+            </div>
+            <div v-if="scannedSerials.length > 0">
+              <div class="text-sm font-semibold text-indigo-600 mb-2">{{ scannedSerials.length }} serial discan</div>
+              <table class="w-full text-sm border rounded-lg overflow-hidden">
+                <thead class="bg-indigo-50">
+                  <tr>
+                    <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700">Nomor Seri</th>
+                    <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700">Item</th>
+                    <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700">Qty</th>
+                    <th class="px-3 py-2 text-left text-xs font-bold text-indigo-700">Unit</th>
+                    <th class="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(s, idx) in scannedSerials" :key="s.serial_number" class="border-t hover:bg-indigo-50/50">
+                    <td class="px-3 py-2 font-mono text-indigo-600 font-semibold">{{ s.serial_number }}</td>
+                    <td class="px-3 py-2">{{ s.item_name }}</td>
+                    <td class="px-3 py-2">{{ s.qty }}</td>
+                    <td class="px-3 py-2">{{ s.unit_name }}</td>
+                    <td class="px-3 py-2">
+                      <button type="button" @click="removeSerial(idx)" class="text-red-500 hover:text-red-700">
+                        <i class="fa fa-times"></i>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item</label>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item (Mode Qty)</label>
           <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">
             Pilih gudang asal dan tujuan terlebih dahulu, dan pastikan tidak sama.
           </div>
@@ -392,7 +562,7 @@ onUnmounted(() => {
                         @keydown.enter="onItemKeydown(idx, $event)"
                         @keydown.esc="onItemKeydown(idx, $event)"
                         class="w-full rounded border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                        required 
+                        :required="!serialMode"
                         autocomplete="off" 
                         placeholder="Cari nama item..." 
                       />
@@ -430,7 +600,7 @@ onUnmounted(() => {
                     </div>
                   </td>
                   <td class="px-3 py-2 min-w-[100px]">
-                    <input type="number" min="0.01" step="0.01" v-model="item.qty" class="w-full rounded border-gray-300" required />
+                    <input type="number" min="0.01" step="0.01" v-model="item.qty" class="w-full rounded border-gray-300" :required="!serialMode && !!item.item_id" />
                     <div v-if="form.errors[`items.${idx}.qty`]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${idx}.qty`] }}</div>
                   </td>
                   <td class="px-3 py-2 min-w-[100px]">

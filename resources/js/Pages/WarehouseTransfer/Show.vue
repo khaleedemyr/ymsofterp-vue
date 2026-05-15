@@ -35,6 +35,19 @@
                 <div class="mt-1">{{ formatDate(transfer.transfer_date) }}</div>
               </div>
               <div>
+                <label class="block text-sm font-medium text-gray-600">Mode</label>
+                <div class="mt-1">
+                  <span class="px-2 py-1 rounded-full text-xs font-semibold"
+                    :class="{
+                      'bg-gray-100 text-gray-700': !transfer.transfer_mode || transfer.transfer_mode === 'normal',
+                      'bg-indigo-100 text-indigo-700': transfer.transfer_mode === 'serial',
+                      'bg-purple-100 text-purple-700': transfer.transfer_mode === 'mixed',
+                    }">
+                    {{ transferModeLabel }}
+                  </span>
+                </div>
+              </div>
+              <div>
                 <label class="block text-sm font-medium text-gray-600">Status</label>
                 <div class="mt-1">
                   <span :class="{
@@ -72,9 +85,35 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div v-if="serialItems && serialItems.length" class="bg-white rounded-2xl shadow-2xl overflow-hidden mb-6">
         <div class="p-6 border-b">
-          <h2 class="text-lg font-semibold text-gray-800">Detail Item</h2>
+          <h2 class="text-lg font-semibold text-gray-800">Detail Nomor Seri</h2>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-full divide-y divide-gray-200">
+            <thead class="bg-gradient-to-r from-indigo-50 to-indigo-100">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Nomor Seri</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Item</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Qty</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-indigo-700 uppercase tracking-wider">Unit</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr v-for="si in serialItems" :key="si.id || si.serial_number" class="hover:bg-indigo-50">
+                <td class="px-6 py-4 font-mono font-semibold text-indigo-700">{{ si.serial_number }}</td>
+                <td class="px-6 py-4">{{ si.item_name }}</td>
+                <td class="px-6 py-4">{{ si.qty }}</td>
+                <td class="px-6 py-4">{{ si.unit_name || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div v-if="transfer.items && transfer.items.length" class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div class="p-6 border-b">
+          <h2 class="text-lg font-semibold text-gray-800">Detail Item (Mode Qty)</h2>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-full divide-y divide-gray-200">
@@ -105,12 +144,24 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
   transfer: Object,
+  serialItems: {
+    type: Array,
+    default: () => [],
+  },
+});
+
+const transferModeLabel = computed(() => {
+  const m = props.transfer?.transfer_mode || 'normal';
+  if (m === 'serial') return 'Nomor Seri';
+  if (m === 'mixed') return 'Qty + Seri';
+  return 'Qty';
 });
 
 function formatDate(date) {
@@ -122,32 +173,24 @@ function formatDate(date) {
 function confirmDelete() {
   Swal.fire({
     title: 'Apakah Anda yakin?',
-    text: "Data yang dihapus tidak dapat dikembalikan!",
+    text: 'Data yang dihapus tidak dapat dikembalikan!',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
     cancelButtonColor: '#d33',
     confirmButtonText: 'Ya, hapus!',
-    cancelButtonText: 'Batal'
+    cancelButtonText: 'Batal',
   }).then((result) => {
     if (result.isConfirmed) {
       router.delete(route('warehouse-transfer.destroy', props.transfer.id), {
         onSuccess: () => {
-          Swal.fire(
-            'Terhapus!',
-            'Data berhasil dihapus.',
-            'success'
-          );
+          Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
         },
         onError: () => {
-          Swal.fire(
-            'Error!',
-            'Terjadi kesalahan saat menghapus data.',
-            'error'
-          );
-        }
+          Swal.fire('Error!', 'Terjadi kesalahan saat menghapus data.', 'error');
+        },
       });
     }
   });
 }
-</script> 
+</script>
