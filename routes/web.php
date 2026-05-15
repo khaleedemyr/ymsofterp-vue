@@ -1514,6 +1514,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'index'])->name('outlet-rejections.index');
     Route::get('/outlet-rejections/create', [\App\Http\Controllers\OutletRejectionController::class, 'create'])->name('outlet-rejections.create');
+    Route::post('/outlet-rejections/validate-serial', [\App\Http\Controllers\OutletRejectionController::class, 'validateSerialForORJ'])->name('outlet-rejections.validate-serial');
     Route::post('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'store'])->name('outlet-rejections.store');
     Route::get('/outlet-rejections/{outletRejection}', [\App\Http\Controllers\OutletRejectionController::class, 'show'])->name('outlet-rejections.show');
     Route::get('/outlet-rejections/{outletRejection}/edit', [\App\Http\Controllers\OutletRejectionController::class, 'edit'])->name('outlet-rejections.edit');

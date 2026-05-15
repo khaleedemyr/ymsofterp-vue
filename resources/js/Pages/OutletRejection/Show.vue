@@ -39,9 +39,16 @@
             </div>
 
             <!-- Status Badge -->
-            <div class="mb-6">
+            <div class="mb-6 flex flex-wrap gap-2 items-center">
               <span :class="getStatusBadgeClass(rejection.status)" class="text-lg px-4 py-2">
                 {{ getStatusLabel(rejection.status) }}
+              </span>
+              <span
+                v-if="rejection.rejection_mode && rejection.rejection_mode !== 'normal'"
+                class="text-sm px-3 py-1 rounded-full bg-sky-100 text-sky-800 font-medium"
+              >
+                <i class="fas fa-qrcode mr-1"></i>
+                {{ rejection.rejection_mode === 'serial' ? 'Mode Serial' : 'Mode Campuran' }}
               </span>
             </div>
 
@@ -162,9 +169,42 @@
               </div>
             </div>
 
+            <!-- Serial Items -->
+            <div v-if="rejection.serialItems && rejection.serialItems.length" class="bg-sky-50 p-6 rounded-lg mb-6">
+              <h4 class="text-lg font-semibold mb-4"><i class="fas fa-qrcode mr-2 text-sky-600"></i>Nomor Seri</h4>
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-sky-100">
+                    <tr>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Serial</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Item</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Unit</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Qty Rejected</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Qty Received</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">Kondisi</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase">MAC</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    <tr v-for="si in rejection.serialItems" :key="si.id">
+                      <td class="px-4 py-3 font-mono text-sm">{{ si.serial_number }}</td>
+                      <td class="px-4 py-3 text-sm">{{ si.item_name }}</td>
+                      <td class="px-4 py-3 text-sm">{{ si.unit_name }}</td>
+                      <td class="px-4 py-3 text-sm">{{ formatNumber(si.qty_rejected) }}</td>
+                      <td class="px-4 py-3 text-sm">{{ formatNumber(si.qty_received) }}</td>
+                      <td class="px-4 py-3">
+                        <span :class="getConditionBadgeClass(si.item_condition)">{{ getConditionLabel(si.item_condition) }}</span>
+                      </td>
+                      <td class="px-4 py-3 text-sm">{{ formatCurrency(si.mac_cost) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <!-- Items Table -->
-            <div class="bg-gray-50 p-6 rounded-lg mb-6">
-              <h4 class="text-lg font-semibold mb-4">Rejected Items</h4>
+            <div v-if="rejection.items && rejection.items.length" class="bg-gray-50 p-6 rounded-lg mb-6">
+              <h4 class="text-lg font-semibold mb-4">Rejected Items (Qty)</h4>
               
               <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">

@@ -142,6 +142,65 @@
                 </div>
               </div>
 
+              <!-- Serial mode -->
+              <div class="mb-6 border rounded-lg p-4" :class="serialMode ? 'border-sky-300 bg-sky-50/30' : 'border-gray-200'">
+                <label class="flex items-center justify-between cursor-pointer">
+                  <span class="text-sm font-medium text-gray-700"><i class="fas fa-qrcode mr-1 text-sky-500"></i> Mode Nomor Seri</span>
+                  <input type="checkbox" v-model="serialMode" class="sr-only peer" />
+                  <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                </label>
+                <div v-if="serialMode" class="mt-3 space-y-2">
+                  <label class="block text-xs font-bold text-sky-700">Scan nomor seri di outlet</label>
+                  <input
+                    ref="serialInputRef"
+                    v-model="serialInput"
+                    @keypress.enter.prevent="scanSerial"
+                    type="text"
+                    placeholder="Scan / ketik serial lalu Enter..."
+                    class="w-full rounded-md border-sky-300 shadow-sm focus:ring-sky-500 focus:border-sky-500"
+                    :disabled="serialScanning || !form.outlet_id || !form.warehouse_id"
+                  />
+                  <p v-if="!form.outlet_id || !form.warehouse_id" class="text-xs text-amber-600">Pilih outlet dan warehouse terlebih dahulu.</p>
+                  <p v-if="serialFeedback" class="text-sm" :class="serialFeedbackOk ? 'text-green-600' : 'text-red-600'">{{ serialFeedback }}</p>
+                  <div v-if="scannedSerials.length" class="space-y-2">
+                    <p class="text-xs font-semibold text-sky-700">{{ scannedSerials.length }} serial</p>
+                    <div
+                      v-for="(s, sIdx) in scannedSerials"
+                      :key="s.serial_number"
+                      class="bg-white border border-sky-200 rounded-lg p-3 text-sm space-y-2"
+                    >
+                      <div class="flex justify-between items-start">
+                        <div>
+                          <span class="font-mono font-semibold">{{ s.serial_number }}</span>
+                          <span class="block text-gray-600">{{ s.item_name }} — {{ s.qty }} {{ s.unit_name }}</span>
+                          <span v-if="s.do_number" class="text-xs text-gray-400">DO: {{ s.do_number }}</span>
+                        </div>
+                        <button type="button" class="text-red-500" @click="removeSerial(sIdx)"><i class="fas fa-trash"></i></button>
+                      </div>
+                      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <div>
+                          <label class="text-xs text-gray-500">Kondisi</label>
+                          <select v-model="s.item_condition" class="w-full rounded border-gray-300 text-sm">
+                            <option value="good">Baik</option>
+                            <option value="damaged">Rusak</option>
+                            <option value="expired">Kadaluarsa</option>
+                            <option value="other">Lainnya</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label class="text-xs text-gray-500">Alasan</label>
+                          <input v-model="s.rejection_reason" type="text" class="w-full rounded border-gray-300 text-sm" placeholder="Alasan..." />
+                        </div>
+                        <div>
+                          <label class="text-xs text-gray-500">Catatan</label>
+                          <input v-model="s.condition_notes" type="text" class="w-full rounded border-gray-300 text-sm" placeholder="Catatan..." />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Document Flow Information -->
               <div v-if="documentFlowInfo" class="bg-blue-50 p-6 rounded-lg mb-6">
                 <h4 class="text-lg font-semibold mb-4">Document Flow Information</h4>
@@ -201,9 +260,9 @@
                 </div>
 
                 <!-- Items List -->
-                <div v-else-if="form.items.length === 0" class="text-center py-8 text-gray-500">
+                <div v-else-if="form.items.length === 0 && !scannedSerials.length" class="text-center py-8 text-gray-500">
                   <i class="fas fa-box text-4xl mb-4"></i>
-                  <p>No items available for rejection. Please select a delivery order.</p>
+                  <p>No items yet. Select a delivery order, add items manually, or scan serial numbers.</p>
                 </div>
 
                 <div v-else class="space-y-4">
@@ -471,7 +530,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, computed } from 'vue'
+import { ref, reactive, watch, computed, nextTick } from 'vue'
 import { Link, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
@@ -492,6 +551,18 @@ const itemsWithQuantityFlow = ref(props.itemsWithQuantityFlow || {})
 
 const isSubmitting = ref(false)
 const loading = ref(false)
+
+const serialMode = ref(false)
+const serialInput = ref('')
+const serialInputRef = ref(null)
+const serialScanning = ref(false)
+const serialFeedback = ref('')
+const serialFeedbackOk = ref(false)
+const scannedSerials = ref([])
+
+watch(serialMode, (on) => {
+  if (on) nextTick(() => serialInputRef.value?.focus())
+})
 
 const filteredDeliveryOrders = computed(() => {
   const keyword = deliveryOrderSearch.value?.trim().toLowerCase()
@@ -527,6 +598,71 @@ const form = useForm({
 })
 
 
+
+const getCsrfToken = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+
+const scanSerial = async () => {
+  const sn = serialInput.value.trim()
+  if (!sn || !form.outlet_id || !form.warehouse_id) return
+  if (scannedSerials.value.some((s) => s.serial_number === sn)) {
+    serialFeedback.value = 'Serial sudah discan.'
+    serialFeedbackOk.value = false
+    return
+  }
+  serialScanning.value = true
+  serialFeedback.value = ''
+  try {
+    const body = {
+      serial_number: sn,
+      outlet_id: form.outlet_id,
+      warehouse_id: form.warehouse_id,
+      delivery_order_id: form.delivery_order_id || null,
+    }
+    const res = await fetch(route('outlet-rejections.validate-serial'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': getCsrfToken(),
+      },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (!data.valid) {
+      serialFeedback.value = data.message || 'Serial tidak valid.'
+      serialFeedbackOk.value = false
+      return
+    }
+    const s = data.serial
+    scannedSerials.value.push({
+      serial_id: s.id,
+      serial_number: s.serial_number,
+      item_id: s.item_id,
+      item_name: s.item_name,
+      unit_id: s.unit_id,
+      unit_name: s.unit_name,
+      qty: s.qty,
+      do_number: s.do_number,
+      mac_cost: s.mac_cost,
+      item_condition: 'good',
+      rejection_reason: '',
+      condition_notes: '',
+    })
+    serialInput.value = ''
+    serialFeedback.value = 'Serial ditambahkan.'
+    serialFeedbackOk.value = true
+    nextTick(() => serialInputRef.value?.focus())
+  } catch (e) {
+    serialFeedback.value = 'Gagal validasi serial.'
+    serialFeedbackOk.value = false
+  } finally {
+    serialScanning.value = false
+  }
+}
+
+const removeSerial = (idx) => {
+  scannedSerials.value.splice(idx, 1)
+}
 
 const removeItem = async (index) => {
   const result = await Swal.fire({
@@ -737,19 +873,38 @@ const submitForm = async () => {
 
   isSubmitting.value = true
   
-  // Prepare items data for submission
-  const itemsData = form.items.map(item => ({
+  const itemsData = form.items.map((item) => ({
     item_id: item.item_id,
     unit_id: item.unit_id,
     qty_rejected: item.qty_rejected,
     rejection_reason: item.rejection_reason,
     item_condition: item.item_condition,
-    condition_notes: item.condition_notes
+    condition_notes: item.condition_notes,
   }))
 
-  form.items = itemsData
+  const serialItems = scannedSerials.value.map((s) => ({
+    serial_id: s.serial_id,
+    serial_number: s.serial_number,
+    item_id: s.item_id,
+    unit_id: s.unit_id,
+    qty: s.qty,
+    mac_cost: s.mac_cost,
+    rejection_reason: s.rejection_reason || null,
+    item_condition: s.item_condition,
+    condition_notes: s.condition_notes || null,
+  }))
 
-  form.post(route('outlet-rejections.store'), {
+  if (!itemsData.length && !serialItems.length) {
+    Swal.fire({ title: 'Error', text: 'Minimal satu item qty atau serial harus diisi.', icon: 'error' })
+    isSubmitting.value = false
+    return
+  }
+
+  form.transform((data) => ({
+    ...data,
+    items: itemsData,
+    serial_items: serialItems,
+  })).post(route('outlet-rejections.store'), {
     onSuccess: () => {
       isSubmitting.value = false
       Swal.fire({

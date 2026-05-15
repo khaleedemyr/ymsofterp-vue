@@ -19,6 +19,7 @@ class OutletRejection extends Model
         'delivery_order_id',
         'status',
         'notes',
+        'rejection_mode',
         'created_by',
         'approved_by',
         'approved_at',

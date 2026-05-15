@@ -744,6 +744,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-rejections/delivery-orders', [\App\Http\Controllers\OutletRejectionController::class, 'getFilteredDeliveryOrders']);
         Route::get('/outlet-rejections/delivery-order-items', [\App\Http\Controllers\OutletRejectionController::class, 'getDeliveryOrderItems']);
         Route::get('/outlet-rejections/items', [\App\Http\Controllers\OutletRejectionController::class, 'getItems']);
+        Route::post('/outlet-rejections/validate-serial', [\App\Http\Controllers\OutletRejectionController::class, 'validateSerialForORJ']);
         Route::get('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiShow']);
         Route::post('/outlet-rejections', [\App\Http\Controllers\OutletRejectionController::class, 'apiStore']);
         Route::put('/outlet-rejections/{id}', [\App\Http\Controllers\OutletRejectionController::class, 'apiUpdate']);

@@ -117,67 +117,114 @@ class OutletRejectionController extends Controller
         ]);
     }
 
-    public function store(Request $request)
+    public function validateSerialForORJ(Request $request)
     {
         $request->validate([
-            'rejection_date' => 'required|date',
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
-            'items.*.unit_id' => 'required|exists:units,id',
-            'items.*.qty_rejected' => 'required|numeric|min:0.01',
-            'items.*.rejection_reason' => 'nullable|string',
-            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
-            'items.*.condition_notes' => 'nullable|string'
+            'serial_number' => 'required|string|max:50',
+            'outlet_id' => 'required',
+            'warehouse_id' => 'required|integer',
+            'delivery_order_id' => 'nullable|integer',
         ]);
+
+        $serialNumber = trim($request->serial_number);
+        $outletId = (string) $request->outlet_id;
+        $warehouseId = (int) $request->warehouse_id;
+        $doId = $request->filled('delivery_order_id') ? (int) $request->delivery_order_id : null;
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+            ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->leftJoin('delivery_orders as do_tbl', 'do_tbl.id', '=', 's.out_delivery_order_id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.unit_id',
+                's.is_out',
+                's.out_outlet_id',
+                's.out_delivery_order_id',
+                's.repack_unit_id',
+                's.repack_qty',
+                's.cost_small',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name',
+                'do_tbl.number as do_number'
+            )
+            ->first();
+
+        if (! $serial) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+        if (! $serial->is_out) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri belum keluar gudang (belum via DO).']);
+        }
+        if ((string) $serial->out_outlet_id !== $outletId) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak berada di outlet yang dipilih.']);
+        }
+        if ($doId && (int) $serial->out_delivery_order_id !== $doId) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak berasal dari Delivery Order yang dipilih.']);
+        }
+
+        $pending = DB::table('outlet_rejection_serial_items as osi')
+            ->join('outlet_rejections as orj', 'orj.id', '=', 'osi.outlet_rejection_id')
+            ->where('osi.serial_id', $serial->id)
+            ->whereIn('orj.status', ['draft', 'submitted', 'approved'])
+            ->exists();
+        if ($pending) {
+            return response()->json(['valid' => false, 'message' => 'Nomor seri sedang dipakai di dokumen rejection lain yang belum selesai.']);
+        }
+
+        $qty = 1.0;
+        $unitId = $serial->unit_id;
+        $unitName = $serial->unit_name ?? '';
+        if ($serial->repack_qty && $serial->repack_unit_id) {
+            $qty = (float) $serial->repack_qty;
+            $unitId = $serial->repack_unit_id;
+            $unitName = $serial->repack_unit_name ?? $unitName;
+        }
+
+        $itemMaster = DB::table('items')->where('id', $serial->item_id)->first();
+        $inventoryItem = DB::table('food_inventory_items')->where('item_id', $serial->item_id)->first();
+        $macSmall = $inventoryItem
+            ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
+            : (float) ($serial->cost_small ?? 0);
+        $macLine = $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $unitId);
+
+        return response()->json([
+            'valid' => true,
+            'message' => 'Nomor seri valid.',
+            'serial' => [
+                'id' => $serial->id,
+                'serial_number' => $serial->serial_number,
+                'item_id' => $serial->item_id,
+                'item_name' => $serial->item_name,
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'qty' => $qty,
+                'do_id' => $serial->out_delivery_order_id,
+                'do_number' => $serial->do_number ?? '',
+                'mac_cost' => round($macLine, 4),
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $this->validateOutletRejectionStoreRequest($request);
 
         DB::beginTransaction();
         try {
-            // Create header
-            $rejection = OutletRejection::create([
-                'number' => OutletRejection::generateNumber(),
-                'rejection_date' => $request->rejection_date,
-                'outlet_id' => $request->outlet_id,
-                'warehouse_id' => $request->warehouse_id,
-                'delivery_order_id' => $request->delivery_order_id,
-                'status' => 'draft',
-                'notes' => $request->notes,
-                'created_by' => Auth::id()
-            ]);
+            $rejection = $this->createOutletRejectionHeader($request);
 
-            // Create items
-            foreach ($request->items as $item) {
-                $inventoryItem = DB::table('food_inventory_items')
-                    ->where('item_id', $item['item_id'])
-                    ->first();
+            if (! empty($request->serial_items)) {
+                $this->saveSerialItemsForORJ($rejection, $request->serial_items, $request);
+            }
 
-                $macCostSmallUnit = $inventoryItem
-                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
-                    : 0.0;
-
-                $itemData = DB::table('items')
-                    ->where('id', $item['item_id'])
-                    ->first();
-                $macCostConverted = $this->convertMacSmallToLineUnit(
-                    (float) $macCostSmallUnit,
-                    $itemData,
-                    (int) $item['unit_id']
-                );
-
-                OutletRejectionItem::create([
-                    'outlet_rejection_id' => $rejection->id,
-                    'item_id' => $item['item_id'],
-                    'unit_id' => $item['unit_id'],
-                    'qty_rejected' => $item['qty_rejected'],
-                    'qty_received' => 0, // Will be filled when completed
-                    'rejection_reason' => $item['rejection_reason'],
-                    'item_condition' => $item['item_condition'],
-                    'condition_notes' => $item['condition_notes'],
-                    'mac_cost' => $macCostConverted
-                ]);
+            if (! empty($request->items)) {
+                $this->saveQtyItemsForORJ($rejection, $request->items, (int) $request->warehouse_id);
             }
 
             DB::commit();
@@ -188,7 +235,7 @@ class OutletRejectionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error creating outlet rejection: ' . $e->getMessage());
-            
+
             return back()->withErrors(['error' => 'Terjadi kesalahan: ' . $e->getMessage()]);
         }
     }
@@ -207,6 +254,8 @@ class OutletRejectionController extends Controller
             'items.item',
             'items.unit'
         ])->findOrFail($id);
+
+        $rejection->serialItems = $this->loadSerialItemsForORJ($rejection->id);
 
         // Add approval information to rejection object
         $rejection->approval_info = [
@@ -322,6 +371,8 @@ class OutletRejectionController extends Controller
             $deliveryOrders = $this->getFilteredDeliveryOrdersData($rejection->outlet_id, $rejection->warehouse_id);
         }
 
+        $rejection->serialItems = $this->loadSerialItemsForORJ($rejection->id);
+
         return Inertia::render('OutletRejection/Edit', [
             'rejection' => $rejection,
             'outlets' => $outlets,
@@ -339,63 +390,27 @@ class OutletRejectionController extends Controller
             return back()->withErrors(['error' => 'Hanya rejection dengan status draft yang dapat diedit']);
         }
 
-        $request->validate([
-            'rejection_date' => 'required|date',
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
-            'items.*.unit_id' => 'required|exists:units,id',
-            'items.*.qty_rejected' => 'required|numeric|min:0.01',
-            'items.*.rejection_reason' => 'nullable|string',
-            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
-            'items.*.condition_notes' => 'nullable|string'
-        ]);
+        $this->validateOutletRejectionStoreRequest($request);
 
         DB::beginTransaction();
         try {
-            // Update header
             $rejection->update([
                 'rejection_date' => $request->rejection_date,
                 'outlet_id' => $request->outlet_id,
                 'warehouse_id' => $request->warehouse_id,
                 'delivery_order_id' => $request->delivery_order_id,
-                'notes' => $request->notes
+                'notes' => $request->notes,
+                'rejection_mode' => $this->resolveRejectionMode($request),
             ]);
 
-            // Delete existing items
+            DB::table('outlet_rejection_serial_items')->where('outlet_rejection_id', $rejection->id)->delete();
             $rejection->items()->delete();
 
-            // Create new items
-            foreach ($request->items as $item) {
-                $inventoryItem = DB::table('food_inventory_items')
-                    ->where('item_id', $item['item_id'])
-                    ->first();
-
-                $macCostSmallUnit = $inventoryItem
-                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
-                    : 0.0;
-
-                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
-                $macCostConverted = $this->convertMacSmallToLineUnit(
-                    $macCostSmallUnit,
-                    $itemData,
-                    (int) $item['unit_id']
-                );
-
-                OutletRejectionItem::create([
-                    'outlet_rejection_id' => $rejection->id,
-                    'item_id' => $item['item_id'],
-                    'unit_id' => $item['unit_id'],
-                    'qty_rejected' => $item['qty_rejected'],
-                    'qty_received' => 0,
-                    'rejection_reason' => $item['rejection_reason'],
-                    'item_condition' => $item['item_condition'],
-                    'condition_notes' => $item['condition_notes'],
-                    'mac_cost' => $macCostConverted
-                ]);
+            if (! empty($request->serial_items)) {
+                $this->saveSerialItemsForORJ($rejection, $request->serial_items, $request);
+            }
+            if (! empty($request->items)) {
+                $this->saveQtyItemsForORJ($rejection, $request->items, (int) $request->warehouse_id);
             }
 
             DB::commit();
@@ -495,13 +510,17 @@ class OutletRejectionController extends Controller
                 'warehouse_name' => $rejection->warehouse->name ?? 'unknown'
             ]);
             
-            // Validasi qty_received
-            $request->validate([
-                'items' => 'required|array',
-                'items.*.id' => 'required|exists:outlet_rejection_items,id',
-                'items.*.qty_received' => 'required|numeric|min:0'
-            ]);
-            
+            $hasQtyLines = $rejection->items->count() > 0;
+            $rules = [];
+            if ($hasQtyLines) {
+                $rules['items'] = 'required|array';
+                $rules['items.*.id'] = 'required|exists:outlet_rejection_items,id';
+                $rules['items.*.qty_received'] = 'required|numeric|min:0';
+            }
+            if (! empty($rules)) {
+                $request->validate($rules);
+            }
+
             DB::beginTransaction();
             try {
                 // Update qty_received for each item
@@ -510,25 +529,27 @@ class OutletRejectionController extends Controller
                     'items_data' => $request->items
                 ]);
                 
-                foreach ($request->items as $itemData) {
-                    Log::info('Processing item data', [
-                        'item_data' => $itemData,
-                        'item_id' => $itemData['id'] ?? 'missing',
-                        'qty_received' => $itemData['qty_received'] ?? 'missing'
-                    ]);
-                    
-                    $item = $rejection->items()->find($itemData['id']);
-                    if ($item) {
-                        Log::info('Found item, updating qty_received', [
-                            'item_id' => $item->id,
-                            'old_qty_received' => $item->qty_received,
-                            'new_qty_received' => $itemData['qty_received']
+                if ($hasQtyLines && $request->has('items')) {
+                    foreach ($request->items as $itemData) {
+                        Log::info('Processing item data', [
+                            'item_data' => $itemData,
+                            'item_id' => $itemData['id'] ?? 'missing',
+                            'qty_received' => $itemData['qty_received'] ?? 'missing'
                         ]);
-                        $item->update(['qty_received' => $itemData['qty_received']]);
-                    } else {
-                        Log::warning('Item not found', [
-                            'item_id' => $itemData['id'] ?? 'missing'
-                        ]);
+
+                        $item = $rejection->items()->find($itemData['id']);
+                        if ($item) {
+                            Log::info('Found item, updating qty_received', [
+                                'item_id' => $item->id,
+                                'old_qty_received' => $item->qty_received,
+                                'new_qty_received' => $itemData['qty_received']
+                            ]);
+                            $item->update(['qty_received' => $itemData['qty_received']]);
+                        } else {
+                            Log::warning('Item not found', [
+                                'item_id' => $itemData['id'] ?? 'missing'
+                            ]);
+                        }
                     }
                 }
                 
@@ -559,7 +580,21 @@ class OutletRejectionController extends Controller
                         $this->processInventory($rejection, $item);
                     }
                 }
-                
+
+                $serialRows = DB::table('outlet_rejection_serial_items')
+                    ->where('outlet_rejection_id', $rejection->id)
+                    ->get();
+                foreach ($serialRows as $serialRow) {
+                    $qtyRec = (float) $serialRow->qty_rejected;
+                    DB::table('outlet_rejection_serial_items')
+                        ->where('id', $serialRow->id)
+                        ->update(['qty_received' => $qtyRec, 'updated_at' => now()]);
+                    if ($qtyRec > 0) {
+                        $serialRow->qty_received = $qtyRec;
+                        $this->processSerialInventoryForORJ($rejection, $serialRow);
+                    }
+                }
+
                 // Update approval data and complete
                 $rejection->update([
                     'ssd_manager_approved_at' => now(),
@@ -655,6 +690,8 @@ class OutletRejectionController extends Controller
 
         DB::beginTransaction();
         try {
+            $this->rollbackSerialReservationForORJ($rejection->id);
+            DB::table('outlet_rejection_serial_items')->where('outlet_rejection_id', $rejection->id)->delete();
             $rejection->items()->delete();
             $rejection->delete();
 
@@ -1083,6 +1120,8 @@ class OutletRejectionController extends Controller
             'items.item', 'items.unit'
         ])->findOrFail($id);
 
+        $rejection->serialItems = $this->loadSerialItemsForORJ($rejection->id);
+
         $rejection->approval_info = [
             'created_by' => $rejection->createdBy ? $rejection->createdBy->nama_lengkap : null,
             'created_at' => $rejection->created_at ? $rejection->created_at->format('Y-m-d H:i') : null,
@@ -1105,63 +1144,27 @@ class OutletRejectionController extends Controller
 
     public function apiStore(Request $request)
     {
-        $request->validate([
-            'rejection_date' => 'required|date',
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
-            'items.*.unit_id' => 'required|exists:units,id',
-            'items.*.qty_rejected' => 'required|numeric|min:0.01',
-            'items.*.rejection_reason' => 'nullable|string',
-            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
-            'items.*.condition_notes' => 'nullable|string'
-        ]);
+        $this->validateOutletRejectionStoreRequest($request);
 
         DB::beginTransaction();
         try {
-            $rejection = OutletRejection::create([
-                'number' => OutletRejection::generateNumber(),
-                'rejection_date' => $request->rejection_date,
-                'outlet_id' => $request->outlet_id,
-                'warehouse_id' => $request->warehouse_id,
-                'delivery_order_id' => $request->delivery_order_id,
-                'status' => 'draft',
-                'notes' => $request->notes,
-                'created_by' => Auth::id()
-            ]);
+            $rejection = $this->createOutletRejectionHeader($request);
 
-            foreach ($request->items as $item) {
-                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-                $macCostSmallUnit = $inventoryItem
-                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
-                    : 0.0;
-                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
-                $macCostConverted = $this->convertMacSmallToLineUnit(
-                    (float) $macCostSmallUnit,
-                    $itemData,
-                    (int) $item['unit_id']
-                );
-
-                OutletRejectionItem::create([
-                    'outlet_rejection_id' => $rejection->id,
-                    'item_id' => $item['item_id'],
-                    'unit_id' => $item['unit_id'],
-                    'qty_rejected' => $item['qty_rejected'],
-                    'qty_received' => 0,
-                    'rejection_reason' => $item['rejection_reason'] ?? null,
-                    'item_condition' => $item['item_condition'],
-                    'condition_notes' => $item['condition_notes'] ?? null,
-                    'mac_cost' => $macCostConverted
-                ]);
+            if (! empty($request->serial_items)) {
+                $this->saveSerialItemsForORJ($rejection, $request->serial_items, $request);
             }
+            if (! empty($request->items)) {
+                $this->saveQtyItemsForORJ($rejection, $request->items, (int) $request->warehouse_id);
+            }
+
             DB::commit();
+            $rejection->load(['outlet', 'warehouse', 'items.item', 'items.unit']);
+            $rejection->serialItems = $this->loadSerialItemsForORJ($rejection->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Outlet Rejection berhasil dibuat',
-                'rejection' => $rejection->load(['outlet', 'warehouse', 'items.item', 'items.unit']),
+                'rejection' => $rejection,
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
@@ -1180,20 +1183,7 @@ class OutletRejectionController extends Controller
             return response()->json(['success' => false, 'message' => 'Hanya rejection dengan status draft yang dapat diedit'], 403);
         }
 
-        $request->validate([
-            'rejection_date' => 'required|date',
-            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
-            'notes' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.item_id' => 'required|exists:items,id',
-            'items.*.unit_id' => 'required|exists:units,id',
-            'items.*.qty_rejected' => 'required|numeric|min:0.01',
-            'items.*.rejection_reason' => 'nullable|string',
-            'items.*.item_condition' => 'required|in:good,damaged,expired,other',
-            'items.*.condition_notes' => 'nullable|string'
-        ]);
+        $this->validateOutletRejectionStoreRequest($request);
 
         DB::beginTransaction();
         try {
@@ -1202,38 +1192,28 @@ class OutletRejectionController extends Controller
                 'outlet_id' => $request->outlet_id,
                 'warehouse_id' => $request->warehouse_id,
                 'delivery_order_id' => $request->delivery_order_id,
-                'notes' => $request->notes
+                'notes' => $request->notes,
+                'rejection_mode' => $this->resolveRejectionMode($request),
             ]);
+
+            DB::table('outlet_rejection_serial_items')->where('outlet_rejection_id', $rejection->id)->delete();
             $rejection->items()->delete();
 
-            foreach ($request->items as $item) {
-                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-                $macCostSmallUnit = $inventoryItem
-                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
-                    : 0.0;
-                $itemData = DB::table('items')->where('id', $item['item_id'])->first();
-                $macCostConverted = $this->convertMacSmallToLineUnit(
-                    $macCostSmallUnit,
-                    $itemData,
-                    (int) $item['unit_id']
-                );
-                OutletRejectionItem::create([
-                    'outlet_rejection_id' => $rejection->id,
-                    'item_id' => $item['item_id'],
-                    'unit_id' => $item['unit_id'],
-                    'qty_rejected' => $item['qty_rejected'],
-                    'qty_received' => 0,
-                    'rejection_reason' => $item['rejection_reason'] ?? null,
-                    'item_condition' => $item['item_condition'],
-                    'condition_notes' => $item['condition_notes'] ?? null,
-                    'mac_cost' => $macCostConverted
-                ]);
+            if (! empty($request->serial_items)) {
+                $this->saveSerialItemsForORJ($rejection, $request->serial_items, $request);
             }
+            if (! empty($request->items)) {
+                $this->saveQtyItemsForORJ($rejection, $request->items, (int) $request->warehouse_id);
+            }
+
             DB::commit();
+            $fresh = $rejection->fresh(['outlet', 'warehouse', 'items.item', 'items.unit']);
+            $fresh->serialItems = $this->loadSerialItemsForORJ($fresh->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Outlet Rejection berhasil diupdate',
-                'rejection' => $rejection->fresh(['outlet', 'warehouse', 'items.item', 'items.unit']),
+                'rejection' => $fresh,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1254,6 +1234,8 @@ class OutletRejectionController extends Controller
         }
         DB::beginTransaction();
         try {
+            $this->rollbackSerialReservationForORJ($rejection->id);
+            DB::table('outlet_rejection_serial_items')->where('outlet_rejection_id', $rejection->id)->delete();
             $rejection->items()->delete();
             $rejection->delete();
             DB::commit();
@@ -1649,6 +1631,229 @@ class OutletRejectionController extends Controller
         }
 
         return null;
+    }
+
+    private function validateOutletRejectionStoreRequest(Request $request): void
+    {
+        $request->validate([
+            'rejection_date' => 'required|date',
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'delivery_order_id' => 'nullable|exists:delivery_orders,id',
+            'notes' => 'nullable|string',
+            'items' => 'nullable|array',
+            'items.*.item_id' => 'required_with:items|exists:items,id',
+            'items.*.unit_id' => 'required_with:items|exists:units,id',
+            'items.*.qty_rejected' => 'required_with:items|numeric|min:0.01',
+            'items.*.rejection_reason' => 'nullable|string',
+            'items.*.item_condition' => 'required_with:items|in:good,damaged,expired,other',
+            'items.*.condition_notes' => 'nullable|string',
+            'serial_items' => 'nullable|array',
+            'serial_items.*.serial_id' => 'required_with:serial_items|integer',
+            'serial_items.*.serial_number' => 'required_with:serial_items|string',
+            'serial_items.*.item_id' => 'required_with:serial_items|exists:items,id',
+            'serial_items.*.unit_id' => 'nullable|integer',
+            'serial_items.*.qty' => 'nullable|numeric|min:0.01',
+            'serial_items.*.item_condition' => 'required_with:serial_items|in:good,damaged,expired,other',
+            'serial_items.*.rejection_reason' => 'nullable|string',
+            'serial_items.*.condition_notes' => 'nullable|string',
+        ]);
+
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+        if (! $hasItems && ! $hasSerials) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'items' => ['Minimal satu baris item qty atau nomor seri harus diisi.'],
+            ]);
+        }
+    }
+
+    private function resolveRejectionMode(Request $request): string
+    {
+        $hasItems = is_array($request->items) && count($request->items) > 0;
+        $hasSerials = is_array($request->serial_items) && count($request->serial_items) > 0;
+        if ($hasItems && $hasSerials) {
+            return 'mixed';
+        }
+        if ($hasSerials) {
+            return 'serial';
+        }
+
+        return 'normal';
+    }
+
+    private function createOutletRejectionHeader(Request $request): OutletRejection
+    {
+        return OutletRejection::create([
+            'number' => OutletRejection::generateNumber(),
+            'rejection_date' => $request->rejection_date,
+            'outlet_id' => $request->outlet_id,
+            'warehouse_id' => $request->warehouse_id,
+            'delivery_order_id' => $request->delivery_order_id,
+            'status' => 'draft',
+            'notes' => $request->notes,
+            'rejection_mode' => $this->resolveRejectionMode($request),
+            'created_by' => Auth::id(),
+        ]);
+    }
+
+    private function saveQtyItemsForORJ(OutletRejection $rejection, array $items, int $warehouseId): void
+    {
+        foreach ($items as $item) {
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
+            $macCostSmallUnit = $inventoryItem
+                ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
+                : 0.0;
+            $itemData = DB::table('items')->where('id', $item['item_id'])->first();
+            $macCostConverted = $this->convertMacSmallToLineUnit(
+                (float) $macCostSmallUnit,
+                $itemData,
+                (int) $item['unit_id']
+            );
+
+            OutletRejectionItem::create([
+                'outlet_rejection_id' => $rejection->id,
+                'item_id' => $item['item_id'],
+                'unit_id' => $item['unit_id'],
+                'qty_rejected' => $item['qty_rejected'],
+                'qty_received' => 0,
+                'rejection_reason' => $item['rejection_reason'] ?? null,
+                'item_condition' => $item['item_condition'],
+                'condition_notes' => $item['condition_notes'] ?? null,
+                'mac_cost' => $macCostConverted,
+            ]);
+        }
+    }
+
+    private function saveSerialItemsForORJ(OutletRejection $rejection, array $serialItems, Request $request): void
+    {
+        $now = now();
+        foreach ($serialItems as $row) {
+            $serialId = (int) $row['serial_id'];
+            $serial = DB::table('inventory_item_serials')->where('id', $serialId)->first();
+            if (! $serial) {
+                throw new \Exception("Serial ID {$serialId} tidak ditemukan.");
+            }
+            if (! $serial->is_out || (string) $serial->out_outlet_id !== (string) $request->outlet_id) {
+                throw new \Exception("Serial {$row['serial_number']} tidak valid untuk outlet ini.");
+            }
+
+            $qty = (float) ($row['qty'] ?? 1);
+            $unitId = $row['unit_id'] ?? $serial->unit_id;
+            $unitName = DB::table('units')->where('id', $unitId)->value('name');
+            $itemMaster = DB::table('items')->where('id', $row['item_id'])->first();
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $row['item_id'])->first();
+            $macSmall = $inventoryItem
+                ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
+                : (float) ($serial->cost_small ?? 0);
+            $macLine = isset($row['mac_cost'])
+                ? (float) $row['mac_cost']
+                : $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $unitId);
+
+            $qtySmall = $this->convertQtyToSmall($qty, (int) $unitId, $itemMaster);
+
+            DB::table('outlet_rejection_serial_items')->insert([
+                'outlet_rejection_id' => $rejection->id,
+                'serial_id' => $serialId,
+                'serial_number' => $row['serial_number'],
+                'item_id' => $row['item_id'],
+                'unit_id' => $unitId,
+                'unit_name' => $unitName,
+                'qty_rejected' => $qty,
+                'qty_small' => $qtySmall,
+                'qty_received' => 0,
+                'rejection_reason' => $row['rejection_reason'] ?? null,
+                'item_condition' => $row['item_condition'] ?? 'good',
+                'condition_notes' => $row['condition_notes'] ?? null,
+                'mac_cost' => $macLine,
+                'delivery_order_id' => $request->delivery_order_id,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('inventory_item_serials')->where('id', $serialId)->update([
+                'out_outlet_rejection_id' => $rejection->id,
+                'updated_at' => $now,
+            ]);
+        }
+    }
+
+    private function loadSerialItemsForORJ(int $rejectionId)
+    {
+        return DB::table('outlet_rejection_serial_items as osi')
+            ->leftJoin('items as i', 'i.id', '=', 'osi.item_id')
+            ->where('osi.outlet_rejection_id', $rejectionId)
+            ->select('osi.*', 'i.name as item_name')
+            ->orderBy('osi.id')
+            ->get();
+    }
+
+    private function processSerialInventoryForORJ($rejection, $serialRow): void
+    {
+        $virtual = (object) [
+            'item_id' => $serialRow->item_id,
+            'unit_id' => $serialRow->unit_id,
+            'qty_received' => $serialRow->qty_received,
+            'mac_cost' => $serialRow->mac_cost,
+        ];
+        $this->processInventory($rejection, $virtual);
+
+        $now = now();
+        DB::table('inventory_item_serials')->where('id', $serialRow->serial_id)->update([
+            'warehouse_id' => $rejection->warehouse_id,
+            'out_outlet_id' => null,
+            'out_warehouse_outlet_id' => null,
+            'out_delivery_order_id' => null,
+            'out_outlet_rejection_id' => null,
+            'is_out' => 0,
+            'is_received' => 0,
+            'updated_at' => $now,
+        ]);
+
+        DB::table('inventory_serial_movements')->insert([
+            'serial_id' => $serialRow->serial_id,
+            'serial_number' => $serialRow->serial_number,
+            'movement_type' => 'orj_in',
+            'outlet_rejection_id' => $rejection->id,
+            'item_id' => $serialRow->item_id,
+            'qty' => $serialRow->qty_received,
+            'unit_id' => $serialRow->unit_id ?? null,
+            'moved_by' => Auth::id(),
+            'moved_at' => $now,
+            'notes' => 'Outlet rejection return to warehouse',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
+    private function convertQtyToSmall(float $qty, int $unitId, ?object $itemMaster): float
+    {
+        if (! $itemMaster) {
+            return $qty;
+        }
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+        if ($unitId === (int) $itemMaster->small_unit_id) {
+            return $qty;
+        }
+        if (! empty($itemMaster->medium_unit_id) && $unitId === (int) $itemMaster->medium_unit_id) {
+            return $qty * $smallConv;
+        }
+        if (! empty($itemMaster->large_unit_id) && $unitId === (int) $itemMaster->large_unit_id) {
+            return $qty * $smallConv * $mediumConv;
+        }
+
+        return $qty;
+    }
+
+    private function rollbackSerialReservationForORJ(int $rejectionId): void
+    {
+        DB::table('inventory_item_serials')
+            ->where('out_outlet_rejection_id', $rejectionId)
+            ->update([
+                'out_outlet_rejection_id' => null,
+                'updated_at' => now(),
+            ]);
     }
 
     // Helper untuk insert notifikasi

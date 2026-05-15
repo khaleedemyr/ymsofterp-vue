@@ -159,6 +159,12 @@
                       <div class="text-sm font-medium text-gray-900">
                         {{ rejection.number }}
                       </div>
+                      <span
+                        v-if="rejection.rejection_mode && rejection.rejection_mode !== 'normal'"
+                        class="inline-block mt-1 text-xs px-2 py-0.5 rounded bg-sky-100 text-sky-700"
+                      >
+                        {{ rejection.rejection_mode === 'serial' ? 'Serial' : 'Mixed' }}
+                      </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                       <div class="text-sm text-gray-900">
