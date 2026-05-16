@@ -178,7 +178,28 @@
                         {{ trackerStatusLabel(row.tracker_status) }}
                       </span>
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{{ formatDate(row.approved_at) }}</td>
+                    <td class="px-4 py-3 text-xs text-gray-700 min-w-[12rem]">
+                      <div
+                        v-if="row.pr_approval_steps && row.pr_approval_steps.length"
+                        class="space-y-1.5"
+                      >
+                        <div
+                          v-for="(step, idx) in row.pr_approval_steps"
+                          :key="`${row.id}-approve-${idx}`"
+                          class="leading-snug"
+                        >
+                          <div class="font-medium text-gray-800">
+                            {{ step.approver_name }}
+                          </div>
+                          <div class="text-[11px] text-gray-500 whitespace-nowrap">
+                            Level {{ step.level }} · {{ formatDateTime(step.approved_at) }}
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="text-gray-400 whitespace-nowrap">
+                        {{ row.approved_at ? formatDateTime(row.approved_at) : '—' }}
+                      </div>
+                    </td>
                     <td class="px-4 py-3 text-xs text-gray-700">
                       <div v-if="row.nfp_transfer_approved_at" class="whitespace-nowrap">
                         {{ formatDateTime(row.nfp_transfer_approved_at) }}

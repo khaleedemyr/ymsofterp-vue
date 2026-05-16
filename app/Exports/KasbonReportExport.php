@@ -62,7 +62,7 @@ class KasbonReportExport implements FromCollection, WithHeadings, WithMapping
             (float) ($row->installment_amount ?? 0),
             $this->fmtDate($row->last_installment_at ?? null),
             $tracker,
-            $this->fmtDate($row->approved_at ?? null),
+            $this->formatPrApprovalSteps($row),
             $this->fmtDateTime($row->nfp_transfer_approved_at ?? null),
             $row->nfp_payment_number ?? '',
             $row->nfp_payment_status ?? '',
@@ -91,5 +91,26 @@ class KasbonReportExport implements FromCollection, WithHeadings, WithMapping
         } catch (\Throwable) {
             return '';
         }
+    }
+
+    /**
+     * @param  object  $row
+     */
+    private function formatPrApprovalSteps($row): string
+    {
+        $steps = $row->pr_approval_steps ?? null;
+        if (is_array($steps) && count($steps) > 0) {
+            $lines = [];
+            foreach ($steps as $step) {
+                $name = is_array($step) ? ($step['approver_name'] ?? '') : ($step->approver_name ?? '');
+                $level = is_array($step) ? ($step['level'] ?? '') : ($step->level ?? '');
+                $at = is_array($step) ? ($step['approved_at'] ?? null) : ($step->approved_at ?? null);
+                $lines[] = 'Lv ' . $level . ': ' . $name . ' @ ' . $this->fmtDateTime($at);
+            }
+
+            return implode(' | ', $lines);
+        }
+
+        return $this->fmtDateTime($row->approved_at ?? null);
     }
 }

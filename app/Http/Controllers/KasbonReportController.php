@@ -81,6 +81,8 @@ class KasbonReportController extends Controller
             ->limit(15000)
             ->get();
 
+        $this->attachPrApprovalStepsToRows($rows);
+
         $filename = 'report_kasbon_' . now()->format('Ymd_His') . '.xlsx';
 
         return Excel::download(new KasbonReportExport($rows), $filename);
@@ -162,9 +164,12 @@ class KasbonReportController extends Controller
             ->paginate($perPage, ['*'], 'page', $page)
             ->withQueryString();
 
+        $kasbonItems = $paginator->items();
+        $this->attachPrApprovalStepsToRows($kasbonItems);
+
         return [
             'tableMissing' => false,
-            'kasbons' => $paginator->items(),
+            'kasbons' => $kasbonItems,
             'summary' => [
                 'total_rows' => (int) ($summary->total_rows ?? 0),
                 'active_count' => (int) ($summary->active_count ?? 0),
@@ -440,5 +445,93 @@ class KasbonReportController extends Controller
             ->select('id_outlet as id', 'nama_outlet as name')
             ->orderBy('nama_outlet')
             ->get();
+    }
+
+    /**
+     * Lampirkan riwayat approve PR per baris (dari purchase_requisition_approval_flows).
+     *
+     * @param  iterable<int, object>  $rows
+     */
+    private function attachPrApprovalStepsToRows(iterable $rows): void
+    {
+        $prIds = collect($rows)
+            ->pluck('purchase_requisition_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($prIds->isEmpty()) {
+            return;
+        }
+
+        $flowsByPr = collect();
+        if (Schema::hasTable('purchase_requisition_approval_flows')) {
+            $flowsByPr = DB::table('purchase_requisition_approval_flows as praf')
+                ->leftJoin('users as u', 'u.id', '=', 'praf.approver_id')
+                ->whereIn('praf.purchase_requisition_id', $prIds)
+                ->where('praf.status', 'APPROVED')
+                ->whereNotNull('praf.approved_at')
+                ->orderBy('praf.purchase_requisition_id')
+                ->orderBy('praf.approval_level')
+                ->select([
+                    'praf.purchase_requisition_id',
+                    'praf.approval_level',
+                    'praf.approved_at',
+                    'u.nama_lengkap as approver_name',
+                ])
+                ->get()
+                ->groupBy('purchase_requisition_id');
+        }
+
+        $legacyByPr = DB::table('purchase_requisitions as pr')
+            ->leftJoin('users as u_cc', 'u_cc.id', '=', 'pr.approved_cc_by')
+            ->leftJoin('users as u_ssd', 'u_ssd.id', '=', 'pr.approved_ssd_by')
+            ->whereIn('pr.id', $prIds)
+            ->select([
+                'pr.id',
+                'pr.approved_cc_at',
+                'pr.approved_ssd_at',
+                'u_cc.nama_lengkap as approved_cc_name',
+                'u_ssd.nama_lengkap as approved_ssd_name',
+            ])
+            ->get()
+            ->keyBy('id');
+
+        foreach ($rows as $row) {
+            $prId = $row->purchase_requisition_id ?? null;
+            $steps = [];
+
+            if ($prId && isset($flowsByPr[$prId])) {
+                foreach ($flowsByPr[$prId] as $flow) {
+                    $steps[] = [
+                        'level' => (int) ($flow->approval_level ?? 0),
+                        'approver_name' => $flow->approver_name ?: '—',
+                        'approved_at' => $flow->approved_at
+                            ? Carbon::parse($flow->approved_at)->toIso8601String()
+                            : null,
+                    ];
+                }
+            }
+
+            if ($steps === [] && $prId && isset($legacyByPr[$prId])) {
+                $legacy = $legacyByPr[$prId];
+                if (! empty($legacy->approved_cc_at)) {
+                    $steps[] = [
+                        'level' => 1,
+                        'approver_name' => $legacy->approved_cc_name ?: 'Cost Control',
+                        'approved_at' => Carbon::parse($legacy->approved_cc_at)->toIso8601String(),
+                    ];
+                }
+                if (! empty($legacy->approved_ssd_at)) {
+                    $steps[] = [
+                        'level' => 2,
+                        'approver_name' => $legacy->approved_ssd_name ?: 'SSD',
+                        'approved_at' => Carbon::parse($legacy->approved_ssd_at)->toIso8601String(),
+                    ];
+                }
+            }
+
+            $row->pr_approval_steps = $steps;
+        }
     }
 }
