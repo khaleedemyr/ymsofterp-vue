@@ -58,12 +58,12 @@ class ItemController extends Controller
 
         if ($mode === 'auto') {
             $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
-            if ($computed === null || $computed <= 0) {
-                throw new \RuntimeException(
-                    'Mode otomatis: tidak ada riwayat Food Good Receive / harga PO untuk item "'.$item->name.'".'
-                );
+            if ($computed !== null && $computed > 0) {
+                $amount = $computed;
+            } else {
+                // Item baru / belum ada GR: tetap simpan mode auto; nominal 0 hingga ada GR pertama.
+                $amount = isset($price['price']) ? (float) $price['price'] : 0;
             }
-            $amount = $computed;
         }
 
         return [

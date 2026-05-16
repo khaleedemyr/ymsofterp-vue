@@ -201,26 +201,52 @@
         <div v-show="currentStep === 'price'">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Harga per Region/Outlet</label>
-            <div v-for="(price, idx) in form.prices" :key="idx" class="flex gap-2 mb-2 items-center">
-              <select v-model="price.price_type" class="rounded border-gray-300" @change="handlePriceTypeChange(price)">
+            <p class="text-xs text-gray-500 mb-3">
+              <strong>Manual:</strong> isi nominal.
+              <strong>Auto:</strong> dari Food GR terakhir + 12% (basis satuan large). Untuk item baru tanpa GR, harga bisa 0 dulu sampai ada penerimaan.
+            </p>
+            <div v-for="(price, idx) in form.prices" :key="idx" class="flex flex-wrap gap-2 mb-3 items-end">
+              <select
+                v-model="price.price_type"
+                class="rounded border-gray-300 text-sm"
+                :disabled="price.pricing_mode === 'auto'"
+                @change="handlePriceTypeChange(price)"
+              >
                 <option value="all">All</option>
                 <option value="specific">Specific Region/Outlet</option>
               </select>
-              <template v-if="price.price_type === 'specific'">
-                <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300">
+              <template v-if="price.price_type === 'specific' && price.pricing_mode !== 'auto'">
+                <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300 text-sm">
                   <option value="">Pilih Region</option>
                   <option v-for="region in regionsArray" :key="region.id" :value="region.id.toString()">{{ region.name }}</option>
                 </select>
-                <span class="text-gray-400">atau</span>
-                <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300">
+                <span class="text-gray-400 self-center text-sm">atau</span>
+                <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300 text-sm">
                   <option value="">Pilih Outlet</option>
                   <option v-for="outlet in outletsArray" :key="outlet.id_outlet" :value="outlet.id_outlet.toString()">{{ outlet.nama_outlet }}</option>
                 </select>
               </template>
-              <input type="number" v-model="price.price" min="0" placeholder="Harga" class="rounded border-gray-300 w-32" required />
-              <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+              <select v-model="price.pricing_mode" class="rounded border-gray-300 text-sm min-w-[10rem]" @change="onPricePricingModeChange(price)">
+                <option value="manual">Harga manual</option>
+                <option value="auto">Auto (GR+12%, large)</option>
+              </select>
+              <input
+                type="number"
+                v-model.number="price.price"
+                min="0"
+                step="1"
+                placeholder="Harga"
+                class="rounded border-gray-300 w-32 text-sm"
+                :disabled="price.pricing_mode === 'auto'"
+                :required="price.pricing_mode === 'manual'"
+              />
+              <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700 self-center p-1" title="Hapus baris">
+                <i class="fa-solid fa-trash"></i>
+              </button>
             </div>
-            <button type="button" @click="addPriceRow" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded"><i class="fa-solid fa-plus"></i> Tambah Harga</button>
+            <button type="button" @click="addPriceRow" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded text-sm">
+              <i class="fa-solid fa-plus"></i> Tambah Harga
+            </button>
           </div>
         </div>
         <!-- Step 4/5: Item Availability -->
@@ -432,14 +458,20 @@
             </h4>
             <div class="space-y-4">
               <div v-for="(price, index) in form.prices" :key="index" class="border-b pb-4">
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <p class="text-sm text-gray-500">Region/Outlet</p>
-                    <p class="font-medium">{{ price.label || '-' }}</p>
+                    <p class="font-medium">{{ formatPricePreviewScope(price) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-sm text-gray-500">Mode</p>
+                    <p class="font-medium">{{ price.pricing_mode === 'auto' ? 'Auto (GR+12%)' : 'Manual' }}</p>
                   </div>
                   <div>
                     <p class="text-sm text-gray-500">Price</p>
-                    <span class="bg-green-200 text-green-800 px-2 py-1 rounded font-bold">Rp {{ price.price }}</span>
+                    <span class="bg-green-200 text-green-800 px-2 py-1 rounded font-bold">
+                      {{ price.pricing_mode === 'auto' && (!price.price || Number(price.price) <= 0) ? '0 (isi setelah GR)' : ('Rp ' + price.price) }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -656,11 +688,12 @@ const isShowWarehouseDivision = computed(() => {
 });
 
 const addPriceRow = () => {
-  form.prices.push({ 
-    price_type: 'specific',
-    region_id: '', 
-    outlet_id: '', 
-    price: 0 
+  form.prices.push({
+    price_type: 'all',
+    region_id: '',
+    outlet_id: '',
+    price: 0,
+    pricing_mode: 'manual',
   });
 };
 
@@ -670,6 +703,15 @@ const removePriceRow = (idx) => {
 
 const handlePriceTypeChange = (price) => {
   if (price.price_type === 'all') {
+    price.region_id = '';
+    price.outlet_id = '';
+  }
+};
+
+const onPricePricingModeChange = (price) => {
+  if (price.pricing_mode === 'auto') {
+    price.price = 0;
+    price.price_type = 'all';
     price.region_id = '';
     price.outlet_id = '';
   }
@@ -735,11 +777,12 @@ watch(
 watch(() => props.show, (val) => {
   if (val && props.mode === 'create') {
     form.reset();
-    form.prices = [{ 
-      price_type: 'specific',
-      region_id: '', 
-      outlet_id: '', 
-      price: 0 
+    form.prices = [{
+      price_type: 'all',
+      region_id: '',
+      outlet_id: '',
+      price: 0,
+      pricing_mode: 'manual',
     }];
     form.availabilities = [];
     form.bom = [];
@@ -771,10 +814,11 @@ watch(() => props.show, (val) => {
       deleted_images: [],
       prices: props.item.prices ? props.item.prices.map(p => ({
         price_type: p.availability_price_type === 'all' ? 'all' : 'specific',
-        region_id: p.region_id,
-        outlet_id: p.outlet_id,
+        region_id: p.region_id ?? '',
+        outlet_id: p.outlet_id ?? '',
         price: p.price,
-        label: p.label
+        label: p.label,
+        pricing_mode: p.pricing_mode === 'auto' ? 'auto' : 'manual',
       })) : [],
       availabilities: props.item.availabilities ? props.item.availabilities.map(a => ({
         region_id: a.region_id,
@@ -905,6 +949,50 @@ onMounted(() => {
   console.log('outlets:', props.outlets);
 });
 
+const regionsArray = computed(() => Array.isArray(props.regions) ? props.regions : Object.values(props.regions || {}));
+const outletsArray = computed(() => Array.isArray(props.outlets) ? props.outlets : Object.values(props.outlets || {}));
+
+function normalizePricesForSubmit(prices) {
+  return (prices || []).map((p) => {
+    const pricing_mode = p.pricing_mode === 'auto' ? 'auto' : 'manual';
+    let price_type = p.price_type === 'specific' ? 'specific' : 'all';
+    let region_id = null;
+    let outlet_id = null;
+    if (pricing_mode === 'auto') {
+      price_type = 'all';
+    }
+    if (price_type === 'specific') {
+      if (p.region_id !== '' && p.region_id != null) region_id = Number(p.region_id);
+      if (p.outlet_id !== '' && p.outlet_id != null) outlet_id = Number(p.outlet_id);
+    }
+    const raw = Number(p.price);
+    const priceVal = Number.isNaN(raw) ? 0 : raw;
+    return {
+      price_type,
+      pricing_mode,
+      region_id,
+      outlet_id,
+      price: priceVal,
+    };
+  }).filter((p) => {
+    if (p.pricing_mode === 'auto') return true;
+    return !Number.isNaN(Number(p.price)) && Number(p.price) >= 0;
+  });
+}
+
+function formatPricePreviewScope(price) {
+  if (price.price_type === 'all') return 'All';
+  if (price.region_id) {
+    const r = regionsArray.value.find((x) => String(x.id) === String(price.region_id));
+    return r ? r.name : `Region #${price.region_id}`;
+  }
+  if (price.outlet_id) {
+    const o = outletsArray.value.find((x) => String(x.id_outlet) === String(price.outlet_id));
+    return o ? o.nama_outlet : `Outlet #${price.outlet_id}`;
+  }
+  return '-';
+}
+
 const isSaving = ref(false);
 
 const handleSave = async () => {
@@ -916,8 +1004,13 @@ const handleSave = async () => {
     didOpen: () => { Swal.showLoading(); }
   });
   try {
+    const applyPrices = () => form.transform((data) => ({
+      ...data,
+      prices: normalizePricesForSubmit(data.prices),
+    }));
+
     if (props.mode === 'create') {
-      await form.post(route('items.store'), {
+      await applyPrices().post(route('items.store'), {
         preserveScroll: true,
         onSuccess: () => {
           Swal.fire('Berhasil', 'Item berhasil ditambahkan!', 'success');
@@ -929,9 +1022,9 @@ const handleSave = async () => {
           if (form.errors && Object.values(form.errors).length > 0) {
             msg = Object.values(form.errors).flat().join('<br>');
           }
-          Swal.fire({ 
-            title: 'Gagal', 
-            html: msg, 
+          Swal.fire({
+            title: 'Gagal',
+            html: msg,
             icon: 'error',
             confirmButtonText: 'OK'
           });
@@ -939,7 +1032,7 @@ const handleSave = async () => {
         onFinish: () => { isSaving.value = false; }
       });
     } else {
-      await form.put(route('items.update', props.item.id), {
+      await applyPrices().put(route('items.update', props.item.id), {
         preserveScroll: true,
         onSuccess: () => {
           Swal.fire('Berhasil', 'Item berhasil diupdate!', 'success');
@@ -961,9 +1054,6 @@ const handleSave = async () => {
     Swal.fire('Error', 'Terjadi kesalahan saat menyimpan.', 'error');
   }
 };
-
-const regionsArray = computed(() => Array.isArray(props.regions) ? props.regions : Object.values(props.regions || {}));
-const outletsArray = computed(() => Array.isArray(props.outlets) ? props.outlets : Object.values(props.outlets || {}));
 
 const closeModal = () => {
   form.reset();

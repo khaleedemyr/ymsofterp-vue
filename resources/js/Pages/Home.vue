@@ -607,6 +607,11 @@ const approvalTypeFilter = ref('');
 const approvalDateFilter = ref('');
 const approvalSortBy = ref('newest');
 
+/** Bulk approve/reject: izin/cuti (supervisor + HRD) + koreksi absen — kartu & modal */
+const bulkSelectedDashboardKeys = ref(new Set());
+const bulkSelectedModalKeys = ref(new Set());
+const bulkUnifiedActionLoading = ref(false);
+
 // Training invitations
 // const trainingInvitations = ref([]);
 // const loadingTrainingInvitations = ref(false);
@@ -859,6 +864,78 @@ const filteredApprovals = computed(() => {
     
     return filtered;
 });
+
+function unifiedApprovalStoreKey(type, id) {
+    return `${type}:${id}`;
+}
+
+function parseUnifiedApprovalStoreKey(key) {
+    const idx = key.indexOf(':');
+    if (idx === -1) return { type: '', id: '' };
+    return { type: key.slice(0, idx), id: key.slice(idx + 1) };
+}
+
+const dashboardBulkRows = computed(() => {
+    const rows = [];
+    pendingApprovals.value.slice(0, 2).forEach((a) => {
+        rows.push({ type: 'leave', id: a.id });
+    });
+    pendingHrdApprovals.value.slice(0, 2).forEach((a) => {
+        rows.push({ type: 'hrd_leave', id: a.id });
+    });
+    pendingCorrectionApprovals.value.slice(0, 2).forEach((a) => {
+        rows.push({ type: 'correction', id: a.id });
+    });
+    return rows;
+});
+
+const modalFilteredApprovalKeys = computed(() =>
+    filteredApprovals.value.map((a) => unifiedApprovalStoreKey(a.type, a.id))
+);
+
+const isDashboardBulkSelectAllChecked = computed(() => {
+    const rows = dashboardBulkRows.value;
+    if (!rows.length) return false;
+    const s = bulkSelectedDashboardKeys.value;
+    return rows.every((r) => s.has(unifiedApprovalStoreKey(r.type, r.id)));
+});
+
+const selectedDashboardBulkCount = computed(() => bulkSelectedDashboardKeys.value.size);
+const selectedModalBulkCount = computed(() => bulkSelectedModalKeys.value.size);
+
+const isModalBulkSelectAllFilteredChecked = computed(() => {
+    const keys = modalFilteredApprovalKeys.value;
+    if (!keys.length) return false;
+    const s = bulkSelectedModalKeys.value;
+    return keys.every((k) => s.has(k));
+});
+
+const dashboardLeaveNotifPendingList = computed(() =>
+    leaveNotifications.value.filter(
+        (n) =>
+            (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') &&
+            !n.is_read &&
+            isNotificationForCurrentUser(n)
+    )
+);
+
+const dashboardTotalRowsCount = computed(
+    () =>
+        pendingApprovals.value.length +
+        pendingHrdApprovals.value.length +
+        pendingCorrectionApprovals.value.length +
+        dashboardLeaveNotifPendingList.value.length
+);
+
+const dashboardVisibleRowsCount = computed(
+    () =>
+        Math.min(2, pendingApprovals.value.length) +
+        Math.min(2, pendingHrdApprovals.value.length) +
+        Math.min(2, pendingCorrectionApprovals.value.length) +
+        Math.min(2, dashboardLeaveNotifPendingList.value.length)
+);
+
+const dashboardOverflowMoreCount = computed(() => Math.max(0, dashboardTotalRowsCount.value - dashboardVisibleRowsCount.value));
 
 function updateGreeting() {
     const hour = time.value.getHours();
@@ -3458,6 +3535,7 @@ async function loadAllApprovals() {
 }
 
 function showAllApprovals() {
+    bulkSelectedModalKeys.value = new Set();
     showAllApprovalsModal.value = true;
     loadAllApprovals();
 }
@@ -5059,6 +5137,285 @@ async function rejectCorrection(approvalId) {
     }
 }
 
+function toggleBulkDashboardKey(key, checked) {
+    const next = new Set(bulkSelectedDashboardKeys.value);
+    if (checked) {
+        next.add(key);
+    } else {
+        next.delete(key);
+    }
+    bulkSelectedDashboardKeys.value = next;
+}
+
+function toggleSelectAllDashboardBulk(checked) {
+    const next = new Set(bulkSelectedDashboardKeys.value);
+    dashboardBulkRows.value.forEach((r) => {
+        const k = unifiedApprovalStoreKey(r.type, r.id);
+        if (checked) {
+            next.add(k);
+        } else {
+            next.delete(k);
+        }
+    });
+    bulkSelectedDashboardKeys.value = next;
+}
+
+function toggleBulkModalKey(key, checked) {
+    const next = new Set(bulkSelectedModalKeys.value);
+    if (checked) {
+        next.add(key);
+    } else {
+        next.delete(key);
+    }
+    bulkSelectedModalKeys.value = next;
+}
+
+function toggleSelectAllModalBulkFiltered(checked) {
+    const next = new Set(bulkSelectedModalKeys.value);
+    modalFilteredApprovalKeys.value.forEach((k) => {
+        if (checked) {
+            next.add(k);
+        } else {
+            next.delete(k);
+        }
+    });
+    bulkSelectedModalKeys.value = next;
+}
+
+function clearBulkDashboardSelection() {
+    bulkSelectedDashboardKeys.value = new Set();
+}
+
+function clearBulkModalSelection() {
+    bulkSelectedModalKeys.value = new Set();
+}
+
+function resolveBulkUnifiedItems(keysSet) {
+    const items = [];
+    keysSet.forEach((key) => {
+        const { type, id } = parseUnifiedApprovalStoreKey(key);
+        if (!type || id === '') {
+            return;
+        }
+        if (type === 'leave') {
+            const raw = pendingApprovals.value.find((x) => String(x.id) === String(id));
+            if (raw) {
+                items.push({ type, id: raw.id, raw });
+            }
+            return;
+        }
+        if (type === 'hrd_leave') {
+            const raw = pendingHrdApprovals.value.find((x) => String(x.id) === String(id));
+            if (raw) {
+                items.push({ type, id: raw.id, raw });
+            }
+            return;
+        }
+        if (type === 'correction') {
+            const raw = pendingCorrectionApprovals.value.find((x) => String(x.id) === String(id));
+            if (raw) {
+                items.push({ type, id: raw.id, raw });
+            }
+        }
+    });
+    return items;
+}
+
+async function reloadUnifiedApprovalSources() {
+    await Promise.all([
+        loadPendingApprovals(),
+        loadPendingHrdApprovals(),
+        loadPendingCorrectionApprovals(),
+        loadLeaveNotifications(),
+    ]);
+    if (showAllApprovalsModal.value) {
+        await loadAllApprovals();
+    }
+}
+
+async function dispatchUnifiedApprove(item) {
+    let response;
+    if (item.type === 'leave') {
+        response = await axios.post(`/api/approval/${item.id}/approve`);
+    } else if (item.type === 'hrd_leave') {
+        response = await axios.post(`/api/approval/${item.id}/hrd-approve`);
+    } else if (item.type === 'correction') {
+        response = await axios.post(`/api/schedule-attendance-correction/approve/${item.id}`);
+    } else {
+        throw new Error('Tipe tidak dikenal');
+    }
+    if (!response?.data?.success) {
+        throw new Error(response?.data?.message || 'Gagal menyetujui');
+    }
+}
+
+async function dispatchUnifiedReject(item, notes) {
+    let response;
+    if (item.type === 'leave') {
+        response = await axios.post(`/api/approval/${item.id}/reject`, { notes });
+    } else if (item.type === 'hrd_leave') {
+        response = await axios.post(`/api/approval/${item.id}/hrd-reject`, { notes });
+    } else if (item.type === 'correction') {
+        response = await axios.post(`/api/schedule-attendance-correction/reject/${item.id}`, {
+            rejection_reason: notes,
+        });
+    } else {
+        throw new Error('Tipe tidak dikenal');
+    }
+    if (!response?.data?.success) {
+        throw new Error(response?.data?.message || 'Gagal menolak');
+    }
+}
+
+async function bulkApproveUnified(keysSet, clearSelection) {
+    const keys = Array.from(keysSet);
+    const items = resolveBulkUnifiedItems(new Set(keys));
+    if (!items.length) {
+        await Swal.fire({
+            icon: 'info',
+            title: 'Tidak ada item',
+            text: 'Pilih minimal satu approval di daftar.',
+        });
+        return;
+    }
+    const confirm = await Swal.fire({
+        title: 'Setujui yang dipilih?',
+        text: `Menyetujui ${items.length} permohonan/koreksi.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, setujui semua',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#10B981',
+        cancelButtonColor: '#6B7280',
+    });
+    if (!confirm.isConfirmed) {
+        return;
+    }
+
+    bulkUnifiedActionLoading.value = true;
+    let ok = 0;
+    const errors = [];
+    for (const item of items) {
+        try {
+            await dispatchUnifiedApprove(item);
+            ok++;
+        } catch (e) {
+            const msg = e.response?.data?.message || e.message || 'Error';
+            errors.push(`${item.type} #${item.id}: ${msg}`);
+        }
+    }
+    await reloadUnifiedApprovalSources();
+    if (clearSelection === 'dashboard') {
+        bulkSelectedDashboardKeys.value = new Set();
+    }
+    if (clearSelection === 'modal') {
+        bulkSelectedModalKeys.value = new Set();
+    }
+    bulkUnifiedActionLoading.value = false;
+
+    const fail = items.length - ok;
+    const errHtml =
+        errors.length > 0
+            ? `<ul class="text-left text-sm mt-2 max-h-40 overflow-y-auto">${errors
+                  .slice(0, 12)
+                  .map((x) => `<li class="text-red-600">${x}</li>`)
+                  .join('')}${errors.length > 12 ? '<li>…</li>' : ''}</ul>`
+            : '';
+    await Swal.fire({
+        icon: fail ? (ok ? 'warning' : 'error') : 'success',
+        title: fail ? (ok ? 'Sebagian berhasil' : 'Gagal') : 'Berhasil',
+        html: `<p>Berhasil: <strong>${ok}</strong> / ${items.length}</p>${errHtml}`,
+    });
+}
+
+async function bulkRejectUnified(keysSet, clearSelection) {
+    const keys = Array.from(keysSet);
+    const items = resolveBulkUnifiedItems(new Set(keys));
+    if (!items.length) {
+        await Swal.fire({
+            icon: 'info',
+            title: 'Tidak ada item',
+            text: 'Pilih minimal satu approval di daftar.',
+        });
+        return;
+    }
+    const { value: notes } = await Swal.fire({
+        title: 'Tolak yang dipilih',
+        text: `Alasan penolakan untuk ${items.length} item (sama untuk semua):`,
+        input: 'textarea',
+        inputPlaceholder: 'Masukkan alasan penolakan…',
+        inputValidator: (value) => {
+            if (!value) {
+                return 'Alasan harus diisi';
+            }
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Tolak semua',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+    });
+    if (!notes) {
+        return;
+    }
+
+    bulkUnifiedActionLoading.value = true;
+    let ok = 0;
+    const errors = [];
+    for (const item of items) {
+        try {
+            await dispatchUnifiedReject(item, notes);
+            ok++;
+        } catch (e) {
+            const msg = e.response?.data?.message || e.message || 'Error';
+            errors.push(`${item.type} #${item.id}: ${msg}`);
+        }
+    }
+    await reloadUnifiedApprovalSources();
+    if (clearSelection === 'dashboard') {
+        bulkSelectedDashboardKeys.value = new Set();
+    }
+    if (clearSelection === 'modal') {
+        bulkSelectedModalKeys.value = new Set();
+    }
+    bulkUnifiedActionLoading.value = false;
+
+    const fail = items.length - ok;
+    const errHtml =
+        errors.length > 0
+            ? `<ul class="text-left text-sm mt-2 max-h-40 overflow-y-auto">${errors
+                  .slice(0, 12)
+                  .map((x) => `<li class="text-red-600">${x}</li>`)
+                  .join('')}${errors.length > 12 ? '<li>…</li>' : ''}</ul>`
+            : '';
+    await Swal.fire({
+        icon: fail ? (ok ? 'warning' : 'error') : 'success',
+        title: fail ? (ok ? 'Sebagian berhasil' : 'Gagal') : 'Berhasil',
+        html: `<p>Ditolak: <strong>${ok}</strong> / ${items.length}</p>${errHtml}`,
+    });
+}
+
+function bulkApproveFromDashboard() {
+    return bulkApproveUnified(bulkSelectedDashboardKeys.value, 'dashboard');
+}
+
+function bulkRejectFromDashboard() {
+    return bulkRejectUnified(bulkSelectedDashboardKeys.value, 'dashboard');
+}
+
+function bulkApproveFromModal() {
+    return bulkApproveUnified(bulkSelectedModalKeys.value, 'modal');
+}
+
+function bulkRejectFromModal() {
+    return bulkRejectUnified(bulkSelectedModalKeys.value, 'modal');
+}
+
+function closeAllApprovalsModal() {
+    showAllApprovalsModal.value = false;
+    bulkSelectedModalKeys.value = new Set();
+}
+
 // Format correction value for display
 function formatCorrectionValue(approval) {
     return formatAnyCorrectionValue(approval.old_value, approval.new_value, approval.type);
@@ -5285,6 +5642,7 @@ function clearApprovalFilters() {
     approvalTypeFilter.value = '';
     approvalDateFilter.value = '';
     approvalSortBy.value = 'newest';
+    bulkSelectedModalKeys.value = new Set();
 }
 
 // Check if notification is for current user (not for approver)
@@ -5753,6 +6111,33 @@ watch(locale, () => {
                                 {{ totalNotificationsCount }}
                             </div>
                         </div>
+
+                        <div v-if="dashboardBulkRows.length && !(loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals)"
+                            class="flex flex-wrap items-center justify-between gap-2 mb-3 px-0.5">
+                            <label class="inline-flex items-center gap-2 text-xs sm:text-sm cursor-pointer select-none"
+                                :class="isNight ? 'text-slate-200' : 'text-slate-700'">
+                                <input type="checkbox" class="rounded border-gray-400"
+                                    :checked="isDashboardBulkSelectAllChecked"
+                                    :disabled="bulkUnifiedActionLoading"
+                                    @change="toggleSelectAllDashboardBulk($event.target.checked)" />
+                                Pilih semua di kartu
+                            </label>
+                            <div v-if="selectedDashboardBulkCount > 0" class="flex flex-wrap gap-2 items-center justify-end">
+                                <button type="button" :disabled="bulkUnifiedActionLoading" @click="bulkApproveFromDashboard"
+                                    class="text-xs px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                                    Setujui ({{ selectedDashboardBulkCount }})
+                                </button>
+                                <button type="button" :disabled="bulkUnifiedActionLoading" @click="bulkRejectFromDashboard"
+                                    class="text-xs px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
+                                    Tolak ({{ selectedDashboardBulkCount }})
+                                </button>
+                                <button type="button" :disabled="bulkUnifiedActionLoading" @click="clearBulkDashboardSelection"
+                                    class="text-xs px-2 py-1 rounded border"
+                                    :class="isNight ? 'text-slate-200 border-slate-500 hover:bg-slate-700' : 'text-slate-600 border-gray-300 hover:bg-gray-50'">
+                                    Batal pilih
+                                </button>
+                            </div>
+                        </div>
                         
                         <div v-if="loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals" class="text-center py-4">
                             <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
@@ -5762,46 +6147,62 @@ watch(locale, () => {
                         <div v-else class="space-y-2">
                             <!-- Approval Requests (Supervisor) -->
                             <div v-for="approval in pendingApprovals.slice(0, 2)" :key="'approval-' + approval.id"
-                                @click="showApprovalDetails(approval.id)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                class="p-3 rounded-lg transition-all duration-200 hover:scale-[1.02]"
                                 :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100'">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ approval.user.nama_lengkap }}
+                                <div class="flex gap-2 items-start">
+                                    <input type="checkbox" class="mt-1 rounded border-gray-400 flex-shrink-0"
+                                        :checked="bulkSelectedDashboardKeys.has(unifiedApprovalStoreKey('leave', approval.id))"
+                                        :disabled="bulkUnifiedActionLoading"
+                                        @click.stop
+                                        @change="toggleBulkDashboardKey(unifiedApprovalStoreKey('leave', approval.id), $event.target.checked)" />
+                                    <div class="flex-1 min-w-0 cursor-pointer" @click="showApprovalDetails(approval.id)">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div class="flex-1">
+                                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                    {{ approval.user.nama_lengkap }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                    {{ approval.leave_type.name }} • {{ approval.duration_text }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                    {{ new Date(approval.date_from).toLocaleDateString('id-ID') }} - {{ new Date(approval.date_to).toLocaleDateString('id-ID') }}
+                                                </div>
+                                            </div>
+                                            <div class="text-xs text-blue-500 font-medium flex-shrink-0">
+                                                <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'Approval' }}
+                                            </div>
                                         </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ approval.leave_type.name }} • {{ approval.duration_text }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ new Date(approval.date_from).toLocaleDateString('id-ID') }} - {{ new Date(approval.date_to).toLocaleDateString('id-ID') }}
-                                        </div>
-                                    </div>
-                                    <div class="text-xs text-blue-500 font-medium">
-                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'Approval' }}
                                     </div>
                                 </div>
                             </div>
 
                             <!-- HRD Approval Requests -->
                             <div v-for="approval in pendingHrdApprovals.slice(0, 2)" :key="'hrd-approval-' + approval.id"
-                                @click="showApprovalDetails(approval.id)"
-                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                class="p-3 rounded-lg transition-all duration-200 hover:scale-[1.02]"
                                 :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-purple-50 hover:bg-purple-100'">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ approval.user.nama_lengkap }}
+                                <div class="flex gap-2 items-start">
+                                    <input type="checkbox" class="mt-1 rounded border-gray-400 flex-shrink-0"
+                                        :checked="bulkSelectedDashboardKeys.has(unifiedApprovalStoreKey('hrd_leave', approval.id))"
+                                        :disabled="bulkUnifiedActionLoading"
+                                        @click.stop
+                                        @change="toggleBulkDashboardKey(unifiedApprovalStoreKey('hrd_leave', approval.id), $event.target.checked)" />
+                                    <div class="flex-1 min-w-0 cursor-pointer" @click="showApprovalDetails(approval.id)">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div class="flex-1">
+                                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                    {{ approval.user.nama_lengkap }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                    {{ approval.leave_type.name }} • {{ approval.duration_text }} • HRD Approval
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                    {{ new Date(approval.date_from).toLocaleDateString('id-ID') }} - {{ new Date(approval.date_to).toLocaleDateString('id-ID') }}
+                                                </div>
+                                            </div>
+                                            <div class="text-xs text-purple-500 font-medium flex-shrink-0">
+                                                <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
+                                            </div>
                                         </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ approval.leave_type.name }} • {{ approval.duration_text }} • HRD Approval
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ new Date(approval.date_from).toLocaleDateString('id-ID') }} - {{ new Date(approval.date_to).toLocaleDateString('id-ID') }}
-                                        </div>
-                                    </div>
-                                    <div class="text-xs text-purple-500 font-medium">
-                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
                                     </div>
                                 </div>
                             </div>
@@ -5810,42 +6211,52 @@ watch(locale, () => {
                             <div v-for="approval in pendingCorrectionApprovals.slice(0, 2)" :key="'correction-approval-' + approval.id"
                                 class="p-3 rounded-lg transition-all duration-200"
                                 :class="isNight ? 'bg-slate-700/50' : 'bg-orange-50'">
-                                <div class="flex items-center justify-between mb-2">
-                                    <div class="flex-1">
-                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                            {{ approval.employee_name }}
+                                <div class="flex gap-2 items-start mb-2">
+                                    <input type="checkbox" class="mt-1 rounded border-gray-400 flex-shrink-0"
+                                        :checked="bulkSelectedDashboardKeys.has(unifiedApprovalStoreKey('correction', approval.id))"
+                                        :disabled="bulkUnifiedActionLoading"
+                                        @click.stop
+                                        @change="toggleBulkDashboardKey(unifiedApprovalStoreKey('correction', approval.id), $event.target.checked)" />
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center justify-between gap-2 mb-2">
+                                            <div class="flex-1">
+                                                <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                    {{ approval.employee_name }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                    {{ approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'attendance' ? 'Koreksi Attendance' : 'Input Absen Manual' }} • {{ approval.nama_outlet }}
+                                                </div>
+                                                <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                    {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}
+                                                </div>
+                                                <div v-if="approval.reason" class="mt-2 p-2 bg-blue-50 rounded text-xs border-l-4 border-blue-400">
+                                                    <div class="font-medium mb-1 text-blue-700">Alasan Koreksi:</div>
+                                                    <div class="text-xs text-blue-600">{{ approval.reason }}</div>
+                                                </div>
+                                            </div>
+                                            <div class="text-xs text-orange-500 font-medium flex-shrink-0">
+                                                <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
+                                            </div>
                                         </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                            {{ approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'attendance' ? 'Koreksi Attendance' : 'Input Absen Manual' }} • {{ approval.nama_outlet }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}
-                                        </div>
-                                        <!-- Reason Display -->
-                                        <div v-if="approval.reason" class="mt-2 p-2 bg-blue-50 rounded text-xs border-l-4 border-blue-400">
-                                            <div class="font-medium mb-1 text-blue-700">Alasan Koreksi:</div>
-                                            <div class="text-xs text-blue-600">{{ approval.reason }}</div>
+                                        <div class="flex gap-2">
+                                            <button type="button" @click.stop="approveCorrection(approval.id)"
+                                                :disabled="bulkUnifiedActionLoading"
+                                                class="flex-1 text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors disabled:opacity-50">
+                                                <i class="fa-solid fa-check mr-1"></i>Setujui
+                                            </button>
+                                            <button type="button" @click.stop="rejectCorrection(approval.id)"
+                                                :disabled="bulkUnifiedActionLoading"
+                                                class="flex-1 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors disabled:opacity-50">
+                                                <i class="fa-solid fa-times mr-1"></i>Tolak
+                                            </button>
                                         </div>
                                     </div>
-                                    <div class="text-xs text-orange-500 font-medium">
-                                        <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
-                                    </div>
-                                </div>
-                                <div class="flex gap-2">
-                                    <button @click="approveCorrection(approval.id)" 
-                                            class="flex-1 text-xs bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600 transition-colors">
-                                        <i class="fa-solid fa-check mr-1"></i>Setujui
-                                    </button>
-                                    <button @click="rejectCorrection(approval.id)" 
-                                            class="flex-1 text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600 transition-colors">
-                                        <i class="fa-solid fa-times mr-1"></i>Tolak
-                                    </button>
                                 </div>
                             </div>
 
 
                             <!-- Leave Notifications -->
-                            <div v-for="notification in leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).slice(0, 2)" :key="'notification-' + notification.id"
+                            <div v-for="notification in dashboardLeaveNotifPendingList.slice(0, 2)" :key="'notification-' + notification.id"
                                 @click="handleNotificationClick(notification)"
                                 class="p-3 rounded-lg transition-all duration-200"
                                 :class="[
@@ -5879,9 +6290,9 @@ watch(locale, () => {
                                 </div>
                             </div>
                             
-                            <div v-if="(pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).length) > 6" class="text-center pt-2">
-                                <button class="text-sm text-blue-500 hover:text-blue-700 font-medium">
-                                    Lihat {{ (pendingApprovals.length + pendingHrdApprovals.length + leaveNotifications.filter(n => (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && !n.is_read && isNotificationForCurrentUser(n)).length) - 6 }} notifikasi lainnya...
+                            <div v-if="dashboardOverflowMoreCount > 0" class="text-center pt-2">
+                                <button type="button" @click="showAllApprovals" class="text-sm text-blue-500 hover:text-blue-700 font-medium">
+                                    Lihat {{ dashboardOverflowMoreCount }} lainnya…
                                 </button>
                             </div>
                             
@@ -12141,7 +12552,7 @@ watch(locale, () => {
     </div>
 
     <!-- All Approvals Modal -->
-    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllApprovalsModal = false">
+    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeAllApprovalsModal">
         <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden" @click.stop>
             <!-- Modal Header -->
             <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -12149,7 +12560,7 @@ watch(locale, () => {
                     <i class="fa-solid fa-list-check mr-2 text-blue-500"></i>
                     Semua Approval Pending
                 </h3>
-                <button @click="showAllApprovalsModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <button type="button" @click="closeAllApprovalsModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                     <i class="fa-solid fa-times text-xl"></i>
                 </button>
             </div>
@@ -12212,6 +12623,32 @@ watch(locale, () => {
                         </button>
                     </div>
                 </div>
+
+                <!-- Bulk (semua yang tampil setelah filter) -->
+                <div v-if="!loadingAllApprovals && filteredApprovals.length > 0"
+                    class="mb-6 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600">
+                    <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer select-none">
+                        <input type="checkbox" class="rounded border-gray-400 dark:border-gray-500"
+                            :checked="isModalBulkSelectAllFilteredChecked"
+                            :disabled="bulkUnifiedActionLoading"
+                            @change="toggleSelectAllModalBulkFiltered($event.target.checked)" />
+                        Pilih semua yang tampil ({{ filteredApprovals.length }})
+                    </label>
+                    <div v-if="selectedModalBulkCount > 0" class="flex flex-wrap gap-2 items-center justify-end">
+                        <button type="button" :disabled="bulkUnifiedActionLoading" @click="bulkApproveFromModal"
+                            class="text-xs sm:text-sm px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                            <i class="fa-solid fa-check mr-1"></i>Setujui ({{ selectedModalBulkCount }})
+                        </button>
+                        <button type="button" :disabled="bulkUnifiedActionLoading" @click="bulkRejectFromModal"
+                            class="text-xs sm:text-sm px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
+                            <i class="fa-solid fa-times mr-1"></i>Tolak ({{ selectedModalBulkCount }})
+                        </button>
+                        <button type="button" :disabled="bulkUnifiedActionLoading" @click="clearBulkModalSelection"
+                            class="text-xs sm:text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600">
+                            Batal pilih
+                        </button>
+                    </div>
+                </div>
                 
                 <!-- Loading State -->
                 <div v-if="loadingAllApprovals" class="text-center py-8">
@@ -12235,13 +12672,18 @@ watch(locale, () => {
                         
                         <!-- Approval Header -->
                         <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <input type="checkbox" class="rounded border-gray-400 dark:border-gray-500 flex-shrink-0 mt-1"
+                                    :checked="bulkSelectedModalKeys.has(unifiedApprovalStoreKey(approval.type, approval.id))"
+                                    :disabled="bulkUnifiedActionLoading"
+                                    @click.stop
+                                    @change="toggleBulkModalKey(unifiedApprovalStoreKey(approval.type, approval.id), $event.target.checked)" />
+                                <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center flex-shrink-0">
                                     <i v-if="approval.type === 'leave'" class="fa-solid fa-calendar-times text-blue-600 dark:text-blue-400"></i>
                                     <i v-else-if="approval.type === 'hrd_leave'" class="fa-solid fa-user-check text-blue-600 dark:text-blue-400"></i>
                                     <i v-else-if="approval.type === 'correction'" class="fa-solid fa-edit text-blue-600 dark:text-blue-400"></i>
                                 </div>
-                                <div>
+                                <div class="min-w-0">
                                     <div class="font-semibold text-gray-900 dark:text-white">
                                         {{ approval.employee_name || approval.user?.nama_lengkap }}
                                     </div>
@@ -12313,12 +12755,12 @@ watch(locale, () => {
 
                         <!-- Action Buttons -->
                         <div class="flex gap-2">
-                            <button @click="handleApprovalAction(approval)" 
-                                    class="flex-1 bg-green-500 text-white px-3 py-2 rounded-md hover:bg-green-600 transition-colors text-sm">
+                            <button type="button" :disabled="bulkUnifiedActionLoading" @click="handleApprovalAction(approval)" 
+                                    class="flex-1 bg-green-500 text-white px-3 py-2 rounded-md hover:bg-green-600 transition-colors text-sm disabled:opacity-50">
                                 <i class="fa-solid fa-check mr-1"></i>Setujui
                             </button>
-                            <button @click="handleRejectionAction(approval)" 
-                                    class="flex-1 bg-red-500 text-white px-3 py-2 rounded-md hover:bg-red-600 transition-colors text-sm">
+                            <button type="button" :disabled="bulkUnifiedActionLoading" @click="handleRejectionAction(approval)" 
+                                    class="flex-1 bg-red-500 text-white px-3 py-2 rounded-md hover:bg-red-600 transition-colors text-sm disabled:opacity-50">
                                 <i class="fa-solid fa-times mr-1"></i>Tolak
                             </button>
                         </div>
@@ -12347,7 +12789,7 @@ watch(locale, () => {
                             Menampilkan {{ filteredApprovals.length }} dari {{ allApprovals.length }} approval
                         </span>
                     </div>
-                    <button @click="showAllApprovalsModal = false" 
+                    <button type="button" @click="closeAllApprovalsModal" 
                             class="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">
                         Tutup
                     </button>
