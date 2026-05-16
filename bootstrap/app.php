@@ -31,19 +31,8 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule) {
-        // Process holiday attendance automatically every day at 6:00 AM
-        $schedule->command('attendance:process-holiday')
-            ->dailyAt('06:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/holiday-attendance.log'));
-
-        // Process holiday attendance for yesterday at 11:00 PM (in case of late scans)
-        $schedule->command('attendance:process-holiday')
-            ->dailyAt('23:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/holiday-attendance.log'));
+        // Holiday attendance: definisi jadwal ada di App\Console\Kernel (dengan --force).
+        // Hindari duplikat di sini — duplikat tanpa --force + $this->confirm() membuat proses batal saat cron.
 
         // Weekly cleanup of old logs (optional)
         $schedule->command('attendance:cleanup-logs')

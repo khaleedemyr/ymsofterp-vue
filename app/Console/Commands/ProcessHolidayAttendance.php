@@ -89,7 +89,8 @@ class ProcessHolidayAttendance extends Command
             })
         );
 
-        if (!$force && !$this->confirm('Do you want to process these compensations?')) {
+        // Scheduler / cron are non-interactive: confirm() defaults to "no" → proses selalu batal tanpa --force
+        if (!$force && $this->input->isInteractive() && ! $this->confirm('Do you want to process these compensations?')) {
             $this->info('Processing cancelled.');
             return 0;
         }
