@@ -17,6 +17,7 @@ class ItemPrice extends Model
         'region_id',
         'outlet_id',
         'price',
+        'pricing_mode',
     ];
 
     protected $casts = [

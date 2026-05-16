@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use App\Models\ActivityLog;
 use App\Support\InventorySerialInUse;
+use App\Support\ItemAutoAllPriceFromFoodGr;
 use Carbon\Carbon;
 
 class FoodGoodReceiveController extends Controller
@@ -436,6 +437,17 @@ class FoodGoodReceiveController extends Controller
             // Update status PO menjadi received
             DB::table('purchase_order_foods')->where('id', $request->po_id)->update(['status' => 'received']);
             DB::commit();
+
+            try {
+                $itemIds = collect($request->items)->pluck('item_id')->all();
+                ItemAutoAllPriceFromFoodGr::syncForItemIds($itemIds);
+            } catch (\Throwable $e) {
+                \Log::warning('ItemAutoAllPriceFromFoodGr setelah FGR store gagal', [
+                    'good_receive_id' => $goodReceiveId,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil disimpan']);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -735,6 +747,16 @@ class FoodGoodReceiveController extends Controller
             ]);
 
             DB::commit();
+
+            try {
+                ItemAutoAllPriceFromFoodGr::syncForItemIds($currentItems->pluck('item_id')->all());
+            } catch (\Throwable $e) {
+                \Log::warning('ItemAutoAllPriceFromFoodGr setelah FGR update gagal', [
+                    'good_receive_id' => $id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil diupdate']);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -766,7 +788,8 @@ class FoodGoodReceiveController extends Controller
             
             // Ambil semua item GR
             $items = DB::table('food_good_receive_items')->where('good_receive_id', $id)->get();
-            
+            $itemIdsAffected = collect($items)->pluck('item_id')->unique()->values()->all();
+
             foreach ($items as $item) {
                 // Get PO item untuk warehouse
                 $poItem = DB::table('purchase_order_food_items')->where('id', $item->po_item_id)->first();
@@ -886,6 +909,16 @@ class FoodGoodReceiveController extends Controller
             ]);
             
             DB::commit();
+
+            try {
+                ItemAutoAllPriceFromFoodGr::syncForItemIds($itemIdsAffected);
+            } catch (\Throwable $e) {
+                \Log::warning('ItemAutoAllPriceFromFoodGr setelah FGR hapus gagal', [
+                    'good_receive_id' => $id,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus dan inventory telah di-rollback']);
         } catch (\Exception $e) {
             DB::rollBack();

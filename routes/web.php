@@ -923,6 +923,11 @@ Route::get('/api/items/by-supplier', [ItemController::class, 'bySupplier']);
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
 
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/items/non-pos-pricing', [ItemController::class, 'nonPosBulkPricesData'])->name('items.non-pos-pricing.data');
+    Route::post('/api/items/non-pos-pricing', [ItemController::class, 'nonPosBulkPricesSave'])->name('items.non-pos-pricing.save');
+});
+
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);
 Route::get('/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'showDetail'])->name('items.detail');
 Route::get('/api/items/{id}/detail', [App\Http\Controllers\ItemController::class, 'apiDetail']);

@@ -213,20 +213,32 @@
         <div v-show="currentStep === 'price'">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Harga per Region/Outlet</label>
-            <div v-for="(price, idx) in form.prices" :key="idx" class="flex gap-2 mb-2 items-center">
+            <div v-for="(price, idx) in form.prices" :key="idx" class="flex flex-wrap gap-2 mb-2 items-end">
               <select v-model="price.region_id" :disabled="!!price.outlet_id" class="rounded border-gray-300">
                 <option value="">Pilih Region</option>
                 <option value="all">All</option>
                 <option v-for="region in regionsArray" :key="region?.id" :value="region?.id?.toString()">{{ region?.name }}</option>
               </select>
-              <span class="text-gray-400">atau</span>
+              <span class="text-gray-400 self-center">atau</span>
               <select v-model="price.outlet_id" :disabled="!!price.region_id" class="rounded border-gray-300">
                 <option value="">Pilih Outlet</option>
                 <option value="all">All</option>
                 <option v-for="outlet in outletsArray" :key="outlet?.id_outlet" :value="outlet?.id_outlet?.toString()">{{ outlet?.nama_outlet }}</option>
               </select>
-              <input type="number" v-model="price.price" min="0" placeholder="Harga" class="rounded border-gray-300 w-32" required />
-              <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700"><i class="fa-solid fa-trash"></i></button>
+              <select v-model="price.pricing_mode" class="rounded border-gray-300 text-sm">
+                <option value="manual">Harga manual</option>
+                <option value="auto">Auto (GR+12%, large)</option>
+              </select>
+              <input
+                type="number"
+                v-model="price.price"
+                min="0"
+                placeholder="Harga"
+                class="rounded border-gray-300 w-32"
+                :disabled="price.pricing_mode === 'auto'"
+                :required="price.pricing_mode !== 'auto'"
+              />
+              <button type="button" @click="removePriceRow(idx)" class="text-red-500 hover:text-red-700 self-center"><i class="fa-solid fa-trash"></i></button>
             </div>
             <button type="button" @click="addPriceRow" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-3 py-1 rounded"><i class="fa-solid fa-plus"></i> Tambah Harga</button>
           </div>
@@ -413,10 +425,14 @@
               </h4>
               <div class="space-y-4">
                 <div v-for="(price, index) in form.prices" :key="index" class="border-b pb-4">
-                  <div class="grid grid-cols-2 gap-4">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <p class="text-sm text-gray-500">Region/Outlet</p>
                       <p class="font-medium">{{ price.label || '-' }}</p>
+                    </div>
+                    <div>
+                      <p class="text-sm text-gray-500">Mode</p>
+                      <p class="font-medium">{{ price.pricing_mode === 'auto' ? 'Auto (GR+12%)' : 'Manual' }}</p>
                     </div>
                     <div>
                       <p class="text-sm text-gray-500">Price</p>
@@ -632,7 +648,8 @@ watch(() => props.show, (val) => {
         region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
         outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
         price: p.price,
-        label: p.label
+        label: p.label,
+        pricing_mode: p.pricing_mode === 'auto' ? 'auto' : 'manual',
       })) : [],
       availabilities: props.item.availabilities ? props.item.availabilities.map(a => ({
         region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
@@ -792,7 +809,8 @@ const saveItem = () => {
       ...p,
       region_id: p.region_id === 'all' ? null : (p.region_id === '' || typeof p.region_id === 'undefined' || p.region_id === null ? null : Number(p.region_id)),
       outlet_id: p.outlet_id === 'all' ? null : (p.outlet_id === '' || typeof p.outlet_id === 'undefined' || p.outlet_id === null ? null : Number(p.outlet_id)),
-      price: p.price === '' || p.price === null || typeof p.price === 'undefined' ? '' : Number(p.price)
+      price: p.price === '' || p.price === null || typeof p.price === 'undefined' ? '' : Number(p.price),
+      pricing_mode: p.pricing_mode === 'auto' ? 'auto' : 'manual',
     }));
     form.availabilities = (form.availabilities || []).map(a => ({
       ...a,
@@ -805,8 +823,11 @@ const saveItem = () => {
     form.availabilities = [];
   }
 
-  // Filter prices dan availabilities agar hanya data valid yang dikirim
-  form.prices = (form.prices || []).filter(p => (p.price !== '' && !isNaN(p.price)));
+  // Filter prices: manual wajib punya angka; auto boleh tanpa (dihitung server)
+  form.prices = (form.prices || []).filter(p => {
+    if (p.pricing_mode === 'auto') return true;
+    return p.price !== '' && !Number.isNaN(p.price) && Number(p.price) >= 0;
+  });
   form.availabilities = (form.availabilities || []).filter(a => true);
 
   console.log('DEBUG: Processed form data:', {
@@ -885,7 +906,8 @@ const saveItem = () => {
             region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
             outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
             price: p.price,
-            label: p.label
+            label: p.label,
+            pricing_mode: p.pricing_mode === 'auto' ? 'auto' : 'manual',
           }));
           item.availabilities = item.availabilities.map(a => ({
             region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
@@ -937,7 +959,8 @@ const saveItem = () => {
             region_id: p.region_id === null ? 'all' : p.region_id?.toString(),
             outlet_id: p.outlet_id === null ? 'all' : p.outlet_id?.toString(),
             price: p.price,
-            label: p.label
+            label: p.label,
+            pricing_mode: p.pricing_mode === 'auto' ? 'auto' : 'manual',
           }));
           item.availabilities = item.availabilities.map(a => ({
             region_id: a.region_id === null ? 'all' : a.region_id?.toString(),
@@ -1040,7 +1063,7 @@ const usedAvailRegionIds = computed(() => form.availabilities.map(a => a.region_
 const usedAvailOutletIds = computed(() => form.availabilities.map(a => a.outlet_id).filter(Boolean));
 
 const addPriceRow = () => {
-  form.prices.push({ region_id: '', outlet_id: '', price: '' });
+  form.prices.push({ region_id: '', outlet_id: '', price: '', pricing_mode: 'manual' });
 };
 
 const removePriceRow = (idx) => {

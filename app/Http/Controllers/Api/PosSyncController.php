@@ -1109,16 +1109,17 @@ class PosSyncController extends Controller
                 ->get();
 
             $formatted = array_map(function($price) {
-                return [
-                    'id' => $price->id,
-                    'item_id' => $price->item_id,
-                    'price' => $price->price ?? 0,
-                    'availability_price_type' => $price->availability_price_type ?? 'all',
-                    'region_id' => $price->region_id ?? null,
-                    'outlet_id' => $price->outlet_id ?? null,
-                    'created_at' => $price->created_at,
-                    'updated_at' => $price->updated_at
-                ];
+            return [
+                'id' => $price->id,
+                'item_id' => $price->item_id,
+                'price' => $price->price ?? 0,
+                'availability_price_type' => $price->availability_price_type ?? 'all',
+                'pricing_mode' => ($price->pricing_mode ?? 'manual'),
+                'region_id' => $price->region_id ?? null,
+                'outlet_id' => $price->outlet_id ?? null,
+                'created_at' => $price->created_at,
+                'updated_at' => $price->updated_at
+            ];
             }, $itemPrices->toArray());
 
             return response()->json([

@@ -6,6 +6,14 @@
           <i class="fa-solid fa-boxes-stacked text-blue-500"></i> Items
         </h1>
         <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+            @click="showNonPosPriceModal = true"
+          >
+            <i class="fa-solid fa-tags"></i>
+            Harga non-POS
+          </button>
           <Link
             :href="route('stock-cut.recipe-checker')"
             class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
@@ -270,6 +278,11 @@
         @close="showEditModal = false"
         @success="handleSuccess"
       />
+      <NonPosItemPriceModal
+        :show="showNonPosPriceModal"
+        @close="showNonPosPriceModal = false"
+        @saved="reload"
+      />
       <VueEasyLightbox
         :visible="lightboxVisible"
         :imgs="lightboxImages"
@@ -478,6 +491,7 @@ import VueEasyLightbox from 'vue-easy-lightbox'
 import axios from 'axios'
 import { saveAs } from 'file-saver'
 import ItemBarcodeModal from './ItemBarcodeModal.vue';
+import NonPosItemPriceModal from './NonPosItemPriceModal.vue';
 
 const props = defineProps({
   items: Object,
@@ -508,6 +522,7 @@ const lightboxVisible = ref(false)
 const lightboxImages = ref([])
 const lightboxIndex = ref(0)
 const showExportDropdown = ref(false)
+const showNonPosPriceModal = ref(false)
 const showImportDropdown = ref(false)
 const importFileInput = ref(null)
 const importPreviewModal = ref(false)

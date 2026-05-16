@@ -26,9 +26,55 @@ use App\Models\FoodInventoryCard;
 use App\Exports\BomImportTemplateExport;
 use App\Imports\BomImport;
 use Illuminate\Validation\Rule;
+use App\Support\FoodGrLastPurchaseForItem;
 
 class ItemController extends Controller
 {
+    /**
+     * Satu baris item_prices dari payload form/API, termasuk mode auto (Food GR +12% per satuan large).
+     *
+     * @param  array<string,mixed>  $price
+     * @return array<string,mixed>
+     */
+    private function buildItemPriceRow(Item $item, array $price): array
+    {
+        $type = 'all';
+        if (isset($price['price_type']) && $price['price_type'] === 'specific') {
+            if (! empty($price['region_id']) && empty($price['outlet_id'])) {
+                $type = 'region';
+            } elseif (! empty($price['outlet_id'])) {
+                $type = 'outlet';
+            }
+        } else {
+            if (! empty($price['region_id']) && empty($price['outlet_id'])) {
+                $type = 'region';
+            } elseif (! empty($price['outlet_id'])) {
+                $type = 'outlet';
+            }
+        }
+
+        $mode = (($price['pricing_mode'] ?? 'manual') === 'auto') ? 'auto' : 'manual';
+        $amount = isset($price['price']) ? (float) $price['price'] : 0;
+
+        if ($mode === 'auto') {
+            $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+            if ($computed === null || $computed <= 0) {
+                throw new \RuntimeException(
+                    'Mode otomatis: tidak ada riwayat Food Good Receive / harga PO untuk item "'.$item->name.'".'
+                );
+            }
+            $amount = $computed;
+        }
+
+        return [
+            'region_id' => $price['region_id'] ?? null,
+            'outlet_id' => $price['outlet_id'] ?? null,
+            'price' => round($amount, 2),
+            'availability_price_type' => $type,
+            'pricing_mode' => $mode,
+        ];
+    }
+
     private function getMasterData(): array
     {
         $ttl = 1800; // 30 minutes - master data rarely changes
@@ -168,12 +214,14 @@ class ItemController extends Controller
                     $label = 'All';
                 }
                 return [
+                    'id' => $p['id'] ?? null,
                     'region_id' => $regionId,
                     'region_name' => $regionName,
                     'outlet_id' => $outletId,
                     'outlet_name' => $outletName,
                     'label' => $label,
                     'price' => $p['price'],
+                    'pricing_mode' => $p['pricing_mode'] ?? 'manual',
                 ];
             })->toArray();
             // Map availabilities
@@ -280,7 +328,8 @@ class ItemController extends Controller
                 'prices' => 'nullable|array',
                 'prices.*.region_id' => 'nullable|exists:regions,id',
                 'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
-                'prices.*.price' => 'required|numeric|min:0',
+                'prices.*.price' => 'nullable|numeric|min:0',
+                'prices.*.pricing_mode' => 'nullable|in:manual,auto',
                 'availabilities' => 'nullable|array',
                 'availabilities.*.region_id' => 'nullable|exists:regions,id',
                 'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -342,20 +391,7 @@ class ItemController extends Controller
             // Simpan harga per region/outlet
             if ($request->prices) {
                 foreach ($request->prices as $price) {
-                    $type = 'all';
-                    if ($price['price_type'] === 'specific') {
-                    if (!empty($price['region_id']) && empty($price['outlet_id'])) {
-                        $type = 'region';
-                    } else if (!empty($price['outlet_id'])) {
-                        $type = 'outlet';
-                        }
-                    }
-                    $item->prices()->create([
-                        'region_id' => $price['region_id'],
-                        'outlet_id' => $price['outlet_id'],
-                        'price' => $price['price'],
-                        'availability_price_type' => $type,
-                    ]);
+                    $item->prices()->create($this->buildItemPriceRow($item, $price));
                 }
             }
 
@@ -456,12 +492,14 @@ class ItemController extends Controller
                 $label = 'All';
             }
             return [
+                'id' => $p->id,
                 'region_id' => $p->region_id,
                 'region_name' => $regionName,
                 'outlet_id' => $p->outlet_id,
                 'outlet_name' => $outletName,
                 'label' => $label,
                 'price' => $p->price,
+                'pricing_mode' => $p->pricing_mode ?? 'manual',
             ];
         })->toArray();
         // Map availabilities with region/outlet name
@@ -572,7 +610,8 @@ class ItemController extends Controller
             'prices' => 'nullable|array',
             'prices.*.region_id' => 'nullable|exists:regions,id',
             'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
-            'prices.*.price' => 'required|numeric|min:0',
+            'prices.*.price' => 'nullable|numeric|min:0',
+            'prices.*.pricing_mode' => 'nullable|in:manual,auto',
             'availabilities' => 'nullable|array',
             'availabilities.*.region_id' => 'nullable|exists:regions,id',
             'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -618,18 +657,7 @@ class ItemController extends Controller
                 $item->prices()->delete();
                 if ($request->prices) {
                     foreach ($request->prices as $price) {
-                        $type = 'all';
-                        if (isset($price['region_id']) && !empty($price['region_id']) && (!isset($price['outlet_id']) || empty($price['outlet_id']))) {
-                            $type = 'region';
-                        } else if (isset($price['outlet_id']) && !empty($price['outlet_id'])) {
-                            $type = 'outlet';
-                        }
-                        $item->prices()->create([
-                            'region_id' => isset($price['region_id']) ? $price['region_id'] : null,
-                            'outlet_id' => isset($price['outlet_id']) ? $price['outlet_id'] : null,
-                            'price' => $price['price'],
-                            'availability_price_type' => $type,
-                        ]);
+                        $item->prices()->create($this->buildItemPriceRow($item, $price));
                     }
                 }
             }
@@ -773,12 +801,14 @@ class ItemController extends Controller
                 $label = 'All';
             }
             return [
+                'id' => $p->id,
                 'region_id' => $regionId,
                 'region_name' => $regionName,
                 'outlet_id' => $outletId,
                 'outlet_name' => $outletName,
                 'label' => $label,
                 'price' => $p->price,
+                'pricing_mode' => $p->pricing_mode ?? 'manual',
             ];
         })->toArray();
         
@@ -2706,7 +2736,8 @@ class ItemController extends Controller
             'prices' => 'nullable|array',
             'prices.*.region_id' => 'nullable|exists:regions,id',
             'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
-            'prices.*.price' => 'required|numeric|min:0',
+            'prices.*.price' => 'nullable|numeric|min:0',
+            'prices.*.pricing_mode' => 'nullable|in:manual,auto',
             'availabilities' => 'nullable|array',
             'availabilities.*.region_id' => 'nullable|exists:regions,id',
             'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -2752,18 +2783,7 @@ class ItemController extends Controller
             }
             if ($request->prices) {
                 foreach ($request->prices as $price) {
-                    $type = 'all';
-                    if (!empty($price['region_id']) && empty($price['outlet_id'])) {
-                        $type = 'region';
-                    } elseif (!empty($price['outlet_id'])) {
-                        $type = 'outlet';
-                    }
-                    $item->prices()->create([
-                        'region_id' => $price['region_id'] ?? null,
-                        'outlet_id' => $price['outlet_id'] ?? null,
-                        'price' => $price['price'],
-                        'availability_price_type' => $type,
-                    ]);
+                    $item->prices()->create($this->buildItemPriceRow($item, $price));
                 }
             }
             if ($request->availabilities) {
@@ -2836,7 +2856,8 @@ class ItemController extends Controller
             'prices' => 'nullable|array',
             'prices.*.region_id' => 'nullable|exists:regions,id',
             'prices.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
-            'prices.*.price' => 'required|numeric|min:0',
+            'prices.*.price' => 'nullable|numeric|min:0',
+            'prices.*.pricing_mode' => 'nullable|in:manual,auto',
             'availabilities' => 'nullable|array',
             'availabilities.*.region_id' => 'nullable|exists:regions,id',
             'availabilities.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
@@ -2882,18 +2903,7 @@ class ItemController extends Controller
                 $item->prices()->delete();
                 if ($request->prices) {
                     foreach ($request->prices as $price) {
-                        $type = 'all';
-                        if (!empty($price['region_id']) && empty($price['outlet_id'])) {
-                            $type = 'region';
-                        } elseif (!empty($price['outlet_id'])) {
-                            $type = 'outlet';
-                        }
-                        $item->prices()->create([
-                            'region_id' => $price['region_id'] ?? null,
-                            'outlet_id' => $price['outlet_id'] ?? null,
-                            'price' => $price['price'],
-                            'availability_price_type' => $type,
-                        ]);
+                        $item->prices()->create($this->buildItemPriceRow($item, $price));
                     }
                 }
             }
@@ -2989,5 +2999,162 @@ class ItemController extends Controller
             'new_data' => $item->toArray(),
         ]);
         return response()->json(['success' => true, 'message' => 'Item set to inactive.']);
+    }
+
+    /**
+     * Modal: daftar item non-POS (kategori is_asset=0, show_pos=0) untuk update harga default (scope "all").
+     */
+    public function nonPosBulkPricesData(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+        $page = max(1, (int) $request->get('page', 1));
+        $perPage = min(50, max(5, (int) $request->get('per_page', 15)));
+
+        $q = Item::query()
+            ->with(['largeUnit'])
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.is_asset', '0')
+            ->where('categories.show_pos', '0')
+            ->where('items.status', 'active')
+            ->select('items.*');
+
+        if ($search !== '') {
+            $like = '%'.$search.'%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('items.name', 'like', $like)
+                    ->orWhere('items.sku', 'like', $like);
+            });
+        }
+
+        $paginator = $q->orderBy('items.name')->paginate($perPage, ['items.*'], 'page', $page);
+
+        $data = collect($paginator->items())->map(function (Item $item) {
+            $row = DB::table('item_prices')
+                ->where('item_id', $item->id)
+                ->where('availability_price_type', 'all')
+                ->whereNull('region_id')
+                ->whereNull('outlet_id')
+                ->orderByDesc('id')
+                ->first();
+
+            $lastGr = FoodGrLastPurchaseForItem::lastLine((int) $item->id);
+            $autoPrice = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+
+            $mode = 'manual';
+            if ($row && isset($row->pricing_mode) && $row->pricing_mode === 'auto') {
+                $mode = 'auto';
+            }
+
+            return [
+                'item_id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'large_unit' => optional($item->largeUnit)->name,
+                'item_price_id' => $row->id ?? null,
+                'pricing_mode' => $mode,
+                'price' => $row ? (float) $row->price : null,
+                'auto_suggested_price' => $autoPrice,
+                'last_gr_number' => $lastGr['gr_number'] ?? null,
+                'last_gr_date' => $lastGr['receive_date'] ?? null,
+                'cost_large_last' => $lastGr ? round((float) $lastGr['cost_large'], 4) : null,
+            ];
+        })->values();
+
+        return response()->json([
+            'data' => $data,
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
+    }
+
+    /**
+     * Simpan harga default (all) untuk baris dari modal non-pos.
+     */
+    public function nonPosBulkPricesSave(Request $request)
+    {
+        $validated = $request->validate([
+            'rows' => 'required|array|min:1',
+            'rows.*.item_id' => 'required|exists:items,id',
+            'rows.*.pricing_mode' => 'required|in:manual,auto',
+            'rows.*.price' => 'nullable|numeric|min:0',
+        ]);
+
+        $errors = [];
+        $saved = 0;
+
+        foreach ($validated['rows'] as $idx => $row) {
+            $item = Item::query()
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.id', $row['item_id'])
+                ->where('categories.is_asset', '0')
+                ->where('categories.show_pos', '0')
+                ->select('items.*')
+                ->first();
+
+            if (! $item) {
+                $errors[] = 'Baris '.((int) $idx + 1).': item tidak termasuk filter kategori non-POS non-asset.';
+
+                continue;
+            }
+
+            $mode = $row['pricing_mode'];
+            $price = isset($row['price']) ? (float) $row['price'] : 0;
+
+            if ($mode === 'auto') {
+                $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+                if ($computed === null || $computed <= 0) {
+                    $errors[] = $item->sku.': tidak ada Food Good Receive / harga PO untuk mode otomatis.';
+
+                    continue;
+                }
+                $price = $computed;
+            } elseif ($price <= 0) {
+                $errors[] = $item->sku.': harga manual harus diisi (> 0).';
+
+                continue;
+            }
+
+            $existing = DB::table('item_prices')
+                ->where('item_id', $item->id)
+                ->where('availability_price_type', 'all')
+                ->whereNull('region_id')
+                ->whereNull('outlet_id')
+                ->orderByDesc('id')
+                ->first();
+
+            $payload = [
+                'price' => round($price, 2),
+                'pricing_mode' => $mode,
+                'updated_at' => now(),
+            ];
+
+            try {
+                if ($existing) {
+                    DB::table('item_prices')->where('id', $existing->id)->update($payload);
+                } else {
+                    DB::table('item_prices')->insert(array_merge([
+                        'item_id' => $item->id,
+                        'availability_price_type' => 'all',
+                        'region_id' => null,
+                        'outlet_id' => null,
+                        'created_at' => now(),
+                    ], $payload));
+                }
+                $saved++;
+            } catch (\Throwable $e) {
+                $errors[] = $item->sku.': '.$e->getMessage();
+            }
+        }
+
+        return response()->json([
+            'success' => $saved > 0,
+            'saved' => $saved,
+            'errors' => $errors,
+            'message' => $saved > 0
+                ? "Berhasil menyimpan {$saved} harga."
+                : 'Tidak ada harga yang tersimpan.',
+        ], $saved > 0 ? 200 : 422);
     }
 } 
