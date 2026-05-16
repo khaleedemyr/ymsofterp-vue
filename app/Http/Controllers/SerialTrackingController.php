@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\OutletSerialReceiveController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class SerialTrackingController extends Controller
@@ -99,6 +101,127 @@ class SerialTrackingController extends Controller
       'outlets' => $outlets,
       'isHQ' => $isHQ,
       'userOutletId' => $user->id_outlet ?? null,
+      'grRejectReasons' => collect(OutletSerialReceiveController::GR_REJECT_REASONS)
+        ->map(fn ($label, $value) => ['value' => $value, 'label' => $label])
+        ->values(),
+      'rejectLogsTableReady' => Schema::hasTable('outlet_serial_receive_reject_logs'),
+    ]);
+  }
+
+  /**
+   * Percobaan GR Nomor Seri yang ditolak (log dari outlet_serial_receive_reject_logs).
+   */
+  public function grRejectLogs(Request $request)
+  {
+    if (! Schema::hasTable('outlet_serial_receive_reject_logs')) {
+      return response()->json([
+        'table_missing' => true,
+        'data' => [],
+        'total' => 0,
+        'current_page' => 1,
+        'last_page' => 1,
+        'per_page' => 20,
+        'summary' => ['total' => 0, 'by_reason' => []],
+      ]);
+    }
+
+    $request->validate([
+      'search' => 'nullable|string|max:100',
+      'serial_number' => 'nullable|string|max:50',
+      'reject_reason' => 'nullable|string|max:64',
+      'outlet_id' => 'nullable|string|max:20',
+      'date_from' => 'nullable|date',
+      'date_to' => 'nullable|date',
+      'per_page' => 'nullable|integer|min:5|max:100',
+    ]);
+
+    $user = auth()->user();
+    $isHQ = ($user->id_outlet ?? null) == '1';
+    $perPage = (int) $request->get('per_page', 20);
+
+    $query = DB::table('outlet_serial_receive_reject_logs as l');
+
+    if (! $isHQ) {
+      $outletId = $user->id_outlet ?? null;
+      if ($outletId) {
+        $query->where(function ($q) use ($outletId) {
+          $q->where('l.scanner_outlet_id', $outletId)
+            ->orWhere('l.serial_target_outlet_id', $outletId);
+        });
+      }
+    } elseif ($request->filled('outlet_id')) {
+      $oid = $request->outlet_id;
+      $query->where(function ($q) use ($oid) {
+        $q->where('l.scanner_outlet_id', $oid)
+          ->orWhere('l.serial_target_outlet_id', $oid);
+      });
+    }
+
+    if ($request->filled('reject_reason')) {
+      $query->where('l.reject_reason', $request->reject_reason);
+    }
+    if ($request->filled('serial_number')) {
+      $query->where('l.serial_number', 'like', '%' . trim($request->serial_number) . '%');
+    }
+    if ($request->filled('search')) {
+      $term = '%' . trim($request->search) . '%';
+      $query->where(function ($q) use ($term) {
+        $q->where('l.serial_number', 'like', $term)
+          ->orWhere('l.reject_message', 'like', $term)
+          ->orWhere('l.scanner_name', 'like', $term)
+          ->orWhere('l.delivery_order_number', 'like', $term)
+          ->orWhere('l.item_name', 'like', $term);
+      });
+    }
+    if ($request->filled('date_from')) {
+      $query->whereDate('l.created_at', '>=', $request->date_from);
+    }
+    if ($request->filled('date_to')) {
+      $query->whereDate('l.created_at', '<=', $request->date_to);
+    }
+
+    $summaryQuery = clone $query;
+    $byReason = (clone $summaryQuery)
+      ->select('l.reject_reason', DB::raw('COUNT(*) as cnt'))
+      ->groupBy('l.reject_reason')
+      ->pluck('cnt', 'reject_reason');
+
+    $paginated = (clone $query)
+      ->orderByDesc('l.created_at')
+      ->orderByDesc('l.id')
+      ->paginate($perPage);
+
+    $reasonLabels = OutletSerialReceiveController::GR_REJECT_REASONS;
+    $data = collect($paginated->items())->map(function ($row) use ($reasonLabels) {
+      return [
+        'id' => $row->id,
+        'created_at' => $row->created_at,
+        'serial_number' => $row->serial_number,
+        'reject_reason' => $row->reject_reason,
+        'reject_reason_label' => $reasonLabels[$row->reject_reason] ?? $row->reject_reason,
+        'reject_message' => $row->reject_message,
+        'scanner_name' => $row->scanner_name,
+        'scanner_outlet_name' => $row->scanner_outlet_name,
+        'serial_target_outlet_name' => $row->serial_target_outlet_name,
+        'delivery_order_number' => $row->delivery_order_number,
+        'warehouse_outlet_name' => $row->warehouse_outlet_name,
+        'item_name' => $row->item_name,
+        'is_out' => $row->is_out,
+        'is_received' => $row->is_received,
+      ];
+    });
+
+    return response()->json([
+      'table_missing' => false,
+      'data' => $data,
+      'total' => $paginated->total(),
+      'current_page' => $paginated->currentPage(),
+      'last_page' => $paginated->lastPage(),
+      'per_page' => $paginated->perPage(),
+      'summary' => [
+        'total' => $paginated->total(),
+        'by_reason' => $byReason,
+      ],
     ]);
   }
 
@@ -667,20 +790,35 @@ class SerialTrackingController extends Controller
     $this->appendFromDeliveryOrderItems($events, $dedupeKeys, $serial);
 
     if ($this->isTruthy($serial->is_received ?? null) && !empty($serial->received_outlet_gr_id)) {
-      $hdr = DB::table('outlet_serial_receive_headers')->where('id', $serial->received_outlet_gr_id)->first();
+      $hdr = DB::table('outlet_serial_receive_headers as h')
+        ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
+        ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
+        ->where('h.id', $serial->received_outlet_gr_id)
+        ->whereNull('h.deleted_at')
+        ->select('h.*', 'u.nama_lengkap as created_by_name', 'o.nama_outlet as outlet_name')
+        ->first();
+
       if ($hdr) {
-        $this->appendTimelineEvent($events, $dedupeKeys, [
-          'at' => $serial->received_at ?? $hdr->receive_date ?? $hdr->created_at,
-          'movement_type' => 'outlet_receive',
-          'label' => self::MOVEMENT_LABELS['outlet_receive'],
-          'document_label' => 'GR Nomor Seri Outlet',
-          'document_number' => $hdr->number,
-          'document_url' => '/outlet-serial-receive/' . $hdr->id,
-          'notes' => $hdr->notes,
-          'qty' => null,
-          'unit_name' => $serial->unit_name ?? null,
-          'moved_by_name' => null,
-        ]);
+        $warehouseName = DB::table('outlet_serial_receive_items as si')
+          ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
+          ->where('si.header_id', $hdr->id)
+          ->where(function ($q) use ($serial) {
+            $q->where('si.serial_id', $serial->id)
+              ->orWhere('si.serial_number', $serial->serial_number);
+          })
+          ->value('wo.name');
+
+        $this->appendTimelineEvent($events, $dedupeKeys, $this->outletReceiveTimelineEvent(
+          $serial,
+          $hdr->number,
+          (int) $hdr->id,
+          $serial->received_at ?? $hdr->receive_date ?? $hdr->created_at,
+          $hdr->notes,
+          null,
+          $hdr->outlet_name,
+          $warehouseName,
+          $hdr->created_by_name
+        ));
       }
     }
 
@@ -798,6 +936,9 @@ class SerialTrackingController extends Controller
   {
     $rows = DB::table('outlet_serial_receive_items as si')
       ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+      ->leftJoin('users as u', 'u.id', '=', 'h.created_by')
+      ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.outlet_id')
+      ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
       ->whereNull('h.deleted_at')
       ->where(function ($q) use ($serial) {
         $q->where('si.serial_id', $serial->id)
@@ -809,25 +950,62 @@ class SerialTrackingController extends Controller
         'h.number as gr_number',
         'h.receive_date',
         'h.created_at as header_created_at',
-        'h.notes as header_notes'
+        'h.notes as header_notes',
+        'u.nama_lengkap as created_by_name',
+        'o.nama_outlet as outlet_name',
+        'wo.name as warehouse_name'
       )
       ->get();
 
     foreach ($rows as $row) {
       // DO sudah tercatat di inventory_serial_movements — cukup tampilkan GR outlet di sini.
-      $this->appendTimelineEvent($events, $dedupeKeys, [
-        'at' => $row->header_created_at ?? $row->receive_date ?? $row->created_at,
-        'movement_type' => 'outlet_receive',
-        'label' => self::MOVEMENT_LABELS['outlet_receive'],
-        'document_label' => 'GR Nomor Seri Outlet',
-        'document_number' => $row->gr_number,
-        'document_url' => '/outlet-serial-receive/' . $row->header_id,
-        'notes' => $row->header_notes,
-        'qty' => $row->qty,
-        'unit_name' => $serial->unit_name ?? null,
-        'moved_by_name' => null,
-      ]);
+      $this->appendTimelineEvent($events, $dedupeKeys, $this->outletReceiveTimelineEvent(
+        $serial,
+        $row->gr_number,
+        (int) $row->header_id,
+        $row->header_created_at ?? $row->receive_date ?? $row->created_at,
+        $row->header_notes,
+        $row->qty,
+        $row->outlet_name,
+        $row->warehouse_name,
+        $row->created_by_name
+      ));
     }
+  }
+
+  /**
+   * @return array<string, mixed>
+   */
+  private function outletReceiveTimelineEvent(
+    object $serial,
+    ?string $grNumber,
+    int $headerId,
+    mixed $at,
+    ?string $notes,
+    mixed $qty,
+    ?string $outletName,
+    ?string $warehouseName,
+    ?string $createdByName
+  ): array {
+    $receiverName = $createdByName;
+    if (!$receiverName && !empty($serial->received_by)) {
+      $receiverName = DB::table('users')->where('id', $serial->received_by)->value('nama_lengkap');
+    }
+
+    return [
+      'at' => $at,
+      'movement_type' => 'outlet_receive',
+      'label' => self::MOVEMENT_LABELS['outlet_receive'],
+      'document_label' => 'GR Nomor Seri Outlet',
+      'document_number' => $grNumber,
+      'document_url' => '/outlet-serial-receive/' . $headerId,
+      'notes' => $notes,
+      'qty' => $qty,
+      'unit_name' => $serial->unit_name ?? null,
+      'outlet_name' => $outletName,
+      'warehouse_name' => $warehouseName,
+      'moved_by_name' => $receiverName,
+    ];
   }
 
   private function appendFromDeliveryOrderItems(array &$events, array &$dedupeKeys, object $serial): void

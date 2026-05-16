@@ -3,12 +3,22 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 
 class OutletSerialReceiveController extends Controller
 {
+    public const GR_REJECT_REASONS = [
+        'not_found' => 'Serial tidak ditemukan',
+        'not_dispatched' => 'Belum keluar via DO',
+        'already_received' => 'Sudah diterima outlet',
+        'incomplete_do_data' => 'Data DO/outlet tidak lengkap',
+        'wrong_outlet' => 'Beda outlet',
+        'duplicate_scan' => 'Duplikat scan di sesi yang sama',
+    ];
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -96,6 +106,7 @@ class OutletSerialReceiveController extends Controller
         $serialNumber = trim($request->serial_number);
         $user = Auth::user();
         $userOutletId = $user->id_outlet ?? null;
+        $scannerOutletName = $this->getOutletName($userOutletId);
 
         $serial = DB::table('inventory_item_serials as s')
             ->leftJoin('items as i', 'i.id', '=', 's.item_id')
@@ -129,19 +140,29 @@ class OutletSerialReceiveController extends Controller
             ->first();
 
         if (!$serial) {
-            return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+            return $this->rejectGrScan($user, $userOutletId, $scannerOutletName, $serialNumber, null, 'not_found', 'Nomor seri tidak ditemukan.');
         }
         if (!$serial->is_out) {
-            return response()->json(['valid' => false, 'message' => 'Nomor seri belum di-dispatch (belum keluar via DO).']);
+            return $this->rejectGrScan($user, $userOutletId, $scannerOutletName, $serialNumber, $serial, 'not_dispatched', 'Nomor seri belum di-dispatch (belum keluar via DO).');
         }
         if ($serial->is_received) {
-            return response()->json(['valid' => false, 'message' => 'Nomor seri sudah diterima sebelumnya.']);
+            return $this->rejectGrScan($user, $userOutletId, $scannerOutletName, $serialNumber, $serial, 'already_received', 'Nomor seri sudah diterima sebelumnya.');
         }
         if (!$serial->out_outlet_id || !$serial->out_warehouse_outlet_id || !$serial->out_delivery_order_id) {
-            return response()->json(['valid' => false, 'message' => 'Data outlet/warehouse/DO pada serial tidak lengkap.']);
+            return $this->rejectGrScan($user, $userOutletId, $scannerOutletName, $serialNumber, $serial, 'incomplete_do_data', 'Data outlet/warehouse/DO pada serial tidak lengkap.');
         }
         if ($userOutletId && $userOutletId != '1' && $userOutletId != $serial->out_outlet_id) {
-            return response()->json(['valid' => false, 'message' => 'Nomor seri ini ditujukan untuk outlet lain.']);
+            $targetName = $serial->outlet_name ?: $serial->out_outlet_id;
+
+            return $this->rejectGrScan(
+                $user,
+                $userOutletId,
+                $scannerOutletName,
+                $serialNumber,
+                $serial,
+                'wrong_outlet',
+                "Nomor seri ini ditujukan untuk outlet lain ({$targetName})."
+            );
         }
 
         $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
@@ -702,6 +723,102 @@ class OutletSerialReceiveController extends Controller
             return response()->json(['success' => true, 'message' => "GR Serial {$header->number} berhasil dihapus."]);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Log penolakan dari frontend (mis. duplikat scan sebelum hitung validasi server).
+     */
+    public function logRejectAttempt(Request $request)
+    {
+        $request->validate([
+            'serial_number' => 'required|string|max:50',
+            'reject_reason' => 'required|string|in:duplicate_scan',
+        ]);
+
+        $user = Auth::user();
+        $serialNumber = trim($request->serial_number);
+        $userOutletId = $user->id_outlet ?? null;
+        $scannerOutletName = $this->getOutletName($userOutletId);
+
+        $serial = DB::table('inventory_item_serials as s')
+            ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+            ->leftJoin('delivery_orders as do_tbl', 'do_tbl.id', '=', 's.out_delivery_order_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 's.out_outlet_id')
+            ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 's.out_warehouse_outlet_id')
+            ->where('s.serial_number', $serialNumber)
+            ->select(
+                's.id',
+                's.serial_number',
+                's.item_id',
+                's.is_out',
+                's.is_received',
+                's.out_outlet_id',
+                's.out_warehouse_outlet_id',
+                's.out_delivery_order_id',
+                'i.name as item_name',
+                'do_tbl.number as do_number',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_name'
+            )
+            ->first();
+
+        $this->logGrRejectAttempt(
+            $user,
+            $userOutletId,
+            $scannerOutletName,
+            $serialNumber,
+            $serial,
+            'duplicate_scan',
+            self::GR_REJECT_REASONS['duplicate_scan'] . '.'
+        );
+
+        return response()->json(['logged' => true]);
+    }
+
+    private function rejectGrScan($user, $userOutletId, $scannerOutletName, string $serialNumber, ?object $serial, string $reason, string $message)
+    {
+        $this->logGrRejectAttempt($user, $userOutletId, $scannerOutletName, $serialNumber, $serial, $reason, $message);
+
+        return response()->json(['valid' => false, 'message' => $message]);
+    }
+
+    private function logGrRejectAttempt($user, $userOutletId, $scannerOutletName, string $serialNumber, ?object $serial, string $reason, string $message): void
+    {
+        if (! Schema::hasTable('outlet_serial_receive_reject_logs')) {
+            return;
+        }
+
+        $scannerName = $user->nama_lengkap ?? $user->name ?? null;
+
+        try {
+            DB::table('outlet_serial_receive_reject_logs')->insert([
+                'serial_number' => $serialNumber,
+                'serial_id' => $serial->id ?? null,
+                'reject_reason' => $reason,
+                'reject_message' => mb_substr($message, 0, 500),
+                'scanned_by' => $user->id ?? null,
+                'scanner_name' => $scannerName,
+                'scanner_outlet_id' => $userOutletId,
+                'scanner_outlet_name' => $scannerOutletName !== '-' ? $scannerOutletName : null,
+                'serial_target_outlet_id' => $serial->out_outlet_id ?? null,
+                'serial_target_outlet_name' => $serial->outlet_name ?? null,
+                'delivery_order_id' => $serial->out_delivery_order_id ?? null,
+                'delivery_order_number' => $serial->do_number ?? null,
+                'warehouse_outlet_id' => $serial->out_warehouse_outlet_id ?? null,
+                'warehouse_outlet_name' => $serial->warehouse_name ?? null,
+                'item_id' => $serial->item_id ?? null,
+                'item_name' => $serial->item_name ?? null,
+                'is_out' => isset($serial->is_out) ? (int) $serial->is_out : null,
+                'is_received' => isset($serial->is_received) ? (int) $serial->is_received : null,
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('outlet_serial_receive_reject_logs insert failed', [
+                'serial_number' => $serialNumber,
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

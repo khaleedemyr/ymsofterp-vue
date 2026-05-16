@@ -1329,6 +1329,7 @@ Route::get('/api/serial-tracking/documents', [\App\Http\Controllers\SerialTracki
 Route::get('/api/serial-tracking/document-serials', [\App\Http\Controllers\SerialTrackingController::class, 'documentSerials'])->name('serial-tracking.document-serials');
 Route::get('/api/serial-tracking/lookup', [\App\Http\Controllers\SerialTrackingController::class, 'lookupSerial'])->name('serial-tracking.lookup');
 Route::get('/api/serial-tracking/pending-outlet-receive', [\App\Http\Controllers\SerialTrackingController::class, 'pendingOutletReceive'])->name('serial-tracking.pending-outlet-receive');
+Route::get('/api/serial-tracking/gr-reject-logs', [\App\Http\Controllers\SerialTrackingController::class, 'grRejectLogs'])->name('serial-tracking.gr-reject-logs');
 
 // Dynamic Inspection Routes
 Route::resource('dynamic-inspections', \App\Http\Controllers\DynamicInspectionController::class);
@@ -1353,6 +1354,7 @@ Route::post('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceive
 Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'show'])->name('outlet-serial-receive.show');
 Route::delete('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'destroy'])->name('outlet-serial-receive.destroy');
 Route::post('/api/outlet-serial-receive/validate-serial', [\App\Http\Controllers\OutletSerialReceiveController::class, 'validateSerial'])->name('outlet-serial-receive.validate-serial');
+Route::post('/api/outlet-serial-receive/log-reject', [\App\Http\Controllers\OutletSerialReceiveController::class, 'logRejectAttempt'])->name('outlet-serial-receive.log-reject');
 
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');

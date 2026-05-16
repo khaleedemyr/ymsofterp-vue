@@ -38,6 +38,14 @@
           <i class="fa-solid fa-clock mr-1"></i> Belum GR Outlet
           <span v-if="pendingSummary.total_serials > 0" class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-100 text-amber-800">{{ pendingSummary.total_serials }}</span>
         </button>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors"
+          :class="activeTab === 'rejects' ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-700'"
+          @click="switchToRejectsTab"
+        >
+          <i class="fa-solid fa-ban mr-1"></i> GR Ditolak
+        </button>
       </div>
 
       <!-- Tab: Per Dokumen -->
@@ -181,7 +189,17 @@
                 <span v-else-if="ev.document_number" class="font-mono ml-1">{{ ev.document_number }}</span>
               </p>
               <p v-if="ev.notes" class="text-sm text-gray-500 mt-0.5">{{ ev.notes }}</p>
-              <p v-if="ev.moved_by_name" class="text-xs text-gray-400 mt-0.5">Oleh: {{ ev.moved_by_name }}</p>
+              <template v-if="ev.movement_type === 'outlet_receive'">
+                <p v-if="ev.outlet_name" class="text-xs text-gray-600 mt-0.5">
+                  <span class="text-gray-500">Outlet:</span> {{ ev.outlet_name }}
+                </p>
+                <p v-if="ev.warehouse_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Warehouse:</span> {{ ev.warehouse_name }}
+                </p>
+              </template>
+              <p v-if="ev.moved_by_name" class="text-xs text-gray-400 mt-0.5">
+                {{ ev.movement_type === 'outlet_receive' ? 'Penerima' : 'Oleh' }}: {{ ev.moved_by_name }}
+              </p>
             </div>
           </div>
           <p v-else class="text-gray-500 text-sm">Belum ada riwayat pergerakan tercatat.</p>
@@ -340,6 +358,113 @@
         <div v-if="pendingLoading" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Memuat...</div>
       </div>
 
+      <!-- Tab: GR Ditolak -->
+      <div v-show="activeTab === 'rejects'" class="space-y-6">
+        <div
+          v-if="!rejectLogsTableReady"
+          class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+          Tabel <code class="bg-amber-100 px-1 rounded">outlet_serial_receive_reject_logs</code> belum ada.
+          Jalankan <code class="bg-amber-100 px-1 rounded">database/sql/create_outlet_serial_receive_reject_logs.sql</code>.
+        </div>
+        <template v-else>
+          <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-900">
+            <i class="fa-solid fa-circle-info mr-1"></i>
+            Log percobaan <strong>GR Nomor Seri yang ditolak</strong>. Serial tetap <strong>tidak</strong> masuk GR — hanya dicatat untuk audit.
+          </div>
+          <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div v-if="isHQ">
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Outlet</label>
+                <select v-model="rejectFilters.outlet_id" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="">Semua outlet</option>
+                  <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Alasan</label>
+                <select v-model="rejectFilters.reject_reason" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="">Semua</option>
+                  <option v-for="r in grRejectReasons" :key="r.value" :value="r.value">{{ r.label }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Nomor Seri</label>
+                <input v-model="rejectFilters.serial_number" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" @keyup.enter="loadRejectLogs(1)" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Cari</label>
+                <input v-model="rejectFilters.search" type="text" placeholder="serial, DO, item, scanner..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" @keyup.enter="loadRejectLogs(1)" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Dari</label>
+                <input v-model="rejectFilters.date_from" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Sampai</label>
+                <input v-model="rejectFilters.date_to" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div class="mt-4 flex gap-2">
+              <button type="button" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50" :disabled="rejectLoading" @click="loadRejectLogs(1)">
+                <i class="fa-solid fa-search mr-1"></i> Tampilkan
+              </button>
+              <button type="button" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-200" @click="resetRejectLogs">Reset</button>
+            </div>
+          </div>
+          <div v-if="rejectLoaded && rejectSummaryByReason.length" class="flex flex-wrap gap-2">
+            <span v-for="chip in rejectSummaryByReason" :key="chip.reason" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-800 border border-red-100">
+              {{ chip.label }}: <strong>{{ chip.count }}</strong>
+            </span>
+          </div>
+          <div v-if="rejectLogList.length" class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-x-auto">
+            <table class="w-full min-w-[1100px] text-sm">
+              <thead class="bg-red-600 text-white">
+                <tr>
+                  <th class="px-4 py-3 text-left">Waktu</th>
+                  <th class="px-4 py-3 text-left">Serial</th>
+                  <th class="px-4 py-3 text-left">Alasan</th>
+                  <th class="px-4 py-3 text-left">Pesan</th>
+                  <th class="px-4 py-3 text-left">Scanner / Outlet</th>
+                  <th class="px-4 py-3 text-left">Outlet Tujuan</th>
+                  <th class="px-4 py-3 text-left">DO</th>
+                  <th class="px-4 py-3 text-left">Warehouse</th>
+                  <th class="px-4 py-3 text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <tr v-for="row in rejectLogList" :key="row.id" class="hover:bg-red-50/40">
+                  <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{{ formatDateTime(row.created_at) }}</td>
+                  <td class="px-4 py-3 font-mono font-semibold text-indigo-700">{{ row.serial_number }}</td>
+                  <td class="px-4 py-3">
+                    <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold" :class="rejectReasonBadge(row.reject_reason)">{{ row.reject_reason_label }}</span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-700 max-w-xs">{{ row.reject_message }}</td>
+                  <td class="px-4 py-3 text-xs">
+                    <div class="font-medium text-gray-800">{{ row.scanner_name || '—' }}</div>
+                    <div class="text-gray-500">{{ row.scanner_outlet_name || '—' }}</div>
+                  </td>
+                  <td class="px-4 py-3 text-xs text-gray-700">{{ row.serial_target_outlet_name || '—' }}</td>
+                  <td class="px-4 py-3 font-mono text-xs">{{ row.delivery_order_number || '—' }}</td>
+                  <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_outlet_name || '—' }}</td>
+                  <td class="px-4 py-3 text-center">
+                    <button type="button" class="text-xs text-indigo-600 hover:underline font-semibold" @click="trackRejectSerial(row.serial_number)">Lacak</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="rejectPagination.last_page > 1" class="flex justify-center gap-2 p-4 border-t">
+              <button type="button" class="px-3 py-1 text-sm rounded border disabled:opacity-40" :disabled="rejectPagination.current_page <= 1" @click="loadRejectLogs(rejectPagination.current_page - 1)">Prev</button>
+              <span class="px-3 py-1 text-sm text-gray-600">{{ rejectPagination.current_page }} / {{ rejectPagination.last_page }}</span>
+              <button type="button" class="px-3 py-1 text-sm rounded border disabled:opacity-40" :disabled="rejectPagination.current_page >= rejectPagination.last_page" @click="loadRejectLogs(rejectPagination.current_page + 1)">Next</button>
+            </div>
+          </div>
+          <p v-else-if="rejectLoaded && !rejectLoading" class="text-center text-gray-500 py-8">Belum ada log penolakan GR.</p>
+          <div v-if="rejectLoading" class="text-center py-8 text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Memuat...</div>
+        </template>
+      </div>
+
       <!-- Modal serial per dokumen -->
       <div v-if="selectedDoc" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" @click.self="closeDocumentSerials">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
@@ -390,7 +515,7 @@
 
 <script setup>
 import { Head } from '@inertiajs/vue3'
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -399,6 +524,8 @@ const props = defineProps({
   outlets: { type: Array, default: () => [] },
   isHQ: { type: Boolean, default: false },
   userOutletId: { type: [String, Number], default: null },
+  grRejectReasons: { type: Array, default: () => [] },
+  rejectLogsTableReady: { type: Boolean, default: false },
 })
 
 const activeTab = ref('document')
@@ -442,6 +569,30 @@ const pendingPagination = reactive({ current_page: 1, last_page: 1 })
 const pendingWarehouseOutlets = ref([])
 const pendingLoading = ref(false)
 const pendingLoaded = ref(false)
+
+const rejectFilters = reactive({
+  outlet_id: '',
+  reject_reason: '',
+  serial_number: '',
+  search: '',
+  date_from: '',
+  date_to: '',
+})
+const rejectLogList = ref([])
+const rejectSummaryRaw = ref({})
+const rejectPagination = reactive({ current_page: 1, last_page: 1 })
+const rejectLoading = ref(false)
+const rejectLoaded = ref(false)
+
+const rejectSummaryByReason = computed(() => {
+  const byReason = rejectSummaryRaw.value?.by_reason || {}
+  const labels = Object.fromEntries((props.grRejectReasons || []).map((r) => [r.value, r.label]))
+  return Object.entries(byReason).map(([reason, count]) => ({
+    reason,
+    label: labels[reason] || reason,
+    count,
+  }))
+})
 
 const searchDocuments = async (page = 1) => {
   if (!docFilters.source_type) return
@@ -605,6 +756,72 @@ const trackPendingSerial = (sn) => {
   activeTab.value = 'serial'
   serialQuery.value = sn
   lookupSerial()
+}
+
+const switchToRejectsTab = () => {
+  activeTab.value = 'rejects'
+  if (!rejectLoaded.value && props.rejectLogsTableReady) {
+    loadRejectLogs(1)
+  }
+}
+
+const loadRejectLogs = async (page = 1) => {
+  if (!props.rejectLogsTableReady) return
+  rejectLoading.value = true
+  rejectLoaded.value = true
+  try {
+    const { data } = await axios.get('/api/serial-tracking/gr-reject-logs', {
+      params: {
+        page,
+        per_page: 20,
+        outlet_id: rejectFilters.outlet_id || undefined,
+        reject_reason: rejectFilters.reject_reason || undefined,
+        serial_number: rejectFilters.serial_number || undefined,
+        search: rejectFilters.search || undefined,
+        date_from: rejectFilters.date_from || undefined,
+        date_to: rejectFilters.date_to || undefined,
+      },
+    })
+    rejectLogList.value = data.data || []
+    rejectSummaryRaw.value = data.summary || {}
+    rejectPagination.current_page = data.current_page || 1
+    rejectPagination.last_page = data.last_page || 1
+  } catch {
+    rejectLogList.value = []
+    rejectSummaryRaw.value = {}
+  } finally {
+    rejectLoading.value = false
+  }
+}
+
+const resetRejectLogs = () => {
+  rejectFilters.outlet_id = ''
+  rejectFilters.reject_reason = ''
+  rejectFilters.serial_number = ''
+  rejectFilters.search = ''
+  rejectFilters.date_from = ''
+  rejectFilters.date_to = ''
+  rejectLogList.value = []
+  rejectLoaded.value = false
+  rejectSummaryRaw.value = {}
+}
+
+const trackRejectSerial = (sn) => {
+  activeTab.value = 'serial'
+  serialQuery.value = sn
+  lookupSerial()
+}
+
+const rejectReasonBadge = (reason) => {
+  const map = {
+    wrong_outlet: 'bg-orange-100 text-orange-800',
+    not_dispatched: 'bg-amber-100 text-amber-800',
+    already_received: 'bg-gray-100 text-gray-800',
+    not_found: 'bg-slate-100 text-slate-800',
+    duplicate_scan: 'bg-purple-100 text-purple-800',
+    incomplete_do_data: 'bg-yellow-100 text-yellow-800',
+  }
+  return map[reason] || 'bg-red-100 text-red-800'
 }
 
 const isPendingDoExpanded = (doId) => !!expandedDoIds.value[doId]

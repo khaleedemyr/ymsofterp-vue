@@ -222,6 +222,10 @@ async function onScan() {
     feedback.value = 'Nomor seri ini sudah di-scan.'
     feedbackClass.value = 'text-amber-600'
     playBeep('error')
+    axios.post('/api/outlet-serial-receive/log-reject', {
+      serial_number: input,
+      reject_reason: 'duplicate_scan',
+    }).catch(() => {})
     Swal.fire({ icon: 'warning', title: 'Duplikat', text: 'Nomor seri ini sudah ada di daftar scan.', timer: 2500, showConfirmButton: false })
     serialInputVal.value = ''
     nextTick(() => serialInput.value?.focus())

@@ -883,12 +883,14 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/serial-tracking/documents', [\App\Http\Controllers\SerialTrackingController::class, 'searchDocuments']);
         Route::get('/serial-tracking/document-serials', [\App\Http\Controllers\SerialTrackingController::class, 'documentSerials']);
         Route::get('/serial-tracking/pending-outlet-receive', [\App\Http\Controllers\SerialTrackingController::class, 'pendingOutletReceive']);
+        Route::get('/serial-tracking/gr-reject-logs', [\App\Http\Controllers\SerialTrackingController::class, 'grRejectLogs']);
         Route::get('/serial-tracking/lookup', [\App\Http\Controllers\SerialTrackingController::class, 'lookupSerial']);
 
         // Outlet Serial Receive (approval-app)
         Route::get('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiIndex']);
         Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiShow']);
         Route::post('/outlet-serial-receive/validate-serial', [\App\Http\Controllers\OutletSerialReceiveController::class, 'validateSerial']);
+        Route::post('/outlet-serial-receive/log-reject', [\App\Http\Controllers\OutletSerialReceiveController::class, 'logRejectAttempt']);
         Route::post('/outlet-serial-receive', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiStore']);
         Route::delete('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'apiDestroy']);
 
