@@ -11,6 +11,7 @@ use App\Models\EmployeeResignation;
 use App\Http\Controllers\AttendanceReportController;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\PayrollBpjsCalculator;
 
 class PayrollReportController extends Controller
 {
@@ -298,6 +299,12 @@ class PayrollReportController extends Controller
             // Ambil data nilai dasar potongan BPJS dari level
             $levelNominalDasarBPJS = DB::table('tbl_data_level')
                 ->pluck('nilai_dasar_potongan_bpjs', 'id');
+            $levelBpjsKategoriId = DB::table('tbl_data_level')
+                ->pluck('id_bpjs_kategori', 'id');
+            $bpjsKategoriById = DB::table('tbl_bpjs_kategori')
+                ->where('status', 'A')
+                ->get()
+                ->keyBy('id');
 
             // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
             $payrollMaster = DB::table('payroll_master')
@@ -464,6 +471,7 @@ class PayrollReportController extends Controller
                             'service_charge' => 0,
                             'bpjs_jkn' => 0,
                             'bpjs_tk' => 0,
+                            'bpjs_perusahaan_detail' => null,
                             'lb_total' => 0,
                             'deviasi_total' => 0,
                             'city_ledger_total' => 0,
@@ -606,6 +614,9 @@ class PayrollReportController extends Controller
                         'service_charge' => round($detail->service_charge ?? 0),
                         'bpjs_jkn' => round($detail->bpjs_jkn ?? 0),
                         'bpjs_tk' => round($detail->bpjs_tk ?? 0),
+                        'bpjs_perusahaan_detail' => ! empty($detail->bpjs_perusahaan_detail)
+                            ? (json_decode($detail->bpjs_perusahaan_detail, true) ?: null)
+                            : null,
                         'lb_total' => round($detail->lb_total ?? 0),
                         'deviasi_total' => round($detail->deviasi_total ?? 0),
                         'city_ledger_total' => round($detail->city_ledger_total ?? 0),
@@ -1393,29 +1404,25 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-                // Hitung BPJS JKN dan BPJS TK berdasarkan level dan outlet
+                // Hitung BPJS JKN & TK (karyawan) + rincian perusahaan (informasi, tidak mengurangi THP)
                 $bpjsJKN = 0;
                 $bpjsTK = 0;
+                $bpjsPerusahaanDetail = null;
                 if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
-                    // Ambil id_level dari jabatan karyawan
                     $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-                    
-                    // Ambil nilai dasar potongan BPJS dari level karyawan
-                    $nilaiDasarBPJS = $userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0;
-                    
-                    if ($masterData->bpjs_jkn == 1) {
-                        $bpjsJKN = $nilaiDasarBPJS * 0.01; // 1% dari nilai dasar
-                    }
-                    
-                    if ($masterData->bpjs_tk == 1) {
-                        if ($user->id_outlet == 1) {
-                            $bpjsTK = $nilaiDasarBPJS * 0.03; // 2% + 1% = 3% dari nilai dasar
-                        } else {
-                            $bpjsTK = $nilaiDasarBPJS * 0.02; // 2% dari nilai dasar
-                        }
-                    }
-                    
-                    // Debug logging untuk perhitungan BPJS
+                    $nilaiDasarBPJS = (float) ($userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0);
+                    $katId = $userLevel ? ($levelBpjsKategoriId[$userLevel] ?? null) : null;
+                    $katRow = ($katId && $bpjsKategoriById->has($katId)) ? $bpjsKategoriById->get($katId) : null;
+                    $bpjsCalc = PayrollBpjsCalculator::calculate(
+                        $masterData,
+                        $nilaiDasarBPJS,
+                        $katRow,
+                        (int) ($user->id_outlet ?? 0)
+                    );
+                    $bpjsJKN = $bpjsCalc['bpjs_jkn'];
+                    $bpjsTK = $bpjsCalc['bpjs_tk'];
+                    $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
+
                     \Log::info('BPJS calculation', [
                         'user_id' => $user->id,
                         'nama_lengkap' => $user->nama_lengkap,
@@ -1426,7 +1433,8 @@ class PayrollReportController extends Controller
                         'bpjs_jkn_enabled' => $masterData->bpjs_jkn,
                         'bpjs_tk_enabled' => $masterData->bpjs_tk,
                         'bpjs_jkn' => $bpjsJKN,
-                        'bpjs_tk' => $bpjsTK
+                        'bpjs_tk' => $bpjsTK,
+                        'bpjs_kategori_id' => $katId,
                     ]);
                 }
 
@@ -1870,6 +1878,7 @@ class PayrollReportController extends Controller
                     'city_ledger_total' => round($cityLedgerTotal),
                     'bpjs_jkn' => round($bpjsJKN),
                     'bpjs_tk' => round($bpjsTK),
+                    'bpjs_perusahaan_detail' => $bpjsPerusahaanDetail,
                     'custom_earnings' => round($customEarnings),
                     'custom_deductions' => round($customDeductions),
                     'custom_items' => $userCustomItems,
@@ -2817,6 +2826,8 @@ class PayrollReportController extends Controller
         $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
         $divisiNominalUangMakan = DB::table('tbl_data_divisi')->pluck('nominal_uang_makan', 'id');
         $levelNominalDasarBPJS = DB::table('tbl_data_level')->pluck('nilai_dasar_potongan_bpjs', 'id');
+        $levelBpjsKategoriId = DB::table('tbl_data_level')->pluck('id_bpjs_kategori', 'id');
+        $bpjsKategoriById = DB::table('tbl_bpjs_kategori')->where('status', 'A')->get()->keyBy('id');
 
         // ========== GUNAKAN QUERY DAN PROSES YANG SAMA PERSIS DENGAN INDEX() DAN EMPLOYEE SUMMARY ==========
         // Query data absensi - SAMA PERSIS dengan index() dan Employee Summary
@@ -3354,24 +3365,24 @@ class PayrollReportController extends Controller
                 $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
             }
 
-            // Hitung BPJS JKN dan BPJS TK berdasarkan level dan outlet
+            // Hitung BPJS JKN & TK (karyawan) + rincian perusahaan (informasi)
             $bpjsJKN = 0;
             $bpjsTK = 0;
+            $bpjsPerusahaanDetail = null;
             if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-                $nilaiDasarBPJS = $userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0;
-                
-                if ($masterData->bpjs_jkn == 1) {
-                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
-                }
-                
-                if ($masterData->bpjs_tk == 1) {
-                    if ($user->id_outlet == 1) {
-                        $bpjsTK = $nilaiDasarBPJS * 0.03;
-                    } else {
-                        $bpjsTK = $nilaiDasarBPJS * 0.02;
-                    }
-                }
+                $nilaiDasarBPJS = (float) ($userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0);
+                $katId = $userLevel ? ($levelBpjsKategoriId[$userLevel] ?? null) : null;
+                $katRow = ($katId && $bpjsKategoriById->has($katId)) ? $bpjsKategoriById->get($katId) : null;
+                $bpjsCalc = PayrollBpjsCalculator::calculate(
+                    $masterData,
+                    $nilaiDasarBPJS,
+                    $katRow,
+                    (int) ($user->id_outlet ?? 0)
+                );
+                $bpjsJKN = $bpjsCalc['bpjs_jkn'];
+                $bpjsTK = $bpjsCalc['bpjs_tk'];
+                $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
             }
 
             // Hitung L & B (By Point × Hari Kerja) jika enabled
@@ -4199,6 +4210,8 @@ class PayrollReportController extends Controller
         $startDate = Carbon::create($year, $month, 26)->subMonth();
         $endDate = Carbon::create($year, $month, 25);
 
+        $bpjsPerusahaanDetail = null;
+
         // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
         if ($payrollDetail) {
             // Gunakan data dari payroll_generated_details
@@ -4214,6 +4227,9 @@ class PayrollReportController extends Controller
             $gajiPerMenit = $payrollDetail->gaji_per_menit ?? 500;
             $bpjsJKN = $payrollDetail->bpjs_jkn ?? 0;
             $bpjsTK = $payrollDetail->bpjs_tk ?? 0;
+            $bpjsPerusahaanDetail = ! empty($payrollDetail->bpjs_perusahaan_detail)
+                ? (json_decode($payrollDetail->bpjs_perusahaan_detail, true) ?: null)
+                : null;
             $customEarnings = $payrollDetail->custom_earnings ?? 0;
             $customDeductions = $payrollDetail->custom_deductions ?? 0;
             $serviceChargeAmount = $payrollDetail->service_charge ?? 0;
@@ -4280,30 +4296,11 @@ class PayrollReportController extends Controller
             $gajiPerMenit = 500; // Flat rate Rp 500 per menit
             $potonganTelat = $totalTelat * $gajiPerMenit;
 
-            // Hitung BPJS
-            $bpjsJKN = 0;
-            $bpjsTK = 0;
-            if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
-                $userLevel = DB::table('tbl_data_jabatan')
-                    ->where('id_jabatan', $user->id_jabatan)
-                    ->value('id_level');
-                
-                $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
-                    ->where('id', $userLevel)
-                    ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
-                
-                if ($masterData->bpjs_jkn == 1) {
-                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
-                }
-                
-                if ($masterData->bpjs_tk == 1) {
-                    if ($user->id_outlet == 1) {
-                        $bpjsTK = $nilaiDasarBPJS * 0.03;
-                    } else {
-                        $bpjsTK = $nilaiDasarBPJS * 0.02;
-                    }
-                }
-            }
+            // Hitung BPJS (karyawan + rincian perusahaan)
+            $bpjsCalc = $this->calculateBpjsPayrollForSingleUser($user, $masterData);
+            $bpjsJKN = $bpjsCalc['bpjs_jkn'];
+            $bpjsTK = $bpjsCalc['bpjs_tk'];
+            $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
 
             // Get custom items - PISAHKAN BERDASARKAN GAJIAN TYPE
             $customItems = CustomPayrollItem::forOutlet($outletId)
@@ -4467,6 +4464,7 @@ class PayrollReportController extends Controller
                 'total_telat' => $totalTelat,
                 'bpjs_jkn' => $bpjsJKN,
                 'bpjs_tk' => $bpjsTK,
+                'bpjs_perusahaan_detail' => $bpjsPerusahaanDetail,
                 'custom_earnings' => $customEarnings,
                 'custom_deductions' => $customDeductions,
                 'custom_items' => $customItems,
@@ -4515,18 +4513,19 @@ class PayrollReportController extends Controller
             'service_charge_by_point' => round($serviceChargeByPoint),
             'service_charge_pro_rate' => round($serviceChargeProRate),
             'total_telat' => $totalTelat,
-                'bpjs_jkn' => $bpjsJKN,
-                'bpjs_tk' => $bpjsTK,
-                'custom_earnings' => $customEarnings,
-                'custom_deductions' => $customDeductions,
-                'custom_items' => $customItems,
-                'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings,
-                'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions,
-                'custom_items_gajian1' => $customItemsGajian1 ?? collect(),
-                'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
-                'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
-                'custom_items_gajian2' => $customItemsGajian2 ?? collect(),
-                'gaji_per_menit' => round($gajiPerMenit, 2),
+            'bpjs_jkn' => $bpjsJKN,
+            'bpjs_tk' => $bpjsTK,
+            'bpjs_perusahaan_detail' => $bpjsPerusahaanDetail,
+            'custom_earnings' => $customEarnings,
+            'custom_deductions' => $customDeductions,
+            'custom_items' => $customItems,
+            'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings,
+            'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions,
+            'custom_items_gajian1' => $customItemsGajian1 ?? collect(),
+            'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
+            'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
+            'custom_items_gajian2' => $customItemsGajian2 ?? collect(),
+            'gaji_per_menit' => round($gajiPerMenit, 2),
             'potongan_telat' => round($potonganTelat),
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
@@ -4534,6 +4533,7 @@ class PayrollReportController extends Controller
             'lb_total' => round($lbTotal),
             'deviasi_total' => round($deviasiTotal),
             'city_ledger_total' => round($cityLedgerTotal),
+            'ph_bonus' => round($phBonus),
             'leave_data' => $leaveData,
             'leave_types' => $leaveTypes,
             'total_gaji' => round($totalGajiFinal),
@@ -4607,6 +4607,8 @@ class PayrollReportController extends Controller
             ];
         }
 
+        $bpjsPerusahaanDetail = null;
+
         // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
         if ($payrollDetail) {
             // Gunakan data dari payroll_generated_details
@@ -4622,6 +4624,9 @@ class PayrollReportController extends Controller
             $gajiPerMenit = $payrollDetail->gaji_per_menit ?? 500;
             $bpjsJKN = $payrollDetail->bpjs_jkn ?? 0;
             $bpjsTK = $payrollDetail->bpjs_tk ?? 0;
+            $bpjsPerusahaanDetail = ! empty($payrollDetail->bpjs_perusahaan_detail)
+                ? (json_decode($payrollDetail->bpjs_perusahaan_detail, true) ?: null)
+                : null;
             $customEarnings = $payrollDetail->custom_earnings ?? 0;
             $customDeductions = $payrollDetail->custom_deductions ?? 0;
             $serviceChargeAmount = $payrollDetail->service_charge ?? 0;
@@ -4690,30 +4695,11 @@ class PayrollReportController extends Controller
             $gajiPerMenit = 500; // Flat rate Rp 500 per menit
             $potonganTelat = $totalTelat * $gajiPerMenit;
 
-            // Hitung BPJS
-            $bpjsJKN = 0;
-            $bpjsTK = 0;
-            if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
-                $userLevel = DB::table('tbl_data_jabatan')
-                    ->where('id_jabatan', $user->id_jabatan)
-                    ->value('id_level');
-                
-                $nilaiDasarBPJS = $userLevel ? (DB::table('tbl_data_level')
-                    ->where('id', $userLevel)
-                    ->value('nilai_dasar_potongan_bpjs') ?? 0) : 0;
-                
-                if ($masterData->bpjs_jkn == 1) {
-                    $bpjsJKN = $nilaiDasarBPJS * 0.01;
-                }
-                
-                if ($masterData->bpjs_tk == 1) {
-                    if ($user->id_outlet == 1) {
-                        $bpjsTK = $nilaiDasarBPJS * 0.03;
-                    } else {
-                        $bpjsTK = $nilaiDasarBPJS * 0.02;
-                    }
-                }
-            }
+            // Hitung BPJS (karyawan + rincian perusahaan)
+            $bpjsCalc = $this->calculateBpjsPayrollForSingleUser($user, $masterData);
+            $bpjsJKN = $bpjsCalc['bpjs_jkn'];
+            $bpjsTK = $bpjsCalc['bpjs_tk'];
+            $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
 
             // Get custom items - PISAHKAN BERDASARKAN GAJIAN TYPE
             $customItems = CustomPayrollItem::forOutlet($outletId)
@@ -4877,6 +4863,7 @@ class PayrollReportController extends Controller
             'service_charge_pro_rate' => round($serviceChargeProRate),
             'bpjs_jkn' => round($bpjsJKN),
             'bpjs_tk' => round($bpjsTK),
+            'bpjs_perusahaan_detail' => $bpjsPerusahaanDetail,
             'custom_earnings' => round($customEarnings),
             'custom_deductions' => round($customDeductions),
             'custom_items' => $customItems,
@@ -5002,6 +4989,9 @@ class PayrollReportController extends Controller
                     'service_charge' => $item['service_charge'] ?? 0,
                     'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
                     'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
+                        ? json_encode($item['bpjs_perusahaan_detail'])
+                        : null,
                     'lb_total' => $item['lb_total'] ?? 0,
                     'deviasi_total' => $item['deviasi_total'] ?? 0,
                     'city_ledger_total' => $item['city_ledger_total'] ?? 0,
@@ -5124,6 +5114,9 @@ class PayrollReportController extends Controller
                     'service_charge' => $item['service_charge'] ?? 0,
                     'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
                     'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+                    'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
+                        ? json_encode($item['bpjs_perusahaan_detail'])
+                        : null,
                     'lb_total' => $item['lb_total'] ?? 0,
                     'deviasi_total' => $item['deviasi_total'] ?? 0,
                     'city_ledger_total' => $item['city_ledger_total'] ?? 0,
@@ -6436,5 +6429,41 @@ class PayrollReportController extends Controller
                 'city_ledger_amount' => 0
             ]);
         }
+    }
+
+    /**
+     * BPJS untuk satu user (slip/preview): dasar dari Data Level, % dari Kategori BPJS bila ada.
+     *
+     * @return array{bpjs_jkn: float, bpjs_tk: float, perusahaan_detail: array|null}
+     */
+    private function calculateBpjsPayrollForSingleUser(object $user, object $masterData): array
+    {
+        $userLevel = DB::table('tbl_data_jabatan')
+            ->where('id_jabatan', $user->id_jabatan)
+            ->value('id_level');
+
+        $nilaiDasar = 0.0;
+        $kategori = null;
+        if ($userLevel) {
+            $levelRow = DB::table('tbl_data_level')
+                ->where('id', $userLevel)
+                ->first(['nilai_dasar_potongan_bpjs', 'id_bpjs_kategori']);
+            if ($levelRow) {
+                $nilaiDasar = (float) ($levelRow->nilai_dasar_potongan_bpjs ?? 0);
+                if (! empty($levelRow->id_bpjs_kategori)) {
+                    $kategori = DB::table('tbl_bpjs_kategori')
+                        ->where('id', $levelRow->id_bpjs_kategori)
+                        ->where('status', 'A')
+                        ->first();
+                }
+            }
+        }
+
+        return PayrollBpjsCalculator::calculate(
+            $masterData,
+            $nilaiDasar,
+            $kategori,
+            (int) ($user->id_outlet ?? 0)
+        );
     }
 }

@@ -36,6 +36,8 @@ const loadingDetails = ref({});
 
 // Custom items state
 const showAddCustomItemModal = ref(false);
+const showBpjsPerusahaanModal = ref(false);
+const bpjsPerusahaanModal = ref({ nama: '', detail: null });
 const showCustomItemsModal = ref(false);
 const selectedCustomItems = ref([]);
 const selectedItemType = ref('');
@@ -56,6 +58,27 @@ const customItemForm = ref({
 const formatMonth = (month) => {
   return month.toString().padStart(2, '0');
 };
+
+function canShowBpjsPerusahaanDetail(item) {
+  const d = item?.bpjs_perusahaan_detail;
+  if (!d || typeof d !== 'object') return false;
+  const md = item?.master_data;
+  if (!md) return false;
+  return Number(md.bpjs_jkn) === 1 || Number(md.bpjs_tk) === 1;
+}
+
+function openBpjsPerusahaanModal(item) {
+  bpjsPerusahaanModal.value = {
+    nama: item.nama_lengkap || '',
+    detail: item.bpjs_perusahaan_detail || null,
+  };
+  showBpjsPerusahaanModal.value = true;
+}
+
+function closeBpjsPerusahaanModal() {
+  showBpjsPerusahaanModal.value = false;
+  bpjsPerusahaanModal.value = { nama: '', detail: null };
+}
 
 // Get leave days for a specific leave type
 // SAMA PERSIS dengan Employee Summary - cek langsung di item[key]
@@ -1113,6 +1136,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS Perusahaan</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger</th>
@@ -1273,6 +1297,17 @@ onMounted(() => {
                         <span class="text-xs text-red-500 ml-1">(TK Disabled)</span>
                       </span>
                     </td>
+                    <td class="px-4 py-3 text-sm text-center">
+                      <button
+                        v-if="canShowBpjsPerusahaanDetail(item)"
+                        type="button"
+                        @click="openBpjsPerusahaanModal(item)"
+                        class="bg-gradient-to-br from-teal-500 to-cyan-600 text-white px-2 py-1 rounded-lg text-xs font-bold hover:opacity-90 transition-opacity"
+                      >
+                        <i class="fa fa-building mr-1"></i> Detail
+                      </button>
+                      <span v-else class="text-gray-400 text-xs">—</span>
+                    </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.lb == 1" class="text-red-600 font-bold">
                         {{ formatCurrency(item.lb_total || 0) }}
@@ -1365,7 +1400,7 @@ onMounted(() => {
                   
                   <!-- Expanded Detail Row -->
                                   <tr v-if="expandedRows.has(item.user_id)" class="bg-blue-50 border-l-4 border-blue-400">
-                  <td colspan="21" class="px-4 py-4">
+                  <td colspan="22" class="px-4 py-4">
                       <div v-if="loadingDetails[item.user_id]" class="flex items-center justify-center py-8">
                         <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                         <span class="ml-2 text-blue-600">Loading detail attendance...</span>
@@ -1555,6 +1590,78 @@ onMounted(() => {
           <i class="fa-solid fa-filter text-6xl mb-4 text-gray-300"></i>
           <h3 class="text-xl font-semibold mb-2">Pilih Filter</h3>
           <p class="text-gray-400">Silakan pilih outlet, bulan, dan tahun untuk melihat data payroll.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal rincian iuran BPJS perusahaan (informasi, tidak memotong THP) -->
+    <div v-if="showBpjsPerusahaanModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-bold text-gray-800">
+            <i class="fa fa-building text-teal-600 mr-2"></i>
+            Iuran BPJS Perusahaan
+          </h3>
+          <button type="button" @click="closeBpjsPerusahaanModal" class="text-gray-500 hover:text-gray-700">
+            <i class="fa fa-times text-xl"></i>
+          </button>
+        </div>
+        <p class="text-sm text-gray-600 mb-3">
+          <span class="font-semibold">{{ bpjsPerusahaanModal.nama }}</span>
+        </p>
+        <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          Nominal perusahaan berikut hanya untuk informasi; tidak mengurangi total gaji karyawan. Potongan dari gaji tetap sesuai kolom BPJS JKN dan BPJS TK.
+        </p>
+        <template v-if="bpjsPerusahaanModal.detail">
+          <div v-if="bpjsPerusahaanModal.detail.source === 'legacy'" class="text-sm text-gray-700 space-y-2">
+            <p class="font-medium">Dasar potongan BPJS: {{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan || 0) }}</p>
+            <p class="text-gray-600">{{ bpjsPerusahaanModal.detail.message }}</p>
+          </div>
+          <div v-else class="text-sm text-gray-800 space-y-3">
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+              <span v-if="bpjsPerusahaanModal.detail.kategori_nama">
+                Kategori: <strong class="text-gray-900">{{ bpjsPerusahaanModal.detail.kategori_nama }}</strong>
+              </span>
+              <span>
+                Dasar: <strong class="text-gray-900">{{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan || 0) }}</strong>
+              </span>
+            </div>
+            <div v-if="bpjsPerusahaanModal.detail.lines && bpjsPerusahaanModal.detail.lines.length" class="border rounded-lg overflow-hidden">
+              <table class="w-full text-xs">
+                <thead class="bg-gray-100 text-gray-700">
+                  <tr>
+                    <th class="text-left px-3 py-2">Komponen</th>
+                    <th class="text-right px-3 py-2">%</th>
+                    <th class="text-right px-3 py-2">Nominal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in bpjsPerusahaanModal.detail.lines" :key="row.key || idx" class="border-t border-gray-100">
+                    <td class="px-3 py-2">{{ row.label }}</td>
+                    <td class="px-3 py-2 text-right">{{ row.pct }}</td>
+                    <td class="px-3 py-2 text-right font-medium">{{ formatCurrency(row.amount) }}</td>
+                  </tr>
+                </tbody>
+                <tfoot class="bg-teal-50 font-semibold border-t border-teal-100">
+                  <tr>
+                    <td colspan="2" class="px-3 py-2 text-right">Total perusahaan</td>
+                    <td class="px-3 py-2 text-right">{{ formatCurrency(bpjsPerusahaanModal.detail.total_perusahaan || 0) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p v-else class="text-gray-500 text-xs">Tidak ada baris iuran perusahaan (persentase perusahaan nol di kategori).</p>
+            <div class="text-xs text-gray-600 border-t pt-3 space-y-1">
+              <p><strong>Potongan karyawan (referensi % dari kategori):</strong></p>
+              <p>JKN: {{ bpjsPerusahaanModal.detail.pct_kes_karyawan ?? '—' }}% · JHT: {{ bpjsPerusahaanModal.detail.pct_jht_karyawan ?? '—' }}% · JP: {{ bpjsPerusahaanModal.detail.pct_jp_karyawan ?? '—' }}%</p>
+            </div>
+          </div>
+        </template>
+        <div v-else class="text-sm text-gray-500">Tidak ada data detail.</div>
+        <div class="flex justify-end mt-6">
+          <button type="button" @click="closeBpjsPerusahaanModal" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm font-medium">
+            Tutup
+          </button>
         </div>
       </div>
     </div>
