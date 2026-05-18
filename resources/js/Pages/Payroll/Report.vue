@@ -214,43 +214,87 @@ const filteredPayrollData = computed(() => {
   });
 });
 
-// Calculate summary
+function sumPayrollField(data, field) {
+  return data.reduce((sum, item) => sum + Number(item[field] || 0), 0);
+}
+
+function getLeaveTypeTotal(leaveTypeName) {
+  const data = filteredPayrollData.value;
+  if (!data?.length) return 0;
+  return data.reduce((sum, item) => sum + Number(getLeaveDays(item, leaveTypeName) || 0), 0);
+}
+
+/** Jumlah kolom tabel (untuk colspan baris expand / footer) */
+const payrollTableColCount = computed(() => {
+  const leaveCount = props.leaveTypes?.length || 0;
+  return 15 + leaveCount + 18;
+});
+
+// Calculate summary (kartu + baris total di bawah tabel)
 const summary = computed(() => {
   const data = filteredPayrollData.value;
+  const empty = {
+    count: 0,
+    totalPoint: 0,
+    totalGajiPokok: 0,
+    totalTunjangan: 0,
+    totalMenitTelat: 0,
+    totalJamLembur: 0,
+    totalGajiLembur: 0,
+    totalUangMakan: 0,
+    totalHariKerja: 0,
+    totalAlpha: 0,
+    totalServiceChargeByPoint: 0,
+    totalServiceChargeProRate: 0,
+    totalServiceCharge: 0,
+    totalBPJSJKN: 0,
+    totalBPJSTK: 0,
+    totalBpjsPerusahaan: 0,
+    totalLB: 0,
+    totalDeviasi: 0,
+    totalCityLedger: 0,
+    totalPHBonus: 0,
+    totalCustomEarnings: 0,
+    totalCustomDeductions: 0,
+    totalPotonganTelat: 0,
+    totalPotonganAlpha: 0,
+    totalPotonganUnpaidLeave: 0,
+    totalGaji: 0,
+  };
   if (!data || data.length === 0) {
-    return {
-      totalGajiPokok: 0,
-      totalTunjangan: 0,
-      totalGajiLembur: 0,
-      totalUangMakan: 0,
-      totalServiceChargeByPoint: 0,
-      totalServiceChargeProRate: 0,
-      totalServiceCharge: 0,
-      totalBPJSJKN: 0,
-      totalBPJSTK: 0,
-      totalPHBonus: 0,
-      totalPotonganTelat: 0,
-      totalPotonganAlpha: 0,
-      totalPotonganUnpaidLeave: 0,
-      totalGaji: 0,
-    };
+    return empty;
   }
 
   return {
-    totalGajiPokok: data.reduce((sum, item) => sum + Number(item.gaji_pokok), 0),
-    totalTunjangan: data.reduce((sum, item) => sum + Number(item.tunjangan), 0),
-    totalGajiLembur: data.reduce((sum, item) => sum + Number(item.gaji_lembur), 0),
-    totalUangMakan: data.reduce((sum, item) => sum + Number(item.uang_makan), 0),
-    totalServiceChargeByPoint: data.reduce((sum, item) => sum + Number(item.service_charge_by_point || 0), 0),
-    totalServiceChargeProRate: data.reduce((sum, item) => sum + Number(item.service_charge_pro_rate || 0), 0),
-    totalServiceCharge: data.reduce((sum, item) => sum + Number(item.service_charge || 0), 0),
-    totalBPJSJKN: data.reduce((sum, item) => sum + Number(item.bpjs_jkn), 0),
-    totalBPJSTK: data.reduce((sum, item) => sum + Number(item.bpjs_tk), 0),
-    totalPHBonus: data.reduce((sum, item) => sum + Number(item.ph_bonus || 0), 0),
-    totalPotonganTelat: data.reduce((sum, item) => sum + Number(item.potongan_telat || 0), 0),
-    totalPotonganAlpha: data.reduce((sum, item) => sum + Number(item.potongan_alpha || 0), 0),
-    totalPotonganUnpaidLeave: data.reduce((sum, item) => sum + Number(item.potongan_unpaid_leave || 0), 0),
-    totalGaji: data.reduce((sum, item) => sum + Number(item.total_gaji), 0),
+    count: data.length,
+    totalPoint: sumPayrollField(data, 'point'),
+    totalGajiPokok: sumPayrollField(data, 'gaji_pokok'),
+    totalTunjangan: sumPayrollField(data, 'tunjangan'),
+    totalMenitTelat: sumPayrollField(data, 'total_telat'),
+    totalJamLembur: sumPayrollField(data, 'total_lembur'),
+    totalGajiLembur: sumPayrollField(data, 'gaji_lembur'),
+    totalUangMakan: sumPayrollField(data, 'uang_makan'),
+    totalHariKerja: sumPayrollField(data, 'hari_kerja'),
+    totalAlpha: sumPayrollField(data, 'total_alpha'),
+    totalServiceChargeByPoint: sumPayrollField(data, 'service_charge_by_point'),
+    totalServiceChargeProRate: sumPayrollField(data, 'service_charge_pro_rate'),
+    totalServiceCharge: sumPayrollField(data, 'service_charge'),
+    totalBPJSJKN: sumPayrollField(data, 'bpjs_jkn'),
+    totalBPJSTK: sumPayrollField(data, 'bpjs_tk'),
+    totalBpjsPerusahaan: data.reduce((sum, item) => {
+      const d = item.bpjs_perusahaan_detail;
+      return sum + Number(d?.total_perusahaan || 0);
+    }, 0),
+    totalLB: sumPayrollField(data, 'lb_total'),
+    totalDeviasi: sumPayrollField(data, 'deviasi_total'),
+    totalCityLedger: sumPayrollField(data, 'city_ledger_total'),
+    totalPHBonus: sumPayrollField(data, 'ph_bonus'),
+    totalCustomEarnings: sumPayrollField(data, 'custom_earnings'),
+    totalCustomDeductions: sumPayrollField(data, 'custom_deductions'),
+    totalPotonganTelat: sumPayrollField(data, 'potongan_telat'),
+    totalPotonganAlpha: sumPayrollField(data, 'potongan_alpha'),
+    totalPotonganUnpaidLeave: sumPayrollField(data, 'potongan_unpaid_leave'),
+    totalGaji: sumPayrollField(data, 'total_gaji'),
   };
 });
 
@@ -1400,7 +1444,7 @@ onMounted(() => {
                   
                   <!-- Expanded Detail Row -->
                                   <tr v-if="expandedRows.has(item.user_id)" class="bg-blue-50 border-l-4 border-blue-400">
-                  <td colspan="22" class="px-4 py-4">
+                  <td :colspan="payrollTableColCount" class="px-4 py-4">
                       <div v-if="loadingDetails[item.user_id]" class="flex items-center justify-center py-8">
                         <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                         <span class="ml-2 text-blue-600">Loading detail attendance...</span>
@@ -1570,6 +1614,50 @@ onMounted(() => {
                   </tr>
                 </template>
               </tbody>
+              <tfoot class="bg-slate-800 text-white border-t-4 border-amber-400">
+                <tr class="font-bold text-xs uppercase tracking-wide">
+                  <td colspan="6" class="px-4 py-3 text-left sticky left-0 bg-slate-800 z-[1]">
+                    <i class="fa fa-calculator mr-2 text-amber-300"></i>
+                    Total ({{ summary.count }} karyawan)
+                  </td>
+                  <td class="px-4 py-3 text-center">{{ summary.totalPoint }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalGajiPokok) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalTunjangan) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ summary.totalMenitTelat }}</td>
+                  <td class="px-4 py-3 text-center">{{ summary.totalJamLembur }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalGajiLembur) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalUangMakan) }}</td>
+                  <td class="px-4 py-3 text-center">{{ summary.totalHariKerja }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ summary.totalAlpha }}</td>
+                  <td
+                    v-for="leaveType in props.leaveTypes"
+                    :key="'sum-' + leaveType.id"
+                    class="px-4 py-3 text-center text-green-300"
+                  >
+                    {{ getLeaveTypeTotal(leaveType.name) }}
+                  </td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalServiceChargeByPoint) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalServiceChargeProRate) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalServiceCharge) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalBPJSJKN) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalBPJSTK) }}</td>
+                  <td class="px-4 py-3 text-center text-teal-300" title="Informasi; tidak mengurangi THP">
+                    {{ formatCurrency(summary.totalBpjsPerusahaan) }}
+                  </td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalLB) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalDeviasi) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalCityLedger) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalPHBonus) }}</td>
+                  <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalCustomEarnings) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalCustomDeductions) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganTelat) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganAlpha) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganUnpaidLeave) }}</td>
+                  <td class="px-4 py-3 text-center text-lg text-amber-300 bg-slate-900">{{ formatCurrency(summary.totalGaji) }}</td>
+                  <td class="px-4 py-3 text-center text-slate-400">—</td>
+                  <td class="px-4 py-3 text-center text-slate-400">—</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
