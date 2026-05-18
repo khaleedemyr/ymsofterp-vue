@@ -5,11 +5,25 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\DataLevel;
+use App\Models\BpjsKategori;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\Auth;
 
 class DataLevelController extends Controller
 {
+    /**
+     * Normalisasi id_bpjs_kategori kosong / string ke null atau int (untuk validasi exists).
+     */
+    protected function prepareBpjsKategoriInput(Request $request): void
+    {
+        $raw = $request->input('id_bpjs_kategori');
+        if ($raw === '' || $raw === null) {
+            $request->merge(['id_bpjs_kategori' => null]);
+        } elseif (is_numeric($raw)) {
+            $request->merge(['id_bpjs_kategori' => (int) $raw]);
+        }
+    }
+
     public function index(Request $request)
     {
         $query = DataLevel::query();
@@ -25,9 +39,18 @@ class DataLevelController extends Controller
             $status = $request->status === 'active' ? 'A' : 'N';
             $query->where('status', $status);
         }
-        $dataLevels = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
+        $dataLevels = $query->with(['bpjsKategori:id,nama_kategori'])
+            ->orderBy('id', 'desc')
+            ->paginate(10)
+            ->withQueryString();
+        $bpjsKategoriOptions = BpjsKategori::query()
+            ->where('status', 'A')
+            ->orderBy('nama_kategori')
+            ->get(['id', 'nama_kategori']);
+
         return Inertia::render('DataLevel/Index', [
             'dataLevels' => $dataLevels,
+            'bpjsKategoriOptions' => $bpjsKategoriOptions,
             'filters' => [
                 'search' => $request->search,
             ],
@@ -36,15 +59,18 @@ class DataLevelController extends Controller
 
     public function store(Request $request)
     {
+        $this->prepareBpjsKategoriInput($request);
         $validated = $request->validate([
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
             'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         // Always set status to 'A' for new records
         $validated['status'] = 'A';
+        $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
         $dataLevel = DataLevel::create($validated);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -61,13 +87,16 @@ class DataLevelController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->prepareBpjsKategoriInput($request);
         $validated = $request->validate([
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
             'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
+        $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
         // Don't update status in edit mode
         $dataLevel = DataLevel::findOrFail($id);
         $oldData = $dataLevel->toArray();
@@ -131,7 +160,10 @@ class DataLevelController extends Controller
             }
         }
         $perPage = (int) $request->get('per_page', 15);
-        $paginator = $query->orderBy('id', 'desc')->paginate($perPage)->withQueryString();
+        $paginator = $query->with(['bpjsKategori:id,nama_kategori'])
+            ->orderBy('id', 'desc')
+            ->paginate($perPage)
+            ->withQueryString();
         return response()->json($paginator);
     }
 
@@ -140,7 +172,8 @@ class DataLevelController extends Controller
      */
     public function apiShow($id)
     {
-        $dataLevel = DataLevel::findOrFail($id);
+        $dataLevel = DataLevel::with('bpjsKategori')->findOrFail($id);
+
         return response()->json($dataLevel);
     }
 
@@ -149,14 +182,17 @@ class DataLevelController extends Controller
      */
     public function apiStore(Request $request)
     {
+        $this->prepareBpjsKategoriInput($request);
         $validated = $request->validate([
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
             'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         $validated['status'] = 'A';
+        $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
         $dataLevel = DataLevel::create($validated);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -168,7 +204,8 @@ class DataLevelController extends Controller
             'old_data' => null,
             'new_data' => $dataLevel->toArray(),
         ]);
-        return response()->json(['success' => true, 'data' => $dataLevel]);
+
+        return response()->json(['success' => true, 'data' => $dataLevel->load('bpjsKategori')]);
     }
 
     /**
@@ -176,13 +213,16 @@ class DataLevelController extends Controller
      */
     public function apiUpdate(Request $request, $id)
     {
+        $this->prepareBpjsKategoriInput($request);
         $validated = $request->validate([
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
             'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
+        $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
         $dataLevel = DataLevel::findOrFail($id);
         $oldData = $dataLevel->toArray();
         $dataLevel->update($validated);
@@ -196,7 +236,8 @@ class DataLevelController extends Controller
             'old_data' => $oldData,
             'new_data' => $dataLevel->fresh()->toArray(),
         ]);
-        return response()->json(['success' => true, 'data' => $dataLevel->fresh()]);
+
+        return response()->json(['success' => true, 'data' => $dataLevel->fresh()->load('bpjsKategori')]);
     }
 
     /**

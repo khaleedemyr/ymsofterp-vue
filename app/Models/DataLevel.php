@@ -19,6 +19,7 @@ class DataLevel extends Model
         'nilai_level',
         'nilai_public_holiday',
         'nilai_dasar_potongan_bpjs',
+        'id_bpjs_kategori',
         'nilai_point',
         'status'
     ];
@@ -28,9 +29,15 @@ class DataLevel extends Model
         'updated_at' => 'datetime',
         'nilai_public_holiday' => 'integer',
         'nilai_dasar_potongan_bpjs' => 'integer',
+        'id_bpjs_kategori' => 'integer',
         'nilai_point' => 'integer',
         'status' => 'string'
     ];
+
+    public function bpjsKategori()
+    {
+        return $this->belongsTo(BpjsKategori::class, 'id_bpjs_kategori');
+    }
 
     // Accessor to get status text
     public function getStatusTextAttribute()

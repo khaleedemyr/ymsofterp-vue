@@ -7,6 +7,10 @@ const props = defineProps({
   show: Boolean,
   mode: String, // 'create' | 'edit'
   dataLevel: Object, // untuk edit
+  bpjsKategoriOptions: {
+    type: Array,
+    default: () => [],
+  },
 });
 const emit = defineEmits(['close', 'success']);
 
@@ -15,6 +19,7 @@ const form = useForm({
   nilai_level: '',
   nilai_public_holiday: 0,
   nilai_dasar_potongan_bpjs: 0,
+  id_bpjs_kategori: '',
   nilai_point: 0,
   status: 'A',
 });
@@ -25,6 +30,10 @@ watch(() => props.show, (val) => {
     form.nilai_level = props.dataLevel.nilai_level;
     form.nilai_public_holiday = props.dataLevel.nilai_public_holiday;
     form.nilai_dasar_potongan_bpjs = props.dataLevel.nilai_dasar_potongan_bpjs;
+    form.id_bpjs_kategori =
+      props.dataLevel.id_bpjs_kategori != null && props.dataLevel.id_bpjs_kategori !== ''
+        ? String(props.dataLevel.id_bpjs_kategori)
+        : '';
     form.nilai_point = props.dataLevel.nilai_point;
     // Don't change status in edit mode
   } else if (val && props.mode === 'create') {
@@ -32,6 +41,7 @@ watch(() => props.show, (val) => {
     form.nilai_level = '';
     form.nilai_public_holiday = 0;
     form.nilai_dasar_potongan_bpjs = 0;
+    form.id_bpjs_kategori = '';
     form.nilai_point = 0;
     form.status = 'A'; // Always set to active for new records
   }
@@ -105,6 +115,18 @@ function closeModal() {
               <input v-model="form.nilai_dasar_potongan_bpjs" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required />
               <div v-if="form.errors.nilai_dasar_potongan_bpjs" class="text-xs text-red-500 mt-1">{{ form.errors.nilai_dasar_potongan_bpjs }}</div>
             </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Kategori BPJS</label>
+            <select
+              v-model="form.id_bpjs_kategori"
+              class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">— Tanpa kategori —</option>
+              <option v-for="opt in bpjsKategoriOptions" :key="opt.id" :value="String(opt.id)">{{ opt.nama_kategori }}</option>
+            </select>
+            <div v-if="form.errors.id_bpjs_kategori" class="text-xs text-red-500 mt-1">{{ form.errors.id_bpjs_kategori }}</div>
+            <p v-if="bpjsKategoriOptions.length === 0" class="text-xs text-amber-600 mt-1">Belum ada kategori aktif. Buat di menu Kategori BPJS.</p>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Nilai Point</label>

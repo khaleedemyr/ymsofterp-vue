@@ -10,6 +10,10 @@ import DataLevelFormModal from './DataLevelFormModal.vue';
 const props = defineProps({
   dataLevels: Object, // { data, links, meta }
   filters: Object,
+  bpjsKategoriOptions: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const search = ref(props.filters?.search || '');
@@ -123,6 +127,7 @@ function toggleStatus(dataLevel) {
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nilai Level</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Public Holiday</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar Potongan BPJS</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Kategori BPJS</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Point</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Status</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Aksi</th>
@@ -134,6 +139,7 @@ function toggleStatus(dataLevel) {
                 <td class="px-6 py-3 font-semibold text-blue-700">{{ dataLevel.nilai_level }}</td>
                 <td class="px-6 py-3">{{ dataLevel.nilai_public_holiday }}</td>
                 <td class="px-6 py-3">{{ dataLevel.nilai_dasar_potongan_bpjs }}</td>
+                <td class="px-6 py-3 text-sm text-gray-700">{{ dataLevel.bpjs_kategori?.nama_kategori || '—' }}</td>
                 <td class="px-6 py-3">{{ dataLevel.nilai_point }}</td>
                 <td class="px-6 py-3">
                   <button
@@ -180,6 +186,7 @@ function toggleStatus(dataLevel) {
         :show="showModal"
         :mode="modalMode"
         :dataLevel="selectedDataLevel"
+        :bpjs-kategori-options="bpjsKategoriOptions"
         @close="closeModal"
         @success="reload"
       />
