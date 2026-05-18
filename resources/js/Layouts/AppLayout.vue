@@ -159,6 +159,7 @@ const menuGroups = [
         open: ref(false),
         menus: [
             { name: () => 'Data Level', icon: 'fa-solid fa-layer-group', route: '/data-levels', code: 'data_levels' },
+            { name: () => 'Kategori BPJS', icon: 'fa-solid fa-percent', route: '/bpjs-kategori', code: 'bpjs_kategori' },
             { name: () => 'Data Jabatan', icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
             { name: () => 'Data Divisi', icon: 'fa-solid fa-building', route: '/divisis', code: 'data_divisi' },
             { name: () => 'Data Karyawan', icon: 'fa-solid fa-users', route: '/users', code: 'data_karyawan' },

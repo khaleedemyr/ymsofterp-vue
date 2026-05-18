@@ -19,6 +19,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\DataLevelController;
+use App\Http\Controllers\BpjsKategoriController;
 use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\DivisiController;
 use App\Http\Controllers\ManPowerOutletController;
@@ -718,6 +719,12 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::patch('/data-levels/{id}', [DataLevelController::class, 'update']);
     Route::post('/data-levels/{id}', [DataLevelController::class, 'update'])->name('data-levels.update');
     Route::patch('/data-levels/{id}/toggle-status', [DataLevelController::class, 'toggleStatus'])->name('data-levels.toggle-status');
+
+    Route::resource('bpjs-kategori', BpjsKategoriController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::put('/bpjs-kategori/{id}', [BpjsKategoriController::class, 'update']);
+    Route::patch('/bpjs-kategori/{id}', [BpjsKategoriController::class, 'update']);
+    Route::post('/bpjs-kategori/{id}', [BpjsKategoriController::class, 'update'])->name('bpjs-kategori.update');
+    Route::patch('/bpjs-kategori/{id}/toggle-status', [BpjsKategoriController::class, 'toggleStatus'])->name('bpjs-kategori.toggle-status');
 
     // Jabatan dropdown and debug routes (PASTIKAN INI DI ATAS resource!)
     Route::get('/jabatans/dropdown-data', [JabatanController::class, 'getDropdownData'])->name('jabatans.dropdown-data');
