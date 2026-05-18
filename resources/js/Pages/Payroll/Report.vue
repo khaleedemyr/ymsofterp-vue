@@ -34,6 +34,24 @@ const expandedRows = ref(new Set());
 const attendanceDetails = ref({});
 const loadingDetails = ref({});
 
+/** Baris yang di-klik untuk highlight (pin); null = tidak ada */
+const highlightedRowUserId = ref(null);
+
+function handlePayrollRowClick(userId, event) {
+  if (event.target.closest('button, select, a, textarea, input, label')) {
+    return;
+  }
+  highlightedRowUserId.value = highlightedRowUserId.value === userId ? null : userId;
+}
+
+function payrollRowClasses(userId, index) {
+  const selected = highlightedRowUserId.value === userId;
+  return [
+    'payroll-data-row cursor-pointer transition-[background-color,box-shadow] duration-150',
+    selected ? 'payroll-row-selected' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50'),
+  ];
+}
+
 // Custom items state
 const showAddCustomItemModal = ref(false);
 const showBpjsPerusahaanModal = ref(false);
@@ -1140,14 +1158,20 @@ onMounted(() => {
           </div>
 
           <!-- Period Info -->
-          <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex justify-between items-center">
+          <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex flex-wrap justify-between items-center gap-3">
             <div class="text-blue-800 font-semibold">
               <i class="fa-solid fa-calendar-days mr-2"></i>
               Periode: {{ props.payrollData[0]?.periode }}
             </div>
-            <div v-if="searchQuery" class="text-blue-600 text-sm">
-              <i class="fa-solid fa-filter mr-2"></i>
-              Menampilkan {{ filteredPayrollData.length }} dari {{ props.payrollData?.length || 0 }} karyawan
+            <div class="flex flex-wrap items-center gap-4 text-sm">
+              <span class="text-gray-600">
+                <i class="fa-solid fa-hand-pointer mr-1"></i>
+                Hover / klik baris untuk highlight (klik lagi untuk lepas)
+              </span>
+              <span v-if="searchQuery" class="text-blue-600">
+                <i class="fa-solid fa-filter mr-1"></i>
+                Menampilkan {{ filteredPayrollData.length }} dari {{ props.payrollData?.length || 0 }} karyawan
+              </span>
             </div>
           </div>
 
@@ -1198,7 +1222,10 @@ onMounted(() => {
               <tbody class="bg-white divide-y divide-gray-200">
                 <template v-for="(item, index) in filteredPayrollData" :key="item.user_id">
                   <!-- Main Row -->
-                  <tr :class="index % 2 === 0 ? 'bg-white' : 'bg-gray-50'" class="hover:bg-blue-50 transition-colors">
+                  <tr
+                    :class="payrollRowClasses(item.user_id, index)"
+                    @click="handlePayrollRowClick(item.user_id, $event)"
+                  >
                     <td class="px-4 py-3 text-center text-sm font-medium text-gray-700">{{ index + 1 }}</td>
                     <td class="px-4 py-3 text-center">
                       <button @click="toggleExpand(item.user_id)" 
@@ -1443,7 +1470,10 @@ onMounted(() => {
                   </tr>
                   
                   <!-- Expanded Detail Row -->
-                                  <tr v-if="expandedRows.has(item.user_id)" class="bg-blue-50 border-l-4 border-blue-400">
+                  <tr
+                    v-if="expandedRows.has(item.user_id)"
+                    :class="highlightedRowUserId === item.user_id ? 'payroll-row-selected-detail border-l-4 border-amber-500' : 'bg-blue-50 border-l-4 border-blue-400'"
+                  >
                   <td :colspan="payrollTableColCount" class="px-4 py-4">
                       <div v-if="loadingDetails[item.user_id]" class="flex items-center justify-center py-8">
                         <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -2006,5 +2036,24 @@ onMounted(() => {
 
 .expand-button.expanded {
   transform: rotate(180deg);
+}
+
+/* Highlight baris payroll: hover + klik pin */
+.payroll-data-row:hover:not(.payroll-row-selected) {
+  background-color: #dbeafe !important;
+  box-shadow: inset 4px 0 0 0 #3b82f6;
+}
+
+.payroll-row-selected {
+  background-color: #fef3c7 !important;
+  box-shadow: inset 4px 0 0 0 #f59e0b;
+}
+
+.payroll-row-selected:hover {
+  background-color: #fde68a !important;
+}
+
+.payroll-row-selected-detail {
+  background-color: #fffbeb !important;
 }
 </style>
