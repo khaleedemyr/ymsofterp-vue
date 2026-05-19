@@ -1125,6 +1125,15 @@ class PayrollReportController extends Controller
                     $hariKerjaUntukServiceCharge = $hariKerja;
                 }
 
+                $this->syncPayrollDaysWithAttendance(
+                    $hariKerja,
+                    $hariKerjaUntukServiceCharge,
+                    $hariKerjaKaryawanBaru,
+                    $hariKerjaKaryawanResign,
+                    $isNewEmployee,
+                    $isResignedEmployee
+                );
+
                 // Mutation logic sudah di-handle di atas (line ~998-1030)
                 // Ambil mutation info jika ada
                 $mutationEffectiveDate = $isMutatedEmployee ? Carbon::parse($mutationData['effective_date']) : null;
@@ -1566,9 +1575,11 @@ class PayrollReportController extends Controller
                 // Ini adalah total hari kalender dalam periode, bukan total hari kerja karyawan
                 $totalHariKalenderPeriode = $startDate->diffInDays($endDate) + 1; // +1 untuk include tanggal awal dan akhir
                 
-                // HANYA prorate jika karyawan baru ATAU karyawan resign
-                // Karyawan biasa TIDAK di-prorate, meskipun hari kerja < total hari kalender periode
-                if ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                // Tanpa hari kerja absensi → tidak ada gaji pokok / tunjangan (termasuk prorate resign)
+                if ($hariKerja <= 0) {
+                    $gajiPokokFinal = 0;
+                    $tunjanganFinal = 0;
+                } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
                     // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
                     // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
@@ -3073,6 +3084,15 @@ class PayrollReportController extends Controller
                 $hariKerjaUntukServiceCharge = $hariKerja;
             }
 
+            $this->syncPayrollDaysWithAttendance(
+                $hariKerja,
+                $hariKerjaUntukServiceCharge,
+                $hariKerjaKaryawanBaru,
+                $hariKerjaKaryawanResign,
+                $isNewEmployee,
+                $isResignedEmployee
+            );
+
             // ========== CRITICAL FIX: ADD MUTATION SPLIT LOGIC (SAMA DENGAN index()) ==========
             // Cek apakah user ini adalah karyawan mutasi
             $isMutatedEmployee = isset($mutationMap[$userId]);
@@ -3428,9 +3448,10 @@ class PayrollReportController extends Controller
             // Ini adalah total hari kalender dalam periode, bukan total hari kerja karyawan
             $totalHariKalenderPeriode = $startDate->diffInDays($endDate) + 1; // +1 untuk include tanggal awal dan akhir
             
-            // HANYA prorate jika karyawan baru ATAU karyawan resign
-            // Karyawan biasa TIDAK di-prorate, meskipun hari kerja < total hari kalender periode
-            if ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+            if ($hariKerja <= 0) {
+                $gajiPokokFinal = 0;
+                $tunjanganFinal = 0;
+            } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
                 // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
                 // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                 // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
@@ -6416,6 +6437,37 @@ class PayrollReportController extends Controller
                 'message' => 'Terjadi kesalahan saat mengambil city ledger amount',
                 'city_ledger_amount' => 0
             ]);
+        }
+    }
+
+    /**
+     * Selaraskan hari prorate/SC dengan hari kerja absensi.
+     * Tidak ada absensi (0) → tidak ada hak gaji pokok, tunjangan, service charge, dll.
+     */
+    private function syncPayrollDaysWithAttendance(
+        int $hariKerja,
+        int &$hariKerjaUntukServiceCharge,
+        int &$hariKerjaKaryawanBaru,
+        int &$hariKerjaKaryawanResign,
+        bool $isNewEmployee,
+        bool $isResignedEmployee
+    ): void {
+        if ($hariKerja <= 0) {
+            $hariKerjaUntukServiceCharge = 0;
+            $hariKerjaKaryawanBaru = 0;
+            $hariKerjaKaryawanResign = 0;
+
+            return;
+        }
+
+        if ($hariKerjaUntukServiceCharge > $hariKerja) {
+            $hariKerjaUntukServiceCharge = $hariKerja;
+            if ($isResignedEmployee) {
+                $hariKerjaKaryawanResign = $hariKerja;
+            }
+            if ($isNewEmployee) {
+                $hariKerjaKaryawanBaru = min($hariKerjaKaryawanBaru, $hariKerja);
+            }
         }
     }
 
