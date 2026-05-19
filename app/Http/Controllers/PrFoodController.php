@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\DB;
 
 class PrFoodController extends Controller
 {
+    /** Set true untuk mengaktifkan filter jam PR Foods (tutup 10:00–15:00) */
+    private const PR_FOODS_SCHEDULE_FILTER_ENABLED = false;
+
     public function index(Request $request)
     {
         $query = PrFood::with([
@@ -590,6 +593,10 @@ class PrFoodController extends Controller
     // Helper untuk validasi waktu PR Foods
     private function isWithinPrFoodsSchedule()
     {
+        if (!self::PR_FOODS_SCHEDULE_FILTER_ENABLED) {
+            return true;
+        }
+
         $now = now();
         $today = $now->copy()->startOfDay();
         

@@ -17,6 +17,9 @@ const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
 
+// Set true untuk mengaktifkan filter jam PR Foods (tutup 10:00–15:00)
+const PR_FOODS_SCHEDULE_FILTER_ENABLED = false;
+
 // Computed untuk cek jadwal PR Foods
 const scheduleInfo = computed(() => {
   const now = new Date();
@@ -55,6 +58,10 @@ const scheduleInfo = computed(() => {
     }
   };
 });
+
+const canCreatePrFood = computed(() =>
+  !PR_FOODS_SCHEDULE_FILTER_ENABLED || scheduleInfo.value.isWithinSchedule
+);
 
 const debouncedSearch = debounce(() => {
   router.get('/pr-foods', { search: search.value, status: selectedStatus.value, from: from.value, to: to.value }, { preserveState: true, replace: true });
@@ -158,17 +165,19 @@ function getAllApproverInfo(pr) {
   return approvers;
 }
 function openCreate() {
-  console.log('Schedule Debug:', scheduleInfo.value.debug);
-  console.log('Is Within Schedule:', scheduleInfo.value.isWithinSchedule);
-  
-  if (!scheduleInfo.value.isWithinSchedule) {
-    Swal.fire({
-      title: 'Jadwal PR Foods',
-      text: 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00',
-      icon: 'warning',
-      confirmButtonText: 'OK'
-    });
-    return;
+  if (PR_FOODS_SCHEDULE_FILTER_ENABLED) {
+    console.log('Schedule Debug:', scheduleInfo.value.debug);
+    console.log('Is Within Schedule:', scheduleInfo.value.isWithinSchedule);
+
+    if (!scheduleInfo.value.isWithinSchedule) {
+      Swal.fire({
+        title: 'Jadwal PR Foods',
+        text: 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00',
+        icon: 'warning',
+        confirmButtonText: 'OK'
+      });
+      return;
+    }
   }
   router.visit('/pr-foods/create');
 }
@@ -211,8 +220,8 @@ async function hapus(pr) {
           <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
             <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Requisition Foods
           </h1>
-          <!-- Info Jadwal -->
-          <div class="mt-2 flex items-center gap-2">
+          <!-- Info Jadwal (nonaktif sementara: set PR_FOODS_SCHEDULE_FILTER_ENABLED = true) -->
+          <div v-if="PR_FOODS_SCHEDULE_FILTER_ENABLED" class="mt-2 flex items-center gap-2">
             <div class="flex items-center gap-1 text-sm">
               <i class="fa fa-clock text-blue-500"></i>
               <span class="font-medium">Jadwal:</span>
@@ -228,16 +237,16 @@ async function hapus(pr) {
         </div>
         <button
           @click="openCreate"
-          :disabled="!scheduleInfo.isWithinSchedule"
+          :disabled="!canCreatePrFood"
           :class="[
             'px-4 py-2 rounded-xl shadow-lg transition-all font-semibold',
-            scheduleInfo.isWithinSchedule 
-              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl cursor-pointer' 
+            canCreatePrFood
+              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl cursor-pointer'
               : 'bg-gray-300 text-gray-500 cursor-not-allowed'
           ]"
-                     :title="scheduleInfo.isWithinSchedule ? 'Buat PR Foods Baru' : 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00'"
+          :title="canCreatePrFood ? 'Buat PR Foods Baru' : 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00'"
         >
-          <i class="fa fa-clock mr-2"></i> + Buat PR Foods Baru
+          <i class="fa fa-plus mr-2"></i> + Buat PR Foods Baru
         </button>
       </div>
       <div class="flex flex-wrap gap-3 mb-4 items-center">
