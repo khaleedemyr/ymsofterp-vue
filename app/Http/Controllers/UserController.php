@@ -8,6 +8,7 @@ use App\Exports\UsersExport;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
@@ -368,23 +369,75 @@ class UserController extends Controller
 
     public function destroy(User $user)
     {
-        // Set status to 'N' (Non-aktif) instead of deleting
+        if ((int) $user->id === (int) auth()->id()) {
+            return redirect()->back()->withErrors([
+                'error' => 'Tidak dapat menghapus akun Anda sendiri.',
+            ]);
+        }
+
+        $blockers = $this->getUserDeleteBlockers((int) $user->id);
+        if (! empty($blockers)) {
+            return redirect()->back()->withErrors([
+                'error' => 'Karyawan tidak dapat dihapus karena masih memiliki: '
+                    . implode(', ', $blockers)
+                    . '. Gunakan tombol nonaktifkan jika karyawan tidak dipakai lagi.',
+            ]);
+        }
+
         $oldData = $user->toArray();
-        $user->update(['status' => 'N']);
-        
-        // Log activity
+        $nama = $user->nama_lengkap;
+
+        DB::transaction(function () use ($user) {
+            $user->userPins()->delete();
+            $user->delete();
+        });
+
         ActivityLog::create([
             'user_id' => auth()->id(),
-            'activity_type' => 'status_change',
+            'activity_type' => 'delete',
             'module' => 'users',
-            'description' => 'Menonaktifkan karyawan: ' . $user->nama_lengkap,
+            'description' => 'Menghapus karyawan: ' . $nama,
             'ip_address' => request()->ip(),
             'user_agent' => request()->userAgent(),
             'old_data' => $oldData,
-            'new_data' => $user->fresh()->toArray()
+            'new_data' => null,
         ]);
 
-        return redirect()->back()->with('success', 'Karyawan berhasil dinonaktifkan!');
+        return redirect()->back()->with('success', 'Karyawan berhasil dihapus.');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function getUserDeleteBlockers(int $userId): array
+    {
+        $blockers = [];
+
+        $checks = [
+            ['table' => 'payroll_generated_details', 'column' => 'user_id', 'label' => 'riwayat payroll'],
+            ['table' => 'employee_resignations', 'column' => 'employee_id', 'label' => 'data resign'],
+            ['table' => 'custom_payroll_items', 'column' => 'user_id', 'label' => 'item payroll custom'],
+            ['table' => 'leave_transactions', 'column' => 'user_id', 'label' => 'transaksi cuti'],
+            ['table' => 'absent_requests', 'column' => 'user_id', 'label' => 'pengajuan absen'],
+        ];
+
+        if (Schema::hasTable('pr_kasbons')) {
+            $checks[] = ['table' => 'pr_kasbons', 'column' => 'employee_user_id', 'label' => 'data kasbon'];
+        }
+        if (Schema::hasTable('pr_kasbon_payroll_deductions')) {
+            $checks[] = ['table' => 'pr_kasbon_payroll_deductions', 'column' => 'user_id', 'label' => 'potongan kasbon payroll'];
+        }
+
+        foreach ($checks as $check) {
+            if (! Schema::hasTable($check['table'])) {
+                continue;
+            }
+            if (DB::table($check['table'])->where($check['column'], $userId)->exists()) {
+                $blockers[] = $check['label'];
+            }
+        }
+
+        return $blockers;
     }
 
     public function toggleStatus(User $user)

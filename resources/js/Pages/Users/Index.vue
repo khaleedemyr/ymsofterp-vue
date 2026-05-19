@@ -138,20 +138,26 @@ function closePinModal() {
   showPinModal.value = false;
 }
 
-async function hapus(user) {
+async function hapusKaryawan(user) {
   const result = await Swal.fire({
-    title: 'Nonaktifkan Karyawan?',
-    text: `Yakin ingin menonaktifkan karyawan "${user.nama_lengkap}"?`,
+    title: 'Hapus Karyawan?',
+    html: `<p>Yakin ingin <strong>menghapus permanen</strong> karyawan "<strong>${user.nama_lengkap}</strong>"?</p>
+           <p class="text-sm text-red-600 mt-2">Data yang sudah terhubung (payroll, cuti, dll.) akan memblokir penghapusan. Gunakan nonaktifkan jika hanya ingin menonaktifkan.</p>`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#d33',
-    cancelButtonColor: '#3085d6',
-    confirmButtonText: 'Ya, Nonaktifkan!',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, Hapus Permanen',
     cancelButtonText: 'Batal',
   });
   if (!result.isConfirmed) return;
+
   router.delete(route('users.destroy', user.id), {
-    onSuccess: () => Swal.fire('Berhasil', 'Karyawan berhasil dinonaktifkan!', 'success'),
+    onSuccess: () => Swal.fire('Berhasil', 'Karyawan berhasil dihapus.', 'success'),
+    onError: (errors) => {
+      const msg = errors?.error || Object.values(errors || {})[0] || 'Gagal menghapus karyawan.';
+      Swal.fire('Tidak Dapat Dihapus', msg, 'error');
+    },
   });
 }
 
@@ -747,6 +753,9 @@ function exportToExcel() {
                 <button @click="openSaldoModal(user)" class="px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition" title="Input Saldo">
                   <i class="fa-solid fa-coins"></i>
                 </button>
+                <button @click="hapusKaryawan(user)" class="px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 transition" title="Hapus permanen">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
               </td>
             </tr>
             <tr v-if="users.data.length === 0">
@@ -825,6 +834,9 @@ function exportToExcel() {
               </button>
               <button @click="openSaldoModal(user)" class="px-3 py-2 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 transition text-sm" title="Input Saldo">
                 <i class="fa-solid fa-coins"></i>
+              </button>
+              <button @click="hapusKaryawan(user)" class="px-3 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition text-sm" title="Hapus permanen">
+                <i class="fa-solid fa-trash"></i>
               </button>
             </div>
           </div>
