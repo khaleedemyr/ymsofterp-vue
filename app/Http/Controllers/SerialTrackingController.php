@@ -10,6 +10,12 @@ use Inertia\Inertia;
 
 class SerialTrackingController extends Controller
 {
+  /** @var array<int, array<string, mixed>|null> */
+  private array $outletTransferMetaCache = [];
+
+  /** @var array<int, array<string, mixed>|null> */
+  private array $deliveryOrderMetaCache = [];
+
   private const GENERATION_SOURCES = [
     'good_receive' => [
       'label' => 'Good Receive',
@@ -771,7 +777,7 @@ class SerialTrackingController extends Controller
 
     foreach ($movements as $m) {
       $ref = $this->resolveMovementReference($m);
-      $this->appendTimelineEvent($events, $dedupeKeys, [
+      $event = [
         'at' => $m->moved_at ?? $m->created_at,
         'movement_type' => $m->movement_type,
         'label' => self::MOVEMENT_LABELS[$m->movement_type] ?? $m->movement_type,
@@ -782,7 +788,11 @@ class SerialTrackingController extends Controller
         'qty' => $m->qty,
         'unit_name' => $m->unit_name,
         'moved_by_name' => $m->moved_by_name,
-      ]);
+      ];
+      $this->appendTimelineEvent($events, $dedupeKeys, $this->enrichDeliveryOrderTimelineEvent(
+        $this->enrichOutletTransferTimelineEvent($event, $m),
+        $m
+      ));
     }
 
     $this->appendDoFromSerialRecord($events, $dedupeKeys, $serial);
@@ -918,7 +928,7 @@ class SerialTrackingController extends Controller
     $doNumber = $serial->out_do_number
       ?? ($doId ? DB::table('delivery_orders')->where('id', $doId)->value('number') : null);
 
-    $this->appendTimelineEvent($events, $dedupeKeys, [
+    $event = [
       'at' => $serial->out_at ?? $serial->updated_at ?? $serial->created_at,
       'movement_type' => 'out',
       'label' => self::MOVEMENT_LABELS['out'],
@@ -929,7 +939,14 @@ class SerialTrackingController extends Controller
       'qty' => null,
       'unit_name' => $serial->unit_name ?? null,
       'moved_by_name' => null,
-    ]);
+    ];
+    $this->appendTimelineEvent($events, $dedupeKeys, $this->mergeDeliveryOrderTimelineMeta(
+      $event,
+      $doId ? (int) $doId : 0,
+      $serial->out_outlet_id ?? null,
+      $serial->out_outlet_name ?? null,
+      $serial->warehouse_name ?? null
+    ));
   }
 
   private function appendFromOutletSerialReceive(array &$events, array &$dedupeKeys, object $serial): void
@@ -1029,7 +1046,7 @@ class SerialTrackingController extends Controller
         continue;
       }
 
-      $this->appendTimelineEvent($events, $dedupeKeys, [
+      $event = [
         'at' => $row->created_at,
         'movement_type' => 'out',
         'label' => self::MOVEMENT_LABELS['out'],
@@ -1040,8 +1057,217 @@ class SerialTrackingController extends Controller
         'qty' => null,
         'unit_name' => $serial->unit_name ?? null,
         'moved_by_name' => null,
-      ]);
+      ];
+      $this->appendTimelineEvent($events, $dedupeKeys, $this->mergeDeliveryOrderTimelineMeta(
+        $event,
+        (int) $row->delivery_order_id
+      ));
     }
+  }
+
+  /**
+   * @return array<string, mixed>|null
+   */
+  private function getOutletTransferTimelineMeta(int $outletTransferId): ?array
+  {
+    if (array_key_exists($outletTransferId, $this->outletTransferMetaCache)) {
+      return $this->outletTransferMetaCache[$outletTransferId];
+    }
+
+    $row = DB::table('outlet_transfers as t')
+      ->leftJoin('users as creator', 'creator.id', '=', 't.created_by')
+      ->leftJoin('users as approver', 'approver.id', '=', 't.approval_by')
+      ->leftJoin('warehouse_outlets as wf', 'wf.id', '=', 't.warehouse_outlet_from_id')
+      ->leftJoin('warehouse_outlets as wt', 'wt.id', '=', 't.warehouse_outlet_to_id')
+      ->leftJoin('tbl_data_outlet as of', 'of.id_outlet', '=', 'wf.outlet_id')
+      ->leftJoin('tbl_data_outlet as ot', 'ot.id_outlet', '=', 'wt.outlet_id')
+      ->where('t.id', $outletTransferId)
+      ->select(
+        'creator.nama_lengkap as creator_name',
+        'approver.nama_lengkap as approver_name',
+        'wf.name as warehouse_from_name',
+        'wt.name as warehouse_to_name',
+        'of.nama_outlet as outlet_from_name',
+        'ot.nama_outlet as outlet_to_name'
+      )
+      ->first();
+
+    if (!$row) {
+      $this->outletTransferMetaCache[$outletTransferId] = null;
+
+      return null;
+    }
+
+    $approverName = $row->approver_name;
+    if (!$approverName) {
+      $flowNames = DB::table('outlet_transfer_approval_flows as f')
+        ->join('users as u', 'u.id', '=', 'f.approver_id')
+        ->where('f.outlet_transfer_id', $outletTransferId)
+        ->whereIn('f.status', ['APPROVED', 'approved'])
+        ->orderBy('f.approval_level')
+        ->pluck('u.nama_lengkap')
+        ->filter()
+        ->unique()
+        ->values()
+        ->all();
+      if (!empty($flowNames)) {
+        $approverName = implode(', ', $flowNames);
+      }
+    }
+
+    $meta = [
+      'creator_name' => $row->creator_name,
+      'approver_name' => $approverName,
+      'outlet_from_name' => $row->outlet_from_name,
+      'outlet_to_name' => $row->outlet_to_name,
+      'warehouse_from_name' => $row->warehouse_from_name,
+      'warehouse_to_name' => $row->warehouse_to_name,
+    ];
+
+    $this->outletTransferMetaCache[$outletTransferId] = $meta;
+
+    return $meta;
+  }
+
+  /**
+   * @return array<string, mixed>|null
+   */
+  private function getDeliveryOrderTimelineMeta(int $deliveryOrderId): ?array
+  {
+    if (array_key_exists($deliveryOrderId, $this->deliveryOrderMetaCache)) {
+      return $this->deliveryOrderMetaCache[$deliveryOrderId];
+    }
+
+    $row = DB::table('delivery_orders as do')
+      ->leftJoin('food_packing_lists as pl', function ($join) {
+        $join->on('pl.id', '=', 'do.packing_list_id')->where('do.packing_list_id', '>', 0);
+      })
+      ->leftJoin('food_good_receives as gr', 'gr.id', '=', 'do.ro_supplier_gr_id')
+      ->leftJoin('purchase_order_foods as po', 'po.id', '=', 'gr.po_id')
+      ->leftJoin('food_floor_orders as fo', function ($join) {
+        $join->on('fo.id', '=', 'do.floor_order_id')
+          ->orOn('fo.id', '=', 'pl.food_floor_order_id')
+          ->orOn('fo.id', '=', 'po.source_id');
+      })
+      ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'fo.id_outlet')
+      ->leftJoin('warehouse_division as wd', 'wd.id', '=', 'pl.warehouse_division_id')
+      ->leftJoin('warehouses as w', 'w.id', '=', 'wd.warehouse_id')
+      ->where('do.id', $deliveryOrderId)
+      ->select(
+        'o.nama_outlet as outlet_to_name',
+        'w.name as warehouse_from_name',
+        'do.ro_supplier_gr_id'
+      )
+      ->first();
+
+    if (!$row) {
+      $this->deliveryOrderMetaCache[$deliveryOrderId] = null;
+
+      return null;
+    }
+
+    $warehouseFrom = $row->warehouse_from_name;
+    if (!$warehouseFrom && !empty($row->ro_supplier_gr_id)) {
+      $warehouseFrom = 'Warehouse 1';
+    }
+
+    $meta = [
+      'warehouse_from_name' => $warehouseFrom,
+      'outlet_to_name' => $row->outlet_to_name,
+    ];
+
+    $this->deliveryOrderMetaCache[$deliveryOrderId] = $meta;
+
+    return $meta;
+  }
+
+  /**
+   * @param  array<string, mixed>  $event
+   * @return array<string, mixed>
+   */
+  private function mergeDeliveryOrderTimelineMeta(
+    array $event,
+    int $deliveryOrderId,
+    $fallbackOutletId = null,
+    ?string $fallbackOutletName = null,
+    ?string $fallbackWarehouseName = null
+  ): array {
+    if ($deliveryOrderId <= 0) {
+      if ($fallbackWarehouseName || $fallbackOutletName) {
+        return array_merge($event, array_filter([
+          'warehouse_from_name' => $fallbackWarehouseName,
+          'outlet_to_name' => $fallbackOutletName,
+        ]));
+      }
+
+      return $event;
+    }
+
+    $meta = $this->getDeliveryOrderTimelineMeta($deliveryOrderId);
+    if (!$meta) {
+      $meta = [];
+    }
+
+    if (empty($meta['outlet_to_name'])) {
+      if ($fallbackOutletName) {
+        $meta['outlet_to_name'] = $fallbackOutletName;
+      } elseif ($fallbackOutletId) {
+        $meta['outlet_to_name'] = DB::table('tbl_data_outlet')
+          ->where('id_outlet', $fallbackOutletId)
+          ->value('nama_outlet');
+      }
+    }
+
+    if (empty($meta['warehouse_from_name']) && $fallbackWarehouseName) {
+      $meta['warehouse_from_name'] = $fallbackWarehouseName;
+    }
+
+    return array_merge($event, array_filter($meta));
+  }
+
+  /**
+   * @param  array<string, mixed>  $event
+   * @return array<string, mixed>
+   */
+  private function enrichDeliveryOrderTimelineEvent(array $event, object $m): array
+  {
+    if (!in_array($event['movement_type'] ?? '', ['out', 'return'], true)) {
+      return $event;
+    }
+
+    $doId = (int) ($m->delivery_order_id ?? 0);
+    if ($doId <= 0) {
+      return $event;
+    }
+
+    return $this->mergeDeliveryOrderTimelineMeta(
+      $event,
+      $doId,
+      $m->outlet_id ?? null
+    );
+  }
+
+  /**
+   * @param  array<string, mixed>  $event
+   * @return array<string, mixed>
+   */
+  private function enrichOutletTransferTimelineEvent(array $event, object $m): array
+  {
+    if (!in_array($event['movement_type'] ?? '', ['transfer_out', 'transfer_in'], true)) {
+      return $event;
+    }
+
+    $transferId = (int) ($m->outlet_transfer_id ?? 0);
+    if ($transferId <= 0) {
+      return $event;
+    }
+
+    $meta = $this->getOutletTransferTimelineMeta($transferId);
+    if (!$meta) {
+      return $event;
+    }
+
+    return array_merge($event, $meta);
   }
 
   private function resolveMovementReference(object $m): array

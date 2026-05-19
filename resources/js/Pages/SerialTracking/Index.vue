@@ -197,6 +197,34 @@
                   <span class="text-gray-500">Warehouse:</span> {{ ev.warehouse_name }}
                 </p>
               </template>
+              <template v-if="ev.movement_type === 'out' && (ev.warehouse_from_name || ev.outlet_to_name)">
+                <p v-if="ev.warehouse_from_name" class="text-xs text-gray-600 mt-0.5">
+                  <span class="text-gray-500">Warehouse pengirim:</span> {{ ev.warehouse_from_name }}
+                </p>
+                <p v-if="ev.outlet_to_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Outlet penerima:</span> {{ ev.outlet_to_name }}
+                </p>
+              </template>
+              <template v-if="ev.movement_type === 'transfer_out' || ev.movement_type === 'transfer_in'">
+                <p v-if="ev.outlet_from_name" class="text-xs text-gray-600 mt-0.5">
+                  <span class="text-gray-500">Outlet pengirim:</span> {{ ev.outlet_from_name }}
+                </p>
+                <p v-if="ev.warehouse_from_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Warehouse pengirim:</span> {{ ev.warehouse_from_name }}
+                </p>
+                <p v-if="ev.outlet_to_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Outlet penerima:</span> {{ ev.outlet_to_name }}
+                </p>
+                <p v-if="ev.warehouse_to_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Warehouse penerima:</span> {{ ev.warehouse_to_name }}
+                </p>
+                <p v-if="ev.creator_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Dibuat oleh:</span> {{ ev.creator_name }}
+                </p>
+                <p v-if="ev.approver_name" class="text-xs text-gray-600">
+                  <span class="text-gray-500">Disetujui oleh:</span> {{ ev.approver_name }}
+                </p>
+              </template>
               <p v-if="ev.moved_by_name" class="text-xs text-gray-400 mt-0.5">
                 {{ ev.movement_type === 'outlet_receive' ? 'Penerima' : 'Oleh' }}: {{ ev.moved_by_name }}
               </p>
