@@ -21,7 +21,7 @@
               <strong>Auto:</strong> Food Good Receive terakhir + 12% (konversi ke satuan large sesuai GR). <strong>Manual:</strong> input bebas.
             </p>
             <p class="text-xs text-gray-600 mt-2 max-w-3xl">
-              <strong>Export template</strong> mengunduh semua item yang cocok filter pencarian (kosong = semua). Kolom
+              <strong>Export template</strong> berisi sheet <strong>Instructions</strong> (tata cara) dan sheet <strong>non_pos_pricing</strong> (data). Kolom
               <code class="bg-gray-100 px-1 rounded">category_id</code> /
               <code class="bg-gray-100 px-1 rounded">category_name</code> untuk referensi; saat import, jika diisi harus cocok dengan item (mencegah salah baris).
               Edit <code class="bg-gray-100 px-1 rounded">pricing_mode</code> (<code>manual</code> / <code>auto</code>) dan

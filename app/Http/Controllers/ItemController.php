@@ -3200,7 +3200,9 @@ class ItemController extends Controller
 
         try {
             $spreadsheet = IOFactory::load($request->file('file')->getRealPath());
-            $data = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+            $sheet = $spreadsheet->getSheetByName('non_pos_pricing')
+                ?? $spreadsheet->getActiveSheet();
+            $data = $sheet->toArray(null, true, true, true);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
