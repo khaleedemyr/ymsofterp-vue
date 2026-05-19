@@ -24,6 +24,21 @@ class DataLevelController extends Controller
         }
     }
 
+    /**
+     * Sinkron kolom legacy nilai_dasar_potongan_bpjs (max dari kesehatan & ketenagakerjaan).
+     *
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    protected function syncLegacyDasarPotonganBpjs(array $validated): array
+    {
+        $kes = (int) ($validated['nilai_dasar_potongan_bpjs_kesehatan'] ?? 0);
+        $tk = (int) ($validated['nilai_dasar_potongan_bpjs_ketenagakerjaan'] ?? 0);
+        $validated['nilai_dasar_potongan_bpjs'] = max($kes, $tk);
+
+        return $validated;
+    }
+
     public function index(Request $request)
     {
         $query = DataLevel::query();
@@ -64,13 +79,15 @@ class DataLevelController extends Controller
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
-            'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_kesehatan' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_ketenagakerjaan' => 'required|integer|min:0',
             'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         // Always set status to 'A' for new records
         $validated['status'] = 'A';
         $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
+        $validated = $this->syncLegacyDasarPotonganBpjs($validated);
         $dataLevel = DataLevel::create($validated);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -92,11 +109,13 @@ class DataLevelController extends Controller
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
-            'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_kesehatan' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_ketenagakerjaan' => 'required|integer|min:0',
             'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
+        $validated = $this->syncLegacyDasarPotonganBpjs($validated);
         // Don't update status in edit mode
         $dataLevel = DataLevel::findOrFail($id);
         $oldData = $dataLevel->toArray();
@@ -187,12 +206,14 @@ class DataLevelController extends Controller
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
-            'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_kesehatan' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_ketenagakerjaan' => 'required|integer|min:0',
             'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         $validated['status'] = 'A';
         $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
+        $validated = $this->syncLegacyDasarPotonganBpjs($validated);
         $dataLevel = DataLevel::create($validated);
         ActivityLog::create([
             'user_id' => Auth::id(),
@@ -218,11 +239,13 @@ class DataLevelController extends Controller
             'nama_level' => 'required|string|max:100',
             'nilai_level' => 'required|string|max:100',
             'nilai_public_holiday' => 'required|integer|min:0',
-            'nilai_dasar_potongan_bpjs' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_kesehatan' => 'required|integer|min:0',
+            'nilai_dasar_potongan_bpjs_ketenagakerjaan' => 'required|integer|min:0',
             'id_bpjs_kategori' => 'nullable|integer|exists:tbl_bpjs_kategori,id',
             'nilai_point' => 'required|integer|min:0',
         ]);
         $validated['id_bpjs_kategori'] = $validated['id_bpjs_kategori'] ?? null;
+        $validated = $this->syncLegacyDasarPotonganBpjs($validated);
         $dataLevel = DataLevel::findOrFail($id);
         $oldData = $dataLevel->toArray();
         $dataLevel->update($validated);

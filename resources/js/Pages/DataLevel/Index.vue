@@ -126,7 +126,8 @@ function toggleStatus(dataLevel) {
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nama Level</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nilai Level</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Public Holiday</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar Potongan BPJS</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar BPJS Kes.</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar BPJS TK</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Kategori BPJS</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Point</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Status</th>
@@ -138,7 +139,8 @@ function toggleStatus(dataLevel) {
                 <td class="px-6 py-3 font-semibold">{{ dataLevel.nama_level }}</td>
                 <td class="px-6 py-3 font-semibold text-blue-700">{{ dataLevel.nilai_level }}</td>
                 <td class="px-6 py-3">{{ dataLevel.nilai_public_holiday }}</td>
-                <td class="px-6 py-3">{{ dataLevel.nilai_dasar_potongan_bpjs }}</td>
+                <td class="px-6 py-3">{{ dataLevel.nilai_dasar_potongan_bpjs_kesehatan ?? dataLevel.nilai_dasar_potongan_bpjs ?? 0 }}</td>
+                <td class="px-6 py-3">{{ dataLevel.nilai_dasar_potongan_bpjs_ketenagakerjaan ?? dataLevel.nilai_dasar_potongan_bpjs ?? 0 }}</td>
                 <td class="px-6 py-3 text-sm text-gray-700">{{ dataLevel.bpjs_kategori?.nama_kategori || '—' }}</td>
                 <td class="px-6 py-3">{{ dataLevel.nilai_point }}</td>
                 <td class="px-6 py-3">

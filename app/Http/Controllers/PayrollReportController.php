@@ -302,9 +302,8 @@ class PayrollReportController extends Controller
             $divisiNominalUangMakan = DB::table('tbl_data_divisi')
                 ->pluck('nominal_uang_makan', 'id');
             
-            // Ambil data nilai dasar potongan BPJS dari level
-            $levelNominalDasarBPJS = DB::table('tbl_data_level')
-                ->pluck('nilai_dasar_potongan_bpjs', 'id');
+            // Ambil data level (dasar potongan BPJS kesehatan & ketenagakerjaan)
+            $dataLevelRowsById = DB::table('tbl_data_level')->get()->keyBy('id');
             $levelBpjsKategoriId = DB::table('tbl_data_level')
                 ->pluck('id_bpjs_kategori', 'id');
             $bpjsKategoriById = DB::table('tbl_bpjs_kategori')
@@ -1425,12 +1424,14 @@ class PayrollReportController extends Controller
                 $bpjsPerusahaanDetail = null;
                 if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
                     $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-                    $nilaiDasarBPJS = (float) ($userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0);
+                    $levelRow = $userLevel ? $dataLevelRowsById->get($userLevel) : null;
+                    $dasarBpjs = PayrollBpjsCalculator::resolveDasarFromLevel($levelRow);
                     $katId = $userLevel ? ($levelBpjsKategoriId[$userLevel] ?? null) : null;
                     $katRow = ($katId && $bpjsKategoriById->has($katId)) ? $bpjsKategoriById->get($katId) : null;
                     $bpjsCalc = PayrollBpjsCalculator::calculate(
                         $masterData,
-                        $nilaiDasarBPJS,
+                        $dasarBpjs['kesehatan'],
+                        $dasarBpjs['ketenagakerjaan'],
                         $katRow,
                         (int) ($user->id_outlet ?? 0)
                     );
@@ -1444,7 +1445,8 @@ class PayrollReportController extends Controller
                         'id_jabatan' => $user->id_jabatan,
                         'id_level' => $userLevel,
                         'id_outlet' => $user->id_outlet,
-                        'nilai_dasar_bpjs' => $nilaiDasarBPJS,
+                        'nilai_dasar_bpjs_kesehatan' => $dasarBpjs['kesehatan'],
+                        'nilai_dasar_bpjs_ketenagakerjaan' => $dasarBpjs['ketenagakerjaan'],
                         'bpjs_jkn_enabled' => $masterData->bpjs_jkn,
                         'bpjs_tk_enabled' => $masterData->bpjs_tk,
                         'bpjs_jkn' => $bpjsJKN,
@@ -2865,7 +2867,7 @@ class PayrollReportController extends Controller
         $levelPoints = DB::table('tbl_data_level')->pluck('nilai_point', 'id');
         $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
         $divisiNominalUangMakan = DB::table('tbl_data_divisi')->pluck('nominal_uang_makan', 'id');
-        $levelNominalDasarBPJS = DB::table('tbl_data_level')->pluck('nilai_dasar_potongan_bpjs', 'id');
+        $dataLevelRowsById = DB::table('tbl_data_level')->get()->keyBy('id');
         $levelBpjsKategoriId = DB::table('tbl_data_level')->pluck('id_bpjs_kategori', 'id');
         $bpjsKategoriById = DB::table('tbl_bpjs_kategori')->where('status', 'A')->get()->keyBy('id');
 
@@ -3415,12 +3417,14 @@ class PayrollReportController extends Controller
             $bpjsPerusahaanDetail = null;
             if ($masterData->bpjs_jkn == 1 || $masterData->bpjs_tk == 1) {
                 $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-                $nilaiDasarBPJS = (float) ($userLevel ? ($levelNominalDasarBPJS[$userLevel] ?? 0) : 0);
+                $levelRow = $userLevel ? $dataLevelRowsById->get($userLevel) : null;
+                $dasarBpjs = PayrollBpjsCalculator::resolveDasarFromLevel($levelRow);
                 $katId = $userLevel ? ($levelBpjsKategoriId[$userLevel] ?? null) : null;
                 $katRow = ($katId && $bpjsKategoriById->has($katId)) ? $bpjsKategoriById->get($katId) : null;
                 $bpjsCalc = PayrollBpjsCalculator::calculate(
                     $masterData,
-                    $nilaiDasarBPJS,
+                    $dasarBpjs['kesehatan'],
+                    $dasarBpjs['ketenagakerjaan'],
                     $katRow,
                     (int) ($user->id_outlet ?? 0)
                 );
@@ -6542,14 +6546,19 @@ class PayrollReportController extends Controller
             ->where('id_jabatan', $user->id_jabatan)
             ->value('id_level');
 
-        $nilaiDasar = 0.0;
+        $dasarBpjs = ['kesehatan' => 0.0, 'ketenagakerjaan' => 0.0];
         $kategori = null;
         if ($userLevel) {
             $levelRow = DB::table('tbl_data_level')
                 ->where('id', $userLevel)
-                ->first(['nilai_dasar_potongan_bpjs', 'id_bpjs_kategori']);
+                ->first([
+                    'nilai_dasar_potongan_bpjs',
+                    'nilai_dasar_potongan_bpjs_kesehatan',
+                    'nilai_dasar_potongan_bpjs_ketenagakerjaan',
+                    'id_bpjs_kategori',
+                ]);
             if ($levelRow) {
-                $nilaiDasar = (float) ($levelRow->nilai_dasar_potongan_bpjs ?? 0);
+                $dasarBpjs = PayrollBpjsCalculator::resolveDasarFromLevel($levelRow);
                 if (! empty($levelRow->id_bpjs_kategori)) {
                     $kategori = DB::table('tbl_bpjs_kategori')
                         ->where('id', $levelRow->id_bpjs_kategori)
@@ -6561,7 +6570,8 @@ class PayrollReportController extends Controller
 
         return PayrollBpjsCalculator::calculate(
             $masterData,
-            $nilaiDasar,
+            $dasarBpjs['kesehatan'],
+            $dasarBpjs['ketenagakerjaan'],
             $kategori,
             (int) ($user->id_outlet ?? 0)
         );

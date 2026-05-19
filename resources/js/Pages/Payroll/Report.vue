@@ -1746,7 +1746,8 @@ onMounted(() => {
         </p>
         <template v-if="bpjsPerusahaanModal.detail">
           <div v-if="bpjsPerusahaanModal.detail.source === 'legacy'" class="text-sm text-gray-700 space-y-2">
-            <p class="font-medium">Dasar potongan BPJS: {{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan || 0) }}</p>
+            <p class="font-medium">Dasar BPJS Kesehatan (JKN): {{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan_kesehatan ?? bpjsPerusahaanModal.detail.dasar_potongan ?? 0) }}</p>
+            <p class="font-medium">Dasar BPJS Ketenagakerjaan (TK): {{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan_ketenagakerjaan ?? bpjsPerusahaanModal.detail.dasar_potongan ?? 0) }}</p>
             <p class="text-gray-600">{{ bpjsPerusahaanModal.detail.message }}</p>
           </div>
           <div v-else class="text-sm text-gray-800 space-y-3">
@@ -1755,7 +1756,10 @@ onMounted(() => {
                 Kategori: <strong class="text-gray-900">{{ bpjsPerusahaanModal.detail.kategori_nama }}</strong>
               </span>
               <span>
-                Dasar: <strong class="text-gray-900">{{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan || 0) }}</strong>
+                Dasar JKN: <strong class="text-gray-900">{{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan_kesehatan ?? bpjsPerusahaanModal.detail.dasar_potongan ?? 0) }}</strong>
+              </span>
+              <span>
+                Dasar TK: <strong class="text-gray-900">{{ formatCurrency(bpjsPerusahaanModal.detail.dasar_potongan_ketenagakerjaan ?? bpjsPerusahaanModal.detail.dasar_potongan ?? 0) }}</strong>
               </span>
             </div>
             <div v-if="bpjsPerusahaanModal.detail.lines && bpjsPerusahaanModal.detail.lines.length" class="border rounded-lg overflow-hidden">

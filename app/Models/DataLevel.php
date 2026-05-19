@@ -19,6 +19,8 @@ class DataLevel extends Model
         'nilai_level',
         'nilai_public_holiday',
         'nilai_dasar_potongan_bpjs',
+        'nilai_dasar_potongan_bpjs_kesehatan',
+        'nilai_dasar_potongan_bpjs_ketenagakerjaan',
         'id_bpjs_kategori',
         'nilai_point',
         'status'
@@ -29,6 +31,8 @@ class DataLevel extends Model
         'updated_at' => 'datetime',
         'nilai_public_holiday' => 'integer',
         'nilai_dasar_potongan_bpjs' => 'integer',
+        'nilai_dasar_potongan_bpjs_kesehatan' => 'integer',
+        'nilai_dasar_potongan_bpjs_ketenagakerjaan' => 'integer',
         'id_bpjs_kategori' => 'integer',
         'nilai_point' => 'integer',
         'status' => 'string'
