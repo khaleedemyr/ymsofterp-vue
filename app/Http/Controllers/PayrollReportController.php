@@ -12,6 +12,7 @@ use App\Http\Controllers\AttendanceReportController;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\PayrollBpjsCalculator;
+use App\Services\PayrollKasbonService;
 
 class PayrollReportController extends Controller
 {
@@ -640,6 +641,10 @@ class PayrollReportController extends Controller
                         'total_alpha' => $detail->total_alpha ?? 0,
                         'potongan_alpha' => round($detail->potongan_alpha ?? 0),
                         'potongan_unpaid_leave' => round($detail->potongan_unpaid_leave ?? 0),
+                        'potongan_kasbon' => round($detail->potongan_kasbon ?? 0),
+                        'pr_kasbon_id' => $detail->pr_kasbon_id ?? null,
+                        'kasbon_cicilan_ke' => $detail->kasbon_cicilan_ke ?? null,
+                        'kasbon_pr_number' => null,
                         'total_gaji' => round($totalGaji),
                         'hari_kerja' => $detail->hari_kerja ?? 0,
                         'total_izin_cuti' => $totalIzinCuti,
@@ -1168,6 +1173,12 @@ class PayrollReportController extends Controller
                     'userPoint' => $userPoint,
                 ];
             }
+
+            $kasbonService = app(PayrollKasbonService::class);
+            $kasbonEligibleByUser = $kasbonService->loadEligibleByUserIds(
+                array_keys($userData),
+                (int) $outletId
+            );
 
             // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
             // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
@@ -1828,11 +1839,25 @@ class PayrollReportController extends Controller
                 $customEarnings = $customEarningsGajian1;
                 $customDeductions = $customDeductionsGajian1;
 
+                $potonganKasbon = 0;
+                $prKasbonId = null;
+                $kasbonCicilanKe = null;
+                $kasbonPrNumber = null;
+                $kasbonPreview = $kasbonService->previewForUser($user->id, $kasbonEligibleByUser);
+                $kasbonTerminTotal = null;
+                if ($kasbonPreview) {
+                    $potonganKasbon = $kasbonPreview['potongan_kasbon'];
+                    $prKasbonId = $kasbonPreview['pr_kasbon_id'];
+                    $kasbonCicilanKe = $kasbonPreview['kasbon_cicilan_ke'];
+                    $kasbonPrNumber = $kasbonPreview['kasbon_pr_number'];
+                    $kasbonTerminTotal = $kasbonEligibleByUser[$user->id]['termin_total'] ?? null;
+                }
+
                 // Hitung total gaji (service charge ditambahkan sebagai earning, L&B, Deviasi, City Ledger, potongan alpha dan unpaid leave sebagai deduction)
                 // PH Bonus akan ditambahkan di gajian2, tidak dihitung di total gaji utama
                 // Custom items gajian2 TIDAK masuk ke total gaji utama, hanya gajian1
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
-                $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave;
+                $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave - $potonganKasbon;
                 
                 // Cek apakah user resign di periode ini SAJA
                 // Hanya set resignation_date jika karyawan benar-benar resign di periode payroll yang dipilih
@@ -1898,6 +1923,11 @@ class PayrollReportController extends Controller
                     'potongan_telat' => round($potonganTelat),
                     'potongan_alpha' => round($potonganAlpha),
                     'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+                    'potongan_kasbon' => round($potonganKasbon),
+                    'pr_kasbon_id' => $prKasbonId,
+                    'kasbon_cicilan_ke' => $kasbonCicilanKe,
+                    'kasbon_pr_number' => $kasbonPrNumber,
+                    'kasbon_termin_total' => $kasbonTerminTotal,
                     'total_gaji' => round($totalGaji),
                     'hari_kerja' => $hariKerja,
                     'total_alpha' => $totalAlpha,
@@ -3177,6 +3207,12 @@ class PayrollReportController extends Controller
             'mutated_employees_count' => count($mutationMap)
         ]);
 
+        $kasbonServiceExport = app(PayrollKasbonService::class);
+        $kasbonEligibleByUserExport = $kasbonServiceExport->loadEligibleByUserIds(
+            array_keys($userData),
+            (int) $outletId
+        );
+
         // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
         // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
         // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
@@ -3655,8 +3691,14 @@ class PayrollReportController extends Controller
                 $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? $potonganUnpaidLeave;
             }
             
-            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - BPJS JKN - BPJS TK - Telat - Alpha - Unpaid Leave
-            $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - ($bpjsJKN ?? 0) - ($bpjsTK ?? 0) - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave;
+            $potonganKasbonExport = 0;
+            $kasbonPreviewExport = $kasbonServiceExport->previewForUser($user->id, $kasbonEligibleByUserExport);
+            if ($kasbonPreviewExport) {
+                $potonganKasbonExport = $kasbonPreviewExport['potongan_kasbon'];
+            }
+
+            // Hitung Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - BPJS JKN - BPJS TK - Telat - Alpha - Unpaid Leave - Kasbon
+            $totalGajian1 = $gajiPokokFinal + $tunjanganFinal + $customEarnings - $customDeductions - ($bpjsJKN ?? 0) - ($bpjsTK ?? 0) - $potonganTelat - $potonganAlpha - $potonganUnpaidLeave - $potonganKasbonExport;
             
             // Hitung Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
             $totalGajian2 = $serviceChargeTotal + $uangMakan + $gajiLembur + $phBonus + ($customEarningsGajian2 ?? 0) - $lbTotal - $deviasiTotal - $cityLedgerTotal - ($customDeductionsGajian2 ?? 0);
@@ -3678,6 +3720,7 @@ class PayrollReportController extends Controller
                 'Potongan Telat' => round($potonganTelat),
                 'Potongan Alpha' => round($potonganAlpha),
                 'Potongan Unpaid Leave' => round($potonganUnpaidLeave),
+                'Potongan Kasbon' => round($potonganKasbonExport),
                 'Total Gaji Akhir Bulan' => round($totalGajian1),
                 'Hari Kerja' => $hariKerja,
                 'Periode' => $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y'),
@@ -4937,6 +4980,8 @@ class PayrollReportController extends Controller
                 ->where('year', $year)
                 ->first();
 
+            $kasbonService = app(PayrollKasbonService::class);
+
             if ($existingPayroll) {
                 // Update jika sudah ada
                 DB::table('payroll_generated')
@@ -4952,6 +4997,8 @@ class PayrollReportController extends Controller
                     ]);
 
                 $payrollId = $existingPayroll->id;
+
+                $kasbonService->reversePayrollDeductions((int) $payrollId);
                 
                 // Hapus detail lama
                 DB::table('payroll_generated_details')
@@ -5012,6 +5059,9 @@ class PayrollReportController extends Controller
                     'total_alpha' => $item['total_alpha'] ?? 0,
                     'potongan_alpha' => $item['potongan_alpha'] ?? 0,
                     'potongan_unpaid_leave' => $item['potongan_unpaid_leave'] ?? 0,
+                    'potongan_kasbon' => $item['potongan_kasbon'] ?? 0,
+                    'pr_kasbon_id' => $item['pr_kasbon_id'] ?? null,
+                    'kasbon_cicilan_ke' => $item['kasbon_cicilan_ke'] ?? null,
                     'total_gaji' => $item['total_gaji'] ?? 0,
                     'hari_kerja' => $item['hari_kerja'] ?? 0,
                     'periode' => $item['periode'] ?? null,
@@ -5022,6 +5072,8 @@ class PayrollReportController extends Controller
                     'updated_at' => now(),
                 ]);
             }
+
+            $kasbonService->applyPayrollDeductions((int) $payrollId, $payrollData);
 
             DB::commit();
 
@@ -5095,6 +5147,9 @@ class PayrollReportController extends Controller
                     'updated_by' => auth()->id(),
                 ]);
 
+            $kasbonServiceEdit = app(PayrollKasbonService::class);
+            $kasbonServiceEdit->reversePayrollDeductions((int) $payrollId);
+
             // Hapus detail lama
             DB::table('payroll_generated_details')
                 ->where('payroll_generated_id', $payrollId)
@@ -5137,6 +5192,9 @@ class PayrollReportController extends Controller
                     'total_alpha' => $item['total_alpha'] ?? 0,
                     'potongan_alpha' => $item['potongan_alpha'] ?? 0,
                     'potongan_unpaid_leave' => $item['potongan_unpaid_leave'] ?? 0,
+                    'potongan_kasbon' => $item['potongan_kasbon'] ?? 0,
+                    'pr_kasbon_id' => $item['pr_kasbon_id'] ?? null,
+                    'kasbon_cicilan_ke' => $item['kasbon_cicilan_ke'] ?? null,
                     'total_gaji' => $item['total_gaji'] ?? 0,
                     'hari_kerja' => $item['hari_kerja'] ?? 0,
                     'periode' => $item['periode'] ?? null,
@@ -5147,6 +5205,8 @@ class PayrollReportController extends Controller
                     'updated_at' => now(),
                 ]);
             }
+
+            $kasbonServiceEdit->applyPayrollDeductions((int) $payrollId, $payrollData);
 
             DB::commit();
 

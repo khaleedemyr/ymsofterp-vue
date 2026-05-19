@@ -277,6 +277,7 @@ const summary = computed(() => {
     totalPotonganTelat: 0,
     totalPotonganAlpha: 0,
     totalPotonganUnpaidLeave: 0,
+    totalPotonganKasbon: 0,
     totalGaji: 0,
   };
   if (!data || data.length === 0) {
@@ -312,6 +313,7 @@ const summary = computed(() => {
     totalPotonganTelat: sumPayrollField(data, 'potongan_telat'),
     totalPotonganAlpha: sumPayrollField(data, 'potongan_alpha'),
     totalPotonganUnpaidLeave: sumPayrollField(data, 'potongan_unpaid_leave'),
+    totalPotonganKasbon: sumPayrollField(data, 'potongan_kasbon'),
     totalGaji: sumPayrollField(data, 'total_gaji'),
   };
 });
@@ -1214,6 +1216,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Telat</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Alpha</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Unpaid Leave</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Kasbon</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Gaji</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Payment Method</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
@@ -1433,6 +1436,16 @@ onMounted(() => {
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
                       {{ formatCurrency(item.potongan_unpaid_leave || 0) }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-red-600">
+                      <span>{{ formatCurrency(item.potongan_kasbon || 0) }}</span>
+                      <span
+                        v-if="item.kasbon_cicilan_ke"
+                        class="block text-xs font-normal text-orange-600 mt-0.5"
+                        :title="item.kasbon_pr_number ? 'PR ' + item.kasbon_pr_number : ''"
+                      >
+                        Cicilan {{ item.kasbon_cicilan_ke }}{{ item.kasbon_termin_total ? '/' + item.kasbon_termin_total : '' }}
+                      </span>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600 bg-green-50 rounded-lg">
                       {{ formatCurrency(item.total_gaji) }}
@@ -1683,6 +1696,7 @@ onMounted(() => {
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganTelat) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganAlpha) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganUnpaidLeave) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganKasbon) }}</td>
                   <td class="px-4 py-3 text-center text-lg text-amber-300 bg-slate-900">{{ formatCurrency(summary.totalGaji) }}</td>
                   <td class="px-4 py-3 text-center text-slate-400">—</td>
                   <td class="px-4 py-3 text-center text-slate-400">—</td>
