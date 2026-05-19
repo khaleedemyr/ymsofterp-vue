@@ -27,15 +27,32 @@ class PayrollReportController extends Controller
         $month = $request->input('month', date('m'));
         $year = $request->input('year', date('Y'));
         $serviceChargeInput = $request->input('service_charge', null); // Input manual service charge (nullable)
-        $lbAmount = $request->input('lb_amount', 0); // Nilai L & B total
-        $deviasiAmount = $request->input('deviasi_amount', 0); // Nilai Deviasi total
-        $cityLedgerAmount = $request->input('city_ledger_amount', 0); // Nilai City Ledger total
-        
+
+        $payrollGeneratedHeader = null;
+        if ($outletId && $month && $year) {
+            $payrollGeneratedHeader = DB::table('payroll_generated')
+                ->where('outlet_id', $outletId)
+                ->where('month', (int) $month)
+                ->where('year', (int) $year)
+                ->first();
+        }
+
+        $lbAmount = $request->filled('lb_amount')
+            ? (float) $request->input('lb_amount')
+            : (float) ($payrollGeneratedHeader?->lb_amount ?? 0);
+        $deviasiAmount = $request->filled('deviasi_amount')
+            ? (float) $request->input('deviasi_amount')
+            : (float) ($payrollGeneratedHeader?->deviasi_amount ?? 0);
+        $cityLedgerAmount = $request->filled('city_ledger_amount')
+            ? (float) $request->input('city_ledger_amount')
+            : (float) ($payrollGeneratedHeader?->city_ledger_amount ?? 0);
+
         // Hitung service charge dari orders jika tidak ada input manual
         $serviceCharge = 0;
         if ($serviceChargeInput !== null && $serviceChargeInput !== '') {
-            // Jika ada input manual, gunakan input manual
-            $serviceCharge = (float)$serviceChargeInput;
+            $serviceCharge = (float) $serviceChargeInput;
+        } elseif ($payrollGeneratedHeader) {
+            $serviceCharge = (float) ($payrollGeneratedHeader->service_charge ?? 0);
         } elseif ($outletId && $month && $year) {
             // Jika tidak ada input manual, ambil dari orders
             // Periode service charge: 1-31 dari bulan yang dipilih

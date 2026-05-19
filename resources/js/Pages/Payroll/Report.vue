@@ -15,13 +15,41 @@ const props = defineProps({
   filter: Object,
 });
 
+const formatMonth = (month) => month.toString().padStart(2, '0');
+
+function normalizeMonthId(month) {
+  if (month === null || month === undefined || month === '') {
+    return '';
+  }
+  return formatMonth(month);
+}
+
+function formatAmountInput(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const num = parseFloat(value);
+  if (Number.isNaN(num)) {
+    return '';
+  }
+  return num.toFixed(2);
+}
+
 const outletId = ref(props.filter?.outlet_id || '');
-const month = ref(props.filter?.month || new Date().getMonth() + 1);
+const month = ref(normalizeMonthId(props.filter?.month) || normalizeMonthId(new Date().getMonth() + 1));
 const year = ref(props.filter?.year || new Date().getFullYear());
-const serviceCharge = ref(props.filter?.service_charge || '');
-const lbAmount = ref(props.filter?.lb_amount || '');
-const deviasiAmount = ref(props.filter?.deviasi_amount || '');
-const cityLedgerAmount = ref(props.filter?.city_ledger_amount || '');
+const serviceCharge = ref(formatAmountInput(props.filter?.service_charge));
+const lbAmount = ref(formatAmountInput(props.filter?.lb_amount));
+const deviasiAmount = ref(formatAmountInput(props.filter?.deviasi_amount));
+const cityLedgerAmount = ref(formatAmountInput(props.filter?.city_ledger_amount));
+
+/** Field amount yang sudah diedit manual — jangan timpa saat auto-load / refresh filter */
+const amountTouched = ref({
+  service_charge: false,
+  lb_amount: false,
+  deviasi_amount: false,
+  city_ledger_amount: false,
+});
 const loading = ref(false);
 const exporting = ref(false);
 const generating = ref(false);
@@ -72,10 +100,36 @@ const customItemForm = ref({
   gajian_type: 'gajian1' // 'gajian1' untuk gaji akhir bulan, 'gajian2' untuk gaji tanggal 8
 });
 
-// Format month to 2 digits
-const formatMonth = (month) => {
-  return month.toString().padStart(2, '0');
-};
+function markAmountTouched(field) {
+  amountTouched.value[field] = true;
+}
+
+function resetAmountTouched() {
+  amountTouched.value = {
+    service_charge: false,
+    lb_amount: false,
+    deviasi_amount: false,
+    city_ledger_amount: false,
+  };
+}
+
+function applyAmountFromFilter(filter) {
+  if (!filter) {
+    return;
+  }
+  if (!amountTouched.value.service_charge) {
+    serviceCharge.value = formatAmountInput(filter.service_charge);
+  }
+  if (!amountTouched.value.lb_amount) {
+    lbAmount.value = formatAmountInput(filter.lb_amount);
+  }
+  if (!amountTouched.value.deviasi_amount) {
+    deviasiAmount.value = formatAmountInput(filter.deviasi_amount);
+  }
+  if (!amountTouched.value.city_ledger_amount) {
+    cityLedgerAmount.value = formatAmountInput(filter.city_ledger_amount);
+  }
+}
 
 function canShowBpjsPerusahaanDetail(item) {
   const d = item?.bpjs_perusahaan_detail;
@@ -318,14 +372,24 @@ const summary = computed(() => {
   };
 });
 
-watch(() => props.filter, (newFilter) => {
-  outletId.value = newFilter?.outlet_id || '';
-  month.value = newFilter?.month || new Date().getMonth() + 1;
-  year.value = newFilter?.year || new Date().getFullYear();
-  serviceCharge.value = newFilter?.service_charge || '';
-  lbAmount.value = newFilter?.lb_amount || '';
-  deviasiAmount.value = newFilter?.deviasi_amount || '';
-  cityLedgerAmount.value = newFilter?.city_ledger_amount || '';
+watch(() => props.filter, (newFilter, oldFilter) => {
+  const prevOutlet = outletId.value;
+  const prevMonth = normalizeMonthId(month.value);
+  const prevYear = String(year.value ?? '');
+
+  outletId.value = newFilter?.outlet_id ?? '';
+  month.value = normalizeMonthId(newFilter?.month) || normalizeMonthId(new Date().getMonth() + 1);
+  year.value = newFilter?.year ?? new Date().getFullYear();
+
+  const periodChanged =
+    String(newFilter?.outlet_id ?? '') !== String(prevOutlet) ||
+    normalizeMonthId(newFilter?.month) !== prevMonth ||
+    String(newFilter?.year ?? '') !== String(prevYear);
+
+  if (periodChanged && oldFilter !== undefined) {
+    resetAmountTouched();
+  }
+  applyAmountFromFilter(newFilter);
 }, { immediate: true });
 
 // Function untuk load service charge dari orders
@@ -343,9 +407,7 @@ async function loadServiceCharge() {
       }
     });
 
-    if (response.data.success) {
-      // Set service charge dengan 80% dari total (sudah dihitung di backend)
-      // Format dengan 2 desimal
+    if (response.data.success && !amountTouched.value.service_charge) {
       const scValue = response.data.service_charge || 0;
       serviceCharge.value = parseFloat(scValue).toFixed(2);
     }
@@ -370,8 +432,7 @@ async function loadCityLedgerAmount() {
       }
     });
 
-    if (response.data.success) {
-      // Set city ledger amount dengan format 2 desimal
+    if (response.data.success && !amountTouched.value.city_ledger_amount) {
       const clValue = response.data.city_ledger_amount || 0;
       cityLedgerAmount.value = parseFloat(clValue).toFixed(2);
     }
@@ -910,17 +971,28 @@ async function rollbackPayroll() {
   }
 }
 
+async function reloadAutoAmounts() {
+  amountTouched.value.service_charge = false;
+  amountTouched.value.city_ledger_amount = false;
+  await Promise.all([loadServiceCharge(), loadCityLedgerAmount()]);
+}
+
 // Watch for changes in outlet, month, year to check payroll status and load service charge & city ledger
 watch([outletId, month, year], async ([newOutletId, newMonth, newYear], [oldOutletId, oldMonth, oldYear]) => {
-  if (newOutletId && newMonth && newYear) {
-    checkPayrollStatus();
-    // Auto-load service charge dan city ledger amount saat outlet, bulan, atau tahun berubah
-    if (newOutletId !== oldOutletId || newMonth !== oldMonth || newYear !== oldYear) {
-      await Promise.all([
-        loadServiceCharge(),
-        loadCityLedgerAmount()
-      ]);
-    }
+  if (!newOutletId || !newMonth || !newYear) {
+    return;
+  }
+
+  const periodChanged =
+    String(newOutletId) !== String(oldOutletId ?? '') ||
+    normalizeMonthId(newMonth) !== normalizeMonthId(oldMonth ?? '') ||
+    String(newYear) !== String(oldYear ?? '');
+
+  checkPayrollStatus();
+
+  if (periodChanged) {
+    resetAmountTouched();
+    await Promise.all([loadServiceCharge(), loadCityLedgerAmount()]);
   }
 });
 
@@ -971,6 +1043,8 @@ onMounted(() => {
             min="0"
             placeholder="Service Charge"
             class="form-input rounded-xl shadow-lg w-48"
+            title="Bisa diedit manual. Nilai otomatis tidak ditimpa setelah Anda mengubah isian ini."
+            @input="markAmountTouched('service_charge')"
             @blur="formatServiceCharge"
           />
           
@@ -981,6 +1055,8 @@ onMounted(() => {
             min="0"
             placeholder="L & B Amount"
             class="form-input rounded-xl shadow-lg w-48"
+            title="Input manual — tetap dipakai saat Lihat Data"
+            @input="markAmountTouched('lb_amount')"
           />
           
           <input
@@ -990,6 +1066,8 @@ onMounted(() => {
             min="0"
             placeholder="Deviasi Amount"
             class="form-input rounded-xl shadow-lg w-48"
+            title="Input manual — tetap dipakai saat Lihat Data"
+            @input="markAmountTouched('deviasi_amount')"
           />
           
           <div class="flex flex-col">
@@ -1000,11 +1078,22 @@ onMounted(() => {
               min="0"
               placeholder="City Ledger Amount"
               class="form-input rounded-xl shadow-lg w-48"
+              title="Bisa diedit manual. Nilai otomatis tidak ditimpa setelah Anda mengubah isian ini."
+              @input="markAmountTouched('city_ledger_amount')"
               @blur="formatCityLedgerAmount"
             />
-            <p class="text-xs text-gray-500 mt-1 w-48">
+            <button
+              type="button"
+              class="mt-1 px-3 py-1.5 rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 text-xs"
+              title="Ambil ulang Service Charge & City Ledger dari sistem"
+              :disabled="!outletId || !month || !year"
+              @click="reloadAutoAmounts"
+            >
+              <i class="fa-solid fa-rotate mr-1"></i> Muat ulang SC & City Ledger
+            </button>
+            <p class="text-xs text-gray-500 mt-1 max-w-[14rem]">
               <i class="fa-solid fa-info-circle mr-1"></i>
-              Diambil dari: Orders (City Ledger) + MAC Wrong Maker
+              Diambil dari: Orders (City Ledger) + MAC Wrong Maker. Setelah diedit, klik <strong>Lihat Data</strong> — nilai manual tidak ditimpa.
             </p>
           </div>
           
