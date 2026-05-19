@@ -387,6 +387,7 @@ function getLeaveDays(row, leaveTypeName) {
                                 <span v-else-if="attendance.is_holiday" class="bg-purple-100 text-purple-600 px-2 py-1 rounded text-xs">
                                   <i class="fa fa-calendar mr-1"></i>{{ attendance.holiday_name || 'Holiday' }}
                                 </span>
+                                <span v-else-if="!attendance.jam_masuk && !attendance.jam_keluar" class="text-gray-400 text-xs">—</span>
                                 <span v-else class="bg-green-100 text-green-600 px-2 py-1 rounded text-xs">
                                   <i class="fa fa-check mr-1"></i>Hadir
                                 </span>

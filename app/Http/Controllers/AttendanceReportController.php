@@ -1972,13 +1972,13 @@ class AttendanceReportController extends Controller
                         $has_no_checkout = true;
                     }
                     
-                    $rows->push((object)[
+                    $dayRow = (object) [
                         'tanggal' => $row->tanggal,
                         'user_id' => $row->user_id,
                         'nama_lengkap' => $row->nama_lengkap,
                         'division_id' => $row->division_id,
-                        'jam_masuk' => $row->jam_masuk, // Kirim datetime lengkap, bukan format time
-                        'jam_keluar' => $row->jam_keluar, // Kirim datetime lengkap, bukan format time
+                        'jam_masuk' => $row->jam_masuk,
+                        'jam_keluar' => $row->jam_keluar,
                         'total_masuk' => $row->total_masuk,
                         'total_keluar' => $row->total_keluar,
                         'telat' => $telat,
@@ -1987,7 +1987,14 @@ class AttendanceReportController extends Controller
                         'shift_start' => $shift->time_start ?? null,
                         'shift_end' => $shift->time_end ?? null,
                         'has_no_checkout' => $has_no_checkout,
-                    ]);
+                    ];
+                    $this->enrichAttendanceDayRow($dayRow, $shift, $holidays);
+
+                    if (! $this->shouldIncludeAttendanceSummaryRow($dayRow)) {
+                        continue;
+                    }
+
+                    $rows->push($dayRow);
                 }
                 
                 $totalRowBuildingTime = microtime(true) - $startRowBuildingTime;
@@ -2117,7 +2124,7 @@ class AttendanceReportController extends Controller
                             'jabatan' => $userData->jabatan ?? '-',
                             'division_id' => $firstRow->division_id,
                             // ✅ FIX: Remove outlet info - sama seperti report attendance
-                            'hari_kerja' => $employeeRows->count(), // Jumlah hari yang bekerja
+                            'hari_kerja' => $this->countHariKerjaFromRows($employeeRows),
                             'off_days' => $offDays, // Jumlah hari tanpa shift
                             'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
                             'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
@@ -2384,6 +2391,10 @@ class AttendanceReportController extends Controller
                     }
                 }
 
+                $holidaysExport = DB::table('tbl_kalender_perusahaan')
+                    ->whereBetween('tgl_libur', [$start, $end])
+                    ->pluck('keterangan', 'tgl_libur');
+
                 // Build rows dengan shift data
                 $rows = collect();
                 $allShiftData = DB::table('user_shifts as us')
@@ -2440,14 +2451,13 @@ class AttendanceReportController extends Controller
                         $has_no_checkout = true;
                     }
                     
-                    // Fix: Pastikan data jam selalu ada, meskipun kosong - SAMA PERSIS DENGAN METHOD employeeSummary
-                    $rows->push((object)[
+                    $dayRow = (object) [
                         'tanggal' => $row->tanggal,
                         'user_id' => $row->user_id,
                         'nama_lengkap' => $row->nama_lengkap,
                         'division_id' => $row->division_id,
-                        'jam_masuk' => $row->jam_masuk, // Kirim datetime lengkap, bukan format time
-                        'jam_keluar' => $row->jam_keluar, // Kirim datetime lengkap, bukan format time
+                        'jam_masuk' => $row->jam_masuk,
+                        'jam_keluar' => $row->jam_keluar,
                         'total_masuk' => $row->total_masuk ?? 0,
                         'total_keluar' => $row->total_keluar ?? 0,
                         'telat' => $telat,
@@ -2456,7 +2466,14 @@ class AttendanceReportController extends Controller
                         'shift_start' => $shift->time_start ?? null,
                         'shift_end' => $shift->time_end ?? null,
                         'has_no_checkout' => $has_no_checkout,
-                    ]);
+                    ];
+                    $this->enrichAttendanceDayRow($dayRow, $shift, $holidaysExport);
+
+                    if (! $this->shouldIncludeAttendanceSummaryRow($dayRow)) {
+                        continue;
+                    }
+
+                    $rows->push($dayRow);
                 }
 
                 // Group by employee dan hitung summary
@@ -2531,7 +2548,7 @@ class AttendanceReportController extends Controller
                         'jabatan' => $userData->jabatan ?? '-',
                         'division_id' => $firstRow->division_id,
                         // ✅ FIX: Remove outlet info - sama seperti report attendance
-                        'hari_kerja' => $employeeRows->count(), // Jumlah hari yang bekerja
+                        'hari_kerja' => $this->countHariKerjaFromRows($employeeRows),
                         'off_days' => $offDays, // Jumlah hari tanpa shift
                         'ph_days' => $phData['days'], // Jumlah hari libur nasional dengan kompensasi
                         'ph_bonus' => $phData['bonus'], // Total bonus PH yang diterima
@@ -2881,6 +2898,93 @@ class AttendanceReportController extends Controller
             
             return 0; // Return 0 if there's an error
         }
+    }
+
+    /**
+     * Shift dianggap OFF (selaras Report Attendance).
+     */
+    public function isShiftOff(?object $shift): bool
+    {
+        if (! $shift) {
+            return false;
+        }
+
+        return is_null($shift->shift_id) || strtolower((string) ($shift->shift_name ?? '')) === 'off';
+    }
+
+    /**
+     * Terapkan flag OFF/libur; kosongkan jam jika OFF (scan OUT cross-day hari sebelumnya tidak dihitung hadir di hari ini).
+     *
+     * @param  \Illuminate\Support\Collection|array  $holidays  tgl_libur => keterangan
+     */
+    public function enrichAttendanceDayRow(object $row, ?object $shift, $holidays): object
+    {
+        $tanggal = $row->tanggal;
+        $isOff = $this->isShiftOff($shift);
+        $isHoliday = $holidays instanceof \Illuminate\Support\Collection
+            ? $holidays->has($tanggal)
+            : isset($holidays[$tanggal]);
+        $holidayName = $isHoliday
+            ? ($holidays instanceof \Illuminate\Support\Collection ? $holidays->get($tanggal) : $holidays[$tanggal])
+            : null;
+
+        $jamMasuk = $row->jam_masuk ?? null;
+        $jamKeluar = $row->jam_keluar ?? null;
+        $telat = $row->telat ?? 0;
+        $lembur = $row->lembur ?? 0;
+
+        if ($isOff) {
+            $jamMasuk = null;
+            $jamKeluar = null;
+            $telat = 0;
+            $lembur = 0;
+        }
+
+        $row->is_off = $isOff;
+        $row->is_holiday = $isHoliday;
+        $row->holiday_name = $holidayName;
+        $row->jam_masuk = $jamMasuk;
+        $row->jam_keluar = $jamKeluar;
+        $row->telat = $telat;
+        $row->lembur = $lembur;
+
+        if ($shift) {
+            $row->shift_start = $shift->time_start ?? null;
+            $row->shift_end = $shift->time_end ?? null;
+            $row->shift_name = $shift->shift_name ?? null;
+        }
+
+        return $row;
+    }
+
+    /**
+     * Hari kerja = ada check-in di hari kalender itu dan shift bukan OFF.
+     * Scan OUT pagi (cross-day dari shift kemarin) tidak dihitung.
+     */
+    public function rowCountsAsHariKerja(object $row): bool
+    {
+        if (! empty($row->is_off)) {
+            return false;
+        }
+
+        return ! empty($row->jam_masuk);
+    }
+
+    /**
+     * Tampilkan di ringkasan harian (skip baris hantu: hanya sisa OUT cross-day tanpa masuk & bukan OFF/libur).
+     */
+    public function shouldIncludeAttendanceSummaryRow(object $row): bool
+    {
+        if (! empty($row->jam_masuk) || ! empty($row->jam_keluar)) {
+            return true;
+        }
+
+        return ! empty($row->is_off) || ! empty($row->is_holiday);
+    }
+
+    public function countHariKerjaFromRows($employeeRows): int
+    {
+        return collect($employeeRows)->filter(fn ($row) => $this->rowCountsAsHariKerja($row))->count();
     }
 
     /**

@@ -15,6 +15,11 @@ use App\Services\PayrollBpjsCalculator;
 
 class PayrollReportController extends Controller
 {
+    private function attendanceReportHelper(): AttendanceReportController
+    {
+        return app(AttendanceReportController::class);
+    }
+
     public function index(Request $request)
     {
         $outletId = $request->input('outlet_id');
@@ -862,7 +867,7 @@ class PayrollReportController extends Controller
                     }
                 }
 
-                $rows->push((object)[
+                $dayRow = (object) [
                     'tanggal' => $row->tanggal,
                     'user_id' => $row->user_id,
                     'nama_lengkap' => $row->nama_lengkap,
@@ -876,7 +881,14 @@ class PayrollReportController extends Controller
                     'is_cross_day' => $row->is_cross_day,
                     'shift_start' => $shift->time_start ?? null,
                     'shift_end' => $shift->time_end ?? null,
-                ]);
+                ];
+                $this->attendanceReportHelper()->enrichAttendanceDayRow($dayRow, $shift, $holidays);
+
+                if (! $this->attendanceReportHelper()->shouldIncludeAttendanceSummaryRow($dayRow)) {
+                    continue;
+                }
+
+                $rows->push($dayRow);
             }
 
             // Get all user data (NIK and jabatan) at once - SAMA PERSIS dengan Employee Summary
@@ -945,8 +957,8 @@ class PayrollReportController extends Controller
                 $totalLemburRegular = floor($employeeRows->sum('lembur'));
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
-                // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
-                $hariKerja = $employeeRows->count();
+                // Hari kerja: check-in di hari itu, bukan OFF (scan OUT cross-day tidak dihitung)
+                $hariKerja = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
 
                 // Hitung total alpha menggunakan method yang sama persis dengan AttendanceReportController
                 // GUNAKAN METHOD calculateAlpaDays yang sudah COPY PERSIS dari AttendanceReportController
@@ -1039,7 +1051,7 @@ class PayrollReportController extends Controller
                         'user_id' => $userId,
                         'employee_name' => $mutationData['employee_name'],
                         'effective_date' => $effectiveDate,
-                        'total_attendance' => $employeeRows->count(),
+                        'total_attendance' => $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows),
                         'attendance_outlet_lama' => $hariKerjaOutletLama,
                         'attendance_outlet_baru' => $hariKerjaOutletBaru,
                         'outlet_from' => $mutationData['outlet_from_name'],
@@ -2228,11 +2240,14 @@ class PayrollReportController extends Controller
                 $is_off = true;
             }
             
+            // Check-in di hari kalender ini (bukan scan OUT cross-day dari shift kemarin)
+            $has_check_in = $attendanceInfo && ! empty($attendanceInfo['first_in']);
+
             // Check directly to att_log table to ensure accuracy
             // First check from attendanceInfo, if not found, check directly from att_log
-            $has_scan = false;
-            if ($attendanceInfo && isset($attendanceInfo['first_in']) && $attendanceInfo['first_in']) {
-                $has_scan = true;
+            $has_scan = $has_check_in;
+            if ($has_scan) {
+                // sudah ada check-in
             } else {
                 // Double check directly from att_log table using the same join logic as getAttendanceDetail
                 $scanCount = DB::table('att_log as a')
@@ -2301,6 +2316,7 @@ class PayrollReportController extends Controller
                 'total_lembur' => $attendanceInfo['total_lembur'] ?? 0,
                 'is_off' => $is_off,
                 'has_scan' => $has_scan,
+                'has_check_in' => $has_check_in,
                 'is_alpha' => $is_alpha,
                 'approved_absent' => $approvedAbsent,
                 'is_approved_absent' => $is_approved_absent,
@@ -2946,7 +2962,7 @@ class PayrollReportController extends Controller
                 }
             }
 
-            $rows->push((object)[
+            $dayRow = (object) [
                 'tanggal' => $row->tanggal,
                 'user_id' => $row->user_id,
                 'nama_lengkap' => $row->nama_lengkap,
@@ -2960,7 +2976,14 @@ class PayrollReportController extends Controller
                 'is_cross_day' => $row->is_cross_day,
                 'shift_start' => $shift->time_start ?? null,
                 'shift_end' => $shift->time_end ?? null,
-            ]);
+            ];
+            $this->attendanceReportHelper()->enrichAttendanceDayRow($dayRow, $shift, $holidays);
+
+            if (! $this->attendanceReportHelper()->shouldIncludeAttendanceSummaryRow($dayRow)) {
+                continue;
+            }
+
+            $rows->push($dayRow);
         }
 
         // Group by employee - SAMA PERSIS dengan Employee Summary
@@ -3009,8 +3032,7 @@ class PayrollReportController extends Controller
                 $totalLemburRegular = floor($employeeRows->sum('lembur'));
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
-                // Hitung hari kerja - SAMA PERSIS dengan Employee Summary (jumlah hari yang bekerja)
-                $hariKerja = $employeeRows->count();
+                $hariKerja = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
             }
 
             // Hitung total alpha menggunakan method yang sama dengan Employee Summary
@@ -4270,8 +4292,8 @@ class PayrollReportController extends Controller
             });
 
             // Hitung hari kerja
-            $hariKerja = $attendanceData->filter(function($item) {
-                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+            $hariKerja = $attendanceData->filter(function ($item) {
+                return ! empty($item['has_check_in']) && empty($item['is_off']);
             })->count();
 
             // Ambil data nominal dari divisi
@@ -4669,8 +4691,8 @@ class PayrollReportController extends Controller
 
             // Hitung hari kerja berdasarkan data attendance yang sebenarnya terjadi
             // Hanya hitung hari yang benar-benar ada scan attendance (bukan yang dijadwalkan saja)
-            $hariKerja = $attendanceData->filter(function($item) {
-                return isset($item['has_scan']) && $item['has_scan'] && !$item['is_off'];
+            $hariKerja = $attendanceData->filter(function ($item) {
+                return ! empty($item['has_check_in']) && empty($item['is_off']);
             })->count();
 
             // Ambil data nominal dari divisi
