@@ -843,29 +843,12 @@ class PayrollReportController extends Controller
             // Build rows for each tanggal in period - SAMA PERSIS dengan Employee Summary
             $rows = collect();
             foreach ($dataRows as $row) {
-                $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                $telat = 0;
-                $lembur = $row->lembur ?? 0;
-                
                 $shiftKey = $row->user_id . '_' . $row->tanggal;
                 $shift = $allShiftData->get($shiftKey, collect())->first();
-
-                if ($shift) {
-                    // Hitung telat dan lembur berdasarkan shift - SAMA PERSIS dengan Employee Summary
-                    if ($shift->time_start && $jam_masuk) {
-                        $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
-                    }
-                    
-                    // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
-                    if ($shift->time_end && $jam_keluar) {
-                        $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
-                        $telat += $earlyCheckoutTelat;
-                        
-                        // Gunakan perhitungan lembur yang konsisten
-                        $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
-                    }
-                }
+                $isOffDay = $this->attendanceReportHelper()->isShiftOff($shift);
+                $telatLembur = $this->attendanceReportHelper()->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+                $telat = $telatLembur['telat'];
+                $lembur = $telatLembur['lembur'];
 
                 $dayRow = (object) [
                     'tanggal' => $row->tanggal,
@@ -948,7 +931,7 @@ class PayrollReportController extends Controller
                 ]);
 
                 // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
-                $totalTelat = $employeeRows->sum('telat');
+                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
                 
                 // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
                 $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
@@ -2938,29 +2921,12 @@ class PayrollReportController extends Controller
         // Build rows for each tanggal in period - SAMA PERSIS dengan Employee Summary
         $rows = collect();
         foreach ($dataRows as $row) {
-            $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-            $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-            $telat = 0;
-            $lembur = $row->lembur ?? 0;
-            
             $shiftKey = $row->user_id . '_' . $row->tanggal;
             $shift = $allShiftData->get($shiftKey, collect())->first();
-
-            if ($shift) {
-                // Hitung telat dan lembur berdasarkan shift - SAMA PERSIS dengan Employee Summary
-                if ($shift->time_start && $jam_masuk) {
-                    $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
-                }
-                
-                // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
-                if ($shift->time_end && $jam_keluar) {
-                    $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
-                    $telat += $earlyCheckoutTelat;
-                    
-                    // Gunakan perhitungan lembur yang konsisten
-                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
-                }
-            }
+            $isOffDay = $this->attendanceReportHelper()->isShiftOff($shift);
+            $telatLembur = $this->attendanceReportHelper()->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+            $telat = $telatLembur['telat'];
+            $lembur = $telatLembur['lembur'];
 
             $dayRow = (object) [
                 'tanggal' => $row->tanggal,
@@ -3023,7 +2989,7 @@ class PayrollReportController extends Controller
                 $totalLembur = 0;
                 $hariKerja = 0;
             } else {
-                $totalTelat = $employeeRows->sum('telat');
+                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
                 
                 // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
                 $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));

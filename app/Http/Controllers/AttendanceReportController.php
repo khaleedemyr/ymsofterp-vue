@@ -1937,34 +1937,16 @@ class AttendanceReportController extends Controller
                         }
                     }
                     
-                    $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                    $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                    $telat = 0;
-                    $lembur = 0;
-                    
-                    // OPTIMASI: Gunakan cached shift data instead of individual query
                     $shiftKey = $row->user_id . '_' . $row->tanggal;
                     $shift = $allShiftData->get($shiftKey, collect())->first();
-
                     if ($shift) {
                         $rowsWithShift++;
-                        
-                        // Hitung telat dan lembur berdasarkan shift
-                        if ($shift->time_start && $jam_masuk) {
-                            $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
-                        }
-                        
-                        // FIXED: Tambahkan telat jika checkout lebih awal dari shift end
-                        if ($shift->time_end && $jam_keluar) {
-                            // Hitung telat dari early checkout (dengan pengecekan cross-day)
-                            $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
-                            $telat += $earlyCheckoutTelat;
-                            
-                            // Gunakan perhitungan lembur yang konsisten
-                            $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
-                        }
                     }
 
+                    $isOffDay = $this->isShiftOff($shift);
+                    $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+                    $telat = $telatLembur['telat'];
+                    $lembur = $telatLembur['lembur'];
 
                     // Deteksi attendance tanpa checkout
                     $has_no_checkout = false;
@@ -2131,7 +2113,7 @@ class AttendanceReportController extends Controller
                             'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // Jumlah hari extra off
                             'alpa_days' => $alpaDays, // Jumlah hari alpa
                             'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
-                            'total_telat' => $employeeRows->sum('telat'),
+                            'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                             'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                             'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                             // Data detail untuk expandable table
@@ -2408,42 +2390,13 @@ class AttendanceReportController extends Controller
                     });
 
                 foreach ($dataRows as $row) {
-                    // Fix: Pastikan data jam_masuk dan jam_keluar tidak null
-                    $jam_masuk = !empty($row->jam_masuk) ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                    $jam_keluar = !empty($row->jam_keluar) ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                    $telat = 0;
-                    $lembur = 0;
-                    
                     $shiftKey = $row->user_id . '_' . $row->tanggal;
                     $shift = $allShiftData->get($shiftKey, collect())->first();
-                    
-                    // Debug: Log jika data kosong
-                    if (empty($jam_masuk) && empty($jam_keluar)) {
-                        \Log::warning('Empty attendance data for user:', [
-                            'user_id' => $row->user_id,
-                            'tanggal' => $row->tanggal,
-                            // ✅ FIX: Remove outlet info - sama seperti report attendance // ✅ FIX: Use outlet where user absen
-                            'raw_jam_masuk' => $row->jam_masuk ?? 'null',
-                            'raw_jam_keluar' => $row->jam_keluar ?? 'null'
-                        ]);
-                    }
 
-                    if ($shift) {
-                        if ($shift->time_start && $jam_masuk) {
-                            $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
-                        }
-                        
-                        // FIXED: Tambahkan telat jika checkout lebih awal dari shift end
-                        if ($shift->time_end && $jam_keluar) {
-                            // Hitung telat dari early checkout (dengan pengecekan cross-day)
-                            $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
-                            $telat += $earlyCheckoutTelat;
-                            
-                            // Gunakan perhitungan lembur yang konsisten
-                            $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
-                        }
-                    }
-
+                    $isOffDay = $this->isShiftOff($shift);
+                    $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+                    $telat = $telatLembur['telat'];
+                    $lembur = $telatLembur['lembur'];
 
                     // Deteksi attendance tanpa checkout
                     $has_no_checkout = false;
@@ -2557,7 +2510,7 @@ class AttendanceReportController extends Controller
                         'sakit_days' => $leaveData['sick_leave_days'] ?? 0, // Jumlah hari sakit (Sick Leave)
                         'alpa_days' => $alpaDays, // Jumlah hari alpa
                         'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
-                        'total_telat' => $employeeRows->sum('telat'),
+                        'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                         'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                         'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                         // Data detail untuk expandable table
@@ -2985,6 +2938,58 @@ class AttendanceReportController extends Controller
     public function countHariKerjaFromRows($employeeRows): int
     {
         return collect($employeeRows)->filter(fn ($row) => $this->rowCountsAsHariKerja($row))->count();
+    }
+
+    /**
+     * Total menit telat — selaras Report Attendance (index): tidak hitung hari OFF.
+     */
+    public function sumTelatFromAttendanceRows($employeeRows): int
+    {
+        return (int) collect($employeeRows)->sum(function ($row) {
+            if (! empty($row->is_off)) {
+                return 0;
+            }
+
+            return (int) ($row->telat ?? 0);
+        });
+    }
+
+    /**
+     * Hitung telat & lembur harian — logika sama Report Attendance (index).
+     *
+     * @return array{telat: int, lembur: float}
+     */
+    public function calculateDailyTelatLembur(object $processedRow, ?object $shift, string $tanggal, ?bool $isOff = null): array
+    {
+        $isOff = $isOff ?? $this->isShiftOff($shift);
+        if ($isOff) {
+            return ['telat' => 0, 'lembur' => 0];
+        }
+
+        $jamMasuk = $processedRow->jam_masuk ? date('H:i:s', strtotime($processedRow->jam_masuk)) : null;
+        $isCrossDay = ! empty($processedRow->is_cross_day);
+        $telat = 0;
+        $lembur = 0;
+
+        if ($shift && $shift->time_start && $jamMasuk) {
+            $telat = $this->calculateLateness($jamMasuk, $shift->time_start, $isCrossDay);
+        }
+
+        // Early checkout: sama index — skip cross-day; pakai datetime lengkap untuk keluar
+        if (! $isCrossDay && $shift && $shift->time_end && $processedRow->jam_keluar) {
+            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)).' '.$shift->time_end;
+            $scanOutDateTime = $processedRow->jam_keluar;
+            $diff = strtotime($shiftEndDateTime) - strtotime($scanOutDateTime);
+            if ($diff > 0) {
+                $telat += (int) round($diff / 60);
+            }
+        }
+
+        if ($shift && $shift->time_end && $processedRow->jam_keluar) {
+            $lembur = floor($this->calculateSimpleOvertime($processedRow->jam_keluar, $shift->time_end));
+        }
+
+        return ['telat' => $telat, 'lembur' => $lembur];
     }
 
     /**
