@@ -130,7 +130,6 @@ import { Head, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { reactive } from 'vue'
 import Swal from 'sweetalert2'
-import axios from 'axios'
 
 const props = defineProps({
   grList: Object,
@@ -184,13 +183,19 @@ async function onDelete(row) {
 
   if (!confirm.isConfirmed) return
 
-  try {
-    await axios.delete(`/outlet-serial-receive/${row.id}`)
-    router.reload()
-    Swal.fire({ title: 'Berhasil', text: `GR ${row.number} berhasil dihapus.`, icon: 'success', timer: 2000, showConfirmButton: false })
-  } catch (e) {
-    const msg = e?.response?.data?.errors?.message || e?.response?.data?.message || 'Gagal menghapus GR.'
-    Swal.fire('Gagal', msg, 'error')
+  if (!row?.id) {
+    Swal.fire('Gagal', 'ID GR tidak valid.', 'error')
+    return
   }
+
+  router.delete(route('outlet-serial-receive.destroy', row.id), {
+    onSuccess: () => {
+      Swal.fire({ title: 'Berhasil', text: `GR ${row.number} berhasil dihapus.`, icon: 'success', timer: 2000, showConfirmButton: false })
+    },
+    onError: (errors) => {
+      const msg = errors?.message || 'Gagal menghapus GR.'
+      Swal.fire('Gagal', msg, 'error')
+    },
+  })
 }
 </script>

@@ -108,7 +108,6 @@ import { Head, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { computed } from 'vue'
 import Swal from 'sweetalert2'
-import axios from 'axios'
 
 const props = defineProps({
   header: Object,
@@ -150,13 +149,19 @@ async function onDelete() {
 
   if (!confirm.isConfirmed) return
 
-  try {
-    await axios.delete(`/outlet-serial-receive/${props.header.id}`)
-    Swal.fire({ title: 'Berhasil', text: `GR ${props.header.number} berhasil dihapus.`, icon: 'success', timer: 2000, showConfirmButton: false })
-    setTimeout(() => { window.location.href = '/outlet-serial-receive' }, 1500)
-  } catch (e) {
-    const msg = e?.response?.data?.errors?.message || e?.response?.data?.message || 'Gagal menghapus GR.'
-    Swal.fire('Gagal', msg, 'error')
+  if (!props.header?.id) {
+    Swal.fire('Gagal', 'ID GR tidak valid.', 'error')
+    return
   }
+
+  router.delete(route('outlet-serial-receive.destroy', props.header.id), {
+    onSuccess: () => {
+      Swal.fire({ title: 'Berhasil', text: `GR ${props.header.number} berhasil dihapus.`, icon: 'success', timer: 2000, showConfirmButton: false })
+    },
+    onError: (errors) => {
+      const msg = errors?.message || 'Gagal menghapus GR.'
+      Swal.fire('Gagal', msg, 'error')
+    },
+  })
 }
 </script>

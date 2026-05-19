@@ -367,12 +367,16 @@ class OutletSerialReceiveController extends Controller
         ]);
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $user = auth()->user();
         $canDelete = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
 
         if (!$canDelete) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk menghapus.'], 403);
+            }
+
             return back()->withErrors(['message' => 'Anda tidak memiliki akses untuk menghapus.']);
         }
 
@@ -382,11 +386,15 @@ class OutletSerialReceiveController extends Controller
             ->first();
 
         if (!$header) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
+            }
+
             return back()->withErrors(['message' => 'Data tidak ditemukan.']);
         }
 
         try {
-            DB::transaction(function () use ($id, $header) {
+            DB::transaction(function () use ($id) {
                 $items = DB::table('outlet_serial_receive_items')->where('header_id', $id)->get();
 
                 $serialIds = $items->pluck('serial_id')->toArray();
@@ -424,8 +432,19 @@ class OutletSerialReceiveController extends Controller
                     ->update(['deleted_at' => now(), 'updated_at' => now()]);
             });
 
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "GR Serial {$header->number} berhasil dihapus.",
+                ]);
+            }
+
             return redirect('/outlet-serial-receive')->with('success', "GR Serial {$header->number} berhasil dihapus.");
         } catch (\Throwable $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => 'Gagal menghapus: ' . $e->getMessage()], 500);
+            }
+
             return back()->withErrors(['message' => 'Gagal menghapus: ' . $e->getMessage()]);
         }
     }
