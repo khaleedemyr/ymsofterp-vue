@@ -20,6 +20,13 @@
             <p class="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded mt-2 px-2 py-1 inline-block">
               <strong>Auto:</strong> Food Good Receive terakhir + 12% (konversi ke satuan large sesuai GR). <strong>Manual:</strong> input bebas.
             </p>
+            <p class="text-xs text-gray-600 mt-2 max-w-3xl">
+              <strong>Export template</strong> mengunduh semua item yang cocok filter pencarian (kosong = semua). Kolom
+              <code class="bg-gray-100 px-1 rounded">category_id</code> /
+              <code class="bg-gray-100 px-1 rounded">category_name</code> untuk referensi; saat import, jika diisi harus cocok dengan item (mencegah salah baris).
+              Edit <code class="bg-gray-100 px-1 rounded">pricing_mode</code> (<code>manual</code> / <code>auto</code>) dan
+              <code class="bg-gray-100 px-1 rounded">price</code> (wajib &gt; 0 jika manual), lalu <strong>Import Excel</strong>.
+            </p>
           </div>
           <button type="button" class="text-gray-400 hover:text-red-500 text-2xl leading-none" @click="emit('close')" aria-label="Tutup">
             <i class="fa-solid fa-xmark"></i>
@@ -46,12 +53,38 @@
             <i class="fa-solid fa-rotate mr-1" :class="{ 'fa-spin': loading }"></i>
             Muat
           </button>
+          <button
+            type="button"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+            :disabled="loading || exporting"
+            @click="exportTemplate"
+          >
+            <i class="fa-solid fa-file-export mr-1" :class="{ 'fa-spin': exporting }"></i>
+            Export template
+          </button>
+          <button
+            type="button"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+            :disabled="importing"
+            @click="importFileInput?.click()"
+          >
+            <i class="fa-solid fa-file-import mr-1" :class="{ 'fa-spin': importing }"></i>
+            Import Excel
+          </button>
+          <input
+            ref="importFileInput"
+            type="file"
+            class="hidden"
+            accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            @change="onImportFile"
+          />
         </div>
 
         <div class="flex-1 overflow-auto px-4 pb-2">
           <table class="min-w-full text-sm">
             <thead class="bg-gray-50 sticky top-0 z-10">
               <tr class="text-left text-xs uppercase text-gray-500">
+                <th class="px-3 py-2">Kategori</th>
                 <th class="px-3 py-2">Item</th>
                 <th class="px-3 py-2">SKU</th>
                 <th class="px-3 py-2">Sat. large</th>
@@ -62,9 +95,13 @@
             </thead>
             <tbody class="divide-y divide-gray-100">
               <tr v-if="!loading && rows.length === 0">
-                <td colspan="6" class="px-3 py-8 text-center text-gray-400">Belum ada data. Klik Muat.</td>
+                <td colspan="7" class="px-3 py-8 text-center text-gray-400">Belum ada data. Klik Muat.</td>
               </tr>
               <tr v-for="r in rows" :key="r.item_id" class="hover:bg-gray-50/80">
+                <td class="px-3 py-2 text-gray-700">
+                  <div class="font-medium text-gray-900">{{ r.category_name || '—' }}</div>
+                  <div class="text-xs text-gray-400 font-mono">#{{ r.category_id }}</div>
+                </td>
                 <td class="px-3 py-2 font-medium text-gray-900">{{ r.name }}</td>
                 <td class="px-3 py-2 text-gray-600">{{ r.sku }}</td>
                 <td class="px-3 py-2 text-gray-600">{{ r.large_unit || '—' }}</td>
@@ -156,6 +193,9 @@ const emit = defineEmits(['close', 'saved']);
 const search = ref('');
 const loading = ref(false);
 const saving = ref(false);
+const exporting = ref(false);
+const importing = ref(false);
+const importFileInput = ref(null);
 const rows = ref([]);
 const meta = ref({
   current_page: 1,
@@ -223,9 +263,68 @@ async function load(page = 1) {
   }
 }
 
+async function exportTemplate() {
+  exporting.value = true;
+  try {
+    const params = new URLSearchParams();
+    if (search.value.trim()) params.set('search', search.value.trim());
+    const url = `/api/items/non-pos-pricing/template${params.toString() ? `?${params.toString()}` : ''}`;
+    window.location.assign(url);
+  } catch (e) {
+    console.error(e);
+    Swal.fire('Gagal', e.response?.data?.message || e.message || 'Export gagal', 'error');
+  } finally {
+    setTimeout(() => {
+      exporting.value = false;
+    }, 800);
+  }
+}
+
+async function onImportFile(e) {
+  const input = e.target;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  importing.value = true;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const { data } = await axios.post('/api/items/non-pos-pricing/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    if (data.errors && data.errors.length) {
+      await Swal.fire({
+        icon: data.success ? 'warning' : 'error',
+        title: data.success ? 'Sebagian berhasil' : 'Import',
+        html: `<p class="mb-2 text-sm">${data.message || ''}</p><ul style="text-align:left;font-size:13px;max-height:240px;overflow:auto">${data.errors.map((err) => `<li>${err}</li>`).join('')}</ul>`,
+      });
+    } else {
+      await Swal.fire({ icon: 'success', title: 'Berhasil', text: data.message || 'Import selesai' });
+    }
+    if (data.success) emit('saved');
+    await load(meta.value.current_page);
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    const errs = err.response?.data?.errors;
+    await Swal.fire({
+      icon: 'error',
+      title: 'Import gagal',
+      html: errs && errs.length
+        ? `<ul style="text-align:left">${errs.map((x) => `<li>${x}</li>`).join('')}</ul>`
+        : msg,
+    });
+  } finally {
+    importing.value = false;
+    if (input) input.value = '';
+  }
+}
+
 async function savePage() {
   const payloadRows = rows.value.map((r) => ({
     item_id: r.item_id,
+    category_id: r.category_id,
+    category_name: r.category_name ?? '',
     pricing_mode: r.pricing_mode,
     price: r.pricing_mode === 'auto' ? 0 : Number(r.price),
   }));

@@ -27,6 +27,10 @@ use App\Exports\BomImportTemplateExport;
 use App\Imports\BomImport;
 use Illuminate\Validation\Rule;
 use App\Support\FoodGrLastPurchaseForItem;
+use App\Exports\NonPosPricingTemplateExport;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ItemController extends Controller
 {
@@ -3002,16 +3006,12 @@ class ItemController extends Controller
     }
 
     /**
-     * Modal: daftar item non-POS (kategori is_asset=0, show_pos=0) untuk update harga default (scope "all").
+     * Query item untuk modal / export non-POS (kategori is_asset=0, show_pos=0, active).
      */
-    public function nonPosBulkPricesData(Request $request)
+    private function nonPosPricingItemsQuery(string $search = '')
     {
-        $search = trim((string) $request->get('search', ''));
-        $page = max(1, (int) $request->get('page', 1));
-        $perPage = min(50, max(5, (int) $request->get('per_page', 15)));
-
         $q = Item::query()
-            ->with(['largeUnit'])
+            ->with(['largeUnit', 'category'])
             ->join('categories', 'items.category_id', '=', 'categories.id')
             ->where('categories.is_asset', '0')
             ->where('categories.show_pos', '0')
@@ -3026,39 +3026,310 @@ class ItemController extends Controller
             });
         }
 
-        $paginator = $q->orderBy('items.name')->paginate($perPage, ['items.*'], 'page', $page);
+        return $q->orderBy('items.name');
+    }
 
-        $data = collect($paginator->items())->map(function (Item $item) {
-            $row = DB::table('item_prices')
-                ->where('item_id', $item->id)
-                ->where('availability_price_type', 'all')
-                ->whereNull('region_id')
-                ->whereNull('outlet_id')
-                ->orderByDesc('id')
+    /**
+     * Satu baris data untuk modal & template export.
+     *
+     * @return array{item_id:int,category_id:int,category_name:?string,name:string,sku:string,large_unit:?string,item_price_id:?int,pricing_mode:string,price:?float,auto_suggested_price:?float,last_gr_number:?string,last_gr_date:?string,cost_large_last:?float}
+     */
+    private function formatNonPosPricingRow(Item $item): array
+    {
+        $row = DB::table('item_prices')
+            ->where('item_id', $item->id)
+            ->where('availability_price_type', 'all')
+            ->whereNull('region_id')
+            ->whereNull('outlet_id')
+            ->orderByDesc('id')
+            ->first();
+
+        $lastGr = FoodGrLastPurchaseForItem::lastLine((int) $item->id);
+        $autoPrice = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+
+        $mode = 'manual';
+        if ($row && isset($row->pricing_mode) && $row->pricing_mode === 'auto') {
+            $mode = 'auto';
+        }
+
+        return [
+            'item_id' => $item->id,
+            'category_id' => (int) $item->category_id,
+            'category_name' => optional($item->category)->name,
+            'name' => $item->name,
+            'sku' => $item->sku,
+            'large_unit' => optional($item->largeUnit)->name,
+            'item_price_id' => $row->id ?? null,
+            'pricing_mode' => $mode,
+            'price' => $row ? (float) $row->price : null,
+            'auto_suggested_price' => $autoPrice,
+            'last_gr_number' => $lastGr['gr_number'] ?? null,
+            'last_gr_date' => $lastGr['receive_date'] ?? null,
+            'cost_large_last' => $lastGr ? round((float) $lastGr['cost_large'], 4) : null,
+        ];
+    }
+
+    /**
+     * Simpan satu baris non-POS pricing. Mengembalikan null jika sukses, atau pesan error.
+     */
+    private function saveNonPosPricingRow(Item $item, string $mode, float $price): ?string
+    {
+        if ($mode === 'auto') {
+            $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+            if ($computed === null || $computed <= 0) {
+                return $item->sku.': tidak ada Food Good Receive / harga PO untuk mode otomatis.';
+            }
+            $price = $computed;
+        } elseif ($price <= 0) {
+            return $item->sku.': harga manual harus diisi (> 0).';
+        }
+
+        $existing = DB::table('item_prices')
+            ->where('item_id', $item->id)
+            ->where('availability_price_type', 'all')
+            ->whereNull('region_id')
+            ->whereNull('outlet_id')
+            ->orderByDesc('id')
+            ->first();
+
+        $payload = [
+            'price' => round($price, 2),
+            'pricing_mode' => $mode,
+            'updated_at' => now(),
+        ];
+
+        try {
+            if ($existing) {
+                DB::table('item_prices')->where('id', $existing->id)->update($payload);
+            } else {
+                DB::table('item_prices')->insert(array_merge([
+                    'item_id' => $item->id,
+                    'availability_price_type' => 'all',
+                    'region_id' => null,
+                    'outlet_id' => null,
+                    'created_at' => now(),
+                ], $payload));
+            }
+        } catch (\Throwable $e) {
+            return $item->sku.': '.$e->getMessage();
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array{item_id:mixed, pricing_mode:mixed, price?:mixed, category_id?:mixed, category_name?:mixed}>  $rows
+     * @return array{errors: array<int, string>, saved: int}
+     */
+    private function processNonPosPricingRows(array $rows): array
+    {
+        $errors = [];
+        $saved = 0;
+
+        foreach ($rows as $idx => $row) {
+            $item = Item::query()
+                ->with('category')
+                ->join('categories', 'items.category_id', '=', 'categories.id')
+                ->where('items.id', $row['item_id'])
+                ->where('categories.is_asset', '0')
+                ->where('categories.show_pos', '0')
+                ->select('items.*')
                 ->first();
 
-            $lastGr = FoodGrLastPurchaseForItem::lastLine((int) $item->id);
-            $autoPrice = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+            if (! $item) {
+                $errors[] = 'Baris '.((int) $idx + 1).': item tidak termasuk filter kategori non-POS non-asset.';
 
-            $mode = 'manual';
-            if ($row && isset($row->pricing_mode) && $row->pricing_mode === 'auto') {
-                $mode = 'auto';
+                continue;
             }
 
-            return [
-                'item_id' => $item->id,
-                'name' => $item->name,
-                'sku' => $item->sku,
-                'large_unit' => optional($item->largeUnit)->name,
-                'item_price_id' => $row->id ?? null,
+            $rowCatId = isset($row['category_id']) && $row['category_id'] !== '' && $row['category_id'] !== null
+                ? (int) $row['category_id']
+                : null;
+            if ($rowCatId !== null && $rowCatId > 0 && (int) $item->category_id !== $rowCatId) {
+                $errors[] = 'Baris '.((int) $idx + 1).': category_id tidak cocok dengan item '.$item->sku.'.';
+
+                continue;
+            }
+
+            $rowCatName = isset($row['category_name']) ? trim((string) $row['category_name']) : '';
+            if ($rowCatName !== '') {
+                $actualName = trim((string) (optional($item->category)->name ?? ''));
+                if (Str::lower($actualName) !== Str::lower($rowCatName)) {
+                    $errors[] = 'Baris '.((int) $idx + 1).': category_name tidak cocok dengan item '.$item->sku.'.';
+
+                    continue;
+                }
+            }
+
+            $mode = $row['pricing_mode'] === 'auto' ? 'auto' : 'manual';
+            $price = isset($row['price']) ? (float) $row['price'] : 0;
+
+            $err = $this->saveNonPosPricingRow($item, $mode, $price);
+            if ($err !== null) {
+                $errors[] = 'Baris '.((int) $idx + 1).': '.$err;
+            } else {
+                $saved++;
+            }
+        }
+
+        return ['errors' => $errors, 'saved' => $saved];
+    }
+
+    /**
+     * Download template Excel (mode + harga) untuk item non-POS. Filter `search` sama seperti modal.
+     */
+    public function nonPosPricingTemplateDownload(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+        $items = $this->nonPosPricingItemsQuery($search)->get();
+        $rows = $items->map(fn (Item $item) => $this->formatNonPosPricingRow($item));
+
+        $fileName = 'non-pos-pricing-template-'.now()->format('Y-m-d').'.xlsx';
+
+        return Excel::download(new NonPosPricingTemplateExport($rows), $fileName);
+    }
+
+    /**
+     * Import bulk dari Excel (kolom sama dengan template). Memperbarui pricing_mode & harga.
+     */
+    public function nonPosPricingImport(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        try {
+            $spreadsheet = IOFactory::load($request->file('file')->getRealPath());
+            $data = $spreadsheet->getActiveSheet()->toArray(null, true, true, true);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'saved' => 0,
+                'errors' => ['Tidak dapat membaca file: '.$e->getMessage()],
+                'message' => 'Gagal membaca Excel.',
+            ], 422);
+        }
+
+        if (count($data) < 2) {
+            return response()->json([
+                'success' => false,
+                'saved' => 0,
+                'errors' => ['File kosong atau hanya header.'],
+                'message' => 'Tidak ada baris data.',
+            ], 422);
+        }
+
+        $headerRow = array_shift($data);
+        $norm = [];
+        foreach ($headerRow as $k => $v) {
+            $key = strtolower(trim((string) $v));
+            if ($key !== '') {
+                $norm[$key] = true;
+            }
+        }
+
+        if (! isset($norm['item_id']) || ! isset($norm['pricing_mode'])) {
+            return response()->json([
+                'success' => false,
+                'saved' => 0,
+                'errors' => ['Header wajib: item_id, pricing_mode (opsional: category_id, category_name, price).'],
+                'message' => 'Format template tidak dikenali.',
+            ], 422);
+        }
+
+        $headerKeys = [];
+        foreach ($headerRow as $colLetter => $label) {
+            $headerKeys[$colLetter] = strtolower(trim((string) $label));
+        }
+
+        $parsedRows = [];
+        foreach ($data as $excelRow) {
+            if (! is_array($excelRow)) {
+                continue;
+            }
+            $assoc = [];
+            foreach ($excelRow as $colLetter => $cellValue) {
+                $h = $headerKeys[$colLetter] ?? null;
+                if ($h === null || $h === '') {
+                    continue;
+                }
+                $assoc[$h] = $cellValue;
+            }
+            if (collect($assoc)->filter(fn ($v) => $v !== null && $v !== '')->isEmpty()) {
+                continue;
+            }
+            $parsedRows[] = $assoc;
+        }
+
+        $rows = [];
+        foreach ($parsedRows as $assoc) {
+            $itemId = isset($assoc['item_id']) ? (int) $assoc['item_id'] : 0;
+            if ($itemId <= 0) {
+                continue;
+            }
+            $modeRaw = isset($assoc['pricing_mode']) ? strtolower(trim((string) $assoc['pricing_mode'])) : 'manual';
+            $mode = $modeRaw === 'auto' ? 'auto' : 'manual';
+            $priceRaw = $assoc['price'] ?? null;
+            $price = 0.0;
+            if ($priceRaw !== null && $priceRaw !== '') {
+                if (is_numeric($priceRaw)) {
+                    $price = (float) $priceRaw;
+                } else {
+                    $price = (float) str_replace([',', ' '], ['.', ''], (string) $priceRaw);
+                }
+            }
+
+            $catIdRaw = $assoc['category_id'] ?? null;
+            $rowCategoryId = null;
+            if ($catIdRaw !== null && $catIdRaw !== '') {
+                $rowCategoryId = (int) $catIdRaw;
+                if ($rowCategoryId <= 0) {
+                    $rowCategoryId = null;
+                }
+            }
+
+            $rows[] = [
+                'item_id' => $itemId,
+                'category_id' => $rowCategoryId,
+                'category_name' => isset($assoc['category_name']) ? trim((string) $assoc['category_name']) : '',
                 'pricing_mode' => $mode,
-                'price' => $row ? (float) $row->price : null,
-                'auto_suggested_price' => $autoPrice,
-                'last_gr_number' => $lastGr['gr_number'] ?? null,
-                'last_gr_date' => $lastGr['receive_date'] ?? null,
-                'cost_large_last' => $lastGr ? round((float) $lastGr['cost_large'], 4) : null,
+                'price' => $price,
             ];
-        })->values();
+        }
+
+        if ($rows === []) {
+            return response()->json([
+                'success' => false,
+                'saved' => 0,
+                'errors' => ['Tidak ada baris valid (item_id).'],
+                'message' => 'Tidak ada data untuk diproses.',
+            ], 422);
+        }
+
+        $result = $this->processNonPosPricingRows($rows);
+
+        return response()->json([
+            'success' => $result['saved'] > 0,
+            'saved' => $result['saved'],
+            'errors' => $result['errors'],
+            'message' => $result['saved'] > 0
+                ? "Berhasil memperbarui {$result['saved']} baris dari import."
+                : 'Tidak ada baris yang tersimpan.',
+        ], $result['saved'] > 0 ? 200 : 422);
+    }
+
+    /**
+     * Modal: daftar item non-POS (kategori is_asset=0, show_pos=0) untuk update harga default (scope "all").
+     */
+    public function nonPosBulkPricesData(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+        $page = max(1, (int) $request->get('page', 1));
+        $perPage = min(50, max(5, (int) $request->get('per_page', 15)));
+
+        $paginator = $this->nonPosPricingItemsQuery($search)->paginate($perPage, ['items.*'], 'page', $page);
+
+        $data = collect($paginator->items())->map(fn (Item $item) => $this->formatNonPosPricingRow($item))->values();
 
         return response()->json([
             'data' => $data,
@@ -3077,84 +3348,21 @@ class ItemController extends Controller
         $validated = $request->validate([
             'rows' => 'required|array|min:1',
             'rows.*.item_id' => 'required|exists:items,id',
+            'rows.*.category_id' => 'nullable|integer',
+            'rows.*.category_name' => 'nullable|string|max:255',
             'rows.*.pricing_mode' => 'required|in:manual,auto',
             'rows.*.price' => 'nullable|numeric|min:0',
         ]);
 
-        $errors = [];
-        $saved = 0;
-
-        foreach ($validated['rows'] as $idx => $row) {
-            $item = Item::query()
-                ->join('categories', 'items.category_id', '=', 'categories.id')
-                ->where('items.id', $row['item_id'])
-                ->where('categories.is_asset', '0')
-                ->where('categories.show_pos', '0')
-                ->select('items.*')
-                ->first();
-
-            if (! $item) {
-                $errors[] = 'Baris '.((int) $idx + 1).': item tidak termasuk filter kategori non-POS non-asset.';
-
-                continue;
-            }
-
-            $mode = $row['pricing_mode'];
-            $price = isset($row['price']) ? (float) $row['price'] : 0;
-
-            if ($mode === 'auto') {
-                $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
-                if ($computed === null || $computed <= 0) {
-                    $errors[] = $item->sku.': tidak ada Food Good Receive / harga PO untuk mode otomatis.';
-
-                    continue;
-                }
-                $price = $computed;
-            } elseif ($price <= 0) {
-                $errors[] = $item->sku.': harga manual harus diisi (> 0).';
-
-                continue;
-            }
-
-            $existing = DB::table('item_prices')
-                ->where('item_id', $item->id)
-                ->where('availability_price_type', 'all')
-                ->whereNull('region_id')
-                ->whereNull('outlet_id')
-                ->orderByDesc('id')
-                ->first();
-
-            $payload = [
-                'price' => round($price, 2),
-                'pricing_mode' => $mode,
-                'updated_at' => now(),
-            ];
-
-            try {
-                if ($existing) {
-                    DB::table('item_prices')->where('id', $existing->id)->update($payload);
-                } else {
-                    DB::table('item_prices')->insert(array_merge([
-                        'item_id' => $item->id,
-                        'availability_price_type' => 'all',
-                        'region_id' => null,
-                        'outlet_id' => null,
-                        'created_at' => now(),
-                    ], $payload));
-                }
-                $saved++;
-            } catch (\Throwable $e) {
-                $errors[] = $item->sku.': '.$e->getMessage();
-            }
-        }
+        $result = $this->processNonPosPricingRows($validated['rows']);
 
         return response()->json([
-            'success' => $saved > 0,
-            'saved' => $saved,
-            'errors' => $errors,
-            'message' => $saved > 0
-                ? "Berhasil menyimpan {$saved} harga."
+            'success' => $result['saved'] > 0,
+            'saved' => $result['saved'],
+            'errors' => $result['errors'],
+            'message' => $result['saved'] > 0
+                ? "Berhasil menyimpan {$result['saved']} harga."
                 : 'Tidak ada harga yang tersimpan.',
-        ], $saved > 0 ? 200 : 422);
+        ], $result['saved'] > 0 ? 200 : 422);
     }
 } 

@@ -932,7 +932,9 @@ Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus']
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/api/items/non-pos-pricing', [ItemController::class, 'nonPosBulkPricesData'])->name('items.non-pos-pricing.data');
+    Route::get('/api/items/non-pos-pricing/template', [ItemController::class, 'nonPosPricingTemplateDownload'])->name('items.non-pos-pricing.template');
     Route::post('/api/items/non-pos-pricing', [ItemController::class, 'nonPosBulkPricesSave'])->name('items.non-pos-pricing.save');
+    Route::post('/api/items/non-pos-pricing/import', [ItemController::class, 'nonPosPricingImport'])->name('items.non-pos-pricing.import');
 });
 
 Route::get('/api/items/{id}', [App\Http\Controllers\ItemController::class, 'show']);

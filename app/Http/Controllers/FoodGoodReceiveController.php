@@ -123,8 +123,10 @@ class FoodGoodReceiveController extends Controller
     public function fetchPO(Request $request)
     {
         $request->validate(['po_number' => 'required|string']);
-        $po = DB::table('purchase_order_foods')
-            ->where('number', $request->po_number)
+        $po = DB::table('purchase_order_foods as pof')
+            ->leftJoin('suppliers as s', 'pof.supplier_id', '=', 's.id')
+            ->where('pof.number', $request->po_number)
+            ->select('pof.*', 's.name as supplier_name')
             ->first();
         if (!$po) {
             return response()->json(['message' => 'PO tidak ditemukan'], 404);
@@ -161,9 +163,13 @@ class FoodGoodReceiveController extends Controller
                 ->select('poi.*', 'i.name as item_name', 'u.name as unit_name', 'wd.name as warehouse_division_name')
                 ->get();
         }
+        $poPayload = (array) $po;
+        $poPayload['order_date'] = $po->date ?? null;
+        $poPayload['delivery_date'] = $po->arrival_date ?? null;
+
         return response()->json([
-            'po' => $po,
-            'items' => $items
+            'po' => $poPayload,
+            'items' => $items,
         ]);
     }
 

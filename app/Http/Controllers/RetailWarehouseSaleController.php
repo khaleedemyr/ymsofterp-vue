@@ -9,6 +9,7 @@ use App\Models\Item;
 use App\Models\Customer;
 use App\Models\RetailWarehouseSale;
 use Illuminate\Support\Facades\Log;
+use App\Support\FoodGrLastPurchaseForItem;
 
 class RetailWarehouseSaleController extends Controller
 {
@@ -661,21 +662,73 @@ class RetailWarehouseSaleController extends Controller
     {
         $request->validate([
             'item_id' => 'required|exists:items,id',
+            'unit_id' => 'nullable|integer',
         ]);
 
-        // Ambil harga dari item_prices dengan prioritas region_id=1, lalu availability_price_type='all'
-        $price = DB::table('item_prices')
-            ->where('item_id', $request->item_id)
-            ->where(function($q) {
+        $unitId = $request->filled('unit_id') ? (int) $request->unit_id : null;
+        $price = $this->resolveRetailWarehouseSaleUnitPrice((int) $request->item_id, $unitId);
+
+        return response()->json([
+            'price' => $price,
+        ]);
+    }
+
+    /**
+     * Harga jual penjualan warehouse retail.
+     * item_prices disimpan per satuan large; dikonversi ke unit jual (medium/small) bila unit_id diberikan.
+     */
+    private function resolveRetailWarehouseSaleUnitPrice(int $itemId, ?int $unitId = null): float
+    {
+        $item = DB::table('items')->where('id', $itemId)->first();
+        if (! $item) {
+            return 0.0;
+        }
+
+        $priceLarge = DB::table('item_prices')
+            ->where('item_id', $itemId)
+            ->where(function ($q) {
                 $q->where('region_id', 1)
-                  ->orWhere('availability_price_type', 'all');
+                    ->orWhere('availability_price_type', 'all');
             })
             ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
             ->value('price');
 
-        return response()->json([
-            'price' => $price ? (float)$price : 0
-        ]);
+        $priceLarge = $priceLarge ? (float) $priceLarge : 0.0;
+
+        if ($priceLarge <= 0) {
+            $fallback = DB::table('item_prices')
+                ->where('item_id', $itemId)
+                ->where('availability_price_type', 'all')
+                ->whereNull('region_id')
+                ->whereNull('outlet_id')
+                ->orderByDesc('id')
+                ->value('price');
+            $priceLarge = $fallback ? (float) $fallback : 0.0;
+        }
+
+        if ($priceLarge <= 0) {
+            $suggested = FoodGrLastPurchaseForItem::suggestedSellingPrice($itemId);
+            $priceLarge = $suggested ? (float) $suggested : 0.0;
+        }
+
+        if ($priceLarge <= 0 || ! $unitId) {
+            return round($priceLarge, 2);
+        }
+
+        $smallConv = (float) ($item->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($item->medium_conversion_qty ?: 1);
+
+        if ((int) $unitId === (int) $item->large_unit_id) {
+            return round($priceLarge, 2);
+        }
+        if ((int) $unitId === (int) $item->medium_unit_id && $mediumConv > 0) {
+            return round($priceLarge / $mediumConv, 2);
+        }
+        if ((int) $unitId === (int) $item->small_unit_id && $smallConv > 0 && $mediumConv > 0) {
+            return round($priceLarge / ($smallConv * $mediumConv), 2);
+        }
+
+        return round($priceLarge, 2);
     }
 
     /**
@@ -1012,16 +1065,10 @@ class RetailWarehouseSaleController extends Controller
             $qty_small = $qty * $smallConv * $mediumConv;
         }
 
-        $price = DB::table('item_prices')
-            ->where('item_id', $serial->item_id)
-            ->where(function ($q) {
-                $q->where('region_id', 1)
-                    ->orWhere('availability_price_type', 'all');
-            })
-            ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
-            ->value('price');
-
-        $price = $price ? (float) $price : 0;
+        $price = $this->resolveRetailWarehouseSaleUnitPrice(
+            (int) $serial->item_id,
+            $unitId ? (int) $unitId : null
+        );
 
         return response()->json([
             'valid' => true,
