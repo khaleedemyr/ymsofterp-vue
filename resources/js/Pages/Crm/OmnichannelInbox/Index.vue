@@ -394,6 +394,32 @@ const props = defineProps({
   canManageOmnichannelTeams: { type: Boolean, default: false },
 })
 
+/** Kunci partial reload Inertia agar daftar chat, pesan, dan hak "lihat semua" selalu sinkron (satu sumber kebenaran). */
+const inboxPartialReloadKeys = [
+  'conversations',
+  'selectedConversation',
+  'messages',
+  'inbox',
+  'leadStageFilter',
+  'leadStages',
+  'assignableUsers',
+  'assignableTeams',
+  'canSeeAllChats',
+  'canManageOmnichannelTeams',
+]
+
+function sortMessages(msgs) {
+  const list = Array.isArray(msgs) ? [...msgs] : []
+  return list.sort((a, b) => {
+    const ta = new Date(a.sent_at || 0).getTime()
+    const tb = new Date(b.sent_at || 0).getTime()
+    if (ta !== tb) {
+      return ta - tb
+    }
+    return (Number(a.id) || 0) - (Number(b.id) || 0)
+  })
+}
+
 const inboxMenuOptions = computed(() => {
   const restricted = !props.canSeeAllChats
   return [
@@ -412,7 +438,7 @@ const inboxMenuOptions = computed(() => {
 
 const search = ref('')
 const selectedId = ref(props.selectedConversation?.id ?? null)
-const localMessages = ref([...props.messages])
+const localMessages = ref(sortMessages(props.messages || []))
 const replyText = ref('')
 const composerMode = ref('reply')
 const sending = ref(false)
@@ -529,7 +555,7 @@ function setInbox(val) {
   router.get('/crm/omnichannel-inbox', listQuery({ inbox: val }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    only: inboxPartialReloadKeys,
   })
 }
 
@@ -537,7 +563,7 @@ function setLeadStage(val) {
   router.get('/crm/omnichannel-inbox', listQuery({ lead_stage: val }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    only: inboxPartialReloadKeys,
   })
 }
 
@@ -545,7 +571,7 @@ function selectConversation(id) {
   router.get('/crm/omnichannel-inbox', listQuery({ conversation: id }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    only: inboxPartialReloadKeys,
   })
 }
 
@@ -564,22 +590,43 @@ function syncCrmFormFromConversation(conv) {
   }
 }
 
+/** User sedang membaca riwayat di atas — jangan auto-scroll kecuali sudah dekat bawah. */
+function shouldStickToBottom() {
+  const el = messagesEl.value
+  if (!el) {
+    return true
+  }
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 100
+}
+
 watch(
   () => props.messages,
   (val) => {
-    localMessages.value = [...val]
-    scrollToBottom()
+    const prev = localMessages.value
+    const next = sortMessages(val ?? [])
+    const prevLastId = prev[prev.length - 1]?.id
+    const nextLastId = next[next.length - 1]?.id
+    localMessages.value = next
+    const newTail = nextLastId !== prevLastId || next.length > prev.length
+    if (shouldStickToBottom() && newTail) {
+      scrollToBottom()
+    }
   },
   { deep: true }
 )
 
 watch(
   () => props.selectedConversation,
-  (conv) => {
-    selectedId.value = conv?.id ?? null
+  (conv, prevConv) => {
+    const prevId = prevConv?.id ?? null
+    const newId = conv?.id ?? null
+    selectedId.value = newId
     syncCrmFormFromConversation(conv)
     sendError.value = ''
     composerMode.value = 'reply'
+    if (newId !== prevId) {
+      nextTick(() => scrollToBottom())
+    }
   },
   { immediate: true }
 )
@@ -595,18 +642,20 @@ async function submitComposer() {
         `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`,
         { body }
       )
-      localMessages.value.push(data.message)
+      localMessages.value = sortMessages([...localMessages.value, data.message])
     } else {
       const { data } = await axios.post(
         `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`,
         { body }
       )
-      localMessages.value.push(data.message)
+      localMessages.value = sortMessages([...localMessages.value, data.message])
     }
     replyText.value = ''
     scrollToBottom()
-    router.reload({
-      only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    await router.reload({
+      only: inboxPartialReloadKeys,
+      preserveState: true,
+      preserveScroll: true,
     })
   } catch (e) {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
@@ -634,8 +683,10 @@ async function saveCrmPanel() {
   }
   try {
     await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, payload)
-    router.reload({
-      only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    await router.reload({
+      only: inboxPartialReloadKeys,
+      preserveState: true,
+      preserveScroll: true,
     })
   } catch (e) {
     crmSaveError.value = e.response?.data?.message || 'Gagal menyimpan.'
@@ -644,19 +695,18 @@ async function saveCrmPanel() {
   }
 }
 
-async function pollMessages() {
-  if (!selectedId.value) return
+/**
+ * Segarkan daftar percakapan, pesan terbuka, dan flag canSeeAllChats tanpa harus keluar halaman.
+ * Sebelumnya reload memakai `only` tanpa `messages` + poll hanya membandingkan panjang array,
+ * sehingga data di DB sudah ada tapi UI / urutan chat terasa "nyangkut".
+ */
+async function pollInbox() {
   try {
-    const { data } = await axios.get(
-      `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`
-    )
-    if (data.messages?.length !== localMessages.value.length) {
-      localMessages.value = data.messages
-      scrollToBottom()
-      router.reload({
-        only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
-      })
-    }
+    await router.reload({
+      only: inboxPartialReloadKeys,
+      preserveState: true,
+      preserveScroll: true,
+    })
   } catch {
     /* ignore */
   }
@@ -698,7 +748,7 @@ onMounted(() => {
     axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf
   }
   scrollToBottom()
-  pollTimer = setInterval(pollMessages, 8000)
+  pollTimer = setInterval(pollInbox, 8000)
 })
 
 onUnmounted(() => {
