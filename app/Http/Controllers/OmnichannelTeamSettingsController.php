@@ -26,13 +26,24 @@ class OmnichannelTeamSettingsController extends Controller
             ->get();
 
         $userOptions = User::query()
-            ->active()
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'email'])
             ->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->nama_lengkap ?? $u->email,
             ]);
+
+        $fullAccessIds = DB::table('omni_inbox_full_access_users')->pluck('user_id')->all();
+        $fullAccessUsers = User::query()
+            ->whereIn('id', $fullAccessIds)
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'email'])
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->nama_lengkap ?? $u->email,
+            ])
+            ->values()
+            ->all();
 
         return Inertia::render('Crm/OmnichannelTeams/Index', [
             'teams' => $teams->map(fn (OmniTeam $t) => [
@@ -44,9 +55,40 @@ class OmnichannelTeamSettingsController extends Controller
                     'name' => $u->nama_lengkap ?? $u->email,
                 ])->values()->all(),
             ])->values()->all(),
-            'seeAllUsers' => $this->buildSeeAllUsersList(),
+            'fullAccessUsers' => $fullAccessUsers,
             'userOptions' => $userOptions,
         ]);
+    }
+
+    public function updateFullAccessUsers(Request $request): RedirectResponse
+    {
+        abort_unless(
+            OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
+            403
+        );
+
+        $validated = $request->validate([
+            'user_ids' => ['nullable', 'array'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+        ]);
+
+        $ids = array_values(array_unique(array_map('intval', $validated['user_ids'] ?? [])));
+
+        DB::transaction(function () use ($ids) {
+            DB::table('omni_inbox_full_access_users')->delete();
+            if ($ids === []) {
+                return;
+            }
+            $now = now();
+            $rows = array_map(fn (int $uid) => [
+                'user_id' => $uid,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $ids);
+            DB::table('omni_inbox_full_access_users')->insert($rows);
+        });
+
+        return redirect()->back()->with('success', 'Daftar pengguna (lihat semua inbox) disimpan.');
     }
 
     public function store(Request $request): RedirectResponse
@@ -114,46 +156,5 @@ class OmnichannelTeamSettingsController extends Controller
         $team->delete();
 
         return redirect()->back()->with('success', 'Tim dihapus.');
-    }
-
-    /**
-     * @return list<array{id: int, name: string, email: ?string, via: string}>
-     */
-    private function buildSeeAllUsersList(): array
-    {
-        $permissionId = DB::table('erp_permission')->where('code', 'omnichannel_inbox_see_all')->value('id');
-
-        $query = User::query()
-            ->active()
-            ->select(['users.id', 'users.nama_lengkap', 'users.email', 'users.is_admin'])
-            ->orderBy('nama_lengkap');
-
-        $query->where(function ($q) use ($permissionId) {
-            $q->where('users.is_admin', 1);
-            if ($permissionId) {
-                $q->orWhereExists(function ($sub) use ($permissionId) {
-                    $sub->select(DB::raw(1))
-                        ->from('erp_user_role as ur')
-                        ->join('erp_role_permission as rp', 'rp.role_id', '=', 'ur.role_id')
-                        ->whereColumn('ur.user_id', 'users.id')
-                        ->where('rp.permission_id', $permissionId);
-                });
-            }
-        });
-
-        return $query->get()
-            ->unique('id')
-            ->map(function (User $u) {
-                $via = ((int) ($u->is_admin ?? 0) === 1) ? 'Admin' : 'Role (lihat semua chat)';
-
-                return [
-                    'id' => (int) $u->id,
-                    'name' => $u->nama_lengkap ?? $u->email ?? '',
-                    'email' => $u->email,
-                    'via' => $via,
-                ];
-            })
-            ->values()
-            ->all();
     }
 }

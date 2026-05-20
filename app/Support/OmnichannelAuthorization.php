@@ -11,11 +11,6 @@ class OmnichannelAuthorization
 {
     public static function userHasPermission(int $userId, string $permissionCode): bool
     {
-        $isAdmin = DB::table('users')->where('id', $userId)->value('is_admin');
-        if ($isAdmin === true || (int) $isAdmin === 1) {
-            return true;
-        }
-
         return DB::table('erp_user_role as ur')
             ->join('erp_role_permission as rp', 'rp.role_id', '=', 'ur.role_id')
             ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
@@ -39,7 +34,9 @@ class OmnichannelAuthorization
             return false;
         }
 
-        return self::userHasPermission($user->id, 'omnichannel_inbox_see_all');
+        return DB::table('omni_inbox_full_access_users')
+            ->where('user_id', $user->id)
+            ->exists();
     }
 
     /**

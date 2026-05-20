@@ -1,30 +1,11 @@
 -- =====================================================
--- Menu "Tim Inbox Omnichannel" + permission lihat semua chat
+-- Menu "Tim Inbox Omnichannel" + permission kelola tim
 -- parent_id = 138 (CRM). Jalankan sekali.
+-- Catatan: siapa yang "lihat semua inbox" diatur manual di halaman tim
+-- (tabel omni_inbox_full_access_users), bukan lewat permission ERP.
 -- =====================================================
 
 START TRANSACTION;
-
-SET @inbox_menu_id = (SELECT `id` FROM `erp_menu` WHERE `code` = 'omnichannel_inbox' LIMIT 1);
-
-INSERT INTO `erp_permission` (
-    `menu_id`,
-    `action`,
-    `code`,
-    `created_at`,
-    `updated_at`
-)
-SELECT
-    @inbox_menu_id,
-    'see_all',
-    'omnichannel_inbox_see_all',
-    NOW(),
-    NOW()
-FROM DUAL
-WHERE @inbox_menu_id IS NOT NULL
-ON DUPLICATE KEY UPDATE
-    `menu_id` = VALUES(`menu_id`),
-    `updated_at` = NOW();
 
 INSERT INTO `erp_menu` (
     `name`,

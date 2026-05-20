@@ -4,7 +4,7 @@
       <div>
         <h1 class="text-xl font-semibold text-slate-900">Tim Inbox Omnichannel</h1>
         <p class="mt-1 text-sm text-slate-600">
-          Buat tim untuk penugasan chat. Pengguna dengan permission <strong>lihat semua chat</strong> melihat seluruh percakapan di inbox.
+          Atur <strong>siapa saja</strong> yang melihat <strong>semua</strong> percakapan di inbox, dan buat <strong>tim</strong> untuk penugasan chat (pilih anggota dari seluruh user).
         </p>
         <Link href="/crm/omnichannel-inbox" class="mt-2 inline-block text-sm font-medium text-emerald-700 hover:underline">
           ← Kembali ke inbox
@@ -12,27 +12,31 @@
       </div>
 
       <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 class="text-sm font-semibold text-slate-800">Pengguna yang bisa melihat semua chat</h2>
+        <h2 class="text-sm font-semibold text-slate-800">Pengguna yang melihat semua inbox</h2>
         <p class="mt-1 text-xs text-slate-500">
-          Daftar ini otomatis dari <strong>Admin</strong> atau role yang memiliki permission <code class="rounded bg-slate-100 px-1">omnichannel_inbox_see_all</code> (atur di menu Role ERP).
+          Pilih satu atau lebih user di bawah (daftar lengkap, bisa dicari). Hanya user yang terdaftar di sini yang mendapat tampilan tab &quot;Semua&quot; penuh. User lain tetap melihat percakapan relevan (tugas pribadi, tim, atau belum ditugaskan).
         </p>
-        <div v-if="seeAllUsers.length === 0" class="mt-3 text-sm text-slate-500">Belum ada pengguna (pastikan permission sudah di-assign ke role).</div>
-        <table v-else class="mt-3 w-full text-left text-sm">
-          <thead>
-            <tr class="border-b text-xs uppercase text-slate-500">
-              <th class="py-2 pr-2">Nama</th>
-              <th class="py-2 pr-2">Email</th>
-              <th class="py-2">Sumber akses</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in seeAllUsers" :key="u.id" class="border-b border-slate-100">
-              <td class="py-2 pr-2 font-medium text-slate-900">{{ u.name }}</td>
-              <td class="py-2 pr-2 text-slate-600">{{ u.email || '—' }}</td>
-              <td class="py-2 text-slate-600">{{ u.via }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <label class="mt-3 block text-xs font-medium text-slate-600">Pilih pengguna</label>
+        <Multiselect
+          v-model="fullAccessSelection"
+          :options="userOptions"
+          :multiple="true"
+          :close-on-select="false"
+          :searchable="true"
+          :preserve-search="true"
+          label="name"
+          track-by="id"
+          placeholder="Cari nama / email..."
+          class="omni-team-multiselect mt-1 text-sm"
+        />
+        <button
+          type="button"
+          class="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          :disabled="fullAccessSaving"
+          @click="saveFullAccess"
+        >
+          {{ fullAccessSaving ? 'Menyimpan...' : 'Simpan daftar lihat semua inbox' }}
+        </button>
       </section>
 
       <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -65,6 +69,7 @@
               :multiple="true"
               :close-on-select="false"
               :searchable="true"
+              :preserve-search="true"
               label="name"
               track-by="id"
               placeholder="Pilih pengguna..."
@@ -108,6 +113,7 @@
               :multiple="true"
               :close-on-select="false"
               :searchable="true"
+              :preserve-search="true"
               label="name"
               track-by="id"
               placeholder="Pilih pengguna..."
@@ -136,9 +142,12 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
   teams: { type: Array, default: () => [] },
-  seeAllUsers: { type: Array, default: () => [] },
+  fullAccessUsers: { type: Array, default: () => [] },
   userOptions: { type: Array, default: () => [] },
 })
+
+const fullAccessSelection = ref([])
+const fullAccessSaving = ref(false)
 
 const createName = ref('')
 const createDescription = ref('')
@@ -146,6 +155,14 @@ const createMembers = ref([])
 const createSubmitting = ref(false)
 
 const memberSelections = reactive({})
+
+watch(
+  () => props.fullAccessUsers,
+  (list) => {
+    fullAccessSelection.value = Array.isArray(list) ? [...list] : []
+  },
+  { immediate: true, deep: true }
+)
 
 watch(
   () => props.teams,
@@ -159,6 +176,22 @@ watch(
   },
   { immediate: true, deep: true }
 )
+
+function saveFullAccess() {
+  fullAccessSaving.value = true
+  router.put(
+    '/crm/omnichannel-teams/full-access-users',
+    {
+      user_ids: (fullAccessSelection.value || []).map((u) => u.id),
+    },
+    {
+      preserveScroll: true,
+      onFinish: () => {
+        fullAccessSaving.value = false
+      },
+    }
+  )
+}
 
 function submitCreate() {
   createSubmitting.value = true
@@ -200,5 +233,8 @@ function destroyTeam(teamId) {
 .omni-team-multiselect :deep(.multiselect__tags) {
   min-height: 40px;
   font-size: 0.875rem;
+}
+.omni-team-multiselect :deep(.multiselect__content-wrapper) {
+  max-height: 320px;
 }
 </style>

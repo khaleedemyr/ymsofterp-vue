@@ -369,8 +369,8 @@ const inboxMenuOptions = computed(() => {
       label: restricted ? 'Semua (relevan)' : 'Semua',
       icon: 'fa-solid fa-inbox',
       hint: restricted
-        ? 'Percakapan yang ditugaskan ke Anda, tim Anda, atau belum ditugaskan'
-        : 'Semua percakapan (perlu permission lihat semua chat)',
+        ? 'Percakapan yang ditugaskan ke Anda, tim Anda, atau belum ditugaskan. Daftar "lihat semua" diatur di menu Tim Inbox Omnichannel.'
+        : 'Semua percakapan (Anda ada di daftar lihat semua inbox)',
     },
     { value: 'mine', label: 'Ditugaskan ke saya', icon: 'fa-solid fa-user', hint: '' },
     { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' },
