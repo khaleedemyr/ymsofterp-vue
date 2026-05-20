@@ -57,6 +57,7 @@ return [
         'whatsapp_business_account_id' => env('META_WHATSAPP_BUSINESS_ACCOUNT_ID'),
         'graph_api_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
+        'webhook_skip_signature_verify' => env('META_WEBHOOK_SKIP_SIGNATURE_VERIFY', false),
     ],
 
     'fcm' => [

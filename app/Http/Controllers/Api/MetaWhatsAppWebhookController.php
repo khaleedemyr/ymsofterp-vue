@@ -21,8 +21,14 @@ class MetaWhatsAppWebhookController extends Controller
         $verifyToken = config('services.meta.webhook_verify_token');
 
         if ($mode !== 'subscribe' || $verifyToken === null || $verifyToken === '' || $token !== $verifyToken) {
+            Log::warning('Meta WhatsApp webhook verify failed', [
+                'mode' => $mode,
+                'token_match' => $token === $verifyToken,
+            ]);
             abort(403, 'Forbidden');
         }
+
+        Log::info('Meta WhatsApp webhook verified');
 
         return response((string) $challenge, 200)->header('Content-Type', 'text/plain');
     }
@@ -32,11 +38,21 @@ class MetaWhatsAppWebhookController extends Controller
      */
     public function handle(Request $request): Response
     {
+        Log::warning('Meta WhatsApp webhook POST hit', [
+            'has_signature' => $request->header('X-Hub-Signature-256') !== null,
+            'content_length' => strlen($request->getContent()),
+        ]);
+
         if (! $this->isValidSignature($request)) {
+            Log::warning('Meta WhatsApp webhook rejected: invalid signature', [
+                'has_signature_header' => $request->header('X-Hub-Signature-256') !== null,
+                'app_secret_configured' => (string) config('services.meta.app_secret') !== '',
+                'skip_signature' => config('services.meta.webhook_skip_signature_verify'),
+            ]);
             abort(403, 'Invalid signature');
         }
 
-        Log::info('Meta WhatsApp webhook received', [
+        Log::warning('Meta WhatsApp webhook received', [
             'payload' => $request->all(),
         ]);
 
@@ -45,6 +61,10 @@ class MetaWhatsAppWebhookController extends Controller
 
     private function isValidSignature(Request $request): bool
     {
+        if (config('services.meta.webhook_skip_signature_verify')) {
+            return true;
+        }
+
         $secret = config('services.meta.app_secret');
 
         if ($secret === null || $secret === '') {
