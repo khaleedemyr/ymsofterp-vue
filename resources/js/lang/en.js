@@ -1,3 +1,5 @@
+import sidebar from './sidebar-en.js';
+
 export default {
   greeting: {
     pagi: 'Good Morning',
@@ -25,6 +27,7 @@ export default {
     tasks: 'Tasks',
     mt_dashboard: 'MT Dashboard',
     maintenance_order: 'Maintenance Order',
+    ...sidebar,
   },
   profile: {
     profile: 'Profile',

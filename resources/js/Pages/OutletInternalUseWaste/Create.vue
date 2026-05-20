@@ -56,6 +56,11 @@
               </button>
             </div>
 
+            <div v-if="isUsageAutoBomType && !loadingStockCutItems" class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <i class="fa-solid fa-circle-info mr-2"></i>
+              Tipe <strong>Usage</strong>: input <strong>stock fisik</strong> hasil hitung di outlet. Sistem menampilkan <strong>stock on hand</strong> dan menghitung <strong>qty usage</strong> = selisih keduanya. Yang dipotong dari stok saat simpan/submit adalah qty usage.
+            </div>
+
             <div v-if="isUsageAutoBomType && loadingStockCutItems" class="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               <i class="fa fa-spinner fa-spin mr-2"></i>Memuat item BOM (stock cut)…
             </div>
@@ -122,16 +127,40 @@
                       </div>
 
                       <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Qty</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Stock On Hand</label>
+                        <input
+                          type="text"
+                          :value="formatStockOnHandSmall(entry.item)"
+                          class="input input-bordered w-full bg-slate-50 font-medium"
+                          readonly
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Stock Fisik</label>
                         <input
                           type="number"
-                          min="0.01"
+                          min="0"
                           step="0.01"
-                          v-model.number="entry.item.qty"
+                          v-model.number="entry.item.physical_qty"
                           class="input input-bordered w-full"
-                          required
+                          placeholder="Hitung stok fisik di outlet"
                           :disabled="!form.warehouse_outlet_id || !entry.item.item_id"
                         />
+                        <p v-if="entry.item.physical_qty !== '' && entry.item.physical_qty != null && Number(entry.item.physical_qty) > getStockOnHandSmall(entry.item)" class="text-xs text-red-600 mt-1">
+                          Stock fisik tidak boleh melebihi stock on hand.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Qty Usage</label>
+                        <input
+                          type="text"
+                          :value="formatUsageQtyDisplay(entry.item)"
+                          class="input input-bordered w-full bg-blue-50 font-semibold text-blue-800"
+                          readonly
+                        />
+                        <p class="text-xs text-gray-500 mt-1">Selisih stock on hand − stock fisik (yang dipotong saat simpan)</p>
                       </div>
 
                       <div>
@@ -428,6 +457,7 @@ function newItem() {
     item_name: '',
     selectedItem: null,
     qty: '',
+    physical_qty: '',
     unit_id: '',
     unit_name: '',
     note: '',
@@ -455,6 +485,7 @@ const form = ref({
           item_name: detail.item_name || '',
           selectedItem: selectedItem,
           qty: detail.qty,
+          physical_qty: '',
           unit_id: detail.unit_id,
           unit_name: detail.unit_name || '',
           note: detail.note || '',
@@ -491,6 +522,67 @@ const usageGroupOpen = ref({})
 
 /** Usage: BOM material item_bom.stock_cut=1, auto-rows, unit terkecil, stok outlet */
 const isUsageAutoBomType = computed(() => form.value.type === 'usage')
+
+function getStockOnHandSmall(item) {
+  return Number(item?.stock?.qty_small ?? 0)
+}
+
+/** Qty usage = stock on hand − stock fisik (unit terkecil) */
+function getUsageQty(item) {
+  if (!isUsageAutoBomType.value) {
+    return Number(item?.qty) || 0
+  }
+  const onHand = getStockOnHandSmall(item)
+  const physical = Number(item?.physical_qty)
+  if (item?.physical_qty === '' || item?.physical_qty == null || Number.isNaN(physical)) {
+    return 0
+  }
+  const usage = onHand - physical
+  return usage > 0 ? usage : 0
+}
+
+function formatStockOnHandSmall(item) {
+  const qty = getStockOnHandSmall(item)
+  const unit = item?.stock?.unit_small || item?.unit_name || ''
+  return `${formatNumber(qty)} ${unit}`.trim()
+}
+
+function formatUsageQtyDisplay(item) {
+  if (!isUsageAutoBomType.value) {
+    return formatNumber(item?.qty ?? 0)
+  }
+  if (item?.physical_qty === '' || item?.physical_qty == null) {
+    return '—'
+  }
+  const unit = item?.stock?.unit_small || item?.unit_name || ''
+  return `${formatNumber(getUsageQty(item))} ${unit}`.trim()
+}
+
+function syncUsagePhysicalFromSavedQty(item) {
+  if (!isUsageAutoBomType.value || !item?.stock) return
+  const onHand = getStockOnHandSmall(item)
+  const usageQty = Number(item.qty) || 0
+  item.physical_qty = Math.max(0, onHand - usageQty)
+}
+
+function mapItemToPayload(item) {
+  return {
+    item_id: item.item_id,
+    qty: isUsageAutoBomType.value ? getUsageQty(item) : item.qty,
+    unit_id: item.unit_id,
+    note: item.note || null,
+  }
+}
+
+function isItemValidForSave(item) {
+  if (!item.item_id) return false
+  if (isUsageAutoBomType.value) {
+    if (item.physical_qty === '' || item.physical_qty == null) return false
+    if (Number(item.physical_qty) > getStockOnHandSmall(item)) return false
+    return getUsageQty(item) > 0
+  }
+  return Number(item.qty) > 0
+}
 
 function normalizeUsageCategory(item) {
   return item.category_name || 'Tanpa Kategori'
@@ -565,10 +657,10 @@ watch(() => form.value.outlet_id, async (newOutletId) => {
 // On mount, if edit mode, fetch stock for existing items
 onMounted(async () => {
   if (isEdit.value && form.value.warehouse_outlet_id) {
-    // Fetch stock for all items
     for (let idx = 0; idx < form.value.items.length; idx++) {
       if (form.value.items[idx].item_id) {
         await fetchStock(idx)
+        syncUsagePhysicalFromSavedQty(form.value.items[idx])
       }
     }
   }
@@ -588,24 +680,43 @@ async function loadStockCutItems() {
     })
 
     const sourceItems = Array.isArray(res.data?.items) ? res.data.items : []
+    const savedMap = new Map()
+    form.value.items.forEach((it) => {
+      if (it.item_id) {
+        savedMap.set(String(it.item_id), {
+          qty: it.qty,
+          note: it.note,
+          physical_qty: it.physical_qty,
+        })
+      }
+    })
+
     const mappedItems = sourceItems.map((row) => {
       const selectedItem = props.items.find((item) => item.id == row.item_id) || {
         id: row.item_id,
         name: row.item_name,
       }
+      const saved = savedMap.get(String(row.item_id))
 
-      return {
+      const mapped = {
         id: Date.now() + Math.random(),
         item_id: row.item_id,
         item_name: row.item_name,
         category_name: row.category_name || 'Tanpa Kategori',
         selectedItem,
-        qty: '',
+        qty: saved?.qty ?? '',
+        physical_qty: saved?.physical_qty ?? '',
         unit_id: row.unit_id || '',
         unit_name: row.unit_name || '',
-        note: '',
+        note: saved?.note ?? '',
         stock: row.stock || null,
       }
+
+      if (mapped.stock && (mapped.physical_qty === '' || mapped.physical_qty == null) && mapped.qty !== '' && mapped.qty != null) {
+        syncUsagePhysicalFromSavedQty(mapped)
+      }
+
+      return mapped
     })
 
     form.value.items = mappedItems
@@ -720,8 +831,26 @@ async function validateStockBeforeSave() {
   
   for (let idx = 0; idx < form.value.items.length; idx++) {
     const item = form.value.items[idx]
-    if (!item.item_id || !item.qty || item.qty <= 0) {
-      continue // Skip empty items
+    if (!item.item_id) {
+      continue
+    }
+
+    if (isUsageAutoBomType.value) {
+      if (item.physical_qty === '' || item.physical_qty == null) {
+        continue
+      }
+      const physical = Number(item.physical_qty)
+      if (Number.isNaN(physical) || physical < 0) {
+        return { valid: false, message: `Stock fisik item "${item.item_name || 'Item'}" tidak valid.` }
+      }
+      if (physical > getStockOnHandSmall(item)) {
+        return {
+          valid: false,
+          message: `Stock fisik item "${item.item_name || 'Item'}" melebihi stock on hand.`,
+        }
+      }
+    } else if (!item.qty || item.qty <= 0) {
+      continue
     }
     
     // Check if stock exists and is not 0
@@ -764,19 +893,20 @@ async function validateStockBeforeSubmit() {
     return { valid: false, message: 'Pilih outlet dan warehouse outlet terlebih dahulu' }
   }
   
-  // Check if there are any items
-  const validItems = form.value.items.filter(item => item.item_id && item.qty > 0)
+  const validItems = form.value.items.filter(isItemValidForSave)
   if (validItems.length === 0) {
-    return { valid: false, message: 'Tidak ada item yang dapat di-submit. Silakan tambahkan item terlebih dahulu.' }
+    const usageHint = isUsageAutoBomType.value
+      ? ' Isi stock fisik pada item yang ingin dicatat (qty usage = selisih dengan stock on hand).'
+      : ''
+    return { valid: false, message: `Tidak ada item yang dapat di-submit.${usageHint}` }
   }
   
   for (let idx = 0; idx < form.value.items.length; idx++) {
     const item = form.value.items[idx]
-    if (!item.item_id || !item.qty || item.qty <= 0) {
-      continue // Skip empty items
+    if (!isItemValidForSave(item)) {
+      continue
     }
     
-    // Fetch stock if not available
     if (!item.stock) {
       try {
         await fetchStock(idx)
@@ -785,29 +915,45 @@ async function validateStockBeforeSubmit() {
       }
     }
     
-    // Check stock
     if (item.stock) {
-      const stockSmall = Number(item.stock.qty_small || 0)
-      const qtyInput = Number(item.qty || 0)
-      
-      // Check if stock is 0 or negative
+      const stockSmall = getStockOnHandSmall(item)
+      const itemName = item.item_name || 'Item'
+
       if (stockSmall <= 0) {
-        const itemName = item.item_name || 'Item'
         return { 
           valid: false, 
           message: `Stok item "${itemName}" tidak tersedia (stock: 0). Tidak dapat di-submit.` 
         }
       }
-      
-      // Check if qty input is greater than stock available
-      // Note: We need to convert qty to small unit for comparison
-      // For now, we'll do a simple comparison assuming qty is already in small unit
-      // If unit conversion is needed, we should convert qty to small unit first
-      if (qtyInput > stockSmall) {
-        const itemName = item.item_name || 'Item'
-        return { 
-          valid: false, 
-          message: `Qty item "${itemName}" (${qtyInput}) melebihi stok yang tersedia (${stockSmall.toFixed(2)}). Tidak dapat di-submit.` 
+
+      if (isUsageAutoBomType.value) {
+        const physical = Number(item.physical_qty)
+        if (physical > stockSmall) {
+          return {
+            valid: false,
+            message: `Stock fisik item "${itemName}" (${physical}) melebihi stock on hand (${stockSmall.toFixed(2)}).`,
+          }
+        }
+        const usageQty = getUsageQty(item)
+        if (usageQty <= 0) {
+          return {
+            valid: false,
+            message: `Qty usage item "${itemName}" harus lebih dari 0 (stock on hand sama dengan stock fisik).`,
+          }
+        }
+        if (usageQty > stockSmall) {
+          return {
+            valid: false,
+            message: `Qty usage item "${itemName}" (${usageQty.toFixed(2)}) melebihi stock on hand (${stockSmall.toFixed(2)}).`,
+          }
+        }
+      } else {
+        const qtyInput = Number(item.qty || 0)
+        if (qtyInput > stockSmall) {
+          return { 
+            valid: false, 
+            message: `Qty item "${itemName}" (${qtyInput}) melebihi stok yang tersedia (${stockSmall.toFixed(2)}). Tidak dapat di-submit.` 
+          }
         }
       }
     } else {
@@ -846,7 +992,7 @@ async function autosave() {
   // But we need at least basic data: type, date, outlet, warehouse
   
   // Filter valid items (with item_id and qty > 0)
-  const validItems = form.value.items.filter(item => item.item_id && item.qty > 0)
+  const validItems = form.value.items.filter(isItemValidForSave)
   
   // For autosave, we don't need strict stock validation
   // Stock validation will be done on submit
@@ -874,13 +1020,8 @@ async function autosave() {
     warehouse_outlet_id: form.value.warehouse_outlet_id,
     notes: form.value.notes,
     items: form.value.items
-      .filter(item => item.item_id && item.qty > 0) // Only send valid items
-      .map(item => ({
-        item_id: item.item_id,
-        qty: item.qty,
-        unit_id: item.unit_id,
-        note: item.note || null
-      })),
+      .filter(isItemValidForSave)
+      .map(mapItemToPayload),
     approvers: form.value.approvers.map(a => a.id),
     autosave: true
   }
@@ -1003,12 +1144,7 @@ async function saveDraft() {
     outlet_id: form.value.outlet_id,
     warehouse_outlet_id: form.value.warehouse_outlet_id,
     notes: form.value.notes,
-    items: form.value.items.map(item => ({
-      item_id: item.item_id,
-      qty: item.qty,
-      unit_id: item.unit_id,
-      note: item.note || null
-    })),
+    items: form.value.items.filter(isItemValidForSave).map(mapItemToPayload),
     approvers: form.value.approvers.map(a => a.id),
     autosave: false
   }
@@ -1114,7 +1250,6 @@ async function submit() {
 
     loading.value = true
     
-    // Prepare form data
     const formData = {
       type: form.value.type,
       date: form.value.date,
@@ -1122,23 +1257,28 @@ async function submit() {
       warehouse_outlet_id: form.value.warehouse_outlet_id,
       notes: form.value.notes,
       items: form.value.items
-        .filter(item => item.item_id && item.qty > 0)
-        .map(item => ({
-          item_id: item.item_id,
-          qty: item.qty,
-          unit_id: item.unit_id,
-          note: item.note || null
-        })),
+        .filter(isItemValidForSave)
+        .map(mapItemToPayload),
       approvers: form.value.approvers.map(a => a.id)
     }
+
+    // Simpan draft terlebih dahulu agar qty usage (hasil selisih) tersimpan sebelum submit
+    if (form.value.header_id) {
+      await axios.post(route('outlet-internal-use-waste.store'), {
+        ...formData,
+        autosave: false,
+      }, {
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+      })
+    }
     
-    // If header_id exists, submit existing draft
-    // Otherwise, create and submit directly
     const submitUrl = form.value.header_id 
       ? route('outlet-internal-use-waste.submit', form.value.header_id)
       : route('outlet-internal-use-waste.store-and-submit')
     
-    // If submitting existing draft, only send approvers
     const submitData = form.value.header_id 
       ? { approvers: form.value.approvers.map(a => a.id) }
       : formData
@@ -1489,6 +1629,7 @@ async function fetchStock(idx) {
     });
     // Simpan stok ke item
     item.stock = res.data;
+    syncUsagePhysicalFromSavedQty(item);
   } catch (e) {
     console.error('Error fetching stock:', e);
     item.stock = { 
