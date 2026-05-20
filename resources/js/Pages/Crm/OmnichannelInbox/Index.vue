@@ -734,11 +734,16 @@ function formatMemberTier(level) {
 
 function formatTime(iso) {
   if (!iso) return ''
-  return new Date(iso).toLocaleString('id-ID', {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  // Selalu WIB: tanpa ini, jam mengikuti zona waktu OS/browser (sering terasa "ngaco" vs WhatsApp).
+  return d.toLocaleString('id-ID', {
+    timeZone: 'Asia/Jakarta',
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   })
 }
 

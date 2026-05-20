@@ -56,7 +56,7 @@ class MetaWhatsAppInboundService
         $body = $this->extractMessageBody($message);
         $messageType = (string) ($message['type'] ?? 'text');
         $sentAt = isset($message['timestamp'])
-            ? Carbon::createFromTimestamp((int) $message['timestamp'])
+            ? Carbon::createFromTimestamp((int) $message['timestamp'], 'UTC')->timezone(config('app.timezone'))
             : now();
 
         $normalizedPhone = $this->normalizePhone($from);
