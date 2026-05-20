@@ -6,8 +6,52 @@
     <p class="font-semibold text-slate-800">Pemicu: Pesan masuk</p>
     <p class="mt-2 text-xs">Setiap pesan masuk dari pelanggan dapat memicu flow ini (sesuai prioritas & channel).</p>
   </div>
-  <div v-else class="space-y-3 overflow-y-auto p-4">
-    <p class="text-sm font-semibold text-slate-800">{{ node.data.label }}</p>
+  <div
+    v-else-if="isAssignPicker"
+    class="omni-flow-config-panel space-y-3 p-4"
+  >
+    <p class="text-sm font-semibold text-slate-800">{{ nodeTitle }}</p>
+
+    <div v-if="node.data.nodeType === 'assign_team'">
+      <Multiselect
+        v-model="node.data.config._teams"
+        :options="teams"
+        :multiple="true"
+        label="name"
+        track-by="id"
+        placeholder="Pilih tim..."
+        open-direction="top"
+        :max-height="240"
+        class="omni-flow-multiselect text-sm"
+      />
+    </div>
+
+    <div v-else-if="node.data.nodeType === 'assign_users'">
+      <Multiselect
+        v-model="node.data.config._users"
+        :options="users"
+        :custom-label="formatUserLabel"
+        :multiple="true"
+        label="name"
+        track-by="id"
+        placeholder="Pilih user..."
+        open-direction="top"
+        :max-height="240"
+        class="omni-flow-multiselect text-sm"
+      />
+    </div>
+
+    <button
+      type="button"
+      class="w-full rounded-lg border border-red-200 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+      @click="$emit('remove-node', node.id)"
+    >
+      Hapus node
+    </button>
+  </div>
+
+  <div v-else class="omni-flow-config-panel min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+    <p class="text-sm font-semibold text-slate-800">{{ nodeTitle }}</p>
 
     <div v-if="node.data.nodeType === 'condition'" class="space-y-2">
       <select v-model="node.data.config.match" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs">
@@ -19,16 +63,31 @@
         :key="ri"
         class="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2"
       >
-        <select v-model="rule.field" class="w-full rounded border border-slate-200 px-2 py-1 text-xs">
+        <select
+          v-model="rule.field"
+          class="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+          @change="onRuleFieldChange(rule)"
+        >
           <option v-for="cf in conditionFields" :key="cf.value" :value="cf.value">{{ cf.label }}</option>
         </select>
         <template v-if="rule.field === 'hour_between'">
-          <div class="flex items-center gap-2">
-            <input v-model.number="rule.from" type="number" min="0" max="23" class="w-14 rounded border px-1 text-xs" />
-            <span class="text-xs">–</span>
-            <input v-model.number="rule.to" type="number" min="0" max="23" class="w-14 rounded border px-1 text-xs" />
+          <div class="flex flex-wrap items-center gap-2">
+            <input
+              v-model="rule.from"
+              type="time"
+              step="60"
+              class="min-w-[6.5rem] rounded border border-slate-200 px-2 py-1 text-xs"
+            />
+            <span class="text-xs text-slate-500">–</span>
+            <input
+              v-model="rule.to"
+              type="time"
+              step="60"
+              class="min-w-[6.5rem] rounded border border-slate-200 px-2 py-1 text-xs"
+            />
             <span class="text-[10px] text-slate-500">WIB</span>
           </div>
+          <p class="text-[10px] text-slate-500">Format jam:menit. Rentang melewati tengah malam (mis. 22:00–07:00) didukung.</p>
         </template>
         <template v-else-if="rule.field === 'no_assignee'">
           <span class="text-xs text-slate-500">Belum ada penugasan</span>
@@ -59,31 +118,6 @@
         rows="5"
         class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
         placeholder="Isi pesan... {{nama}} {{nomor}}"
-      />
-    </div>
-
-    <div v-else-if="node.data.nodeType === 'assign_team'">
-      <Multiselect
-        v-model="node.data.config._teams"
-        :options="teams"
-        :multiple="true"
-        label="name"
-        track-by="id"
-        placeholder="Pilih tim..."
-        class="text-sm"
-      />
-    </div>
-
-    <div v-else-if="node.data.nodeType === 'assign_users'">
-      <Multiselect
-        v-model="node.data.config._users"
-        :options="users"
-        :custom-label="formatUserLabel"
-        :multiple="true"
-        label="name"
-        track-by="id"
-        placeholder="Pilih user..."
-        class="text-sm"
       />
     </div>
 
@@ -118,8 +152,11 @@
 </template>
 
 <script setup>
+import { computed, watch } from 'vue'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
+import { ensureHourBetweenRule } from '@/utils/omniFlowTime'
+import { nodeTypeLabel } from '@/utils/omniFlowGraph'
 
 const props = defineProps({
   node: { type: Object, default: null },
@@ -131,10 +168,31 @@ const props = defineProps({
 
 defineEmits(['remove-node'])
 
+const nodeTitle = computed(() => nodeTypeLabel(props.node?.data?.nodeType))
+
+const isAssignPicker = computed(() => {
+  const t = props.node?.data?.nodeType
+  return t === 'assign_team' || t === 'assign_users'
+})
+
 function formatUserLabel(opt) {
   if (!opt) return ''
   const bits = [opt.jabatan, opt.outlet].filter(Boolean)
   return bits.length ? `${opt.name} — ${bits.join(' · ')}` : opt.name
+}
+
+function normalizeConditionRules() {
+  const rules = props.node?.data?.config?.rules
+  if (!Array.isArray(rules)) return
+  rules.forEach((rule) => ensureHourBetweenRule(rule))
+}
+
+watch(() => props.node?.id, normalizeConditionRules, { immediate: true })
+
+function onRuleFieldChange(rule) {
+  if (rule.field === 'hour_between') {
+    ensureHourBetweenRule(rule)
+  }
 }
 
 function addRule() {
@@ -144,4 +202,24 @@ function addRule() {
   }
   props.node.data.config.rules.push({ field: 'message_contains', value: '' })
 }
+
+defineExpose({ normalizeConditionRules })
 </script>
+
+<style scoped>
+.omni-flow-multiselect :deep(.multiselect__tags) {
+  min-height: 38px;
+  padding-top: 6px;
+}
+.omni-flow-multiselect :deep(.multiselect__input),
+.omni-flow-multiselect :deep(.multiselect__single) {
+  font-size: 0.875rem;
+}
+.omni-flow-config-panel :deep(.multiselect--active) {
+  z-index: 60;
+}
+.omni-flow-config-panel :deep(.multiselect__content-wrapper) {
+  z-index: 70;
+  max-height: 240px;
+}
+</style>

@@ -2699,6 +2699,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/crm/omnichannel-flows', [App\Http\Controllers\OmnichannelFlowController::class, 'store'])->name('crm.omnichannel-flows.store');
     Route::get('/crm/omnichannel-flows/{flow}/edit', [App\Http\Controllers\OmnichannelFlowController::class, 'edit'])->name('crm.omnichannel-flows.edit');
     Route::patch('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'update'])->name('crm.omnichannel-flows.update');
+    Route::patch('/crm/omnichannel-flows/{flow}/toggle-active', [App\Http\Controllers\OmnichannelFlowController::class, 'toggleActive'])->name('crm.omnichannel-flows.toggle-active');
     Route::delete('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'destroy'])->name('crm.omnichannel-flows.destroy');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/pause-automation', [App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('crm.omnichannel-inbox.pause-automation');
 });

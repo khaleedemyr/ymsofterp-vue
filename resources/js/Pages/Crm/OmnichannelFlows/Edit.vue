@@ -34,6 +34,9 @@
           <div>
             <label class="text-xs font-medium text-slate-600">Prioritas</label>
             <input v-model.number="form.priority" type="number" min="1" max="9999" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+            <p class="mt-1 text-[10px] leading-snug text-slate-500">
+              Angka lebih kecil = dicek lebih dulu saat pesan masuk. Hanya satu flow yang jalan per chat.
+            </p>
           </div>
           <div>
             <label class="text-xs font-medium text-slate-600">Channel</label>
@@ -42,14 +45,10 @@
               <option value="whatsapp">WhatsApp</option>
             </select>
           </div>
-          <div class="sm:col-span-2">
+          <div class="sm:col-span-2 lg:col-span-4">
             <label class="text-xs font-medium text-slate-600">Deskripsi</label>
             <input v-model="form.description" type="text" maxlength="500" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
           </div>
-          <label class="flex items-center gap-2 self-end text-sm text-slate-700">
-            <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 text-emerald-600" />
-            Flow aktif
-          </label>
         </div>
       </div>
 
@@ -86,9 +85,10 @@
           />
         </main>
 
-        <!-- Config panel -->
-        <aside class="w-80 shrink-0 overflow-y-auto border-l border-slate-200 bg-white">
+        <!-- Config panel: overflow visible agar dropdown Multiselect tidak terpotong -->
+        <aside class="relative z-30 flex w-80 shrink-0 flex-col self-stretch border-l border-slate-200 bg-white">
           <FlowNodeConfigPanel
+            class="flex min-h-0 flex-1 flex-col"
             :node="selectedNode"
             :teams="teams"
             :users="users"
@@ -136,7 +136,6 @@ const edges = ref(hydrateEdges(initialDef.edges || [], nodes.value))
 const form = reactive({
   name: props.flow?.name || '',
   description: props.flow?.description || '',
-  is_active: props.flow?.is_active ?? false,
   trigger_type: 'inbound_message',
   channel: props.flow?.channel ?? 'whatsapp',
   priority: props.flow?.priority ?? 100,
@@ -173,7 +172,6 @@ function submit() {
   const payload = {
     name: form.name.trim(),
     description: form.description.trim() || null,
-    is_active: form.is_active,
     trigger_type: form.trigger_type,
     channel: form.channel || null,
     priority: form.priority,

@@ -11,10 +11,7 @@
       class="!h-2 !w-2 !border-2 !border-slate-400 !bg-white"
     />
 
-    <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-      {{ nodeType === 'trigger' ? 'Pemicu' : 'Langkah' }}
-    </p>
-    <p class="text-sm font-semibold text-slate-900">{{ data.label }}</p>
+    <p class="text-sm font-semibold leading-snug text-slate-900">{{ nodeTitle }}</p>
     <p v-if="summary" class="mt-1 line-clamp-2 text-[11px] text-slate-600">{{ summary }}</p>
 
     <template v-if="nodeType === 'condition'">
@@ -48,7 +45,7 @@
 <script setup>
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-import { nodeColorClass } from '@/utils/omniFlowGraph'
+import { nodeColorClass, nodeTypeLabel } from '@/utils/omniFlowGraph'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -57,6 +54,7 @@ const props = defineProps({
 
 const nodeType = computed(() => props.data?.nodeType || '')
 const colorClass = computed(() => nodeColorClass(nodeType.value, props.nodePalette))
+const nodeTitle = computed(() => nodeTypeLabel(nodeType.value, props.nodePalette))
 
 const summary = computed(() => {
   const cfg = props.data?.config || {}

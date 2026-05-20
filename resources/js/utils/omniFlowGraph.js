@@ -1,3 +1,5 @@
+import { ensureHourBetweenRule } from '@/utils/omniFlowTime'
+
 export const TRIGGER_NODE_ID = 'trigger-1'
 
 export function createTriggerNode() {
@@ -46,9 +48,24 @@ export function defaultNodeConfig(nodeType) {
   }
 }
 
-export function nodeTypeLabel(nodeType, stepTypes = []) {
-  if (nodeType === 'trigger') return 'Pesan masuk'
-  return stepTypes.find((s) => s.value === nodeType)?.label || nodeType
+/** Label tampilan node di canvas (sinkron dengan palette sidebar). */
+export const NODE_TYPE_LABELS = {
+  trigger: 'Pesan masuk',
+  condition: 'Kondisi',
+  send_message: 'Kirim pesan WA',
+  assign_team: 'Tugaskan tim',
+  assign_users: 'Tugaskan user',
+  set_lead_stage: 'Ubah tahap lead',
+  append_memo: 'Tambah memo',
+  notify_assignees: 'Notifikasi',
+}
+
+export function nodeTypeLabel(nodeType, palette = []) {
+  if (NODE_TYPE_LABELS[nodeType]) {
+    return NODE_TYPE_LABELS[nodeType]
+  }
+  const fromPalette = palette.find((p) => p.value === nodeType)?.label
+  return fromPalette || nodeType
 }
 
 export function nodeColorClass(nodeType, palette = []) {
@@ -79,9 +96,17 @@ export function hydrateNodes(nodes, teams, users) {
       const ids = config.user_ids || []
       config._users = users.filter((u) => ids.includes(u.id))
     }
-    if (data.nodeType === 'condition' && !Array.isArray(config.rules)) {
-      config.rules = []
+    if (data.nodeType === 'condition') {
+      if (!Array.isArray(config.rules)) {
+        config.rules = []
+      }
+      config.rules.forEach((rule) => ensureHourBetweenRule(rule))
     }
+    const nodeType = data.nodeType || ''
+    if (nodeType && (!data.label || data.label === nodeType)) {
+      data.label = nodeTypeLabel(nodeType)
+    }
+
     return {
       ...n,
       type: n.type || 'omniFlow',

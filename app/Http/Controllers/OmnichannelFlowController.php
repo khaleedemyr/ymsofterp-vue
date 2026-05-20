@@ -23,6 +23,7 @@ class OmnichannelFlowController extends Controller
         $this->assertFlowAccess($request);
 
         $flows = OmniFlow::query()
+            ->with(['createdBy:id,nama_lengkap,avatar'])
             ->orderBy('priority')
             ->orderBy('name')
             ->get()
@@ -57,10 +58,11 @@ class OmnichannelFlowController extends Controller
     {
         $this->assertFlowAccess($request);
 
-        $validated = $this->validateFlow($request);
+        $validated = $this->validateFlow($request, null);
 
         OmniFlow::query()->create([
             ...$validated,
+            'is_active' => true,
             'created_by_user_id' => $request->user()->id,
         ]);
 
@@ -72,7 +74,7 @@ class OmnichannelFlowController extends Controller
     {
         $this->assertFlowAccess($request);
 
-        $flow->update($this->validateFlow($request));
+        $flow->update($this->validateFlow($request, $flow));
 
         return redirect()->route('crm.omnichannel-flows.index')
             ->with('success', 'Flow otomasi diperbarui.');
@@ -88,15 +90,24 @@ class OmnichannelFlowController extends Controller
             ->with('success', 'Flow dihapus.');
     }
 
+    public function toggleActive(Request $request, OmniFlow $flow): RedirectResponse
+    {
+        $this->assertFlowAccess($request);
+
+        $flow->update(['is_active' => ! $flow->is_active]);
+
+        return redirect()->route('crm.omnichannel-flows.index')
+            ->with('success', $flow->is_active ? 'Flow diaktifkan.' : 'Flow dinonaktifkan.');
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function validateFlow(Request $request): array
+    private function validateFlow(Request $request, ?OmniFlow $existing = null): array
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
-            'is_active' => ['sometimes', 'boolean'],
             'trigger_type' => ['required', Rule::in(['inbound_message'])],
             'channel' => ['nullable', Rule::in(['whatsapp'])],
             'priority' => ['required', 'integer', 'min:1', 'max:9999'],
@@ -140,7 +151,6 @@ class OmnichannelFlowController extends Controller
         return [
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
-            'is_active' => (bool) ($validated['is_active'] ?? false),
             'trigger_type' => $validated['trigger_type'],
             'channel' => $validated['channel'] ?? null,
             'priority' => (int) $validated['priority'],
@@ -201,6 +211,8 @@ class OmnichannelFlowController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        $creator = $flow->createdBy;
+
         return [
             'id' => $flow->id,
             'name' => $flow->name,
@@ -209,11 +221,27 @@ class OmnichannelFlowController extends Controller
             'channel' => $flow->channel,
             'priority' => (int) $flow->priority,
             'step_count' => $flow->stepCount(),
+            'created_by' => $creator ? [
+                'id' => (int) $creator->id,
+                'name' => (string) $creator->nama_lengkap,
+                'avatar_url' => $this->userAvatarUrl($creator->avatar),
+            ] : null,
             'last_run' => $lastRun ? [
                 'status' => $lastRun->status,
                 'finished_at' => $lastRun->finished_at?->toIso8601String(),
             ] : null,
         ];
+    }
+
+    private function userAvatarUrl(?string $avatar): ?string
+    {
+        if ($avatar === null || trim($avatar) === '') {
+            return null;
+        }
+
+        $path = ltrim($avatar, '/');
+
+        return str_starts_with($path, 'storage/') ? '/'.$path : '/storage/'.$path;
     }
 
     /**

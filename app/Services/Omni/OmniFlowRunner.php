@@ -405,9 +405,9 @@ class OmniFlowRunner
         return match ($field) {
             'message_contains' => $this->textContains($message?->body, (string) $value),
             'message_not_contains' => ! $this->textContains($message?->body, (string) $value),
-            'hour_between' => $this->hourBetween(
-                (int) ($rule['from'] ?? 0),
-                (int) ($rule['to'] ?? 0)
+            'hour_between' => $this->timeBetween(
+                $rule['from'] ?? '00:00',
+                $rule['to'] ?? '23:59'
             ),
             'no_assignee' => ! $conversation->assigned_user_id
                 && ! $conversation->assignees()->exists()
@@ -430,15 +430,44 @@ class OmniFlowRunner
         return mb_stripos($haystack, $needle) !== false;
     }
 
-    private function hourBetween(int $fromHour, int $toHour): bool
+    /**
+     * Rentang waktu WIB inklusif awal, eksklusif akhir. Mendukung HH:mm atau jam integer lama (0–23).
+     *
+     * @param  string|int|float  $from
+     * @param  string|int|float  $to
+     */
+    private function timeBetween(string|int|float $from, string|int|float $to): bool
     {
-        $hour = (int) Carbon::now(config('app.timezone'))->format('G');
+        $fromMinutes = $this->parseTimeToMinutes($from);
+        $toMinutes = $this->parseTimeToMinutes($to);
+        $now = Carbon::now(config('app.timezone'));
+        $nowMinutes = ((int) $now->format('G')) * 60 + (int) $now->format('i');
 
-        if ($fromHour <= $toHour) {
-            return $hour >= $fromHour && $hour < $toHour;
+        if ($fromMinutes <= $toMinutes) {
+            return $nowMinutes >= $fromMinutes && $nowMinutes < $toMinutes;
         }
 
-        return $hour >= $fromHour || $hour < $toHour;
+        return $nowMinutes >= $fromMinutes || $nowMinutes < $toMinutes;
+    }
+
+    /**
+     * @param  string|int|float  $value
+     */
+    private function parseTimeToMinutes(string|int|float $value): int
+    {
+        if (is_int($value) || (is_numeric($value) && ! str_contains((string) $value, ':'))) {
+            return max(0, min(23, (int) $value)) * 60;
+        }
+
+        $s = trim((string) $value);
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $s, $m)) {
+            $hour = max(0, min(23, (int) $m[1]));
+            $minute = max(0, min(59, (int) $m[2]));
+
+            return $hour * 60 + $minute;
+        }
+
+        return 0;
     }
 
     /**
