@@ -116,6 +116,71 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
+    /**
+     * Data awal inbox untuk YMSoft App (approval-app API).
+     */
+    public function apiBootstrap(Request $request): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+
+        $inbox = $request->get('inbox', 'all');
+        if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
+            $inbox = 'all';
+        }
+
+        $leadStageFilter = $request->get('lead_stage');
+        if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {
+            $leadStageFilter = null;
+        }
+
+        $query = OmniConversation::query()
+            ->with([
+                'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+            ]);
+
+        OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
+
+        if ($leadStageFilter) {
+            $query->where('lead_stage', $leadStageFilter);
+        }
+
+        $conversations = $query
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('id')
+            ->limit(150)
+            ->get()
+            ->map(fn (OmniConversation $c) => $this->formatConversation($c));
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'conversations' => $conversations,
+                'inbox' => $inbox,
+                'lead_stage_filter' => $leadStageFilter,
+                'lead_stages' => OmniLeadStages::all(),
+                'assignable_users' => OmnichannelUserOption::toOptions(
+                    User::query()
+                        ->with(['jabatan', 'outlet'])
+                        ->orderBy('nama_lengkap')
+                        ->get()
+                ),
+                'assignable_teams' => OmniTeam::query()
+                    ->orderBy('name')
+                    ->get(['id', 'name'])
+                    ->map(fn (OmniTeam $t) => ['id' => $t->id, 'name' => $t->name])
+                    ->values()
+                    ->all(),
+                'can_see_all_chats' => $canSeeAll,
+            ],
+        ]);
+    }
+
     public function update(Request $request, OmniConversation $conversation): JsonResponse
     {
         $this->assertInboxAccess($request);

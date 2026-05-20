@@ -1219,6 +1219,14 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.approval-app.support.admin.get-conversations');
         Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.approval-app.support.admin.reply');
         Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.approval-app.support.admin.update-status');
+
+        // Omnichannel Inbox (WhatsApp) — YMSoft App
+        Route::get('/omnichannel-inbox/bootstrap', [\App\Http\Controllers\OmnichannelInboxController::class, 'apiBootstrap'])->name('api.approval-app.omnichannel-inbox.bootstrap');
+        Route::get('/omnichannel-inbox/conversations/{conversation}/messages', [\App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('api.approval-app.omnichannel-inbox.messages');
+        Route::patch('/omnichannel-inbox/conversations/{conversation}', [\App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('api.approval-app.omnichannel-inbox.update');
+        Route::post('/omnichannel-inbox/conversations/{conversation}/messages', [\App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('api.approval-app.omnichannel-inbox.send');
+        Route::post('/omnichannel-inbox/conversations/{conversation}/internal-notes', [\App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('api.approval-app.omnichannel-inbox.internal-notes');
+        Route::post('/omnichannel-inbox/conversations/{conversation}/pause-automation', [\App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('api.approval-app.omnichannel-inbox.pause-automation');
         
         // User Role Settings routes
         Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index'])->name('api.approval-app.user-roles.index');

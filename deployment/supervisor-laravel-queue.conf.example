@@ -1,7 +1,7 @@
 ; =============================================================================
 ; Contoh Supervisor — worker antrian Laravel (untuk user web, tanpa SSH manual)
 ; =============================================================================
-; 1. Salin ke /etc/supervisor/conf.d/ymsofterp-queue.conf (sesuaikan path & user)
+; 1. Salin ke /etc/supervisord.d/ymsofterp-queue.ini (CentOS) atau conf.d (Debian)
 ; 2. sudo supervisorctl reread && sudo supervisorctl update
 ; 3. sudo supervisorctl status
 ;
@@ -14,7 +14,7 @@
 process_name=%(program_name)s_%(process_num)02d
 directory=/var/www/ymsofterp
 ; Sertakan antrean job laporan AI (GOOGLE_REVIEW_AI_QUEUE) dan Instagram Apify (INSTAGRAM_SCRAPER_QUEUE, default instagram-scraper)
-command=/usr/bin/php artisan queue:work --queue=notifications,google-review-ai,instagram-scraper --sleep=3 --tries=1 --timeout=3700 --max-time=3600
+command=/usr/bin/php artisan queue:work redis --queue=omnichannel,notifications,google-review-ai,instagram-scraper --sleep=3 --tries=3 --timeout=300 --max-jobs=1000
 autostart=true
 autorestart=true
 stopasgroup=true

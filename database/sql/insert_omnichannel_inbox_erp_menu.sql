@@ -50,10 +50,10 @@ INSERT INTO `erp_permission` (
 
 COMMIT;
 
--- Opsional: beri akses ke semua role yang sudah punya Customer Voice Command Center
--- INSERT INTO `erp_role_permission` (`role_id`, `permission_id`, `created_at`, `updated_at`)
--- SELECT rp.role_id, p_new.id, NOW(), NOW()
--- FROM `erp_role_permission` rp
--- INNER JOIN `erp_permission` p_old ON p_old.id = rp.permission_id AND p_old.`code` = 'customer_voice_command_center_view'
--- INNER JOIN `erp_permission` p_new ON p_new.`code` = 'omnichannel_inbox_view'
--- ON DUPLICATE KEY UPDATE `erp_role_permission`.`updated_at` = NOW();
+-- Beri akses ke role yang sudah punya Customer Voice Command Center
+INSERT INTO `erp_role_permission` (`role_id`, `permission_id`, `created_at`, `updated_at`)
+SELECT rp.role_id, p_new.id, NOW(), NOW()
+FROM `erp_role_permission` rp
+INNER JOIN `erp_permission` p_old ON p_old.id = rp.permission_id AND p_old.`code` = 'customer_voice_command_center_view'
+INNER JOIN `erp_permission` p_new ON p_new.`code` = 'omnichannel_inbox_view'
+ON DUPLICATE KEY UPDATE `erp_role_permission`.`updated_at` = NOW();

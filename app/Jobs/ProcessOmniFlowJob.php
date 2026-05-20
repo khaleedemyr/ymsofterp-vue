@@ -20,7 +20,9 @@ class ProcessOmniFlowJob implements ShouldQueue
     public function __construct(
         public int $conversationId,
         public int $messageId,
-    ) {}
+    ) {
+        $this->onQueue((string) config('omnichannel.flow_queue', 'omnichannel'));
+    }
 
     public function handle(OmniFlowRunner $runner): void
     {

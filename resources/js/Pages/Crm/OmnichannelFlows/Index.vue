@@ -19,10 +19,6 @@
         </Link>
       </div>
 
-      <p class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        <strong>Catatan:</strong> pastikan <code class="rounded bg-amber-100 px-1">php artisan queue:work</code> berjalan di server agar flow dieksekusi setelah pesan masuk.
-      </p>
-
       <div v-if="flows.length === 0" class="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
         Belum ada flow. Klik &quot;Buat flow baru&quot; untuk mulai.
       </div>
