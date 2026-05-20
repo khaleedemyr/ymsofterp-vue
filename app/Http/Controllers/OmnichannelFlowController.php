@@ -6,6 +6,7 @@ use App\Models\OmniFlow;
 use App\Models\OmniFlowRun;
 use App\Models\OmniTeam;
 use App\Models\User;
+use App\Support\OmniFlowDefinition;
 use App\Support\OmniLeadStages;
 use App\Support\OmnichannelAuthorization;
 use App\Support\OmnichannelUserOption;
@@ -99,12 +100,40 @@ class OmnichannelFlowController extends Controller
             'trigger_type' => ['required', Rule::in(['inbound_message'])],
             'channel' => ['nullable', Rule::in(['whatsapp'])],
             'priority' => ['required', 'integer', 'min:1', 'max:9999'],
-            'steps' => ['required', 'array', 'min:1'],
-            'steps.*.type' => ['required', 'string', Rule::in([
-                'condition', 'send_message', 'assign_team', 'assign_users', 'set_lead_stage', 'append_memo', 'notify_assignees',
+            'definition' => ['required', 'array'],
+            'definition.nodes' => ['required', 'array', 'min:1'],
+            'definition.nodes.*.id' => ['required', 'string', 'max:64'],
+            'definition.nodes.*.type' => ['nullable', 'string', 'max:32'],
+            'definition.nodes.*.position' => ['nullable', 'array'],
+            'definition.nodes.*.data' => ['nullable', 'array'],
+            'definition.nodes.*.data.nodeType' => ['nullable', 'string', Rule::in([
+                'trigger', 'condition', 'send_message', 'assign_team', 'assign_users', 'set_lead_stage', 'append_memo', 'notify_assignees',
             ])],
-            'steps.*.config' => ['nullable', 'array'],
+            'definition.nodes.*.data.config' => ['nullable', 'array'],
+            'definition.edges' => ['nullable', 'array'],
+            'definition.edges.*.source' => ['required', 'string'],
+            'definition.edges.*.target' => ['required', 'string'],
+            'definition.edges.*.sourceHandle' => ['nullable', 'string', Rule::in(['default', 'true', 'false'])],
         ]);
+
+        $definition = OmniFlowDefinition::normalizeForStorage($validated['definition']);
+
+        $hasTrigger = false;
+        $hasAction = false;
+        foreach ($definition['nodes'] as $node) {
+            if (! is_array($node)) {
+                continue;
+            }
+            $type = OmniFlowDefinition::nodeType($node);
+            if ($type === 'trigger') {
+                $hasTrigger = true;
+            }
+            if ($type !== '' && $type !== 'trigger') {
+                $hasAction = true;
+            }
+        }
+
+        abort_unless($hasTrigger && $hasAction, 422, 'Flow harus memiliki node pemicu dan minimal satu langkah.');
 
         return [
             'name' => $validated['name'],
@@ -113,9 +142,7 @@ class OmnichannelFlowController extends Controller
             'trigger_type' => $validated['trigger_type'],
             'channel' => $validated['channel'] ?? null,
             'priority' => (int) $validated['priority'],
-            'definition' => [
-                'steps' => array_values($validated['steps']),
-            ],
+            'definition' => $definition,
         ];
     }
 
@@ -133,8 +160,17 @@ class OmnichannelFlowController extends Controller
                 User::query()->with(['jabatan', 'outlet'])->orderBy('nama_lengkap')->get()
             ),
             'leadStages' => OmniLeadStages::all(),
+            'nodePalette' => [
+                ['value' => 'condition', 'label' => 'Kondisi', 'color' => 'amber'],
+                ['value' => 'send_message', 'label' => 'Kirim pesan WA', 'color' => 'emerald'],
+                ['value' => 'assign_team', 'label' => 'Tugaskan tim', 'color' => 'blue'],
+                ['value' => 'assign_users', 'label' => 'Tugaskan user', 'color' => 'indigo'],
+                ['value' => 'set_lead_stage', 'label' => 'Ubah tahap lead', 'color' => 'violet'],
+                ['value' => 'append_memo', 'label' => 'Tambah memo', 'color' => 'slate'],
+                ['value' => 'notify_assignees', 'label' => 'Notifikasi', 'color' => 'rose'],
+            ],
             'stepTypes' => [
-                ['value' => 'condition', 'label' => 'Kondisi (hentikan jika tidak cocok)'],
+                ['value' => 'condition', 'label' => 'Kondisi'],
                 ['value' => 'send_message', 'label' => 'Kirim pesan WhatsApp'],
                 ['value' => 'assign_team', 'label' => 'Tugaskan ke tim'],
                 ['value' => 'assign_users', 'label' => 'Tugaskan ke user'],
@@ -170,7 +206,7 @@ class OmnichannelFlowController extends Controller
             'is_active' => (bool) $flow->is_active,
             'channel' => $flow->channel,
             'priority' => (int) $flow->priority,
-            'step_count' => count($flow->steps()),
+            'step_count' => $flow->stepCount(),
             'last_run' => $lastRun ? [
                 'status' => $lastRun->status,
                 'finished_at' => $lastRun->finished_at?->toIso8601String(),
@@ -191,8 +227,26 @@ class OmnichannelFlowController extends Controller
             'trigger_type' => $flow->trigger_type,
             'channel' => $flow->channel,
             'priority' => (int) $flow->priority,
-            'steps' => $flow->steps(),
+            'definition' => $this->formatDefinitionForEditor($flow),
         ];
+    }
+
+    /**
+     * @return array{version: int, nodes: array, edges: array}
+     */
+    private function formatDefinitionForEditor(OmniFlow $flow): array
+    {
+        $def = is_array($flow->definition) ? $flow->definition : [];
+
+        if (OmniFlowDefinition::isGraph($def)) {
+            return [
+                'version' => (int) ($def['version'] ?? OmniFlowDefinition::VERSION_GRAPH),
+                'nodes' => array_values($def['nodes'] ?? []),
+                'edges' => array_values($def['edges'] ?? []),
+            ];
+        }
+
+        return OmniFlowDefinition::linearToGraph($flow->steps());
     }
 
     private function assertFlowAccess(Request $request): void

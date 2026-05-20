@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\OmniFlowDefinition;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -35,13 +36,23 @@ class OmniFlow extends Model
         return $this->hasMany(OmniFlowRun::class, 'flow_id');
     }
 
+    public function usesGraph(): bool
+    {
+        return OmniFlowDefinition::isGraph($this->definition);
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
     public function steps(): array
     {
-        $steps = $this->definition['steps'] ?? [];
+        return OmniFlowDefinition::steps($this->definition);
+    }
 
-        return is_array($steps) ? $steps : [];
+    public function stepCount(): int
+    {
+        $def = is_array($this->definition) ? $this->definition : [];
+
+        return OmniFlowDefinition::actionNodeCount($def);
     }
 }

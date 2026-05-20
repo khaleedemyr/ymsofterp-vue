@@ -11,6 +11,7 @@ use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
+use App\Support\OmniFlowDefinition;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -65,6 +66,13 @@ class OmniFlowRunner
 
         if (! $flow || ! $conversation || $conversation->automation_paused) {
             $this->finishRun($run, 'cancelled', 'Otomasi dijeda atau data tidak valid');
+
+            return;
+        }
+
+        $definition = is_array($flow->definition) ? $flow->definition : [];
+        if (OmniFlowDefinition::isGraph($definition)) {
+            $this->runGraph($run, $flow, $conversation, $definition);
 
             return;
         }
@@ -143,16 +151,24 @@ class OmniFlowRunner
 
     private function tryStartFlow(OmniFlow $flow, OmniConversation $conversation, OmniMessage $message): bool
     {
-        $steps = $flow->steps();
-        if ($steps === []) {
-            return false;
-        }
+        $definition = is_array($flow->definition) ? $flow->definition : [];
 
-        $first = $steps[0];
-        if (($first['type'] ?? '') === 'condition') {
-            $config = is_array($first['config'] ?? null) ? $first['config'] : [];
-            if (! $this->evaluateCondition($config, $conversation, $message)) {
+        if (OmniFlowDefinition::isGraph($definition)) {
+            if (! $this->shouldStartGraph($definition, $conversation, $message)) {
                 return false;
+            }
+        } else {
+            $steps = $flow->steps();
+            if ($steps === []) {
+                return false;
+            }
+
+            $first = $steps[0];
+            if (($first['type'] ?? '') === 'condition') {
+                $config = is_array($first['config'] ?? null) ? $first['config'] : [];
+                if (! $this->evaluateCondition($config, $conversation, $message)) {
+                    return false;
+                }
             }
         }
 
@@ -174,6 +190,178 @@ class OmniFlowRunner
         $this->run($run);
 
         return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     */
+    private function shouldStartGraph(array $definition, OmniConversation $conversation, OmniMessage $message): bool
+    {
+        $triggerId = OmniFlowDefinition::findTriggerNodeId($definition);
+        if ($triggerId === null || $triggerId === '') {
+            return false;
+        }
+
+        $nodes = OmniFlowDefinition::nodesById($definition);
+        $outgoing = OmniFlowDefinition::outgoingEdges($definition);
+        $currentId = OmniFlowDefinition::nextNodeId($triggerId, $outgoing);
+
+        while ($currentId && $currentId !== '') {
+            $node = $nodes[$currentId] ?? null;
+            if (! is_array($node)) {
+                return false;
+            }
+
+            $type = OmniFlowDefinition::nodeType($node);
+            if ($type === 'condition') {
+                return $this->evaluateCondition(
+                    OmniFlowDefinition::nodeConfig($node),
+                    $conversation,
+                    $message
+                );
+            }
+
+            if ($type !== '' && $type !== 'trigger') {
+                return true;
+            }
+
+            $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing);
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $definition
+     */
+    private function runGraph(
+        OmniFlowRun $run,
+        OmniFlow $flow,
+        OmniConversation $conversation,
+        array $definition
+    ): void {
+        $message = $run->triggerMessage;
+        $context = is_array($run->context) ? $run->context : [];
+        $nodes = OmniFlowDefinition::nodesById($definition);
+        $outgoing = OmniFlowDefinition::outgoingEdges($definition);
+
+        $triggerId = OmniFlowDefinition::findTriggerNodeId($definition);
+        if ($triggerId === null || $triggerId === '') {
+            $this->finishRun($run, 'failed', 'Flow tanpa node pemicu');
+
+            return;
+        }
+
+        $currentId = (string) ($context['current_node_id'] ?? '');
+        if ($currentId === '') {
+            $currentId = OmniFlowDefinition::nextNodeId($triggerId, $outgoing) ?: '';
+        }
+
+        $stepIndex = (int) $run->current_step_index;
+        $maxSteps = 50;
+
+        while ($currentId !== '' && $stepIndex < $maxSteps) {
+            $node = $nodes[$currentId] ?? null;
+            if (! is_array($node)) {
+                break;
+            }
+
+            $type = OmniFlowDefinition::nodeType($node);
+            $config = OmniFlowDefinition::nodeConfig($node);
+
+            $run->update([
+                'current_step_index' => $stepIndex,
+                'context' => array_merge($context, [
+                    'current_node_id' => $currentId,
+                    'flow_name' => $flow->name,
+                ]),
+            ]);
+
+            try {
+                if ($type === 'trigger') {
+                    $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing) ?: '';
+                    $stepIndex++;
+
+                    continue;
+                }
+
+                if ($type === 'condition') {
+                    $passed = $this->evaluateCondition($config, $conversation, $message);
+                    $this->logStep(
+                        $run,
+                        $stepIndex,
+                        $type,
+                        $passed ? 'ok' : 'skipped',
+                        $passed ? 'Kondisi terpenuhi' : 'Kondisi tidak terpenuhi — cabang tidak ya'
+                    );
+                    $handle = $passed ? 'true' : 'false';
+                    $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing, $handle) ?: '';
+                    $stepIndex++;
+
+                    continue;
+                }
+
+                if ($type === '') {
+                    $this->logStep($run, $stepIndex, 'unknown', 'skipped', 'Node tidak dikenal');
+                    $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing) ?: '';
+                    $stepIndex++;
+
+                    continue;
+                }
+
+                $this->executeStep($type, $config, $conversation, $message, $context);
+                $this->logStep($run, $stepIndex, $type, 'ok', 'Langkah selesai');
+                $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing) ?: '';
+                $stepIndex++;
+            } catch (\Throwable $e) {
+                Log::error('Omni flow graph step failed', [
+                    'run_id' => $run->id,
+                    'node_id' => $currentId,
+                    'type' => $type,
+                    'error' => $e->getMessage(),
+                ]);
+                $this->logStep($run, $stepIndex, $type, 'failed', mb_substr($e->getMessage(), 0, 480));
+                $this->finishRun($run, 'failed', $e->getMessage());
+
+                return;
+            }
+        }
+
+        $this->finishRun($run, 'completed', null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $context
+     */
+    private function executeStep(
+        string $type,
+        array $config,
+        OmniConversation $conversation,
+        ?OmniMessage $message,
+        array &$context
+    ): void {
+        if ($type === 'send_message') {
+            $this->executeSendMessage($config, $conversation, $context);
+        } elseif ($type === 'assign_team') {
+            $this->executeAssignTeam($config, $conversation);
+        } elseif ($type === 'assign_users') {
+            $this->executeAssignUsers($config, $conversation);
+        } elseif ($type === 'set_lead_stage') {
+            $stage = (string) ($config['lead_stage'] ?? '');
+            if ($stage !== '') {
+                $conversation->lead_stage = $stage;
+                $conversation->save();
+            }
+        } elseif ($type === 'append_memo') {
+            $text = trim((string) ($config['text'] ?? ''));
+            if ($text !== '') {
+                $conversation->memo = trim(($conversation->memo ?? '')."\n".$this->replacePlaceholders($text, $conversation));
+                $conversation->save();
+            }
+        } elseif ($type === 'notify_assignees') {
+            $this->executeNotifyAssignees($conversation, (string) ($config['message'] ?? 'Chat masuk — otomasi inbox'));
+        }
     }
 
     /**

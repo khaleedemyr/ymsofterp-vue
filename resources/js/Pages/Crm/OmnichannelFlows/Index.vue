@@ -5,7 +5,7 @@
         <div>
           <h1 class="text-xl font-semibold text-slate-900">Otomasi Inbox</h1>
           <p class="mt-1 text-sm text-slate-600">
-            Flow otomasi saat pesan masuk (WhatsApp). Tanpa integrasi eksternal — dijalankan di server ERP lewat antrian.
+            Flow otomasi saat pesan masuk (WhatsApp). Editor visual drag-and-drop — dijalankan di server ERP lewat antrian.
           </p>
           <Link href="/crm/omnichannel-inbox" class="mt-2 inline-block text-sm font-medium text-emerald-700 hover:underline">
             ← Kembali ke inbox
