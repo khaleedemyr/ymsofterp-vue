@@ -52,3 +52,14 @@ CREATE TABLE IF NOT EXISTS `omni_messages` (
     CONSTRAINT `omni_messages_conversation_id_foreign`
         FOREIGN KEY (`conversation_id`) REFERENCES `omni_conversations` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `omni_conversation_assignees` (
+    `conversation_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `created_at` TIMESTAMP NULL,
+    `updated_at` TIMESTAMP NULL,
+    PRIMARY KEY (`conversation_id`, `user_id`),
+    KEY `omni_conv_assignees_user_id_index` (`user_id`),
+    CONSTRAINT `omni_conv_assignees_conversation_fk`
+        FOREIGN KEY (`conversation_id`) REFERENCES `omni_conversations` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

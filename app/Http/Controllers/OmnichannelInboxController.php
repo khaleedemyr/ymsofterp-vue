@@ -6,6 +6,7 @@ use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Models\User;
 use App\Services\Meta\MetaWhatsAppClient;
+use App\Services\NotificationService;
 use App\Support\OmniLeadStages;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,13 +32,19 @@ class OmnichannelInboxController extends Controller
         $query = OmniConversation::query()
             ->with([
                 'member:id,nama_lengkap,mobile_phone,member_id',
-                'assignee:id,nama_lengkap',
+                'assignee:id,nama_lengkap,email',
+                'assignees:id,nama_lengkap,email',
             ]);
 
         if ($inbox === 'mine') {
-            $query->where('assigned_user_id', $request->user()->id);
+            $uid = $request->user()->id;
+            $query->where(function ($q) use ($uid) {
+                $q->whereHas('assignees', fn ($sub) => $sub->where('users.id', $uid))
+                    ->orWhere('assigned_user_id', $uid);
+            });
         } elseif ($inbox === 'unassigned') {
-            $query->whereNull('assigned_user_id');
+            $query->whereDoesntHave('assignees')
+                ->whereNull('assigned_user_id');
         }
 
         if ($leadStageFilter) {
@@ -59,7 +66,7 @@ class OmnichannelInboxController extends Controller
 
         if ($selectedId) {
             $conversation = OmniConversation::query()
-                ->with(['member', 'assignee'])
+                ->with(['member', 'assignee', 'assignees'])
                 ->find($selectedId);
             if ($conversation) {
                 $selectedConversation = $this->formatConversation($conversation);
@@ -71,8 +78,11 @@ class OmnichannelInboxController extends Controller
         $assignableUsers = User::query()
             ->orderBy('nama_lengkap')
             ->limit(500)
-            ->get(['id', 'nama_lengkap'])
-            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->nama_lengkap ?? $u->email]);
+            ->get(['id', 'nama_lengkap', 'email'])
+            ->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->nama_lengkap ?? $u->email,
+            ]);
 
         return Inertia::render('Crm/OmnichannelInbox/Index', [
             'conversations' => $conversations,
@@ -88,7 +98,9 @@ class OmnichannelInboxController extends Controller
     public function update(Request $request, OmniConversation $conversation): JsonResponse
     {
         $validated = $request->validate([
-            'assigned_user_id' => ['nullable', 'integer', 'exists:users,id'],
+            'assigned_user_ids' => ['nullable', 'array'],
+            'assigned_user_ids.*' => ['integer', 'exists:users,id'],
+            'notify_assignees' => ['sometimes', 'boolean'],
             'lead_stage' => ['nullable', 'string', Rule::in(OmniLeadStages::values())],
             'memo' => ['nullable', 'string', 'max:10000'],
             'contact_first_name' => ['nullable', 'string', 'max:120'],
@@ -98,12 +110,60 @@ class OmnichannelInboxController extends Controller
             'contact_job_title' => ['nullable', 'string', 'max:255'],
         ]);
 
+        $notify = (bool) ($validated['notify_assignees'] ?? false);
+        unset($validated['notify_assignees']);
+
+        $assignedIds = null;
+        if (array_key_exists('assigned_user_ids', $validated)) {
+            $assignedIds = array_values(array_unique(array_filter($validated['assigned_user_ids'] ?? [])));
+            unset($validated['assigned_user_ids']);
+        }
+
         $conversation->fill($validated);
+
+        if ($assignedIds !== null) {
+            $syncPayload = [];
+            foreach ($assignedIds as $userId) {
+                $syncPayload[$userId] = [];
+            }
+            $conversation->assignees()->sync($syncPayload);
+            $conversation->assigned_user_id = $assignedIds[0] ?? null;
+        }
+
         $conversation->save();
 
+        if ($notify && $assignedIds !== null && count($assignedIds) > 0) {
+            $this->notifyAssignees($conversation->fresh(['assignees']), $assignedIds, $request->user());
+        }
+
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->fresh(['member', 'assignee'])),
+            'conversation' => $this->formatConversation($conversation->fresh(['member', 'assignee', 'assignees'])),
         ]);
+    }
+
+    /**
+     * @param  list<int>  $userIds
+     */
+    private function notifyAssignees(OmniConversation $conversation, array $userIds, User $actor): void
+    {
+        $label = $conversation->contact_name
+            ?: $this->formatDisplayPhone($conversation->external_contact_id);
+        $actorName = $actor->nama_lengkap ?? $actor->email ?? 'Tim';
+        $message = "{$actorName} menugaskan Anda ke chat WhatsApp: {$label}.";
+        $url = url('/crm/omnichannel-inbox?conversation='.$conversation->id);
+
+        foreach ($userIds as $userId) {
+            if ((int) $userId === (int) $actor->id) {
+                continue;
+            }
+            NotificationService::create([
+                'user_id' => $userId,
+                'type' => 'omnichannel_inbox_assign',
+                'title' => 'Inbox Omnichannel — penugasan chat',
+                'message' => $message,
+                'url' => $url,
+            ]);
+        }
     }
 
     public function messages(OmniConversation $conversation): JsonResponse
@@ -111,7 +171,7 @@ class OmnichannelInboxController extends Controller
         $conversation->update(['unread_count' => 0]);
 
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->load(['member', 'assignee'])),
+            'conversation' => $this->formatConversation($conversation->load(['member', 'assignee', 'assignees'])),
             'messages' => $this->loadMessages($conversation),
         ]);
     }
@@ -205,6 +265,14 @@ class OmnichannelInboxController extends Controller
 
     private function formatConversation(OmniConversation $conversation): array
     {
+        $assignees = [];
+        if ($conversation->relationLoaded('assignees')) {
+            $assignees = $conversation->assignees->map(fn (User $u) => [
+                'id' => $u->id,
+                'name' => $u->nama_lengkap ?? $u->email,
+            ])->values()->all();
+        }
+
         return [
             'id' => $conversation->id,
             'channel' => $conversation->channel,
@@ -224,6 +292,7 @@ class OmnichannelInboxController extends Controller
             'contact_company' => $conversation->contact_company,
             'contact_job_title' => $conversation->contact_job_title,
             'assigned_user_id' => $conversation->assigned_user_id,
+            'assignees' => $assignees,
             'assignee' => $conversation->assignee ? [
                 'id' => $conversation->assignee->id,
                 'name' => $conversation->assignee->nama_lengkap ?? $conversation->assignee->email,

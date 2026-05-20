@@ -77,6 +77,9 @@
               </div>
               <p class="truncate text-[11px] text-slate-500">{{ conv.display_phone }}</p>
               <p class="truncate text-[11px] text-slate-400">{{ conv.last_message_preview || '—' }}</p>
+              <p v-if="conv.assignees?.length" class="truncate text-[10px] text-indigo-600">
+                {{ conv.assignees.map((a) => a.name).join(', ') }}
+              </p>
             </div>
           </button>
           <p v-if="filteredConversations.length === 0" class="px-3 py-6 text-center text-xs text-slate-400">
@@ -93,7 +96,7 @@
               <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                 <i class="fa-brands fa-whatsapp" />
               </div>
-              <div class="min-w-0">
+              <div class="min-w-0 flex-1">
                 <p class="truncate font-semibold text-slate-900">
                   {{ selectedConversation.contact_name || selectedConversation.display_phone }}
                 </p>
@@ -101,18 +104,11 @@
                   {{ selectedConversation.display_phone }}
                   <span v-if="selectedConversation.member" class="text-emerald-600"> · {{ selectedConversation.member.nama_lengkap }}</span>
                 </p>
+                <p v-if="selectedConversation.assignees?.length" class="mt-0.5 truncate text-[10px] text-indigo-700">
+                  <i class="fa-solid fa-user-tag mr-0.5" />
+                  {{ selectedConversation.assignees.map((a) => a.name).join(', ') }}
+                </p>
               </div>
-            </div>
-            <div class="flex items-center gap-2 text-xs">
-              <label class="text-slate-500">Assign</label>
-              <select
-                :value="selectedConversation.assigned_user_id ?? ''"
-                class="max-w-[140px] rounded border border-slate-200 px-1.5 py-1 text-xs"
-                @change="onAssignChange($event)"
-              >
-                <option value="">—</option>
-                <option v-for="u in assignableUsers" :key="u.id" :value="u.id">{{ u.name }}</option>
-              </select>
             </div>
           </div>
 
@@ -207,6 +203,31 @@
             </select>
           </div>
           <div>
+            <label class="text-[10px] font-semibold uppercase text-slate-500">Assign ke (bisa banyak)</label>
+            <Multiselect
+              v-model="crmForm.assignees"
+              :options="assignableUsers"
+              :multiple="true"
+              :close-on-select="false"
+              :clear-on-select="false"
+              :searchable="true"
+              :preserve-search="true"
+              :show-labels="false"
+              placeholder="Ketik nama untuk mencari..."
+              label="name"
+              track-by="id"
+              class="omni-assign-multiselect mt-1 text-sm"
+            >
+              <template #noResult>
+                <span class="px-2 py-1 text-xs text-slate-500">Tidak ada user</span>
+              </template>
+            </Multiselect>
+          </div>
+          <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-700">
+            <input v-model="notifyAssigneesOnSave" type="checkbox" class="mt-0.5 rounded border-slate-300 text-emerald-600" />
+            <span>Kirim notifikasi in-app ke semua yang ditugaskan saat klik <strong>Simpan detail</strong></span>
+          </label>
+          <div>
             <label class="text-[10px] font-semibold uppercase text-slate-500">Memo</label>
             <textarea v-model="crmForm.memo" rows="3" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm" placeholder="Catatan internal CRM..." />
           </div>
@@ -251,6 +272,8 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
@@ -279,8 +302,10 @@ const sendError = ref('')
 const messagesEl = ref(null)
 const crmSaving = ref(false)
 const crmSaveError = ref('')
+const notifyAssigneesOnSave = ref(true)
 const crmForm = ref({
   lead_stage: 'new_lead',
+  assignees: [],
   memo: '',
   contact_first_name: '',
   contact_last_name: '',
@@ -388,6 +413,7 @@ function syncCrmFormFromConversation(conv) {
   if (!conv) return
   crmForm.value = {
     lead_stage: conv.lead_stage || 'new_lead',
+    assignees: Array.isArray(conv.assignees) ? [...conv.assignees] : [],
     memo: conv.memo || '',
     contact_first_name: conv.contact_first_name || '',
     contact_last_name: conv.contact_last_name || '',
@@ -448,24 +474,24 @@ async function submitComposer() {
   }
 }
 
-async function onAssignChange(ev) {
-  const val = ev.target.value
-  const assigned_user_id = val === '' ? null : Number(val)
-  if (!selectedId.value) return
-  try {
-    await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, { assigned_user_id })
-    router.reload({ only: ['conversations', 'selectedConversation'] })
-  } catch {
-    /* revert optional */
-  }
-}
-
 async function saveCrmPanel() {
   if (!selectedId.value) return
   crmSaving.value = true
   crmSaveError.value = ''
+  const f = crmForm.value
+  const payload = {
+    lead_stage: f.lead_stage,
+    memo: f.memo,
+    contact_first_name: f.contact_first_name,
+    contact_last_name: f.contact_last_name,
+    contact_email: f.contact_email,
+    contact_company: f.contact_company,
+    contact_job_title: f.contact_job_title,
+    assigned_user_ids: (f.assignees || []).map((a) => a.id),
+    notify_assignees: notifyAssigneesOnSave.value,
+  }
   try {
-    await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, { ...crmForm.value })
+    await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, payload)
     router.reload({ only: ['conversations', 'selectedConversation'] })
   } catch (e) {
     crmSaveError.value = e.response?.data?.message || 'Gagal menyimpan.'
@@ -521,3 +547,18 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
+
+<style scoped>
+.omni-assign-multiselect :deep(.multiselect__tags) {
+  min-height: 38px;
+  padding-top: 6px;
+  font-size: 0.875rem;
+}
+.omni-assign-multiselect :deep(.multiselect__input),
+.omni-assign-multiselect :deep(.multiselect__single) {
+  font-size: 0.875rem;
+}
+.omni-assign-multiselect :deep(.multiselect__content-wrapper) {
+  max-height: 220px;
+}
+</style>
