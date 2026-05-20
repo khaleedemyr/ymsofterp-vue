@@ -16,6 +16,7 @@ use App\Support\OmnichannelUserOption;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -177,6 +178,7 @@ class OmnichannelInboxController extends Controller
                     ->values()
                     ->all(),
                 'can_see_all_chats' => $canSeeAll,
+                'message_templates' => OmniMessageTemplate::listActiveForInbox(),
             ],
         ]);
     }
@@ -330,24 +332,76 @@ class OmnichannelInboxController extends Controller
         );
 
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:4096'],
+            'body' => ['nullable', 'string', 'max:4096'],
+            'attachment' => ['nullable', 'file', 'max:16384'],
         ]);
+
+        $body = trim((string) ($validated['body'] ?? ''));
+        $file = $request->file('attachment');
+
+        if ($body === '' && ! $file) {
+            return response()->json(['message' => 'Pesan atau lampiran wajib diisi.'], 422);
+        }
 
         if ($conversation->channel !== 'whatsapp') {
             return response()->json(['message' => 'Channel belum didukung.'], 422);
         }
 
+        $client = app(MetaWhatsAppClient::class);
+        $messageType = 'text';
+        $preview = $body;
+        $payload = [];
+        $metaMessageId = '';
+
         try {
-            $result = app(MetaWhatsAppClient::class)->sendText(
-                $conversation->external_contact_id,
-                $validated['body'],
-                $conversation->phone_number_id
-            );
+            if ($file) {
+                $mime = $file->getMimeType() ?: 'application/octet-stream';
+                $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
+                $localUrl = Storage::disk('public')->url($storedPath);
+                $absolutePath = Storage::disk('public')->path($storedPath);
+                $mediaId = $client->uploadMedia($absolutePath, $mime, $conversation->phone_number_id);
+                $isImage = str_starts_with($mime, 'image/');
+
+                if ($isImage) {
+                    $result = $client->sendImage(
+                        $conversation->external_contact_id,
+                        $mediaId,
+                        $body !== '' ? $body : null,
+                        $conversation->phone_number_id
+                    );
+                    $messageType = 'image';
+                    $preview = $body !== '' ? $body : '[Gambar]';
+                } else {
+                    $result = $client->sendDocument(
+                        $conversation->external_contact_id,
+                        $mediaId,
+                        $body !== '' ? $body : null,
+                        $file->getClientOriginalName(),
+                        $conversation->phone_number_id
+                    );
+                    $messageType = 'document';
+                    $preview = $body !== '' ? $body : '[Lampiran: '.$file->getClientOriginalName().']';
+                }
+
+                $payload = array_merge(is_array($result) ? $result : [], [
+                    'local_media_url' => $localUrl,
+                    'media_filename' => $file->getClientOriginalName(),
+                    'media_mime' => $mime,
+                ]);
+                $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+            } else {
+                $result = $client->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+                $payload = is_array($result) ? $result : [];
+                $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+            }
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
 
-        $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
         $sentAt = now();
 
         $message = OmniMessage::query()->create([
@@ -355,16 +409,16 @@ class OmnichannelInboxController extends Controller
             'user_id' => $request->user()->id,
             'direction' => 'outbound',
             'meta_message_id' => $metaMessageId !== '' ? $metaMessageId : null,
-            'message_type' => 'text',
-            'body' => $validated['body'],
-            'payload' => $result,
+            'message_type' => $messageType,
+            'body' => $body !== '' ? $body : ($preview ?: ''),
+            'payload' => $payload,
             'status' => 'sent',
             'sent_at' => $sentAt,
         ]);
 
         $conversation->update([
             'last_message_at' => $sentAt,
-            'last_message_preview' => mb_substr($validated['body'], 0, 500),
+            'last_message_preview' => mb_substr($preview, 0, 500),
         ]);
 
         return response()->json([
@@ -420,8 +474,31 @@ class OmnichannelInboxController extends Controller
         );
 
         $validated = $request->validate([
-            'body' => ['required', 'string', 'max:8192'],
+            'body' => ['nullable', 'string', 'max:8192'],
+            'attachment' => ['nullable', 'file', 'max:16384'],
         ]);
+
+        $body = trim((string) ($validated['body'] ?? ''));
+        $file = $request->file('attachment');
+        if ($body === '' && ! $file) {
+            return response()->json(['message' => 'Catatan atau lampiran wajib diisi.'], 422);
+        }
+
+        $messageType = 'note';
+        $payload = null;
+        $preview = $body;
+
+        if ($file) {
+            $mime = $file->getMimeType() ?: 'application/octet-stream';
+            $storedPath = $file->store("omni-internal/{$conversation->id}", 'public');
+            $messageType = str_starts_with($mime, 'image/') ? 'image' : 'document';
+            $preview = $body !== '' ? $body : ($messageType === 'image' ? '[Gambar]' : '[Lampiran: '.$file->getClientOriginalName().']');
+            $payload = [
+                'local_media_url' => Storage::disk('public')->url($storedPath),
+                'media_filename' => $file->getClientOriginalName(),
+                'media_mime' => $mime,
+            ];
+        }
 
         $sentAt = now();
 
@@ -430,16 +507,16 @@ class OmnichannelInboxController extends Controller
             'user_id' => $request->user()->id,
             'direction' => 'internal',
             'meta_message_id' => null,
-            'message_type' => 'note',
-            'body' => $validated['body'],
-            'payload' => null,
+            'message_type' => $messageType,
+            'body' => $body !== '' ? $body : $preview,
+            'payload' => $payload,
             'status' => null,
             'sent_at' => $sentAt,
         ]);
 
         $conversation->update([
             'last_message_at' => $sentAt,
-            'last_message_preview' => mb_substr('[Catatan] '.$validated['body'], 0, 500),
+            'last_message_preview' => mb_substr('[Catatan] '.$preview, 0, 500),
         ]);
 
         return response()->json([
@@ -532,6 +609,8 @@ class OmnichannelInboxController extends Controller
             $authorName = 'Otomasi';
         }
 
+        $payload = is_array($message->payload) ? $message->payload : [];
+
         return [
             'id' => $message->id,
             'direction' => $message->direction,
@@ -540,6 +619,8 @@ class OmnichannelInboxController extends Controller
             'status' => $message->status,
             'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),
             'author_name' => $authorName,
+            'media_url' => $payload['local_media_url'] ?? null,
+            'media_filename' => $payload['media_filename'] ?? null,
         ];
     }
 

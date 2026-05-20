@@ -185,7 +185,23 @@
                 <p v-if="msg.direction === 'internal'" class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
-                <p class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
+                <img
+                  v-if="msg.media_url && msg.message_type === 'image'"
+                  :src="msg.media_url"
+                  alt=""
+                  class="mb-1 max-h-48 max-w-full rounded object-cover"
+                />
+                <a
+                  v-else-if="msg.media_url"
+                  :href="msg.media_url"
+                  target="_blank"
+                  rel="noopener"
+                  class="mb-1 inline-flex items-center gap-1 text-xs font-medium text-emerald-800 underline"
+                >
+                  <i class="fa-solid fa-paperclip" />
+                  {{ msg.media_filename || 'Lampiran' }}
+                </a>
+                <p v-if="msg.body" class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
                   <span
                     v-if="msg.direction === 'outbound' && msg.author_name"
@@ -221,7 +237,40 @@
                 Catatan internal
               </button>
             </div>
-            <form class="flex items-end gap-2 p-3" @submit.prevent="submitComposer">
+            <form class="flex flex-col gap-2 p-3" @submit.prevent="submitComposer">
+              <div
+                v-if="pendingAttachment"
+                class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+              >
+                <i class="fa-solid fa-paperclip text-emerald-700" />
+                <span class="min-w-0 flex-1 truncate">{{ pendingAttachment.name }}</span>
+                <button type="button" class="text-slate-500 hover:text-red-600" @click="clearAttachment">
+                  <i class="fa-solid fa-xmark" />
+                </button>
+              </div>
+              <div class="flex items-end gap-2">
+              <input ref="imageInputRef" type="file" accept="image/*" class="hidden" @change="onPickAttachment" />
+              <input ref="fileInputRef" type="file" class="hidden" @change="onPickAttachment" />
+              <div class="flex shrink-0 flex-col gap-1">
+                <button
+                  type="button"
+                  class="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+                  title="Gambar"
+                  :disabled="sending"
+                  @click="imageInputRef?.click()"
+                >
+                  <i class="fa-solid fa-image" />
+                </button>
+                <button
+                  type="button"
+                  class="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+                  title="Lampiran"
+                  :disabled="sending"
+                  @click="fileInputRef?.click()"
+                >
+                  <i class="fa-solid fa-paperclip" />
+                </button>
+              </div>
               <div class="relative min-w-0 flex-1">
                 <div
                   v-if="templateMenuOpen && filteredTemplates.length > 0"
@@ -298,11 +347,12 @@
                 type="submit"
                 class="shrink-0 rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 :class="composerMode === 'internal' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'"
-                :disabled="sending || !replyText.trim()"
+                :disabled="sending || (!replyText.trim() && !pendingAttachment)"
               >
                 <i v-if="sending" class="fa-solid fa-spinner fa-spin" />
                 <span v-else>{{ composerMode === 'internal' ? 'Simpan' : 'Kirim' }}</span>
               </button>
+              </div>
             </form>
             <p v-if="sendError" class="px-3 pb-2 text-xs text-red-600">{{ sendError }}</p>
           </div>
@@ -529,6 +579,9 @@ const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
 const emojiPickerOpen = ref(false)
+const pendingAttachment = ref(null)
+const imageInputRef = ref(null)
+const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
 const crmSaving = ref(false)
 const crmSaveError = ref('')
@@ -750,6 +803,7 @@ watch(
       composerMode.value = 'reply'
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
+      clearAttachment()
       nextTick(() => scrollToBottom())
     }
   },
@@ -769,11 +823,21 @@ function insertEmoji(emoji) {
   })
 }
 
-function onComposerInput() {
-  if (composerMode.value !== 'reply') {
-    templateMenuOpen.value = false
-    return
+function onPickAttachment(e) {
+  const file = e.target?.files?.[0]
+  if (file) {
+    pendingAttachment.value = file
   }
+  if (e.target) {
+    e.target.value = ''
+  }
+}
+
+function clearAttachment() {
+  pendingAttachment.value = null
+}
+
+function onComposerInput() {
   const text = replyText.value
   const match = text.match(/\/([\p{L}\p{N}_-]*)$/u)
   if (match) {
@@ -842,42 +906,37 @@ async function submitComposer() {
   if (templateMenuOpen.value && filteredTemplates.value.length > 0) {
     return
   }
-  if (!selectedId.value || !replyText.value.trim()) return
+  if (!selectedId.value) return
+  const body = replyText.value.trim()
+  if (!body && !pendingAttachment.value) return
   sending.value = true
   sendError.value = ''
-  const body = replyText.value.trim()
   try {
-    if (composerMode.value === 'internal') {
-      const { data } = await axios.post(
-        `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`,
-        { body }
-      )
-      if (data.message) {
-        localMessages.value = sortMessages([...localMessages.value, data.message])
-      }
-      replyText.value = ''
-      scrollToBottom()
-      await router.reload({
-        only: ['conversations'],
-        preserveState: true,
-        preserveScroll: true,
-      })
-    } else {
-      const { data } = await axios.post(
-        `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`,
-        { body }
-      )
-      if (data.message) {
-        localMessages.value = sortMessages([...localMessages.value, data.message])
-      }
-      replyText.value = ''
-      scrollToBottom()
-      await router.reload({
-        only: inboxPartialReloadKeys,
-        preserveState: true,
-        preserveScroll: true,
-      })
+    const formData = new FormData()
+    if (body) {
+      formData.append('body', body)
     }
+    if (pendingAttachment.value) {
+      formData.append('attachment', pendingAttachment.value)
+    }
+    const url =
+      composerMode.value === 'internal'
+        ? `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`
+        : `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`
+    const { data } = await axios.post(url, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    if (data.message) {
+      localMessages.value = sortMessages([...localMessages.value, data.message])
+    }
+    replyText.value = ''
+    clearAttachment()
+    scrollToBottom()
+    await router.reload({
+      only: composerMode.value === 'internal' ? ['conversations'] : inboxPartialReloadKeys,
+      preserveState: true,
+      preserveScroll: true,
+    })
   } catch (e) {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
   } finally {
