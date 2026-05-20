@@ -297,7 +297,7 @@ class OmnichannelInboxController extends Controller
         ]);
 
         return response()->json([
-            'message' => $this->formatMessage($message),
+            'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email')),
         ]);
     }
 
@@ -377,6 +377,7 @@ class OmnichannelInboxController extends Controller
             'external_contact_id' => $conversation->external_contact_id,
             'contact_name' => $conversation->contact_name,
             'display_phone' => $this->formatDisplayPhone($conversation->external_contact_id),
+            'display_phone_international' => $this->formatInternationalPhone($conversation->external_contact_id),
             'last_message_preview' => $conversation->last_message_preview,
             'last_message_at' => $conversation->last_message_at?->toIso8601String(),
             'last_customer_message_at' => $conversation->last_customer_message_at?->toIso8601String(),
@@ -431,5 +432,21 @@ class OmnichannelInboxController extends Controller
         }
 
         return $waId;
+    }
+
+    private function formatInternationalPhone(string $waId): string
+    {
+        $digits = preg_replace('/\D/', '', $waId) ?? '';
+        if ($digits === '') {
+            return $waId;
+        }
+        if (str_starts_with($digits, '62')) {
+            return '+'.$digits;
+        }
+        if (str_starts_with($digits, '0')) {
+            return '+62'.substr($digits, 1);
+        }
+
+        return '+'.$digits;
     }
 }

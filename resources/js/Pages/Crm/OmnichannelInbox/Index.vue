@@ -163,9 +163,17 @@
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
                 <p class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
-                <p class="mt-1 text-right text-[10px] opacity-80">
-                  {{ formatTime(msg.sent_at) }}
-                  <span v-if="msg.direction === 'outbound' && msg.status"> · {{ msg.status }}</span>
+                <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
+                  <span
+                    v-if="msg.direction === 'outbound' && msg.author_name"
+                    class="mb-0.5 block text-left font-medium text-slate-700"
+                  >
+                    Dibalas oleh {{ msg.author_name }}
+                  </span>
+                  <span class="block text-slate-600">
+                    {{ formatTime(msg.sent_at) }}
+                    <span v-if="msg.direction === 'outbound' && msg.status"> · {{ msg.status }}</span>
+                  </span>
                 </p>
               </div>
             </div>
@@ -218,10 +226,10 @@
         </div>
       </section>
 
-      <!-- Kolom 4: CRM ringkas -->
+      <!-- Kolom 4: informasi detail kontak + CRM -->
       <aside v-if="selectedConversation" class="flex w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50">
         <div class="border-b border-slate-200 px-3 py-2">
-          <p class="text-xs font-semibold text-slate-700">Detail kontak</p>
+          <p class="text-xs font-semibold text-slate-800">Informasi detail kontak</p>
           <Link
             v-if="canManageOmnichannelTeams"
             href="/crm/omnichannel-teams"
@@ -231,6 +239,25 @@
           </Link>
         </div>
         <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+          <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">WhatsApp</p>
+            <p class="mt-1 font-medium text-slate-900">{{ selectedConversation.contact_name || '—' }}</p>
+            <dl class="mt-2 space-y-1.5 text-slate-700">
+              <div class="flex justify-between gap-2">
+                <dt class="shrink-0 text-slate-500">Nomor (lokal)</dt>
+                <dd class="text-right font-mono">{{ selectedConversation.display_phone || '—' }}</dd>
+              </div>
+              <div class="flex justify-between gap-2">
+                <dt class="shrink-0 text-slate-500">Nomor (internasional)</dt>
+                <dd class="text-right font-mono text-[11px]">{{ selectedConversation.display_phone_international || '—' }}</dd>
+              </div>
+              <div class="border-t border-slate-100 pt-1.5">
+                <dt class="text-slate-500">Penanggung jawab</dt>
+                <dd class="mt-0.5 font-medium text-slate-900">{{ contactOwnerLabel }}</dd>
+              </div>
+            </dl>
+          </div>
+
           <div
             v-if="selectedConversation.member"
             class="rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-900"
@@ -243,10 +270,15 @@
               <span v-if="selectedConversation.member.is_exclusive_member" class="text-amber-700"> · Eksklusif</span>
             </p>
             <p class="mt-0.5 text-emerald-800">{{ selectedConversation.member.nama_lengkap }}</p>
+            <p v-if="selectedConversation.member.mobile_phone" class="mt-0.5 text-emerald-800">
+              {{ selectedConversation.member.mobile_phone }}
+            </p>
             <p v-if="selectedConversation.member.member_id" class="mt-0.5 font-mono text-[11px] text-emerald-700">
               ID: {{ selectedConversation.member.member_id }}
             </p>
           </div>
+
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Data CRM (tersimpan)</p>
           <div>
             <label class="text-[10px] font-semibold uppercase text-slate-500">Tahap lead</label>
             <select v-model="crmForm.lead_stage" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
@@ -323,7 +355,7 @@
             <input v-model="crmForm.contact_company" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
           </div>
           <div>
-            <label class="text-[10px] font-semibold uppercase text-slate-500">Jabatan</label>
+            <label class="text-[10px] font-semibold uppercase text-slate-500">Jabatan (kontak)</label>
             <input v-model="crmForm.contact_job_title" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
           </div>
           <button
@@ -407,6 +439,14 @@ const inbox = computed(() => props.inbox || 'all')
 const leadStageFilter = computed(() => props.leadStageFilter || null)
 
 const selectedConversation = computed(() => props.selectedConversation)
+
+const contactOwnerLabel = computed(() => {
+  const c = props.selectedConversation
+  if (!c) return '—'
+  if (c.assignee) return formatUserOptionLabel(c.assignee)
+  const first = c.assignees?.[0]
+  return first ? formatUserOptionLabel(first) : '—'
+})
 
 const filteredConversations = computed(() => {
   const q = search.value.trim().toLowerCase()
