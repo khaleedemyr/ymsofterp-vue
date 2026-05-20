@@ -138,6 +138,29 @@
                 </p>
               </div>
             </div>
+            <button
+              v-if="selectedConversation.active_flow && !selectedConversation.automation_paused"
+              type="button"
+              class="shrink-0 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-800 hover:bg-violet-100"
+              :disabled="pausingAutomation"
+              @click="pauseAutomation"
+            >
+              {{ pausingAutomation ? '...' : 'Hentikan otomasi' }}
+            </button>
+          </div>
+
+          <div
+            v-if="selectedConversation.active_flow && !selectedConversation.automation_paused"
+            class="border-b border-violet-200 bg-violet-50 px-4 py-1.5 text-center text-[11px] text-violet-900"
+          >
+            <i class="fa-solid fa-diagram-project mr-1" />
+            Otomasi berjalan: <strong>{{ selectedConversation.active_flow.flow_name || 'Flow' }}</strong>
+          </div>
+          <div
+            v-else-if="selectedConversation.automation_paused"
+            class="border-b border-slate-200 bg-slate-100 px-4 py-1.5 text-center text-[11px] text-slate-600"
+          >
+            Otomasi dijeda untuk chat ini
           </div>
 
           <div
@@ -295,13 +318,22 @@
       <aside v-if="selectedConversation" class="flex w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50">
         <div class="border-b border-slate-200 px-3 py-2">
           <p class="text-xs font-semibold text-slate-800">Informasi detail kontak</p>
-          <Link
-            v-if="canManageOmnichannelTeams"
-            href="/crm/omnichannel-teams"
-            class="mt-1 inline-block text-[11px] font-medium text-emerald-700 hover:text-emerald-900 hover:underline"
-          >
-            Kelola tim & akses lihat semua chat
-          </Link>
+          <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+            <Link
+              v-if="canManageOmnichannelTeams"
+              href="/crm/omnichannel-teams"
+              class="font-medium text-emerald-700 hover:text-emerald-900 hover:underline"
+            >
+              Kelola tim & template
+            </Link>
+            <Link
+              v-if="canManageOmnichannelFlows"
+              href="/crm/omnichannel-flows"
+              class="font-medium text-violet-700 hover:text-violet-900 hover:underline"
+            >
+              Otomasi flow
+            </Link>
+          </div>
         </div>
         <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
           <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
@@ -436,6 +468,7 @@ const props = defineProps({
   assignableTeams: { type: Array, default: () => [] },
   canSeeAllChats: { type: Boolean, default: true },
   canManageOmnichannelTeams: { type: Boolean, default: false },
+  canManageOmnichannelFlows: { type: Boolean, default: false },
   messageTemplates: { type: Array, default: () => [] },
 })
 
@@ -451,6 +484,7 @@ const inboxPartialReloadKeys = [
   'assignableTeams',
   'canSeeAllChats',
   'canManageOmnichannelTeams',
+  'canManageOmnichannelFlows',
   'messageTemplates',
 ]
 
@@ -495,6 +529,7 @@ const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
 const emojiPickerOpen = ref(false)
+const pausingAutomation = ref(false)
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -847,6 +882,27 @@ async function submitComposer() {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
   } finally {
     sending.value = false
+  }
+}
+
+async function pauseAutomation() {
+  if (!selectedId.value) return
+  pausingAutomation.value = true
+  try {
+    const { data } = await axios.post(
+      `/crm/omnichannel-inbox/conversations/${selectedId.value}/pause-automation`
+    )
+    if (data.conversation) {
+      await router.reload({
+        only: ['conversations', 'selectedConversation'],
+        preserveState: true,
+        preserveScroll: true,
+      })
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    pausingAutomation.value = false
   }
 }
 

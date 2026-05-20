@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\OmniConversation;
+use App\Models\OmniFlowRun;
 use App\Models\OmniMessage;
 use App\Models\OmniMessageTemplate;
 use App\Models\OmniTeam;
@@ -73,6 +74,7 @@ class OmnichannelInboxController extends Controller
                     'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                     'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                     'teams:id,name',
+                    'activeFlowRun.flow:id,name',
                 ])
                 ->find($selectedId);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
@@ -109,6 +111,8 @@ class OmnichannelInboxController extends Controller
             'assignableTeams' => $assignableTeams,
             'canSeeAllChats' => $canSeeAll,
             'canManageOmnichannelTeams' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
+            'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
+                || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
         ]);
     }
 
@@ -303,6 +307,43 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
+    public function pauseAutomation(Request $request, OmniConversation $conversation): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
+        $conversation->automation_paused = true;
+        $conversation->save();
+
+        if ($conversation->active_flow_run_id) {
+            OmniFlowRun::query()
+                ->where('id', $conversation->active_flow_run_id)
+                ->where('status', 'running')
+                ->update([
+                    'status' => 'cancelled',
+                    'error_message' => 'Dihentikan oleh pengguna',
+                    'finished_at' => now(),
+                ]);
+            $conversation->active_flow_run_id = null;
+            $conversation->save();
+        }
+
+        return response()->json([
+            'conversation' => $this->formatConversation($conversation->fresh([
+                'member',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+                'activeFlowRun.flow:id,name',
+            ])),
+        ]);
+    }
+
     public function storeInternalNote(Request $request, OmniConversation $conversation): JsonResponse
     {
         $this->assertInboxAccess($request);
@@ -406,6 +447,14 @@ class OmnichannelInboxController extends Controller
                 'member_level' => $conversation->member->member_level,
                 'is_exclusive_member' => (bool) $conversation->member->is_exclusive_member,
             ] : null,
+            'automation_paused' => (bool) $conversation->automation_paused,
+            'active_flow' => $conversation->relationLoaded('activeFlowRun') && $conversation->activeFlowRun
+                ? [
+                    'run_id' => $conversation->activeFlowRun->id,
+                    'status' => $conversation->activeFlowRun->status,
+                    'flow_name' => $conversation->activeFlowRun->flow?->name,
+                ]
+                : null,
         ];
     }
 
@@ -414,6 +463,8 @@ class OmnichannelInboxController extends Controller
         $authorName = null;
         if ($message->relationLoaded('author') && $message->author) {
             $authorName = $message->author->nama_lengkap ?? $message->author->email;
+        } elseif ($message->direction === 'outbound' && $message->user_id === null) {
+            $authorName = 'Otomasi';
         }
 
         return [

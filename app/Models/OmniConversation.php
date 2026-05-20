@@ -30,12 +30,15 @@ class OmniConversation extends Model
         'last_message_preview',
         'unread_count',
         'status',
+        'automation_paused',
+        'active_flow_run_id',
     ];
 
     protected $casts = [
         'last_message_at' => 'datetime',
         'last_customer_message_at' => 'datetime',
         'unread_count' => 'integer',
+        'automation_paused' => 'boolean',
     ];
 
     public function messages(): HasMany
@@ -68,5 +71,10 @@ class OmniConversation extends Model
     {
         return $this->belongsToMany(OmniTeam::class, 'omni_conversation_teams', 'conversation_id', 'team_id')
             ->withTimestamps();
+    }
+
+    public function activeFlowRun(): BelongsTo
+    {
+        return $this->belongsTo(OmniFlowRun::class, 'active_flow_run_id');
     }
 }

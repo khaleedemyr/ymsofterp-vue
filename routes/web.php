@@ -2693,6 +2693,14 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/crm/omnichannel-teams/message-templates', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'store'])->name('crm.omnichannel-teams.message-templates.store');
     Route::patch('/crm/omnichannel-teams/message-templates/{messageTemplate}', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'update'])->name('crm.omnichannel-teams.message-templates.update');
     Route::delete('/crm/omnichannel-teams/message-templates/{messageTemplate}', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'destroy'])->name('crm.omnichannel-teams.message-templates.destroy');
+
+    Route::get('/crm/omnichannel-flows', [App\Http\Controllers\OmnichannelFlowController::class, 'index'])->name('crm.omnichannel-flows.index');
+    Route::get('/crm/omnichannel-flows/create', [App\Http\Controllers\OmnichannelFlowController::class, 'create'])->name('crm.omnichannel-flows.create');
+    Route::post('/crm/omnichannel-flows', [App\Http\Controllers\OmnichannelFlowController::class, 'store'])->name('crm.omnichannel-flows.store');
+    Route::get('/crm/omnichannel-flows/{flow}/edit', [App\Http\Controllers\OmnichannelFlowController::class, 'edit'])->name('crm.omnichannel-flows.edit');
+    Route::patch('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'update'])->name('crm.omnichannel-flows.update');
+    Route::delete('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'destroy'])->name('crm.omnichannel-flows.destroy');
+    Route::post('/crm/omnichannel-inbox/conversations/{conversation}/pause-automation', [App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('crm.omnichannel-inbox.pause-automation');
 });
 
 // Video Tutorial Routes

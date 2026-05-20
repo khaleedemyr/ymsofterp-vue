@@ -2,6 +2,7 @@
 
 namespace App\Services\Meta;
 
+use App\Jobs\ProcessOmniFlowJob;
 use App\Models\MemberAppsMember;
 use App\Models\OmniContact;
 use App\Models\OmniConversation;
@@ -69,6 +70,9 @@ class MetaWhatsAppInboundService
             return;
         }
 
+        $conversationId = null;
+        $inboundMessageId = null;
+
         DB::transaction(function () use (
             $wabaId,
             $phoneNumberId,
@@ -79,7 +83,9 @@ class MetaWhatsAppInboundService
             $messageType,
             $body,
             $message,
-            $sentAt
+            $sentAt,
+            &$conversationId,
+            &$inboundMessageId
         ) {
             $memberId = $this->findMemberIdByPhone($from);
 
@@ -128,7 +134,7 @@ class MetaWhatsAppInboundService
                 }
             }
 
-            OmniMessage::query()->create([
+            $inbound = OmniMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => 'inbound',
                 'meta_message_id' => $metaMessageId,
@@ -139,12 +145,19 @@ class MetaWhatsAppInboundService
                 'sent_at' => $sentAt,
             ]);
 
+            $conversationId = (int) $conversation->id;
+            $inboundMessageId = (int) $inbound->id;
+
             $conversation->last_message_at = $sentAt;
             $conversation->last_customer_message_at = $sentAt;
             $conversation->last_message_preview = mb_substr($body ?: '['.$messageType.']', 0, 500);
             $conversation->unread_count = (int) $conversation->unread_count + 1;
             $conversation->save();
         });
+
+        if ($conversationId && $inboundMessageId) {
+            ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
+        }
     }
 
     private function updateMessageStatus(array $status): void

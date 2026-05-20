@@ -261,6 +261,7 @@ export default {
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
     "omnichannel_teams": "Omnichannel inbox teams",
+    "omnichannel_flows": "Inbox automation",
     "migrasi_data_member": "Migrasi Data Member",
     "kirim_notifikasi_member": "Kirim Notifikasi Member",
     "dashboard_crm_2": "Dashboard CRM",
