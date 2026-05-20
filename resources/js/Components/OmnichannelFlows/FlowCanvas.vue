@@ -11,6 +11,8 @@
     :max-zoom="1.5"
     class="h-full w-full bg-slate-100"
     @connect="onConnect"
+    @edges-change="onEdgesChange"
+    @nodes-initialized="onNodesInitialized"
     @node-click="onNodeClick"
     @pane-click="onPaneClick"
     @drop="onDrop"
@@ -22,15 +24,20 @@
 </template>
 
 <script setup>
-import { markRaw } from 'vue'
-import { VueFlow, useVueFlow, ConnectionMode } from '@vue-flow/core'
+import { markRaw, nextTick } from 'vue'
+import {
+  VueFlow,
+  useVueFlow,
+  ConnectionMode,
+  applyEdgeChanges,
+} from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 
 import FlowNode from '@/Components/OmnichannelFlows/FlowNode.vue'
-import { createPaletteNode, TRIGGER_NODE_ID } from '@/utils/omniFlowGraph'
+import { createPaletteNode, hydrateEdges, TRIGGER_NODE_ID } from '@/utils/omniFlowGraph'
 
 const FLOW_ID = 'omni-flow-canvas'
 
@@ -43,7 +50,15 @@ const props = defineProps({
 
 const emit = defineEmits(['node-selected'])
 
-const { screenToFlowCoordinate, addNodes } = useVueFlow({ id: FLOW_ID })
+const {
+  screenToFlowCoordinate,
+  addNodes,
+  addEdges,
+  setEdges,
+  getEdges,
+  getNodes,
+  updateNodeInternals,
+} = useVueFlow({ id: FLOW_ID })
 
 const nodeTypes = markRaw({ omniFlow: FlowNode })
 
@@ -53,20 +68,40 @@ const defaultEdgeOptions = {
   style: { stroke: '#64748b', strokeWidth: 2 },
 }
 
+function syncEdgesFromProps() {
+  const hydrated = hydrateEdges(edges.value, nodes.value)
+  if (hydrated.length > 0 || edges.value.length === 0) {
+    setEdges(hydrated)
+    edges.value = hydrated
+  }
+}
+
+function onNodesInitialized() {
+  const ids = nodes.value.map((n) => n.id)
+  updateNodeInternals(ids)
+  nextTick(() => {
+    syncEdgesFromProps()
+  })
+}
+
+function onEdgesChange(changes) {
+  edges.value = applyEdgeChanges(changes, edges.value)
+}
+
 function onConnect(params) {
-  const id = `e-${params.source}-${params.target}-${params.sourceHandle || 'default'}`
-  if (edges.value.some((e) => e.id === id)) return
-  edges.value = [
-    ...edges.value,
+  const sourceHandle = params.sourceHandle ?? 'default'
+  const targetHandle = params.targetHandle ?? 'target'
+  addEdges([
     {
-      id,
+      id: `e-${params.source}-${sourceHandle}-${params.target}`,
       source: params.source,
       target: params.target,
-      sourceHandle: params.sourceHandle || 'default',
+      sourceHandle,
+      targetHandle,
       type: 'smoothstep',
       animated: true,
     },
-  ]
+  ])
 }
 
 function onNodeClick({ node }) {
@@ -101,8 +136,16 @@ function removeNode(nodeId) {
   if (nodeId === TRIGGER_NODE_ID) return
   nodes.value = nodes.value.filter((n) => n.id !== nodeId)
   edges.value = edges.value.filter((e) => e.source !== nodeId && e.target !== nodeId)
+  setEdges(edges.value)
   emit('node-selected', null)
 }
 
-defineExpose({ removeNode })
+function getFlowSnapshot() {
+  return {
+    nodes: getNodes.value,
+    edges: getEdges.value,
+  }
+}
+
+defineExpose({ removeNode, getFlowSnapshot })
 </script>

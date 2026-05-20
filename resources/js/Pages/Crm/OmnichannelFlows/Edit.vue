@@ -110,6 +110,7 @@ import FlowCanvas from '@/Components/OmnichannelFlows/FlowCanvas.vue'
 import FlowNodeConfigPanel from '@/Components/OmnichannelFlows/FlowNodeConfigPanel.vue'
 import {
   ensureDefinition,
+  hydrateEdges,
   hydrateNodes,
   serializeDefinition,
 } from '@/utils/omniFlowGraph'
@@ -130,13 +131,7 @@ const selectedNode = ref(null)
 
 const initialDef = ensureDefinition(props.flow?.definition)
 const nodes = ref(hydrateNodes(initialDef.nodes, props.teams, props.users))
-const edges = ref(
-  (initialDef.edges || []).map((e) => ({
-    ...e,
-    type: 'smoothstep',
-    animated: true,
-  })),
-)
+const edges = ref(hydrateEdges(initialDef.edges || [], nodes.value))
 
 const form = reactive({
   name: props.flow?.name || '',
@@ -174,6 +169,7 @@ function submit() {
   if (!form.name.trim()) return
 
   submitting.value = true
+  const snap = canvasRef.value?.getFlowSnapshot?.()
   const payload = {
     name: form.name.trim(),
     description: form.description.trim() || null,
@@ -181,7 +177,10 @@ function submit() {
     trigger_type: form.trigger_type,
     channel: form.channel || null,
     priority: form.priority,
-    definition: serializeDefinition(nodes.value, edges.value),
+    definition: serializeDefinition(
+      snap?.nodes ?? nodes.value,
+      snap?.edges ?? edges.value,
+    ),
   }
 
   if (props.flow?.id) {

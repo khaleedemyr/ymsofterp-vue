@@ -103,7 +103,42 @@ function serializeNodeConfig(nodeType, config) {
   return out
 }
 
+function resolveSourceHandle(edge, nodeById) {
+  const raw = edge.sourceHandle ?? null
+  const sourceType = nodeById[edge.source]?.data?.nodeType
+  if (sourceType === 'condition') {
+    return raw === 'true' || raw === 'false' ? raw : 'true'
+  }
+  if (!raw || raw === 'default') {
+    return 'default'
+  }
+  return raw
+}
+
+export function hydrateEdges(edges, nodes) {
+  const nodeById = Object.fromEntries((nodes || []).map((n) => [n.id, n]))
+  const nodeIds = new Set(Object.keys(nodeById))
+
+  return (edges || [])
+    .filter((e) => e?.source && e?.target && nodeIds.has(e.source) && nodeIds.has(e.target))
+    .map((e) => {
+      const sourceHandle = resolveSourceHandle(e, nodeById)
+      const targetHandle = e.targetHandle || 'target'
+      return {
+        id: e.id || `e-${e.source}-${sourceHandle}-${e.target}`,
+        source: e.source,
+        target: e.target,
+        sourceHandle,
+        targetHandle,
+        type: e.type || 'smoothstep',
+        animated: e.animated !== false,
+      }
+    })
+}
+
 export function serializeDefinition(nodes, edges) {
+  const nodeById = Object.fromEntries(nodes.map((n) => [n.id, n]))
+
   return {
     version: 2,
     nodes: nodes.map((n) => ({
@@ -120,7 +155,8 @@ export function serializeDefinition(nodes, edges) {
       id: e.id,
       source: e.source,
       target: e.target,
-      sourceHandle: e.sourceHandle || 'default',
+      sourceHandle: resolveSourceHandle(e, nodeById),
+      targetHandle: e.targetHandle || 'target',
     })),
   }
 }

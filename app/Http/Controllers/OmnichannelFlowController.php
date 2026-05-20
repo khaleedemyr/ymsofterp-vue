@@ -113,7 +113,9 @@ class OmnichannelFlowController extends Controller
             'definition.edges' => ['nullable', 'array'],
             'definition.edges.*.source' => ['required', 'string'],
             'definition.edges.*.target' => ['required', 'string'],
+            'definition.edges.*.id' => ['nullable', 'string', 'max:128'],
             'definition.edges.*.sourceHandle' => ['nullable', 'string', Rule::in(['default', 'true', 'false'])],
+            'definition.edges.*.targetHandle' => ['nullable', 'string', Rule::in(['target', 'default'])],
         ]);
 
         $definition = OmniFlowDefinition::normalizeForStorage($validated['definition']);

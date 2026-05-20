@@ -5,6 +5,7 @@
   >
     <Handle
       v-if="nodeType !== 'trigger'"
+      id="target"
       type="target"
       :position="Position.Top"
       class="!h-2 !w-2 !border-2 !border-slate-400 !bg-white"
