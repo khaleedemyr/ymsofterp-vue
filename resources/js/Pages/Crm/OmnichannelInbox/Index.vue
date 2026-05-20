@@ -185,7 +185,7 @@
                 type="button"
                 class="px-4 py-2 text-sm font-medium"
                 :class="composerMode === 'reply' ? 'border-b-2 border-emerald-600 text-emerald-800' : 'text-slate-500'"
-                @click="composerMode = 'reply'"
+                @click="setComposerMode('reply')"
               >
                 Balas
               </button>
@@ -193,12 +193,12 @@
                 type="button"
                 class="px-4 py-2 text-sm font-medium"
                 :class="composerMode === 'internal' ? 'border-b-2 border-amber-600 text-amber-900' : 'text-slate-500'"
-                @click="composerMode = 'internal'"
+                @click="setComposerMode('internal')"
               >
                 Catatan internal
               </button>
             </div>
-            <form class="flex gap-2 p-3" @submit.prevent="submitComposer">
+            <form class="flex items-end gap-2 p-3" @submit.prevent="submitComposer">
               <div class="relative min-w-0 flex-1">
                 <div
                   v-if="templateMenuOpen && filteredTemplates.length > 0"
@@ -232,12 +232,44 @@
                   ref="composerEl"
                   v-model="replyText"
                   rows="1"
-                  class="w-full resize-none rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  class="w-full resize-none rounded-2xl border border-slate-200 py-2 pl-4 pr-10 text-sm focus:outline-none focus:ring-1"
+                  :class="composerMode === 'internal'
+                    ? 'focus:border-amber-500 focus:ring-amber-500'
+                    : 'focus:border-emerald-500 focus:ring-emerald-500'"
                   :placeholder="composerPlaceholder"
                   :disabled="sending"
                   @input="onComposerInput"
                   @keydown="onComposerKeydown"
                 />
+                <div class="absolute bottom-1.5 right-1.5" data-omni-emoji-picker>
+                  <button
+                    type="button"
+                    class="flex h-8 w-8 items-center justify-center rounded-full text-lg text-slate-500 hover:bg-slate-100"
+                    :disabled="sending"
+                    title="Emoji"
+                    @click.stop="emojiPickerOpen = !emojiPickerOpen"
+                  >
+                    <i class="fa-regular fa-face-smile" />
+                  </button>
+                  <div
+                    v-if="emojiPickerOpen"
+                    class="absolute bottom-full right-0 z-30 mb-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+                    @mousedown.prevent
+                  >
+                    <p class="mb-1 px-1 text-[10px] font-semibold uppercase text-slate-500">Emoji</p>
+                    <div class="grid max-h-36 grid-cols-8 gap-0.5 overflow-y-auto">
+                      <button
+                        v-for="(em, idx) in emojiPickerList"
+                        :key="idx"
+                        type="button"
+                        class="rounded p-1 text-lg leading-none hover:bg-slate-100"
+                        @mousedown.prevent="insertEmoji(em)"
+                      >
+                        {{ em }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
               <button
                 type="submit"
@@ -367,29 +399,7 @@
           </label>
           <div>
             <label class="text-[10px] font-semibold uppercase text-slate-500">Memo</label>
-            <textarea v-model="crmForm.memo" rows="3" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm" placeholder="Catatan internal CRM..." />
-          </div>
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-[10px] font-semibold uppercase text-slate-500">Nama depan</label>
-              <input v-model="crmForm.contact_first_name" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
-            </div>
-            <div>
-              <label class="text-[10px] font-semibold uppercase text-slate-500">Nama belakang</label>
-              <input v-model="crmForm.contact_last_name" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
-            </div>
-          </div>
-          <div>
-            <label class="text-[10px] font-semibold uppercase text-slate-500">Email</label>
-            <input v-model="crmForm.contact_email" type="email" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
-          </div>
-          <div>
-            <label class="text-[10px] font-semibold uppercase text-slate-500">Perusahaan</label>
-            <input v-model="crmForm.contact_company" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
-          </div>
-          <div>
-            <label class="text-[10px] font-semibold uppercase text-slate-500">Jabatan (kontak)</label>
-            <input v-model="crmForm.contact_job_title" type="text" class="mt-1 w-full rounded border border-slate-200 px-2 py-1 text-xs" />
+            <textarea v-model="crmForm.memo" rows="4" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm" placeholder="Catatan internal CRM..." />
           </div>
           <button
             type="button"
@@ -483,6 +493,17 @@ const composerEl = ref(null)
 const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
+const emojiPickerOpen = ref(false)
+
+/** Emoji umum (UTF-8); tabel omni_* sudah utf8mb4 — aman disimpan di body/memo/template. */
+const emojiPickerList = [
+  '😀', '😃', '😄', '😁', '😊', '🙂', '😉', '😍', '🥰', '😘', '😗', '😋', '😛', '😜', '🤪', '😝',
+  '🤗', '🤔', '😐', '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '🥱', '😴',
+  '😌', '😛', '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲', '☹️', '🙁', '😖', '😞', '😟', '😤',
+  '😢', '😭', '😦', '😧', '😨', '😩', '🤯', '😬', '😰', '😱', '🥵', '🥶', '😳', '🤪', '😵', '🥴',
+  '👍', '👎', '👌', '✌️', '🤞', '🤝', '🙏', '💪', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💯',
+  '✅', '❌', '⭐', '🔥', '🎉', '🎊', '💐', '🌹', '🙌', '👏', '🤝', '💬', '📱', '📞', '📍', '🕐',
+]
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -491,11 +512,6 @@ const crmForm = ref({
   assignees: [],
   assigned_teams: [],
   memo: '',
-  contact_first_name: '',
-  contact_last_name: '',
-  contact_email: '',
-  contact_company: '',
-  contact_job_title: '',
 })
 
 let pollTimer = null
@@ -648,11 +664,6 @@ function syncCrmFormFromConversation(conv) {
     assignees: Array.isArray(conv.assignees) ? [...conv.assignees] : [],
     assigned_teams: Array.isArray(conv.assigned_teams) ? [...conv.assigned_teams] : [],
     memo: conv.memo || '',
-    contact_first_name: conv.contact_first_name || '',
-    contact_last_name: conv.contact_last_name || '',
-    contact_email: conv.contact_email || '',
-    contact_company: conv.contact_company || '',
-    contact_job_title: conv.contact_job_title || '',
   }
 }
 
@@ -665,15 +676,36 @@ function shouldStickToBottom() {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 100
 }
 
+/** Gabungkan pesan server + lokal (hindari hilang saat poll/reload lebih cepat dari DB). */
+function mergeMessagesFromProps(serverMsgs) {
+  const next = sortMessages(serverMsgs ?? [])
+  const prev = localMessages.value
+  if (prev.length === 0) {
+    return next
+  }
+  const byId = new Map()
+  for (const m of next) {
+    if (m.id != null) {
+      byId.set(m.id, m)
+    }
+  }
+  for (const m of prev) {
+    if (m.id != null && !byId.has(m.id)) {
+      byId.set(m.id, m)
+    }
+  }
+  return sortMessages([...byId.values()])
+}
+
 watch(
   () => props.messages,
   (val) => {
     const prev = localMessages.value
-    const next = sortMessages(val ?? [])
+    const merged = mergeMessagesFromProps(val)
     const prevLastId = prev[prev.length - 1]?.id
-    const nextLastId = next[next.length - 1]?.id
-    localMessages.value = next
-    const newTail = nextLastId !== prevLastId || next.length > prev.length
+    const nextLastId = merged[merged.length - 1]?.id
+    localMessages.value = merged
+    const newTail = nextLastId !== prevLastId || merged.length > prev.length
     if (shouldStickToBottom() && newTail) {
       scrollToBottom()
     }
@@ -682,23 +714,52 @@ watch(
 )
 
 watch(
-  () => props.selectedConversation,
-  (conv, prevConv) => {
-    const prevId = prevConv?.id ?? null
-    const newId = conv?.id ?? null
-    selectedId.value = newId
+  () => props.selectedConversation?.id,
+  (newId, prevId) => {
+    const conv = props.selectedConversation
+    selectedId.value = newId ?? null
     syncCrmFormFromConversation(conv)
     sendError.value = ''
-    composerMode.value = 'reply'
-    templateMenuOpen.value = false
     if (newId !== prevId) {
+      composerMode.value = 'reply'
+      templateMenuOpen.value = false
+      emojiPickerOpen.value = false
       nextTick(() => scrollToBottom())
     }
   },
   { immediate: true }
 )
 
+function setComposerMode(mode) {
+  composerMode.value = mode
+  templateMenuOpen.value = false
+  emojiPickerOpen.value = false
+  nextTick(() => composerEl.value?.focus())
+}
+
+function insertEmoji(emoji) {
+  const el = composerEl.value
+  if (!el) {
+    replyText.value += emoji
+    return
+  }
+  const start = el.selectionStart ?? replyText.value.length
+  const end = el.selectionEnd ?? start
+  const text = replyText.value
+  replyText.value = text.slice(0, start) + emoji + text.slice(end)
+  emojiPickerOpen.value = false
+  nextTick(() => {
+    el.focus()
+    const pos = start + emoji.length
+    el.setSelectionRange(pos, pos)
+  })
+}
+
 function onComposerInput() {
+  if (composerMode.value !== 'reply') {
+    templateMenuOpen.value = false
+    return
+  }
   const text = replyText.value
   const match = text.match(/\/([\p{L}\p{N}_-]*)$/u)
   if (match) {
@@ -777,21 +838,32 @@ async function submitComposer() {
         `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`,
         { body }
       )
-      localMessages.value = sortMessages([...localMessages.value, data.message])
+      if (data.message) {
+        localMessages.value = sortMessages([...localMessages.value, data.message])
+      }
+      replyText.value = ''
+      scrollToBottom()
+      await router.reload({
+        only: ['conversations'],
+        preserveState: true,
+        preserveScroll: true,
+      })
     } else {
       const { data } = await axios.post(
         `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`,
         { body }
       )
-      localMessages.value = sortMessages([...localMessages.value, data.message])
+      if (data.message) {
+        localMessages.value = sortMessages([...localMessages.value, data.message])
+      }
+      replyText.value = ''
+      scrollToBottom()
+      await router.reload({
+        only: inboxPartialReloadKeys,
+        preserveState: true,
+        preserveScroll: true,
+      })
     }
-    replyText.value = ''
-    scrollToBottom()
-    await router.reload({
-      only: inboxPartialReloadKeys,
-      preserveState: true,
-      preserveScroll: true,
-    })
   } catch (e) {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
   } finally {
@@ -807,11 +879,6 @@ async function saveCrmPanel() {
   const payload = {
     lead_stage: f.lead_stage,
     memo: f.memo,
-    contact_first_name: f.contact_first_name,
-    contact_last_name: f.contact_last_name,
-    contact_email: f.contact_email,
-    contact_company: f.contact_company,
-    contact_job_title: f.contact_job_title,
     assigned_user_ids: (f.assignees || []).map((a) => a.id),
     assigned_team_ids: (f.assigned_teams || []).map((t) => t.id),
     notify_assignees: notifyAssigneesOnSave.value,
@@ -922,6 +989,17 @@ function formatTime(iso) {
   })
 }
 
+function closeEmojiPickerOnOutsideClick(e) {
+  if (!emojiPickerOpen.value) {
+    return
+  }
+  const target = e.target
+  if (target instanceof Element && target.closest('[data-omni-emoji-picker]')) {
+    return
+  }
+  emojiPickerOpen.value = false
+}
+
 onMounted(() => {
   const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   if (csrf) {
@@ -931,6 +1009,7 @@ onMounted(() => {
   restartInboxPollTimer()
   document.addEventListener('visibilitychange', onInboxVisibilityChange)
   window.addEventListener('focus', onInboxWindowFocus)
+  document.addEventListener('mousedown', closeEmojiPickerOnOutsideClick)
 })
 
 onUnmounted(() => {
@@ -941,6 +1020,7 @@ onUnmounted(() => {
   clearTimeout(pollKickTimer)
   document.removeEventListener('visibilitychange', onInboxVisibilityChange)
   window.removeEventListener('focus', onInboxWindowFocus)
+  document.removeEventListener('mousedown', closeEmojiPickerOnOutsideClick)
 })
 </script>
 

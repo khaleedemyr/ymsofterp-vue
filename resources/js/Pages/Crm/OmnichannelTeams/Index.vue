@@ -79,7 +79,7 @@
               rows="3"
               maxlength="4096"
               class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
-              placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami..."
+              placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami... (emoji didukung 😊)"
             />
           </div>
           <div class="flex flex-wrap items-center gap-4 sm:col-span-2">

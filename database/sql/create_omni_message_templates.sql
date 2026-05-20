@@ -1,4 +1,5 @@
 -- Template balasan cepat inbox omnichannel (trigger / di composer chat)
+-- Kolom TEXT utf8mb4_unicode_ci mendukung emoji (sama: omni_messages.body, omni_conversations.memo)
 
 CREATE TABLE IF NOT EXISTS `omni_message_templates` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

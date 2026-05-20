@@ -337,7 +337,7 @@ class OmnichannelInboxController extends Controller
         ]);
 
         return response()->json([
-            'message' => $this->formatMessage($message->load('author')),
+            'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email')),
         ]);
     }
 
