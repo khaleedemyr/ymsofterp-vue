@@ -199,13 +199,46 @@
               </button>
             </div>
             <form class="flex gap-2 p-3" @submit.prevent="submitComposer">
-              <input
-                v-model="replyText"
-                type="text"
-                class="min-w-0 flex-1 rounded-full border border-slate-200 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                :placeholder="composerMode === 'internal' ? 'Catatan hanya untuk tim...' : 'Kirim ke WhatsApp...'"
-                :disabled="sending"
-              />
+              <div class="relative min-w-0 flex-1">
+                <div
+                  v-if="templateMenuOpen && filteredTemplates.length > 0"
+                  class="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                >
+                  <p class="border-b border-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Template balasan
+                  </p>
+                  <button
+                    v-for="(tpl, idx) in filteredTemplates"
+                    :key="tpl.id"
+                    type="button"
+                    class="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-emerald-50"
+                    :class="idx === templateMenuHighlight ? 'bg-emerald-50' : ''"
+                    @mousedown.prevent="applyTemplate(tpl)"
+                  >
+                    <span class="font-medium text-slate-900">
+                      {{ tpl.title }}
+                      <span v-if="tpl.shortcut" class="font-mono text-xs text-emerald-700">/{{ tpl.shortcut }}</span>
+                    </span>
+                    <span class="mt-0.5 line-clamp-2 text-xs text-slate-500">{{ tpl.body }}</span>
+                  </button>
+                </div>
+                <p
+                  v-else-if="templateMenuOpen && messageTemplates.length === 0"
+                  class="absolute bottom-full left-0 mb-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                >
+                  Belum ada template. Buat di menu Tim Inbox Omnichannel.
+                </p>
+                <textarea
+                  ref="composerEl"
+                  v-model="replyText"
+                  rows="1"
+                  class="w-full resize-none rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  :placeholder="composerPlaceholder"
+                  :disabled="sending"
+                  @input="onComposerInput"
+                  @keydown="onComposerKeydown"
+                />
+              </div>
               <button
                 type="submit"
                 class="shrink-0 rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
@@ -392,6 +425,7 @@ const props = defineProps({
   assignableTeams: { type: Array, default: () => [] },
   canSeeAllChats: { type: Boolean, default: true },
   canManageOmnichannelTeams: { type: Boolean, default: false },
+  messageTemplates: { type: Array, default: () => [] },
 })
 
 /** Kunci partial reload Inertia agar daftar chat, pesan, dan hak "lihat semua" selalu sinkron (satu sumber kebenaran). */
@@ -406,6 +440,7 @@ const inboxPartialReloadKeys = [
   'assignableTeams',
   'canSeeAllChats',
   'canManageOmnichannelTeams',
+  'messageTemplates',
 ]
 
 function sortMessages(msgs) {
@@ -444,6 +479,10 @@ const composerMode = ref('reply')
 const sending = ref(false)
 const sendError = ref('')
 const messagesEl = ref(null)
+const composerEl = ref(null)
+const templateMenuOpen = ref(false)
+const templateQuery = ref('')
+const templateMenuHighlight = ref(0)
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -501,6 +540,26 @@ const filteredConversations = computed(() => {
       teamNames.includes(q) ||
       assigneeBits.includes(q)
     )
+  })
+})
+
+const composerPlaceholder = computed(() => {
+  if (composerMode.value === 'internal') {
+    return 'Catatan hanya untuk tim... (ketik / untuk template)'
+  }
+  return 'Kirim ke WhatsApp... (ketik / untuk template balasan)'
+})
+
+const filteredTemplates = computed(() => {
+  const q = templateQuery.value.trim().toLowerCase()
+  const list = props.messageTemplates || []
+  if (!q) {
+    return list
+  }
+  return list.filter((tpl) => {
+    const shortcut = (tpl.shortcut || '').toLowerCase()
+    const title = (tpl.title || '').toLowerCase()
+    return shortcut.includes(q) || title.includes(q)
   })
 })
 
@@ -631,6 +690,7 @@ watch(
     syncCrmFormFromConversation(conv)
     sendError.value = ''
     composerMode.value = 'reply'
+    templateMenuOpen.value = false
     if (newId !== prevId) {
       nextTick(() => scrollToBottom())
     }
@@ -638,7 +698,75 @@ watch(
   { immediate: true }
 )
 
+function onComposerInput() {
+  const text = replyText.value
+  const match = text.match(/\/([\p{L}\p{N}_-]*)$/u)
+  if (match) {
+    templateMenuOpen.value = true
+    templateQuery.value = match[1]
+    templateMenuHighlight.value = 0
+    return
+  }
+  templateMenuOpen.value = false
+  templateQuery.value = ''
+}
+
+function onComposerKeydown(e) {
+  if (!templateMenuOpen.value || filteredTemplates.value.length === 0) {
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    templateMenuHighlight.value = Math.min(
+      templateMenuHighlight.value + 1,
+      filteredTemplates.value.length - 1
+    )
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    templateMenuHighlight.value = Math.max(templateMenuHighlight.value - 1, 0)
+    return
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    templateMenuOpen.value = false
+    return
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    const tpl = filteredTemplates.value[templateMenuHighlight.value]
+    if (tpl) {
+      applyTemplate(tpl)
+    }
+  }
+}
+
+function applyTemplateBody(body) {
+  let text = body
+  const c = props.selectedConversation
+  if (c) {
+    const nama = c.contact_name || c.contact_first_name || c.display_phone || ''
+    text = text
+      .replace(/\{\{nama\}\}/gi, nama)
+      .replace(/\{\{nomor\}\}/gi, c.display_phone || '')
+      .replace(/\{\{nama_depan\}\}/gi, c.contact_first_name || nama)
+  }
+  return text
+}
+
+function applyTemplate(tpl) {
+  const body = applyTemplateBody(tpl.body)
+  replyText.value = replyText.value.replace(/\/[\p{L}\p{N}_-]*$/u, body)
+  templateMenuOpen.value = false
+  templateQuery.value = ''
+  nextTick(() => composerEl.value?.focus())
+}
+
 async function submitComposer() {
+  if (templateMenuOpen.value && filteredTemplates.value.length > 0) {
+    return
+  }
   if (!selectedId.value || !replyText.value.trim()) return
   sending.value = true
   sendError.value = ''

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OmniMessageTemplate;
 use App\Models\OmniTeam;
 use App\Models\User;
 use App\Support\OmnichannelAuthorization;
@@ -46,7 +47,23 @@ class OmnichannelTeamSettingsController extends Controller
                     ->get()
             );
 
+        $messageTemplates = OmniMessageTemplate::query()
+            ->orderBy('sort_order')
+            ->orderBy('title')
+            ->get()
+            ->map(fn (OmniMessageTemplate $t) => [
+                'id' => $t->id,
+                'title' => $t->title,
+                'shortcut' => $t->shortcut,
+                'body' => $t->body,
+                'is_active' => (bool) $t->is_active,
+                'sort_order' => (int) $t->sort_order,
+            ])
+            ->values()
+            ->all();
+
         return Inertia::render('Crm/OmnichannelTeams/Index', [
+            'messageTemplates' => $messageTemplates,
             'teams' => $teams->map(fn (OmniTeam $t) => [
                 'id' => $t->id,
                 'name' => $t->name,

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Models\OmniMessageTemplate;
 use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaWhatsAppClient;
@@ -97,6 +98,7 @@ class OmnichannelInboxController extends Controller
             ]);
 
         return Inertia::render('Crm/OmnichannelInbox/Index', [
+            'messageTemplates' => OmniMessageTemplate::listActiveForInbox(),
             'conversations' => $conversations,
             'selectedConversation' => $selectedConversation,
             'messages' => $messages,

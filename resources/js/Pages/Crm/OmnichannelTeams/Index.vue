@@ -41,6 +41,109 @@
       </section>
 
       <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 class="text-sm font-semibold text-slate-800">Template balasan cepat</h2>
+        <p class="mt-1 text-xs text-slate-500">
+          Di inbox, ketik <strong>/</strong> di kotak chat untuk memilih template. Shortcut opsional (mis. <code class="rounded bg-slate-100 px-1">salam</code> → ketik <code class="rounded bg-slate-100 px-1">/salam</code>).
+          Placeholder:
+          <code v-pre class="rounded bg-slate-100 px-1">{{nama}}</code>,
+          <code v-pre class="rounded bg-slate-100 px-1">{{nomor}}</code>,
+          <code v-pre class="rounded bg-slate-100 px-1">{{nama_depan}}</code>.
+        </p>
+        <form class="mt-3 grid gap-3 sm:grid-cols-2" @submit.prevent="submitCreateTemplate">
+          <div>
+            <label class="text-xs font-medium text-slate-600">Judul template</label>
+            <input
+              v-model="tplTitle"
+              type="text"
+              required
+              maxlength="120"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+              placeholder="Salam pembuka"
+            />
+          </div>
+          <div>
+            <label class="text-xs font-medium text-slate-600">Shortcut (opsional)</label>
+            <input
+              v-model="tplShortcut"
+              type="text"
+              maxlength="64"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm font-mono"
+              placeholder="salam"
+            />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-xs font-medium text-slate-600">Isi pesan</label>
+            <textarea
+              v-model="tplBody"
+              required
+              rows="3"
+              maxlength="4096"
+              class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
+              placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami..."
+            />
+          </div>
+          <div class="flex flex-wrap items-center gap-4 sm:col-span-2">
+            <label class="flex items-center gap-2 text-xs text-slate-700">
+              <input v-model="tplActive" type="checkbox" class="rounded border-slate-300 text-emerald-600" />
+              Aktif (tampil di inbox)
+            </label>
+            <div class="flex items-center gap-2 text-xs text-slate-600">
+              <span>Urutan</span>
+              <input
+                v-model.number="tplSortOrder"
+                type="number"
+                min="0"
+                max="9999"
+                class="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+              :disabled="tplSubmitting"
+            >
+              {{ tplSubmitting ? 'Menyimpan...' : 'Tambah template' }}
+            </button>
+          </div>
+        </form>
+        <div v-if="messageTemplates.length === 0" class="mt-4 text-sm text-slate-500">Belum ada template.</div>
+        <div v-else class="mt-4 space-y-3">
+          <div
+            v-for="tpl in messageTemplates"
+            :key="tpl.id"
+            class="rounded-lg border border-slate-100 bg-slate-50/80 p-3 text-sm"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p class="font-medium text-slate-900">
+                  {{ tpl.title }}
+                  <span v-if="tpl.shortcut" class="font-mono text-xs text-emerald-700">/{{ tpl.shortcut }}</span>
+                  <span v-if="!tpl.is_active" class="ml-1 rounded bg-slate-200 px-1.5 text-[10px] text-slate-600">Nonaktif</span>
+                </p>
+                <p class="mt-1 whitespace-pre-wrap text-xs text-slate-600">{{ tpl.body }}</p>
+              </div>
+              <button
+                type="button"
+                class="text-xs font-medium text-red-600 hover:underline"
+                @click="destroyTemplate(tpl.id)"
+              >
+                Hapus
+              </button>
+            </div>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="text-xs font-medium text-slate-700 hover:underline"
+                @click="toggleTemplateActive(tpl)"
+              >
+                {{ tpl.is_active ? 'Nonaktifkan' : 'Aktifkan' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 class="text-sm font-semibold text-slate-800">Tambah tim</h2>
         <form class="mt-3 grid gap-3 sm:grid-cols-2" @submit.prevent="submitCreate">
           <div>
@@ -147,6 +250,7 @@ const props = defineProps({
   teams: { type: Array, default: () => [] },
   fullAccessUsers: { type: Array, default: () => [] },
   userOptions: { type: Array, default: () => [] },
+  messageTemplates: { type: Array, default: () => [] },
 })
 
 const fullAccessSelection = ref([])
@@ -156,6 +260,13 @@ const createName = ref('')
 const createDescription = ref('')
 const createMembers = ref([])
 const createSubmitting = ref(false)
+
+const tplTitle = ref('')
+const tplShortcut = ref('')
+const tplBody = ref('')
+const tplActive = ref(true)
+const tplSortOrder = ref(0)
+const tplSubmitting = ref(false)
 
 const memberSelections = reactive({})
 
@@ -235,6 +346,44 @@ function saveTeamMembers(teamId) {
 function destroyTeam(teamId) {
   if (!confirm('Hapus tim ini? Penugasan chat ke tim ini akan dilepas.')) return
   router.delete(`/crm/omnichannel-teams/${teamId}`, { preserveScroll: true })
+}
+
+function submitCreateTemplate() {
+  tplSubmitting.value = true
+  router.post(
+    '/crm/omnichannel-teams/message-templates',
+    {
+      title: tplTitle.value.trim(),
+      shortcut: tplShortcut.value.trim() || null,
+      body: tplBody.value.trim(),
+      is_active: tplActive.value,
+      sort_order: tplSortOrder.value,
+    },
+    {
+      preserveScroll: true,
+      onFinish: () => {
+        tplSubmitting.value = false
+      },
+      onSuccess: () => {
+        tplTitle.value = ''
+        tplShortcut.value = ''
+        tplBody.value = ''
+        tplActive.value = true
+        tplSortOrder.value = 0
+      },
+    }
+  )
+}
+
+function toggleTemplateActive(tpl) {
+  router.patch(`/crm/omnichannel-teams/message-templates/${tpl.id}`, {
+    is_active: !tpl.is_active,
+  }, { preserveScroll: true })
+}
+
+function destroyTemplate(id) {
+  if (!confirm('Hapus template ini?')) return
+  router.delete(`/crm/omnichannel-teams/message-templates/${id}`, { preserveScroll: true })
 }
 </script>
 
