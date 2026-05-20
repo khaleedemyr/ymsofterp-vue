@@ -2684,6 +2684,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('crm.omnichannel-inbox.messages');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('crm.omnichannel-inbox.send');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/internal-notes', [App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('crm.omnichannel-inbox.internal-notes');
+
+    Route::get('/crm/omnichannel-teams', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'index'])->name('crm.omnichannel-teams.index');
+    Route::post('/crm/omnichannel-teams', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'store'])->name('crm.omnichannel-teams.store');
+    Route::patch('/crm/omnichannel-teams/{team}', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'update'])->name('crm.omnichannel-teams.update');
+    Route::delete('/crm/omnichannel-teams/{team}', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'destroy'])->name('crm.omnichannel-teams.destroy');
 });
 
 // Video Tutorial Routes

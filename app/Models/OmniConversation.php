@@ -63,4 +63,10 @@ class OmniConversation extends Model
         return $this->belongsToMany(User::class, 'omni_conversation_assignees', 'conversation_id', 'user_id')
             ->withTimestamps();
     }
+
+    public function teams(): BelongsToMany
+    {
+        return $this->belongsToMany(OmniTeam::class, 'omni_conversation_teams', 'conversation_id', 'team_id')
+            ->withTimestamps();
+    }
 }

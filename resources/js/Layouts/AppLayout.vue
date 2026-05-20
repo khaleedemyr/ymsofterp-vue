@@ -533,6 +533,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.guest_comment_ocr'), icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
             { name: () => t('sidebar.menus.customer_voice_command_center'), icon: 'fa-solid fa-headset', route: '/customer-voice-command-center', code: 'customer_voice_command_center' },
             { name: () => t('sidebar.menus.omnichannel_inbox'), icon: 'fa-solid fa-inbox', route: '/crm/omnichannel-inbox', code: 'omnichannel_inbox' },
+            { name: () => t('sidebar.menus.omnichannel_teams'), icon: 'fa-solid fa-people-group', route: '/crm/omnichannel-teams', code: 'omnichannel_teams' },
            // { name: () => t('sidebar.menus.migrasi_data_member'), icon: 'fa-solid fa-database', route: '/member-migration', code: 'member_migration' },
             { name: () => t('sidebar.menus.kirim_notifikasi_member'), icon: 'fa-solid fa-paper-plane', route: '/member-notification', code: 'member_notification' },
            // { name: () => t('sidebar.menus.dashboard_crm_2'), icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },

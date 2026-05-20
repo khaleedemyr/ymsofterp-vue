@@ -4,12 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
 use App\Support\OmniLeadStages;
+use App\Support\OmnichannelAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,6 +22,11 @@ class OmnichannelInboxController extends Controller
 {
     public function index(Request $request): Response
     {
+        $this->assertInboxAccess($request);
+
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+
         $inbox = $request->get('inbox', 'all');
         if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
             $inbox = 'all';
@@ -34,18 +42,10 @@ class OmnichannelInboxController extends Controller
                 'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
                 'assignee:id,nama_lengkap,email',
                 'assignees:id,nama_lengkap,email',
+                'teams:id,name',
             ]);
 
-        if ($inbox === 'mine') {
-            $uid = $request->user()->id;
-            $query->where(function ($q) use ($uid) {
-                $q->whereHas('assignees', fn ($sub) => $sub->where('users.id', $uid))
-                    ->orWhere('assigned_user_id', $uid);
-            });
-        } elseif ($inbox === 'unassigned') {
-            $query->whereDoesntHave('assignees')
-                ->whereNull('assigned_user_id');
-        }
+        OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
 
         if ($leadStageFilter) {
             $query->where('lead_stage', $leadStageFilter);
@@ -66,9 +66,9 @@ class OmnichannelInboxController extends Controller
 
         if ($selectedId) {
             $conversation = OmniConversation::query()
-                ->with(['member', 'assignee', 'assignees'])
+                ->with(['member', 'assignee', 'assignees', 'teams:id,name'])
                 ->find($selectedId);
-            if ($conversation) {
+            if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
                 $selectedConversation = $this->formatConversation($conversation);
                 $messages = $this->loadMessages($conversation);
                 $conversation->update(['unread_count' => 0]);
@@ -83,6 +83,14 @@ class OmnichannelInboxController extends Controller
                 'name' => $u->nama_lengkap ?? $u->email,
             ]);
 
+        $assignableTeams = OmniTeam::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (OmniTeam $t) => [
+                'id' => $t->id,
+                'name' => $t->name,
+            ]);
+
         return Inertia::render('Crm/OmnichannelInbox/Index', [
             'conversations' => $conversations,
             'selectedConversation' => $selectedConversation,
@@ -91,14 +99,27 @@ class OmnichannelInboxController extends Controller
             'leadStageFilter' => $leadStageFilter,
             'leadStages' => OmniLeadStages::all(),
             'assignableUsers' => $assignableUsers,
+            'assignableTeams' => $assignableTeams,
+            'canSeeAllChats' => $canSeeAll,
+            'canManageOmnichannelTeams' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
         ]);
     }
 
     public function update(Request $request, OmniConversation $conversation): JsonResponse
     {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
         $validated = $request->validate([
             'assigned_user_ids' => ['nullable', 'array'],
             'assigned_user_ids.*' => ['integer', 'exists:users,id'],
+            'assigned_team_ids' => ['nullable', 'array'],
+            'assigned_team_ids.*' => ['integer', 'exists:omni_teams,id'],
             'notify_assignees' => ['sometimes', 'boolean'],
             'lead_stage' => ['nullable', 'string', Rule::in(OmniLeadStages::values())],
             'memo' => ['nullable', 'string', 'max:10000'],
@@ -118,6 +139,12 @@ class OmnichannelInboxController extends Controller
             unset($validated['assigned_user_ids']);
         }
 
+        $assignedTeamIds = null;
+        if (array_key_exists('assigned_team_ids', $validated)) {
+            $assignedTeamIds = array_values(array_unique(array_filter($validated['assigned_team_ids'] ?? [])));
+            unset($validated['assigned_team_ids']);
+        }
+
         $conversation->fill($validated);
 
         if ($assignedIds !== null) {
@@ -129,14 +156,37 @@ class OmnichannelInboxController extends Controller
             $conversation->assigned_user_id = $assignedIds[0] ?? null;
         }
 
+        if ($assignedTeamIds !== null) {
+            $syncTeams = [];
+            foreach ($assignedTeamIds as $teamId) {
+                $syncTeams[$teamId] = [];
+            }
+            $conversation->teams()->sync($syncTeams);
+        }
+
         $conversation->save();
 
-        if ($notify && $assignedIds !== null && count($assignedIds) > 0) {
-            $this->notifyAssignees($conversation->fresh(['assignees']), $assignedIds, $request->user());
+        $notifyUserIds = [];
+        if ($notify && ($assignedIds !== null || $assignedTeamIds !== null)) {
+            if ($assignedIds !== null) {
+                $notifyUserIds = array_merge($notifyUserIds, $assignedIds);
+            }
+            if ($assignedTeamIds !== null && count($assignedTeamIds) > 0) {
+                $fromTeams = DB::table('omni_team_user')
+                    ->whereIn('team_id', $assignedTeamIds)
+                    ->pluck('user_id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all();
+                $notifyUserIds = array_merge($notifyUserIds, $fromTeams);
+            }
+            $notifyUserIds = array_values(array_unique(array_filter($notifyUserIds)));
+            if (count($notifyUserIds) > 0) {
+                $this->notifyAssignees($conversation->fresh(['assignees', 'teams']), $notifyUserIds, $request->user());
+            }
         }
 
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->fresh(['member', 'assignee', 'assignees'])),
+            'conversation' => $this->formatConversation($conversation->fresh(['member', 'assignee', 'assignees', 'teams:id,name'])),
         ]);
     }
 
@@ -165,18 +215,34 @@ class OmnichannelInboxController extends Controller
         }
     }
 
-    public function messages(OmniConversation $conversation): JsonResponse
+    public function messages(Request $request, OmniConversation $conversation): JsonResponse
     {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
         $conversation->update(['unread_count' => 0]);
 
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->load(['member', 'assignee', 'assignees'])),
+            'conversation' => $this->formatConversation($conversation->load(['member', 'assignee', 'assignees', 'teams:id,name'])),
             'messages' => $this->loadMessages($conversation),
         ]);
     }
 
     public function sendMessage(Request $request, OmniConversation $conversation): JsonResponse
     {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:4096'],
         ]);
@@ -222,6 +288,14 @@ class OmnichannelInboxController extends Controller
 
     public function storeInternalNote(Request $request, OmniConversation $conversation): JsonResponse
     {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
         $validated = $request->validate([
             'body' => ['required', 'string', 'max:8192'],
         ]);
@@ -250,6 +324,11 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
+    private function assertInboxAccess(Request $request): void
+    {
+        abort_unless(OmnichannelAuthorization::canViewInbox($request->user()), 403);
+    }
+
     private function loadMessages(OmniConversation $conversation): array
     {
         return $conversation->messages()
@@ -269,6 +348,14 @@ class OmnichannelInboxController extends Controller
             $assignees = $conversation->assignees->map(fn (User $u) => [
                 'id' => $u->id,
                 'name' => $u->nama_lengkap ?? $u->email,
+            ])->values()->all();
+        }
+
+        $assignedTeams = [];
+        if ($conversation->relationLoaded('teams')) {
+            $assignedTeams = $conversation->teams->map(fn (OmniTeam $t) => [
+                'id' => $t->id,
+                'name' => $t->name,
             ])->values()->all();
         }
 
@@ -292,6 +379,7 @@ class OmnichannelInboxController extends Controller
             'contact_job_title' => $conversation->contact_job_title,
             'assigned_user_id' => $conversation->assigned_user_id,
             'assignees' => $assignees,
+            'assigned_teams' => $assignedTeams,
             'assignee' => $conversation->assignee ? [
                 'id' => $conversation->assignee->id,
                 'name' => $conversation->assignee->nama_lengkap ?? $conversation->assignee->email,

@@ -145,6 +145,12 @@ class User extends Authenticatable
         return $this->hasMany(ApprovalRequest::class, 'hrd_approver_id')->where('status', 'approved')->where('hrd_status', 'pending');
     }
 
+    public function omniTeams()
+    {
+        return $this->belongsToMany(OmniTeam::class, 'omni_team_user', 'user_id', 'team_id')
+            ->withTimestamps();
+    }
+
     // Training relationships - TEMPORARILY COMMENTED OUT
     // public function trainingHours()
     // {

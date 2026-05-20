@@ -7,11 +7,12 @@
           <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Inbox</p>
           <div class="mt-2 space-y-1">
             <button
-              v-for="opt in inboxOptions"
+              v-for="opt in inboxMenuOptions"
               :key="opt.value"
               type="button"
               class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm"
               :class="inbox === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80'"
+              :title="opt.hint || undefined"
               @click="setInbox(opt.value)"
             >
               <i :class="opt.icon" class="w-4 text-center text-slate-400" />
@@ -90,6 +91,10 @@
               <p v-if="conv.assignees?.length" class="truncate text-[10px] text-indigo-600">
                 {{ conv.assignees.map((a) => a.name).join(', ') }}
               </p>
+              <p v-if="conv.assigned_teams?.length" class="truncate text-[10px] text-sky-700">
+                <i class="fa-solid fa-people-group mr-0.5" />
+                {{ conv.assigned_teams.map((t) => t.name).join(', ') }}
+              </p>
             </div>
           </button>
           <p v-if="filteredConversations.length === 0" class="px-3 py-6 text-center text-xs text-slate-400">
@@ -126,6 +131,10 @@
                 <p v-if="selectedConversation.assignees?.length" class="mt-0.5 truncate text-[10px] text-indigo-700">
                   <i class="fa-solid fa-user-tag mr-0.5" />
                   {{ selectedConversation.assignees.map((a) => a.name).join(', ') }}
+                </p>
+                <p v-if="selectedConversation.assigned_teams?.length" class="mt-0.5 truncate text-[10px] text-sky-800">
+                  <i class="fa-solid fa-people-group mr-0.5" />
+                  {{ selectedConversation.assigned_teams.map((t) => t.name).join(', ') }}
                 </p>
               </div>
             </div>
@@ -213,6 +222,13 @@
       <aside v-if="selectedConversation" class="flex w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50">
         <div class="border-b border-slate-200 px-3 py-2">
           <p class="text-xs font-semibold text-slate-700">Detail kontak</p>
+          <Link
+            v-if="canManageOmnichannelTeams"
+            href="/crm/omnichannel-teams"
+            class="mt-1 inline-block text-[11px] font-medium text-emerald-700 hover:text-emerald-900 hover:underline"
+          >
+            Kelola tim & akses lihat semua chat
+          </Link>
         </div>
         <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
           <div
@@ -255,6 +271,27 @@
             >
               <template #noResult>
                 <span class="px-2 py-1 text-xs text-slate-500">Tidak ada user</span>
+              </template>
+            </Multiselect>
+          </div>
+          <div>
+            <label class="text-[10px] font-semibold uppercase text-slate-500">Tim (opsional)</label>
+            <Multiselect
+              v-model="crmForm.assigned_teams"
+              :options="assignableTeams"
+              :multiple="true"
+              :close-on-select="false"
+              :clear-on-select="false"
+              :searchable="true"
+              :preserve-search="true"
+              :show-labels="false"
+              placeholder="Pilih tim..."
+              label="name"
+              track-by="id"
+              class="omni-assign-multiselect mt-1 text-sm"
+            >
+              <template #noResult>
+                <span class="px-2 py-1 text-xs text-slate-500">Tidak ada tim</span>
               </template>
             </Multiselect>
           </div>
@@ -305,7 +342,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
@@ -319,13 +356,26 @@ const props = defineProps({
   leadStageFilter: { type: String, default: null },
   leadStages: { type: Array, default: () => [] },
   assignableUsers: { type: Array, default: () => [] },
+  assignableTeams: { type: Array, default: () => [] },
+  canSeeAllChats: { type: Boolean, default: true },
+  canManageOmnichannelTeams: { type: Boolean, default: false },
 })
 
-const inboxOptions = [
-  { value: 'all', label: 'Semua', icon: 'fa-solid fa-inbox' },
-  { value: 'mine', label: 'Ditugaskan ke saya', icon: 'fa-solid fa-user' },
-  { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash' },
-]
+const inboxMenuOptions = computed(() => {
+  const restricted = !props.canSeeAllChats
+  return [
+    {
+      value: 'all',
+      label: restricted ? 'Semua (relevan)' : 'Semua',
+      icon: 'fa-solid fa-inbox',
+      hint: restricted
+        ? 'Percakapan yang ditugaskan ke Anda, tim Anda, atau belum ditugaskan'
+        : 'Semua percakapan (perlu permission lihat semua chat)',
+    },
+    { value: 'mine', label: 'Ditugaskan ke saya', icon: 'fa-solid fa-user', hint: '' },
+    { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' },
+  ]
+})
 
 const search = ref('')
 const selectedId = ref(props.selectedConversation?.id ?? null)
@@ -341,6 +391,7 @@ const notifyAssigneesOnSave = ref(true)
 const crmForm = ref({
   lead_stage: 'new_lead',
   assignees: [],
+  assigned_teams: [],
   memo: '',
   contact_first_name: '',
   contact_last_name: '',
@@ -364,7 +415,8 @@ const filteredConversations = computed(() => {
     const phone = (c.display_phone || '').toLowerCase()
     const memberName = (c.member?.nama_lengkap || '').toLowerCase()
     const tier = (c.member?.member_level || '').toLowerCase().replace(/_/g, ' ')
-    return name.includes(q) || phone.includes(q) || memberName.includes(q) || tier.includes(q)
+    const teamNames = (c.assigned_teams || []).map((t) => (t.name || '').toLowerCase()).join(' ')
+    return name.includes(q) || phone.includes(q) || memberName.includes(q) || tier.includes(q) || teamNames.includes(q)
   })
 })
 
@@ -426,7 +478,7 @@ function setInbox(val) {
   router.get('/crm/omnichannel-inbox', listQuery({ inbox: val }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers'],
+    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
   })
 }
 
@@ -434,7 +486,7 @@ function setLeadStage(val) {
   router.get('/crm/omnichannel-inbox', listQuery({ lead_stage: val }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers'],
+    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
   })
 }
 
@@ -442,7 +494,7 @@ function selectConversation(id) {
   router.get('/crm/omnichannel-inbox', listQuery({ conversation: id }), {
     preserveState: true,
     preserveScroll: true,
-    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers'],
+    only: ['conversations', 'selectedConversation', 'messages', 'inbox', 'leadStageFilter', 'leadStages', 'assignableUsers', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
   })
 }
 
@@ -451,6 +503,7 @@ function syncCrmFormFromConversation(conv) {
   crmForm.value = {
     lead_stage: conv.lead_stage || 'new_lead',
     assignees: Array.isArray(conv.assignees) ? [...conv.assignees] : [],
+    assigned_teams: Array.isArray(conv.assigned_teams) ? [...conv.assigned_teams] : [],
     memo: conv.memo || '',
     contact_first_name: conv.contact_first_name || '',
     contact_last_name: conv.contact_last_name || '',
@@ -502,7 +555,7 @@ async function submitComposer() {
     replyText.value = ''
     scrollToBottom()
     router.reload({
-      only: ['conversations', 'selectedConversation'],
+      only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
     })
   } catch (e) {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
@@ -525,11 +578,14 @@ async function saveCrmPanel() {
     contact_company: f.contact_company,
     contact_job_title: f.contact_job_title,
     assigned_user_ids: (f.assignees || []).map((a) => a.id),
+    assigned_team_ids: (f.assigned_teams || []).map((t) => t.id),
     notify_assignees: notifyAssigneesOnSave.value,
   }
   try {
     await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, payload)
-    router.reload({ only: ['conversations', 'selectedConversation'] })
+    router.reload({
+      only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+    })
   } catch (e) {
     crmSaveError.value = e.response?.data?.message || 'Gagal menyimpan.'
   } finally {
@@ -546,7 +602,9 @@ async function pollMessages() {
     if (data.messages?.length !== localMessages.value.length) {
       localMessages.value = data.messages
       scrollToBottom()
-      router.reload({ only: ['conversations', 'selectedConversation'] })
+      router.reload({
+        only: ['conversations', 'selectedConversation', 'assignableTeams', 'canSeeAllChats', 'canManageOmnichannelTeams'],
+      })
     }
   } catch {
     /* ignore */

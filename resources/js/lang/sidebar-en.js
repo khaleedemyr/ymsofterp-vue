@@ -260,6 +260,7 @@ export default {
     "guest_comment_ocr": "Guest Comment (OCR)",
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
+    "omnichannel_teams": "Omnichannel inbox teams",
     "migrasi_data_member": "Migrasi Data Member",
     "kirim_notifikasi_member": "Kirim Notifikasi Member",
     "dashboard_crm_2": "Dashboard CRM",
