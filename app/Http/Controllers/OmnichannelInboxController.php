@@ -31,7 +31,7 @@ class OmnichannelInboxController extends Controller
 
         $query = OmniConversation::query()
             ->with([
-                'member:id,nama_lengkap,mobile_phone,member_id',
+                'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
                 'assignee:id,nama_lengkap,email',
                 'assignees:id,nama_lengkap,email',
             ]);
@@ -301,6 +301,8 @@ class OmnichannelInboxController extends Controller
                 'nama_lengkap' => $conversation->member->nama_lengkap,
                 'mobile_phone' => $conversation->member->mobile_phone,
                 'member_id' => $conversation->member->member_id,
+                'member_level' => $conversation->member->member_level,
+                'is_exclusive_member' => (bool) $conversation->member->is_exclusive_member,
             ] : null,
         ];
     }

@@ -16,6 +16,7 @@ class OmniConversation extends Model
         'phone_number_id',
         'waba_id',
         'member_apps_member_id',
+        'omni_contact_id',
         'assigned_user_id',
         'lead_stage',
         'memo',
@@ -45,6 +46,11 @@ class OmniConversation extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(MemberAppsMember::class, 'member_apps_member_id');
+    }
+
+    public function omniContact(): BelongsTo
+    {
+        return $this->belongsTo(OmniContact::class, 'omni_contact_id');
     }
 
     public function assignee(): BelongsTo

@@ -3,6 +3,7 @@
 namespace App\Services\Meta;
 
 use App\Models\MemberAppsMember;
+use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use Carbon\Carbon;
@@ -58,10 +59,21 @@ class MetaWhatsAppInboundService
             ? Carbon::createFromTimestamp((int) $message['timestamp'])
             : now();
 
+        $normalizedPhone = $this->normalizePhone($from);
+        if ($normalizedPhone === '') {
+            $normalizedPhone = preg_replace('/\D/', '', $from) ?? '';
+        }
+        if ($normalizedPhone === '') {
+            Log::warning('Meta WhatsApp inbound: cannot normalize sender phone', ['from' => $from]);
+
+            return;
+        }
+
         DB::transaction(function () use (
             $wabaId,
             $phoneNumberId,
             $from,
+            $normalizedPhone,
             $contactName,
             $metaMessageId,
             $messageType,
@@ -69,6 +81,24 @@ class MetaWhatsAppInboundService
             $message,
             $sentAt
         ) {
+            $memberId = $this->findMemberIdByPhone($from);
+
+            $contact = OmniContact::query()->firstOrCreate(
+                ['phone_normalized' => $normalizedPhone],
+                [
+                    'display_name' => $contactName,
+                    'member_apps_member_id' => $memberId,
+                ]
+            );
+
+            if ($contactName) {
+                $contact->display_name = $contactName;
+            }
+            if ($memberId) {
+                $contact->member_apps_member_id = $memberId;
+            }
+            $contact->save();
+
             $conversation = OmniConversation::query()->firstOrCreate(
                 [
                     'channel' => 'whatsapp',
@@ -78,19 +108,23 @@ class MetaWhatsAppInboundService
                 [
                     'waba_id' => $wabaId,
                     'contact_name' => $contactName,
-                    'member_apps_member_id' => $this->findMemberIdByPhone($from),
+                    'member_apps_member_id' => $memberId,
+                    'omni_contact_id' => $contact->id,
                     'status' => 'open',
                 ]
             );
+
+            $conversation->omni_contact_id = $contact->id;
 
             if ($contactName && $conversation->contact_name !== $contactName) {
                 $conversation->contact_name = $contactName;
             }
 
             if (! $conversation->member_apps_member_id) {
-                $memberId = $this->findMemberIdByPhone($from);
                 if ($memberId) {
                     $conversation->member_apps_member_id = $memberId;
+                } elseif ($contact->member_apps_member_id) {
+                    $conversation->member_apps_member_id = $contact->member_apps_member_id;
                 }
             }
 

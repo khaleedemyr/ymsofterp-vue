@@ -69,8 +69,18 @@
               <i class="fa-brands fa-whatsapp text-sm" />
             </div>
             <div class="min-w-0 flex-1">
-              <div class="flex items-center justify-between gap-1">
-                <span class="truncate text-sm font-medium text-slate-900">{{ conv.contact_name || conv.display_phone }}</span>
+              <div class="flex w-full items-center justify-between gap-1">
+                <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+                  <span class="truncate text-sm font-medium text-slate-900">{{ conv.contact_name || conv.display_phone }}</span>
+                  <span
+                    v-if="conv.member"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                    title="Terdaftar di member app"
+                  >
+                    Member<span v-if="conv.member.member_level"> · {{ formatMemberTier(conv.member.member_level) }}</span>
+                    <span v-if="conv.member.is_exclusive_member" class="text-amber-600" title="Eksklusif">★</span>
+                  </span>
+                </div>
                 <span v-if="conv.unread_count > 0" class="shrink-0 rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white">
                   {{ conv.unread_count }}
                 </span>
@@ -97,9 +107,18 @@
                 <i class="fa-brands fa-whatsapp" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="truncate font-semibold text-slate-900">
-                  {{ selectedConversation.contact_name || selectedConversation.display_phone }}
-                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <p class="truncate font-semibold text-slate-900">
+                    {{ selectedConversation.contact_name || selectedConversation.display_phone }}
+                  </p>
+                  <span
+                    v-if="selectedConversation.member"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
+                  >
+                    Member<span v-if="selectedConversation.member.member_level"> · {{ formatMemberTier(selectedConversation.member.member_level) }}</span>
+                    <span v-if="selectedConversation.member.is_exclusive_member" class="text-amber-600" title="Eksklusif">★</span>
+                  </span>
+                </div>
                 <p class="truncate text-xs text-slate-500">
                   {{ selectedConversation.display_phone }}
                   <span v-if="selectedConversation.member" class="text-emerald-600"> · {{ selectedConversation.member.nama_lengkap }}</span>
@@ -196,6 +215,22 @@
           <p class="text-xs font-semibold text-slate-700">Detail kontak</p>
         </div>
         <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+          <div
+            v-if="selectedConversation.member"
+            class="rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-900"
+          >
+            <p class="font-semibold text-emerald-950">
+              Member app
+              <span v-if="selectedConversation.member.member_level" class="font-normal text-emerald-800">
+                — {{ formatMemberTier(selectedConversation.member.member_level) }}
+              </span>
+              <span v-if="selectedConversation.member.is_exclusive_member" class="text-amber-700"> · Eksklusif</span>
+            </p>
+            <p class="mt-0.5 text-emerald-800">{{ selectedConversation.member.nama_lengkap }}</p>
+            <p v-if="selectedConversation.member.member_id" class="mt-0.5 font-mono text-[11px] text-emerald-700">
+              ID: {{ selectedConversation.member.member_id }}
+            </p>
+          </div>
           <div>
             <label class="text-[10px] font-semibold uppercase text-slate-500">Tahap lead</label>
             <select v-model="crmForm.lead_stage" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
@@ -327,7 +362,9 @@ const filteredConversations = computed(() => {
   return props.conversations.filter((c) => {
     const name = (c.contact_name || '').toLowerCase()
     const phone = (c.display_phone || '').toLowerCase()
-    return name.includes(q) || phone.includes(q)
+    const memberName = (c.member?.nama_lengkap || '').toLowerCase()
+    const tier = (c.member?.member_level || '').toLowerCase().replace(/_/g, ' ')
+    return name.includes(q) || phone.includes(q) || memberName.includes(q) || tier.includes(q)
   })
 })
 
@@ -522,6 +559,12 @@ function scrollToBottom() {
       messagesEl.value.scrollTop = messagesEl.value.scrollHeight
     }
   })
+}
+
+function formatMemberTier(level) {
+  if (!level) return ''
+  const s = String(level).replace(/_/g, ' ')
+  return s.length ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
 function formatTime(iso) {
