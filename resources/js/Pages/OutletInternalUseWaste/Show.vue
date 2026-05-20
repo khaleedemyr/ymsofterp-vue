@@ -24,7 +24,9 @@
             <thead>
               <tr class="bg-gray-100">
                 <th class="px-2 py-1 border">Item</th>
-                <th class="px-2 py-1 border">Qty</th>
+                <th v-if="isUsageType" class="px-2 py-1 border">Stock On Hand</th>
+                <th v-if="isUsageType" class="px-2 py-1 border">Stock Fisik</th>
+                <th class="px-2 py-1 border">{{ isUsageType ? 'Qty Usage' : 'Qty' }}</th>
                 <th class="px-2 py-1 border">Unit</th>
                 <th class="px-2 py-1 border">Catatan</th>
               </tr>
@@ -32,6 +34,8 @@
             <tbody>
               <tr v-for="item in details" :key="item.id">
                 <td class="px-2 py-1 border">{{ item.item_name }}</td>
+                <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.stock_on_hand) }}</td>
+                <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.physical_qty) }}</td>
                 <td class="px-2 py-1 border">{{ formatNumber(item.qty) }}</td>
                 <td class="px-2 py-1 border">{{ item.unit_name }}</td>
                 <td class="px-2 py-1 border">{{ item.note || '-' }}</td>
@@ -50,11 +54,17 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { router } from '@inertiajs/vue3'
+import { computed } from 'vue'
 
 const props = defineProps({
   id: [String, Number],
   header: Object,
   details: Array
+})
+
+const isUsageType = computed(() => {
+  const t = props.header?.type
+  return t === 'usage' || t === 'stock_cut'
 })
 
 function typeLabel(type) {

@@ -55,6 +55,12 @@ use App\Http\Controllers\ManualPointController;
 use App\Http\Middleware\ApprovalAppAuth;
 
 
+// Meta WhatsApp Cloud API webhook (no auth; verified via hub.verify_token / X-Hub-Signature-256)
+Route::get('/webhooks/meta/whatsapp', [\App\Http\Controllers\Api\MetaWhatsAppWebhookController::class, 'verify'])
+    ->name('api.webhooks.meta.whatsapp.verify');
+Route::post('/webhooks/meta/whatsapp', [\App\Http\Controllers\Api\MetaWhatsAppWebhookController::class, 'handle'])
+    ->name('api.webhooks.meta.whatsapp');
+
 // Test route for approvers
 Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers']);
 

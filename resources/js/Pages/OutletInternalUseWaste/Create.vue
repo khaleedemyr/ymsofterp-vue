@@ -58,7 +58,7 @@
 
             <div v-if="isUsageAutoBomType && !loadingStockCutItems" class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               <i class="fa-solid fa-circle-info mr-2"></i>
-              Tipe <strong>Usage</strong>: input <strong>stock fisik</strong> hasil hitung di outlet. Sistem menampilkan <strong>stock on hand</strong> dan menghitung <strong>qty usage</strong> = selisih keduanya. Yang dipotong dari stok saat simpan/submit adalah qty usage.
+              Tipe <strong>Usage</strong>: isi <strong>stock fisik</strong> hanya untuk barang yang dihitung. Barang yang dikosongkan tidak disimpan dan stok tidak dipotong. Sistem menampilkan <strong>stock on hand</strong> dan menghitung <strong>qty usage</strong> = selisih keduanya (yang dipotong saat simpan).
             </div>
 
             <div v-if="isUsageAutoBomType && loadingStockCutItems" class="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
@@ -86,7 +86,10 @@
                   </div>
                 </div>
                 <p class="text-xs text-slate-500">
-                  Menampilkan {{ usageVisibleCount }} item
+                  Menampilkan {{ usageVisibleCount }} item BOM
+                </p>
+                <p class="text-xs text-blue-600 font-semibold">
+                  Akan disimpan: {{ form.items.filter(isItemValidForSave).length }} item (yang stock fisiknya diisi)
                 </p>
               </div>
 
@@ -137,14 +140,14 @@
                       </div>
 
                       <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Stock Fisik</label>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Stock Fisik <span class="text-xs font-normal text-gray-500">(opsional)</span></label>
                         <input
                           type="number"
                           min="0"
                           step="0.01"
                           v-model.number="entry.item.physical_qty"
                           class="input input-bordered w-full"
-                          placeholder="Hitung stok fisik di outlet"
+                          placeholder="Kosongkan jika barang tidak dihitung"
                           :disabled="!form.warehouse_outlet_id || !entry.item.item_id"
                         />
                         <p v-if="entry.item.physical_qty !== '' && entry.item.physical_qty != null && Number(entry.item.physical_qty) > getStockOnHandSmall(entry.item)" class="text-xs text-red-600 mt-1">
@@ -458,6 +461,7 @@ function newItem() {
     selectedItem: null,
     qty: '',
     physical_qty: '',
+    stock_on_hand: null,
     unit_id: '',
     unit_name: '',
     note: '',
@@ -485,7 +489,8 @@ const form = ref({
           item_name: detail.item_name || '',
           selectedItem: selectedItem,
           qty: detail.qty,
-          physical_qty: '',
+          physical_qty: detail.physical_qty ?? '',
+          stock_on_hand: detail.stock_on_hand ?? null,
           unit_id: detail.unit_id,
           unit_name: detail.unit_name || '',
           note: detail.note || '',
@@ -523,8 +528,16 @@ const usageGroupOpen = ref({})
 /** Usage: BOM material item_bom.stock_cut=1, auto-rows, unit terkecil, stok outlet */
 const isUsageAutoBomType = computed(() => form.value.type === 'usage')
 
-function getStockOnHandSmall(item) {
+function getStockOnHandFromSystem(item) {
   return Number(item?.stock?.qty_small ?? 0)
+}
+
+/** Tampilan & hitung: pakai snapshot tersimpan, fallback ke stok live */
+function getStockOnHandSmall(item) {
+  if (item?.stock_on_hand != null && item?.stock_on_hand !== '') {
+    return Number(item.stock_on_hand)
+  }
+  return getStockOnHandFromSystem(item)
 }
 
 /** Qty usage = stock on hand − stock fisik (unit terkecil) */
@@ -559,19 +572,25 @@ function formatUsageQtyDisplay(item) {
 }
 
 function syncUsagePhysicalFromSavedQty(item) {
-  if (!isUsageAutoBomType.value || !item?.stock) return
+  if (!isUsageAutoBomType.value) return
+  if (item?.physical_qty !== '' && item?.physical_qty != null) return
   const onHand = getStockOnHandSmall(item)
   const usageQty = Number(item.qty) || 0
   item.physical_qty = Math.max(0, onHand - usageQty)
 }
 
 function mapItemToPayload(item) {
-  return {
+  const payload = {
     item_id: item.item_id,
     qty: isUsageAutoBomType.value ? getUsageQty(item) : item.qty,
     unit_id: item.unit_id,
     note: item.note || null,
   }
+  if (isUsageAutoBomType.value) {
+    payload.stock_on_hand = getStockOnHandFromSystem(item)
+    payload.physical_qty = Number(item.physical_qty)
+  }
+  return payload
 }
 
 function isItemValidForSave(item) {
@@ -687,6 +706,7 @@ async function loadStockCutItems() {
           qty: it.qty,
           note: it.note,
           physical_qty: it.physical_qty,
+          stock_on_hand: it.stock_on_hand,
         })
       }
     })
@@ -706,13 +726,20 @@ async function loadStockCutItems() {
         selectedItem,
         qty: saved?.qty ?? '',
         physical_qty: saved?.physical_qty ?? '',
+        stock_on_hand: saved?.stock_on_hand ?? null,
         unit_id: row.unit_id || '',
         unit_name: row.unit_name || '',
         note: saved?.note ?? '',
         stock: row.stock || null,
       }
 
-      if (mapped.stock && (mapped.physical_qty === '' || mapped.physical_qty == null) && mapped.qty !== '' && mapped.qty != null) {
+      if (
+        mapped.stock
+        && (mapped.physical_qty === '' || mapped.physical_qty == null)
+        && mapped.qty !== ''
+        && mapped.qty != null
+        && (mapped.stock_on_hand == null || mapped.stock_on_hand === '')
+      ) {
         syncUsagePhysicalFromSavedQty(mapped)
       }
 

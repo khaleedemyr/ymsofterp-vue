@@ -194,7 +194,9 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.item_id' => 'required_with:items|exists:items,id',
                 'items.*.qty' => 'required_with:items|numeric|min:0',
                 'items.*.unit_id' => 'required_with:items|exists:units,id',
-                'items.*.note' => 'nullable|string'
+                'items.*.note' => 'nullable|string',
+                'items.*.stock_on_hand' => 'nullable|numeric|min:0',
+                'items.*.physical_qty' => 'nullable|numeric|min:0',
             ]);
 
             // Get user ID with multiple fallback methods
@@ -462,16 +464,9 @@ class OutletInternalUseWasteController extends Controller
                     // Validasi stock cukup (hanya untuk informasi, tidak dipotong saat draft)
                     // Stock validation will be done again on submit
                     
-                    // Insert detail
-                    $detailInserted = DB::table('outlet_internal_use_waste_details')->insert([
-                        'header_id' => $headerId,
-                        'item_id' => $item['item_id'],
-                        'qty' => $item['qty'],
-                        'unit_id' => $item['unit_id'],
-                        'note' => $item['note'] ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
+                    $detailInserted = DB::table('outlet_internal_use_waste_details')->insert(
+                        $this->buildDetailInsertRow($headerId, $item, $request->type)
+                    );
                     
                     if (!$detailInserted) {
                         throw new \Exception("Gagal menyimpan detail item ke-" . ($itemIndex + 1));
@@ -1042,6 +1037,8 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.qty' => 'required|numeric|min:0',
                 'items.*.unit_id' => 'required|exists:units,id',
                 'items.*.note' => 'nullable|string',
+                'items.*.stock_on_hand' => 'nullable|numeric|min:0',
+                'items.*.physical_qty' => 'nullable|numeric|min:0',
                 'approvers' => 'nullable|array'
             ]);
 
@@ -1080,16 +1077,9 @@ class OutletInternalUseWasteController extends Controller
             // Insert details and process stock (same logic as submit method)
             foreach ($request->items as $itemIndex => $item) {
                 try {
-                    // Insert detail
-                    DB::table('outlet_internal_use_waste_details')->insert([
-                        'header_id' => $headerId,
-                        'item_id' => $item['item_id'],
-                        'qty' => $item['qty'],
-                        'unit_id' => $item['unit_id'],
-                        'note' => $item['note'] ?? null,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
+                    DB::table('outlet_internal_use_waste_details')->insert(
+                        $this->buildDetailInsertRow($headerId, $item, $request->type)
+                    );
                     
                     // Process stock immediately (same logic as submit)
                     $inventoryItem = DB::table('outlet_food_inventory_items')
@@ -3111,5 +3101,32 @@ class OutletInternalUseWasteController extends Controller
             'approval_flows' => $approvalFlows,
             'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
         ]);
+    }
+
+    /**
+     * Build detail row for insert (termasuk snapshot usage: stock on hand & stock fisik).
+     */
+    private function buildDetailInsertRow(int $headerId, array $item, string $type): array
+    {
+        $row = [
+            'header_id' => $headerId,
+            'item_id' => $item['item_id'],
+            'qty' => $item['qty'],
+            'unit_id' => $item['unit_id'],
+            'note' => $item['note'] ?? null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        if ($type === 'usage') {
+            $row['stock_on_hand'] = array_key_exists('stock_on_hand', $item) && $item['stock_on_hand'] !== null && $item['stock_on_hand'] !== ''
+                ? (float) $item['stock_on_hand']
+                : null;
+            $row['physical_qty'] = array_key_exists('physical_qty', $item) && $item['physical_qty'] !== null && $item['physical_qty'] !== ''
+                ? (float) $item['physical_qty']
+                : null;
+        }
+
+        return $row;
     }
 } 
