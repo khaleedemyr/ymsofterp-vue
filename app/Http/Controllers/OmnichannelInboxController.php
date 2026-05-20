@@ -77,7 +77,6 @@ class OmnichannelInboxController extends Controller
 
         $assignableUsers = User::query()
             ->orderBy('nama_lengkap')
-            ->limit(500)
             ->get(['id', 'nama_lengkap', 'email'])
             ->map(fn (User $u) => [
                 'id' => $u->id,
