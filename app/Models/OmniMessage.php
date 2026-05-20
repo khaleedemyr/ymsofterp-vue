@@ -9,6 +9,7 @@ class OmniMessage extends Model
 {
     protected $fillable = [
         'conversation_id',
+        'user_id',
         'direction',
         'meta_message_id',
         'message_type',
@@ -26,5 +27,10 @@ class OmniMessage extends Model
     public function conversation(): BelongsTo
     {
         return $this->belongsTo(OmniConversation::class, 'conversation_id');
+    }
+
+    public function author(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

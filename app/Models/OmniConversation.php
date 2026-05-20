@@ -15,7 +15,16 @@ class OmniConversation extends Model
         'phone_number_id',
         'waba_id',
         'member_apps_member_id',
+        'assigned_user_id',
+        'lead_stage',
+        'memo',
+        'contact_first_name',
+        'contact_last_name',
+        'contact_email',
+        'contact_company',
+        'contact_job_title',
         'last_message_at',
+        'last_customer_message_at',
         'last_message_preview',
         'unread_count',
         'status',
@@ -23,6 +32,7 @@ class OmniConversation extends Model
 
     protected $casts = [
         'last_message_at' => 'datetime',
+        'last_customer_message_at' => 'datetime',
         'unread_count' => 'integer',
     ];
 
@@ -34,5 +44,10 @@ class OmniConversation extends Model
     public function member(): BelongsTo
     {
         return $this->belongsTo(MemberAppsMember::class, 'member_apps_member_id');
+    }
+
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_user_id');
     }
 }

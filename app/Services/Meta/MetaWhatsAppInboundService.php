@@ -106,6 +106,7 @@ class MetaWhatsAppInboundService
             ]);
 
             $conversation->last_message_at = $sentAt;
+            $conversation->last_customer_message_at = $sentAt;
             $conversation->last_message_preview = mb_substr($body ?: '['.$messageType.']', 0, 500);
             $conversation->unread_count = (int) $conversation->unread_count + 1;
             $conversation->save();
