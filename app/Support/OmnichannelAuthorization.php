@@ -40,6 +40,20 @@ class OmnichannelAuthorization
     }
 
     /**
+     * User yang diatur di Tim Inbox → "Pengguna yang melihat semua inbox".
+     *
+     * @return list<int>
+     */
+    public static function fullAccessUserIds(): array
+    {
+        return DB::table('omni_inbox_full_access_users')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return list<int>
      */
     public static function teamIdsForUser(int $userId): array

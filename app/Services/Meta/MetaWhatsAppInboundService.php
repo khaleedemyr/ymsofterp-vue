@@ -2,6 +2,7 @@
 
 namespace App\Services\Meta;
 
+use App\Jobs\NotifyOmniInboundMessageJob;
 use App\Jobs\ProcessOmniFlowJob;
 use App\Models\MemberAppsMember;
 use App\Models\OmniContact;
@@ -156,6 +157,7 @@ class MetaWhatsAppInboundService
         });
 
         if ($conversationId && $inboundMessageId) {
+            NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }
     }
