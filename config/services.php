@@ -51,7 +51,7 @@ return [
 
     'meta' => [
         'app_id' => env('META_APP_ID'),
-        'app_secret' => env('META_APP_SECRET'),
+        'app_secret' => trim((string) env('META_APP_SECRET', '')),
         'whatsapp_access_token' => env('META_WHATSAPP_ACCESS_TOKEN'),
         'whatsapp_phone_number_id' => env('META_WHATSAPP_PHONE_NUMBER_ID'),
         'whatsapp_business_account_id' => env('META_WHATSAPP_BUSINESS_ACCOUNT_ID'),

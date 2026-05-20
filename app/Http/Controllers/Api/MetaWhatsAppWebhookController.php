@@ -77,7 +77,13 @@ class MetaWhatsAppWebhookController extends Controller
             return false;
         }
 
-        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
+        $payload = $request->getContent();
+
+        if ($payload === '') {
+            $payload = file_get_contents('php://input') ?: '';
+        }
+
+        $expected = 'sha256='.hash_hmac('sha256', $payload, $secret);
 
         return hash_equals($expected, $signature);
     }
