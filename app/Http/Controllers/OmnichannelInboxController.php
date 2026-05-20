@@ -10,6 +10,7 @@ use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
 use App\Support\OmniLeadStages;
 use App\Support\OmnichannelAuthorization;
+use App\Support\OmnichannelUserOption;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,8 +41,8 @@ class OmnichannelInboxController extends Controller
         $query = OmniConversation::query()
             ->with([
                 'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
-                'assignee:id,nama_lengkap,email',
-                'assignees:id,nama_lengkap,email',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
             ]);
 
@@ -66,7 +67,12 @@ class OmnichannelInboxController extends Controller
 
         if ($selectedId) {
             $conversation = OmniConversation::query()
-                ->with(['member', 'assignee', 'assignees', 'teams:id,name'])
+                ->with([
+                    'member',
+                    'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                    'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                    'teams:id,name',
+                ])
                 ->find($selectedId);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
                 $selectedConversation = $this->formatConversation($conversation);
@@ -75,13 +81,12 @@ class OmnichannelInboxController extends Controller
             }
         }
 
-        $assignableUsers = User::query()
-            ->orderBy('nama_lengkap')
-            ->get(['id', 'nama_lengkap', 'email'])
-            ->map(fn (User $u) => [
-                'id' => $u->id,
-                'name' => $u->nama_lengkap ?? $u->email,
-            ]);
+        $assignableUsers = OmnichannelUserOption::toOptions(
+            User::query()
+                ->with(['jabatan', 'outlet'])
+                ->orderBy('nama_lengkap')
+                ->get()
+        );
 
         $assignableTeams = OmniTeam::query()
             ->orderBy('name')
@@ -186,7 +191,12 @@ class OmnichannelInboxController extends Controller
         }
 
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->fresh(['member', 'assignee', 'assignees', 'teams:id,name'])),
+            'conversation' => $this->formatConversation($conversation->fresh([
+                'member',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+            ])),
         ]);
     }
 
@@ -228,7 +238,12 @@ class OmnichannelInboxController extends Controller
         $conversation->update(['unread_count' => 0]);
 
         return response()->json([
-            'conversation' => $this->formatConversation($conversation->load(['member', 'assignee', 'assignees', 'teams:id,name'])),
+            'conversation' => $this->formatConversation($conversation->load([
+                'member',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+            ])),
             'messages' => $this->loadMessages($conversation),
         ]);
     }
@@ -345,10 +360,7 @@ class OmnichannelInboxController extends Controller
     {
         $assignees = [];
         if ($conversation->relationLoaded('assignees')) {
-            $assignees = $conversation->assignees->map(fn (User $u) => [
-                'id' => $u->id,
-                'name' => $u->nama_lengkap ?? $u->email,
-            ])->values()->all();
+            $assignees = OmnichannelUserOption::toOptions($conversation->assignees);
         }
 
         $assignedTeams = [];
@@ -380,10 +392,9 @@ class OmnichannelInboxController extends Controller
             'assigned_user_id' => $conversation->assigned_user_id,
             'assignees' => $assignees,
             'assigned_teams' => $assignedTeams,
-            'assignee' => $conversation->assignee ? [
-                'id' => $conversation->assignee->id,
-                'name' => $conversation->assignee->nama_lengkap ?? $conversation->assignee->email,
-            ] : null,
+            'assignee' => $conversation->assignee
+                ? OmnichannelUserOption::toArray($conversation->assignee)
+                : null,
             'member' => $conversation->member ? [
                 'id' => $conversation->member->id,
                 'nama_lengkap' => $conversation->member->nama_lengkap,

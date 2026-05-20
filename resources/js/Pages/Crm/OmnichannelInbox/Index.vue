@@ -89,7 +89,7 @@
               <p class="truncate text-[11px] text-slate-500">{{ conv.display_phone }}</p>
               <p class="truncate text-[11px] text-slate-400">{{ conv.last_message_preview || '—' }}</p>
               <p v-if="conv.assignees?.length" class="truncate text-[10px] text-indigo-600">
-                {{ conv.assignees.map((a) => a.name).join(', ') }}
+                {{ conv.assignees.map((a) => formatUserOptionLabel(a)).join(', ') }}
               </p>
               <p v-if="conv.assigned_teams?.length" class="truncate text-[10px] text-sky-700">
                 <i class="fa-solid fa-people-group mr-0.5" />
@@ -130,7 +130,7 @@
                 </p>
                 <p v-if="selectedConversation.assignees?.length" class="mt-0.5 truncate text-[10px] text-indigo-700">
                   <i class="fa-solid fa-user-tag mr-0.5" />
-                  {{ selectedConversation.assignees.map((a) => a.name).join(', ') }}
+                  {{ selectedConversation.assignees.map((a) => formatUserOptionLabel(a)).join(', ') }}
                 </p>
                 <p v-if="selectedConversation.assigned_teams?.length" class="mt-0.5 truncate text-[10px] text-sky-800">
                   <i class="fa-solid fa-people-group mr-0.5" />
@@ -258,6 +258,7 @@
             <Multiselect
               v-model="crmForm.assignees"
               :options="assignableUsers"
+              :custom-label="formatUserOptionLabel"
               :multiple="true"
               :close-on-select="false"
               :clear-on-select="false"
@@ -416,7 +417,17 @@ const filteredConversations = computed(() => {
     const memberName = (c.member?.nama_lengkap || '').toLowerCase()
     const tier = (c.member?.member_level || '').toLowerCase().replace(/_/g, ' ')
     const teamNames = (c.assigned_teams || []).map((t) => (t.name || '').toLowerCase()).join(' ')
-    return name.includes(q) || phone.includes(q) || memberName.includes(q) || tier.includes(q) || teamNames.includes(q)
+    const assigneeBits = (c.assignees || [])
+      .map((a) => [a.name, a.jabatan, a.outlet].filter(Boolean).join(' ').toLowerCase())
+      .join(' ')
+    return (
+      name.includes(q) ||
+      phone.includes(q) ||
+      memberName.includes(q) ||
+      tier.includes(q) ||
+      teamNames.includes(q) ||
+      assigneeBits.includes(q)
+    )
   })
 })
 
@@ -617,6 +628,12 @@ function scrollToBottom() {
       messagesEl.value.scrollTop = messagesEl.value.scrollHeight
     }
   })
+}
+
+function formatUserOptionLabel(opt) {
+  if (!opt) return ''
+  const bits = [opt.jabatan, opt.outlet].filter(Boolean)
+  return bits.length ? `${opt.name} — ${bits.join(' · ')}` : opt.name
 }
 
 function formatMemberTier(level) {

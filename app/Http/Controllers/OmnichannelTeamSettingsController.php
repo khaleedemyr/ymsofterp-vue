@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\OmniTeam;
 use App\Models\User;
 use App\Support\OmnichannelAuthorization;
+use App\Support\OmnichannelUserOption;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,39 +22,36 @@ class OmnichannelTeamSettingsController extends Controller
         );
 
         $teams = OmniTeam::query()
-            ->with(['users:id,nama_lengkap,email'])
+            ->with([
+                'users' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+            ])
             ->orderBy('name')
             ->get();
 
-        $userOptions = User::query()
-            ->orderBy('nama_lengkap')
-            ->get(['id', 'nama_lengkap', 'email'])
-            ->map(fn (User $u) => [
-                'id' => $u->id,
-                'name' => $u->nama_lengkap ?? $u->email,
-            ]);
+        $userOptions = OmnichannelUserOption::toOptions(
+            User::query()
+                ->with(['jabatan', 'outlet'])
+                ->orderBy('nama_lengkap')
+                ->get()
+        );
 
         $fullAccessIds = DB::table('omni_inbox_full_access_users')->pluck('user_id')->all();
-        $fullAccessUsers = User::query()
-            ->whereIn('id', $fullAccessIds)
-            ->orderBy('nama_lengkap')
-            ->get(['id', 'nama_lengkap', 'email'])
-            ->map(fn (User $u) => [
-                'id' => $u->id,
-                'name' => $u->nama_lengkap ?? $u->email,
-            ])
-            ->values()
-            ->all();
+        $fullAccessUsers = $fullAccessIds === []
+            ? []
+            : OmnichannelUserOption::toOptions(
+                User::query()
+                    ->whereIn('id', $fullAccessIds)
+                    ->with(['jabatan', 'outlet'])
+                    ->orderBy('nama_lengkap')
+                    ->get()
+            );
 
         return Inertia::render('Crm/OmnichannelTeams/Index', [
             'teams' => $teams->map(fn (OmniTeam $t) => [
                 'id' => $t->id,
                 'name' => $t->name,
                 'description' => $t->description,
-                'members' => $t->users->map(fn (User $u) => [
-                    'id' => $u->id,
-                    'name' => $u->nama_lengkap ?? $u->email,
-                ])->values()->all(),
+                'members' => OmnichannelUserOption::toOptions($t->users),
             ])->values()->all(),
             'fullAccessUsers' => $fullAccessUsers,
             'userOptions' => $userOptions,

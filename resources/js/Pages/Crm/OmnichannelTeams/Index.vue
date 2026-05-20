@@ -20,6 +20,7 @@
         <Multiselect
           v-model="fullAccessSelection"
           :options="userOptions"
+          :custom-label="formatUserOptionLabel"
           :multiple="true"
           :close-on-select="false"
           :searchable="true"
@@ -66,6 +67,7 @@
             <Multiselect
               v-model="createMembers"
               :options="userOptions"
+              :custom-label="formatUserOptionLabel"
               :multiple="true"
               :close-on-select="false"
               :searchable="true"
@@ -110,6 +112,7 @@
             <Multiselect
               v-model="memberSelections[team.id]"
               :options="userOptions"
+              :custom-label="formatUserOptionLabel"
               :multiple="true"
               :close-on-select="false"
               :searchable="true"
@@ -176,6 +179,12 @@ watch(
   },
   { immediate: true, deep: true }
 )
+
+function formatUserOptionLabel(opt) {
+  if (!opt) return ''
+  const bits = [opt.jabatan, opt.outlet].filter(Boolean)
+  return bits.length ? `${opt.name} — ${bits.join(' · ')}` : opt.name
+}
 
 function saveFullAccess() {
   fullAccessSaving.value = true
