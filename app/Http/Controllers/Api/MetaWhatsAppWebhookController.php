@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Meta\MetaWhatsAppInboundService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -38,23 +39,18 @@ class MetaWhatsAppWebhookController extends Controller
      */
     public function handle(Request $request): Response
     {
-        Log::warning('Meta WhatsApp webhook POST hit', [
-            'has_signature' => $request->header('X-Hub-Signature-256') !== null,
-            'content_length' => strlen($request->getContent()),
-        ]);
-
         if (! $this->isValidSignature($request)) {
-            Log::warning('Meta WhatsApp webhook rejected: invalid signature', [
-                'has_signature_header' => $request->header('X-Hub-Signature-256') !== null,
-                'app_secret_configured' => (string) config('services.meta.app_secret') !== '',
-                'skip_signature' => config('services.meta.webhook_skip_signature_verify'),
-            ]);
+            Log::warning('Meta WhatsApp webhook rejected: invalid signature');
             abort(403, 'Invalid signature');
         }
 
-        Log::warning('Meta WhatsApp webhook received', [
-            'payload' => $request->all(),
-        ]);
+        try {
+            app(MetaWhatsAppInboundService::class)->processPayload($request->all());
+        } catch (\Throwable $e) {
+            Log::error('Meta WhatsApp webhook processing failed', [
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response('EVENT_RECEIVED', 200);
     }
