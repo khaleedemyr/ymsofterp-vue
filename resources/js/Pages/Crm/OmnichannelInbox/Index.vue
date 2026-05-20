@@ -313,35 +313,12 @@
                   @input="onComposerInput"
                   @keydown="onComposerKeydown"
                 />
-                <div class="absolute bottom-1.5 right-1.5" data-omni-emoji-picker>
-                  <button
-                    type="button"
-                    class="flex h-8 w-8 items-center justify-center rounded-full text-lg text-slate-500 hover:bg-slate-100"
-                    :disabled="sending"
-                    title="Emoji"
-                    @click.stop="emojiPickerOpen = !emojiPickerOpen"
-                  >
-                    <i class="fa-regular fa-face-smile" />
-                  </button>
-                  <div
-                    v-if="emojiPickerOpen"
-                    class="absolute bottom-full right-0 z-30 mb-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
-                    @mousedown.prevent
-                  >
-                    <p class="mb-1 px-1 text-[10px] font-semibold uppercase text-slate-500">Emoji</p>
-                    <div class="grid max-h-36 grid-cols-8 gap-0.5 overflow-y-auto">
-                      <button
-                        v-for="(em, idx) in omniEmojiPickerList"
-                        :key="idx"
-                        type="button"
-                        class="rounded p-1 text-lg leading-none hover:bg-slate-100"
-                        @mousedown.prevent="insertEmoji(em)"
-                      >
-                        {{ em }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                <OmniEmojiPickerButton
+                  v-model:open="emojiPickerOpen"
+                  class="absolute bottom-1.5 right-1.5"
+                  :disabled="sending"
+                  @select="insertEmoji"
+                />
               </div>
               <button
                 type="submit"
@@ -505,7 +482,8 @@ import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { insertEmojiIntoTextarea, omniEmojiPickerList } from '@/utils/omniEmojiPicker.js'
+import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
+import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -1083,17 +1061,6 @@ function formatTime(iso) {
   })
 }
 
-function closeEmojiPickerOnOutsideClick(e) {
-  if (!emojiPickerOpen.value) {
-    return
-  }
-  const target = e.target
-  if (target instanceof Element && target.closest('[data-omni-emoji-picker]')) {
-    return
-  }
-  emojiPickerOpen.value = false
-}
-
 onMounted(() => {
   const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   if (csrf) {
@@ -1103,7 +1070,6 @@ onMounted(() => {
   restartInboxPollTimer()
   document.addEventListener('visibilitychange', onInboxVisibilityChange)
   window.addEventListener('focus', onInboxWindowFocus)
-  document.addEventListener('mousedown', closeEmojiPickerOnOutsideClick)
 })
 
 onUnmounted(() => {
@@ -1114,7 +1080,6 @@ onUnmounted(() => {
   clearTimeout(pollKickTimer)
   document.removeEventListener('visibilitychange', onInboxVisibilityChange)
   window.removeEventListener('focus', onInboxWindowFocus)
-  document.removeEventListener('mousedown', closeEmojiPickerOnOutsideClick)
 })
 </script>
 

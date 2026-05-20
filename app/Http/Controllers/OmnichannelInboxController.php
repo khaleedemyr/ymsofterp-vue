@@ -85,12 +85,7 @@ class OmnichannelInboxController extends Controller
             }
         }
 
-        $assignableUsers = OmnichannelUserOption::toOptions(
-            User::query()
-                ->with(['jabatan', 'outlet'])
-                ->orderBy('nama_lengkap')
-                ->get()
-        );
+        $assignableUsers = OmnichannelUserOption::assignableOptions();
 
         $assignableTeams = OmniTeam::query()
             ->orderBy('name')
@@ -165,12 +160,7 @@ class OmnichannelInboxController extends Controller
                 'inbox' => $inbox,
                 'lead_stage_filter' => $leadStageFilter,
                 'lead_stages' => OmniLeadStages::all(),
-                'assignable_users' => OmnichannelUserOption::toOptions(
-                    User::query()
-                        ->with(['jabatan', 'outlet'])
-                        ->orderBy('nama_lengkap')
-                        ->get()
-                ),
+                'assignable_users' => OmnichannelUserOption::assignableOptions(),
                 'assignable_teams' => OmniTeam::query()
                     ->orderBy('name')
                     ->get(['id', 'name'])
@@ -194,8 +184,7 @@ class OmnichannelInboxController extends Controller
         );
 
         $validated = $request->validate([
-            'assigned_user_ids' => ['nullable', 'array'],
-            'assigned_user_ids.*' => ['integer', 'exists:users,id'],
+            'assigned_user_ids' => OmnichannelUserOption::assignableUserIdRules(),
             'assigned_team_ids' => ['nullable', 'array'],
             'assigned_team_ids.*' => ['integer', 'exists:omni_teams,id'],
             'notify_assignees' => ['sometimes', 'boolean'],

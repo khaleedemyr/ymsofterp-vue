@@ -73,7 +73,7 @@
           </div>
           <div class="sm:col-span-2">
             <label class="text-xs font-medium text-slate-600">Isi pesan</label>
-            <div class="relative mt-1" data-omni-tpl-emoji-picker>
+            <div class="relative mt-1">
               <textarea
                 ref="tplBodyEl"
                 v-model="tplBody"
@@ -83,32 +83,11 @@
                 class="w-full rounded-lg border border-slate-200 py-2 pl-2 pr-10 text-sm"
                 placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami..."
               />
-              <button
-                type="button"
-                class="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-lg text-slate-500 hover:bg-slate-100"
-                title="Emoji"
-                @click.stop="tplEmojiOpen = !tplEmojiOpen"
-              >
-                <i class="fa-regular fa-face-smile" />
-              </button>
-              <div
-                v-if="tplEmojiOpen"
-                class="absolute bottom-full right-0 z-30 mb-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
-                @mousedown.prevent
-              >
-                <p class="mb-1 px-1 text-[10px] font-semibold uppercase text-slate-500">Emoji</p>
-                <div class="grid max-h-36 grid-cols-8 gap-0.5 overflow-y-auto">
-                  <button
-                    v-for="(em, idx) in omniEmojiPickerList"
-                    :key="idx"
-                    type="button"
-                    class="rounded p-1 text-lg leading-none hover:bg-slate-100"
-                    @mousedown.prevent="insertTplEmoji(em)"
-                  >
-                    {{ em }}
-                  </button>
-                </div>
-              </div>
+              <OmniEmojiPickerButton
+                v-model:open="tplEmojiOpen"
+                class="absolute bottom-2 right-2"
+                @select="insertTplEmoji"
+              />
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-4 sm:col-span-2">
@@ -261,12 +240,13 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { insertEmojiIntoTextarea, omniEmojiPickerList } from '@/utils/omniEmojiPicker.js'
+import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
+import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
 
 const props = defineProps({
   teams: { type: Array, default: () => [] },
@@ -377,17 +357,6 @@ function insertTplEmoji(emoji) {
   })
 }
 
-function closeTplEmojiOnOutsideClick(e) {
-  if (!tplEmojiOpen.value) {
-    return
-  }
-  const target = e.target
-  if (target instanceof Element && target.closest('[data-omni-tpl-emoji-picker]')) {
-    return
-  }
-  tplEmojiOpen.value = false
-}
-
 function submitCreateTemplate() {
   tplSubmitting.value = true
   router.post(
@@ -413,14 +382,6 @@ function submitCreateTemplate() {
     }
   )
 }
-
-onMounted(() => {
-  document.addEventListener('mousedown', closeTplEmojiOnOutsideClick)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('mousedown', closeTplEmojiOnOutsideClick)
-})
 
 function toggleTemplateActive(tpl) {
   router.patch(`/crm/omnichannel-teams/message-templates/${tpl.id}`, {

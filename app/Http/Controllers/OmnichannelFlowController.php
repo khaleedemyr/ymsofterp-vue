@@ -168,9 +168,7 @@ class OmnichannelFlowController extends Controller
                 'id' => $t->id,
                 'name' => $t->name,
             ])->values()->all(),
-            'users' => OmnichannelUserOption::toOptions(
-                User::query()->with(['jabatan', 'outlet'])->orderBy('nama_lengkap')->get()
-            ),
+            'users' => OmnichannelUserOption::assignableOptions(),
             'leadStages' => OmniLeadStages::all(),
             'nodePalette' => [
                 ['value' => 'condition', 'label' => 'Kondisi', 'color' => 'amber'],

@@ -547,7 +547,7 @@ class OmniFlowRunner
 
         $sync = [];
         foreach ($userIds as $userId) {
-            if (User::query()->whereKey($userId)->exists()) {
+            if (User::query()->active()->whereKey($userId)->exists()) {
                 $sync[$userId] = [];
             }
         }

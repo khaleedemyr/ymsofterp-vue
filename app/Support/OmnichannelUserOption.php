@@ -3,10 +3,50 @@
 namespace App\Support;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 
 class OmnichannelUserOption
 {
+    /**
+     * User yang boleh dipilih di inbox / flow / tim omnichannel (hanya aktif).
+     *
+     * @return Builder<User>
+     */
+    public static function assignableQuery(): Builder
+    {
+        return User::query()
+            ->active()
+            ->with(['jabatan', 'outlet'])
+            ->orderBy('nama_lengkap');
+    }
+
+    /**
+     * @return list<array{id: int, name: string, jabatan: ?string, outlet: ?string}>
+     */
+    public static function assignableOptions(): array
+    {
+        return self::toOptions(self::assignableQuery()->get());
+    }
+
+    /**
+     * Validasi ID user untuk penugasan omnichannel.
+     *
+     * @return array<int, mixed>
+     */
+    public static function assignableUserIdRules(): array
+    {
+        return [
+            'nullable',
+            'array',
+            Rule::forEach(fn () => [
+                'integer',
+                Rule::exists('users', 'id')->where('status', 'A'),
+            ]),
+        ];
+    }
+
     /**
      * @return array{id: int, name: string, jabatan: ?string, outlet: ?string}
      */

@@ -113,12 +113,22 @@
     </div>
 
     <div v-else-if="node.data.nodeType === 'send_message'">
-      <textarea
-        v-model="node.data.config.body"
-        rows="5"
-        class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
-        placeholder="Isi pesan... {{nama}} {{nomor}}"
-      />
+      <p class="text-[10px] text-slate-500">Variabel: {{nama}}, {{nomor}}, {{nama_depan}}</p>
+      <div class="relative mt-1">
+        <textarea
+          ref="sendMsgBodyEl"
+          v-model="node.data.config.body"
+          rows="5"
+          class="w-full rounded-lg border border-slate-200 py-2 pl-2 pr-10 text-sm"
+          placeholder="Isi pesan WhatsApp..."
+        />
+        <OmniEmojiPickerButton
+          class="absolute bottom-2 right-2"
+          button-size="sm"
+          panel-width="16rem"
+          @select="insertSendMessageEmoji"
+        />
+      </div>
     </div>
 
     <div v-else-if="node.data.nodeType === 'set_lead_stage'">
@@ -152,9 +162,11 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
+import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
+import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 import { ensureHourBetweenRule } from '@/utils/omniFlowTime'
 import { nodeTypeLabel } from '@/utils/omniFlowGraph'
 
@@ -168,7 +180,23 @@ const props = defineProps({
 
 defineEmits(['remove-node'])
 
+const sendMsgBodyEl = ref(null)
+
 const nodeTitle = computed(() => nodeTypeLabel(props.node?.data?.nodeType))
+
+function insertSendMessageEmoji(emoji) {
+  const config = props.node?.data?.config
+  if (!config) return
+  const bodyRef = {
+    get value() {
+      return config.body ?? ''
+    },
+    set value(v) {
+      config.body = v
+    },
+  }
+  insertEmojiIntoTextarea(sendMsgBodyEl.value, bodyRef, emoji)
+}
 
 const isAssignPicker = computed(() => {
   const t = props.node?.data?.nodeType
