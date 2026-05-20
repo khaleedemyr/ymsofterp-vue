@@ -73,30 +73,50 @@
           </div>
           <div class="sm:col-span-2">
             <label class="text-xs font-medium text-slate-600">Isi pesan</label>
-            <textarea
-              v-model="tplBody"
-              required
-              rows="3"
-              maxlength="4096"
-              class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-2 text-sm"
-              placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami... (emoji didukung 😊)"
-            />
+            <div class="relative mt-1" data-omni-tpl-emoji-picker>
+              <textarea
+                ref="tplBodyEl"
+                v-model="tplBody"
+                required
+                rows="3"
+                maxlength="4096"
+                class="w-full rounded-lg border border-slate-200 py-2 pl-2 pr-10 text-sm"
+                placeholder="Halo {{nama}}, terima kasih sudah menghubungi kami..."
+              />
+              <button
+                type="button"
+                class="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full text-lg text-slate-500 hover:bg-slate-100"
+                title="Emoji"
+                @click.stop="tplEmojiOpen = !tplEmojiOpen"
+              >
+                <i class="fa-regular fa-face-smile" />
+              </button>
+              <div
+                v-if="tplEmojiOpen"
+                class="absolute bottom-full right-0 z-30 mb-1 w-64 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+                @mousedown.prevent
+              >
+                <p class="mb-1 px-1 text-[10px] font-semibold uppercase text-slate-500">Emoji</p>
+                <div class="grid max-h-36 grid-cols-8 gap-0.5 overflow-y-auto">
+                  <button
+                    v-for="(em, idx) in omniEmojiPickerList"
+                    :key="idx"
+                    type="button"
+                    class="rounded p-1 text-lg leading-none hover:bg-slate-100"
+                    @mousedown.prevent="insertTplEmoji(em)"
+                  >
+                    {{ em }}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="flex flex-wrap items-center gap-4 sm:col-span-2">
             <label class="flex items-center gap-2 text-xs text-slate-700">
               <input v-model="tplActive" type="checkbox" class="rounded border-slate-300 text-emerald-600" />
               Aktif (tampil di inbox)
             </label>
-            <div class="flex items-center gap-2 text-xs text-slate-600">
-              <span>Urutan</span>
-              <input
-                v-model.number="tplSortOrder"
-                type="number"
-                min="0"
-                max="9999"
-                class="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
-              />
-            </div>
+            <p class="text-xs text-slate-500">Urutan tampil di inbox diatur otomatis (template baru di bawah).</p>
             <button
               type="submit"
               class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
@@ -119,6 +139,7 @@
                   {{ tpl.title }}
                   <span v-if="tpl.shortcut" class="font-mono text-xs text-emerald-700">/{{ tpl.shortcut }}</span>
                   <span v-if="!tpl.is_active" class="ml-1 rounded bg-slate-200 px-1.5 text-[10px] text-slate-600">Nonaktif</span>
+                  <span class="ml-1 text-[10px] font-normal text-slate-400">#{{ tpl.sort_order }}</span>
                 </p>
                 <p class="mt-1 whitespace-pre-wrap text-xs text-slate-600">{{ tpl.body }}</p>
               </div>
@@ -240,11 +261,12 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import { insertEmojiIntoTextarea, omniEmojiPickerList } from '@/utils/omniEmojiPicker.js'
 
 const props = defineProps({
   teams: { type: Array, default: () => [] },
@@ -265,8 +287,9 @@ const tplTitle = ref('')
 const tplShortcut = ref('')
 const tplBody = ref('')
 const tplActive = ref(true)
-const tplSortOrder = ref(0)
 const tplSubmitting = ref(false)
+const tplBodyEl = ref(null)
+const tplEmojiOpen = ref(false)
 
 const memberSelections = reactive({})
 
@@ -348,6 +371,23 @@ function destroyTeam(teamId) {
   router.delete(`/crm/omnichannel-teams/${teamId}`, { preserveScroll: true })
 }
 
+function insertTplEmoji(emoji) {
+  insertEmojiIntoTextarea(tplBodyEl.value, tplBody, emoji, () => {
+    tplEmojiOpen.value = false
+  })
+}
+
+function closeTplEmojiOnOutsideClick(e) {
+  if (!tplEmojiOpen.value) {
+    return
+  }
+  const target = e.target
+  if (target instanceof Element && target.closest('[data-omni-tpl-emoji-picker]')) {
+    return
+  }
+  tplEmojiOpen.value = false
+}
+
 function submitCreateTemplate() {
   tplSubmitting.value = true
   router.post(
@@ -357,7 +397,6 @@ function submitCreateTemplate() {
       shortcut: tplShortcut.value.trim() || null,
       body: tplBody.value.trim(),
       is_active: tplActive.value,
-      sort_order: tplSortOrder.value,
     },
     {
       preserveScroll: true,
@@ -369,11 +408,19 @@ function submitCreateTemplate() {
         tplShortcut.value = ''
         tplBody.value = ''
         tplActive.value = true
-        tplSortOrder.value = 0
+        tplEmojiOpen.value = false
       },
     }
   )
 }
+
+onMounted(() => {
+  document.addEventListener('mousedown', closeTplEmojiOnOutsideClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('mousedown', closeTplEmojiOnOutsideClick)
+})
 
 function toggleTemplateActive(tpl) {
   router.patch(`/crm/omnichannel-teams/message-templates/${tpl.id}`, {

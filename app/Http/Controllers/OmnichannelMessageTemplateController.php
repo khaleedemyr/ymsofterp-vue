@@ -18,15 +18,16 @@ class OmnichannelMessageTemplateController extends Controller
             'shortcut' => ['nullable', 'string', 'max:64', 'regex:/^[\pL\pN_-]+$/u'],
             'body' => ['required', 'string', 'max:4096'],
             'is_active' => ['sometimes', 'boolean'],
-            'sort_order' => ['sometimes', 'integer', 'min:0', 'max:9999'],
         ]);
+
+        $nextSortOrder = ((int) OmniMessageTemplate::query()->max('sort_order')) + 1;
 
         OmniMessageTemplate::query()->create([
             'title' => $validated['title'],
             'shortcut' => $this->normalizeShortcut($validated['shortcut'] ?? null),
             'body' => $validated['body'],
             'is_active' => $validated['is_active'] ?? true,
-            'sort_order' => $validated['sort_order'] ?? 0,
+            'sort_order' => $nextSortOrder,
             'created_by_user_id' => $request->user()->id,
         ]);
 

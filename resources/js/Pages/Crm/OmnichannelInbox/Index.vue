@@ -259,7 +259,7 @@
                     <p class="mb-1 px-1 text-[10px] font-semibold uppercase text-slate-500">Emoji</p>
                     <div class="grid max-h-36 grid-cols-8 gap-0.5 overflow-y-auto">
                       <button
-                        v-for="(em, idx) in emojiPickerList"
+                        v-for="(em, idx) in omniEmojiPickerList"
                         :key="idx"
                         type="button"
                         class="rounded p-1 text-lg leading-none hover:bg-slate-100"
@@ -423,6 +423,7 @@ import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import { insertEmojiIntoTextarea, omniEmojiPickerList } from '@/utils/omniEmojiPicker.js'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -494,16 +495,6 @@ const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
 const emojiPickerOpen = ref(false)
-
-/** Emoji umum (UTF-8); tabel omni_* sudah utf8mb4 — aman disimpan di body/memo/template. */
-const emojiPickerList = [
-  '😀', '😃', '😄', '😁', '😊', '🙂', '😉', '😍', '🥰', '😘', '😗', '😋', '😛', '😜', '🤪', '😝',
-  '🤗', '🤔', '😐', '😑', '😶', '🙄', '😏', '😣', '😥', '😮', '🤐', '😯', '😪', '😫', '🥱', '😴',
-  '😌', '😛', '🤤', '😒', '😓', '😔', '😕', '🙃', '🤑', '😲', '☹️', '🙁', '😖', '😞', '😟', '😤',
-  '😢', '😭', '😦', '😧', '😨', '😩', '🤯', '😬', '😰', '😱', '🥵', '🥶', '😳', '🤪', '😵', '🥴',
-  '👍', '👎', '👌', '✌️', '🤞', '🤝', '🙏', '💪', '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💯',
-  '✅', '❌', '⭐', '🔥', '🎉', '🎊', '💐', '🌹', '🙌', '👏', '🤝', '💬', '📱', '📞', '📍', '🕐',
-]
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -738,20 +729,8 @@ function setComposerMode(mode) {
 }
 
 function insertEmoji(emoji) {
-  const el = composerEl.value
-  if (!el) {
-    replyText.value += emoji
-    return
-  }
-  const start = el.selectionStart ?? replyText.value.length
-  const end = el.selectionEnd ?? start
-  const text = replyText.value
-  replyText.value = text.slice(0, start) + emoji + text.slice(end)
-  emojiPickerOpen.value = false
-  nextTick(() => {
-    el.focus()
-    const pos = start + emoji.length
-    el.setSelectionRange(pos, pos)
+  insertEmojiIntoTextarea(composerEl.value, replyText, emoji, () => {
+    emojiPickerOpen.value = false
   })
 }
 
