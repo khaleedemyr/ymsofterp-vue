@@ -460,6 +460,13 @@ const crmForm = ref({
 })
 
 let pollTimer = null
+let pollKickTimer = null
+/** Hindari dua router.reload poll bersamaan (tab focus + interval). */
+let pollInFlight = false
+
+/** Saat tab aktif: cukup cepat agar WA masuk terasa “live” tanpa refresh manual. Tab di background: irit server. */
+const POLL_MS_TAB_VISIBLE = 3000
+const POLL_MS_TAB_HIDDEN = 25000
 
 const inbox = computed(() => props.inbox || 'all')
 const leadStageFilter = computed(() => props.leadStageFilter || null)
@@ -699,8 +706,15 @@ async function saveCrmPanel() {
  * Segarkan daftar percakapan, pesan terbuka, dan flag canSeeAllChats tanpa harus keluar halaman.
  * Sebelumnya reload memakai `only` tanpa `messages` + poll hanya membandingkan panjang array,
  * sehingga data di DB sudah ada tapi UI / urutan chat terasa "nyangkut".
+ *
+ * Catatan arsitektur: ini polling Inertia (sederhana, tanpa WebSocket). Untuk push instan,
+ * langkah berikutnya bisa Laravel Reverb + broadcast saat webhook Meta menyimpan pesan.
  */
 async function pollInbox() {
+  if (pollInFlight) {
+    return
+  }
+  pollInFlight = true
   try {
     await router.reload({
       only: inboxPartialReloadKeys,
@@ -709,6 +723,39 @@ async function pollInbox() {
     })
   } catch {
     /* ignore */
+  } finally {
+    pollInFlight = false
+  }
+}
+
+function pollIntervalMs() {
+  return document.visibilityState === 'visible' ? POLL_MS_TAB_VISIBLE : POLL_MS_TAB_HIDDEN
+}
+
+function restartInboxPollTimer() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  pollTimer = setInterval(pollInbox, pollIntervalMs())
+}
+
+/** Satu reload singkat setelah user kembali ke tab (debounce agar tidak double dengan focus). */
+function kickPollInboxSoon() {
+  clearTimeout(pollKickTimer)
+  pollKickTimer = setTimeout(() => pollInbox(), 350)
+}
+
+function onInboxVisibilityChange() {
+  restartInboxPollTimer()
+  if (document.visibilityState === 'visible') {
+    kickPollInboxSoon()
+  }
+}
+
+function onInboxWindowFocus() {
+  if (document.visibilityState === 'visible') {
+    kickPollInboxSoon()
   }
 }
 
@@ -753,11 +800,19 @@ onMounted(() => {
     axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf
   }
   scrollToBottom()
-  pollTimer = setInterval(pollInbox, 8000)
+  restartInboxPollTimer()
+  document.addEventListener('visibilitychange', onInboxVisibilityChange)
+  window.addEventListener('focus', onInboxWindowFocus)
 })
 
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  clearTimeout(pollKickTimer)
+  document.removeEventListener('visibilitychange', onInboxVisibilityChange)
+  window.removeEventListener('focus', onInboxWindowFocus)
 })
 </script>
 
