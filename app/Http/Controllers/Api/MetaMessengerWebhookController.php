@@ -3,16 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\Meta\MetaMessengerInboundService;
 use App\Services\Meta\MetaWebhookSignature;
-use App\Services\Meta\MetaWhatsAppInboundService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
-class MetaWhatsAppWebhookController extends Controller
+class MetaMessengerWebhookController extends Controller
 {
     /**
-     * Meta webhook verification (GET hub.mode=subscribe).
+     * Verifikasi webhook Messenger / Instagram (GET hub.mode=subscribe).
      */
     public function verify(Request $request): Response
     {
@@ -23,32 +23,32 @@ class MetaWhatsAppWebhookController extends Controller
         $verifyToken = config('services.meta.webhook_verify_token');
 
         if ($mode !== 'subscribe' || $verifyToken === null || $verifyToken === '' || $token !== $verifyToken) {
-            Log::warning('Meta WhatsApp webhook verify failed', [
+            Log::warning('Meta Messenger webhook verify failed', [
                 'mode' => $mode,
                 'token_match' => $token === $verifyToken,
             ]);
             abort(403, 'Forbidden');
         }
 
-        Log::info('Meta WhatsApp webhook verified');
+        Log::info('Meta Messenger/Instagram webhook verified');
 
         return response((string) $challenge, 200)->header('Content-Type', 'text/plain');
     }
 
     /**
-     * Incoming WhatsApp events (messages, statuses).
+     * Event pesan masuk Page (Messenger) & Instagram DM.
      */
     public function handle(Request $request): Response
     {
         if (! MetaWebhookSignature::isValid($request)) {
-            Log::warning('Meta WhatsApp webhook rejected: invalid signature');
+            Log::warning('Meta Messenger webhook rejected: invalid signature');
             abort(403, 'Invalid signature');
         }
 
         try {
-            app(MetaWhatsAppInboundService::class)->processPayload($request->all());
+            app(MetaMessengerInboundService::class)->processPayload($request->all());
         } catch (\Throwable $e) {
-            Log::error('Meta WhatsApp webhook processing failed', [
+            Log::error('Meta Messenger webhook processing failed', [
                 'error' => $e->getMessage(),
             ]);
         }

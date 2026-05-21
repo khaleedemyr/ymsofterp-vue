@@ -41,8 +41,10 @@
           <div>
             <label class="text-xs font-medium text-slate-600">Channel</label>
             <select v-model="form.channel" class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
-              <option :value="null">Semua</option>
+              <option :value="null">Semua channel</option>
               <option value="whatsapp">WhatsApp</option>
+              <option value="messenger">Facebook Messenger</option>
+              <option value="instagram">Instagram DM</option>
             </select>
           </div>
           <div class="sm:col-span-2 lg:col-span-4">

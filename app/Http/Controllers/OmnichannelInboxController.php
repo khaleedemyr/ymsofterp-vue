@@ -8,6 +8,7 @@ use App\Models\OmniMessage;
 use App\Models\OmniMessageTemplate;
 use App\Models\OmniTeam;
 use App\Models\User;
+use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
 use App\Support\OmniLeadStages;
@@ -332,18 +333,30 @@ class OmnichannelInboxController extends Controller
             return response()->json(['message' => 'Pesan atau lampiran wajib diisi.'], 422);
         }
 
-        if ($conversation->channel !== 'whatsapp') {
-            return response()->json(['message' => 'Channel belum didukung.'], 422);
-        }
-
-        $client = app(MetaWhatsAppClient::class);
+        $channel = (string) $conversation->channel;
         $messageType = 'text';
         $preview = $body;
         $payload = [];
         $metaMessageId = '';
 
         try {
-            if ($file) {
+            if (in_array($channel, ['messenger', 'facebook', 'instagram'], true)) {
+                if ($file) {
+                    return response()->json(['message' => 'Lampiran untuk Messenger/Instagram belum didukung. Kirim teks dulu.'], 422);
+                }
+                if ($body === '') {
+                    return response()->json(['message' => 'Pesan teks wajib diisi.'], 422);
+                }
+                $result = app(MetaMessengerClient::class)->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+                $payload = is_array($result) ? $result : [];
+                $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
+            } elseif ($channel === 'whatsapp') {
+                $client = app(MetaWhatsAppClient::class);
+                if ($file) {
                 $mime = $file->getMimeType() ?: 'application/octet-stream';
                 $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
                 $localUrl = Storage::disk('public')->url($storedPath);
@@ -386,6 +399,9 @@ class OmnichannelInboxController extends Controller
                 );
                 $payload = is_array($result) ? $result : [];
                 $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+                }
+            } else {
+                return response()->json(['message' => 'Channel belum didukung.'], 422);
             }
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 502);
@@ -550,8 +566,8 @@ class OmnichannelInboxController extends Controller
             'channel' => $conversation->channel,
             'external_contact_id' => $conversation->external_contact_id,
             'contact_name' => $conversation->contact_name,
-            'display_phone' => $this->formatDisplayPhone($conversation->external_contact_id),
-            'display_phone_international' => $this->formatInternationalPhone($conversation->external_contact_id),
+            'display_phone' => $this->formatContactDisplayId($conversation),
+            'display_phone_international' => $this->formatContactDisplayId($conversation),
             'last_message_preview' => $conversation->last_message_preview,
             'last_message_at' => $conversation->last_message_at?->toIso8601String(),
             'last_customer_message_at' => $conversation->last_customer_message_at?->toIso8601String(),
@@ -611,6 +627,17 @@ class OmnichannelInboxController extends Controller
             'media_url' => $payload['local_media_url'] ?? null,
             'media_filename' => $payload['media_filename'] ?? null,
         ];
+    }
+
+    private function formatContactDisplayId(OmniConversation $conversation): string
+    {
+        $id = (string) $conversation->external_contact_id;
+
+        return match ((string) $conversation->channel) {
+            'instagram' => 'Instagram · '.$id,
+            'messenger', 'facebook' => 'Messenger · '.$id,
+            default => $this->formatDisplayPhone($id),
+        };
     }
 
     private function formatDisplayPhone(string $waId): string

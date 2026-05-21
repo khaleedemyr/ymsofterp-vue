@@ -109,7 +109,7 @@ class OmnichannelFlowController extends Controller
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
             'trigger_type' => ['required', Rule::in(['inbound_message'])],
-            'channel' => ['nullable', Rule::in(['whatsapp'])],
+            'channel' => ['nullable', Rule::in(['whatsapp', 'messenger', 'instagram', 'facebook'])],
             'priority' => ['required', 'integer', 'min:1', 'max:9999'],
             'definition' => ['required', 'array'],
             'definition.nodes' => ['required', 'array', 'min:1'],

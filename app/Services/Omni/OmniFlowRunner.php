@@ -476,10 +476,6 @@ class OmniFlowRunner
      */
     private function executeSendMessage(array $config, OmniConversation $conversation, array $context): void
     {
-        if ($conversation->channel !== 'whatsapp') {
-            throw new RuntimeException('Kirim otomatis saat ini hanya untuk WhatsApp.');
-        }
-
         $body = trim((string) ($config['body'] ?? ''));
         if ($body === '') {
             return;
@@ -487,13 +483,24 @@ class OmniFlowRunner
 
         $body = $this->replacePlaceholders($body, $conversation);
 
-        $result = app(MetaWhatsAppClient::class)->sendText(
-            $conversation->external_contact_id,
-            $body,
-            $conversation->phone_number_id
-        );
-
-        $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+        $channel = (string) $conversation->channel;
+        if (in_array($channel, ['messenger', 'facebook', 'instagram'], true)) {
+            $result = app(\App\Services\Meta\MetaMessengerClient::class)->sendText(
+                $conversation->external_contact_id,
+                $body,
+                $conversation->phone_number_id
+            );
+            $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
+        } elseif ($channel === 'whatsapp') {
+            $result = app(MetaWhatsAppClient::class)->sendText(
+                $conversation->external_contact_id,
+                $body,
+                $conversation->phone_number_id
+            );
+            $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+        } else {
+            throw new RuntimeException('Kirim otomatis belum didukung untuk channel: '.$channel);
+        }
         $sentAt = now();
 
         OmniMessage::query()->create([

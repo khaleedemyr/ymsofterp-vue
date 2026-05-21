@@ -61,6 +61,12 @@ Route::get('/webhooks/meta/whatsapp', [\App\Http\Controllers\Api\MetaWhatsAppWeb
 Route::post('/webhooks/meta/whatsapp', [\App\Http\Controllers\Api\MetaWhatsAppWebhookController::class, 'handle'])
     ->name('api.webhooks.meta.whatsapp');
 
+// Meta Messenger (Facebook Page) & Instagram DM webhooks
+Route::get('/webhooks/meta/messenger', [\App\Http\Controllers\Api\MetaMessengerWebhookController::class, 'verify'])
+    ->name('api.webhooks.meta.messenger.verify');
+Route::post('/webhooks/meta/messenger', [\App\Http\Controllers\Api\MetaMessengerWebhookController::class, 'handle'])
+    ->name('api.webhooks.meta.messenger');
+
 // Test route for approvers
 Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers']);
 
