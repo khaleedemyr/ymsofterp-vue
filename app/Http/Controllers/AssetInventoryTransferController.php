@@ -933,19 +933,25 @@ class AssetInventoryTransferController extends Controller
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
-            $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
+
+            $newCostMedium = $mac * $mediumConv;
+            $newCostLarge = $mac * $smallConv;
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventory_item_id,
                 'outlet_id' => $warehouseTo->outlet_id,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                 'date' => $transfer->transfer_date,
-                'old_cost' => $old_cost,
-                'new_cost' => $costSmall,
-                'mac' => $mac,
-                'type' => 'asset_inventory_transfer',
                 'reference_type' => 'asset_inventory_transfer',
                 'reference_id' => $transfer->id,
+                'old_cost_small' => $lastCostHistory ? $lastCostHistory->new_cost_small : 0,
+                'old_cost_medium' => $lastCostHistory ? $lastCostHistory->new_cost_medium : 0,
+                'old_cost_large' => $lastCostHistory ? $lastCostHistory->new_cost_large : 0,
+                'new_cost_small' => $mac,
+                'new_cost_medium' => $newCostMedium,
+                'new_cost_large' => $newCostLarge,
+                'qty' => $qty_small,
+                'value' => $qty_small * $costSmall,
                 'created_at' => now(),
             ]);
         }

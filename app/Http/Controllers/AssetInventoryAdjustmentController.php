@@ -794,19 +794,22 @@ class AssetInventoryAdjustmentController extends Controller
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
-            $old_cost = $lastCostHistory ? $lastCostHistory->new_cost : 0;
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventoryItemId,
                 'outlet_id' => $outletId,
                 'warehouse_outlet_id' => $adjustment->warehouse_outlet_id,
                 'date' => $adjustment->date,
-                'old_cost' => $old_cost,
-                'new_cost' => $costSmall,
-                'mac' => $costSmall,
-                'type' => 'asset_stock_adjustment',
                 'reference_type' => 'asset_stock_adjustment',
                 'reference_id' => $adjustment->id,
+                'old_cost_small' => $lastCostHistory ? $lastCostHistory->new_cost_small : $costSmall,
+                'old_cost_medium' => $lastCostHistory ? $lastCostHistory->new_cost_medium : $costMedium,
+                'old_cost_large' => $lastCostHistory ? $lastCostHistory->new_cost_large : $costLarge,
+                'new_cost_small' => $costSmall,
+                'new_cost_medium' => $costMedium,
+                'new_cost_large' => $costLarge,
+                'qty' => $qty_small,
+                'value' => $qty_small * $costSmall,
                 'created_at' => now(),
             ]);
         }

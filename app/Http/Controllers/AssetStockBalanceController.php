@@ -175,14 +175,19 @@ class AssetStockBalanceController extends Controller
 
         DB::table('asset_inventory_cost_histories')->insert([
             'inventory_item_id' => $inventoryItemId,
+            'outlet_id' => $request->outlet_id,
             'warehouse_outlet_id' => $request->warehouse_outlet_id,
-            'date' => now(),
-            'old_cost' => 0,
-            'new_cost' => $cost_small,
-            'mac' => $cost_small,
-            'type' => 'initial_balance',
+            'date' => now()->toDateString(),
             'reference_type' => 'initial_balance',
             'reference_id' => 0,
+            'old_cost_small' => 0,
+            'old_cost_medium' => 0,
+            'old_cost_large' => 0,
+            'new_cost_small' => $cost_small,
+            'new_cost_medium' => $cost_medium,
+            'new_cost_large' => $cost_large,
+            'qty' => $qty_small,
+            'value' => $value,
             'created_at' => now(),
         ]);
 
