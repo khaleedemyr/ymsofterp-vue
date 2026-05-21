@@ -4,6 +4,24 @@ window.axios = axios;
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
 window.axios.defaults.withCredentials = true;
 
+const csrfMeta = document.head.querySelector('meta[name="csrf-token"]');
+if (csrfMeta?.content) {
+  window.axios.defaults.headers.common['X-CSRF-TOKEN'] = csrfMeta.content;
+}
+
+function readCookie(name) {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[$()*+./?[\\\]^{|}-]/g, '\\$&') + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+axios.interceptors.request.use((config) => {
+  const xsrf = readCookie('XSRF-TOKEN');
+  if (xsrf && !config.headers['X-XSRF-TOKEN']) {
+    config.headers['X-XSRF-TOKEN'] = xsrf;
+  }
+  return config;
+});
+
 // Tambahkan interceptor agar Authorization token otomatis dikirim
 axios.interceptors.request.use(config => {
   const token = localStorage.getItem('token');
