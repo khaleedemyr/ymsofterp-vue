@@ -333,6 +333,80 @@
               </button>
               </div>
             </form>
+            <div
+              v-if="aiWritingEnabled && composerMode === 'reply'"
+              class="relative border-t border-slate-100 px-3 py-2"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
+                :disabled="sending || aiLoading"
+                @click="aiMenuOpen = !aiMenuOpen"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles" />
+                <span>{{ aiLoading ? 'Memproses AI...' : 'AI Writing Assistant' }}</span>
+                <i class="fa-solid fa-chevron-up text-xs transition" :class="aiMenuOpen ? 'rotate-180' : ''" />
+              </button>
+              <div
+                v-if="aiMenuOpen"
+                class="absolute bottom-full left-3 right-3 z-30 mb-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+              >
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50"
+                  :disabled="aiLoading"
+                  @click="runAiAssist('grammar')"
+                >
+                  <i class="fa-solid fa-spell-check w-4 text-slate-400" /> Perbaiki ejaan & tata bahasa
+                </button>
+                <div class="border-t border-slate-100 px-2 py-1">
+                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ubah nada</p>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'professional' })">
+                    Profesional
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'friendly' })">
+                    Ramah
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'formal' })">
+                    Formal
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'empathetic' })">
+                    Empati
+                  </button>
+                </div>
+                <div class="border-t border-slate-100 px-2 py-1">
+                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Terjemahkan</p>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_en')">
+                    <i class="fa-solid fa-language w-4 text-slate-400" /> Ke Bahasa Inggris
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_id')">
+                    <i class="fa-solid fa-language w-4 text-slate-400" /> Ke Bahasa Indonesia
+                  </button>
+                </div>
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('simplify')">
+                  <i class="fa-solid fa-wand-magic-sparkles w-4 text-slate-400" /> Sederhanakan
+                </button>
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('expand')">
+                  <i class="fa-solid fa-up-down w-4 text-slate-400" /> Perluas
+                </button>
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('shorten')">
+                  <i class="fa-solid fa-align-left w-4 text-slate-400" /> Persingkat
+                </button>
+                <div class="border-t border-slate-100 px-2 py-1">
+                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ubah jadi daftar</p>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('to_list', { listStyle: 'bullet' })">
+                    Bullet list
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('to_list', { listStyle: 'numbered' })">
+                    Daftar bernomor
+                  </button>
+                </div>
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="openAiCustomPrompt">
+                  <i class="fa-solid fa-pen w-4 text-slate-400" /> Instruksi kustom
+                </button>
+              </div>
+            </div>
+            <p v-if="aiError" class="px-3 pb-1 text-xs text-red-600">{{ aiError }}</p>
             <p v-if="sendError" class="px-3 pb-2 text-xs text-red-600">{{ sendError }}</p>
           </div>
         </template>
@@ -481,6 +555,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -500,6 +575,7 @@ const props = defineProps({
   canManageOmnichannelTeams: { type: Boolean, default: false },
   canManageOmnichannelFlows: { type: Boolean, default: false },
   messageTemplates: { type: Array, default: () => [] },
+  aiWritingEnabled: { type: Boolean, default: true },
 })
 
 /** Kunci partial reload Inertia agar daftar chat, pesan, dan hak "lihat semua" selalu sinkron (satu sumber kebenaran). */
@@ -565,6 +641,9 @@ const pendingAttachment = ref(null)
 const imageInputRef = ref(null)
 const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
+const aiMenuOpen = ref(false)
+const aiLoading = ref(false)
+const aiError = ref('')
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -824,7 +903,55 @@ function setComposerMode(mode) {
   composerMode.value = mode
   templateMenuOpen.value = false
   emojiPickerOpen.value = false
+  aiMenuOpen.value = false
   nextTick(() => composerEl.value?.focus())
+}
+
+async function runAiAssist(action, opts = {}) {
+  if (!replyText.value.trim()) {
+    aiError.value = 'Tulis dulu teks di kotak balasan.'
+    return
+  }
+  aiLoading.value = true
+  aiError.value = ''
+  aiMenuOpen.value = false
+  try {
+    const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
+      action,
+      text: replyText.value,
+      tone: opts.tone ?? null,
+      list_style: opts.listStyle ?? null,
+      custom_prompt: opts.customPrompt ?? null,
+      conversation_id: selectedId.value ?? null,
+    })
+    if (data.success && data.text) {
+      replyText.value = data.text
+      nextTick(() => composerEl.value?.focus())
+    } else {
+      aiError.value = data.message || 'AI tidak mengembalikan teks.'
+    }
+  } catch (e) {
+    aiError.value = e.response?.data?.message || 'Gagal memproses AI Writing Assistant.'
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function openAiCustomPrompt() {
+  aiMenuOpen.value = false
+  const result = await Swal.fire({
+    title: 'Instruksi kustom',
+    input: 'textarea',
+    inputPlaceholder: 'Contoh: buat balasan penawaran promo member, maksimal 3 kalimat...',
+    inputAttributes: { 'aria-label': 'Instruksi' },
+    showCancelButton: true,
+    confirmButtonText: 'Proses',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#7c3aed',
+  })
+  if (result.isConfirmed && result.value) {
+    await runAiAssist('custom', { customPrompt: String(result.value).trim() })
+  }
 }
 
 function insertEmoji(emoji) {

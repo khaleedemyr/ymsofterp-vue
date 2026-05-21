@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
+use App\Services\Omni\OmniAiWritingService;
 use App\Support\OmniLeadStages;
 use App\Support\OmnichannelAuthorization;
 use App\Support\OmnichannelUserOption;
@@ -110,6 +111,7 @@ class OmnichannelInboxController extends Controller
             'canManageOmnichannelTeams' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
             'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
                 || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
+            'aiWritingEnabled' => (bool) config('omnichannel.ai_writing.enabled', true),
         ]);
     }
 
@@ -309,6 +311,76 @@ class OmnichannelInboxController extends Controller
             ])),
             'messages' => $this->loadMessages($conversation),
         ]);
+    }
+
+    public function aiAssist(Request $request): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+
+        $validated = $request->validate([
+            'action' => [
+                'required',
+                'string',
+                Rule::in([
+                    'grammar',
+                    'tone',
+                    'translate_to_en',
+                    'translate_to_id',
+                    'simplify',
+                    'expand',
+                    'shorten',
+                    'to_list',
+                    'custom',
+                ]),
+            ],
+            'text' => 'required|string|max:8000',
+            'tone' => 'nullable|string|in:professional,friendly,formal,empathetic,casual',
+            'list_style' => 'nullable|string|in:bullet,numbered',
+            'custom_prompt' => 'nullable|string|max:2000',
+            'conversation_id' => 'nullable|integer|exists:omni_conversations,id',
+        ]);
+
+        $context = null;
+        if (! empty($validated['conversation_id']) && config('omnichannel.ai_writing.include_context', true)) {
+            $conversation = OmniConversation::query()->find($validated['conversation_id']);
+            if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
+                $context = [
+                    'contact_name' => $conversation->contact_name,
+                    'channel' => $conversation->channel,
+                    'recent_messages' => app(OmniAiWritingService::class)->recentMessageContext($conversation),
+                ];
+            }
+        }
+
+        try {
+            $text = app(OmniAiWritingService::class)->transform(
+                $validated['action'],
+                $validated['text'],
+                $validated['tone'] ?? null,
+                $validated['list_style'] ?? 'bullet',
+                $validated['custom_prompt'] ?? null,
+                $context
+            );
+
+            return response()->json([
+                'success' => true,
+                'text' => $text,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'AI Writing Assistant gagal. Coba lagi atau hubungi administrator.',
+            ], 500);
+        }
     }
 
     public function sendMessage(Request $request, OmniConversation $conversation): JsonResponse

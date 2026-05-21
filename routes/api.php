@@ -1232,6 +1232,7 @@ Route::prefix('approval-app')->group(function () {
         Route::patch('/omnichannel-inbox/conversations/{conversation}', [\App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('api.approval-app.omnichannel-inbox.update');
         Route::post('/omnichannel-inbox/conversations/{conversation}/messages', [\App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('api.approval-app.omnichannel-inbox.send');
         Route::post('/omnichannel-inbox/conversations/{conversation}/internal-notes', [\App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('api.approval-app.omnichannel-inbox.internal-notes');
+        Route::post('/omnichannel-inbox/ai-assist', [\App\Http\Controllers\OmnichannelInboxController::class, 'aiAssist'])->name('api.approval-app.omnichannel-inbox.ai-assist');
         Route::post('/omnichannel-inbox/conversations/{conversation}/pause-automation', [\App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('api.approval-app.omnichannel-inbox.pause-automation');
         
         // User Role Settings routes
