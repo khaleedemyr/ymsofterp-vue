@@ -92,7 +92,7 @@ class OmnichannelInboxController extends Controller
             'canManageOmnichannelTeams' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
             'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
                 || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
-            'aiWritingEnabled' => (bool) config('omnichannel.ai_writing.enabled', true),
+            'aiWritingEnabled' => filter_var(config('omnichannel.ai_writing.enabled', true), FILTER_VALIDATE_BOOLEAN),
         ]);
     }
 

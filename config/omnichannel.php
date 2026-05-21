@@ -16,7 +16,7 @@ return [
     | API key = GOOGLE_GEMINI_API_KEY (sama Guest Comment / Google Review).
     */
     'ai_writing' => [
-        'enabled' => env('OMNI_AI_WRITING_ENABLED', true),
+        'enabled' => filter_var(env('OMNI_AI_WRITING_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         'provider' => env('OMNI_AI_PROVIDER'),
         'gemini_model' => env('OMNI_AI_GEMINI_MODEL'),
         'claude_model' => env('OMNI_AI_CLAUDE_MODEL'),

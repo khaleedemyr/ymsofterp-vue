@@ -220,7 +220,7 @@
             </div>
           </div>
 
-          <div class="border-t border-slate-200 bg-white">
+          <div class="border-t border-slate-200 bg-white overflow-visible">
             <div class="flex border-b border-slate-100 px-2">
               <button
                 type="button"
@@ -333,7 +333,7 @@
               </button>
               </div>
             </form>
-            <div v-if="aiWritingEnabled" class="relative border-t border-slate-100 px-3 py-2">
+            <div v-if="showAiWriting" class="relative border-t border-slate-100 px-3 py-2">
               <button
                 type="button"
                 class="flex w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
@@ -342,11 +342,11 @@
               >
                 <i class="fa-solid fa-wand-magic-sparkles" />
                 <span>{{ aiLoading ? 'Memproses AI...' : 'AI Writing Assistant' }}</span>
-                <i class="fa-solid fa-chevron-down text-xs transition" :class="aiMenuOpen ? 'rotate-180' : ''" />
+                <i class="fa-solid fa-chevron-up text-xs transition" :class="aiMenuOpen ? 'rotate-180' : ''" />
               </button>
               <div
                 v-if="aiMenuOpen"
-                class="absolute left-3 right-3 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                class="absolute bottom-full left-3 right-3 z-50 mb-1 max-h-[min(20rem,50vh)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
               >
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('simplify')">
                   <i class="fa-solid fa-wand-magic-sparkles w-4 text-slate-400" /> Sederhanakan teks
@@ -650,6 +650,9 @@ const POLL_MS_TAB_HIDDEN = 30000
 
 const inbox = computed(() => props.inbox || 'all')
 const leadStageFilter = computed(() => props.leadStageFilter || null)
+
+/** Tombol AI di composer — default aktif kecuali server kirim false eksplisit. */
+const showAiWriting = computed(() => props.aiWritingEnabled !== false)
 
 /** Diperbarui poll axios + sinkron dari props saat navigasi Inertia. */
 const liveConversations = ref([...(props.conversations || [])])
