@@ -19,6 +19,18 @@ class MetaMessengerInboundService
     public function processPayload(array $payload): void
     {
         $object = (string) ($payload['object'] ?? '');
+        $entryCount = count($payload['entry'] ?? []);
+
+        Log::info('Meta Messenger/Instagram webhook payload', [
+            'object' => $object !== '' ? $object : '(empty)',
+            'entry_count' => $entryCount,
+        ]);
+
+        if ($object !== 'page' && $object !== 'instagram') {
+            Log::warning('Meta webhook ignored: unsupported object', ['object' => $object]);
+
+            return;
+        }
 
         if ($object === 'page') {
             foreach ($payload['entry'] ?? [] as $entry) {
@@ -44,7 +56,15 @@ class MetaMessengerInboundService
     {
         $pageOrIgId = (string) ($entry['id'] ?? '');
 
-        foreach ($entry['messaging'] ?? [] as $event) {
+        $events = $entry['messaging'] ?? [];
+        if ($events === []) {
+            Log::info('Meta webhook entry without messaging events', [
+                'channel' => $channel,
+                'entry_id' => $pageOrIgId,
+            ]);
+        }
+
+        foreach ($events as $event) {
             if (! isset($event['message']) || ! is_array($event['message'])) {
                 continue;
             }
@@ -65,6 +85,11 @@ class MetaMessengerInboundService
         $message = $event['message'];
         $metaMessageId = (string) ($message['mid'] ?? '');
         if ($metaMessageId === '') {
+            Log::warning('Meta inbound skipped: missing message mid', [
+                'channel' => $channel,
+                'entry_id' => $pageOrIgId,
+            ]);
+
             return;
         }
 
