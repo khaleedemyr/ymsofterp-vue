@@ -64,7 +64,7 @@
             type="button"
             class="flex w-full gap-2 border-b border-slate-100 px-3 py-2.5 text-left hover:bg-slate-50"
             :class="selectedId === conv.id ? 'bg-emerald-50/80 ring-1 ring-inset ring-emerald-200' : ''"
-            @click="selectConversation(conv.id)"
+            @click.stop="selectConversation(conv.id)"
           >
             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
               <i class="fa-brands fa-whatsapp text-sm" />
@@ -333,10 +333,7 @@
               </button>
               </div>
             </form>
-            <div
-              v-if="aiWritingEnabled && composerMode === 'reply'"
-              class="relative border-t border-slate-100 px-3 py-2"
-            >
+            <div v-if="aiWritingEnabled" class="relative border-t border-slate-100 px-3 py-2">
               <button
                 type="button"
                 class="flex w-full items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-50"
@@ -345,65 +342,51 @@
               >
                 <i class="fa-solid fa-wand-magic-sparkles" />
                 <span>{{ aiLoading ? 'Memproses AI...' : 'AI Writing Assistant' }}</span>
-                <i class="fa-solid fa-chevron-up text-xs transition" :class="aiMenuOpen ? 'rotate-180' : ''" />
+                <i class="fa-solid fa-chevron-down text-xs transition" :class="aiMenuOpen ? 'rotate-180' : ''" />
               </button>
               <div
                 v-if="aiMenuOpen"
-                class="absolute bottom-full left-3 right-3 z-30 mb-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
+                class="absolute left-3 right-3 top-full z-40 mt-1 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
               >
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50"
-                  :disabled="aiLoading"
-                  @click="runAiAssist('grammar')"
-                >
-                  <i class="fa-solid fa-spell-check w-4 text-slate-400" /> Perbaiki ejaan & tata bahasa
-                </button>
-                <div class="border-t border-slate-100 px-2 py-1">
-                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ubah nada</p>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'professional' })">
-                    Profesional
-                  </button>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'friendly' })">
-                    Ramah
-                  </button>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'formal' })">
-                    Formal
-                  </button>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'empathetic' })">
-                    Empati
-                  </button>
-                </div>
-                <div class="border-t border-slate-100 px-2 py-1">
-                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Terjemahkan</p>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_en')">
-                    <i class="fa-solid fa-language w-4 text-slate-400" /> Ke Bahasa Inggris
-                  </button>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_id')">
-                    <i class="fa-solid fa-language w-4 text-slate-400" /> Ke Bahasa Indonesia
-                  </button>
-                </div>
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('simplify')">
-                  <i class="fa-solid fa-wand-magic-sparkles w-4 text-slate-400" /> Sederhanakan
+                  <i class="fa-solid fa-wand-magic-sparkles w-4 text-slate-400" /> Sederhanakan teks
                 </button>
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('expand')">
-                  <i class="fa-solid fa-up-down w-4 text-slate-400" /> Perluas
+                  <i class="fa-solid fa-up-down w-4 text-slate-400" /> Perluas teks
                 </button>
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('shorten')">
-                  <i class="fa-solid fa-align-left w-4 text-slate-400" /> Persingkat
+                  <i class="fa-solid fa-align-left w-4 text-slate-400" /> Persingkat teks
                 </button>
                 <div class="border-t border-slate-100 px-2 py-1">
                   <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ubah jadi daftar</p>
                   <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('to_list', { listStyle: 'bullet' })">
-                    Bullet list
+                    <i class="fa-solid fa-list-ul w-4 text-slate-400" /> Bullet list
                   </button>
                   <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('to_list', { listStyle: 'numbered' })">
-                    Daftar bernomor
+                    <i class="fa-solid fa-list-ol w-4 text-slate-400" /> Daftar bernomor
                   </button>
                 </div>
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="openAiCustomPrompt">
                   <i class="fa-solid fa-pen w-4 text-slate-400" /> Instruksi kustom
                 </button>
+                <div class="border-t border-slate-100 px-2 py-1">
+                  <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Lainnya</p>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('grammar')">
+                    <i class="fa-solid fa-spell-check w-4 text-slate-400" /> Perbaiki ejaan & tata bahasa
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_en')">
+                    <i class="fa-solid fa-language w-4 text-slate-400" /> Terjemahkan ke Inggris
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_id')">
+                    <i class="fa-solid fa-language w-4 text-slate-400" /> Terjemahkan ke Indonesia
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'professional' })">
+                    Nada: profesional
+                  </button>
+                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('tone', { tone: 'friendly' })">
+                    Nada: ramah
+                  </button>
+                </div>
               </div>
             </div>
             <p v-if="aiError" class="px-3 pb-1 text-xs text-red-600">{{ aiError }}</p>
@@ -644,6 +627,8 @@ const pausingAutomation = ref(false)
 const aiMenuOpen = ref(false)
 const aiLoading = ref(false)
 const aiError = ref('')
+/** ID chat yang sedang dipilih user; cegah poll mengembalikan chat lama dari URL. */
+const pendingConversationId = ref(null)
 const crmSaving = ref(false)
 const crmSaveError = ref('')
 const notifyAssigneesOnSave = ref(true)
@@ -800,15 +785,39 @@ function setLeadStage(val) {
   })
 }
 
-function selectConversation(id) {
-  if (id !== selectedId.value) {
-    localMessagesConversationId.value = null
-    localMessages.value = []
+/** Abaikan respons Inertia lama (URL/poll) saat user sudah pilih chat lain di sidebar. */
+function isStaleConversationProps(convId) {
+  if (convId == null || selectedId.value == null) {
+    return false
   }
+
+  return convId !== selectedId.value
+}
+
+function selectConversation(id) {
+  pendingConversationId.value = id
+  selectedId.value = id
+  localMessagesConversationId.value = null
+  localMessages.value = []
+  aiMenuOpen.value = false
+  sendError.value = ''
+  aiError.value = ''
+
   router.get('/crm/omnichannel-inbox', listQuery({ conversation: id }), {
     preserveState: true,
     preserveScroll: true,
+    replace: true,
     only: inboxPartialReloadKeys,
+    onFinish: () => {
+      if (pendingConversationId.value === id) {
+        pendingConversationId.value = null
+      }
+    },
+    onCancel: () => {
+      if (pendingConversationId.value === id) {
+        pendingConversationId.value = null
+      }
+    },
   })
 }
 
@@ -866,6 +875,9 @@ function mergeMessagesFromProps(serverMsgs, conversationId) {
 watch(
   () => [props.selectedConversation?.id, props.messages],
   ([convId, val]) => {
+    if (isStaleConversationProps(convId)) {
+      return
+    }
     const prev = localMessages.value
     const merged = mergeMessagesFromProps(val, convId)
     const prevLastId = prev[prev.length - 1]?.id
@@ -882,6 +894,9 @@ watch(
 watch(
   () => props.selectedConversation?.id,
   (newId, prevId) => {
+    if (isStaleConversationProps(newId)) {
+      return
+    }
     const conv = props.selectedConversation
     selectedId.value = newId ?? null
     syncCrmFormFromConversation(conv)
@@ -1137,15 +1152,16 @@ async function saveCrmPanel() {
  * langkah berikutnya bisa Laravel Reverb + broadcast saat webhook Meta menyimpan pesan.
  */
 async function pollInbox() {
-  if (pollInFlight) {
+  if (pollInFlight || pendingConversationId.value != null) {
     return
   }
   pollInFlight = true
   try {
-    await router.reload({
+    await router.get('/crm/omnichannel-inbox', listQuery(), {
       only: inboxPartialReloadKeys,
       preserveState: true,
       preserveScroll: true,
+      replace: true,
     })
   } catch {
     /* ignore */
