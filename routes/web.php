@@ -2680,6 +2680,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crm/point-management/cabang-list', [App\Http\Controllers\PointManagementController::class, 'getCabangList'])->name('crm.point-management.cabang-list');
 
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
+    Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');
     Route::patch('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('crm.omnichannel-inbox.update');
     Route::get('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('crm.omnichannel-inbox.messages');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('crm.omnichannel-inbox.send');

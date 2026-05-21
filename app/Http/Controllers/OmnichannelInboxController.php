@@ -43,26 +43,7 @@ class OmnichannelInboxController extends Controller
             $leadStageFilter = null;
         }
 
-        $query = OmniConversation::query()
-            ->with([
-                'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
-                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
-                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
-                'teams:id,name',
-            ]);
-
-        OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
-
-        if ($leadStageFilter) {
-            $query->where('lead_stage', $leadStageFilter);
-        }
-
-        $conversations = $query
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('id')
-            ->limit(150)
-            ->get()
-            ->map(fn (OmniConversation $c) => $this->formatConversation($c));
+        $conversations = $this->queryInboxConversations($request);
 
         $selectedId = $request->integer('conversation')
             ?: ($conversations->first()['id'] ?? null);
@@ -112,6 +93,44 @@ class OmnichannelInboxController extends Controller
             'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
                 || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
             'aiWritingEnabled' => (bool) config('omnichannel.ai_writing.enabled', true),
+        ]);
+    }
+
+    /**
+     * Polling ringan (JSON) — daftar chat + pesan terbuka tanpa reload halaman Inertia.
+     */
+    public function pollSnapshot(Request $request): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        $conversations = $this->queryInboxConversations($request);
+
+        $selectedConversation = null;
+        $messages = [];
+
+        $selectedId = $request->integer('conversation') ?: null;
+        if ($selectedId) {
+            $conversation = OmniConversation::query()
+                ->with([
+                    'member',
+                    'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                    'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                    'teams:id,name',
+                    'activeFlowRun.flow:id,name',
+                ])
+                ->find($selectedId);
+            if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
+                $selectedConversation = $this->formatConversation($conversation);
+                $messages = $this->loadMessages($conversation);
+            }
+        }
+
+        return response()->json([
+            'conversations' => $conversations->values()->all(),
+            'selected_conversation' => $selectedConversation,
+            'messages' => $messages,
         ]);
     }
 
@@ -599,6 +618,46 @@ class OmnichannelInboxController extends Controller
         return response()->json([
             'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email')),
         ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryInboxConversations(Request $request): \Illuminate\Support\Collection
+    {
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+
+        $inbox = $request->get('inbox', 'all');
+        if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
+            $inbox = 'all';
+        }
+
+        $leadStageFilter = $request->get('lead_stage');
+        if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {
+            $leadStageFilter = null;
+        }
+
+        $query = OmniConversation::query()
+            ->with([
+                'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+            ]);
+
+        OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
+
+        if ($leadStageFilter) {
+            $query->where('lead_stage', $leadStageFilter);
+        }
+
+        return $query
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('id')
+            ->limit(150)
+            ->get()
+            ->map(fn (OmniConversation $c) => $this->formatConversation($c));
     }
 
     private function assertInboxAccess(Request $request): void

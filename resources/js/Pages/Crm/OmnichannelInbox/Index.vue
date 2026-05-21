@@ -644,17 +644,41 @@ let pollKickTimer = null
 /** Hindari dua router.reload poll bersamaan (tab focus + interval). */
 let pollInFlight = false
 
-/** Saat tab aktif: cukup cepat agar WA masuk terasa “live” tanpa refresh manual. Tab di background: irit server. */
-const POLL_MS_TAB_VISIBLE = 3000
-const POLL_MS_TAB_HIDDEN = 25000
+/** Polling JSON (bukan Inertia) — tab aktif ~8s; background lebih jarang. */
+const POLL_MS_TAB_VISIBLE = 8000
+const POLL_MS_TAB_HIDDEN = 30000
 
 const inbox = computed(() => props.inbox || 'all')
 const leadStageFilter = computed(() => props.leadStageFilter || null)
 
-const selectedConversation = computed(() => props.selectedConversation)
+/** Diperbarui poll axios + sinkron dari props saat navigasi Inertia. */
+const liveConversations = ref([...(props.conversations || [])])
+const liveSelectedConversation = ref(props.selectedConversation ?? null)
+
+watch(
+  () => props.conversations,
+  (v) => {
+    liveConversations.value = v ?? []
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.selectedConversation,
+  (v) => {
+    if (!isStaleConversationProps(v?.id)) {
+      liveSelectedConversation.value = v ?? null
+    }
+  },
+  { deep: true }
+)
+
+const selectedConversation = computed(
+  () => liveSelectedConversation.value ?? props.selectedConversation
+)
 
 const contactOwnerLabel = computed(() => {
-  const c = props.selectedConversation
+  const c = selectedConversation.value
   if (!c) return '—'
   if (c.assignee) return formatUserOptionLabel(c.assignee)
   const first = c.assignees?.[0]
@@ -663,8 +687,8 @@ const contactOwnerLabel = computed(() => {
 
 const filteredConversations = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return props.conversations
-  return props.conversations.filter((c) => {
+  if (!q) return liveConversations.value
+  return liveConversations.value.filter((c) => {
     const name = (c.contact_name || '').toLowerCase()
     const phone = (c.display_phone || '').toLowerCase()
     const memberName = (c.member?.nama_lengkap || '').toLowerCase()
@@ -705,7 +729,7 @@ const filteredTemplates = computed(() => {
 })
 
 const waWindowBanner = computed(() => {
-  const c = props.selectedConversation
+  const c = selectedConversation.value
   if (!c?.last_customer_message_at) return null
   const start = new Date(c.last_customer_message_at).getTime()
   const end = start + 24 * 60 * 60 * 1000
@@ -899,6 +923,7 @@ watch(
     }
     const conv = props.selectedConversation
     selectedId.value = newId ?? null
+    liveSelectedConversation.value = conv ?? null
     syncCrmFormFromConversation(conv)
     sendError.value = ''
     if (newId !== prevId) {
@@ -1035,7 +1060,7 @@ function onComposerKeydown(e) {
 
 function applyTemplateBody(body) {
   let text = body
-  const c = props.selectedConversation
+  const c = selectedConversation.value
   if (c) {
     const nama = c.contact_name || c.contact_first_name || c.display_phone || ''
     text = text
@@ -1143,26 +1168,30 @@ async function saveCrmPanel() {
   }
 }
 
-/**
- * Segarkan daftar percakapan, pesan terbuka, dan flag canSeeAllChats tanpa harus keluar halaman.
- * Sebelumnya reload memakai `only` tanpa `messages` + poll hanya membandingkan panjang array,
- * sehingga data di DB sudah ada tapi UI / urutan chat terasa "nyangkut".
- *
- * Catatan arsitektur: ini polling Inertia (sederhana, tanpa WebSocket). Untuk push instan,
- * langkah berikutnya bisa Laravel Reverb + broadcast saat webhook Meta menyimpan pesan.
- */
+/** Segarkan daftar & pesan via JSON — tidak memicu reload halaman Inertia (tidak "kedip"). */
 async function pollInbox() {
   if (pollInFlight || pendingConversationId.value != null) {
     return
   }
   pollInFlight = true
   try {
-    await router.get('/crm/omnichannel-inbox', listQuery(), {
-      only: inboxPartialReloadKeys,
-      preserveState: true,
-      preserveScroll: true,
-      replace: true,
-    })
+    const { data } = await axios.get('/crm/omnichannel-inbox/poll', { params: listQuery() })
+    liveConversations.value = data.conversations ?? []
+
+    const sel = data.selected_conversation
+    const convId = sel?.id ?? null
+    if (sel && convId === selectedId.value && !isStaleConversationProps(convId)) {
+      liveSelectedConversation.value = sel
+      const prev = localMessages.value
+      const merged = mergeMessagesFromProps(data.messages, convId)
+      const prevLastId = prev[prev.length - 1]?.id
+      const nextLastId = merged[merged.length - 1]?.id
+      localMessages.value = merged
+      const newTail = nextLastId !== prevLastId || merged.length > prev.length
+      if (shouldStickToBottom() && newTail) {
+        scrollToBottom()
+      }
+    }
   } catch {
     /* ignore */
   } finally {
