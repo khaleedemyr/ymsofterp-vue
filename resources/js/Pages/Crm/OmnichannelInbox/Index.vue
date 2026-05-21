@@ -547,6 +547,8 @@ const inboxMenuOptions = computed(() => {
 const search = ref('')
 const selectedId = ref(props.selectedConversation?.id ?? null)
 const localMessages = ref(sortMessages(props.messages || []))
+/** ID percakapan yang isi localMessages saat ini — cegah merge pesan chat lain saat pindah kontak. */
+const localMessagesConversationId = ref(props.selectedConversation?.id ?? null)
 const replyText = ref('')
 const composerMode = ref('reply')
 const sending = ref(false)
@@ -707,6 +709,10 @@ function setLeadStage(val) {
 }
 
 function selectConversation(id) {
+  if (id !== selectedId.value) {
+    localMessagesConversationId.value = null
+    localMessages.value = []
+  }
   router.get('/crm/omnichannel-inbox', listQuery({ conversation: id }), {
     preserveState: true,
     preserveScroll: true,
@@ -733,13 +739,24 @@ function shouldStickToBottom() {
   return el.scrollHeight - el.scrollTop - el.clientHeight < 100
 }
 
-/** Gabungkan pesan server + lokal (hindari hilang saat poll/reload lebih cepat dari DB). */
-function mergeMessagesFromProps(serverMsgs) {
+/**
+ * Gabungkan pesan server + lokal hanya untuk percakapan yang sama (poll/reload).
+ * Saat ganti kontak, jangan gabungkan — ID pesan global bisa membuat chat lain ikut tampil.
+ */
+function mergeMessagesFromProps(serverMsgs, conversationId) {
   const next = sortMessages(serverMsgs ?? [])
+  const convKey = conversationId ?? null
+
+  if (convKey !== localMessagesConversationId.value) {
+    localMessagesConversationId.value = convKey
+    return next
+  }
+
   const prev = localMessages.value
   if (prev.length === 0) {
     return next
   }
+
   const byId = new Map()
   for (const m of next) {
     if (m.id != null) {
@@ -755,10 +772,10 @@ function mergeMessagesFromProps(serverMsgs) {
 }
 
 watch(
-  () => props.messages,
-  (val) => {
+  () => [props.selectedConversation?.id, props.messages],
+  ([convId, val]) => {
     const prev = localMessages.value
-    const merged = mergeMessagesFromProps(val)
+    const merged = mergeMessagesFromProps(val, convId)
     const prevLastId = prev[prev.length - 1]?.id
     const nextLastId = merged[merged.length - 1]?.id
     localMessages.value = merged
@@ -778,6 +795,8 @@ watch(
     syncCrmFormFromConversation(conv)
     sendError.value = ''
     if (newId !== prevId) {
+      localMessagesConversationId.value = newId ?? null
+      localMessages.value = sortMessages(props.messages || [])
       composerMode.value = 'reply'
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
