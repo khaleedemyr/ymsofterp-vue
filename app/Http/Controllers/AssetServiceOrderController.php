@@ -787,12 +787,9 @@ class AssetServiceOrderController extends Controller
             if (!$inventoryItem) {
                 $inventoryItemId = DB::table('asset_inventory_items')->insertGetId([
                     'item_id' => $orderItem->item_id,
-                    'name' => $itemMaster->name,
                     'small_unit_id' => $itemMaster->small_unit_id,
                     'medium_unit_id' => $itemMaster->medium_unit_id,
                     'large_unit_id' => $itemMaster->large_unit_id,
-                    'small_conversion_qty' => $itemMaster->small_conversion_qty,
-                    'medium_conversion_qty' => $itemMaster->medium_conversion_qty,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
