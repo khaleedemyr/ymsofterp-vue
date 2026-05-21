@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\Meta\MetaMessengerInboundService;
 use App\Services\Meta\MetaWebhookSignature;
+use App\Support\MetaWebhookTrace;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,8 @@ class MetaMessengerWebhookController extends Controller
      */
     public function verify(Request $request): Response
     {
+        MetaWebhookTrace::write('messenger', 'GET', $request, 'verify');
+
         $mode = $request->query('hub_mode') ?? $request->query('hub.mode');
         $token = $request->query('hub_verify_token') ?? $request->query('hub.verify_token');
         $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge');
@@ -40,6 +43,8 @@ class MetaMessengerWebhookController extends Controller
      */
     public function handle(Request $request): Response
     {
+        MetaWebhookTrace::write('messenger', 'POST', $request);
+
         Log::info('Meta Messenger/Instagram webhook POST received', [
             'content_length' => strlen($request->getContent()),
             'has_signature' => $request->header('X-Hub-Signature-256') !== null,
