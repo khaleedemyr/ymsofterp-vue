@@ -58,11 +58,23 @@ return [
         'page_access_token' => env('META_PAGE_ACCESS_TOKEN'),
         'page_id' => env('META_PAGE_ID'),
         /** @var array<string, string> page_id => page_access_token (multi Page Messenger) */
-        'page_tokens' => array_filter(
-            (array) json_decode((string) env('META_PAGE_TOKENS', '{}'), true),
-            fn ($v, $k) => is_string($k) && $k !== '' && is_string($v) && $v !== '',
-            ARRAY_FILTER_USE_BOTH
-        ),
+        'page_tokens' => (static function (): array {
+            $decoded = json_decode((string) env('META_PAGE_TOKENS', '{}'), true);
+            if (! is_array($decoded)) {
+                return [];
+            }
+
+            $tokens = [];
+            foreach ($decoded as $pageId => $token) {
+                if (! is_string($token) || $token === '') {
+                    continue;
+                }
+                // json_decode casts numeric keys to int; webhook lookup uses string ids.
+                $tokens[(string) $pageId] = $token;
+            }
+
+            return $tokens;
+        })(),
         'instagram_account_id' => env('META_INSTAGRAM_ACCOUNT_ID'),
         'graph_api_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
