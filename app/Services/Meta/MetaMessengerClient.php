@@ -2,6 +2,7 @@
 
 namespace App\Services\Meta;
 
+use App\Support\MetaPageTokens;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -40,7 +41,7 @@ class MetaMessengerClient
     private function resolveCredentials(?string $pageId): array
     {
         $pageId = $pageId ?: (string) config('services.meta.page_id');
-        $tokens = config('services.meta.page_tokens', []);
+        $tokens = MetaPageTokens::resolved();
 
         $token = null;
         if ($pageId !== '' && isset($tokens[$pageId])) {
