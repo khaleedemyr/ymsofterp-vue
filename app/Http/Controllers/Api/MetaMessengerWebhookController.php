@@ -51,6 +51,7 @@ class MetaMessengerWebhookController extends Controller
         ]);
 
         if (! MetaWebhookSignature::isValid($request)) {
+            MetaWebhookTrace::write('messenger', 'POST', $request, 'sig_invalid');
             Log::warning('Meta Messenger webhook rejected: invalid signature');
             abort(403, 'Invalid signature');
         }

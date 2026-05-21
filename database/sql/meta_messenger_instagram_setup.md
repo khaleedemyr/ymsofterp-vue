@@ -83,10 +83,27 @@ Percakapan muncul otomatis di **CRM → Omnichannel** (web & app).
 
 ## 7. Troubleshooting — DM IG tidak masuk / tidak ada log
 
-1. **Webhook fields (app):** Subscribe **messages** untuk object **Page** dan **Instagram** (bukan hanya `affiliation`).
-2. **Per Page:** Messenger API Settings → Page Indonesia → subscription `messages`.
-3. **IG ↔ Page:** @justussteakhouse terhubung ke Page `258676410659651` (Connected assets).
-4. **Cek Meta → Webhooks → Recent deliveries** saat kirim DM: harus HTTP 200 ke `/api/webhooks/meta/messenger`.
-5. **Log server:** `storage/logs/laravel-*.log` — cari `webhook POST received`. Tidak ada sama sekali = Meta tidak kirim atau URL salah.
-6. **App mode:** Untuk beberapa setup Instagram Platform, app perlu **Live** + permission `instagram_manage_messages` (Development: uji dengan akun **Tester** + role Instagram di app).
-7. **Deploy** kode terbaru `MetaMessengerInboundService` (dukung `entry.changes[]` + log awal POST).
+### Tombol "Send to My Server" = 200 **bukan** bukti DM live jalan
+
+- Test dari Meta Dashboard hanya memanggil URL sekali (sample JSON). Server balas 200 → URL & verify token OK.
+- **DM asli** butuh Meta benar-benar mengirim POST saat ada pesan masuk. Itu terpisah dari tombol test.
+- Setelah deploy terbaru, cek file jejak (tidak bergantung `LOG_LEVEL`):
+  - `storage/logs/messenger-webhook.trace.log`
+  - Baris test: `object=... entries=...`
+  - Saat kirim DM: **harus ada baris POST baru**. Tidak ada = Meta tidak mengirim event DM.
+
+### Checklist Meta (paling sering terlewat)
+
+1. **Webhook fields (app):** Subscribe **messages** untuk **Page** dan **Instagram** (bukan hanya `affiliation`).
+2. **Per Page (WAJIB untuk DM live):** **Messenger API Settings** → pilih Page → **Add Subscriptions** → centang `messages`. Tanpa ini, test 200 tapi DM tidak pernah dikirim.
+3. **IG ↔ Page:** Akun IG Professional terhubung ke Page yang sama (Connected assets).
+4. **Recent deliveries:** Saat kirim DM, buka Meta → Webhooks → **Recent deliveries**. Harus ada POST ke `/api/webhooks/meta/messenger` dengan status 200. Kosong = subscription/Page/akun uji salah.
+5. **App Development:** Pengirim DM harus akun **Tester** di Roles app Meta. Bukan tester → Meta tidak kirim webhook.
+6. **App Live (Instagram Platform):** Beberapa alur butuh app **Live** + permission approved.
+7. **DM via Messenger for Instagram** sering pakai `object: page` (bukan `instagram`) — chat tetap masuk inbox channel **messenger**, bukan filter Instagram saja.
+
+### Log server
+
+- `storage/logs/messenger-webhook.trace.log` — setiap GET verify & POST (termasuk `sig_invalid`)
+- `storage/logs/laravel-*.log` — `Meta Messenger/Instagram webhook POST received`, `inbound stored`
+- Ada trace POST tapi tidak ada `inbound stored` → payload sampai, format event kosong / bukan field `messages`

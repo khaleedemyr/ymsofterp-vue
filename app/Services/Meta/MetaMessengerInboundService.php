@@ -24,10 +24,22 @@ class MetaMessengerInboundService
         Log::info('Meta Messenger/Instagram webhook payload', [
             'object' => $object !== '' ? $object : '(empty)',
             'entry_count' => $entryCount,
+            'has_sample' => isset($payload['sample']),
         ]);
 
+        // Meta Dashboard → Webhooks → "Send to My Server" (bukan DM live)
+        if (isset($payload['sample']) && is_array($payload['sample'])) {
+            $this->processMessagesChangeValue($payload['sample']['value'] ?? [], 'instagram', 'test');
+            Log::info('Meta webhook processed dashboard test sample');
+
+            return;
+        }
+
         if ($object !== 'page' && $object !== 'instagram') {
-            Log::warning('Meta webhook ignored: unsupported object', ['object' => $object]);
+            Log::warning('Meta webhook ignored: unsupported object', [
+                'object' => $object,
+                'keys' => array_keys($payload),
+            ]);
 
             return;
         }
@@ -40,19 +52,8 @@ class MetaMessengerInboundService
             return;
         }
 
-        if ($object === 'instagram') {
-            foreach ($payload['entry'] ?? [] as $entry) {
-                $this->processPageEntry($entry, 'instagram');
-            }
-
-            return;
-        }
-
-        // Meta "Send to server" test sample (bukan DM live)
-        if (isset($payload['sample']) && is_array($payload['sample'])) {
-            $this->processMessagesChangeValue($payload['sample']['value'] ?? [], 'instagram', 'test');
-
-            return;
+        foreach ($payload['entry'] ?? [] as $entry) {
+            $this->processPageEntry($entry, 'instagram');
         }
     }
 
@@ -80,9 +81,10 @@ class MetaMessengerInboundService
         }
 
         if ($events === [] && ($entry['changes'] ?? []) === []) {
-            Log::info('Meta webhook entry without messaging/changes', [
+            Log::warning('Meta webhook entry without messaging/changes (no DM stored)', [
                 'channel' => $channel,
                 'entry_id' => $pageOrIgId,
+                'entry_keys' => array_keys($entry),
             ]);
         }
     }

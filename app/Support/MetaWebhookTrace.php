@@ -11,8 +11,23 @@ final class MetaWebhookTrace
 {
     public static function write(string $channel, string $method, Request $request, ?string $note = null): void
     {
+        $objectHint = '';
+        if ($method === 'POST') {
+            $body = $request->getContent();
+            if ($body !== '') {
+                $decoded = json_decode($body, true);
+                if (is_array($decoded)) {
+                    $objectHint = sprintf(
+                        ' object=%s entries=%d',
+                        (string) ($decoded['object'] ?? '-'),
+                        count($decoded['entry'] ?? [])
+                    );
+                }
+            }
+        }
+
         $line = sprintf(
-            "[%s] channel=%s %s path=/%s content_len=%d has_sig=%s ip=%s%s\n",
+            "[%s] channel=%s %s path=/%s content_len=%d has_sig=%s ip=%s%s%s\n",
             date('c'),
             $channel,
             $method,
@@ -20,6 +35,7 @@ final class MetaWebhookTrace
             strlen($request->getContent()),
             $request->header('X-Hub-Signature-256') !== null ? '1' : '0',
             $request->ip() ?? '-',
+            $objectHint,
             $note !== null && $note !== '' ? ' note='.$note : ''
         );
 
