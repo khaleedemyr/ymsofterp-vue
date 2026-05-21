@@ -40,6 +40,11 @@ class MetaMessengerWebhookController extends Controller
      */
     public function handle(Request $request): Response
     {
+        Log::info('Meta Messenger/Instagram webhook POST received', [
+            'content_length' => strlen($request->getContent()),
+            'has_signature' => $request->header('X-Hub-Signature-256') !== null,
+        ]);
+
         if (! MetaWebhookSignature::isValid($request)) {
             Log::warning('Meta Messenger webhook rejected: invalid signature');
             abort(403, 'Invalid signature');

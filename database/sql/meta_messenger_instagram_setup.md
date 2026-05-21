@@ -80,3 +80,13 @@ Pastikan worker queue `omnichannel` jalan (flow + notifikasi push pesan masuk).
 | `instagram` | Webhook `object: instagram` |
 
 Percakapan muncul otomatis di **CRM → Omnichannel** (web & app).
+
+## 7. Troubleshooting — DM IG tidak masuk / tidak ada log
+
+1. **Webhook fields (app):** Subscribe **messages** untuk object **Page** dan **Instagram** (bukan hanya `affiliation`).
+2. **Per Page:** Messenger API Settings → Page Indonesia → subscription `messages`.
+3. **IG ↔ Page:** @justussteakhouse terhubung ke Page `258676410659651` (Connected assets).
+4. **Cek Meta → Webhooks → Recent deliveries** saat kirim DM: harus HTTP 200 ke `/api/webhooks/meta/messenger`.
+5. **Log server:** `storage/logs/laravel-*.log` — cari `webhook POST received`. Tidak ada sama sekali = Meta tidak kirim atau URL salah.
+6. **App mode:** Untuk beberapa setup Instagram Platform, app perlu **Live** + permission `instagram_manage_messages` (Development: uji dengan akun **Tester** + role Instagram di app).
+7. **Deploy** kode terbaru `MetaMessengerInboundService` (dukung `entry.changes[]` + log awal POST).

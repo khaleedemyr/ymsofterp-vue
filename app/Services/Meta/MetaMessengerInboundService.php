@@ -47,6 +47,13 @@ class MetaMessengerInboundService
 
             return;
         }
+
+        // Meta "Send to server" test sample (bukan DM live)
+        if (isset($payload['sample']) && is_array($payload['sample'])) {
+            $this->processMessagesChangeValue($payload['sample']['value'] ?? [], 'instagram', 'test');
+
+            return;
+        }
     }
 
     /**
@@ -57,24 +64,68 @@ class MetaMessengerInboundService
         $pageOrIgId = (string) ($entry['id'] ?? '');
 
         $events = $entry['messaging'] ?? [];
-        if ($events === []) {
-            Log::info('Meta webhook entry without messaging events', [
+        foreach ($events as $event) {
+            $this->processMessagingEvent($channel, $pageOrIgId, $event);
+        }
+
+        // Instagram Platform / beberapa konfigurasi webhook memakai entry.changes[]
+        foreach ($entry['changes'] ?? [] as $change) {
+            if (! is_array($change) || ($change['field'] ?? '') !== 'messages') {
+                continue;
+            }
+            $value = $change['value'] ?? [];
+            if (is_array($value)) {
+                $this->processMessagesChangeValue($value, $channel, $pageOrIgId);
+            }
+        }
+
+        if ($events === [] && ($entry['changes'] ?? []) === []) {
+            Log::info('Meta webhook entry without messaging/changes', [
                 'channel' => $channel,
                 'entry_id' => $pageOrIgId,
             ]);
         }
+    }
 
-        foreach ($events as $event) {
-            if (! isset($event['message']) || ! is_array($event['message'])) {
-                continue;
+    /**
+     * Normalisasi event messages (Messenger API atau Instagram changes.value).
+     *
+     * @param  'messenger'|'instagram'  $channel
+     */
+    private function processMessagesChangeValue(array $value, string $channel, string $pageOrIgId): void
+    {
+        if (isset($value['messaging']) && is_array($value['messaging'])) {
+            foreach ($value['messaging'] as $event) {
+                $this->processMessagingEvent($channel, $pageOrIgId, $event);
             }
 
-            if (! empty($event['message']['is_echo'])) {
-                continue;
-            }
-
-            $this->storeInboundMessage($channel, $pageOrIgId, $event);
+            return;
         }
+
+        if (isset($value['message']) && is_array($value['message'])) {
+            $this->processMessagingEvent($channel, $pageOrIgId, [
+                'sender' => $value['sender'] ?? [],
+                'recipient' => $value['recipient'] ?? [],
+                'timestamp' => $value['timestamp'] ?? null,
+                'message' => $value['message'],
+            ]);
+        }
+    }
+
+    /**
+     * @param  'messenger'|'instagram'  $channel
+     */
+    private function processMessagingEvent(string $channel, string $pageOrIgId, array $event): void
+    {
+        if (! isset($event['message']) || ! is_array($event['message'])) {
+            return;
+        }
+
+        if (! empty($event['message']['is_echo']) || ! empty($event['is_self'])) {
+            return;
+        }
+
+        $this->storeInboundMessage($channel, $pageOrIgId, $event);
     }
 
     /**
