@@ -186,20 +186,22 @@
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
                 <img
-                  v-if="msg.media_url && msg.message_type === 'image'"
+                  v-if="msg.media_url && isImageLikeMessage(msg)"
                   :src="msg.media_url"
                   alt=""
-                  class="mb-1 max-h-48 max-w-full rounded object-cover"
+                  class="mb-1 max-h-48 max-w-full rounded object-cover cursor-pointer"
+                  @click="openMediaUrl(msg.media_url)"
                 />
                 <a
                   v-else-if="msg.media_url"
                   :href="msg.media_url"
                   target="_blank"
                   rel="noopener"
-                  class="mb-1 inline-flex items-center gap-1 text-xs font-medium text-emerald-800 underline"
+                  download
+                  class="mb-1 inline-flex max-w-full items-center gap-1 rounded-md bg-white/60 px-2 py-1 text-xs font-medium text-emerald-900 underline"
                 >
-                  <i class="fa-solid fa-paperclip" />
-                  {{ msg.media_filename || 'Lampiran' }}
+                  <i class="fa-solid fa-paperclip shrink-0" />
+                  <span class="truncate">{{ msg.media_filename || 'Buka lampiran' }}</span>
                 </a>
                 <p v-if="msg.body" class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
@@ -662,6 +664,17 @@ function bubbleClass(msg) {
   if (msg.direction === 'internal') return 'border border-amber-200 bg-amber-50 text-amber-950'
   if (msg.direction === 'outbound') return 'bg-[#dcf8c6] text-slate-900'
   return 'bg-white text-slate-900'
+}
+
+function isImageLikeMessage(msg) {
+  return msg.message_type === 'image' || msg.message_type === 'sticker'
+    || (msg.media_mime && String(msg.media_mime).startsWith('image/'))
+}
+
+function openMediaUrl(url) {
+  if (url) {
+    window.open(url, '_blank', 'noopener')
+  }
 }
 
 function stageDotClass(color) {

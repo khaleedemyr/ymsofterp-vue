@@ -57,6 +57,7 @@ class MetaWhatsAppInboundService
         $contactName = $this->resolveContactName($value, $from);
         $body = $this->extractMessageBody($message);
         $messageType = (string) ($message['type'] ?? 'text');
+        $mediaPayload = $this->resolveInboundMediaPayload($message);
         $sentAt = isset($message['timestamp'])
             ? Carbon::createFromTimestamp((int) $message['timestamp'], 'UTC')->timezone(config('app.timezone'))
             : now();
@@ -84,6 +85,7 @@ class MetaWhatsAppInboundService
             $messageType,
             $body,
             $message,
+            $mediaPayload,
             $sentAt,
             &$conversationId,
             &$inboundMessageId
@@ -135,13 +137,17 @@ class MetaWhatsAppInboundService
                 }
             }
 
+            $payload = $mediaPayload !== null
+                ? array_merge($message, $mediaPayload)
+                : $message;
+
             $inbound = OmniMessage::query()->create([
                 'conversation_id' => $conversation->id,
                 'direction' => 'inbound',
                 'meta_message_id' => $metaMessageId,
                 'message_type' => $messageType,
                 'body' => $body,
-                'payload' => $message,
+                'payload' => $payload,
                 'status' => 'received',
                 'sent_at' => $sentAt,
             ]);
@@ -197,11 +203,11 @@ class MetaWhatsAppInboundService
 
         return match ($type) {
             'text' => $message['text']['body'] ?? null,
-            'image' => $message['image']['caption'] ?? '[Gambar]',
+            'image' => $message['image']['caption'] ?? null,
             'video' => $message['video']['caption'] ?? '[Video]',
             'audio' => '[Audio]',
             'document' => $message['document']['filename'] ?? '[Dokumen]',
-            'sticker' => '[Stiker]',
+            'sticker' => null,
             'location' => '[Lokasi]',
             'contacts' => '[Kontak]',
             'interactive' => $message['interactive']['button_reply']['title']
@@ -209,6 +215,46 @@ class MetaWhatsAppInboundService
                 ?? '[Pesan interaktif]',
             default => '['.$type.']',
         };
+    }
+
+    /**
+     * @return array{local_media_url: string, media_filename: string, media_mime: string}|null
+     */
+    private function resolveInboundMediaPayload(array $message): ?array
+    {
+        $type = (string) ($message['type'] ?? '');
+        $mediaId = match ($type) {
+            'image' => (string) ($message['image']['id'] ?? ''),
+            'document' => (string) ($message['document']['id'] ?? ''),
+            'audio' => (string) ($message['audio']['id'] ?? ''),
+            'video' => (string) ($message['video']['id'] ?? ''),
+            'sticker' => (string) ($message['sticker']['id'] ?? ''),
+            default => '',
+        };
+
+        if ($mediaId === '') {
+            return null;
+        }
+
+        $preferredFilename = match ($type) {
+            'document' => (string) ($message['document']['filename'] ?? ''),
+            default => '',
+        };
+
+        try {
+            return app(MetaWhatsAppClient::class)->downloadMedia(
+                $mediaId,
+                $preferredFilename !== '' ? $preferredFilename : null
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Meta WhatsApp inbound media download error', [
+                'media_id' => $mediaId,
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function findMemberIdByPhone(string $waId): ?int

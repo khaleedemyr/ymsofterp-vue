@@ -626,6 +626,7 @@ class OmnichannelInboxController extends Controller
             'author_name' => $authorName,
             'media_url' => $payload['local_media_url'] ?? null,
             'media_filename' => $payload['media_filename'] ?? null,
+            'media_mime' => $payload['media_mime'] ?? null,
         ];
     }
 
