@@ -106,6 +106,19 @@ Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/m
 
 8. Cek log: `storage/logs/meta-instagram-inbox-sync.log` dan `storage/logs/laravel.log` (cari `Instagram inbox sync`).
 
+### `Imported 111` sekali lalu `Imported 0` terus?
+
+Itu normal untuk impor riwayat pertama. DM **baru** kadang tidak terbaca karena API mengembalikan pesan **lama dulu** di halaman pertama — sudah diperbaiki (urut terbaru + pagination).
+
+Kalau cron tetap 0 untuk DM baru: pastikan scheduler **tanpa** `runInBackground` (deploy terbaru), lalu:
+
+```bash
+php artisan schedule:clear-cache
+php artisan meta:sync-instagram-inbox -v
+```
+
+Lihat `skipped_db` vs `imported` — kalau DM baru tetap 0, kirim DM dari **akun pribadi** (bukan akun bisnis IG yang sama).
+
 ## 5. Verifikasi
 
 ```bash

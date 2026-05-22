@@ -37,12 +37,12 @@ class SyncMetaInstagramInboxCommand extends Command
                     '%s (@%s): conversations=%d, checked=%d, imported=%d, skipped_db=%d, skipped_outbound=%d, api_errors=%d',
                     $account['ig_id'],
                     $account['username'] ?? '-',
-                    $account['conversations'],
-                    $account['messages_checked'],
-                    $account['imported'],
-                    $account['skipped_existing'],
-                    $account['skipped_outbound'],
-                    $account['api_errors'],
+                    $account['conversations'] ?? 0,
+                    $account['messages_checked'] ?? 0,
+                    $account['imported'] ?? 0,
+                    $account['skipped_existing'] ?? 0,
+                    $account['skipped_outbound'] ?? 0,
+                    $account['api_errors'] ?? 0,
                 ));
             }
         }
