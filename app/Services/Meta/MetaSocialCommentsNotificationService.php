@@ -128,7 +128,11 @@ class MetaSocialCommentsNotificationService
             }
         }
 
-        return compact('notified', 'scannedPosts', 'skippedSeen');
+        return [
+            'notified' => $notified,
+            'scanned_posts' => $scannedPosts,
+            'skipped_seen' => $skippedSeen,
+        ];
     }
 
     /**
@@ -174,7 +178,11 @@ class MetaSocialCommentsNotificationService
             }
         }
 
-        return compact('notified', 'scannedPosts', 'skippedSeen');
+        return [
+            'notified' => $notified,
+            'scanned_posts' => $scannedPosts,
+            'skipped_seen' => $skippedSeen,
+        ];
     }
 
     /**
