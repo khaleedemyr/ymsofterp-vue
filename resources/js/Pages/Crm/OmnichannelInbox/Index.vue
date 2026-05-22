@@ -383,6 +383,10 @@
                 <OmniEmojiPickerButton
                   v-model:open="emojiPickerOpen"
                   class="absolute bottom-1.5 right-1.5"
+                  teleport
+                  panel-size="lg"
+                  panel-width="22rem"
+                  placement="top"
                   :disabled="sending"
                   @select="insertEmoji"
                 />

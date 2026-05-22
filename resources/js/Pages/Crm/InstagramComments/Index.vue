@@ -189,6 +189,9 @@
                       :open="emojiPickerCommentId === c.id"
                       button-size="sm"
                       placement="top"
+                      teleport
+                      panel-size="lg"
+                      panel-width="22rem"
                       :disabled="replyingId === c.id"
                       @update:open="(open) => onEmojiPickerToggle(c.id, open)"
                       @select="(emoji) => insertEmoji(c.id, emoji)"
