@@ -10,7 +10,9 @@
 
 ```bash
 php artisan migrate
-# atau database/sql/create_wa_broadcast_tables.sql
+# atau database/sql/create_wa_broadcast_tables.sql (3 tabel: campaigns, recipients, daily_usage)
+
+**Error `wa_broadcast_daily_usages doesn't exist`:** deploy `app/Models/WaBroadcastDailyUsage.php` (property `$table = 'wa_broadcast_daily_usage'`) lalu pastikan tabel sudah dibuat di DB.
 ```
 
 Menu: `database/sql/insert_wa_broadcast_menu.sql` atau `php artisan migrate` (migration `2026_05_22_120001_insert_wa_broadcast_menu.php`)
