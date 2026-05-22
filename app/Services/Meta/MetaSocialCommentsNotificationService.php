@@ -51,9 +51,9 @@ class MetaSocialCommentsNotificationService
         foreach ($this->instagram->listAccounts() as $account) {
             try {
                 $result = $this->checkInstagramAccount((string) $account['ig_id'], (string) $account['label']);
-                $notified += $result['notified'];
-                $scannedPosts += $result['scanned_posts'];
-                $skippedSeen += $result['skipped_seen'];
+                $notified += (int) ($result['notified'] ?? 0);
+                $scannedPosts += (int) ($result['scanned_posts'] ?? $result['scannedPosts'] ?? 0);
+                $skippedSeen += (int) ($result['skipped_seen'] ?? 0);
             } catch (\Throwable $e) {
                 $errors++;
                 $msg = 'IG '.$account['ig_id'].': '.$e->getMessage();
@@ -65,9 +65,9 @@ class MetaSocialCommentsNotificationService
         foreach ($this->facebook->listPages() as $page) {
             try {
                 $result = $this->checkFacebookPage((string) $page['page_id'], (string) $page['label']);
-                $notified += $result['notified'];
-                $scannedPosts += $result['scanned_posts'];
-                $skippedSeen += $result['skipped_seen'];
+                $notified += (int) ($result['notified'] ?? 0);
+                $scannedPosts += (int) ($result['scanned_posts'] ?? $result['scannedPosts'] ?? 0);
+                $skippedSeen += (int) ($result['skipped_seen'] ?? 0);
             } catch (\Throwable $e) {
                 $errors++;
                 $msg = 'FB '.$page['page_id'].': '.$e->getMessage();
