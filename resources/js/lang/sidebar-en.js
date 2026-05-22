@@ -54,6 +54,7 @@ export default {
     "lost_breakage": "Lost & Breakage",
     "asset_good_receive": "Asset Good Receive",
     "asset_inventory_transfer": "Asset Inventory Transfer",
+    "asset_owner_transfer": "Asset Ownership Transfer",
     "asset_stock_adjustment": "Asset Stock Adjustment",
     "asset_service": "Asset Service",
     "asset_disposal": "Asset Disposal",

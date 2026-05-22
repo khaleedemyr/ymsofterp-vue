@@ -84,3 +84,5 @@ ALTER TABLE `asset_disposals`
   MODIFY COLUMN `id_outlet` INT UNSIGNED NOT NULL COMMENT 'FK tbl_data_outlet — lokasi fisik (outlet gudang)';
 
 COMMIT;
+
+-- Fase 3 (Lost & Breakage + Transfer Kepemilikan): jalankan asset_ownership_phase3.sql

@@ -358,6 +358,7 @@ function formatReference(card) {
   const labels = {
     'asset_good_receive': 'Good Receive',
     'asset_inventory_transfer': 'Transfer',
+    'asset_owner_transfer': 'Transfer Kepemilikan',
     'asset_stock_adjustment': 'Stock Adjustment',
     'asset_service_order': 'Service Order',
     'asset_disposal': 'Disposal',
@@ -370,6 +371,7 @@ function refBadgeClass(refType) {
   const map = {
     'asset_good_receive': 'bg-green-100 text-green-800',
     'asset_inventory_transfer': 'bg-blue-100 text-blue-800',
+    'asset_owner_transfer': 'bg-violet-100 text-violet-800',
     'asset_stock_adjustment': 'bg-yellow-100 text-yellow-800',
     'asset_service_order': 'bg-purple-100 text-purple-800',
     'asset_disposal': 'bg-red-100 text-red-800',

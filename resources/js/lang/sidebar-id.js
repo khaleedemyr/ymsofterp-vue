@@ -54,6 +54,7 @@ export default {
     "lost_breakage": "Hilang & Rusak",
     "asset_good_receive": "Penerimaan Barang Aset",
     "asset_inventory_transfer": "Transfer Inventori Aset",
+    "asset_owner_transfer": "Transfer Kepemilikan Aset",
     "asset_stock_adjustment": "Penyesuaian Stok Aset",
     "asset_service": "Servis Aset",
     "asset_disposal": "Pembuangan Aset",

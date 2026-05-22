@@ -33,10 +33,25 @@
                 <input type="date" v-model="form.date" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all" required />
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Outlet <span class="text-red-400">*</span></label>
-                <select v-model="form.outlet_id" :disabled="outletDisabled" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400/40 focus:border-orange-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed" required>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Outlet Pemilik <span class="text-red-400">*</span></label>
+                <select v-if="userOutletId == 1" v-model="form.owner_outlet_id" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                  <option value="">Pilih Pemilik</option>
+                  <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                </select>
+                <input v-else type="text" :value="props.outlets.find(o => o.id_outlet == userOutletId)?.nama_outlet" disabled class="w-full px-4 py-2.5 bg-slate-100 border rounded-xl text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Outlet Lokasi <span class="text-red-400">*</span></label>
+                <select v-model="form.outlet_id" :disabled="outletDisabled" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-60" required>
                   <option value="">Pilih Outlet</option>
                   <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Gudang</label>
+                <select v-model="form.warehouse_outlet_id" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                  <option value="">— Opsional —</option>
+                  <option v-for="w in (warehouseOutlets || []).filter(x => form.outlet_id && x.outlet_id == form.outlet_id)" :key="w.id" :value="w.id">{{ w.name }}</option>
                 </select>
               </div>
             </div>
@@ -314,7 +329,7 @@ import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
-const props = defineProps({ outlets: Array, items: Array, units: Array, header: Object, details: Array, approvalFlows: Array, isEdit: Boolean })
+const props = defineProps({ outlets: Array, warehouseOutlets: Array, items: Array, units: Array, header: Object, details: Array, approvalFlows: Array, isEdit: Boolean })
 
 const page = usePage()
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '')
@@ -356,7 +371,9 @@ function initItems() {
 const form = ref({
   header_id: props.header?.id || null,
   date: props.header?.date || new Date().toISOString().split('T')[0],
+  owner_outlet_id: props.header?.owner_outlet_id || (userOutletId.value == 1 ? '' : userOutletId.value),
   outlet_id: props.header?.outlet_id || (userOutletId.value == 1 ? '' : userOutletId.value),
+  warehouse_outlet_id: props.header?.warehouse_outlet_id || '',
   notes: props.header?.notes || '',
   items: initItems(),
   approvers: (props.approvalFlows || []).map(f => ({ id: f.approver_id, name: f.approver_name, email: f.approver_email || '', jabatan: '' }))
@@ -450,11 +467,17 @@ function removeApprover(i) { form.value.approvers.splice(i, 1) }
 function reorderApprover(from, to) { const l = form.value.approvers; l.splice(to, 0, l.splice(from, 1)[0]) }
 
 function buildPayload() {
-  return { header_id: form.value.header_id, date: form.value.date, outlet_id: form.value.outlet_id, notes: form.value.notes, items: form.value.items.filter(i => i.item_id).map(i => ({ item_id: i.item_id, type: i.type, qty: i.qty, unit_id: i.unit_id, note: i.note, photo: i.photo })) }
+  return {
+    header_id: form.value.header_id, date: form.value.date,
+    owner_outlet_id: form.value.owner_outlet_id, outlet_id: form.value.outlet_id,
+    warehouse_outlet_id: form.value.warehouse_outlet_id || null,
+    notes: form.value.notes,
+    items: form.value.items.filter(i => i.item_id).map(i => ({ item_id: i.item_id, type: i.type, qty: i.qty, unit_id: i.unit_id, note: i.note, photo: i.photo })),
+  }
 }
 
 async function saveDraft() {
-  if (!form.value.date || !form.value.outlet_id) { Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Tanggal dan Outlet wajib diisi.' }); return }
+  if (!form.value.date || !form.value.owner_outlet_id || !form.value.outlet_id) { Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Tanggal, pemilik, dan lokasi wajib diisi.' }); return }
   loading.value = true
   try {
     const r = await axios.post('/lost-breakage', buildPayload())
@@ -464,7 +487,7 @@ async function saveDraft() {
 }
 
 async function submitForm() {
-  if (!form.value.date || !form.value.outlet_id) { Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Tanggal dan Outlet wajib diisi.' }); return }
+  if (!form.value.date || !form.value.owner_outlet_id || !form.value.outlet_id) { Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Tanggal, pemilik, dan lokasi wajib diisi.' }); return }
   if (validItemCount.value === 0) { Swal.fire({ icon: 'warning', title: 'Item kosong', text: 'Minimal 1 item harus ditambahkan.' }); return }
   const breakageNoPhoto = form.value.items.filter(i => i.item_id && i.type === 'breakage' && !i.photo)
   if (breakageNoPhoto.length > 0) { Swal.fire({ icon: 'warning', title: 'Foto wajib untuk Breakage', text: 'Item bertipe Breakage wajib dilampirkan foto bukti.' }); return }

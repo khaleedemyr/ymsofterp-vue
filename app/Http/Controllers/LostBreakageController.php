@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use App\Services\NotificationService;
+use App\Services\AssetInventoryStockService;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\LostBreakageExport;
 
@@ -18,17 +19,21 @@ class LostBreakageController extends Controller
         $user = auth()->user();
 
         $query = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as oo', 'h.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->select(
                 'h.*',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name',
                 'u.avatar as creator_avatar'
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('h.outlet_id', $user->id_outlet);
+            $query->where('h.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->filled('search')) {
@@ -40,7 +45,10 @@ class LostBreakageController extends Controller
             });
         }
 
-        if ($user->id_outlet == 1 && $request->filled('outlet_id')) {
+        if ($user->id_outlet == 1 && $request->filled('owner_outlet_id')) {
+            $query->where('h.owner_outlet_id', $request->owner_outlet_id);
+        }
+        if ($request->filled('outlet_id')) {
             $query->where('h.outlet_id', $request->outlet_id);
         }
 
@@ -316,8 +324,14 @@ class LostBreakageController extends Controller
         $items = $this->getAssetItems();
         $units = DB::table('units')->where('status', 'active')->get();
 
+        $warehouseOutlets = DB::table('warehouse_outlets')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name')
+            ->get();
+
         return inertia('LostBreakage/Create', [
             'outlets' => $outlets,
+            'warehouseOutlets' => $warehouseOutlets,
             'items'   => $items,
             'units'   => $units,
         ]);
@@ -328,7 +342,9 @@ class LostBreakageController extends Controller
         $request->validate([
             'header_id'          => 'nullable|integer',
             'date'               => 'required|date',
-            'outlet_id'          => 'required',
+            'owner_outlet_id'    => 'required|integer',
+            'outlet_id'          => 'required|integer',
+            'warehouse_outlet_id'=> 'nullable|integer',
             'notes'              => 'nullable|string',
             'items'              => 'nullable|array',
             'items.*.item_id'    => 'required_with:items|exists:items,id',
@@ -354,6 +370,17 @@ class LostBreakageController extends Controller
 
         DB::beginTransaction();
         try {
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $request->outlet_id,
+                $request->warehouse_outlet_id ? (int) $request->warehouse_outlet_id : null
+            );
+            if ($request->warehouse_outlet_id) {
+                AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                    (int) $request->warehouse_outlet_id,
+                    (int) $request->outlet_id
+                );
+            }
+
             $headerId = $request->header_id;
 
             if ($headerId) {
@@ -369,10 +396,12 @@ class LostBreakageController extends Controller
                 }
 
                 DB::table('lost_breakage_headers')->where('id', $headerId)->update([
-                    'date'       => $request->date,
-                    'outlet_id'  => $request->outlet_id,
-                    'notes'      => $request->notes,
-                    'updated_at' => now(),
+                    'date'                => $request->date,
+                    'owner_outlet_id'     => $request->owner_outlet_id,
+                    'outlet_id'           => $locationOutletId,
+                    'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                    'notes'               => $request->notes,
+                    'updated_at'          => now(),
                 ]);
 
                 DB::table('lost_breakage_details')->where('header_id', $headerId)->delete();
@@ -397,14 +426,16 @@ class LostBreakageController extends Controller
                 } else {
                     $draftNumber = 'DRAFT-' . $userId . '-' . time();
                     $headerId = DB::table('lost_breakage_headers')->insertGetId([
-                        'number'     => $draftNumber,
-                        'date'       => $request->date,
-                        'outlet_id'  => $request->outlet_id,
-                        'notes'      => $request->notes,
-                        'status'     => 'DRAFT',
-                        'created_by' => $userId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
+                        'number'              => $draftNumber,
+                        'date'                => $request->date,
+                        'owner_outlet_id'     => $request->owner_outlet_id,
+                        'outlet_id'           => $locationOutletId,
+                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                        'notes'               => $request->notes,
+                        'status'              => 'DRAFT',
+                        'created_by'          => $userId,
+                        'created_at'          => now(),
+                        'updated_at'          => now(),
                     ]);
                 }
             }
@@ -500,10 +531,19 @@ class LostBreakageController extends Controller
     public function show($id)
     {
         $header = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as oo', 'h.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->where('h.id', $id)
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar')
+            ->select(
+                'h.*',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+                'u.avatar as creator_avatar'
+            )
             ->first();
 
         if (!$header) {
@@ -511,7 +551,7 @@ class LostBreakageController extends Controller
         }
 
         $user = auth()->user();
-        if ($user && (int) $user->id_outlet !== 1 && (int) $header->outlet_id !== (int) $user->id_outlet) {
+        if ($user && (int) $user->id_outlet !== 1 && (int) $header->owner_outlet_id !== (int) $user->id_outlet) {
             return redirect()->route('lost-breakage.index')->with('error', 'Tidak punya akses.');
         }
 
@@ -1042,8 +1082,11 @@ class LostBreakageController extends Controller
             ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar');
 
         if ($user->id_outlet != 1) {
-            $query->where('h.outlet_id', $user->id_outlet);
-        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.owner_outlet_id', $user->id_outlet);
+        } elseif ($request->filled('owner_outlet_id')) {
+            $query->where('h.owner_outlet_id', $request->owner_outlet_id);
+        }
+        if ($request->filled('outlet_id')) {
             $query->where('h.outlet_id', $request->outlet_id);
         }
         if ($request->filled('status')) $query->where('h.status', $request->status);
@@ -1088,8 +1131,11 @@ class LostBreakageController extends Controller
             ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar');
 
         if ($user->id_outlet != 1) {
-            $query->where('h.outlet_id', $user->id_outlet);
-        } elseif ($request->filled('outlet_id')) {
+            $query->where('h.owner_outlet_id', $user->id_outlet);
+        } elseif ($request->filled('owner_outlet_id')) {
+            $query->where('h.owner_outlet_id', $request->owner_outlet_id);
+        }
+        if ($request->filled('outlet_id')) {
             $query->where('h.outlet_id', $request->outlet_id);
         }
 
@@ -1220,7 +1266,7 @@ class LostBreakageController extends Controller
         if ($header->status !== 'APPROVED') {
             return response()->json(['success' => false, 'message' => 'Penggantian hanya untuk dokumen berstatus Disetujui'], 422);
         }
-        if ($user && (int) $user->id_outlet !== 1 && (int) $header->outlet_id !== (int) $user->id_outlet) {
+        if ($user && (int) $user->id_outlet !== 1 && (int) $header->owner_outlet_id !== (int) $user->id_outlet) {
             return response()->json(['success' => false, 'message' => 'Tidak punya akses'], 403);
         }
 

@@ -650,6 +650,16 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve'])->name('asset-inventory-transfers.approve');
     Route::get('/asset-inventory-transfer/approvers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovers'])->name('asset-inventory-transfers.approvers');
 
+    // Asset Owner Transfer (kepemilikan)
+    Route::get('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'index'])->name('asset-owner-transfers.index');
+    Route::get('/asset-owner-transfers/create', [\App\Http\Controllers\AssetOwnerTransferController::class, 'create'])->name('asset-owner-transfers.create');
+    Route::post('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'store'])->name('asset-owner-transfers.store');
+    Route::get('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'show'])->name('asset-owner-transfers.show');
+    Route::delete('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'destroy'])->name('asset-owner-transfers.destroy');
+    Route::post('/asset-owner-transfers/{id}/submit', [\App\Http\Controllers\AssetOwnerTransferController::class, 'submit'])->name('asset-owner-transfers.submit');
+    Route::post('/asset-owner-transfers/{id}/approve', [\App\Http\Controllers\AssetOwnerTransferController::class, 'approve'])->name('asset-owner-transfers.approve');
+    Route::get('/asset-owner-transfer/approvers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getApprovers'])->name('asset-owner-transfers.approvers');
+
     // Asset Inventory Adjustment
     Route::get('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'index'])->name('asset-inventory-adjustments.index');
     Route::get('/asset-inventory-adjustments/create', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'create'])->name('asset-inventory-adjustments.create');

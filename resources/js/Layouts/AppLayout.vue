@@ -84,6 +84,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.lost_breakage'), icon: 'fa-solid fa-box-open', route: '/lost-breakage', code: 'lost_breakage' },
             { name: () => t('sidebar.menus.asset_good_receive'), icon: 'fa-solid fa-truck-ramp-box', route: '/asset-good-receives', code: 'asset_good_receive' },
             { name: () => t('sidebar.menus.asset_inventory_transfer'), icon: 'fa-solid fa-right-left', route: '/asset-inventory-transfers', code: 'asset_inventory_transfer' },
+            { name: () => t('sidebar.menus.asset_owner_transfer'), icon: 'fa-solid fa-people-arrows', route: '/asset-owner-transfers', code: 'asset_owner_transfer' },
             { name: () => t('sidebar.menus.asset_stock_adjustment'), icon: 'fa-solid fa-sliders', route: '/asset-inventory-adjustments', code: 'asset_stock_adjustment' },
             { name: () => t('sidebar.menus.asset_service'), icon: 'fa-solid fa-screwdriver-wrench', route: '/asset-service-orders', code: 'asset_service_order' },
             { name: () => t('sidebar.menus.asset_disposal'), icon: 'fa-solid fa-dumpster', route: '/asset-disposals', code: 'asset_disposal' },
