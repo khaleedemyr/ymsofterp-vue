@@ -50,8 +50,8 @@ class HandleInertiaRequests extends Middleware
                 ->where('p.action', 'view')
                 ->whereNotNull('m.route')
                 ->where('m.route', '!=', '')
-                ->select('m.code', 'm.route', 'm.icon', 'm.name')
-                ->distinct()
+                ->select('m.id', 'm.code', 'm.route', 'm.icon', 'm.name')
+                ->groupBy('m.id', 'm.code', 'm.route', 'm.icon', 'm.name')
                 ->orderBy('m.id')
                 ->get()
                 ->map(fn ($row) => [
