@@ -146,6 +146,73 @@ class MetaWhatsAppClient
         return $this->postMessage($payload, $phoneNumberId);
     }
 
+    /**
+     * Kirim pesan template resmi WA (wajib untuk broadcast di luar jendela 24 jam).
+     *
+     * @param  list<string>  $bodyParameters
+     * @return array<string, mixed>
+     */
+    public function sendTemplate(
+        string $toWaId,
+        string $templateName,
+        string $languageCode = 'id',
+        array $bodyParameters = [],
+        ?string $phoneNumberId = null
+    ): array {
+        $components = [];
+        if ($bodyParameters !== []) {
+            $components[] = [
+                'type' => 'body',
+                'parameters' => array_map(
+                    fn (string $text) => ['type' => 'text', 'text' => $text],
+                    $bodyParameters
+                ),
+            ];
+        }
+
+        return $this->postMessage([
+            'messaging_product' => 'whatsapp',
+            'to' => $toWaId,
+            'type' => 'template',
+            'template' => [
+                'name' => $templateName,
+                'language' => ['code' => $languageCode],
+                'components' => $components,
+            ],
+        ], $phoneNumberId);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listMessageTemplates(?string $wabaId = null): array
+    {
+        $token = config('services.meta.whatsapp_access_token');
+        $wabaId = $wabaId ?: config('services.meta.whatsapp_business_account_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $wabaId) {
+            return [];
+        }
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->get("https://graph.facebook.com/{$version}/{$wabaId}/message_templates", [
+                'fields' => 'name,language,status,category',
+                'limit' => 100,
+            ]);
+
+        if (! $response->successful()) {
+            Log::warning('Meta WhatsApp list templates failed', ['body' => $response->body()]);
+
+            return [];
+        }
+
+        $data = $response->json('data') ?? [];
+
+        return is_array($data) ? $data : [];
+    }
+
     public function sendDocument(string $toWaId, string $mediaId, ?string $caption = null, ?string $filename = null, ?string $phoneNumberId = null): array
     {
         $doc = ['id' => $mediaId];

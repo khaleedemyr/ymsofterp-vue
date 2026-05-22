@@ -36,6 +36,15 @@ return [
     /** Jumlah post terbaru dicek per akun tiap run cron. */
     'social_comment_posts_per_account' => (int) env('OMNI_SOCIAL_COMMENT_POSTS_PER_ACCOUNT', 12),
 
+    /** Broadcast WhatsApp — batas kirim per hari (semua campaign digabung). */
+    'wa_broadcast_daily_cap' => (int) env('WA_BROADCAST_DAILY_CAP', 100000),
+
+    /** Antrian job broadcast (pisahkan dari omnichannel inbox). */
+    'wa_broadcast_queue' => env('WA_BROADCAST_QUEUE', 'wa-broadcast'),
+
+    /** Throttle: max job kirim per dispatch batch. */
+    'wa_broadcast_batch_size' => (int) env('WA_BROADCAST_BATCH_SIZE', 50),
+
     /*
     | AI Writing Assistant di composer inbox (grammar, tone, translate ID/EN, dll.)
     | Provider kosong = GOOGLE_REVIEW_AI_PROVIDER → GUEST_COMMENT_AI_PROVIDER → AI_PROVIDER.

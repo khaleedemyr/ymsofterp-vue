@@ -2735,6 +2735,14 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/crm/omnichannel-flows/{flow}/toggle-active', [App\Http\Controllers\OmnichannelFlowController::class, 'toggleActive'])->name('crm.omnichannel-flows.toggle-active');
     Route::delete('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'destroy'])->name('crm.omnichannel-flows.destroy');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/pause-automation', [App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('crm.omnichannel-inbox.pause-automation');
+
+    Route::get('/crm/wa-broadcast', [App\Http\Controllers\WaBroadcastController::class, 'index'])->name('crm.wa-broadcast.index');
+    Route::post('/crm/wa-broadcast/preview-recipients', [App\Http\Controllers\WaBroadcastController::class, 'previewRecipients'])->name('crm.wa-broadcast.preview');
+    Route::get('/crm/wa-broadcast/templates', [App\Http\Controllers\WaBroadcastController::class, 'templates'])->name('crm.wa-broadcast.templates');
+    Route::post('/crm/wa-broadcast/campaigns', [App\Http\Controllers\WaBroadcastController::class, 'store'])->name('crm.wa-broadcast.store');
+    Route::post('/crm/wa-broadcast/campaigns/{campaign}/start', [App\Http\Controllers\WaBroadcastController::class, 'start'])->name('crm.wa-broadcast.start');
+    Route::post('/crm/wa-broadcast/campaigns/{campaign}/pause', [App\Http\Controllers\WaBroadcastController::class, 'pause'])->name('crm.wa-broadcast.pause');
+    Route::get('/crm/wa-broadcast/campaigns/{campaign}', [App\Http\Controllers\WaBroadcastController::class, 'show'])->name('crm.wa-broadcast.show');
 });
 
 // Video Tutorial Routes
