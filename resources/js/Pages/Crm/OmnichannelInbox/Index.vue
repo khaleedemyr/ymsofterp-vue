@@ -217,14 +217,21 @@
                 <p v-if="msg.direction === 'internal'" class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
-                <img
+                <button
                   v-if="msg.media_url && isImageLikeMessage(msg)"
-                  :src="msg.media_url"
-                  alt=""
-                  referrerpolicy="no-referrer"
-                  class="mb-1 max-h-48 max-w-full rounded object-cover cursor-pointer"
-                  @click="openMediaUrl(msg.media_url)"
-                />
+                  type="button"
+                  class="mb-1 block max-w-full overflow-hidden rounded-lg ring-0 transition hover:ring-2 hover:ring-emerald-400/80 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  @click="openImageLightbox(msg)"
+                >
+                  <img
+                    :src="msg.media_url"
+                    alt="Lampiran gambar"
+                    referrerpolicy="no-referrer"
+                    class="max-h-56 max-w-full cursor-zoom-in object-cover"
+                    loading="lazy"
+                    @error="onImageLoadError(msg)"
+                  />
+                </button>
                 <a
                   v-else-if="msg.media_url"
                   :href="msg.media_url"
@@ -243,7 +250,7 @@
                   <i class="fa-regular fa-image shrink-0 text-slate-500" />
                   {{ mediaPlaceholderLabel(msg) }}
                 </p>
-                <p v-if="msg.body && !(msg.media_url && msg.body === '[Gambar]')" class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
+                <p v-if="displayMessageBody(msg)" class="whitespace-pre-wrap break-words">{{ displayMessageBody(msg) }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
                   <span
                     v-if="msg.direction === 'outbound' && msg.author_name"
@@ -587,6 +594,13 @@
         </div>
       </aside>
     </div>
+
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImages"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
   </AppLayout>
 </template>
 
@@ -595,6 +609,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import VueEasyLightbox from 'vue-easy-lightbox'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -847,9 +862,59 @@ function bubbleClass(msg) {
   return 'bg-white text-slate-900'
 }
 
+const lightboxVisible = ref(false)
+const lightboxImages = ref([])
+const lightboxIndex = ref(0)
+const imageLoadFailed = ref({})
+
 function isImageLikeMessage(msg) {
-  return msg.message_type === 'image' || msg.message_type === 'sticker'
-    || (msg.media_mime && String(msg.media_mime).startsWith('image/'))
+  if (!msg?.media_url || imageLoadFailed.value[msg.id]) {
+    return false
+  }
+  if (msg.message_type === 'image' || msg.message_type === 'sticker') {
+    return true
+  }
+  if (msg.media_mime && String(msg.media_mime).startsWith('image/')) {
+    return true
+  }
+  const url = String(msg.media_url).toLowerCase()
+  if (/\.(jpe?g|png|gif|webp)(\?|$)/.test(url)) {
+    return true
+  }
+  const body = String(msg.body || '')
+  if (body === '[Gambar]' || body === '[Lampiran]') {
+    return true
+  }
+  return false
+}
+
+function displayMessageBody(msg) {
+  const body = (msg.body || '').trim()
+  if (!body) return ''
+  if (msg.media_url && isImageLikeMessage(msg) && ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]'].includes(body)) {
+    return ''
+  }
+  return body
+}
+
+function conversationImageUrls() {
+  return localMessages.value
+    .filter((m) => isImageLikeMessage(m) && m.media_url)
+    .map((m) => m.media_url)
+}
+
+function openImageLightbox(msg) {
+  const urls = conversationImageUrls()
+  const idx = urls.indexOf(msg.media_url)
+  lightboxImages.value = urls.length ? urls : [msg.media_url]
+  lightboxIndex.value = idx >= 0 ? idx : 0
+  lightboxVisible.value = true
+}
+
+function onImageLoadError(msg) {
+  if (msg?.id) {
+    imageLoadFailed.value = { ...imageLoadFailed.value, [msg.id]: true }
+  }
 }
 
 function mediaPlaceholderLabel(msg) {
@@ -864,6 +929,10 @@ function openMediaUrl(url) {
     window.open(url, '_blank', 'noopener')
   }
 }
+
+watch(selectedId, () => {
+  imageLoadFailed.value = {}
+})
 
 function stageDotClass(color) {
   const map = {

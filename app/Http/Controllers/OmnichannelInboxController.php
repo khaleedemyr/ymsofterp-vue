@@ -824,10 +824,21 @@ class OmnichannelInboxController extends Controller
             $mediaUrl = $this->publicStorageUrl($payload['local_media_path']);
         }
 
+        $messageType = (string) $message->message_type;
+        $mediaMime = (string) ($payload['media_mime'] ?? '');
+        if ($mediaUrl !== null && ($messageType === 'attachment' || $messageType === 'text')
+            && ($mediaMime === '' || str_starts_with($mediaMime, 'image/'))) {
+            $looksLikeImage = $mediaMime !== '' && str_starts_with($mediaMime, 'image/')
+                || preg_match('/\.(jpe?g|png|gif|webp)(\?|$)/i', $mediaUrl) === 1;
+            if ($looksLikeImage) {
+                $messageType = 'image';
+            }
+        }
+
         return [
             'id' => $message->id,
             'direction' => $message->direction,
-            'message_type' => $message->message_type,
+            'message_type' => $messageType,
             'body' => $message->body,
             'status' => $message->status,
             'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),

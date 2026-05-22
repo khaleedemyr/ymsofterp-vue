@@ -31,8 +31,15 @@ final class OmniMetaMessagePayload
                     'video' => 'video',
                     'audio' => 'audio',
                     'file' => 'document',
+                    'attachment' => 'attachment',
                     default => $rawType !== '' ? $rawType : 'attachment',
                 };
+                if ($messageType === 'attachment' || $messageType === 'file') {
+                    $mime = (string) ($first['mime_type'] ?? '');
+                    if (str_starts_with($mime, 'image/')) {
+                        $messageType = 'image';
+                    }
+                }
                 $mediaMime = isset($first['mime_type']) ? (string) $first['mime_type'] : null;
                 $mediaFilename = isset($first['name']) ? (string) $first['name'] : null;
             }
