@@ -372,6 +372,311 @@ class AssetOwnerTransferController extends Controller
         return response()->json(['success' => true, 'users' => $users]);
     }
 
+    // ─── API (approval-app / mobile) ─────────────────────────────────
+
+    public function apiIndex(Request $request)
+    {
+        $user = Auth::user();
+
+        $query = DB::table('asset_owner_transfers as t')
+            ->leftJoin('tbl_data_outlet as of', 't.owner_outlet_from_id', '=', 'of.id_outlet')
+            ->leftJoin('tbl_data_outlet as ot', 't.owner_outlet_to_id', '=', 'ot.id_outlet')
+            ->leftJoin('tbl_data_outlet as ol', 't.outlet_id', '=', 'ol.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 't.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 't.created_by', '=', 'u.id')
+            ->select(
+                't.id', 't.transfer_number', 't.transfer_date', 't.status',
+                't.notes', 't.created_at',
+                'of.nama_outlet as owner_from_name',
+                'ot.nama_outlet as owner_to_name',
+                'ol.nama_outlet as location_outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name'
+            );
+
+        if ((int) ($user->id_outlet ?? 0) !== 1) {
+            $uid = (int) $user->id_outlet;
+            $query->where(function ($q) use ($uid) {
+                $q->where('t.owner_outlet_from_id', $uid)
+                    ->orWhere('t.owner_outlet_to_id', $uid);
+            });
+        }
+
+        if ($request->search) {
+            $query->where('t.transfer_number', 'like', '%' . $request->search . '%');
+        }
+        if ($request->date_from) {
+            $query->whereDate('t.transfer_date', '>=', $request->date_from);
+        }
+        if ($request->date_to) {
+            $query->whereDate('t.transfer_date', '<=', $request->date_to);
+        }
+        if ($request->status) {
+            $query->where('t.status', $request->status);
+        }
+        if ($request->owner_outlet_id) {
+            $oid = (int) $request->owner_outlet_id;
+            $query->where(function ($q) use ($oid) {
+                $q->where('t.owner_outlet_from_id', $oid)
+                    ->orWhere('t.owner_outlet_to_id', $oid);
+            });
+        }
+
+        $perPage = $request->get('per_page', 15);
+        $page = $request->get('page', 1);
+
+        return response()->json(
+            $query->orderByDesc('t.created_at')->paginate($perPage, ['*'], 'page', $page)
+        );
+    }
+
+    public function apiCreateData(Request $request)
+    {
+        $user = Auth::user();
+
+        return response()->json([
+            'outlets' => DB::table('tbl_data_outlet')->where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'warehouseOutlets' => DB::table('warehouse_outlets')->select('id', 'name', 'outlet_id')->orderBy('name')->get(),
+            'user' => [
+                'id' => $user->id,
+                'id_outlet' => $user->id_outlet,
+                'nama_lengkap' => $user->nama_lengkap,
+            ],
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $user = Auth::user();
+        $transfer = AssetOwnerTransfer::with([
+            'items.item', 'items.unit',
+            'warehouseOutlet',
+            'creator', 'approver',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        $this->assertUserCanView($user, $transfer);
+
+        $ownerFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_from_id)->first();
+        $ownerTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_to_id)->first();
+        $location = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->outlet_id)->first();
+
+        $canApprove = false;
+        if ($transfer->status === 'submitted') {
+            $nextFlow = $transfer->approvalFlows()->where('status', 'PENDING')->orderBy('approval_level')->first();
+            if ($nextFlow && ($nextFlow->approver_id == $user->id || ($user->id_role === '5af56935b011a' && $user->status === 'A'))) {
+                $canApprove = true;
+            }
+        }
+
+        return response()->json([
+            'id' => $transfer->id,
+            'transfer_number' => $transfer->transfer_number,
+            'transfer_date' => $transfer->transfer_date->format('Y-m-d'),
+            'status' => $transfer->status,
+            'notes' => $transfer->notes,
+            'owner_outlet_from_id' => $transfer->owner_outlet_from_id,
+            'owner_outlet_to_id' => $transfer->owner_outlet_to_id,
+            'owner_from_name' => $ownerFrom->nama_outlet ?? '-',
+            'owner_to_name' => $ownerTo->nama_outlet ?? '-',
+            'location_outlet_name' => $location->nama_outlet ?? '-',
+            'warehouse_outlet_name' => optional($transfer->warehouseOutlet)->name,
+            'creator_name' => optional($transfer->creator)->nama_lengkap,
+            'approval_by_name' => optional($transfer->approver)->nama_lengkap,
+            'approval_at' => $transfer->approval_at,
+            'approval_notes' => $transfer->approval_notes,
+            'can_approve' => $canApprove,
+            'items' => $transfer->items->map(fn ($item) => [
+                'id' => $item->id,
+                'item_id' => $item->item_id,
+                'item_name' => optional($item->item)->name ?? '-',
+                'unit_id' => $item->unit_id,
+                'unit_name' => optional($item->unit)->name ?? '-',
+                'qty' => $item->qty,
+                'note' => $item->note,
+            ]),
+            'approval_flows' => $transfer->approvalFlows->map(function ($flow) {
+                $jabatan = DB::table('tbl_data_jabatan')
+                    ->where('id_jabatan', optional($flow->approver)->id_jabatan)
+                    ->value('nama_jabatan');
+
+                return [
+                    'id' => $flow->id,
+                    'approver_id' => $flow->approver_id,
+                    'approver_name' => optional($flow->approver)->nama_lengkap,
+                    'approver_jabatan' => $jabatan ?? '-',
+                    'approval_level' => $flow->approval_level,
+                    'status' => $flow->status,
+                    'approved_at' => $flow->approved_at,
+                    'rejected_at' => $flow->rejected_at,
+                    'comments' => $flow->comments,
+                ];
+            }),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $validated = $request->validate([
+            'transfer_date' => 'required|date',
+            'owner_outlet_from_id' => 'required|integer',
+            'owner_outlet_to_id' => 'required|integer|different:owner_outlet_from_id',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
+            'notes' => 'nullable|string',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer',
+            'items.*.unit_id' => 'nullable|integer',
+            'items.*.qty' => 'required|numeric|min:0.01',
+            'items.*.note' => 'nullable|string',
+            'approvers' => 'nullable|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
+            $transfer = AssetOwnerTransfer::create([
+                'transfer_number' => AssetOwnerTransfer::generateNumber(),
+                'transfer_date' => $validated['transfer_date'],
+                'owner_outlet_from_id' => $validated['owner_outlet_from_id'],
+                'owner_outlet_to_id' => $validated['owner_outlet_to_id'],
+                'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
+                'outlet_id' => $locationOutletId,
+                'status' => 'draft',
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => Auth::id(),
+            ]);
+
+            foreach ($validated['items'] as $itemData) {
+                $converted = $this->convertItemQty($itemData['item_id'], $itemData['unit_id'] ?? null, $itemData['qty']);
+                AssetOwnerTransferItem::create([
+                    'asset_owner_transfer_id' => $transfer->id,
+                    'item_id' => $itemData['item_id'],
+                    'unit_id' => $converted['unit_id'],
+                    'qty' => $itemData['qty'],
+                    'qty_small' => $converted['qty_small'],
+                    'qty_medium' => $converted['qty_medium'],
+                    'qty_large' => $converted['qty_large'],
+                    'note' => $itemData['note'] ?? null,
+                ]);
+            }
+
+            if (!empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    AssetOwnerTransferApprovalFlow::create([
+                        'asset_owner_transfer_id' => $transfer->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+                $transfer->update(['status' => 'submitted']);
+                $this->notifyNextApprover($transfer->id);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transfer kepemilikan berhasil dibuat.',
+                'transfer_id' => $transfer->id,
+                'transfer_number' => $transfer->transfer_number,
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error apiStore asset owner transfer', ['error' => $e->getMessage()]);
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $transfer = AssetOwnerTransfer::findOrFail($id);
+        $this->assertUserCanView(Auth::user(), $transfer);
+
+        if ($transfer->status !== 'draft') {
+            return response()->json(['success' => false, 'message' => 'Hanya draft yang bisa dihapus.'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $transfer->approvalFlows()->delete();
+            $transfer->items()->delete();
+            $transfer->delete();
+            DB::commit();
+
+            return response()->json(['success' => true, 'message' => 'Transfer dihapus.']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getPendingApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'headers' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('asset_owner_transfers as t')
+            ->join('asset_owner_transfer_approval_flows as af', 't.id', '=', 'af.asset_owner_transfer_id')
+            ->leftJoin('tbl_data_outlet as of', 't.owner_outlet_from_id', '=', 'of.id_outlet')
+            ->leftJoin('tbl_data_outlet as ot', 't.owner_outlet_to_id', '=', 'ot.id_outlet')
+            ->join('users as creator', 't.created_by', '=', 'creator.id')
+            ->where('af.status', 'PENDING')
+            ->where('t.status', 'submitted');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $pendingHeaders = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                't.id',
+                't.transfer_number as number',
+                't.transfer_date as date',
+                't.status',
+                't.notes',
+                'of.nama_outlet as owner_from_name',
+                'ot.nama_outlet as owner_to_name',
+                'creator.nama_lengkap as creator_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->get()
+            ->filter(function ($header) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) {
+                    return true;
+                }
+                $lowerPending = DB::table('asset_owner_transfer_approval_flows')
+                    ->where('asset_owner_transfer_id', $header->id)
+                    ->where('approval_level', '<', $header->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'headers' => $pendingHeaders]);
+    }
+
     private function processOwnerTransfer(AssetOwnerTransfer $transfer): void
     {
         $ownerFrom = (int) $transfer->owner_outlet_from_id;

@@ -196,10 +196,17 @@ class AssetInventoryReportController extends Controller
             ->orderBy('name')
             ->get();
 
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
+
         return response()->json([
             'success' => true,
             'stocks' => $data,
             'warehouseOutlets' => $warehouseOutlets,
+            'outlets' => $outlets,
         ]);
     }
 

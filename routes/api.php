@@ -1321,6 +1321,16 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit']);
         Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve']);
 
+        // Asset Owner Transfer (kepemilikan)
+        Route::get('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiIndex']);
+        Route::get('/asset-owner-transfers/create-data', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiCreateData']);
+        Route::post('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiStore']);
+        Route::get('/asset-owner-transfer/approvers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getApprovers']);
+        Route::get('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiShow']);
+        Route::delete('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiDestroy']);
+        Route::post('/asset-owner-transfers/{id}/submit', [\App\Http\Controllers\AssetOwnerTransferController::class, 'submit']);
+        Route::post('/asset-owner-transfers/{id}/approve', [\App\Http\Controllers\AssetOwnerTransferController::class, 'approve']);
+
         // Asset Inventory Adjustment
         Route::get('/asset-inventory-adjustments', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiIndex']);
         Route::get('/asset-inventory-adjustments/create-data', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'apiCreateData']);
@@ -1352,6 +1362,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve']);
 
         // Asset pending approvals (for mobile fallback)
+        Route::get('/asset-owner-transfers/pending-approvals', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getPendingApprovals']);
         Route::get('/asset-inventory-transfers/pending-approvals', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getPendingApprovals']);
         Route::get('/asset-inventory-adjustments/pending-approvals', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getPendingApprovals']);
         Route::get('/asset-service-orders/pending-approvals', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals']);
