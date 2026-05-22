@@ -97,3 +97,5 @@ Backfill avatar untuk chat lama:
 ```bash
 php artisan meta:enrich-messenger-profiles --limit=200
 ```
+
+Komentar di **post Facebook Page**: menu `/crm/instagram-comments` → tab **FB** (token `META_PAGE_TOKENS`).

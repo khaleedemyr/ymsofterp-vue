@@ -54,12 +54,13 @@ https://{domain-production-erp}/api/webhooks/meta/instagram
 php artisan config:clear
 ```
 
-## 4. Post & komentar Instagram (menu ERP)
+## 4. Post & komentar Instagram + Facebook (menu ERP)
 
 Menu **CRM → Instagram Post & Komentar** (`/crm/instagram-comments`):
 
-- Daftar post per akun IG (token sama dengan DM)
-- Komentar + balasan langsung dari ERP
+- Tab **IG** — post & komentar Instagram (`META_INSTAGRAM_LOGIN_TOKENS`)
+- Tab **FB** — post & komentar Facebook Page (`META_PAGE_TOKENS`, sama dengan Messenger)
+- Balasan langsung dari ERP
 
 **Permission Meta** (App Dashboard → Instagram → permissions):
 
@@ -67,6 +68,17 @@ Menu **CRM → Instagram Post & Komentar** (`/crm/instagram-comments`):
 - `instagram_business_manage_comments`
 
 Jalankan SQL menu sekali: `database/sql/insert_instagram_comments_menu.sql`
+
+### Notifikasi komentar baru (admin inbox)
+
+Penerima: pengguna di **Tim Inbox Omnichannel → Pengguna yang melihat semua inbox**.
+
+Cron tiap 3 menit: `php artisan meta:check-social-comments`  
+Log: `storage/logs/meta-social-comments-notify.log`
+
+Tabel lacak komentar yang sudah diproses: `database/sql/create_omni_social_comment_seen.sql` (atau `php artisan migrate`)
+
+Isi notifikasi: akun (Justus / Tempayan / Page FB), cuplikan post, nama & teks komentar. Klik notifikasi → buka halaman post & komentar.
 
 ## 5. Polling otomatis (Instagram ≠ WhatsApp)
 

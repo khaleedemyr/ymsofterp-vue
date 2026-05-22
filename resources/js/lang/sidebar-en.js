@@ -262,7 +262,7 @@ export default {
     "guest_comment_ocr": "Guest Comment (OCR)",
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
-    "instagram_comments": "Instagram Posts & Comments",
+    "instagram_comments": "IG & FB Posts / Comments",
     "omnichannel_teams": "Omnichannel inbox teams",
     "omnichannel_flows": "Inbox automation",
     "migrasi_data_member": "Migrasi Data Member",

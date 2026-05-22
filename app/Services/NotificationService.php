@@ -148,6 +148,7 @@ class NotificationService
                 'customer_voice_capa_verification_request' => 'CAPA — permintaan verifikasi',
                 'omnichannel_inbox_assign' => 'Inbox Omnichannel — penugasan chat',
                 'omnichannel_inbox_message' => 'Pesan masuk — Omnichannel',
+                'social_comment_new' => 'Komentar baru — IG / Facebook',
                 'pr_approved_for_po' => 'PR Approved for PO',
                 'pr_deleted' => 'Purchase Requisition Deleted',
                 'po_approved' => 'Purchase Order Approved',

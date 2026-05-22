@@ -27,6 +27,15 @@ return [
     /** Saat inbox dibuka: hanya DM Messenger N menit terakhir. */
     'messenger_inbox_sync_recent_minutes' => (int) env('OMNI_MESSENGER_INBOX_SYNC_RECENT_MINUTES', 45),
 
+    /** Aktifkan polling komentar IG/FB + notifikasi admin inbox. */
+    'social_comment_notify_enabled' => filter_var(env('OMNI_SOCIAL_COMMENT_NOTIFY_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+
+    /** Hanya komentar dalam N menit terakhir yang memicu notifikasi (hindari spam saat pertama jalan). */
+    'social_comment_notify_within_minutes' => (int) env('OMNI_SOCIAL_COMMENT_NOTIFY_WITHIN_MINUTES', 45),
+
+    /** Jumlah post terbaru dicek per akun tiap run cron. */
+    'social_comment_posts_per_account' => (int) env('OMNI_SOCIAL_COMMENT_POSTS_PER_ACCOUNT', 12),
+
     /*
     | AI Writing Assistant di composer inbox (grammar, tone, translate ID/EN, dll.)
     | Provider kosong = GOOGLE_REVIEW_AI_PROVIDER → GUEST_COMMENT_AI_PROVIDER → AI_PROVIDER.

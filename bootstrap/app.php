@@ -170,6 +170,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->appendOutputTo(storage_path('logs/meta-messenger-inbox-sync.log'));
         }
 
+        // Komentar IG/FB baru → notifikasi admin Tim Inbox Omnichannel
+        if (filter_var(env('OMNI_SOCIAL_COMMENT_NOTIFY_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
+            $schedule->command('meta:check-social-comments')
+                ->everyThreeMinutes()
+                ->withoutOverlapping(5)
+                ->appendOutputTo(storage_path('logs/meta-social-comments-notify.log'));
+        }
+
         // Cleanup old and excess device tokens - run daily at 2:00 AM
         $schedule->command('device-tokens:cleanup --days=30 --limit=5')
             ->dailyAt('02:00')

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\Meta\MetaFacebookCommentsService;
 use App\Services\Meta\MetaInstagramCommentsService;
 use App\Support\OmnichannelAuthorization;
 use Illuminate\Http\JsonResponse;
@@ -12,16 +13,31 @@ use RuntimeException;
 
 class InstagramCommentsController extends Controller
 {
-    public function index(Request $request, MetaInstagramCommentsService $comments): Response
-    {
+    public function index(
+        Request $request,
+        MetaInstagramCommentsService $instagram,
+        MetaFacebookCommentsService $facebook
+    ): Response {
         $this->assertAccess($request);
 
-        $accounts = $comments->listAccounts();
-        $selectedIgId = (string) $request->get('account', $accounts[0]['ig_id'] ?? '');
+        $platform = $request->get('platform', 'instagram');
+        if (! in_array($platform, ['instagram', 'facebook'], true)) {
+            $platform = 'instagram';
+        }
+
+        $igAccounts = $instagram->listAccounts();
+        $fbPages = $facebook->listPages();
+
+        $defaultAccount = $platform === 'facebook'
+            ? (string) $request->get('account', $fbPages[0]['page_id'] ?? '')
+            : (string) $request->get('account', $igAccounts[0]['ig_id'] ?? '');
 
         return Inertia::render('Crm/InstagramComments/Index', [
-            'accounts' => $accounts,
-            'selectedIgId' => $selectedIgId,
+            'platform' => $platform,
+            'instagramAccounts' => $igAccounts,
+            'facebookPages' => $fbPages,
+            'selectedAccount' => $defaultAccount,
+            'initialPostId' => (string) $request->get('post', ''),
         ]);
     }
 
@@ -77,6 +93,58 @@ class InstagramCommentsController extends Controller
                 'success' => true,
                 'result' => $result,
             ]);
+        } catch (RuntimeException $e) {
+            return $this->jsonError($e);
+        }
+    }
+
+    public function facebookPosts(Request $request, string $pageId, MetaFacebookCommentsService $facebook): JsonResponse
+    {
+        $this->assertAccess($request);
+
+        try {
+            return response()->json([
+                'media' => $facebook->listPosts($pageId, (int) $request->get('limit', 25)),
+                'account' => $facebook->resolvePage($pageId),
+            ]);
+        } catch (RuntimeException $e) {
+            return $this->jsonError($e);
+        }
+    }
+
+    public function facebookComments(
+        Request $request,
+        string $pageId,
+        string $postId,
+        MetaFacebookCommentsService $facebook
+    ): JsonResponse {
+        $this->assertAccess($request);
+
+        try {
+            return response()->json([
+                'comments' => $facebook->listComments($pageId, $postId, (int) $request->get('limit', 50)),
+            ]);
+        } catch (RuntimeException $e) {
+            return $this->jsonError($e);
+        }
+    }
+
+    public function facebookReply(
+        Request $request,
+        string $pageId,
+        string $commentId,
+        MetaFacebookCommentsService $facebook
+    ): JsonResponse {
+        $this->assertAccess($request);
+
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:8000'],
+        ]);
+
+        try {
+            $result = $facebook->replyToComment($pageId, $commentId, $validated['message']);
+
+            return response()->json(['success' => true, 'result' => $result]);
         } catch (RuntimeException $e) {
             return $this->jsonError($e);
         }

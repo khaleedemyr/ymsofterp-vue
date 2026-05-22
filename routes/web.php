@@ -2694,11 +2694,21 @@ Route::middleware(['auth'])->group(function () {
         ->where('igAccount', '[0-9]+')
         ->name('crm.instagram-comments.media');
     Route::get('/crm/instagram-comments/{igAccount}/media/{mediaId}/comments', [App\Http\Controllers\InstagramCommentsController::class, 'comments'])
-        ->where(['igAccount' => '[0-9]+', 'mediaId' => '[0-9]+'])
+        ->where(['igAccount' => '[0-9]+', 'mediaId' => '[0-9_]+'])
         ->name('crm.instagram-comments.comments');
     Route::post('/crm/instagram-comments/{igAccount}/comments/{commentId}/reply', [App\Http\Controllers\InstagramCommentsController::class, 'reply'])
-        ->where(['igAccount' => '[0-9]+', 'commentId' => '[0-9]+'])
+        ->where(['igAccount' => '[0-9]+', 'commentId' => '[0-9_]+'])
         ->name('crm.instagram-comments.reply');
+
+    Route::get('/crm/instagram-comments/facebook/{pageId}/posts', [App\Http\Controllers\InstagramCommentsController::class, 'facebookPosts'])
+        ->where('pageId', '[0-9]+')
+        ->name('crm.instagram-comments.facebook.posts');
+    Route::get('/crm/instagram-comments/facebook/{pageId}/posts/{postId}/comments', [App\Http\Controllers\InstagramCommentsController::class, 'facebookComments'])
+        ->where(['pageId' => '[0-9]+', 'postId' => '[0-9_]+'])
+        ->name('crm.instagram-comments.facebook.comments');
+    Route::post('/crm/instagram-comments/facebook/{pageId}/comments/{commentId}/reply', [App\Http\Controllers\InstagramCommentsController::class, 'facebookReply'])
+        ->where(['pageId' => '[0-9]+', 'commentId' => '[0-9_]+'])
+        ->name('crm.instagram-comments.facebook.reply');
 
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
     Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');

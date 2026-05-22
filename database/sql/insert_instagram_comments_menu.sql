@@ -12,7 +12,7 @@ INSERT INTO `erp_menu` (
     `created_at`,
     `updated_at`
 ) VALUES (
-    'Instagram Post & Komentar',
+    'IG & FB Post / Komentar',
     'instagram_comments',
     138,
     '/crm/instagram-comments',
