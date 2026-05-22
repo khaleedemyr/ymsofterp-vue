@@ -262,6 +262,7 @@ export default {
     "guest_comment_ocr": "Guest Comment (OCR)",
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
+    "wa_broadcast": "WhatsApp Broadcast",
     "instagram_comments": "IG & FB Posts / Comments",
     "omnichannel_teams": "Omnichannel inbox teams",
     "omnichannel_flows": "Inbox automation",
