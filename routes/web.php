@@ -2737,6 +2737,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/pause-automation', [App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('crm.omnichannel-inbox.pause-automation');
 
     Route::get('/crm/wa-broadcast', [App\Http\Controllers\WaBroadcastController::class, 'index'])->name('crm.wa-broadcast.index');
+    Route::get('/crm/wa-broadcast/create', [App\Http\Controllers\WaBroadcastController::class, 'create'])->name('crm.wa-broadcast.create');
     Route::post('/crm/wa-broadcast/preview-recipients', [App\Http\Controllers\WaBroadcastController::class, 'previewRecipients'])->name('crm.wa-broadcast.preview');
     Route::get('/crm/wa-broadcast/templates', [App\Http\Controllers\WaBroadcastController::class, 'templates'])->name('crm.wa-broadcast.templates');
     Route::post('/crm/wa-broadcast/campaigns', [App\Http\Controllers\WaBroadcastController::class, 'store'])->name('crm.wa-broadcast.store');
