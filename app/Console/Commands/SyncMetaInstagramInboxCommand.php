@@ -7,13 +7,14 @@ use Illuminate\Console\Command;
 
 class SyncMetaInstagramInboxCommand extends Command
 {
-    protected $signature = 'meta:sync-instagram-inbox {--verbose : Tampilkan ringkasan per akun IG}';
+    protected $signature = 'meta:sync-instagram-inbox';
 
     protected $description = 'Poll Instagram Login API conversations and import new DMs into omnichannel inbox';
 
     public function handle(MetaInstagramInboxSyncService $sync): int
     {
-        $verbose = (bool) $this->option('verbose');
+        // Pakai -v / --verbose bawaan Laravel (jangan definisi option verbose sendiri)
+        $verbose = $this->output->isVerbose();
         $result = $sync->syncAll($verbose);
 
         $this->info("Imported {$result['imported']} new Instagram message(s).");
