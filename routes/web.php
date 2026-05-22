@@ -2689,6 +2689,17 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crm/point-management/search-customers', [App\Http\Controllers\PointManagementController::class, 'searchCustomers'])->name('crm.point-management.search-customers');
     Route::get('/crm/point-management/cabang-list', [App\Http\Controllers\PointManagementController::class, 'getCabangList'])->name('crm.point-management.cabang-list');
 
+    Route::get('/crm/instagram-comments', [App\Http\Controllers\InstagramCommentsController::class, 'index'])->name('crm.instagram-comments.index');
+    Route::get('/crm/instagram-comments/{igAccount}/media', [App\Http\Controllers\InstagramCommentsController::class, 'media'])
+        ->where('igAccount', '[0-9]+')
+        ->name('crm.instagram-comments.media');
+    Route::get('/crm/instagram-comments/{igAccount}/media/{mediaId}/comments', [App\Http\Controllers\InstagramCommentsController::class, 'comments'])
+        ->where(['igAccount' => '[0-9]+', 'mediaId' => '[0-9]+'])
+        ->name('crm.instagram-comments.comments');
+    Route::post('/crm/instagram-comments/{igAccount}/comments/{commentId}/reply', [App\Http\Controllers\InstagramCommentsController::class, 'reply'])
+        ->where(['igAccount' => '[0-9]+', 'commentId' => '[0-9]+'])
+        ->name('crm.instagram-comments.reply');
+
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
     Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');
     Route::patch('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('crm.omnichannel-inbox.update');

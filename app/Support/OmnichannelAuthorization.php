@@ -25,7 +25,8 @@ class OmnichannelAuthorization
             return false;
         }
 
-        return self::userHasPermission($user->id, 'omnichannel_inbox_view');
+        return self::userHasPermission($user->id, 'omnichannel_inbox_view')
+            || self::userHasPermission($user->id, 'instagram_comments_view');
     }
 
     public static function canSeeAllChats(?User $user): bool

@@ -262,6 +262,7 @@ export default {
     "guest_comment_ocr": "Komentar Tamu (OCR)",
     "customer_voice_command_center": "Pusat Komando Suara Pelanggan",
     "omnichannel_inbox": "Inbox Omnichannel",
+    "instagram_comments": "Instagram Post & Komentar",
     "omnichannel_teams": "Tim Inbox Omnichannel",
     "omnichannel_flows": "Otomasi Inbox",
     "migrasi_data_member": "Migrasi Data Member",

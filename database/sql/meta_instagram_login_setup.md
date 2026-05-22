@@ -54,7 +54,21 @@ https://{domain-production-erp}/api/webhooks/meta/instagram
 php artisan config:clear
 ```
 
-## 4. Polling otomatis (Instagram ≠ WhatsApp)
+## 4. Post & komentar Instagram (menu ERP)
+
+Menu **CRM → Instagram Post & Komentar** (`/crm/instagram-comments`):
+
+- Daftar post per akun IG (token sama dengan DM)
+- Komentar + balasan langsung dari ERP
+
+**Permission Meta** (App Dashboard → Instagram → permissions):
+
+- `instagram_business_basic`
+- `instagram_business_manage_comments`
+
+Jalankan SQL menu sekali: `database/sql/insert_instagram_comments_menu.sql`
+
+## 5. Polling otomatis (Instagram ≠ WhatsApp)
 
 | Kanal | Cara masuk inbox |
 |-------|------------------|
