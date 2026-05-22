@@ -13,7 +13,16 @@ class CheckMetaSocialCommentsCommand extends Command
 
     public function handle(MetaSocialCommentsNotificationService $service): int
     {
-        $result = $service->checkAll();
+        try {
+            $result = $service->checkAll();
+        } catch (\Throwable $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $adminCount = count(\App\Support\OmnichannelAuthorization::fullAccessUserIds());
+        $this->line("Admin penerima notif (lihat semua inbox): {$adminCount}");
 
         $this->info(sprintf(
             'Selesai: notified=%d posts=%d skip_seen=%d errors=%d',
@@ -23,10 +32,18 @@ class CheckMetaSocialCommentsCommand extends Command
             $result['errors']
         ));
 
+        foreach ($result['error_details'] ?? [] as $detail) {
+            $this->warn($detail);
+        }
+
         if ($result['notified'] === 0 && $result['errors'] === 0) {
             $this->line('Tidak ada komentar baru (atau sudah pernah diproses).');
         }
 
-        return self::SUCCESS;
+        if ($result['errors'] > 0) {
+            $this->line('Cek permission Meta (IG: instagram_business_manage_comments, FB: pages_read_engagement + pages_manage_engagement).');
+        }
+
+        return ($result['errors'] ?? 0) > 0 ? self::FAILURE : self::SUCCESS;
     }
 }

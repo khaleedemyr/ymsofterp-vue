@@ -8,6 +8,7 @@ use App\Support\MetaPageAccountRegistry;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Poll komentar IG/FB, kirim notifikasi ke admin inbox untuk komentar baru.
@@ -21,18 +22,31 @@ class MetaSocialCommentsNotificationService
     ) {}
 
     /**
-     * @return array{notified: int, scanned_posts: int, skipped_seen: int, errors: int}
+     * @return array{notified: int, scanned_posts: int, skipped_seen: int, errors: int, error_details: list<string>}
      */
     public function checkAll(): array
     {
         if (! filter_var(config('omnichannel.social_comment_notify_enabled', true), FILTER_VALIDATE_BOOLEAN)) {
-            return ['notified' => 0, 'scanned_posts' => 0, 'skipped_seen' => 0, 'errors' => 0];
+            return [
+                'notified' => 0,
+                'scanned_posts' => 0,
+                'skipped_seen' => 0,
+                'errors' => 0,
+                'error_details' => [],
+            ];
+        }
+
+        if (! Schema::hasTable('omni_social_comment_seen')) {
+            throw new \RuntimeException(
+                'Tabel omni_social_comment_seen belum ada. Jalankan: php artisan migrate atau database/sql/create_omni_social_comment_seen.sql'
+            );
         }
 
         $notified = 0;
         $scannedPosts = 0;
         $skippedSeen = 0;
         $errors = 0;
+        $errorDetails = [];
 
         foreach ($this->instagram->listAccounts() as $account) {
             try {
@@ -42,10 +56,9 @@ class MetaSocialCommentsNotificationService
                 $skippedSeen += $result['skipped_seen'];
             } catch (\Throwable $e) {
                 $errors++;
-                Log::warning('Social comment check IG failed', [
-                    'ig_id' => $account['ig_id'],
-                    'error' => $e->getMessage(),
-                ]);
+                $msg = 'IG '.$account['ig_id'].': '.$e->getMessage();
+                $errorDetails[] = $msg;
+                Log::warning('Social comment check IG failed', ['ig_id' => $account['ig_id'], 'error' => $e->getMessage()]);
             }
         }
 
@@ -57,10 +70,9 @@ class MetaSocialCommentsNotificationService
                 $skippedSeen += $result['skipped_seen'];
             } catch (\Throwable $e) {
                 $errors++;
-                Log::warning('Social comment check FB failed', [
-                    'page_id' => $page['page_id'],
-                    'error' => $e->getMessage(),
-                ]);
+                $msg = 'FB '.$page['page_id'].': '.$e->getMessage();
+                $errorDetails[] = $msg;
+                Log::warning('Social comment check FB failed', ['page_id' => $page['page_id'], 'error' => $e->getMessage()]);
             }
         }
 
@@ -69,6 +81,7 @@ class MetaSocialCommentsNotificationService
             'scanned_posts' => $scannedPosts,
             'skipped_seen' => $skippedSeen,
             'errors' => $errors,
+            'error_details' => $errorDetails,
         ];
     }
 
