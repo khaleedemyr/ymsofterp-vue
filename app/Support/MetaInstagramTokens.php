@@ -38,11 +38,23 @@ final class MetaInstagramTokens
      */
     public static function resolved(): array
     {
+        $tokens = [];
         $fromConfig = config('services.meta.instagram_login_tokens', []);
         if (is_array($fromConfig) && $fromConfig !== []) {
-            return $fromConfig;
+            $tokens = $fromConfig;
+        } else {
+            $tokens = self::parse();
         }
 
-        return self::parse();
+        // Satu akun: META_INSTAGRAM_LOGIN_ACCESS_TOKEN + META_INSTAGRAM_LOGIN_DEFAULT_ID
+        $singleToken = config('services.meta.instagram_login_access_token');
+        $defaultId = (string) config('services.meta.instagram_login_default_id', '');
+        if (is_string($singleToken) && $singleToken !== '' && $defaultId !== '') {
+            if (! isset($tokens[$defaultId])) {
+                $tokens[$defaultId] = $singleToken;
+            }
+        }
+
+        return $tokens;
     }
 }

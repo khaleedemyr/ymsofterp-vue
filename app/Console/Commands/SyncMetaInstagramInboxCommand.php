@@ -17,6 +17,12 @@ class SyncMetaInstagramInboxCommand extends Command
         $verbose = $this->output->isVerbose();
         $result = $sync->syncAll($verbose);
 
+        if ($result['accounts'] !== [] && isset($result['accounts'][0]['error']) && count($result['accounts']) === 1) {
+            $this->error($result['accounts'][0]['error']);
+
+            return self::FAILURE;
+        }
+
         $this->info("Imported {$result['imported']} new Instagram message(s).");
 
         if ($verbose) {

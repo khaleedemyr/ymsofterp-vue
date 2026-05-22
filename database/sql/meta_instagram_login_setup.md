@@ -45,7 +45,7 @@ META_INSTAGRAM_LOGIN_DEFAULT_ID=17841400914429846
 # META_INSTAGRAM_LOGIN_TOKENS='{"17841400914429846":"IGQ...","17841462873080478":"IGQ..."}'
 
 # Badge inbox: nama akun bisnis (Justus, Tempayan, …)
-# META_INSTAGRAM_LOGIN_ACCOUNT_LABELS='{"17841400914429846":"Justus","17841462873080478":"Tempayan"}'
+# META_INSTAGRAM_LOGIN_ACCOUNT_LABELS='{"17841400914429846":"Justus Steakhouse","17841462873080478":"Tempayan"}'
 
 META_INSTAGRAM_INBOX_SYNC_ENABLED=true
 ```
@@ -54,9 +54,16 @@ https://{domain-production-erp}/api/webhooks/meta/instagram
 php artisan config:clear
 ```
 
-## 4. Polling otomatis (pasti masuk inbox)
+## 4. Polling otomatis (Instagram ≠ WhatsApp)
 
-Webhook kadang tidak push; ERP **poll** conversations tiap 2 menit:
+| Kanal | Cara masuk inbox |
+|-------|------------------|
+| **WhatsApp** | Hampir selalu **webhook** Meta → langsung ke DB (tanpa command poll) |
+| **Instagram** | **Polling** `meta:sync-instagram-inbox` tiap **1 menit** (cron) + webhook opsional |
+
+Webhook Instagram Login sering **tidak push** di Development; andalkan polling + cron.
+
+Webhook kadang tidak push; ERP **poll** conversations tiap 1 menit (wajib cron jalan):
 
 ```bash
 php artisan meta:sync-instagram-inbox -v
@@ -68,6 +75,30 @@ php artisan meta:enrich-instagram-profiles --limit=200
 ```
 
 Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/meta-instagram-inbox-sync.log`.
+
+### DM saya kirim tapi tidak muncul di inbox?
+
+1. **Tes manual dulu** (di server production):
+   ```bash
+   php artisan config:clear
+   php artisan meta:sync-instagram-inbox -v
+   ```
+   Lihat baris `imported=...`, `api_errors=0`, `conversations>0`. Kalau `error` token → perbarui token di Meta Dashboard (Generate token) lalu update `.env`.
+
+2. **Cron harus jalan** — tanpa ini polling tidak pernah otomatis:
+   ```cron
+   * * * * * cd /path/ke/ymsofterp && php artisan schedule:run >> /dev/null 2>&1
+   ```
+
+3. **DM dari akun pribadi ke IG bisnis** (bukan balas dari akun bisnis sendiri). Pesan dari bisnis sendiri di-skip (outbound).
+
+4. **App Meta Development**: akun IG yang DM harus jadi **Tester** di Meta App (Roles), atau App **Live**.
+
+5. **DM ke akun yang benar** (Justus vs Tempayan) — cek badge / `phone_number_id` di DB.
+
+6. **UI inbox** refresh daftar tiap ~8 detik, tapi hanya baca DB — kalau sync gagal, UI tetap kosong.
+
+7. Cek log: `storage/logs/meta-instagram-inbox-sync.log` dan `storage/logs/laravel.log` (cari `Meta Instagram inbox sync`).
 
 ## 5. Verifikasi
 

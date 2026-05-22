@@ -26,8 +26,21 @@ class MetaInstagramInboxSyncService
     {
         $imported = 0;
         $accounts = [];
+        $tokenMap = MetaInstagramTokens::resolved();
 
-        foreach (MetaInstagramTokens::resolved() as $igId => $token) {
+        if ($tokenMap === []) {
+            Log::warning('Meta Instagram inbox sync skipped: no tokens (META_INSTAGRAM_LOGIN_TOKENS kosong?)');
+
+            return [
+                'imported' => 0,
+                'accounts' => [[
+                    'error' => 'Tidak ada token Instagram. Isi META_INSTAGRAM_LOGIN_TOKENS atau META_INSTAGRAM_LOGIN_ACCESS_TOKEN + META_INSTAGRAM_LOGIN_DEFAULT_ID lalu php artisan config:clear',
+                    'imported' => 0,
+                ]],
+            ];
+        }
+
+        foreach ($tokenMap as $igId => $token) {
             try {
                 $result = $this->syncAccount((string) $igId, $token, $verbose);
                 $imported += $result['imported'];
