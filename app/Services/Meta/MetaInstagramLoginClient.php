@@ -34,6 +34,52 @@ class MetaInstagramLoginClient
     }
 
     /**
+     * Kirim gambar (URL publik HTTPS — Meta akan fetch dari server Anda).
+     *
+     * @param  'image'|'file'|'video'|'audio'  $attachmentType
+     */
+    public function sendAttachment(
+        string $recipientIgsid,
+        string $attachmentType,
+        string $publicMediaUrl,
+        ?string $igProfessionalId = null
+    ): array {
+        [$token, $igId] = $this->resolveCredentials($igProfessionalId);
+        $version = config('services.meta.instagram_graph_version', 'v25.0');
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->post("https://graph.instagram.com/{$version}/{$igId}/messages", [
+                'recipient' => ['id' => $recipientIgsid],
+                'message' => [
+                    'attachment' => [
+                        'type' => $attachmentType,
+                        'payload' => ['url' => $publicMediaUrl],
+                    ],
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'Instagram Login API send attachment failed: '.$response->body(),
+                $response->status()
+            );
+        }
+
+        return $response->json();
+    }
+
+    public function sendImage(string $recipientIgsid, string $publicImageUrl, ?string $igProfessionalId = null): array
+    {
+        return $this->sendAttachment($recipientIgsid, 'image', $publicImageUrl, $igProfessionalId);
+    }
+
+    public function sendFile(string $recipientIgsid, string $publicFileUrl, ?string $igProfessionalId = null): array
+    {
+        return $this->sendAttachment($recipientIgsid, 'file', $publicFileUrl, $igProfessionalId);
+    }
+
+    /**
      * @return array{0: string, 1: string} [access_token, ig_professional_id]
      */
     private function resolveCredentials(?string $igId): array

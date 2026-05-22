@@ -135,7 +135,14 @@ Output sync sekarang **selalu** menampilkan baris per akun, mis.:
 
 Lihat `skipped_db` vs `imported` — kalau DM baru tetap 0, kirim DM dari **akun pribadi** (bukan akun bisnis IG yang sama).
 
-## 5. Verifikasi
+## 5. Kirim gambar / PDF dari inbox
+
+- **Gambar:** PNG atau JPEG, maks **8 MB** (URL publik dari `storage/app/public/omni-outbound/...`)
+- **PDF:** maks **25 MB**
+- Pastikan `APP_URL` di `.env` mengarah ke domain HTTPS production (Meta harus bisa download file)
+- Teks opsional sebagai caption dikirim sebagai pesan teks terpisah setelah gambar
+
+## 6. Verifikasi
 
 ```bash
 # Token terbaca

@@ -441,27 +441,72 @@ class OmnichannelInboxController extends Controller
 
         try {
             if (in_array($channel, ['messenger', 'facebook', 'instagram'], true)) {
-                if ($file) {
-                    return response()->json(['message' => 'Lampiran untuk Messenger/Instagram belum didukung. Kirim teks dulu.'], 422);
-                }
-                if ($body === '') {
-                    return response()->json(['message' => 'Pesan teks wajib diisi.'], 422);
-                }
                 if ($channel === 'instagram' && $this->useInstagramLoginApi()) {
-                    $result = app(\App\Services\Meta\MetaInstagramLoginClient::class)->sendText(
-                        $conversation->external_contact_id,
-                        $body,
-                        $conversation->phone_number_id
-                    );
+                    $igClient = app(\App\Services\Meta\MetaInstagramLoginClient::class);
+                    $recipient = $conversation->external_contact_id;
+
+                    if ($file) {
+                        $mime = $file->getMimeType() ?: 'application/octet-stream';
+                        $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
+                        $publicUrl = $this->publicStorageUrl($storedPath);
+                        $isImage = str_starts_with($mime, 'image/');
+
+                        if ($isImage) {
+                            if ($file->getSize() > 8 * 1024 * 1024) {
+                                return response()->json(['message' => 'Gambar untuk Instagram maksimal 8 MB.'], 422);
+                            }
+                            if (! in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
+                                return response()->json(['message' => 'Instagram mendukung gambar PNG atau JPEG.'], 422);
+                            }
+                            $result = $igClient->sendImage($recipient, $publicUrl, $conversation->phone_number_id);
+                            $messageType = 'image';
+                            $preview = $body !== '' ? $body : '[Gambar]';
+                        } elseif ($mime === 'application/pdf') {
+                            if ($file->getSize() > 25 * 1024 * 1024) {
+                                return response()->json(['message' => 'PDF untuk Instagram maksimal 25 MB.'], 422);
+                            }
+                            $result = $igClient->sendFile($recipient, $publicUrl, $conversation->phone_number_id);
+                            $messageType = 'document';
+                            $preview = $body !== '' ? $body : '[PDF: '.$file->getClientOriginalName().']';
+                        } else {
+                            return response()->json([
+                                'message' => 'Lampiran Instagram: gambar (PNG/JPEG) atau PDF. Video/audio belum didukung di inbox.',
+                            ], 422);
+                        }
+
+                        $payload = array_merge(is_array($result) ? $result : [], [
+                            'local_media_url' => $publicUrl,
+                            'media_filename' => $file->getClientOriginalName(),
+                            'media_mime' => $mime,
+                        ]);
+                        $metaMessageId = (string) ($result['message_id'] ?? '');
+
+                        if ($body !== '') {
+                            $igClient->sendText($recipient, $body, $conversation->phone_number_id);
+                        }
+                    } else {
+                        if ($body === '') {
+                            return response()->json(['message' => 'Pesan teks wajib diisi.'], 422);
+                        }
+                        $result = $igClient->sendText($recipient, $body, $conversation->phone_number_id);
+                        $payload = is_array($result) ? $result : [];
+                        $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
+                    }
                 } else {
+                    if ($file) {
+                        return response()->json(['message' => 'Lampiran untuk Messenger (Page API) belum didukung. Gunakan channel Instagram Login atau kirim teks.'], 422);
+                    }
+                    if ($body === '') {
+                        return response()->json(['message' => 'Pesan teks wajib diisi.'], 422);
+                    }
                     $result = app(MetaMessengerClient::class)->sendText(
                         $conversation->external_contact_id,
                         $body,
                         $conversation->phone_number_id
                     );
+                    $payload = is_array($result) ? $result : [];
+                    $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
                 }
-                $payload = is_array($result) ? $result : [];
-                $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
             } elseif ($channel === 'whatsapp') {
                 $client = app(MetaWhatsAppClient::class);
                 if ($file) {
@@ -841,5 +886,14 @@ class OmnichannelInboxController extends Controller
     {
         return MetaInstagramTokens::resolved() !== []
             || (string) config('services.meta.instagram_login_access_token') !== '';
+    }
+
+    private function publicStorageUrl(string $storedPath): string
+    {
+        $relative = Storage::disk('public')->url($storedPath);
+
+        return str_starts_with($relative, 'http')
+            ? $relative
+            : url($relative);
     }
 }
