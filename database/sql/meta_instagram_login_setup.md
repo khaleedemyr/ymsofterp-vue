@@ -142,7 +142,18 @@ Lihat `skipped_db` vs `imported` — kalau DM baru tetap 0, kirim DM dari **akun
 - Pastikan `APP_URL` di `.env` mengarah ke domain HTTPS production (Meta harus bisa download file)
 - Teks opsional sebagai caption dikirim sebagai pesan teks terpisah setelah gambar
 
-## 6. Verifikasi
+## 6. Perbaiki chat gambar kosong (hanya tanggal)
+
+Bug lama: sync mengira pesan gambar sudah lengkap karena field `message` ada tapi kosong. Setelah deploy:
+
+```bash
+php artisan meta:repair-instagram-message-media --limit=300
+php artisan meta:sync-instagram-inbox
+```
+
+Refresh inbox (Ctrl+F5).
+
+## 7. Verifikasi
 
 ```bash
 # Token terbaca

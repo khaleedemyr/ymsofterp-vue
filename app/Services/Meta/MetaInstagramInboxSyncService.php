@@ -14,6 +14,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Sinkron DM Instagram (Instagram Login API) via polling.
@@ -67,6 +68,23 @@ class MetaInstagramInboxSyncService
         }
 
         return ['imported' => $imported, 'accounts' => $accounts];
+    }
+
+    public function repairMessageMedia(OmniMessage $message, string $accessToken, string $igProfessionalId): bool
+    {
+        $metaId = (string) ($message->meta_message_id ?? '');
+        if ($metaId === '') {
+            return false;
+        }
+
+        $version = config('services.meta.instagram_graph_version', 'v25.0');
+        $payload = $this->fetchMessagePayloadFromApi($accessToken, $version, $metaId);
+
+        if ($payload === null) {
+            return false;
+        }
+
+        return $this->maybeEnrichExistingMessageMedia($message->fresh() ?? $message, $payload);
     }
 
     /**
@@ -355,30 +373,65 @@ class MetaInstagramInboxSyncService
     }
 
     /**
+     * Selalu ambil detail + edge attachments (pesan gambar IG punya message kosong).
+     *
      * @param  array<string, mixed>  $partial
      * @return array<string, mixed>|null
      */
     private function resolveMessagePayload(string $accessToken, string $version, array $partial): ?array
     {
-        $fromId = (string) ($partial['from']['id'] ?? '');
-        $hasBody = array_key_exists('message', $partial);
-
-        if ($fromId !== '' && $hasBody) {
-            return $partial;
-        }
-
         $messageId = (string) ($partial['id'] ?? '');
         if ($messageId === '') {
             return null;
         }
 
+        return $this->fetchMessagePayloadFromApi($accessToken, $version, $messageId) ?? $partial;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function fetchMessagePayloadFromApi(string $accessToken, string $version, string $messageId): ?array
+    {
         $response = Http::withToken($accessToken)
             ->acceptJson()
             ->get("https://graph.instagram.com/{$version}/{$messageId}", [
-                'fields' => 'id,created_time,from,to,message,attachments{type,mime_type,image_data,file_url,video_data,name}',
+                'fields' => 'id,created_time,from,to,message',
             ]);
 
-        return $response->successful() ? $response->json() : null;
+        $data = $response->successful() ? $response->json() : [];
+        if (! is_array($data)) {
+            $data = [];
+        }
+
+        $attResponse = Http::withToken($accessToken)
+            ->acceptJson()
+            ->get("https://graph.instagram.com/{$version}/{$messageId}/attachments", [
+                'fields' => 'type,mime_type,image_data,file_url,video_data,name,payload',
+            ]);
+
+        if ($attResponse->successful()) {
+            $rows = $attResponse->json('data') ?? [];
+            if (is_array($rows) && $rows !== []) {
+                $data['attachments'] = ['data' => $rows];
+            }
+        }
+
+        if (! isset($data['attachments']) || empty($data['attachments']['data'])) {
+            $nested = Http::withToken($accessToken)
+                ->acceptJson()
+                ->get("https://graph.instagram.com/{$version}/{$messageId}", [
+                    'fields' => 'attachments{type,mime_type,image_data,file_url,video_data,name,payload}',
+                ]);
+            if ($nested->successful()) {
+                $extra = $nested->json('attachments') ?? null;
+                if (is_array($extra)) {
+                    $data['attachments'] = $extra;
+                }
+            }
+        }
+
+        return $data !== [] ? $data : null;
     }
 
     /**
@@ -496,23 +549,46 @@ class MetaInstagramInboxSyncService
     private function maybeEnrichExistingMessageMedia(OmniMessage $message, array $payload): bool
     {
         $currentPayload = is_array($message->payload) ? $message->payload : [];
-        if (OmniMetaMessagePayload::extractAttachmentUrl($currentPayload) !== null) {
+        if (! empty($currentPayload['local_media_path'])) {
             return false;
         }
 
         $normalized = OmniMetaMessagePayload::normalize($payload);
-        if ($normalized['attachment_url'] === null) {
+        $hadMetaUrl = OmniMetaMessagePayload::extractAttachmentUrl($currentPayload) !== null;
+        if ($normalized['attachment_url'] === null && ! $hadMetaUrl) {
+            // Pesan gambar IG: message kosong, tandai supaya UI tidak bubble kosong
+            if (array_key_exists('message', $payload) && ($payload['message'] === '' || $payload['message'] === null)) {
+                $message->update([
+                    'message_type' => 'image',
+                    'body' => '[Gambar]',
+                ]);
+
+                return true;
+            }
+
             return false;
         }
 
+        $attachmentUrl = $normalized['attachment_url'] ?? OmniMetaMessagePayload::extractAttachmentUrl($currentPayload);
+
         $merged = array_merge($currentPayload, $payload, [
-            'attachment_url' => $normalized['attachment_url'],
+            'attachment_url' => $attachmentUrl,
         ]);
         if ($normalized['media_mime'] !== null) {
             $merged['media_mime'] = $normalized['media_mime'];
         }
         if ($normalized['media_filename'] !== null) {
             $merged['media_filename'] = $normalized['media_filename'];
+        }
+
+        $localPath = $this->cacheInboundMediaLocally(
+            $attachmentUrl,
+            (int) $message->conversation_id,
+            (string) ($message->meta_message_id ?? $message->id),
+            $normalized['message_type'] !== 'text' ? $normalized['message_type'] : 'image'
+        );
+        if ($localPath !== null) {
+            $merged['local_media_path'] = $localPath;
         }
 
         $updates = ['payload' => $merged];
@@ -522,11 +598,52 @@ class MetaInstagramInboxSyncService
         }
         if (! $message->body && $normalized['body']) {
             $updates['body'] = $normalized['body'];
+        } elseif (! $message->body && $localPath !== null) {
+            $updates['body'] = '[Gambar]';
         }
 
         $message->update($updates);
 
         return true;
+    }
+
+    private function cacheInboundMediaLocally(
+        ?string $remoteUrl,
+        int $conversationId,
+        string $metaMessageId,
+        string $messageType
+    ): ?string {
+        if ($remoteUrl === null || $remoteUrl === '' || $conversationId <= 0) {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(45)->get($remoteUrl);
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $contentType = strtolower((string) $response->header('Content-Type'));
+            $ext = match (true) {
+                str_contains($contentType, 'png') => 'png',
+                str_contains($contentType, 'pdf') => 'pdf',
+                str_contains($contentType, 'webp') => 'webp',
+                default => 'jpg',
+            };
+
+            $safeId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $metaMessageId) ?: 'msg';
+            $path = "omni-inbound/{$conversationId}/{$safeId}.{$ext}";
+            Storage::disk('public')->put($path, $response->body());
+
+            return $path;
+        } catch (\Throwable $e) {
+            Log::warning('Instagram inbound media cache failed', [
+                'conversation_id' => $conversationId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function storeInboundFromApi(
@@ -612,6 +729,23 @@ class MetaInstagramInboxSyncService
             $conversation->unread_count = (int) $conversation->unread_count + 1;
             $conversation->save();
         });
+
+        if ($conversationId && $inboundMessageId && $normalized['attachment_url'] !== null) {
+            $localPath = $this->cacheInboundMediaLocally(
+                $normalized['attachment_url'],
+                $conversationId,
+                $metaMessageId,
+                $messageType
+            );
+            if ($localPath !== null) {
+                $msg = OmniMessage::query()->find($inboundMessageId);
+                if ($msg) {
+                    $mergedPayload = is_array($msg->payload) ? $msg->payload : [];
+                    $mergedPayload['local_media_path'] = $localPath;
+                    $msg->update(['payload' => $mergedPayload]);
+                }
+            }
+        }
 
         if ($conversationId && $inboundMessageId) {
             $within = (int) config('omnichannel.instagram_sync_notify_within_minutes', 30);

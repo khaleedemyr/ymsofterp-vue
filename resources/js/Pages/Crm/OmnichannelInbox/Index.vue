@@ -221,6 +221,7 @@
                   v-if="msg.media_url && isImageLikeMessage(msg)"
                   :src="msg.media_url"
                   alt=""
+                  referrerpolicy="no-referrer"
                   class="mb-1 max-h-48 max-w-full rounded object-cover cursor-pointer"
                   @click="openMediaUrl(msg.media_url)"
                 />

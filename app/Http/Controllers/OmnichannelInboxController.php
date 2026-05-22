@@ -820,6 +820,9 @@ class OmnichannelInboxController extends Controller
 
         $payload = is_array($message->payload) ? $message->payload : [];
         $mediaUrl = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
+        if ($mediaUrl === null && ! empty($payload['local_media_path']) && is_string($payload['local_media_path'])) {
+            $mediaUrl = $this->publicStorageUrl($payload['local_media_path']);
+        }
 
         return [
             'id' => $message->id,

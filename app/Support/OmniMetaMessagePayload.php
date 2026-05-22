@@ -27,7 +27,7 @@ final class OmniMetaMessagePayload
             if ($first !== null) {
                 $rawType = (string) ($first['type'] ?? 'attachment');
                 $messageType = match ($rawType) {
-                    'image' => 'image',
+                    'image', 'animated_image_share' => 'image',
                     'video' => 'video',
                     'audio' => 'audio',
                     'file' => 'document',
@@ -42,7 +42,15 @@ final class OmniMetaMessagePayload
             $messageType = 'image';
         }
 
-        if ($body === null && $attachmentUrl !== null) {
+        // Pesan gambar dari IG sering punya message="" tanpa attachments di list API
+        if ($body === null && $attachmentUrl === null && array_key_exists('message', $payload)) {
+            $rawMsg = $payload['message'];
+            if ($rawMsg === null || $rawMsg === '') {
+                $messageType = 'image';
+            }
+        }
+
+        if ($body === null && ($attachmentUrl !== null || $messageType !== 'text')) {
             $body = match ($messageType) {
                 'image' => '[Gambar]',
                 'video' => '[Video]',
@@ -81,16 +89,8 @@ final class OmniMetaMessagePayload
                 continue;
             }
 
-            $candidates = [
-                $item['image_data']['url'] ?? null,
-                $item['image_data']['preview_url'] ?? null,
-                $item['video_data']['url'] ?? null,
-                $item['file_url'] ?? null,
-                $item['payload']['url'] ?? null,
-            ];
-
-            foreach ($candidates as $url) {
-                if (is_string($url) && $url !== '') {
+            foreach (self::attachmentUrlCandidates($item) as $url) {
+                if ($url !== '') {
                     return $url;
                 }
             }
@@ -99,10 +99,47 @@ final class OmniMetaMessagePayload
         return null;
     }
 
+    /**
+     * @param  array<string, mixed>  $item
+     * @return list<string>
+     */
+    private static function attachmentUrlCandidates(array $item): array
+    {
+        $urls = [];
+
+        foreach (['image_data', 'video_data'] as $key) {
+            $data = $item[$key] ?? null;
+            if (is_string($data)) {
+                $decoded = json_decode($data, true);
+                if (is_array($decoded)) {
+                    $data = $decoded;
+                }
+            }
+            if (is_array($data)) {
+                foreach (['url', 'preview_url', 'src'] as $k) {
+                    if (! empty($data[$k]) && is_string($data[$k])) {
+                        $urls[] = $data[$k];
+                    }
+                }
+            }
+        }
+
+        foreach (['file_url', 'url'] as $k) {
+            if (! empty($item[$k]) && is_string($item[$k])) {
+                $urls[] = $item[$k];
+            }
+        }
+
+        $payload = $item['payload'] ?? null;
+        if (is_array($payload) && ! empty($payload['url']) && is_string($payload['url'])) {
+            $urls[] = $payload['url'];
+        }
+
+        return $urls;
+    }
+
     public static function mediaUrlForInbox(array $payload, string $messageType = 'text'): ?string
     {
-        $url = self::extractAttachmentUrl($payload);
-
-        return $url !== null ? $url : null;
+        return self::extractAttachmentUrl($payload);
     }
 }
