@@ -221,7 +221,14 @@
             {{ waWindowBanner.text }}
           </div>
 
-          <div ref="messagesEl" class="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+          <div ref="messagesEl" class="flex-1 space-y-2 overflow-y-auto px-3 py-3" @scroll.passive="onMessagesScroll">
+            <div
+              v-if="hasMoreOlder"
+              class="py-1 text-center text-[11px] text-slate-500"
+            >
+              <span v-if="loadingOlder">Memuat pesan lama…</span>
+              <span v-else>↑ Gulir ke atas untuk muat pesan lebih lama</span>
+            </div>
             <div
               v-for="msg in localMessages"
               :key="msg.id"
@@ -687,6 +694,8 @@ const props = defineProps({
   conversations: { type: Array, default: () => [] },
   selectedConversation: { type: Object, default: null },
   messages: { type: Array, default: () => [] },
+  messagesHasMoreOlder: { type: Boolean, default: false },
+  messagesOldestId: { type: Number, default: null },
   inbox: { type: String, default: 'all' },
   channelFilter: { type: String, default: null },
   leadStageFilter: { type: String, default: null },
@@ -705,6 +714,8 @@ const inboxPartialReloadKeys = [
   'conversations',
   'selectedConversation',
   'messages',
+  'messagesHasMoreOlder',
+  'messagesOldestId',
   'inbox',
   'channelFilter',
   'leadStageFilter',
@@ -757,6 +768,10 @@ const selectedId = ref(props.selectedConversation?.id ?? null)
 const localMessages = ref(sortMessages(props.messages || []))
 /** ID percakapan yang isi localMessages saat ini — cegah merge pesan chat lain saat pindah kontak. */
 const localMessagesConversationId = ref(props.selectedConversation?.id ?? null)
+const hasMoreOlder = ref(!!props.messagesHasMoreOlder)
+const oldestMessageId = ref(props.messagesOldestId ?? null)
+const loadingOlder = ref(false)
+const stickScrollBottom = ref(false)
 const replyText = ref('')
 const composerMode = ref('reply')
 const sending = ref(false)
@@ -1145,7 +1160,15 @@ function autoResolvePendingMedia() {
       !mediaResolving.value[m.id] &&
       !mediaResolveFailed.value[m.id]
   )
-  pending.slice(0, 8).forEach((m) => resolveMessageMedia(m))
+  const recent = [...localMessages.value].slice(-3)
+  recent
+    .filter(
+      (m) =>
+        needsMediaResolve(m) &&
+        !mediaResolving.value[m.id] &&
+        !mediaResolveFailed.value[m.id]
+    )
+    .forEach((m) => resolveMessageMedia(m))
 }
 
 function mediaPlaceholderLabel(msg) {
@@ -1237,6 +1260,9 @@ function selectConversation(id) {
   selectedId.value = id
   localMessagesConversationId.value = null
   localMessages.value = []
+  hasMoreOlder.value = false
+  oldestMessageId.value = null
+  stickScrollBottom.value = true
   aiMenuOpen.value = false
   sendError.value = ''
   aiError.value = ''
@@ -1279,8 +1305,7 @@ function shouldStickToBottom() {
 }
 
 /**
- * Gabungkan pesan server + lokal hanya untuk percakapan yang sama (poll/reload).
- * Saat ganti kontak, jangan gabungkan — ID pesan global bisa membuat chat lain ikut tampil.
+ * Gabungkan pesan poll (jendela terbaru) + riwayat lama yang sudah di-load saat scroll atas.
  */
 function mergeMessagesFromProps(serverMsgs, conversationId) {
   const next = sortMessages(serverMsgs ?? [])
@@ -1296,7 +1321,14 @@ function mergeMessagesFromProps(serverMsgs, conversationId) {
     return next
   }
 
+  const nextOldestId = next[0]?.id
+  const olderKept =
+    nextOldestId != null ? prev.filter((m) => m.id != null && m.id < nextOldestId) : []
+
   const byId = new Map()
+  for (const m of olderKept) {
+    byId.set(m.id, m)
+  }
   for (const m of next) {
     if (m.id != null) {
       byId.set(m.id, m)
@@ -1324,6 +1356,55 @@ function mergeMessagesFromProps(serverMsgs, conversationId) {
   return sortMessages([...byId.values()])
 }
 
+async function loadOlderMessages() {
+  if (!selectedId.value || loadingOlder.value || !hasMoreOlder.value || !oldestMessageId.value) {
+    return
+  }
+  loadingOlder.value = true
+  const el = messagesEl.value
+  const prevHeight = el?.scrollHeight ?? 0
+  const prevTop = el?.scrollTop ?? 0
+  try {
+    const { data } = await axios.get(
+      `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`,
+      { params: { before_id: oldestMessageId.value, limit: 40, no_enrich: 1 } }
+    )
+    const older = sortMessages(data.messages ?? [])
+    if (older.length > 0) {
+      const existingIds = new Set(localMessages.value.map((m) => m.id))
+      const toPrepend = older.filter((m) => m.id != null && !existingIds.has(m.id))
+      localMessages.value = sortMessages([...toPrepend, ...localMessages.value])
+      oldestMessageId.value = data.oldest_message_id ?? older[0]?.id ?? oldestMessageId.value
+      hasMoreOlder.value = !!data.has_more_older
+      nextTick(() => {
+        requestAnimationFrame(() => {
+          const box = messagesEl.value
+          if (!box) {
+            return
+          }
+          box.scrollTop = box.scrollHeight - prevHeight + prevTop
+        })
+      })
+    } else {
+      hasMoreOlder.value = false
+    }
+  } catch {
+    /* ignore */
+  } finally {
+    loadingOlder.value = false
+  }
+}
+
+function onMessagesScroll() {
+  const el = messagesEl.value
+  if (!el || loadingOlder.value || !hasMoreOlder.value) {
+    return
+  }
+  if (el.scrollTop < 100) {
+    loadOlderMessages()
+  }
+}
+
 watch(
   () => [props.selectedConversation?.id, props.messages],
   ([convId, val]) => {
@@ -1336,8 +1417,9 @@ watch(
     const nextLastId = merged[merged.length - 1]?.id
     localMessages.value = merged
     const newTail = nextLastId !== prevLastId || merged.length > prev.length
-    if (shouldStickToBottom() && newTail) {
+    if (stickScrollBottom.value || (shouldStickToBottom() && newTail)) {
       scrollToBottom()
+      stickScrollBottom.value = false
     }
     nextTick(() => autoResolvePendingMedia())
   },
@@ -1358,6 +1440,9 @@ watch(
     if (newId !== prevId) {
       localMessagesConversationId.value = newId ?? null
       localMessages.value = sortMessages(props.messages || [])
+      hasMoreOlder.value = !!props.messagesHasMoreOlder
+      oldestMessageId.value = props.messagesOldestId ?? null
+      stickScrollBottom.value = true
       composerMode.value = 'reply'
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
@@ -1365,6 +1450,7 @@ watch(
       mediaResolveFailed.value = {}
       nextTick(() => {
         scrollToBottom()
+        stickScrollBottom.value = false
         autoResolvePendingMedia()
       })
     }
@@ -1620,6 +1706,14 @@ async function pollInbox() {
       const prevLastId = prev[prev.length - 1]?.id
       const nextLastId = merged[merged.length - 1]?.id
       localMessages.value = merged
+      if (data.has_more_older != null) {
+        hasMoreOlder.value = !!data.has_more_older
+      }
+      if (data.oldest_message_id != null) {
+        oldestMessageId.value = data.oldest_message_id
+      } else if (merged.length > 0 && oldestMessageId.value == null) {
+        oldestMessageId.value = merged[0]?.id ?? null
+      }
       const newTail = nextLastId !== prevLastId || merged.length > prev.length
       if (shouldStickToBottom() && newTail) {
         scrollToBottom()
@@ -1664,10 +1758,19 @@ function onInboxWindowFocus() {
 }
 
 function scrollToBottom() {
-  nextTick(() => {
-    if (messagesEl.value) {
-      messagesEl.value.scrollTop = messagesEl.value.scrollHeight
+  const run = () => {
+    const el = messagesEl.value
+    if (!el) {
+      return
     }
+    el.scrollTop = el.scrollHeight
+  }
+  nextTick(() => {
+    run()
+    requestAnimationFrame(() => {
+      run()
+      requestAnimationFrame(run)
+    })
   })
 }
 
@@ -1703,7 +1806,13 @@ onMounted(() => {
   if (csrf) {
     axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf
   }
-  scrollToBottom()
+  hasMoreOlder.value = !!props.messagesHasMoreOlder
+  oldestMessageId.value = props.messagesOldestId ?? (localMessages.value[0]?.id ?? null)
+  if (localMessages.value.length > 0) {
+    stickScrollBottom.value = true
+    scrollToBottom()
+    stickScrollBottom.value = false
+  }
   restartInboxPollTimer()
   document.addEventListener('visibilitychange', onInboxVisibilityChange)
   window.addEventListener('focus', onInboxWindowFocus)

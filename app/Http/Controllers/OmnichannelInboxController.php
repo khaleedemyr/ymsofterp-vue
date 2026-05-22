@@ -33,6 +33,7 @@ use RuntimeException;
 
 class OmnichannelInboxController extends Controller
 {
+    private const MESSAGES_PAGE_SIZE = 40;
     public function index(Request $request): Response
     {
         $this->assertInboxAccess($request);
@@ -59,6 +60,7 @@ class OmnichannelInboxController extends Controller
 
         $messages = [];
         $selectedConversation = null;
+        $messagePage = ['has_more_older' => false, 'oldest_message_id' => null];
 
         if ($selectedId) {
             $conversation = OmniConversation::query()
@@ -73,7 +75,8 @@ class OmnichannelInboxController extends Controller
                 ->find($selectedId);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
                 $selectedConversation = $this->formatConversation($conversation);
-                $messages = $this->loadMessages($conversation);
+                $messagePage = $this->loadMessagesPage($conversation);
+                $messages = $messagePage['messages'];
                 $conversation->update(['unread_count' => 0]);
             }
         }
@@ -93,6 +96,8 @@ class OmnichannelInboxController extends Controller
             'conversations' => $conversations,
             'selectedConversation' => $selectedConversation,
             'messages' => $messages,
+            'messagesHasMoreOlder' => $messagePage['has_more_older'] ?? false,
+            'messagesOldestId' => $messagePage['oldest_message_id'] ?? null,
             'inbox' => $inbox,
             'channelFilter' => $this->parseChannelFilter($request),
             'leadStageFilter' => $leadStageFilter,
@@ -122,6 +127,7 @@ class OmnichannelInboxController extends Controller
 
         $selectedConversation = null;
         $messages = [];
+        $messagePage = ['has_more_older' => false, 'oldest_message_id' => null];
 
         $selectedId = $request->integer('conversation') ?: null;
         if ($selectedId) {
@@ -137,7 +143,12 @@ class OmnichannelInboxController extends Controller
                 ->find($selectedId);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
                 $selectedConversation = $this->formatConversation($conversation);
-                $messages = $this->loadMessages($conversation);
+                $pollRequest = Request::create('/', 'GET', [
+                    'limit' => self::MESSAGES_PAGE_SIZE,
+                    'no_enrich' => '1',
+                ]);
+                $messagePage = $this->loadMessagesPage($conversation, $pollRequest);
+                $messages = $messagePage['messages'];
             }
         }
 
@@ -145,6 +156,8 @@ class OmnichannelInboxController extends Controller
             'conversations' => $conversations->values()->all(),
             'selected_conversation' => $selectedConversation,
             'messages' => $messages,
+            'has_more_older' => $messagePage['has_more_older'],
+            'oldest_message_id' => $messagePage['oldest_message_id'],
         ]);
     }
 
@@ -319,6 +332,8 @@ class OmnichannelInboxController extends Controller
 
         $conversation->update(['unread_count' => 0]);
 
+        $page = $this->loadMessagesPage($conversation, $request);
+
         return response()->json([
             'conversation' => $this->formatConversation($conversation->load([
                 'member',
@@ -326,7 +341,9 @@ class OmnichannelInboxController extends Controller
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
             ])),
-            'messages' => $this->loadMessages($conversation),
+            'messages' => $page['messages'],
+            'has_more_older' => $page['has_more_older'],
+            'oldest_message_id' => $page['oldest_message_id'],
         ]);
     }
 
@@ -755,32 +772,54 @@ class OmnichannelInboxController extends Controller
         abort_unless(OmnichannelAuthorization::canViewInbox($request->user()), 403);
     }
 
-    private function loadMessages(OmniConversation $conversation): array
+    /**
+     * Muat pesan per halaman (terbaru dulu). Scroll ke atas → before_id untuk riwayat lama.
+     *
+     * @return array{messages: list<array<string, mixed>>, has_more_older: bool, oldest_message_id: int|null}
+     */
+    private function loadMessagesPage(OmniConversation $conversation, ?Request $request = null): array
     {
+        $limit = min(max((int) ($request?->input('limit', self::MESSAGES_PAGE_SIZE)), 10), 80);
+        $beforeId = $request?->integer('before_id') ?: null;
+        $enrichMedia = ! filter_var($request?->input('no_enrich', false), FILTER_VALIDATE_BOOLEAN);
+
+        $query = $conversation->messages()->with('author:id,nama_lengkap,email');
+        if ($beforeId) {
+            $query->where('id', '<', $beforeId);
+        }
+
+        $rows = $query->orderByDesc('id')->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
+        if ($hasMore) {
+            $rows = $rows->take($limit);
+        }
+        $rows = $rows->reverse()->values();
+
         $media = app(OmnichannelInboxMediaService::class);
         $enriched = 0;
-        $maxEnrich = 20;
+        $maxEnrich = $enrichMedia ? ($beforeId ? 0 : 6) : 0;
 
-        return $conversation->messages()
-            ->with('author:id,nama_lengkap,email')
-            ->orderBy('sent_at')
-            ->orderBy('id')
-            ->limit(200)
-            ->get()
-            ->map(function (OmniMessage $m) use ($conversation, $media, &$enriched, $maxEnrich) {
-                if ($enriched < $maxEnrich && $media->needsResolve($m)) {
-                    $media->ensureCached($m, $conversation);
+        $messages = $rows->map(function (OmniMessage $m) use ($conversation, $media, &$enriched, $maxEnrich) {
+            if ($enriched < $maxEnrich && $media->needsResolve($m)) {
+                $media->ensureCached($m, $conversation);
+                $m->refresh();
+                if ($media->needsResolve($m)) {
+                    $media->attemptChannelRepair($m, $conversation);
                     $m->refresh();
-                    if ($media->needsResolve($m)) {
-                        $media->attemptChannelRepair($m, $conversation);
-                        $m->refresh();
-                    }
-                    $enriched++;
                 }
+                $enriched++;
+            }
 
-                return $this->formatMessage($m, $conversation);
-            })
-            ->all();
+            return $this->formatMessage($m, $conversation);
+        })->all();
+
+        $oldestId = $rows->first()?->id;
+
+        return [
+            'messages' => $messages,
+            'has_more_older' => $hasMore,
+            'oldest_message_id' => $oldestId !== null ? (int) $oldestId : null,
+        ];
     }
 
     /**
