@@ -19,6 +19,7 @@ use App\Support\OmniMetaMessagePayload;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
 use App\Support\OmniLeadStages;
+use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Support\OmnichannelAuthorization;
 use App\Support\OmnichannelUserOption;
 use Illuminate\Http\JsonResponse;
@@ -756,14 +757,56 @@ class OmnichannelInboxController extends Controller
 
     private function loadMessages(OmniConversation $conversation): array
     {
+        $media = app(OmnichannelInboxMediaService::class);
+        $enriched = 0;
+        $maxEnrich = 20;
+
         return $conversation->messages()
             ->with('author:id,nama_lengkap,email')
             ->orderBy('sent_at')
             ->orderBy('id')
             ->limit(200)
             ->get()
-            ->map(fn (OmniMessage $m) => $this->formatMessage($m))
+            ->map(function (OmniMessage $m) use ($conversation, $media, &$enriched, $maxEnrich) {
+                if ($enriched < $maxEnrich && $media->needsResolve($m)) {
+                    $media->ensureCached($m, $conversation);
+                    $m->refresh();
+                    $enriched++;
+                }
+
+                return $this->formatMessage($m, $conversation);
+            })
             ->all();
+    }
+
+    /**
+     * Muat / cache ulang lampiran satu pesan (untuk pesan lama yang masih [Gambar]).
+     */
+    public function messageMedia(Request $request, OmniMessage $message): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $conversation = $message->conversation;
+        if (! $conversation) {
+            abort(404);
+        }
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
+        $media = app(OmnichannelInboxMediaService::class);
+        $media->ensureCached($message, $conversation);
+        $message->refresh();
+
+        $url = $media->resolvePublicUrl($message, $conversation, false);
+
+        return response()->json([
+            'success' => $url !== null,
+            'media_url' => $url,
+            'message' => $this->formatMessage($message, $conversation),
+        ]);
     }
 
     private function formatConversation(OmniConversation $conversation): array
@@ -834,7 +877,7 @@ class OmnichannelInboxController extends Controller
         ];
     }
 
-    private function formatMessage(OmniMessage $message): array
+    private function formatMessage(OmniMessage $message, ?OmniConversation $conversation = null): array
     {
         $authorName = null;
         if ($message->relationLoaded('author') && $message->author) {
@@ -844,9 +887,16 @@ class OmnichannelInboxController extends Controller
         }
 
         $payload = is_array($message->payload) ? $message->payload : [];
-        $mediaUrl = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
+        $mediaUrl = app(OmnichannelInboxMediaService::class)
+            ->resolvePublicUrl($message, $conversation, false);
+        if ($mediaUrl === null) {
+            $mediaUrl = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
+            if ($mediaUrl !== null) {
+                $mediaUrl = str_starts_with($mediaUrl, 'http') ? $mediaUrl : url($mediaUrl);
+            }
+        }
         if ($mediaUrl === null && ! empty($payload['local_media_path']) && is_string($payload['local_media_path'])) {
-            $mediaUrl = $this->publicStorageUrl($payload['local_media_path']);
+            $mediaUrl = app(OmnichannelInboxMediaService::class)->publicStorageUrl($payload['local_media_path']);
         }
 
         $messageType = (string) $message->message_type;

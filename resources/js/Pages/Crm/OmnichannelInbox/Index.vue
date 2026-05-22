@@ -261,13 +261,16 @@
                   <i class="fa-solid fa-paperclip shrink-0" />
                   <span class="truncate">{{ msg.media_filename || 'Buka lampiran' }}</span>
                 </a>
-                <p
-                  v-else-if="!msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'document' || msg.message_type === 'audio')"
-                  class="mb-1 flex items-center gap-1.5 rounded-md bg-white/50 px-2 py-1.5 text-xs text-slate-700"
+                <button
+                  v-else-if="!msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'document' || msg.message_type === 'audio' || ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]'].includes((msg.body || '').trim()))"
+                  type="button"
+                  class="mb-1 flex w-full items-center gap-1.5 rounded-md bg-white/50 px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-white/80"
+                  :disabled="mediaResolving[msg.id]"
+                  @click="resolveMessageMedia(msg)"
                 >
-                  <i class="fa-regular fa-image shrink-0 text-slate-500" />
-                  {{ mediaPlaceholderLabel(msg) }}
-                </p>
+                  <i class="fa-regular fa-image shrink-0 text-slate-500" :class="{ 'fa-spin fa-spinner': mediaResolving[msg.id] }" />
+                  {{ mediaResolving[msg.id] ? 'Memuat…' : mediaPlaceholderLabel(msg) }}
+                </button>
                 <p v-if="displayMessageBody(msg)" class="whitespace-pre-wrap break-words">{{ displayMessageBody(msg) }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
                   <span
@@ -938,6 +941,7 @@ const lightboxVisible = ref(false)
 const lightboxImages = ref([])
 const lightboxIndex = ref(0)
 const imageLoadFailed = ref({})
+const mediaResolving = ref({})
 
 function isImageLikeMessage(msg) {
   if (!msg?.media_url || imageLoadFailed.value[msg.id]) {
@@ -986,6 +990,34 @@ function openImageLightbox(msg) {
 function onImageLoadError(msg) {
   if (msg?.id) {
     imageLoadFailed.value = { ...imageLoadFailed.value, [msg.id]: true }
+    resolveMessageMedia(msg)
+  }
+}
+
+async function resolveMessageMedia(msg) {
+  if (!msg?.id || mediaResolving.value[msg.id]) {
+    return
+  }
+  mediaResolving.value = { ...mediaResolving.value, [msg.id]: true }
+  try {
+    const { data } = await axios.get(`/crm/omnichannel-inbox/messages/${msg.id}/media`)
+    if (data?.message?.media_url) {
+      const idx = localMessages.value.findIndex((m) => m.id === msg.id)
+      if (idx >= 0) {
+        localMessages.value = localMessages.value.map((m, i) =>
+          i === idx ? { ...m, ...data.message } : m
+        )
+        const failed = { ...imageLoadFailed.value }
+        delete failed[msg.id]
+        imageLoadFailed.value = failed
+      }
+    }
+  } catch (e) {
+    console.warn('resolveMessageMedia', e)
+  } finally {
+    const next = { ...mediaResolving.value }
+    delete next[msg.id]
+    mediaResolving.value = next
   }
 }
 

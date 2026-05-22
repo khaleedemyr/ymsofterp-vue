@@ -124,8 +124,12 @@ class MetaWhatsAppClient
 
         Storage::disk('public')->put($storedPath, $fileResponse->body());
 
+        $relative = Storage::disk('public')->url($storedPath);
+        $publicUrl = str_starts_with($relative, 'http') ? $relative : url($relative);
+
         return [
-            'local_media_url' => Storage::disk('public')->url($storedPath),
+            'local_media_path' => $storedPath,
+            'local_media_url' => $publicUrl,
             'media_filename' => $filename,
             'media_mime' => $mime,
         ];

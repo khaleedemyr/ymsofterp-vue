@@ -5,6 +5,7 @@ namespace App\Services\Meta;
 use App\Jobs\NotifyOmniInboundMessageJob;
 use App\Jobs\ProcessOmniFlowJob;
 use App\Models\OmniContact;
+use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Support\OmniMetaMessageId;
@@ -254,6 +255,12 @@ class MetaMessengerInboundService
         $this->processedMetaIdsThisRequest[$metaMessageId] = true;
 
         if ($conversationId && $inboundMessageId) {
+            $conversation = OmniConversation::query()->find($conversationId);
+            $inbound = OmniMessage::query()->find($inboundMessageId);
+            if ($conversation && $inbound) {
+                app(OmnichannelInboxMediaService::class)->ensureCached($inbound, $conversation);
+            }
+
             NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }

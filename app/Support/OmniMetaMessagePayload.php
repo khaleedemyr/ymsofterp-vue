@@ -86,6 +86,13 @@ final class OmniMetaMessagePayload
             return $payload['attachment_url'];
         }
 
+        // WhatsApp Cloud API (payload = message + hasil download)
+        foreach (['image', 'video', 'audio', 'document', 'sticker'] as $kind) {
+            if (! empty($payload[$kind]['link']) && is_string($payload[$kind]['link'])) {
+                return $payload[$kind]['link'];
+            }
+        }
+
         $attachments = $payload['attachments']['data'] ?? $payload['attachments'] ?? [];
         if (! is_array($attachments)) {
             return null;
