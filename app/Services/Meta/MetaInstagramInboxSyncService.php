@@ -18,40 +18,81 @@ use Illuminate\Support\Facades\Log;
  */
 class MetaInstagramInboxSyncService
 {
-    public function syncAll(): int
+    /**
+     * @return array{imported: int, accounts: list<array<string, mixed>>}
+     */
+    public function syncAll(bool $verbose = false): array
     {
         $imported = 0;
+        $accounts = [];
 
         foreach (MetaInstagramTokens::resolved() as $igId => $token) {
             try {
-                $imported += $this->syncAccount((string) $igId, $token);
+                $result = $this->syncAccount((string) $igId, $token, $verbose);
+                $imported += $result['imported'];
+                $accounts[] = $result;
             } catch (\Throwable $e) {
                 Log::error('Meta Instagram inbox sync failed for account', [
                     'ig_id' => $igId,
                     'error' => $e->getMessage(),
                 ]);
+                $accounts[] = [
+                    'ig_id' => $igId,
+                    'error' => $e->getMessage(),
+                    'imported' => 0,
+                ];
             }
         }
 
-        return $imported;
+        return ['imported' => $imported, 'accounts' => $accounts];
     }
 
-    public function syncAccount(string $igProfessionalId, string $accessToken): int
+    /**
+     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string}
+     */
+    public function syncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false): array
     {
         $version = config('services.meta.instagram_graph_version', 'v25.0');
         $imported = 0;
+        $messagesChecked = 0;
+        $skippedExisting = 0;
+        $skippedOutbound = 0;
+        $apiErrors = 0;
+
+        $me = Http::withToken($accessToken)
+            ->acceptJson()
+            ->get("https://graph.instagram.com/{$version}/me", [
+                'fields' => 'user_id,username',
+            ]);
+
+        if ($me->successful()) {
+            $resolvedId = (string) ($me->json('user_id') ?? '');
+            if ($resolvedId !== '') {
+                $igProfessionalId = $resolvedId;
+            }
+        }
 
         $conversations = Http::withToken($accessToken)
             ->acceptJson()
-            ->get("https://graph.instagram.com/{$version}/{$igProfessionalId}/conversations", [
+            ->get("https://graph.instagram.com/{$version}/me/conversations", [
                 'platform' => 'instagram',
             ]);
+
+        if (! $conversations->successful()) {
+            $conversations = Http::withToken($accessToken)
+                ->acceptJson()
+                ->get("https://graph.instagram.com/{$version}/{$igProfessionalId}/conversations", [
+                    'platform' => 'instagram',
+                ]);
+        }
 
         if (! $conversations->successful()) {
             throw new \RuntimeException('List conversations failed: '.$conversations->body());
         }
 
-        foreach ($conversations->json('data') ?? [] as $row) {
+        $conversationRows = $conversations->json('data') ?? [];
+
+        foreach ($conversationRows as $row) {
             $conversationId = (string) ($row['id'] ?? '');
             if ($conversationId === '') {
                 continue;
@@ -64,16 +105,24 @@ class MetaInstagramInboxSyncService
                 ]);
 
             if (! $detail->successful()) {
+                $apiErrors++;
+
                 continue;
             }
 
-            foreach ($detail->json('messages.data') ?? [] as $msgRow) {
+            $messageRows = $detail->json('messages.data') ?? [];
+
+            foreach ($messageRows as $msgRow) {
                 $messageId = (string) ($msgRow['id'] ?? '');
                 if ($messageId === '') {
                     continue;
                 }
 
+                $messagesChecked++;
+
                 if (OmniMessage::query()->where('meta_message_id', $messageId)->exists()) {
+                    $skippedExisting++;
+
                     continue;
                 }
 
@@ -84,13 +133,17 @@ class MetaInstagramInboxSyncService
                     ]);
 
                 if (! $full->successful()) {
+                    $apiErrors++;
+
                     continue;
                 }
 
                 $payload = $full->json();
                 $fromId = (string) ($payload['from']['id'] ?? '');
 
-                if ($fromId === '' || $fromId === $igProfessionalId) {
+                if ($fromId === '' || $this->isOutboundFromBusiness($payload, $igProfessionalId)) {
+                    $skippedOutbound++;
+
                     continue;
                 }
 
@@ -100,14 +153,27 @@ class MetaInstagramInboxSyncService
             }
         }
 
-        if ($imported > 0) {
-            Log::info('Meta Instagram inbox sync imported messages', [
-                'ig_id' => $igProfessionalId,
-                'count' => $imported,
-            ]);
-        }
+        $summary = [
+            'ig_id' => $igProfessionalId,
+            'username' => $me->successful() ? (string) ($me->json('username') ?? '') : '',
+            'imported' => $imported,
+            'conversations' => count($conversationRows),
+            'messages_checked' => $messagesChecked,
+            'skipped_existing' => $skippedExisting,
+            'skipped_outbound' => $skippedOutbound,
+            'api_errors' => $apiErrors,
+        ];
 
-        return $imported;
+        Log::info('Meta Instagram inbox sync finished', $summary);
+
+        return $summary;
+    }
+
+    private function isOutboundFromBusiness(array $payload, string $igProfessionalId): bool
+    {
+        $fromId = (string) ($payload['from']['id'] ?? '');
+
+        return $fromId === '' || $fromId === $igProfessionalId;
     }
 
     private function storeInboundFromApi(

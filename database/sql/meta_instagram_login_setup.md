@@ -56,7 +56,7 @@ php artisan config:clear
 Webhook kadang tidak push; ERP **poll** conversations tiap 2 menit:
 
 ```bash
-php artisan meta:sync-instagram-inbox
+php artisan meta:sync-instagram-inbox --verbose
 ```
 
 Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/meta-instagram-inbox-sync.log`.
