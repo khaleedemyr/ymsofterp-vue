@@ -9,6 +9,7 @@ use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramTokens;
+use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -155,7 +156,7 @@ class MetaInstagramInboxSyncService
     ): void {
         $url = "https://graph.instagram.com/{$version}/{$metaConversationId}/messages";
         $query = [
-            'fields' => 'id,created_time,from,to,message',
+            'fields' => 'id,created_time,from,to,message,attachments{type,mime_type,image_data,file_url,video_data,name}',
             'limit' => self::MESSAGE_PAGE_LIMIT,
         ];
         $pages = 0;
@@ -220,7 +221,12 @@ class MetaInstagramInboxSyncService
 
                 $messagesChecked++;
 
-                if (OmniMessage::query()->where('meta_message_id', $messageId)->exists()) {
+                $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
+                if ($existing) {
+                    $fullPayload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+                    if ($this->maybeEnrichExistingMessageMedia($existing, $fullPayload)) {
+                        $imported++;
+                    }
                     $skippedExisting++;
                     $consecutiveExisting++;
                     if ($consecutiveExisting >= self::STOP_AFTER_CONSECUTIVE_EXISTING) {
@@ -305,7 +311,12 @@ class MetaInstagramInboxSyncService
 
             $messagesChecked++;
 
-            if (OmniMessage::query()->where('meta_message_id', $messageId)->exists()) {
+            $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
+            if ($existing) {
+                $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
+                if ($payload && $this->maybeEnrichExistingMessageMedia($existing, $payload)) {
+                    $imported++;
+                }
                 $skippedExisting++;
                 $consecutiveExisting++;
                 if ($consecutiveExisting >= self::STOP_AFTER_CONSECUTIVE_EXISTING) {
@@ -364,7 +375,7 @@ class MetaInstagramInboxSyncService
         $response = Http::withToken($accessToken)
             ->acceptJson()
             ->get("https://graph.instagram.com/{$version}/{$messageId}", [
-                'fields' => 'id,created_time,from,to,message',
+                'fields' => 'id,created_time,from,to,message,attachments{type,mime_type,image_data,file_url,video_data,name}',
             ]);
 
         return $response->successful() ? $response->json() : null;
@@ -482,6 +493,42 @@ class MetaInstagramInboxSyncService
         return false;
     }
 
+    private function maybeEnrichExistingMessageMedia(OmniMessage $message, array $payload): bool
+    {
+        $currentPayload = is_array($message->payload) ? $message->payload : [];
+        if (OmniMetaMessagePayload::extractAttachmentUrl($currentPayload) !== null) {
+            return false;
+        }
+
+        $normalized = OmniMetaMessagePayload::normalize($payload);
+        if ($normalized['attachment_url'] === null) {
+            return false;
+        }
+
+        $merged = array_merge($currentPayload, $payload, [
+            'attachment_url' => $normalized['attachment_url'],
+        ]);
+        if ($normalized['media_mime'] !== null) {
+            $merged['media_mime'] = $normalized['media_mime'];
+        }
+        if ($normalized['media_filename'] !== null) {
+            $merged['media_filename'] = $normalized['media_filename'];
+        }
+
+        $updates = ['payload' => $merged];
+        if (($message->message_type === 'text' || $message->message_type === null || $message->message_type === '')
+            && $normalized['message_type'] !== 'text') {
+            $updates['message_type'] = $normalized['message_type'];
+        }
+        if (! $message->body && $normalized['body']) {
+            $updates['body'] = $normalized['body'];
+        }
+
+        $message->update($updates);
+
+        return true;
+    }
+
     private function storeInboundFromApi(
         string $igProfessionalId,
         string $senderIgsid,
@@ -492,9 +539,19 @@ class MetaInstagramInboxSyncService
             return false;
         }
 
-        $body = isset($payload['message']) && is_string($payload['message'])
-            ? $payload['message']
-            : null;
+        $normalized = OmniMetaMessagePayload::normalize($payload);
+        $body = $normalized['body'];
+        $messageType = $normalized['message_type'];
+
+        if ($normalized['attachment_url'] !== null) {
+            $payload['attachment_url'] = $normalized['attachment_url'];
+        }
+        if ($normalized['media_mime'] !== null) {
+            $payload['media_mime'] = $normalized['media_mime'];
+        }
+        if ($normalized['media_filename'] !== null) {
+            $payload['media_filename'] = $normalized['media_filename'];
+        }
 
         $created = (string) ($payload['created_time'] ?? '');
         $sentAt = $created !== ''
@@ -539,7 +596,7 @@ class MetaInstagramInboxSyncService
                 'conversation_id' => $conversation->id,
                 'direction' => 'inbound',
                 'meta_message_id' => $metaMessageId,
-                'message_type' => 'text',
+                'message_type' => $messageType,
                 'body' => $body,
                 'payload' => $payload,
                 'status' => 'received',

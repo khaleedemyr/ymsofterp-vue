@@ -235,7 +235,14 @@
                   <i class="fa-solid fa-paperclip shrink-0" />
                   <span class="truncate">{{ msg.media_filename || 'Buka lampiran' }}</span>
                 </a>
-                <p v-if="msg.body" class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
+                <p
+                  v-else-if="!msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'document' || msg.message_type === 'audio')"
+                  class="mb-1 flex items-center gap-1.5 rounded-md bg-white/50 px-2 py-1.5 text-xs text-slate-700"
+                >
+                  <i class="fa-regular fa-image shrink-0 text-slate-500" />
+                  {{ mediaPlaceholderLabel(msg) }}
+                </p>
+                <p v-if="msg.body && !(msg.media_url && msg.body === '[Gambar]')" class="whitespace-pre-wrap break-words">{{ msg.body }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
                   <span
                     v-if="msg.direction === 'outbound' && msg.author_name"
@@ -842,6 +849,13 @@ function bubbleClass(msg) {
 function isImageLikeMessage(msg) {
   return msg.message_type === 'image' || msg.message_type === 'sticker'
     || (msg.media_mime && String(msg.media_mime).startsWith('image/'))
+}
+
+function mediaPlaceholderLabel(msg) {
+  if (msg.message_type === 'video') return 'Video'
+  if (msg.message_type === 'audio') return 'Audio'
+  if (msg.message_type === 'document') return msg.media_filename || 'Berkas'
+  return 'Gambar'
 }
 
 function openMediaUrl(url) {

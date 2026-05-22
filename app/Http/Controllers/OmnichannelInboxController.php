@@ -13,6 +13,7 @@ use App\Services\Meta\MetaWhatsAppClient;
 use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramInboxSyncTrigger;
 use App\Support\MetaInstagramTokens;
+use App\Support\OmniMetaMessagePayload;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
 use App\Support\OmniLeadStages;
@@ -818,6 +819,7 @@ class OmnichannelInboxController extends Controller
         }
 
         $payload = is_array($message->payload) ? $message->payload : [];
+        $mediaUrl = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
 
         return [
             'id' => $message->id,
@@ -827,7 +829,7 @@ class OmnichannelInboxController extends Controller
             'status' => $message->status,
             'sent_at' => ($message->sent_at ?? $message->created_at)?->toIso8601String(),
             'author_name' => $authorName,
-            'media_url' => $payload['local_media_url'] ?? null,
+            'media_url' => $mediaUrl,
             'media_filename' => $payload['media_filename'] ?? null,
             'media_mime' => $payload['media_mime'] ?? null,
         ];
