@@ -28,11 +28,15 @@ final class MetaInstagramInboxSyncTrigger
             return;
         }
 
-        app()->terminating(function () use ($lockKey, $seconds): void {
+        $recentMinutes = max(15, (int) config('omnichannel.instagram_inbox_sync_recent_minutes', 45));
+
+        // terminating() sering tidak jalan di PHP-FPM/cPanel; afterResponse lebih andal
+        dispatch(function () use ($lockKey, $recentMinutes): void {
             try {
-                $result = app(MetaInstagramInboxSyncService::class)->syncAll(false);
+                $result = app(MetaInstagramInboxSyncService::class)->syncAll(false, $recentMinutes);
                 Log::info('Instagram inbox sync (triggered by open inbox)', [
                     'imported' => $result['imported'] ?? 0,
+                    'recent_minutes' => $recentMinutes,
                     'accounts' => count($result['accounts'] ?? []),
                 ]);
             } catch (\Throwable $e) {
@@ -41,6 +45,6 @@ final class MetaInstagramInboxSyncTrigger
                     'error' => $e->getMessage(),
                 ]);
             }
-        });
+        })->afterResponse();
     }
 }

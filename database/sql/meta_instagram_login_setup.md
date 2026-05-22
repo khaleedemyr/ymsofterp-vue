@@ -63,10 +63,13 @@ php artisan config:clear
 
 Webhook Instagram Login sering **tidak push** di Development; andalkan polling + cron.
 
-Webhook kadang tidak push; ERP **poll** conversations tiap 1 menit (wajib cron jalan):
+Webhook kadang tidak push; ERP **poll** conversations tiap 1 menit (wajib cron jalan).
+
+Cron memakai mode cepat `--recent=60` (hanya DM 60 menit terakhir). Impor riwayat penuh:
 
 ```bash
 php artisan meta:sync-instagram-inbox -v
+php artisan meta:sync-instagram-inbox --recent=60 -v
 
 # Isi nama & avatar profil (sekali / setelah impor riwayat)
 php artisan migrate

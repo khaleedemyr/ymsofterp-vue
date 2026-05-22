@@ -7,14 +7,24 @@ use Illuminate\Console\Command;
 
 class SyncMetaInstagramInboxCommand extends Command
 {
-    protected $signature = 'meta:sync-instagram-inbox';
+    protected $signature = 'meta:sync-instagram-inbox
+                            {--recent= : Hanya pesan dalam N menit terakhir (cepat, untuk cron/inbox)}';
 
     protected $description = 'Poll Instagram Login API conversations and import new DMs into omnichannel inbox';
 
     public function handle(MetaInstagramInboxSyncService $sync): int
     {
         $verbose = $this->output->isVerbose();
-        $result = $sync->syncAll($verbose);
+        $recentOpt = $this->option('recent');
+        $recentMinutes = $recentOpt !== null && $recentOpt !== ''
+            ? max(1, (int) $recentOpt)
+            : null;
+
+        if ($recentMinutes !== null) {
+            $this->line("Mode recent: {$recentMinutes} menit terakhir");
+        }
+
+        $result = $sync->syncAll($verbose, $recentMinutes);
 
         if ($result['accounts'] !== [] && isset($result['accounts'][0]['error']) && count($result['accounts']) === 1) {
             $this->error($result['accounts'][0]['error']);

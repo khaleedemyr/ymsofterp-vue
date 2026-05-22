@@ -33,7 +33,7 @@ class MetaInstagramInboxSyncService
     /**
      * @return array{imported: int, accounts: list<array<string, mixed>>}
      */
-    public function syncAll(bool $verbose = false): array
+    public function syncAll(bool $verbose = false, ?int $recentMinutes = null): array
     {
         $imported = 0;
         $accounts = [];
@@ -53,7 +53,7 @@ class MetaInstagramInboxSyncService
 
         foreach ($tokenMap as $igId => $token) {
             try {
-                $result = $this->syncAccount((string) $igId, $token, $verbose);
+                $result = $this->syncAccount((string) $igId, $token, $verbose, $recentMinutes);
                 $imported += $result['imported'];
                 $accounts[] = $result;
             } catch (\Throwable $e) {
@@ -67,6 +67,10 @@ class MetaInstagramInboxSyncService
                     'imported' => 0,
                 ];
             }
+        }
+
+        if ($imported > 0 || $recentMinutes !== null) {
+            Cache::put('meta_instagram_last_sync_at', now()->toIso8601String(), now()->addDay());
         }
 
         return ['imported' => $imported, 'accounts' => $accounts];
@@ -90,33 +94,17 @@ class MetaInstagramInboxSyncService
     }
 
     /**
-     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string}
+     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string, recent_minutes?: int|null}
      */
-    public function syncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false): array
+    public function syncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false, ?int $recentMinutes = null): array
     {
-        $lock = Cache::lock('meta_ig_sync_account_'.preg_replace('/\D/', '', $igProfessionalId), 540);
-
-        if (! $lock->get()) {
-            Log::info('Meta Instagram inbox sync skipped: account already syncing', ['ig_id' => $igProfessionalId]);
-
-            return [
-                'ig_id' => $igProfessionalId,
-                'imported' => 0,
-                'skipped_locked' => true,
-            ];
-        }
-
-        try {
-            return $this->runSyncAccount($igProfessionalId, $accessToken, $verbose);
-        } finally {
-            $lock->release();
-        }
+        return $this->runSyncAccount($igProfessionalId, $accessToken, $verbose, $recentMinutes);
     }
 
     /**
-     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string}
+     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string, recent_minutes?: int|null}
      */
-    private function runSyncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false): array
+    private function runSyncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false, ?int $recentMinutes = null): array
     {
         $version = config('services.meta.instagram_graph_version', 'v25.0');
         $imported = 0;
@@ -162,13 +150,15 @@ class MetaInstagramInboxSyncService
                 $skippedExisting,
                 $skippedOutbound,
                 $skippedNoSender,
-                $apiErrors
+                $apiErrors,
+                $recentMinutes
             );
         }
 
         $summary = [
             'ig_id' => $igProfessionalId,
             'username' => $igUsername !== '' ? $igUsername : ($me->successful() ? (string) ($me->json('username') ?? '') : ''),
+            'recent_minutes' => $recentMinutes,
             'imported' => $imported,
             'conversations' => $conversationCount,
             'messages_checked' => $messagesChecked,
@@ -196,8 +186,15 @@ class MetaInstagramInboxSyncService
         int &$skippedExisting,
         int &$skippedOutbound,
         int &$skippedNoSender,
-        int &$apiErrors
+        int &$apiErrors,
+        ?int $recentMinutes = null
     ): void {
+        $cutoff = $recentMinutes !== null && $recentMinutes > 0
+            ? now()->subMinutes($recentMinutes)
+            : null;
+        $maxPages = $cutoff !== null ? 1 : self::MAX_MESSAGE_PAGES_PER_CONVERSATION;
+        $stopAfterExisting = $cutoff !== null ? 3 : self::STOP_AFTER_CONSECUTIVE_EXISTING;
+
         $url = "https://graph.instagram.com/{$version}/{$metaConversationId}/messages";
         $query = [
             'fields' => 'id,created_time,from,to,message,attachments{type,mime_type,image_data,file_url,video_data,name}',
@@ -206,7 +203,7 @@ class MetaInstagramInboxSyncService
         $pages = 0;
         $consecutiveExisting = 0;
 
-        while ($pages < self::MAX_MESSAGE_PAGES_PER_CONVERSATION) {
+        while ($pages < $maxPages) {
             $response = Http::withToken($accessToken)
                 ->acceptJson()
                 ->get($url, $query);
@@ -228,7 +225,8 @@ class MetaInstagramInboxSyncService
                     $skippedExisting,
                     $skippedOutbound,
                     $skippedNoSender,
-                    $apiErrors
+                    $apiErrors,
+                    $recentMinutes
                 );
 
                 return;
@@ -247,7 +245,8 @@ class MetaInstagramInboxSyncService
                     $skippedExisting,
                     $skippedOutbound,
                     $skippedNoSender,
-                    $apiErrors
+                    $apiErrors,
+                    $recentMinutes
                 );
 
                 return;
@@ -265,6 +264,16 @@ class MetaInstagramInboxSyncService
 
                 $messagesChecked++;
 
+                if ($this->isMessageOlderThanCutoff($payload, $cutoff)) {
+                    $skippedExisting++;
+                    $consecutiveExisting++;
+                    if ($consecutiveExisting >= $stopAfterExisting) {
+                        return;
+                    }
+
+                    continue;
+                }
+
                 $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
                 if ($existing) {
                     $fullPayload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
@@ -273,7 +282,7 @@ class MetaInstagramInboxSyncService
                     }
                     $skippedExisting++;
                     $consecutiveExisting++;
-                    if ($consecutiveExisting >= self::STOP_AFTER_CONSECUTIVE_EXISTING) {
+                    if ($consecutiveExisting >= $stopAfterExisting) {
                         return;
                     }
 
@@ -326,8 +335,14 @@ class MetaInstagramInboxSyncService
         int &$skippedExisting,
         int &$skippedOutbound,
         int &$skippedNoSender,
-        int &$apiErrors
+        int &$apiErrors,
+        ?int $recentMinutes = null
     ): void {
+        $cutoff = $recentMinutes !== null && $recentMinutes > 0
+            ? now()->subMinutes($recentMinutes)
+            : null;
+        $stopAfterExisting = $cutoff !== null ? 3 : self::STOP_AFTER_CONSECUTIVE_EXISTING;
+
         $detail = Http::withToken($accessToken)
             ->acceptJson()
             ->get("https://graph.instagram.com/{$version}/{$metaConversationId}", [
@@ -355,6 +370,16 @@ class MetaInstagramInboxSyncService
 
             $messagesChecked++;
 
+            if ($this->isMessageOlderThanCutoff($msgRow, $cutoff)) {
+                $skippedExisting++;
+                $consecutiveExisting++;
+                if ($consecutiveExisting >= $stopAfterExisting) {
+                    return;
+                }
+
+                continue;
+            }
+
             $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
             if ($existing) {
                 $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
@@ -363,7 +388,7 @@ class MetaInstagramInboxSyncService
                 }
                 $skippedExisting++;
                 $consecutiveExisting++;
-                if ($consecutiveExisting >= self::STOP_AFTER_CONSECUTIVE_EXISTING) {
+                if ($consecutiveExisting >= $stopAfterExisting) {
                     return;
                 }
 
@@ -529,6 +554,24 @@ class MetaInstagramInboxSyncService
         }
 
         return $rows;
+    }
+
+    private function isMessageOlderThanCutoff(array $payload, ?Carbon $cutoff): bool
+    {
+        if ($cutoff === null) {
+            return false;
+        }
+
+        $createdRaw = (string) ($payload['created_time'] ?? '');
+        if ($createdRaw === '') {
+            return false;
+        }
+
+        try {
+            return Carbon::parse($createdRaw)->timezone(config('app.timezone'))->lt($cutoff);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function messageTimestamp(array $row): ?int
