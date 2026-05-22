@@ -11,6 +11,8 @@ use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramTokens;
 use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -91,6 +93,30 @@ class MetaInstagramInboxSyncService
      * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string}
      */
     public function syncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false): array
+    {
+        $lock = Cache::lock('meta_ig_sync_account_'.preg_replace('/\D/', '', $igProfessionalId), 540);
+
+        if (! $lock->get()) {
+            Log::info('Meta Instagram inbox sync skipped: account already syncing', ['ig_id' => $igProfessionalId]);
+
+            return [
+                'ig_id' => $igProfessionalId,
+                'imported' => 0,
+                'skipped_locked' => true,
+            ];
+        }
+
+        try {
+            return $this->runSyncAccount($igProfessionalId, $accessToken, $verbose);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @return array{ig_id: string, imported: int, conversations: int, messages_checked: int, skipped_existing: int, skipped_outbound: int, api_errors: int, username?: string}
+     */
+    private function runSyncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false): array
     {
         $version = config('services.meta.instagram_graph_version', 'v25.0');
         $imported = 0;
@@ -675,60 +701,94 @@ class MetaInstagramInboxSyncService
             ? Carbon::parse($created)->timezone(config('app.timezone'))
             : now();
 
+        $existingGlobal = OmniMessage::query()->where('meta_message_id', $metaMessageId)->first();
+        if ($existingGlobal) {
+            $this->maybeEnrichExistingMessageMedia($existingGlobal, $payload);
+
+            return false;
+        }
+
         $contactKey = "instagram_{$senderIgsid}";
         $conversationId = null;
         $inboundMessageId = null;
+        $wasNew = false;
 
-        DB::transaction(function () use (
-            $igProfessionalId,
-            $senderIgsid,
-            $contactKey,
-            $metaMessageId,
-            $body,
-            $payload,
-            $sentAt,
-            &$conversationId,
-            &$inboundMessageId
-        ) {
-            $contact = OmniContact::query()->firstOrCreate(
-                ['phone_normalized' => $contactKey],
-                ['display_name' => (string) ($payload['from']['username'] ?? null)]
-            );
+        try {
+            DB::transaction(function () use (
+                $igProfessionalId,
+                $senderIgsid,
+                $contactKey,
+                $metaMessageId,
+                $body,
+                $messageType,
+                $payload,
+                $sentAt,
+                &$conversationId,
+                &$inboundMessageId,
+                &$wasNew
+            ) {
+                $contact = OmniContact::query()->firstOrCreate(
+                    ['phone_normalized' => $contactKey],
+                    ['display_name' => (string) ($payload['from']['username'] ?? null)]
+                );
 
-            $conversation = OmniConversation::query()->firstOrCreate(
-                [
-                    'channel' => 'instagram',
-                    'external_contact_id' => $senderIgsid,
-                    'phone_number_id' => $igProfessionalId,
-                ],
-                [
-                    'omni_contact_id' => $contact->id,
-                    'status' => 'open',
-                ]
-            );
+                $conversation = OmniConversation::query()->firstOrCreate(
+                    [
+                        'channel' => 'instagram',
+                        'external_contact_id' => $senderIgsid,
+                        'phone_number_id' => $igProfessionalId,
+                    ],
+                    [
+                        'omni_contact_id' => $contact->id,
+                        'status' => 'open',
+                    ]
+                );
 
-            $conversation->omni_contact_id = $contact->id;
+                $conversation->omni_contact_id = $contact->id;
 
-            $inbound = OmniMessage::query()->create([
-                'conversation_id' => $conversation->id,
-                'direction' => 'inbound',
-                'meta_message_id' => $metaMessageId,
-                'message_type' => $messageType,
-                'body' => $body,
-                'payload' => $payload,
-                'status' => 'received',
-                'sent_at' => $sentAt,
+                $inbound = OmniMessage::query()->firstOrCreate(
+                    ['meta_message_id' => $metaMessageId],
+                    [
+                        'conversation_id' => $conversation->id,
+                        'direction' => 'inbound',
+                        'message_type' => $messageType,
+                        'body' => $body,
+                        'payload' => $payload,
+                        'status' => 'received',
+                        'sent_at' => $sentAt,
+                    ]
+                );
+
+                $wasNew = $inbound->wasRecentlyCreated;
+                if (! $wasNew) {
+                    return;
+                }
+
+                $conversationId = (int) $conversation->id;
+                $inboundMessageId = (int) $inbound->id;
+
+                $conversation->last_message_at = $sentAt;
+                $conversation->last_customer_message_at = $sentAt;
+                $conversation->last_message_preview = mb_substr($body ?: '[pesan]', 0, 500);
+                $conversation->unread_count = (int) $conversation->unread_count + 1;
+                $conversation->save();
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            $dup = OmniMessage::query()->where('meta_message_id', $metaMessageId)->first();
+            if ($dup) {
+                $this->maybeEnrichExistingMessageMedia($dup, $payload);
+            }
+
+            Log::debug('Instagram sync duplicate meta_message_id skipped', [
+                'meta_message_id' => mb_substr($metaMessageId, 0, 80),
             ]);
 
-            $conversationId = (int) $conversation->id;
-            $inboundMessageId = (int) $inbound->id;
+            return false;
+        }
 
-            $conversation->last_message_at = $sentAt;
-            $conversation->last_customer_message_at = $sentAt;
-            $conversation->last_message_preview = mb_substr($body ?: '[pesan]', 0, 500);
-            $conversation->unread_count = (int) $conversation->unread_count + 1;
-            $conversation->save();
-        });
+        if (! $wasNew) {
+            return false;
+        }
 
         if ($conversationId && $inboundMessageId && $normalized['attachment_url'] !== null) {
             $localPath = $this->cacheInboundMediaLocally(
