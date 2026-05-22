@@ -2,11 +2,13 @@
 
 namespace App\Services\Omni;
 
+use App\Models\Notification;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Support\OmnichannelAuthorization;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -17,6 +19,16 @@ class OmnichannelInboundNotificationService
 {
     public function notifyInboundMessage(int $conversationId, int $messageId): void
     {
+        $jobDedupeKey = 'omni_inbound_notify_job:'.$messageId;
+        if (! Cache::add($jobDedupeKey, 1, now()->addMinutes(15))) {
+            Log::debug('Omnichannel inbound notify: duplicate job skipped', [
+                'conversation_id' => $conversationId,
+                'message_id' => $messageId,
+            ]);
+
+            return;
+        }
+
         $conversation = OmniConversation::query()
             ->with(['assignees:id', 'teams:id'])
             ->find($conversationId);
@@ -41,13 +53,24 @@ class OmnichannelInboundNotificationService
         $preview = mb_substr($message->body ?: '['.$message->message_type.']', 0, 160);
         $channel = strtoupper((string) ($conversation->channel ?: 'whatsapp'));
         $url = url('/crm/omnichannel-inbox?conversation='.$conversation->id);
+        $notificationBody = "[{$channel}] {$label}: {$preview}";
+        $dedupeMinutes = (int) config('omnichannel.inbound_notify_dedupe_minutes', 3);
 
         foreach ($recipientIds as $userId) {
+            if ($this->alreadyNotifiedRecently($userId, $notificationBody, $conversation->id, $dedupeMinutes)) {
+                continue;
+            }
+
+            $userDedupeKey = 'omni_inbound_notify_user:'.$userId.':'.md5($notificationBody);
+            if (! Cache::add($userDedupeKey, 1, now()->addMinutes($dedupeMinutes))) {
+                continue;
+            }
+
             NotificationService::create([
                 'user_id' => $userId,
                 'type' => 'omnichannel_inbox_message',
                 'title' => 'Pesan masuk — Omnichannel',
-                'message' => "[{$channel}] {$label}: {$preview}",
+                'message' => $notificationBody,
                 'url' => $url,
             ]);
         }
@@ -102,6 +125,25 @@ class OmnichannelInboundNotificationService
             $activeWithInbox,
             fn (int $uid) => OmnichannelAuthorization::userHasPermission($uid, 'omnichannel_inbox_view')
         ));
+    }
+
+    private function alreadyNotifiedRecently(
+        int $userId,
+        string $notificationBody,
+        int $conversationId,
+        int $withinMinutes
+    ): bool {
+        if ($withinMinutes <= 0) {
+            return false;
+        }
+
+        return Notification::query()
+            ->where('user_id', $userId)
+            ->where('type', 'omnichannel_inbox_message')
+            ->where('message', $notificationBody)
+            ->where('url', 'like', '%conversation='.$conversationId.'%')
+            ->where('created_at', '>=', now()->subMinutes($withinMinutes))
+            ->exists();
     }
 
     private function formatDisplayPhone(?string $externalId): string

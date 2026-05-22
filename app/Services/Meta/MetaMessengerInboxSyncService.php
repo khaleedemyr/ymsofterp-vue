@@ -9,6 +9,7 @@ use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Support\MetaPageAccountRegistry;
 use App\Support\MetaPageTokens;
+use App\Support\OmniMetaMessageId;
 use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -740,6 +741,15 @@ class MetaMessengerInboxSyncService
                 $conversation->omni_contact_id = $contact->id;
                 if ($fromName !== '' && ! $conversation->contact_name) {
                     $conversation->contact_name = $fromName;
+                }
+
+                $nearDup = OmniMetaMessageId::findNearDuplicateInbound(
+                    (int) $conversation->id,
+                    $body,
+                    $sentAt
+                );
+                if ($nearDup !== null) {
+                    return;
                 }
 
                 $inbound = OmniMessage::query()->firstOrCreate(

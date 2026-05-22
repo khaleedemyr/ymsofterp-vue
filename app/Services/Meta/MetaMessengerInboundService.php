@@ -7,7 +7,9 @@ use App\Jobs\ProcessOmniFlowJob;
 use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Support\OmniMetaMessageId;
 use Carbon\Carbon;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -16,6 +18,9 @@ use Illuminate\Support\Facades\Log;
  */
 class MetaMessengerInboundService
 {
+    /** @var array<string, true> */
+    private array $processedMetaIdsThisRequest = [];
+
     public function processPayload(array $payload): void
     {
         $object = (string) ($payload['object'] ?? '');
@@ -136,7 +141,8 @@ class MetaMessengerInboundService
     private function storeInboundMessage(string $channel, string $pageOrIgId, array $event): void
     {
         $message = $event['message'];
-        $metaMessageId = (string) ($message['mid'] ?? $message['message_id'] ?? $event['message_id'] ?? '');
+        $aliases = OmniMetaMessageId::aliasesFromWebhook($message, $event);
+        $metaMessageId = OmniMetaMessageId::canonical($aliases);
         if ($metaMessageId === '') {
             Log::warning('Meta inbound skipped: missing message mid', [
                 'channel' => $channel,
@@ -146,7 +152,13 @@ class MetaMessengerInboundService
             return;
         }
 
-        if (OmniMessage::query()->where('meta_message_id', $metaMessageId)->exists()) {
+        if (isset($this->processedMetaIdsThisRequest[$metaMessageId])) {
+            return;
+        }
+
+        if (OmniMetaMessageId::existsAny($aliases)) {
+            $this->processedMetaIdsThisRequest[$metaMessageId] = true;
+
             return;
         }
 
@@ -167,58 +179,79 @@ class MetaMessengerInboundService
         $conversationId = null;
         $inboundMessageId = null;
 
-        DB::transaction(function () use (
-            $channel,
-            $pageOrIgId,
-            $senderId,
-            $contactKey,
-            $metaMessageId,
-            $messageType,
-            $body,
-            $message,
-            $sentAt,
-            &$conversationId,
-            &$inboundMessageId
-        ) {
-            $contact = OmniContact::query()->firstOrCreate(
-                ['phone_normalized' => $contactKey],
-                ['display_name' => null]
-            );
+        try {
+            DB::transaction(function () use (
+                $channel,
+                $pageOrIgId,
+                $senderId,
+                $contactKey,
+                $metaMessageId,
+                $messageType,
+                $body,
+                $message,
+                $sentAt,
+                &$conversationId,
+                &$inboundMessageId
+            ) {
+                $contact = OmniContact::query()->firstOrCreate(
+                    ['phone_normalized' => $contactKey],
+                    ['display_name' => null]
+                );
 
-            $conversation = OmniConversation::query()->firstOrCreate(
-                [
-                    'channel' => $channel,
-                    'external_contact_id' => $senderId,
-                    'phone_number_id' => $pageOrIgId !== '' ? $pageOrIgId : null,
-                ],
-                [
-                    'omni_contact_id' => $contact->id,
-                    'status' => 'open',
-                ]
-            );
+                $conversation = OmniConversation::query()->firstOrCreate(
+                    [
+                        'channel' => $channel,
+                        'external_contact_id' => $senderId,
+                        'phone_number_id' => $pageOrIgId !== '' ? $pageOrIgId : null,
+                    ],
+                    [
+                        'omni_contact_id' => $contact->id,
+                        'status' => 'open',
+                    ]
+                );
 
-            $conversation->omni_contact_id = $contact->id;
+                $conversation->omni_contact_id = $contact->id;
 
-            $inbound = OmniMessage::query()->create([
-                'conversation_id' => $conversation->id,
-                'direction' => 'inbound',
-                'meta_message_id' => $metaMessageId,
-                'message_type' => $messageType,
-                'body' => $body,
-                'payload' => $message,
-                'status' => 'received',
-                'sent_at' => $sentAt,
+                $nearDup = OmniMetaMessageId::findNearDuplicateInbound(
+                    (int) $conversation->id,
+                    $body,
+                    $sentAt
+                );
+                if ($nearDup !== null) {
+                    return;
+                }
+
+                $inbound = OmniMessage::query()->create([
+                    'conversation_id' => $conversation->id,
+                    'direction' => 'inbound',
+                    'meta_message_id' => $metaMessageId,
+                    'message_type' => $messageType,
+                    'body' => $body,
+                    'payload' => $message,
+                    'status' => 'received',
+                    'sent_at' => $sentAt,
+                ]);
+
+                $conversationId = (int) $conversation->id;
+                $inboundMessageId = (int) $inbound->id;
+
+                $conversation->last_message_at = $sentAt;
+                $conversation->last_customer_message_at = $sentAt;
+                $conversation->last_message_preview = mb_substr($body ?: '['.$messageType.']', 0, 500);
+                $conversation->unread_count = (int) $conversation->unread_count + 1;
+                $conversation->save();
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            Log::debug('Meta inbound webhook duplicate meta_message_id skipped', [
+                'meta_message_id' => mb_substr($metaMessageId, 0, 80),
+                'channel' => $channel,
             ]);
+            $this->processedMetaIdsThisRequest[$metaMessageId] = true;
 
-            $conversationId = (int) $conversation->id;
-            $inboundMessageId = (int) $inbound->id;
+            return;
+        }
 
-            $conversation->last_message_at = $sentAt;
-            $conversation->last_customer_message_at = $sentAt;
-            $conversation->last_message_preview = mb_substr($body ?: '['.$messageType.']', 0, 500);
-            $conversation->unread_count = (int) $conversation->unread_count + 1;
-            $conversation->save();
-        });
+        $this->processedMetaIdsThisRequest[$metaMessageId] = true;
 
         if ($conversationId && $inboundMessageId) {
             NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);

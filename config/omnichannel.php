@@ -9,6 +9,12 @@ return [
     */
     'flow_queue' => env('OMNI_FLOW_QUEUE', 'omnichannel'),
 
+    /**
+     | Dedupe notifikasi inbox: webhook + polling sync kadang menyimpan pesan sama dengan meta_message_id berbeda.
+     | Window ini mencegah push ganda ke HP untuk teks & percakapan yang sama.
+     */
+    'inbound_notify_dedupe_minutes' => (int) env('OMNI_INBOUND_NOTIFY_DEDUPE_MINUTES', 3),
+
     /** Notifikasi push hanya untuk pesan masuk sync dalam N menit terakhir (hindari spam saat impor riwayat). */
     'instagram_sync_notify_within_minutes' => (int) env('OMNI_INSTAGRAM_SYNC_NOTIFY_WITHIN_MINUTES', 30),
 

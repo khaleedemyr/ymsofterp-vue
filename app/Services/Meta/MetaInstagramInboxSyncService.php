@@ -9,6 +9,7 @@ use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramTokens;
+use App\Support\OmniMetaMessageId;
 use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -788,6 +789,15 @@ class MetaInstagramInboxSyncService
                 );
 
                 $conversation->omni_contact_id = $contact->id;
+
+                $nearDup = OmniMetaMessageId::findNearDuplicateInbound(
+                    (int) $conversation->id,
+                    $body,
+                    $sentAt
+                );
+                if ($nearDup !== null) {
+                    return;
+                }
 
                 $inbound = OmniMessage::query()->firstOrCreate(
                     ['meta_message_id' => $metaMessageId],
