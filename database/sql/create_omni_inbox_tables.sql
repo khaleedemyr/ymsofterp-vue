@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS `omni_messages` (
 
     `direction` VARCHAR(16) NOT NULL,
 
-    `meta_message_id` VARCHAR(128) NULL,
+    `meta_message_id` VARCHAR(512) NULL,
 
     `message_type` VARCHAR(32) NOT NULL DEFAULT 'text',
 
