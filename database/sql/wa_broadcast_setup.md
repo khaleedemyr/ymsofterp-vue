@@ -4,7 +4,7 @@
 
 - `META_WHATSAPP_ACCESS_TOKEN`, `META_WHATSAPP_PHONE_NUMBER_ID`, `META_WHATSAPP_BUSINESS_ACCOUNT_ID`
 - Template pesan **disetujui Meta** (Marketing / Utility) untuk broadcast di luar jendela 24 jam
-- Queue worker: `php artisan queue:work --queue=wa-broadcast,omnichannel,notifications`
+- Queue worker via Supervisor (lihat `deployment/supervisor-laravel-queue.conf.example`)
 
 ## Database
 

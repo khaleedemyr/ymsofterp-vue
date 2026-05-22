@@ -14,7 +14,8 @@
 process_name=%(program_name)s_%(process_num)02d
 directory=/var/www/ymsofterp
 ; Sertakan antrean job laporan AI (GOOGLE_REVIEW_AI_QUEUE) dan Instagram Apify (INSTAGRAM_SCRAPER_QUEUE, default instagram-scraper)
-command=/usr/bin/php artisan queue:work redis --queue=omnichannel,notifications,google-review-ai,instagram-scraper --sleep=3 --tries=3 --timeout=300 --max-jobs=1000
+; Antrean: omnichannel (flow inbox), notifications, wa-broadcast (broadcast WA), + job lain
+command=/usr/bin/php artisan queue:work redis --queue=wa-broadcast,omnichannel,notifications,google-review-ai,instagram-scraper --sleep=3 --tries=3 --timeout=300 --max-jobs=1000
 autostart=true
 autorestart=true
 stopasgroup=true
@@ -48,4 +49,22 @@ stopwaitsecs=3700
 ; Opsi C — Dua app berbagi Redis, job tertukar atau macet:
 ;   Bedakan antrean atau prefix Redis per app (lihat dokumentasi Laravel queue +
 ;   REDIS_PREFIX), lalu worker per app: queue:work redis --queue=nama_antrian_tiap_app
+; =============================================================================
+
+; =============================================================================
+; Opsi khusus broadcast WA (volume besar, pisah dari inbox)
+; =============================================================================
+; [program:ymsofterp-wa-broadcast-worker]
+; process_name=%(program_name)s_%(process_num)02d
+; directory=/var/www/ymsofterp/public_html
+; command=/usr/bin/php artisan queue:work redis --queue=wa-broadcast --sleep=1 --tries=3 --timeout=120 --max-jobs=5000
+; autostart=true
+; autorestart=true
+; stopasgroup=true
+; killasgroup=true
+; user=www-data
+; numprocs=2
+; redirect_stderr=true
+; stdout_logfile=/var/www/ymsofterp/public_html/storage/logs/wa-broadcast-worker.log
+; stopwaitsecs=130
 ; =============================================================================
