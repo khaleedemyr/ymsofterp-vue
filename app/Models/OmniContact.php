@@ -11,6 +11,7 @@ class OmniContact extends Model
     protected $fillable = [
         'phone_normalized',
         'display_name',
+        'avatar_url',
         'member_apps_member_id',
     ];
 

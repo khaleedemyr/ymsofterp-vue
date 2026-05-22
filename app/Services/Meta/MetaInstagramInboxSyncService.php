@@ -7,6 +7,7 @@ use App\Jobs\ProcessOmniFlowJob;
 use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramTokens;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -65,11 +66,14 @@ class MetaInstagramInboxSyncService
                 'fields' => 'user_id,username',
             ]);
 
+        $igUsername = '';
         if ($me->successful()) {
             $resolvedId = (string) ($me->json('user_id') ?? '');
             if ($resolvedId !== '') {
                 $igProfessionalId = $resolvedId;
             }
+            $igUsername = (string) ($me->json('username') ?? '');
+            MetaInstagramAccountRegistry::remember($igProfessionalId, $igUsername !== '' ? $igUsername : null);
         }
 
         $conversations = Http::withToken($accessToken)
@@ -155,7 +159,7 @@ class MetaInstagramInboxSyncService
 
         $summary = [
             'ig_id' => $igProfessionalId,
-            'username' => $me->successful() ? (string) ($me->json('username') ?? '') : '',
+            'username' => $igUsername !== '' ? $igUsername : ($me->successful() ? (string) ($me->json('username') ?? '') : ''),
             'imported' => $imported,
             'conversations' => count($conversationRows),
             'messages_checked' => $messagesChecked,
@@ -247,8 +251,23 @@ class MetaInstagramInboxSyncService
         });
 
         if ($conversationId && $inboundMessageId) {
-            NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
-            ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
+            $within = (int) config('omnichannel.instagram_sync_notify_within_minutes', 30);
+            if ($sentAt->gte(now()->subMinutes($within))) {
+                NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
+                ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
+            }
+        }
+
+        $conversation = OmniConversation::query()->find($conversationId);
+        $contact = $conversation?->omniContact;
+        if ($conversation && $contact && (! $conversation->contact_name || ! $contact->avatar_url)) {
+            app(MetaInstagramProfileService::class)->enrichContactAndConversation(
+                $contact,
+                $conversation,
+                $senderIgsid,
+                $igProfessionalId,
+                isset($payload['from']['username']) ? (string) $payload['from']['username'] : null
+            );
         }
 
         return true;

@@ -9,6 +9,9 @@ return [
     */
     'flow_queue' => env('OMNI_FLOW_QUEUE', 'omnichannel'),
 
+    /** Notifikasi push hanya untuk pesan masuk sync dalam N menit terakhir (hindari spam saat impor riwayat). */
+    'instagram_sync_notify_within_minutes' => (int) env('OMNI_INSTAGRAM_SYNC_NOTIFY_WITHIN_MINUTES', 30),
+
     /*
     | AI Writing Assistant di composer inbox (grammar, tone, translate ID/EN, dll.)
     | Provider kosong = GOOGLE_REVIEW_AI_PROVIDER → GUEST_COMMENT_AI_PROVIDER → AI_PROVIDER.

@@ -225,6 +225,19 @@ class MetaMessengerInboundService
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }
 
+        if ($channel === 'instagram' && $conversationId) {
+            $conversation = OmniConversation::query()->find($conversationId);
+            $contact = $conversation?->omniContact;
+            if ($conversation && $contact && (! $conversation->contact_name || ! $contact->avatar_url)) {
+                app(MetaInstagramProfileService::class)->enrichContactAndConversation(
+                    $contact,
+                    $conversation,
+                    $senderId,
+                    $pageOrIgId
+                );
+            }
+        }
+
         Log::info('Meta Messenger/Instagram inbound stored', [
             'channel' => $channel,
             'conversation_id' => $conversationId,

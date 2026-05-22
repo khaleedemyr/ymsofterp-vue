@@ -10,6 +10,7 @@ use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
+use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramTokens;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
@@ -56,6 +57,7 @@ class OmnichannelInboxController extends Controller
             $conversation = OmniConversation::query()
                 ->with([
                     'member',
+                    'omniContact:id,display_name,avatar_url',
                     'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                     'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                     'teams:id,name',
@@ -116,6 +118,7 @@ class OmnichannelInboxController extends Controller
             $conversation = OmniConversation::query()
                 ->with([
                     'member',
+                    'omniContact:id,display_name,avatar_url',
                     'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                     'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                     'teams:id,name',
@@ -158,6 +161,7 @@ class OmnichannelInboxController extends Controller
         $query = OmniConversation::query()
             ->with([
                 'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
+                'omniContact:id,display_name,avatar_url',
                 'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
@@ -650,6 +654,7 @@ class OmnichannelInboxController extends Controller
         $query = OmniConversation::query()
             ->with([
                 'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
+                'omniContact:id,display_name,avatar_url',
                 'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
@@ -701,11 +706,20 @@ class OmnichannelInboxController extends Controller
             ])->values()->all();
         }
 
+        $omniContact = $conversation->relationLoaded('omniContact') ? $conversation->omniContact : null;
+        $resolvedName = $conversation->contact_name ?: $omniContact?->display_name;
+
+        $channelAccountId = (string) ($conversation->phone_number_id ?? '');
+        $channelAccountLabel = $this->resolveChannelAccountLabel($conversation);
+
         return [
             'id' => $conversation->id,
             'channel' => $conversation->channel,
             'external_contact_id' => $conversation->external_contact_id,
-            'contact_name' => $conversation->contact_name,
+            'contact_name' => $resolvedName,
+            'contact_avatar_url' => $omniContact?->avatar_url,
+            'channel_account_id' => $channelAccountId !== '' ? $channelAccountId : null,
+            'channel_account_label' => $channelAccountLabel,
             'display_phone' => $this->formatContactDisplayId($conversation),
             'display_phone_international' => $this->formatContactDisplayId($conversation),
             'last_message_preview' => $conversation->last_message_preview,
@@ -768,6 +782,19 @@ class OmnichannelInboxController extends Controller
             'media_filename' => $payload['media_filename'] ?? null,
             'media_mime' => $payload['media_mime'] ?? null,
         ];
+    }
+
+    private function resolveChannelAccountLabel(OmniConversation $conversation): ?string
+    {
+        $accountId = (string) ($conversation->phone_number_id ?? '');
+        if ($accountId === '') {
+            return null;
+        }
+
+        return match ((string) $conversation->channel) {
+            'instagram' => MetaInstagramAccountRegistry::displayLabel($accountId),
+            default => null,
+        };
     }
 
     private function formatContactDisplayId(OmniConversation $conversation): string

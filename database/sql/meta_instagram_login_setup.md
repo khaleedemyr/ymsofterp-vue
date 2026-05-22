@@ -42,7 +42,10 @@ META_INSTAGRAM_LOGIN_ACCESS_TOKEN=IGQ...
 META_INSTAGRAM_LOGIN_DEFAULT_ID=17841400914429846
 
 # Beberapa akun IG:
-# META_INSTAGRAM_LOGIN_TOKENS='{"17841400914429846":"IGQ...","17841401112223344":"IGQ..."}'
+# META_INSTAGRAM_LOGIN_TOKENS='{"17841400914429846":"IGQ...","17841462873080478":"IGQ..."}'
+
+# Badge inbox: nama akun bisnis (Justus, Tempayan, …)
+# META_INSTAGRAM_LOGIN_ACCOUNT_LABELS='{"17841400914429846":"Justus","17841462873080478":"Tempayan"}'
 
 META_INSTAGRAM_INBOX_SYNC_ENABLED=true
 ```
@@ -57,6 +60,11 @@ Webhook kadang tidak push; ERP **poll** conversations tiap 2 menit:
 
 ```bash
 php artisan meta:sync-instagram-inbox -v
+
+# Isi nama & avatar profil (sekali / setelah impor riwayat)
+php artisan migrate
+# atau: database/sql/alter_omni_contacts_avatar_url.sql
+php artisan meta:enrich-instagram-profiles --limit=200
 ```
 
 Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/meta-instagram-inbox-sync.log`.

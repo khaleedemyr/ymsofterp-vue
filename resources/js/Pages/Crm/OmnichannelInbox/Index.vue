@@ -66,13 +66,29 @@
             :class="selectedId === conv.id ? 'bg-emerald-50/80 ring-1 ring-inset ring-emerald-200' : ''"
             @click.stop="selectConversation(conv.id)"
           >
-            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-              <i class="fa-brands fa-whatsapp text-sm" />
+            <div
+              class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full"
+              :class="channelAvatarClass(conv.channel)"
+            >
+              <img
+                v-if="conv.contact_avatar_url"
+                :src="conv.contact_avatar_url"
+                alt=""
+                class="h-full w-full object-cover"
+              />
+              <i v-else :class="channelIcon(conv.channel)" class="text-sm" />
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex w-full items-center justify-between gap-1">
                 <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
                   <span class="truncate text-sm font-medium text-slate-900">{{ conv.contact_name || conv.display_phone }}</span>
+                  <span
+                    v-if="conv.channel_account_label"
+                    class="inline-flex shrink-0 rounded-md bg-gradient-to-r from-purple-100 to-pink-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-900 ring-1 ring-purple-200/80"
+                    :title="channelAccountBadgeTitle(conv)"
+                  >
+                    {{ conv.channel_account_label }}
+                  </span>
                   <span
                     v-if="conv.member"
                     class="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
@@ -108,14 +124,30 @@
         <template v-if="selectedConversation">
           <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
             <div class="flex min-w-0 flex-1 items-center gap-2">
-              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                <i class="fa-brands fa-whatsapp" />
+              <div
+                class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                :class="channelAvatarClass(selectedConversation.channel)"
+              >
+                <img
+                  v-if="selectedConversation.contact_avatar_url"
+                  :src="selectedConversation.contact_avatar_url"
+                  alt=""
+                  class="h-full w-full object-cover"
+                />
+                <i v-else :class="channelIcon(selectedConversation.channel)" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <p class="truncate font-semibold text-slate-900">
                     {{ selectedConversation.contact_name || selectedConversation.display_phone }}
                   </p>
+                  <span
+                    v-if="selectedConversation.channel_account_label"
+                    class="inline-flex shrink-0 rounded-md bg-gradient-to-r from-purple-100 to-pink-100 px-2 py-0.5 text-[11px] font-semibold text-purple-900 ring-1 ring-purple-200/80"
+                    :title="channelAccountBadgeTitle(selectedConversation)"
+                  >
+                    {{ selectedConversation.channel_account_label }}
+                  </span>
                   <span
                     v-if="selectedConversation.member"
                     class="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200"
@@ -423,17 +455,33 @@
         </div>
         <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
           <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
-            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">WhatsApp</p>
+            <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ channelLabel(selectedConversation.channel) }}</p>
             <p class="mt-1 font-medium text-slate-900">{{ selectedConversation.contact_name || '—' }}</p>
             <dl class="mt-2 space-y-1.5 text-slate-700">
-              <div class="flex justify-between gap-2">
-                <dt class="shrink-0 text-slate-500">Nomor (lokal)</dt>
-                <dd class="text-right font-mono">{{ selectedConversation.display_phone || '—' }}</dd>
-              </div>
-              <div class="flex justify-between gap-2">
-                <dt class="shrink-0 text-slate-500">Nomor (internasional)</dt>
-                <dd class="text-right font-mono text-[11px]">{{ selectedConversation.display_phone_international || '—' }}</dd>
-              </div>
+              <template v-if="selectedConversation.channel === 'whatsapp'">
+                <div class="flex justify-between gap-2">
+                  <dt class="shrink-0 text-slate-500">Nomor (lokal)</dt>
+                  <dd class="text-right font-mono">{{ selectedConversation.display_phone || '—' }}</dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <dt class="shrink-0 text-slate-500">Nomor (internasional)</dt>
+                  <dd class="text-right font-mono text-[11px]">{{ selectedConversation.display_phone_international || '—' }}</dd>
+                </div>
+              </template>
+              <template v-else>
+                <div v-if="selectedConversation.channel_account_label" class="flex justify-between gap-2">
+                  <dt class="shrink-0 text-slate-500">Akun bisnis</dt>
+                  <dd class="text-right font-medium text-purple-900">{{ selectedConversation.channel_account_label }}</dd>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <dt class="shrink-0 text-slate-500">ID pelanggan</dt>
+                  <dd class="text-right font-mono text-[11px]">{{ selectedConversation.external_contact_id || '—' }}</dd>
+                </div>
+                <div v-if="selectedConversation.display_phone" class="flex justify-between gap-2">
+                  <dt class="shrink-0 text-slate-500">Kanal</dt>
+                  <dd class="text-right text-[11px]">{{ selectedConversation.display_phone }}</dd>
+                </div>
+              </template>
               <div class="border-t border-slate-100 pt-1.5">
                 <dt class="text-slate-500">Penanggung jawab</dt>
                 <dd class="mt-0.5 font-medium text-slate-900">{{ contactOwnerLabel }}</dd>
@@ -715,6 +763,13 @@ const composerPlaceholder = computed(() => {
   if (composerMode.value === 'internal') {
     return 'Catatan hanya untuk tim... (ketik / untuk template)'
   }
+  const ch = selectedConversation.value?.channel
+  if (ch === 'instagram') {
+    return 'Kirim ke Instagram... (ketik / untuk template balasan)'
+  }
+  if (ch === 'messenger' || ch === 'facebook') {
+    return 'Kirim ke Messenger... (ketik / untuk template balasan)'
+  }
   return 'Kirim ke WhatsApp... (ketik / untuk template balasan)'
 })
 
@@ -733,7 +788,7 @@ const filteredTemplates = computed(() => {
 
 const waWindowBanner = computed(() => {
   const c = selectedConversation.value
-  if (!c?.last_customer_message_at) return null
+  if (!c?.last_customer_message_at || c.channel !== 'whatsapp') return null
   const start = new Date(c.last_customer_message_at).getTime()
   const end = start + 24 * 60 * 60 * 1000
   const now = Date.now()
@@ -745,6 +800,33 @@ const waWindowBanner = computed(() => {
   const m = Math.floor((left % (60 * 60 * 1000)) / (60 * 1000))
   return { expired: false, text: `Jendela percakapan WhatsApp: ±${h} jam ${m} menit lagi untuk balasan bebas (24 jam dari pesan terakhir pelanggan).` }
 })
+
+function channelIcon(channel) {
+  if (channel === 'instagram') return 'fa-brands fa-instagram'
+  if (channel === 'messenger' || channel === 'facebook') return 'fa-brands fa-facebook-messenger'
+  return 'fa-brands fa-whatsapp'
+}
+
+function channelAvatarClass(channel) {
+  if (channel === 'instagram') return 'bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 text-white'
+  if (channel === 'messenger' || channel === 'facebook') return 'bg-blue-100 text-blue-700'
+  return 'bg-emerald-100 text-emerald-700'
+}
+
+function channelLabel(channel) {
+  if (channel === 'instagram') return 'Instagram'
+  if (channel === 'messenger' || channel === 'facebook') return 'Messenger'
+  return 'WhatsApp'
+}
+
+function channelAccountBadgeTitle(conv) {
+  if (!conv?.channel_account_label) return ''
+  const id = conv.channel_account_id
+  if (id) {
+    return `DM masuk ke akun Instagram (${conv.channel_account_label}) · ID: ${id}`
+  }
+  return `DM masuk ke akun Instagram (${conv.channel_account_label})`
+}
 
 function bubbleAlign(msg) {
   if (msg.direction === 'internal') return 'justify-center'
