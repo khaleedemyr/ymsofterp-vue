@@ -12,6 +12,9 @@ return [
     /** Notifikasi push hanya untuk pesan masuk sync dalam N menit terakhir (hindari spam saat impor riwayat). */
     'instagram_sync_notify_within_minutes' => (int) env('OMNI_INSTAGRAM_SYNC_NOTIFY_WITHIN_MINUTES', 30),
 
+    /** Min interval sync IG saat inbox web dibuka / di-poll (detik). */
+    'instagram_inbox_poll_sync_seconds' => (int) env('OMNI_INSTAGRAM_POLL_SYNC_SECONDS', 30),
+
     /*
     | AI Writing Assistant di composer inbox (grammar, tone, translate ID/EN, dll.)
     | Provider kosong = GOOGLE_REVIEW_AI_PROVIDER → GUEST_COMMENT_AI_PROVIDER → AI_PROVIDER.

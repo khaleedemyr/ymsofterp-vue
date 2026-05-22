@@ -96,9 +96,15 @@ Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/m
 
 5. **DM ke akun yang benar** (Justus vs Tempayan) — cek badge / `phone_number_id` di DB.
 
-6. **UI inbox** refresh daftar tiap ~8 detik, tapi hanya baca DB — kalau sync gagal, UI tetap kosong.
+6. **UI inbox** refresh daftar tiap ~8 detik. Sejak update terbaru, **buka halaman inbox** atau **poll AJAX** juga memicu sync Instagram otomatis (throttle ~30 detik) — tidak perlu `artisan` manual selama ada yang membuka inbox.
 
-7. Cek log: `storage/logs/meta-instagram-inbox-sync.log` dan `storage/logs/laravel.log` (cari `Meta Instagram inbox sync`).
+7. **Cron tetap disarankan** untuk DM masuk saat tidak ada yang buka inbox:
+   ```cron
+   * * * * * cd /path/ymsofterp && php artisan schedule:run >> /dev/null 2>&1
+   ```
+   Tanpa cron, DM hanya masuk saat halaman `/crm/omnichannel-inbox` terbuka.
+
+8. Cek log: `storage/logs/meta-instagram-inbox-sync.log` dan `storage/logs/laravel.log` (cari `Instagram inbox sync`).
 
 ## 5. Verifikasi
 
