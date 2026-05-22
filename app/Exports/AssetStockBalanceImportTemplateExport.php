@@ -36,23 +36,32 @@ class AssetStockBalanceImportTemplateExport implements WithMultipleSheets
         $outlets = DB::table('tbl_data_outlet as o')
             ->where('o.status', 'A')
             ->leftJoin('warehouse_outlets as wo', 'wo.outlet_id', '=', 'o.id_outlet')
-            ->select('o.nama_outlet', 'wo.id as warehouse_outlet_id', 'wo.name as warehouse_name')
+            ->select('o.id_outlet', 'o.nama_outlet', 'wo.id as warehouse_outlet_id', 'wo.name as warehouse_name')
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->get()
             ->map(function ($row) {
                 return [
+                    $row->id_outlet,
                     $row->nama_outlet,
                     $row->warehouse_outlet_id ?? '',
                     $row->warehouse_name ?? '',
                 ];
             })->toArray();
 
+        $ownerOutlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get()
+            ->map(fn ($row) => [$row->id_outlet, $row->nama_outlet])
+            ->toArray();
+
         return [
             'Instructions' => new AssetBalanceInstructionsSheet(),
             'StockBalance' => new AssetStockBalanceSheet(),
             'Items' => new AssetBalanceMasterSheet($items, ['SKU', 'Name', 'Small Unit'], 'Items'),
-            'Outlets' => new AssetBalanceMasterSheet($outlets, ['Outlet Name', 'Warehouse Outlet ID', 'Warehouse Name'], 'Outlets'),
+            'OwnerOutlets' => new AssetBalanceMasterSheet($ownerOutlets, ['Owner Outlet ID', 'Owner Outlet Name'], 'OwnerOutlets'),
+            'Outlets' => new AssetBalanceMasterSheet($outlets, ['Location Outlet ID', 'Location Outlet Name', 'Warehouse Outlet ID', 'Warehouse Name'], 'Outlets'),
         ];
     }
 }
@@ -62,14 +71,17 @@ class AssetBalanceInstructionsSheet implements FromArray, WithHeadings, WithTitl
     public function array(): array
     {
         return [
-            ['SKU', 'Kode item. Wajib diisi. Contoh: AST001'],
-            ['Name', 'Nama item. Wajib diisi. Contoh: Laptop Dell'],
-            ['Small Unit', 'Unit terkecil item. Wajib diisi. Contoh: Unit'],
-            ['Outlet', 'Nama outlet. Wajib diisi. Contoh: Kantor Pusat'],
-            ['Warehouse Outlet ID', 'ID warehouse outlet. Wajib diisi. Lihat sheet Outlets. Contoh: 1'],
-            ['Quantity', 'Jumlah dalam unit terkecil. Wajib diisi. Contoh: 10'],
-            ['Cost', 'Harga per unit terkecil. Wajib diisi. Contoh: 15000000'],
-            ['Notes', 'Catatan tambahan. Boleh dikosongkan. Contoh: Saldo awal asset 2024'],
+            ['SKU', 'Kode item asset. Wajib. Contoh: AST001'],
+            ['Name', 'Nama item (harus cocok dengan SKU). Wajib.'],
+            ['Small Unit', 'Unit terkecil item. Wajib. Contoh: Pcs'],
+            ['Owner Outlet', 'Outlet PEMILIK aset (kepemilikan). Wajib. Nama harus sama persis seperti sheet OwnerOutlets. Jika pemilik = lokasi fisik, isi nama yang sama.'],
+            ['Outlet', 'Outlet LOKASI fisik tempat barang disimpan (induk gudang). Wajib. Harus punya Warehouse Outlet ID di sheet Outlets.'],
+            ['Warehouse Outlet ID', 'ID gudang (warehouse_outlets.id). Wajib. Lihat sheet Outlets — gudang harus milik outlet lokasi di kolom Outlet.'],
+            ['Quantity', 'Qty dalam unit terkecil. Wajib. Contoh: 10'],
+            ['Cost', 'Harga per unit terkecil. Wajib. Contoh: 15000000'],
+            ['Notes', 'Catatan. Opsional.'],
+            ['', ''],
+            ['Catatan ownership', 'Stok di sistem = kombinasi (Item + Owner Outlet + Warehouse). Owner dan lokasi boleh berbeda outlet.'],
         ];
     }
 
@@ -92,7 +104,7 @@ class AssetBalanceInstructionsSheet implements FromArray, WithHeadings, WithTitl
                 'startColor' => ['rgb' => '0070C0']
             ],
         ]);
-        $sheet->getStyle('A1:B9')->getBorders()->getAllBorders()
+        $sheet->getStyle('A1:B12')->getBorders()->getAllBorders()
             ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
         $sheet->getColumnDimension('A')->setWidth(25);
         $sheet->getColumnDimension('B')->setWidth(60);
@@ -114,7 +126,8 @@ class AssetStockBalanceSheet implements FromArray, WithHeadings, WithTitle, With
     public function array(): array
     {
         return [
-            ['AST001', 'Laptop Dell', 'Unit', 'Outlet A', 'Outlet A', 1, 10, 15000000, 'Saldo awal asset 2024']
+            ['AST001', 'Dinner Fork', 'Pcs', 'Justus Steak House Dago', 'Justus Steak House Dago', 1, 10, 50000, 'Saldo awal — pemilik & lokasi sama'],
+            ['AST002', 'Office Chair', 'Pcs', 'Justus Steak House Dago', 'Kantor Pusat', 2, 5, 1200000, 'Contoh: pemilik outlet A, barang di gudang outlet B'],
         ];
     }
 
@@ -140,15 +153,18 @@ class AssetStockBalanceSheet implements FromArray, WithHeadings, WithTitle, With
 
     public function styles(Worksheet $sheet)
     {
-        $sheet->getStyle('A1:H1')->applyFromArray([
+        $sheet->getStyle('A1:I1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
                 'startColor' => ['rgb' => '0070C0']
             ],
         ]);
-        $sheet->getStyle('A1:H2')->getBorders()->getAllBorders()
+        $sheet->getStyle('A1:I3')->getBorders()->getAllBorders()
             ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+        foreach (range('A', 'I') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
         return [];
     }
 

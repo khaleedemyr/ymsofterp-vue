@@ -15,6 +15,7 @@ import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
 import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
+import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
@@ -196,6 +197,11 @@ const loadingAssetServiceApprovals = ref(false);
 // Asset Disposal approvals
 const pendingAssetDisposalApprovals = ref([]);
 const loadingAssetDisposalApprovals = ref(false);
+
+// Asset module approval modal (transfer, adjustment, service, disposal)
+const showAssetModuleApprovalModal = ref(false);
+const assetModuleApprovalType = ref('transfer');
+const selectedAssetModuleApproval = ref(null);
 
 // Filtered and paginated Contra Bon approvals
 const filteredContraBonApprovals = computed(() => {
@@ -2588,16 +2594,47 @@ async function loadPendingAssetServiceApprovals() {
     }
 }
 
+const ASSET_APPROVAL_DETAIL_URLS = {
+    transfer: (id) => `/api/asset-transfer/${id}/approval-details`,
+    adjustment: (id) => `/api/asset-adjustment/${id}/approval-details`,
+    service: (id) => `/api/asset-service/${id}/approval-details`,
+    disposal: (id) => `/api/asset-disposal/${id}/approval-details`,
+};
+
+async function showAssetModuleApprovalDetails(type, id) {
+    const url = ASSET_APPROVAL_DETAIL_URLS[type];
+    if (!url) return;
+    try {
+        const response = await axios.get(url(id));
+        if (response.data.success) {
+            assetModuleApprovalType.value = type;
+            selectedAssetModuleApproval.value = response.data;
+            showAssetModuleApprovalModal.value = true;
+        }
+    } catch (error) {
+        console.error(`Error loading asset ${type} approval details:`, error);
+        Swal.fire('Error', 'Gagal memuat detail approval', 'error');
+    }
+}
+
 function showAssetTransferApprovalDetails(id) {
-    window.location.href = `/asset-inventory-transfers/${id}`;
+    showAssetModuleApprovalDetails('transfer', id);
 }
 
 function showAssetAdjustmentApprovalDetails(id) {
-    window.location.href = `/asset-inventory-adjustments/${id}`;
+    showAssetModuleApprovalDetails('adjustment', id);
 }
 
 function showAssetServiceApprovalDetails(id) {
-    window.location.href = `/asset-service-orders/${id}`;
+    showAssetModuleApprovalDetails('service', id);
+}
+
+function onAssetModuleApprovalDone(type) {
+    if (type === 'transfer') loadPendingAssetTransferApprovals();
+    else if (type === 'adjustment') loadPendingAssetAdjustmentApprovals();
+    else if (type === 'service') loadPendingAssetServiceApprovals();
+    else if (type === 'disposal') loadPendingAssetDisposalApprovals();
+    loadAllPendingApprovalsOptimized();
 }
 
 async function loadPendingAssetDisposalApprovals() {
@@ -2615,7 +2652,7 @@ async function loadPendingAssetDisposalApprovals() {
 }
 
 function showAssetDisposalApprovalDetails(id) {
-    window.location.href = `/asset-disposals/${id}`;
+    showAssetModuleApprovalDetails('disposal', id);
 }
 
 async function showLostBreakageApprovalDetails(headerId) {
@@ -8580,6 +8617,13 @@ watch(locale, () => {
                 </div>
             </div>
         </div>
+
+        <AssetModuleApprovalModal
+            v-model:show="showAssetModuleApprovalModal"
+            :module="assetModuleApprovalType"
+            :data="selectedAssetModuleApproval"
+            @done="onAssetModuleApprovalDone"
+        />
 
         <!-- Lost & Breakage Approval Detail Modal -->
         <div v-if="showLostBreakageApprovalModal && selectedLostBreakageApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showLostBreakageApprovalModal = false">

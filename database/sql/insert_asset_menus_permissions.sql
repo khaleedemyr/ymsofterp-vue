@@ -109,11 +109,11 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@asa_menu_id, 'approve', 'asset_stock_adjustment_approve', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `updated_at` = NOW();
 
--- 5. Asset Service menu
+-- 5. Asset Repair & Maintenance menu
 INSERT INTO `erp_menu` (
     `name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`
 ) VALUES (
-    'Asset Service',
+    'Asset Repair & Maintenance',
     'asset_service_order',
     251,
     '/asset-service-orders',

@@ -166,12 +166,20 @@ class LostBreakageReplacementService
         }
 
         $categoryId = $this->resolveDefaultAssetPrCategoryId();
-        $numbers = collect($lines)->pluck('header_number')->unique()->take(3)->implode(', ');
-        $more = count($lines) > 3 ? '…' : '';
+        $lbNumbers = collect($lines)->pluck('header_number')->filter()->unique()->values();
+        $numbersForTitle = $lbNumbers->take(3)->implode(', ');
+        $moreTitle = $lbNumbers->count() > 3 ? '…' : '';
+
+        $numbersForDesc = $lbNumbers->take(10)->implode(', ');
+        if ($lbNumbers->count() > 10) {
+            $numbersForDesc .= ' … (+' . ($lbNumbers->count() - 10) . ' dokumen)';
+        }
 
         return [
-            'title' => 'Pengganti L&B — ' . $numbers . $more,
-            'description' => 'PR Asset untuk penggantian Lost & Breakage. Baris: ' . implode(', ', $detailIds),
+            'title' => 'Pengganti L&B — ' . $numbersForTitle . $moreTitle,
+            'description' => 'PR Asset untuk penggantian Lost & Breakage. No. L&B: '
+                . ($numbersForDesc ?: '-')
+                . '. Baris detail: ' . implode(', ', $detailIds),
             'default_category_id' => $categoryId,
             'lines' => $lines,
         ];

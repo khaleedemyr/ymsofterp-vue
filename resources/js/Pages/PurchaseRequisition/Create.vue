@@ -420,15 +420,7 @@
                 <div class="flex items-center justify-between mb-4">
                   <div class="flex-1">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Outlet (Pemilik) *</label>
-                    <input
-                      v-if="outlet.lb_locked"
-                      type="text"
-                      :value="outlet.outlet_name || getOutletName(outlet.outlet_id)"
-                      disabled
-                      class="w-full md:w-64 px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-800 font-medium"
-                    />
                     <select
-                      v-else
                       v-model="outlet.outlet_id"
                       required
                       class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -446,7 +438,7 @@
                     <button
                       type="button"
                       @click="removeOutlet(outletIdx)"
-                      :disabled="form.outlets.length === 1 || (lbPrefillActive && outlet.lb_locked)"
+                      :disabled="form.outlets.length === 1"
                       class="text-red-500 hover:text-red-700 disabled:opacity-50"
                       title="Remove Outlet"
                     >
@@ -524,10 +516,7 @@
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex-1">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                        <div v-if="category.lb_locked && category.category_id" class="w-full md:w-64 px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-800 text-sm font-medium">
-                          {{ getCategoryDisplayName(category.category_id) }}
-                        </div>
-                        <div v-else class="relative category-dropdown-container">
+                        <div class="relative category-dropdown-container">
                           <div
                             @click.stop="showCategoryDropdown = !showCategoryDropdown"
                             class="w-full md:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer bg-white flex items-center justify-between"
@@ -2719,11 +2708,6 @@ function newItem() {
   }
 }
 
-function getOutletName(outletId) {
-  const o = props.outlets.find((x) => Number(x.id_outlet) === Number(outletId))
-  return o?.nama_outlet || `Outlet #${outletId}`
-}
-
 function newTravelItem() {
   return {
     item_type: 'transport', // transport, allowance, others
@@ -2776,8 +2760,6 @@ function buildOutletsFromLbPrefill(prefill) {
     if (!byOutlet[oid]) {
       byOutlet[oid] = {
         outlet_id: oid,
-        outlet_name: line.owner_outlet_name,
-        lb_locked: true,
         categories: {},
       }
     }
@@ -2786,7 +2768,6 @@ function buildOutletsFromLbPrefill(prefill) {
     if (!byOutlet[oid].categories[catKey]) {
       byOutlet[oid].categories[catKey] = {
         category_id: categoryId,
-        lb_locked: !!categoryId,
         items: [],
       }
     }
@@ -2808,11 +2789,8 @@ function buildOutletsFromLbPrefill(prefill) {
 
   return Object.values(byOutlet).map((o) => ({
     outlet_id: o.outlet_id,
-    outlet_name: o.outlet_name,
-    lb_locked: o.lb_locked,
     categories: Object.values(o.categories).map((c) => ({
       category_id: c.category_id,
-      lb_locked: c.lb_locked,
       items: c.items,
     })),
   }))

@@ -65,11 +65,11 @@ ALTER TABLE `lost_breakage_details` ADD COLUMN `type` enum('lost','breakage') CO
 -- Menu registration (run once)
 -- =============================================================
 INSERT IGNORE INTO `erp_menu` (`name`, `code`, `icon`, `route`, `parent_id`, `sort_order`, `created_at`, `updated_at`)
-VALUES ('Lost & Breakage', 'lost_breakage', 'fa-solid fa-box-open', '/lost-breakage', NULL, 99, NOW(), NOW());
+VALUES ('Asset Lost & Breakage', 'lost_breakage', 'fa-solid fa-box-open', '/lost-breakage', NULL, 99, NOW(), NOW());
 
 SET @menu_id = (SELECT `id` FROM `erp_menu` WHERE `code` = 'lost_breakage' LIMIT 1);
 
 INSERT IGNORE INTO `erp_permission` (`menu_id`, `name`, `action`, `code`, `created_at`, `updated_at`)
-VALUES (@menu_id, 'View Lost & Breakage', 'view', 'lost_breakage_view', NOW(), NOW());
+VALUES (@menu_id, 'View Asset Lost & Breakage', 'view', 'lost_breakage_view', NOW(), NOW());
 
 -- Replacement tracking (partial replacements): run database/sql/lost_breakage_replacements.sql

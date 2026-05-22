@@ -589,11 +589,10 @@ class LostBreakageController extends Controller
         }
 
         return inertia('LostBreakage/Show', [
-            'header'                => $header,
-            'details'               => $details,
-            'approvalFlows'         => $approvalFlows,
-            'currentApprover'       => $currentApprover,
-            'canRecordReplacements' => $header->status === 'APPROVED' && $this->lostBreakageReplacementsTableExists(),
+            'header'          => $header,
+            'details'         => $details,
+            'approvalFlows'   => $approvalFlows,
+            'currentApprover' => $currentApprover,
         ]);
     }
 
