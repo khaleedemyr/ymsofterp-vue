@@ -118,6 +118,18 @@ php artisan meta:debug-instagram-inbox
 php artisan meta:sync-instagram-inbox -v
 ```
 
+### Error `Permission denied` pada `instagram_account_registry.json`
+
+Sync gagal total jika folder tidak bisa ditulis. Perbaikan kode sudah pakai Laravel Cache (tidak wajib file). Opsional perbaiki permission:
+
+```bash
+mkdir -p storage/app/meta
+chmod -R 775 storage/app/meta storage/framework/cache
+chown -R ymsuperadmin:ymsuperadmin storage/app/meta storage/framework/cache
+```
+
+Lalu `php artisan meta:sync-instagram-inbox` lagi.
+
 Output sync sekarang **selalu** menampilkan baris per akun, mis.:
 `imported=0 skip_db=120 skip_out=5 api_err=0` — kirim screenshot baris ini jika masih bermasalah.
 

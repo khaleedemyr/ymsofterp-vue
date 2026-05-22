@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Label akun IG bisnis untuk badge inbox (Justus, Tempayan, dll.).
@@ -14,7 +16,9 @@ use Illuminate\Support\Facades\File;
  */
 final class MetaInstagramAccountRegistry
 {
-    private const CACHE_RELATIVE = 'meta/instagram_account_registry.json';
+    private const CACHE_KEY = 'meta_instagram_account_registry_v1';
+
+    private const FILE_RELATIVE = 'meta/instagram_account_registry.json';
 
     /**
      * @return array<string, string> ig_professional_id => label
@@ -46,17 +50,24 @@ final class MetaInstagramAccountRegistry
             return;
         }
 
-        $cache = self::cache();
-        $entry = $cache[$igProfessionalId] ?? [];
+        try {
+            $store = self::readStore();
+            $entry = $store[$igProfessionalId] ?? [];
 
-        if ($username !== null && $username !== '') {
-            $entry['username'] = ltrim($username, '@');
+            if ($username !== null && $username !== '') {
+                $entry['username'] = ltrim($username, '@');
+            }
+
+            $entry['updated_at'] = now()->toIso8601String();
+            $store[$igProfessionalId] = $entry;
+
+            self::writeStore($store);
+        } catch (\Throwable $e) {
+            Log::warning('MetaInstagramAccountRegistry: tidak bisa simpan cache username', [
+                'ig_id' => $igProfessionalId,
+                'error' => $e->getMessage(),
+            ]);
         }
-
-        $entry['updated_at'] = now()->toIso8601String();
-        $cache[$igProfessionalId] = $entry;
-
-        self::writeCache($cache);
     }
 
     public static function displayLabel(string $igProfessionalId): string
@@ -71,7 +82,8 @@ final class MetaInstagramAccountRegistry
             return $labels[$igProfessionalId];
         }
 
-        $cached = self::cache()[$igProfessionalId]['username'] ?? null;
+        $store = self::readStore();
+        $cached = $store[$igProfessionalId]['username'] ?? null;
         if (is_string($cached) && $cached !== '') {
             return '@'.$cached;
         }
@@ -86,30 +98,66 @@ final class MetaInstagramAccountRegistry
     /**
      * @return array<string, array{username?: string, updated_at?: string}>
      */
-    public static function cache(): array
+    private static function readStore(): array
     {
-        $path = self::cachePath();
-        if (! File::exists($path)) {
-            return [];
+        try {
+            $cached = Cache::get(self::CACHE_KEY);
+            if (is_array($cached) && $cached !== []) {
+                return $cached;
+            }
+        } catch (\Throwable) {
+            // fallback file
         }
 
-        $decoded = json_decode(File::get($path), true);
+        return self::readFileStore();
+    }
 
-        return is_array($decoded) ? $decoded : [];
+    /**
+     * @return array<string, array{username?: string, updated_at?: string}>
+     */
+    private static function readFileStore(): array
+    {
+        try {
+            $path = self::filePath();
+            if (! File::exists($path)) {
+                return [];
+            }
+
+            $decoded = json_decode(File::get($path), true);
+
+            return is_array($decoded) ? $decoded : [];
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**
      * @param  array<string, array{username?: string, updated_at?: string}>  $data
      */
-    private static function writeCache(array $data): void
+    private static function writeStore(array $data): void
     {
-        $path = self::cachePath();
-        File::ensureDirectoryExists(dirname($path));
-        File::put($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        try {
+            Cache::put(self::CACHE_KEY, $data, now()->addDays(90));
+        } catch (\Throwable $e) {
+            Log::debug('MetaInstagramAccountRegistry: Cache::put gagal', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $path = self::filePath();
+            File::ensureDirectoryExists(dirname($path));
+            File::put($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        } catch (\Throwable $e) {
+            Log::debug('MetaInstagramAccountRegistry: file write skipped', [
+                'path' => self::filePath(),
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
-    private static function cachePath(): string
+    private static function filePath(): string
     {
-        return storage_path('app/'.self::CACHE_RELATIVE);
+        return storage_path('app/'.self::FILE_RELATIVE);
     }
 }
