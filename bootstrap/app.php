@@ -162,6 +162,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->appendOutputTo(storage_path('logs/meta-instagram-inbox-sync.log'));
         }
 
+        // Facebook Messenger — poll Page Conversations API (tidak bergantung webhook)
+        if (filter_var(env('META_MESSENGER_INBOX_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
+            $schedule->command('meta:sync-messenger-inbox --recent=60')
+                ->everyMinute()
+                ->withoutOverlapping(4)
+                ->appendOutputTo(storage_path('logs/meta-messenger-inbox-sync.log'));
+        }
+
         // Cleanup old and excess device tokens - run daily at 2:00 AM
         $schedule->command('device-tokens:cleanup --days=30 --limit=5')
             ->dailyAt('02:00')

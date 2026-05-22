@@ -69,6 +69,7 @@ return [
         'instagram_login_default_id' => env('META_INSTAGRAM_LOGIN_DEFAULT_ID'),
         'instagram_graph_version' => env('META_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
         'instagram_inbox_sync_enabled' => env('META_INSTAGRAM_INBOX_SYNC_ENABLED', true),
+        'messenger_inbox_sync_enabled' => env('META_MESSENGER_INBOX_SYNC_ENABLED', true),
         'graph_api_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'webhook_skip_signature_verify' => env('META_WEBHOOK_SKIP_SIGNATURE_VERIFY', false),

@@ -12,6 +12,7 @@ use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Support\MetaInstagramAccountRegistry;
 use App\Support\MetaInstagramInboxSyncTrigger;
+use App\Support\MetaMessengerInboxSyncTrigger;
 use App\Support\MetaInstagramTokens;
 use App\Support\OmniMetaMessagePayload;
 use App\Services\NotificationService;
@@ -34,6 +35,7 @@ class OmnichannelInboxController extends Controller
     {
         $this->assertInboxAccess($request);
         MetaInstagramInboxSyncTrigger::maybeRunFromInboxRequest();
+        MetaMessengerInboxSyncTrigger::maybeRunFromInboxRequest();
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
@@ -109,6 +111,7 @@ class OmnichannelInboxController extends Controller
     {
         $this->assertInboxAccess($request);
         MetaInstagramInboxSyncTrigger::maybeRunFromInboxRequest();
+        MetaMessengerInboxSyncTrigger::maybeRunFromInboxRequest();
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
@@ -149,6 +152,7 @@ class OmnichannelInboxController extends Controller
     {
         $this->assertInboxAccess($request);
         MetaInstagramInboxSyncTrigger::maybeRunFromInboxRequest();
+        MetaMessengerInboxSyncTrigger::maybeRunFromInboxRequest();
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);

@@ -1,7 +1,7 @@
 # Meta Messenger & Instagram DM — setup omnichannel ERP
 
-> **Instagram DM (alur YouTube / Instagram Login):** gunakan panduan terpisah  
-> [`meta_instagram_login_setup.md`](meta_instagram_login_setup.md) — webhook `/api/webhooks/meta/instagram` + polling `meta:sync-instagram-inbox`.
+> **Instagram DM (Instagram Login):** [`meta_instagram_login_setup.md`](meta_instagram_login_setup.md) — polling `meta:sync-instagram-inbox`.  
+> **Facebook Messenger (polling, tidak wajib webhook):** [`meta_messenger_polling_setup.md`](meta_messenger_polling_setup.md) — `meta:sync-messenger-inbox`.
 
 ## 1. Meta Developer (use case: Messenger from Meta)
 
@@ -79,8 +79,8 @@ Pastikan worker queue `omnichannel` jalan (flow + notifikasi push pesan masuk).
 | Channel value | Sumber |
 |---------------|--------|
 | `whatsapp` | Webhook WhatsApp |
-| `messenger` | Webhook `object: page` |
-| `instagram` | Webhook `object: instagram` |
+| `messenger` | **Polling** `meta:sync-messenger-inbox` (+ webhook opsional) |
+| `instagram` | **Polling** `meta:sync-instagram-inbox` (Instagram Login) |
 
 Percakapan muncul otomatis di **CRM → Omnichannel** (web & app).
 

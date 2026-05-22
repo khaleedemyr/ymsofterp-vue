@@ -18,6 +18,15 @@ return [
     /** Saat inbox dibuka: hanya tarik DM dalam N menit terakhir (sync cepat). */
     'instagram_inbox_sync_recent_minutes' => (int) env('OMNI_INSTAGRAM_INBOX_SYNC_RECENT_MINUTES', 45),
 
+    /** Notifikasi push hanya untuk pesan Messenger sync dalam N menit terakhir. */
+    'messenger_sync_notify_within_minutes' => (int) env('OMNI_MESSENGER_SYNC_NOTIFY_WITHIN_MINUTES', 30),
+
+    /** Min interval sync Messenger saat inbox web dibuka (detik). */
+    'messenger_inbox_poll_sync_seconds' => (int) env('OMNI_MESSENGER_POLL_SYNC_SECONDS', 30),
+
+    /** Saat inbox dibuka: hanya DM Messenger N menit terakhir. */
+    'messenger_inbox_sync_recent_minutes' => (int) env('OMNI_MESSENGER_INBOX_SYNC_RECENT_MINUTES', 45),
+
     /*
     | AI Writing Assistant di composer inbox (grammar, tone, translate ID/EN, dll.)
     | Provider kosong = GOOGLE_REVIEW_AI_PROVIDER → GUEST_COMMENT_AI_PROVIDER → AI_PROVIDER.
