@@ -164,18 +164,40 @@
                 </div>
               </div>
 
-              <div class="mt-3 flex gap-2">
-                <input
-                  v-model="replyDrafts[c.id]"
-                  type="text"
-                  placeholder="Balas komentar…"
-                  class="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-1"
-                  :class="platform === 'instagram' ? 'focus:border-pink-500 focus:ring-pink-500' : 'focus:border-blue-500 focus:ring-blue-500'"
-                  @keydown.enter.prevent="sendReply(c.id)"
-                />
+              <div class="mt-3 flex items-end gap-1.5">
+                <div class="relative min-w-0 flex-1">
+                  <textarea
+                    :ref="(el) => setReplyInputRef(c.id, el)"
+                    v-model="replyDrafts[c.id]"
+                    rows="2"
+                    placeholder="Balas komentar… (Enter kirim, Shift+Enter baris baru)"
+                    class="w-full resize-none rounded-lg border border-slate-200 py-2 pl-3 pr-20 text-sm focus:outline-none focus:ring-1"
+                    :class="platform === 'instagram' ? 'focus:border-pink-500 focus:ring-pink-500' : 'focus:border-blue-500 focus:ring-blue-500'"
+                    @keydown.enter.exact.prevent="sendReply(c.id)"
+                  />
+                  <div class="absolute bottom-1.5 right-1.5 flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      class="flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-40"
+                      :disabled="!mentionHandle(c.username)"
+                      title="Tag pengguna"
+                      @click="insertMention(c.id, c.username)"
+                    >
+                      <i class="fa-solid fa-at text-sm" />
+                    </button>
+                    <OmniEmojiPickerButton
+                      :open="emojiPickerCommentId === c.id"
+                      button-size="sm"
+                      placement="top"
+                      :disabled="replyingId === c.id"
+                      @update:open="(open) => onEmojiPickerToggle(c.id, open)"
+                      @select="(emoji) => insertEmoji(c.id, emoji)"
+                    />
+                  </div>
+                </div>
                 <button
                   type="button"
-                  class="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                  class="shrink-0 rounded-lg px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                   :class="platform === 'instagram' ? 'bg-pink-600 hover:bg-pink-700' : 'bg-blue-600 hover:bg-blue-700'"
                   :disabled="replyingId === c.id || !replyDrafts[c.id]?.trim()"
                   @click="sendReply(c.id)"
@@ -200,6 +222,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
+import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 
 const props = defineProps({
   platform: { type: String, default: 'instagram' },
@@ -259,6 +283,50 @@ const mediaError = ref('')
 const commentsError = ref('')
 const replyDrafts = reactive({})
 const replyingId = ref(null)
+const emojiPickerCommentId = ref(null)
+/** @type {Record<string, HTMLTextAreaElement | null>} */
+const replyInputRefs = {}
+
+function setReplyInputRef(commentId, el) {
+  if (el) {
+    replyInputRefs[commentId] = el
+  } else {
+    delete replyInputRefs[commentId]
+  }
+}
+
+function replyTextRef(commentId) {
+  return {
+    get value() {
+      return replyDrafts[commentId] ?? ''
+    },
+    set value(v) {
+      replyDrafts[commentId] = v
+    },
+  }
+}
+
+function mentionHandle(username) {
+  const u = (username || '').trim().replace(/^@+/, '').replace(/\s+/g, '')
+  if (!u || u === 'Pengguna') return ''
+  return u
+}
+
+function insertMention(commentId, username) {
+  const handle = mentionHandle(username)
+  if (!handle) return
+  insertEmojiIntoTextarea(replyInputRefs[commentId] ?? null, replyTextRef(commentId), `@${handle} `)
+}
+
+function insertEmoji(commentId, emoji) {
+  insertEmojiIntoTextarea(replyInputRefs[commentId] ?? null, replyTextRef(commentId), emoji, () => {
+    emojiPickerCommentId.value = null
+  })
+}
+
+function onEmojiPickerToggle(commentId, open) {
+  emojiPickerCommentId.value = open ? commentId : null
+}
 
 function ensureDefaultAccount() {
   if (!selectedAccount.value && accountList.value.length > 0) {
@@ -300,6 +368,7 @@ function resetPosts() {
   selectedMedia.value = null
   commentsList.value = []
   mediaList.value = []
+  emojiPickerCommentId.value = null
 }
 
 function setPlatform(p) {
@@ -362,6 +431,7 @@ async function selectMedia(post) {
   selectedMedia.value = post
   commentsList.value = []
   commentsError.value = ''
+  emojiPickerCommentId.value = null
   loadingComments.value = true
   try {
     const { data } = await axios.get(commentsUrl(post.id))
