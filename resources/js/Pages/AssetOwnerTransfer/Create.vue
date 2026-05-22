@@ -118,7 +118,8 @@ function submitForm() {
 
             <div class="bg-white rounded-xl shadow p-6 mb-6">
                 <h2 class="font-semibold mb-3">Item</h2>
-                <input v-model="itemQuery" :disabled="!form.warehouse_outlet_from_id" placeholder="Cari item..." class="w-full rounded-lg border-gray-300 text-sm mb-2" />
+                <input v-model="itemQuery" :disabled="!form.owner_outlet_from_id || !form.warehouse_outlet_id" placeholder="Cari item..." class="w-full rounded-lg border-gray-300 text-sm mb-2 disabled:bg-gray-50 disabled:cursor-not-allowed" />
+                <p v-if="!form.owner_outlet_from_id || !form.warehouse_outlet_id" class="text-sm text-amber-600 mb-2">Pilih pemilik asal dan gudang terlebih dahulu.</p>
                 <div v-if="itemResults.length" class="border rounded-lg max-h-48 overflow-auto mb-3">
                     <div v-for="it in itemResults" :key="it.id" @click="addItem(it)" class="px-3 py-2 hover:bg-violet-50 cursor-pointer text-sm">{{ it.name }} — stok {{ it.stock_small }}</div>
                 </div>
