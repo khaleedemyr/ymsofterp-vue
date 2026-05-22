@@ -89,6 +89,7 @@
                 <th class="px-3 py-3 text-right">Qty</th>
                 <th class="px-3 py-3 text-right">Diganti</th>
                 <th class="px-3 py-3 text-right">Sisa</th>
+                <th class="px-3 py-3 min-w-[220px]">Proses (PR → PO → NFP → GR)</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -119,9 +120,34 @@
                 <td class="px-3 py-2 text-right">{{ formatNum(r.qty) }} {{ r.unit_name }}</td>
                 <td class="px-3 py-2 text-right text-gray-500">{{ formatNum(r.qty_replaced) }}</td>
                 <td class="px-3 py-2 text-right font-semibold text-orange-700">{{ formatNum(r.qty_remaining) }}</td>
+                <td class="px-3 py-2 align-top">
+                  <div class="flex flex-wrap items-center gap-1 mb-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{{ r.pipeline_step_label || 'Belum PR' }}</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <template v-for="stage in pipelineStages" :key="stage.key">
+                      <a
+                        v-if="(r['pipeline_' + stage.key] || []).length"
+                        href="#"
+                        class="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium hover:opacity-90"
+                        :class="docStatusClass((r['pipeline_' + stage.key] || [])[0]?.status)"
+                        :title="stage.key + ' ' + ((r['pipeline_' + stage.key] || [])[0]?.number || '') + ' (' + ((r['pipeline_' + stage.key] || [])[0]?.status || '-') + ')'"
+                        @click.prevent="visitDoc((r['pipeline_' + stage.key] || [])[0]?.url)"
+                      >
+                        {{ stage.label }} {{ (r['pipeline_' + stage.key] || [])[0]?.number }}
+                        <span v-if="(r['pipeline_' + stage.key] || []).length > 1"> +{{ (r['pipeline_' + stage.key] || []).length - 1 }}</span>
+                      </a>
+                      <span
+                        v-else
+                        class="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-medium bg-gray-50 text-gray-400 border-gray-200"
+                        :title="stage.label + ': belum ada'"
+                      >{{ stage.label }}</span>
+                    </template>
+                  </div>
+                </td>
               </tr>
               <tr v-if="!rows.length">
-                <td colspan="10" class="px-4 py-12 text-center text-gray-400">Tidak ada sisa penggantian.</td>
+                <td colspan="11" class="px-4 py-12 text-center text-gray-400">Tidak ada sisa penggantian.</td>
               </tr>
             </tbody>
           </table>
@@ -137,6 +163,25 @@ import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+
+const pipelineStages = [
+  { key: 'prs', label: 'PR' },
+  { key: 'pos', label: 'PO' },
+  { key: 'nfps', label: 'NFP' },
+  { key: 'grs', label: 'GR' },
+]
+
+function docStatusClass(status) {
+  const s = (status || '').toLowerCase()
+  if (['approved', 'completed', 'paid', 'done'].includes(s)) return 'bg-green-100 text-green-800 border-green-200'
+  if (['rejected', 'cancelled', 'canceled'].includes(s)) return 'bg-red-100 text-red-700 border-red-200'
+  if (['submitted', 'waiting', 'pending', 'draft'].includes(s)) return 'bg-amber-100 text-amber-800 border-amber-200'
+  return 'bg-slate-100 text-slate-600 border-slate-200'
+}
+
+function visitDoc(url) {
+  if (url) router.visit(url)
+}
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },

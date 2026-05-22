@@ -885,6 +885,10 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/lost-breakage/items', [\App\Http\Controllers\LostBreakageController::class, 'apiGetAssetItems']);
         Route::get('/lost-breakage/approvers', [\App\Http\Controllers\LostBreakageController::class, 'getApprovers']);
         Route::get('/lost-breakage/item-units/{id}', [\App\Http\Controllers\LostBreakageController::class, 'getItemUnits']);
+        Route::get('/lost-breakage/form-meta', [\App\Http\Controllers\LostBreakageController::class, 'apiFormMeta']);
+        Route::get('/lost-breakage/replacement-backlog', [\App\Http\Controllers\LostBreakageController::class, 'apiReplacementBacklog']);
+        Route::post('/lost-breakage/replacement-backlog/prepare-pr', [\App\Http\Controllers\LostBreakageController::class, 'apiPreparePrFromBacklog']);
+        Route::get('/lost-breakage/pending-approvals', [\App\Http\Controllers\LostBreakageController::class, 'getPendingApprovals']);
         Route::get('/lost-breakage/{id}', [\App\Http\Controllers\LostBreakageController::class, 'apiShow']);
         Route::post('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'store']);
         Route::post('/lost-breakage/{id}/submit', [\App\Http\Controllers\LostBreakageController::class, 'submit']);
@@ -1352,7 +1356,6 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/asset-inventory-adjustments/pending-approvals', [\App\Http\Controllers\AssetInventoryAdjustmentController::class, 'getPendingApprovals']);
         Route::get('/asset-service-orders/pending-approvals', [\App\Http\Controllers\AssetServiceOrderController::class, 'getPendingApprovals']);
         Route::get('/asset-disposals/pending-approvals', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals']);
-
         // POS void item (kasir / HO approvers — sama pola dengan inbox web)
         Route::get('/pos-void-items/pending-approvals', [\App\Http\Controllers\PosVoidItemRequestController::class, 'getPendingApprovals']);
         Route::post('/pos-void-items/{id}/approve', [\App\Http\Controllers\PosVoidItemRequestController::class, 'approve']);

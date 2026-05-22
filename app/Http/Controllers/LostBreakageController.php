@@ -1034,10 +1034,19 @@ class LostBreakageController extends Controller
     public function apiShow($id)
     {
         $header = DB::table('lost_breakage_headers as h')
+            ->leftJoin('tbl_data_outlet as oo', 'h.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->where('h.id', $id)
-            ->select('h.*', 'o.nama_outlet as outlet_name', 'u.nama_lengkap as creator_name', 'u.avatar as creator_avatar')
+            ->select(
+                'h.*',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+                'u.avatar as creator_avatar'
+            )
             ->first();
 
         if (!$header) {
@@ -1069,7 +1078,62 @@ class LostBreakageController extends Controller
             'header' => $header,
             'details' => $details,
             'approval_flows' => $approvalFlows,
-            'can_record_replacements' => ($header->status === 'APPROVED' && $this->lostBreakageReplacementsTableExists()),
+            // Penggantian lewat Asset Replacement → PR → PO → GR (sama seperti web Show.vue).
+            'can_record_replacements' => false,
+        ]);
+    }
+
+    public function apiFormMeta()
+    {
+        $warehouseOutlets = DB::table('warehouse_outlets')
+            ->select('id', 'name', 'outlet_id')
+            ->orderBy('name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'warehouse_outlets' => $warehouseOutlets,
+        ]);
+    }
+
+    public function apiReplacementBacklog(Request $request)
+    {
+        $user = auth()->user();
+        $service = app(LostBreakageReplacementService::class);
+        $filters = $request->only(['search', 'owner_outlet_id', 'outlet_id', 'type', 'date_from', 'date_to']);
+
+        return response()->json([
+            'success' => true,
+            'rows' => $service->pendingDetailRows($filters, $user),
+            'pr_integration_ready' => $service->prLinesTableExists() && $service->replacementsTableExists(),
+            'is_admin' => (int) ($user->id_outlet ?? 0) === 1,
+        ]);
+    }
+
+    public function apiPreparePrFromBacklog(Request $request)
+    {
+        $request->validate([
+            'detail_ids' => 'required|array|min:1',
+            'detail_ids.*' => 'integer|min:1',
+        ]);
+
+        $service = app(LostBreakageReplacementService::class);
+        if (!$service->prLinesTableExists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jalankan database/sql/lost_breakage_pr_integration.sql terlebih dahulu.',
+            ], 503);
+        }
+
+        try {
+            $prefill = $service->buildPrPrefill($request->detail_ids, auth()->user());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'prefill' => $prefill,
         ]);
     }
 

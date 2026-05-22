@@ -92,12 +92,244 @@ class LostBreakageReplacementService
             $query->whereDate('h.date', '<=', $filters['date_to']);
         }
 
-        return $query
+        $rows = $query
             ->orderByDesc('h.date')
             ->orderByDesc('d.id')
             ->limit(500)
             ->get()
             ->all();
+
+        return $this->attachProcurementPipeline($rows);
+    }
+
+    /**
+     * Lampirkan status PR → PO → NFP → GR per baris detail (untuk backlog penggantian).
+     *
+     * @param  array<int, object>  $rows
+     * @return array<int, object>
+     */
+    public function attachProcurementPipeline(array $rows): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $detailIds = collect($rows)->pluck('detail_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+
+        $prsByDetail = collect();
+        $prItemIds = [];
+        if ($this->prLinesTableExists()) {
+            $prsByDetail = DB::table('lost_breakage_pr_lines as lb')
+                ->join('purchase_requisitions as pr', 'lb.purchase_requisition_id', '=', 'pr.id')
+                ->whereIn('lb.lost_breakage_detail_id', $detailIds)
+                ->select(
+                    'lb.lost_breakage_detail_id as detail_id',
+                    'lb.qty_planned',
+                    'lb.purchase_requisition_item_id as pr_item_id',
+                    'pr.id as pr_id',
+                    'pr.pr_number',
+                    'pr.status as pr_status'
+                )
+                ->orderByDesc('lb.id')
+                ->get()
+                ->groupBy('detail_id');
+
+            $prItemIds = $prsByDetail->flatten(1)->pluck('pr_item_id')->filter()->unique()->values()->all();
+        }
+
+        $posByPrItem = collect();
+        $poIds = [];
+        if (!empty($prItemIds) && Schema::hasTable('purchase_order_ops_items')) {
+            $posByPrItem = DB::table('purchase_order_ops_items as poi')
+                ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
+                ->whereIn('poi.pr_ops_item_id', $prItemIds)
+                ->select(
+                    'poi.pr_ops_item_id',
+                    'poi.id as po_item_id',
+                    'po.id as po_id',
+                    'po.number as po_number',
+                    'po.status as po_status'
+                )
+                ->orderByDesc('po.id')
+                ->get()
+                ->groupBy('pr_ops_item_id');
+
+            $poIds = $posByPrItem->flatten(1)->pluck('po_id')->unique()->values()->all();
+        }
+
+        $prIds = $prsByDetail->flatten(1)->pluck('pr_id')->unique()->values()->all();
+
+        $nfpByPo = collect();
+        $nfpByPr = collect();
+        if (Schema::hasTable('non_food_payments')) {
+            if (!empty($poIds)) {
+                $nfpByPo = DB::table('non_food_payments')
+                    ->whereIn('purchase_order_ops_id', $poIds)
+                    ->where('status', '!=', 'cancelled')
+                    ->select('id', 'purchase_order_ops_id as po_id', 'payment_number', 'status')
+                    ->orderByDesc('id')
+                    ->get()
+                    ->groupBy('po_id');
+            }
+            if (!empty($prIds)) {
+                $nfpByPr = DB::table('non_food_payments')
+                    ->whereIn('purchase_requisition_id', $prIds)
+                    ->whereNull('purchase_order_ops_id')
+                    ->where('status', '!=', 'cancelled')
+                    ->select('id', 'purchase_requisition_id as pr_id', 'payment_number', 'status')
+                    ->orderByDesc('id')
+                    ->get()
+                    ->groupBy('pr_id');
+            }
+        }
+
+        $grByDetail = collect();
+        $grByPo = collect();
+        if (Schema::hasTable('asset_good_receives')) {
+            if ($this->replacementsTableExists() && Schema::hasColumn('lost_breakage_replacements', 'asset_good_receive_id')) {
+                $grByDetail = DB::table('lost_breakage_replacements as r')
+                    ->join('asset_good_receives as gr', 'r.asset_good_receive_id', '=', 'gr.id')
+                    ->whereIn('r.detail_id', $detailIds)
+                    ->whereNotNull('r.asset_good_receive_id')
+                    ->select(
+                        'r.detail_id',
+                        'r.qty_replaced',
+                        'gr.id as gr_id',
+                        'gr.gr_number',
+                        'gr.status as gr_status'
+                    )
+                    ->orderByDesc('gr.id')
+                    ->get()
+                    ->groupBy('detail_id');
+            }
+
+            if (!empty($poIds)) {
+                $grByPo = DB::table('asset_good_receives as gr')
+                    ->whereIn('gr.po_id', $poIds)
+                    ->select('gr.id as gr_id', 'gr.po_id', 'gr.gr_number', 'gr.status as gr_status')
+                    ->orderByDesc('gr.id')
+                    ->get()
+                    ->groupBy('po_id');
+            }
+        }
+
+        foreach ($rows as $row) {
+            $detailId = (int) $row->detail_id;
+            $prs = [];
+            $pos = [];
+            $nfps = [];
+            $grs = [];
+            $seenPo = [];
+            $seenNfp = [];
+            $seenGr = [];
+
+            foreach ($prsByDetail->get($detailId, collect()) as $pl) {
+                $prs[] = [
+                    'id' => (int) $pl->pr_id,
+                    'number' => $pl->pr_number,
+                    'status' => $pl->pr_status,
+                    'qty_planned' => (float) $pl->qty_planned,
+                    'url' => '/purchase-requisitions/' . $pl->pr_id,
+                ];
+
+                $prItemId = (int) ($pl->pr_item_id ?? 0);
+                foreach ($posByPrItem->get($prItemId, collect()) as $poRow) {
+                    $poId = (int) $poRow->po_id;
+                    if (isset($seenPo[$poId])) {
+                        continue;
+                    }
+                    $seenPo[$poId] = true;
+                    $pos[] = [
+                        'id' => $poId,
+                        'number' => $poRow->po_number,
+                        'status' => $poRow->po_status,
+                        'url' => '/po-ops/' . $poId,
+                    ];
+
+                    foreach ($nfpByPo->get($poId, collect()) as $nfp) {
+                        $nfpId = (int) $nfp->id;
+                        if (isset($seenNfp[$nfpId])) {
+                            continue;
+                        }
+                        $seenNfp[$nfpId] = true;
+                        $nfps[] = [
+                            'id' => $nfpId,
+                            'number' => $nfp->payment_number,
+                            'status' => $nfp->status,
+                            'url' => '/non-food-payments/' . $nfpId,
+                        ];
+                    }
+
+                    foreach ($grByPo->get($poId, collect()) as $grRow) {
+                        $grId = (int) $grRow->gr_id;
+                        if (isset($seenGr[$grId])) {
+                            continue;
+                        }
+                        $seenGr[$grId] = true;
+                        $grs[] = [
+                            'id' => $grId,
+                            'number' => $grRow->gr_number,
+                            'status' => $grRow->gr_status,
+                            'url' => '/asset-good-receives/' . $grId,
+                        ];
+                    }
+                }
+
+                foreach ($nfpByPr->get((int) $pl->pr_id, collect()) as $nfp) {
+                    $nfpId = (int) $nfp->id;
+                    if (isset($seenNfp[$nfpId])) {
+                        continue;
+                    }
+                    $seenNfp[$nfpId] = true;
+                    $nfps[] = [
+                        'id' => $nfpId,
+                        'number' => $nfp->payment_number,
+                        'status' => $nfp->status,
+                        'url' => '/non-food-payments/' . $nfpId,
+                    ];
+                }
+            }
+
+            foreach ($grByDetail->get($detailId, collect()) as $grRep) {
+                $grId = (int) $grRep->gr_id;
+                if (isset($seenGr[$grId])) {
+                    continue;
+                }
+                $seenGr[$grId] = true;
+                $grs[] = [
+                    'id' => $grId,
+                    'number' => $grRep->gr_number,
+                    'status' => $grRep->gr_status,
+                    'qty_replaced' => (float) $grRep->qty_replaced,
+                    'url' => '/asset-good-receives/' . $grId,
+                ];
+            }
+
+            $step = 'belum_pr';
+            $stepLabel = 'Belum PR';
+            if (!empty($grs)) {
+                $step = 'gr';
+                $stepLabel = 'GR tercatat';
+            } elseif (!empty($nfps)) {
+                $step = 'nfp';
+                $stepLabel = 'NFP';
+            } elseif (!empty($pos)) {
+                $step = 'po';
+                $stepLabel = 'PO';
+            } elseif (!empty($prs)) {
+                $step = 'pr';
+                $stepLabel = 'PR';
+            }
+
+            $row->pipeline_prs = $prs;
+            $row->pipeline_pos = $pos;
+            $row->pipeline_nfps = $nfps;
+            $row->pipeline_grs = $grs;
+            $row->pipeline_step = $step;
+            $row->pipeline_step_label = $stepLabel;
+        }
+
+        return $rows;
     }
 
     public function resolveDefaultAssetPrCategoryId(): ?int
