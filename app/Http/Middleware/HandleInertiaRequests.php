@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\ExternalUser;
 use App\Models\User;
+use App\Services\RoleMenuService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\DB;
@@ -34,19 +35,33 @@ class HandleInertiaRequests extends Middleware
     {
         $userId = auth()->id();
         $allowedMenus = [];
-        
+        $crmMenusFromDb = [];
+
         if ($userId) {
-            $allowedMenus = DB::table('users as u')
-                ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
-                ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
-                ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
-                ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
-                ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
-                ->where('u.id', $userId)
+            $allowedMenus = array_values(RoleMenuService::allowedMenuCodesForInternalUser($userId));
+
+            // Menu CRM (parent_id 138) dari DB — sama join permission dengan allowedMenus
+            $crmMenusFromDb = DB::table('erp_menu as m')
+                ->join('erp_permission as p', 'p.menu_id', '=', 'm.id')
+                ->join('erp_role_permission as rp', 'rp.permission_id', '=', 'p.id')
+                ->join('erp_user_role as ur', 'ur.role_id', '=', 'rp.role_id')
+                ->where('ur.user_id', $userId)
+                ->where('m.parent_id', 138)
                 ->where('p.action', 'view')
+                ->whereNotNull('m.route')
+                ->where('m.route', '!=', '')
+                ->select('m.code', 'm.route', 'm.icon', 'm.name')
                 ->distinct()
-                ->pluck('m.code')
-                ->toArray();
+                ->orderBy('m.id')
+                ->get()
+                ->map(fn ($row) => [
+                    'code' => $row->code,
+                    'route' => $row->route,
+                    'icon' => $row->icon ?: 'fa-solid fa-circle',
+                    'name' => $row->name,
+                ])
+                ->values()
+                ->all();
         }
 
 
@@ -112,6 +127,7 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
             ],
             'allowedMenus' => $allowedMenus,
+            'crmMenusFromDb' => $crmMenusFromDb,
         ]);
     }
 }

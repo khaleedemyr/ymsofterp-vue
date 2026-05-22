@@ -23,7 +23,62 @@ let notificationPollInterval = null;
 
 const page = usePage();
 // Harus computed agar ikut refresh setelah login / perubahan role (Inertia layout persist)
-const allowedMenus = computed(() => page.props.allowedMenus ?? []);
+const allowedMenus = computed(() => {
+    const raw = page.props.allowedMenus ?? [];
+    return Array.isArray(raw) ? raw : Object.values(raw);
+});
+const crmMenusFromDb = computed(() => page.props.crmMenusFromDb ?? []);
+
+/** Urutan menu omnichannel di grup CRM (sama pola erp_menu + permission view) */
+const CRM_DB_MENU_ORDER = [
+    'omnichannel_inbox',
+    'wa_broadcast',
+    'instagram_comments',
+    'omnichannel_teams',
+    'omnichannel_flows',
+];
+
+function menuLabelFromDb(code, fallbackName) {
+    const key = `sidebar.menus.${code}`;
+    const translated = t(key);
+    return translated !== key ? translated : fallbackName;
+}
+
+/** Sisipkan menu dari erp_menu yang belum ada di hardcode AppLayout (mis. wa_broadcast) */
+function enrichCrmMenus(staticMenus) {
+    let list = [...staticMenus];
+
+    for (const code of CRM_DB_MENU_ORDER) {
+        if (list.some((m) => m.code === code)) {
+            continue;
+        }
+        const db = crmMenusFromDb.value.find((m) => m.code === code);
+        if (!db || !allowedMenus.value.includes(code)) {
+            continue;
+        }
+
+        const item = {
+            name: () => menuLabelFromDb(db.code, db.name),
+            icon: db.icon || 'fa-solid fa-circle',
+            route: db.route,
+            code: db.code,
+        };
+
+        let insertAt = list.length;
+        const pos = CRM_DB_MENU_ORDER.indexOf(code);
+        for (let i = pos - 1; i >= 0; i--) {
+            const prevCode = CRM_DB_MENU_ORDER[i];
+            const prevIdx = list.findIndex((m) => m.code === prevCode);
+            if (prevIdx >= 0) {
+                insertAt = prevIdx + 1;
+                break;
+            }
+        }
+        list.splice(insertAt, 0, item);
+    }
+
+    return list.filter((menu) => !menu.code || allowedMenus.value.includes(menu.code));
+}
 
 const menuGroups = [
     {
@@ -528,6 +583,7 @@ const menuGroups = [
         ],
     },
     {
+        groupKey: 'crm',
         title: () => t('sidebar.groups.crm'),
         icon: 'fa-solid fa-handshake',
         collapsible: true,
@@ -574,10 +630,16 @@ const menuGroups = [
 ];
 
 const filteredMenuGroups = computed(() =>
-  menuGroups.map(group => ({
-    ...group,
-    menus: group.menus.filter(menu => !menu.code || allowedMenus.value.includes(menu.code))
-  })).filter(group => group.menus.length > 0)
+  menuGroups.map((group) => {
+    const isCrm = group.groupKey === 'crm';
+    const menus = isCrm
+      ? enrichCrmMenus(group.menus)
+      : group.menus.filter(
+            (menu) => !menu.code || allowedMenus.value.includes(menu.code)
+        );
+
+    return { ...group, menus };
+  }).filter((group) => group.menus.length > 0)
 );
 
 const languages = [
