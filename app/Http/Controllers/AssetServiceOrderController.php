@@ -13,6 +13,7 @@ use App\Models\AssetServiceOrder;
 use App\Models\AssetServiceOrderItem;
 use App\Models\AssetServiceOrderApprovalFlow;
 use App\Services\NotificationService;
+use App\Services\AssetInventoryStockService;
 
 class AssetServiceOrderController extends Controller
 {
@@ -23,6 +24,7 @@ class AssetServiceOrderController extends Controller
         $user = auth()->user();
 
         $query = DB::table('asset_service_orders as s')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
@@ -30,7 +32,7 @@ class AssetServiceOrderController extends Controller
             ->select($this->assetServiceOrderListSelect());
 
         if ($user->id_outlet != 1) {
-            $query->where('s.outlet_id', $user->id_outlet);
+            $query->where('s.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -103,12 +105,22 @@ class AssetServiceOrderController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetServiceOrder::generateNumber();
 
             $createPayload = [
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'supplier_id' => !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
                 'description' => $validated['description'],
@@ -229,6 +241,7 @@ class AssetServiceOrderController extends Controller
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
+            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $order->owner_outlet_id)->value('nama_outlet') ?? '-',
             'outlet_name' => optional($order->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($order->warehouseOutlet)->name,
             'supplier_name' => optional($order->supplier)->name,
@@ -531,6 +544,7 @@ class AssetServiceOrderController extends Controller
         $user = Auth::user();
 
         $query = DB::table('asset_service_orders as s')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('suppliers as sp', 's.supplier_id', '=', 'sp.id')
@@ -538,7 +552,7 @@ class AssetServiceOrderController extends Controller
             ->select($this->assetServiceOrderListSelect());
 
         if ($user->id_outlet != 1) {
-            $query->where('s.outlet_id', $user->id_outlet);
+            $query->where('s.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -639,6 +653,7 @@ class AssetServiceOrderController extends Controller
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
+            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $order->owner_outlet_id)->value('nama_outlet') ?? '-',
             'outlet_name' => optional($order->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($order->warehouseOutlet)->name,
             'supplier_name' => optional($order->supplier)->name,
@@ -685,12 +700,22 @@ class AssetServiceOrderController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetServiceOrder::generateNumber();
 
             $createPayload = [
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'supplier_id' => !empty($validated['supplier_id']) ? (int) $validated['supplier_id'] : null,
                 'description' => $validated['description'],
@@ -774,7 +799,8 @@ class AssetServiceOrderController extends Controller
             throw new \Exception('Warehouse outlet tidak ditemukan');
         }
 
-        $outletId = $warehouseOutlet->outlet_id;
+        $ownerOutletId = (int) $order->owner_outlet_id;
+        $locationOutletId = (int) $order->outlet_id;
 
         foreach ($order->items as $orderItem) {
             $itemMaster = DB::table('items')->where('id', $orderItem->item_id)->first();
@@ -799,11 +825,11 @@ class AssetServiceOrderController extends Controller
 
             $converted = $this->convertUnits($itemMaster, $orderItem->unit, $orderItem->qty_out);
 
-            $stock = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $order->warehouse_outlet_id)
-                ->first();
+            $stock = AssetInventoryStockService::findStock(
+                $inventoryItemId,
+                $ownerOutletId,
+                $order->warehouse_outlet_id
+            );
 
             if (!$stock) {
                 throw new \Exception('Stok tidak ditemukan untuk item: ' . $itemMaster->name);
@@ -829,7 +855,8 @@ class AssetServiceOrderController extends Controller
 
             DB::table('asset_inventory_cards')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $order->warehouse_outlet_id,
                 'date' => $order->date,
                 'reference_type' => 'asset_service_order',
@@ -853,17 +880,22 @@ class AssetServiceOrderController extends Controller
                 'created_at' => now(),
             ]);
 
-            $lastCostHistory = DB::table('asset_inventory_cost_histories')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $order->warehouse_outlet_id)
+            $lastCostQuery = DB::table('asset_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId);
+            AssetInventoryStockService::applyOwnerWarehouseScope(
+                $lastCostQuery,
+                $ownerOutletId,
+                $order->warehouse_outlet_id
+            );
+            $lastCostHistory = $lastCostQuery
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $order->warehouse_outlet_id,
                 'date' => $order->date,
                 'reference_type' => 'asset_service_order',
@@ -874,8 +906,8 @@ class AssetServiceOrderController extends Controller
                 'new_cost_small' => $costSmall,
                 'new_cost_medium' => $costMedium,
                 'new_cost_large' => $costLarge,
-                'qty' => $qty_small,
-                'value' => $qty_small * $costSmall,
+                'qty' => $converted['qty_small'],
+                'value' => $converted['qty_small'] * $costSmall,
                 'created_at' => now(),
             ]);
         }
@@ -891,7 +923,8 @@ class AssetServiceOrderController extends Controller
             throw new \Exception('Warehouse outlet tidak ditemukan');
         }
 
-        $outletId = $warehouseOutlet->outlet_id;
+        $ownerOutletId = (int) $order->owner_outlet_id;
+        $locationOutletId = (int) $order->outlet_id;
 
         foreach ($returnItems as $returnItem) {
             $orderItem = $order->items()->where('item_id', $returnItem['item_id'])->first();
@@ -909,11 +942,11 @@ class AssetServiceOrderController extends Controller
 
             $converted = $this->convertUnits($itemMaster, $orderItem->unit, $returnItem['qty_returned']);
 
-            $stock = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $order->warehouse_outlet_id)
-                ->first();
+            $stock = AssetInventoryStockService::findStock(
+                $inventoryItemId,
+                $ownerOutletId,
+                $order->warehouse_outlet_id
+            );
 
             $costSmall = $stock->last_cost_small ?? 0;
             $costMedium = $stock->last_cost_medium ?? 0;
@@ -922,7 +955,8 @@ class AssetServiceOrderController extends Controller
             if (!$stock) {
                 DB::table('asset_inventory_stocks')->insert([
                     'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $outletId,
+                    'owner_outlet_id' => $ownerOutletId,
+                    'outlet_id' => $locationOutletId,
                     'warehouse_outlet_id' => $order->warehouse_outlet_id,
                     'qty_small' => $converted['qty_small'],
                     'qty_medium' => $converted['qty_medium'],
@@ -955,7 +989,8 @@ class AssetServiceOrderController extends Controller
 
             DB::table('asset_inventory_cards')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $order->warehouse_outlet_id,
                 'date' => now()->toDateString(),
                 'reference_type' => 'asset_service_order_return',
@@ -1144,6 +1179,7 @@ class AssetServiceOrderController extends Controller
             's.id', 's.number', 's.date', 's.description',
             's.estimated_cost', 's.actual_cost', 's.status',
             's.sent_date', 's.return_date', 's.created_at',
+            'oo.nama_outlet as owner_outlet_name',
             'o.nama_outlet as outlet_name',
             'wo.name as warehouse_outlet_name',
             'sp.name as supplier_name',
@@ -1172,6 +1208,7 @@ class AssetServiceOrderController extends Controller
         $hasSvcType = Schema::hasColumn('asset_service_orders', 'service_type');
 
         $rules = [
+            'owner_outlet_id' => 'required|integer',
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -1209,7 +1246,7 @@ class AssetServiceOrderController extends Controller
         if ((int) ($user->id_outlet ?? 0) === 1) {
             return;
         }
-        if ((int) ($user->id_outlet ?? 0) !== (int) $order->outlet_id) {
+        if ((int) ($user->id_outlet ?? 0) !== (int) $order->owner_outlet_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }

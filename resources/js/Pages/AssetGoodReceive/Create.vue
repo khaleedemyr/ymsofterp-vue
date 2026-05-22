@@ -16,32 +16,35 @@
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left: Form -->
         <div class="lg:col-span-2 space-y-6">
-          <!-- Outlet & Warehouse Selection -->
+          <!-- Ownership & Location -->
           <div class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">
-              <i class="fa-solid fa-store mr-2 text-blue-500"></i> Outlet & Warehouse
+              <i class="fa-solid fa-store mr-2 text-blue-500"></i> Pemilik & Lokasi Simpan
             </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet Pemilik</label>
+                <input
+                  type="text"
+                  :value="ownerOutletDisplay"
+                  readonly
+                  placeholder="Diisi otomatis dari PO"
+                  class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                />
+                <p class="text-xs text-gray-500 mt-1">Sama dengan outlet pada baris PO</p>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet Lokasi Simpan</label>
                 <select
-                  v-if="user.id_outlet == 1"
                   v-model="form.outlet_id"
                   @change="onOutletChange"
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option :value="null">-- Select Outlet --</option>
+                  <option :value="null">-- Pilih Outlet Lokasi --</option>
                   <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
                     {{ outlet.nama_outlet }}
                   </option>
                 </select>
-                <input
-                  v-else
-                  type="text"
-                  :value="currentOutletName"
-                  readonly
-                  class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
-                />
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
@@ -238,7 +241,8 @@
               <i class="fa-solid fa-info-circle mr-1"></i> Instructions
             </h3>
             <ol class="text-xs text-blue-700 space-y-1.5 list-decimal list-inside">
-              <li>Select the outlet and warehouse</li>
+              <li>Pilih lokasi outlet & gudang (gudang mengikuti outlet lokasi)</li>
+              <li>Outlet pemilik terisi otomatis dari PO</li>
               <li>Scan QR code or manually input PO number</li>
               <li>Verify PO details and adjust received quantities</li>
               <li>Add notes if needed</li>
@@ -265,7 +269,8 @@ const props = defineProps({
 
 const form = useForm({
   po_id: null,
-  outlet_id: props.user.id_outlet != 1 ? props.user.id_outlet : null,
+  owner_outlet_id: null,
+  outlet_id: null,
   warehouse_outlet_id: null,
   receive_date: new Date().toISOString().split('T')[0],
   notes: '',
@@ -283,10 +288,10 @@ const cameras = ref([]);
 const selectedCameraId = ref('');
 let html5QrCode = null;
 
-const currentOutletName = computed(() => {
-  if (props.user.id_outlet == 1) return '';
-  const outlet = props.outlets?.find(o => o.id_outlet == props.user.id_outlet);
-  return outlet?.nama_outlet || `Outlet ${props.user.id_outlet}`;
+const ownerOutletDisplay = computed(() => {
+  if (!form.owner_outlet_id) return '';
+  const outlet = props.outlets?.find(o => o.id_outlet == form.owner_outlet_id);
+  return outlet?.nama_outlet || `Outlet ${form.owner_outlet_id}`;
 });
 
 const grandTotal = computed(() => {
@@ -329,6 +334,9 @@ async function fetchPO() {
     const res = await axios.get('/api/asset-good-receives/fetch-po', { params: { number: poNumber.value } });
     poData.value = res.data.po;
     form.po_id = res.data.po.id;
+    if (res.data.suggested_owner_outlet_id) {
+      form.owner_outlet_id = res.data.suggested_owner_outlet_id;
+    }
     form.items = res.data.items.map(item => ({
       po_item_id: item.id,
       item_id: item.resolved_item_id,
@@ -352,8 +360,12 @@ async function fetchPO() {
 }
 
 function submitForm() {
+  if (!form.owner_outlet_id) {
+    Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Outlet pemilik belum terisi. Muat PO yang memiliki outlet pada baris item.' });
+    return;
+  }
   if (!form.outlet_id) {
-    Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Please select an outlet.' });
+    Swal.fire({ icon: 'error', title: 'Validation Error', text: 'Pilih outlet lokasi simpan.' });
     return;
   }
   if (!form.po_id) {
@@ -441,10 +453,6 @@ function restartScanner() {
   startScanner();
 }
 
-// Auto-fetch warehouses if user has fixed outlet
-if (props.user.id_outlet != 1 && form.outlet_id) {
-  fetchWarehouses(form.outlet_id);
-}
 
 onBeforeUnmount(() => {
   if (html5QrCode) {

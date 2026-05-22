@@ -137,6 +137,12 @@ function deleteTransfer() {
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="space-y-2 md:col-span-2">
+                        <div class="flex gap-2">
+                            <span class="text-gray-500 w-28">Pemilik:</span>
+                            <span class="font-medium">{{ transfer.owner_outlet_name || '-' }}</span>
+                        </div>
+                    </div>
                     <div class="space-y-2">
                         <div class="flex gap-2">
                             <span class="text-gray-500 w-28">Dari Outlet:</span>

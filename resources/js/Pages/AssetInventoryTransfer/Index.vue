@@ -118,6 +118,7 @@ function deleteTransfer(id) {
                     <thead class="bg-teal-50">
                         <tr>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">No. Transfer</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Pemilik</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Dari</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Ke</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tanggal</th>
@@ -128,10 +129,11 @@ function deleteTransfer(id) {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         <tr v-if="!transfers.data || !transfers.data.length">
-                            <td colspan="7" class="px-5 py-8 text-center text-gray-400">Tidak ada data transfer.</td>
+                            <td colspan="8" class="px-5 py-8 text-center text-gray-400">Tidak ada data transfer.</td>
                         </tr>
                         <tr v-for="t in transfers.data" :key="t.id" class="hover:bg-teal-50/30 transition">
                             <td class="px-5 py-3 font-semibold text-teal-700">{{ t.transfer_number }}</td>
+                            <td class="px-5 py-3 text-sm text-gray-700">{{ t.owner_outlet_name || '-' }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">
                                 {{ t.outlet_from_name }}<br />
                                 <span class="text-xs text-gray-400">{{ t.warehouse_outlet_from_name }}</span>

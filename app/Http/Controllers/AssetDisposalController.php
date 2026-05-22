@@ -12,6 +12,7 @@ use App\Models\AssetDisposalItem;
 use App\Models\AssetDisposalPhoto;
 use App\Models\AssetDisposalApprovalFlow;
 use App\Services\NotificationService;
+use App\Services\AssetInventoryStockService;
 
 class AssetDisposalController extends Controller
 {
@@ -22,6 +23,7 @@ class AssetDisposalController extends Controller
         $user = auth()->user();
 
         $query = DB::table('asset_disposals as d')
+            ->leftJoin('tbl_data_outlet as oo', 'd.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'd.created_by', '=', 'u.id')
@@ -29,13 +31,14 @@ class AssetDisposalController extends Controller
                 'd.id', 'd.number', 'd.date', 'd.type', 'd.description',
                 'd.buyer_name', 'd.total_sale_price',
                 'd.status', 'd.created_by', 'd.created_at',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('d.id_outlet', $user->id_outlet);
+            $query->where('d.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -103,6 +106,7 @@ class AssetDisposalController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -124,6 +128,15 @@ class AssetDisposalController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetDisposal::generateNumber();
 
             $totalSalePrice = 0;
@@ -136,7 +149,8 @@ class AssetDisposalController extends Controller
             $disposal = AssetDisposal::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'id_outlet' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'id_outlet' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'description' => $validated['description'],
@@ -241,6 +255,7 @@ class AssetDisposalController extends Controller
             'buyer_contact' => $disposal->buyer_contact,
             'total_sale_price' => (float) $disposal->total_sale_price,
             'status' => $disposal->status,
+            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $disposal->owner_outlet_id)->value('nama_outlet') ?? '-',
             'outlet_name' => optional($disposal->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($disposal->warehouseOutlet)->name,
             'creator_name' => optional($disposal->creator)->nama_lengkap,
@@ -458,6 +473,7 @@ class AssetDisposalController extends Controller
         $user = Auth::user();
 
         $query = DB::table('asset_disposals as d')
+            ->leftJoin('tbl_data_outlet as oo', 'd.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'd.id_outlet', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'd.created_by', '=', 'u.id')
@@ -465,13 +481,14 @@ class AssetDisposalController extends Controller
                 'd.id', 'd.number', 'd.date', 'd.type', 'd.description',
                 'd.buyer_name', 'd.total_sale_price',
                 'd.status', 'd.created_at',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('d.id_outlet', $user->id_outlet);
+            $query->where('d.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -567,6 +584,7 @@ class AssetDisposalController extends Controller
             'buyer_contact' => $disposal->buyer_contact,
             'total_sale_price' => (float) $disposal->total_sale_price,
             'status' => $disposal->status,
+            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $disposal->owner_outlet_id)->value('nama_outlet') ?? '-',
             'outlet_name' => optional($disposal->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($disposal->warehouseOutlet)->name,
             'creator_name' => optional($disposal->creator)->nama_lengkap,
@@ -612,6 +630,7 @@ class AssetDisposalController extends Controller
     public function apiStore(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -633,6 +652,15 @@ class AssetDisposalController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetDisposal::generateNumber();
 
             $totalSalePrice = 0;
@@ -645,7 +673,8 @@ class AssetDisposalController extends Controller
             $disposal = AssetDisposal::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'id_outlet' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'id_outlet' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'description' => $validated['description'],
@@ -741,7 +770,8 @@ class AssetDisposalController extends Controller
             throw new \Exception('Warehouse outlet tidak ditemukan');
         }
 
-        $outletId = $warehouseOutlet->outlet_id;
+        $ownerOutletId = (int) $disposal->owner_outlet_id;
+        $locationOutletId = (int) $disposal->id_outlet;
 
         foreach ($disposal->items as $dispItem) {
             $itemMaster = DB::table('items')->where('id', $dispItem->item_id)->first();
@@ -766,11 +796,11 @@ class AssetDisposalController extends Controller
 
             $converted = $this->convertUnits($itemMaster, $dispItem->unit, $dispItem->qty);
 
-            $stock = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $disposal->warehouse_outlet_id)
-                ->first();
+            $stock = AssetInventoryStockService::findStock(
+                $inventoryItemId,
+                $ownerOutletId,
+                $disposal->warehouse_outlet_id
+            );
 
             if (!$stock) {
                 throw new \Exception('Stok tidak ditemukan untuk item: ' . $itemMaster->name);
@@ -796,7 +826,8 @@ class AssetDisposalController extends Controller
 
             DB::table('asset_inventory_cards')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $disposal->warehouse_outlet_id,
                 'date' => $disposal->date,
                 'reference_type' => 'asset_disposal',
@@ -820,17 +851,22 @@ class AssetDisposalController extends Controller
                 'created_at' => now(),
             ]);
 
-            $lastCostHistory = DB::table('asset_inventory_cost_histories')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $disposal->warehouse_outlet_id)
+            $lastCostQuery = DB::table('asset_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId);
+            AssetInventoryStockService::applyOwnerWarehouseScope(
+                $lastCostQuery,
+                $ownerOutletId,
+                $disposal->warehouse_outlet_id
+            );
+            $lastCostHistory = $lastCostQuery
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $disposal->warehouse_outlet_id,
                 'date' => $disposal->date,
                 'reference_type' => 'asset_disposal',
@@ -841,8 +877,8 @@ class AssetDisposalController extends Controller
                 'new_cost_small' => $costSmall,
                 'new_cost_medium' => $costMedium,
                 'new_cost_large' => $costLarge,
-                'qty' => $qty_small,
-                'value' => $qty_small * $costSmall,
+                'qty' => $converted['qty_small'],
+                'value' => $converted['qty_small'] * $costSmall,
                 'created_at' => now(),
             ]);
         }
@@ -1013,7 +1049,7 @@ class AssetDisposalController extends Controller
         if ((int) ($user->id_outlet ?? 0) === 1) {
             return;
         }
-        if ((int) ($user->id_outlet ?? 0) !== (int) $disposal->id_outlet) {
+        if ((int) ($user->id_outlet ?? 0) !== (int) $disposal->owner_outlet_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }

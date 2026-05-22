@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\AssetGoodReceive;
 use App\Models\AssetGoodReceiveItem;
 use App\Models\ActivityLog;
+use App\Services\AssetInventoryStockService;
 
 class AssetGoodReceiveController extends Controller
 {
@@ -19,12 +20,14 @@ class AssetGoodReceiveController extends Controller
         $query = DB::table('asset_good_receives as gr')
             ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 'gr.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->select(
                 'gr.id',
                 'gr.gr_number',
                 'gr.po_id',
+                'gr.owner_outlet_id',
                 'gr.outlet_id',
                 'gr.warehouse_outlet_id',
                 'gr.receive_date',
@@ -34,14 +37,15 @@ class AssetGoodReceiveController extends Controller
                 'gr.created_at',
                 'gr.updated_at',
                 'po.number as po_number',
-                'o.nama_outlet as outlet_name',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
             )
             ->addSelect(DB::raw('(SELECT COALESCE(SUM(gri.total), 0) FROM asset_good_receive_items gri WHERE gri.asset_good_receive_id = gr.id) as total'));
 
         if ($user->id_outlet != 1) {
-            $query->where('gr.outlet_id', $user->id_outlet);
+            $query->where('gr.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -60,6 +64,9 @@ class AssetGoodReceiveController extends Controller
         }
         if ($request->status) {
             $query->where('gr.status', $request->status);
+        }
+        if ($request->owner_outlet_id) {
+            $query->where('gr.owner_outlet_id', $request->owner_outlet_id);
         }
         if ($request->outlet_id) {
             $query->where('gr.outlet_id', $request->outlet_id);
@@ -85,18 +92,11 @@ class AssetGoodReceiveController extends Controller
     {
         $user = auth()->user();
 
-        if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet', 'nama_outlet')
-                ->orderBy('nama_outlet')
-                ->get();
-        } else {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('id_outlet', $user->id_outlet)
-                ->select('id_outlet', 'nama_outlet')
-                ->get();
-        }
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
 
         return inertia('AssetGoodReceive/Create', [
             'user' => $user,
@@ -172,11 +172,14 @@ class AssetGoodReceiveController extends Controller
 
         $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
 
+        $suggestedOwnerOutletId = AssetInventoryStockService::suggestedOwnerOutletIdFromPoItems($poItems);
+
         return response()->json([
             'po' => $po,
             'supplier' => $supplier,
             'pr' => $pr,
             'items' => $poItems,
+            'suggested_owner_outlet_id' => $suggestedOwnerOutletId,
         ]);
     }
 
@@ -184,6 +187,7 @@ class AssetGoodReceiveController extends Controller
     {
         $request->validate([
             'po_id' => 'required|integer',
+            'owner_outlet_id' => 'required|integer',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -198,6 +202,18 @@ class AssetGoodReceiveController extends Controller
             'items.*.notes' => 'nullable|string',
         ]);
 
+        if ($request->warehouse_outlet_id) {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $request->warehouse_outlet_id,
+                (int) $request->outlet_id
+            );
+        }
+
+        $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+            (int) $request->outlet_id,
+            $request->warehouse_outlet_id ? (int) $request->warehouse_outlet_id : null
+        );
+
         DB::beginTransaction();
         try {
             $grNumber = AssetGoodReceive::generateNumber();
@@ -205,7 +221,8 @@ class AssetGoodReceiveController extends Controller
             $gr = AssetGoodReceive::create([
                 'gr_number' => $grNumber,
                 'po_id' => $request->po_id,
-                'outlet_id' => $request->outlet_id,
+                'owner_outlet_id' => $request->owner_outlet_id,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'receive_date' => $request->receive_date,
                 'received_by' => Auth::id(),
@@ -235,7 +252,8 @@ class AssetGoodReceiveController extends Controller
                     $itemData['unit_id'],
                     $qtyReceived,
                     $price,
-                    $request->outlet_id,
+                    (int) $request->owner_outlet_id,
+                    $locationOutletId,
                     $request->warehouse_outlet_id,
                     $request->receive_date,
                     $gr->id,
@@ -280,6 +298,7 @@ class AssetGoodReceiveController extends Controller
             ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 'gr.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->select(
@@ -287,7 +306,8 @@ class AssetGoodReceiveController extends Controller
                 'po.number as po_number',
                 'po.date as po_date',
                 's.name as supplier_name',
-                'o.nama_outlet as outlet_name',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
             )
@@ -326,6 +346,7 @@ class AssetGoodReceiveController extends Controller
             ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 'gr.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->select(
@@ -333,7 +354,8 @@ class AssetGoodReceiveController extends Controller
                 'po.number as po_number',
                 'po.date as po_date',
                 's.name as supplier_name',
-                'o.nama_outlet as outlet_name',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
             )
@@ -367,18 +389,11 @@ class AssetGoodReceiveController extends Controller
         $gr->items = $items;
 
         $user = auth()->user();
-        if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet', 'nama_outlet')
-                ->orderBy('nama_outlet')
-                ->get();
-        } else {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('id_outlet', $user->id_outlet)
-                ->select('id_outlet', 'nama_outlet')
-                ->get();
-        }
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
 
         return inertia('AssetGoodReceive/Edit', [
             'goodReceive' => $gr,
@@ -390,6 +405,7 @@ class AssetGoodReceiveController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -404,6 +420,18 @@ class AssetGoodReceiveController extends Controller
             'items.*.price' => 'required|numeric|min:0',
             'items.*.notes' => 'nullable|string',
         ]);
+
+        if ($request->warehouse_outlet_id) {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $request->warehouse_outlet_id,
+                (int) $request->outlet_id
+            );
+        }
+
+        $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+            (int) $request->outlet_id,
+            $request->warehouse_outlet_id ? (int) $request->warehouse_outlet_id : null
+        );
 
         DB::beginTransaction();
         try {
@@ -420,7 +448,8 @@ class AssetGoodReceiveController extends Controller
                     $oldItem->item_id,
                     $oldItem->unit_id,
                     (float) $oldItem->qty_received,
-                    $gr->outlet_id,
+                    (int) $gr->owner_outlet_id,
+                    (int) $gr->outlet_id,
                     $gr->warehouse_outlet_id,
                     $gr->id
                 );
@@ -429,7 +458,8 @@ class AssetGoodReceiveController extends Controller
             AssetGoodReceiveItem::where('asset_good_receive_id', $id)->delete();
 
             $gr->update([
-                'outlet_id' => $request->outlet_id,
+                'owner_outlet_id' => $request->owner_outlet_id,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'receive_date' => $request->receive_date,
                 'notes' => $request->notes,
@@ -457,7 +487,8 @@ class AssetGoodReceiveController extends Controller
                     $itemData['unit_id'],
                     $qtyReceived,
                     $price,
-                    $request->outlet_id,
+                    (int) $request->owner_outlet_id,
+                    $locationOutletId,
                     $request->warehouse_outlet_id,
                     $request->receive_date,
                     $gr->id,
@@ -509,7 +540,8 @@ class AssetGoodReceiveController extends Controller
                     $item->item_id,
                     $item->unit_id,
                     (float) $item->qty_received,
-                    $gr->outlet_id,
+                    (int) $gr->owner_outlet_id,
+                    (int) $gr->outlet_id,
                     $gr->warehouse_outlet_id,
                     $gr->id
                 );
@@ -555,7 +587,8 @@ class AssetGoodReceiveController extends Controller
         int $unitId,
         float $qtyReceived,
         float $price,
-        int $outletId,
+        int $ownerOutletId,
+        int $locationOutletId,
         ?int $warehouseOutletId,
         string $receiveDate,
         int $grId,
@@ -633,17 +666,11 @@ class AssetGoodReceiveController extends Controller
         $newValue = $qty_small * $cost_small;
 
         // 4. Moving Average Cost & upsert stock
-        $existingStock = DB::table('asset_inventory_stocks')
-            ->where('inventory_item_id', $inventoryItemId)
-            ->where('outlet_id', $outletId)
-            ->where(function ($q) use ($warehouseOutletId) {
-                if ($warehouseOutletId) {
-                    $q->where('warehouse_outlet_id', $warehouseOutletId);
-                } else {
-                    $q->whereNull('warehouse_outlet_id');
-                }
-            })
-            ->first();
+        $existingStock = AssetInventoryStockService::findStock(
+            $inventoryItemId,
+            $ownerOutletId,
+            $warehouseOutletId
+        );
 
         $oldQty = $existingStock ? (float) $existingStock->qty_small : 0;
         $oldValue = $existingStock ? (float) $existingStock->value : 0;
@@ -667,7 +694,8 @@ class AssetGoodReceiveController extends Controller
         } else {
             DB::table('asset_inventory_stocks')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $warehouseOutletId,
                 'qty_small' => $qty_small,
                 'qty_medium' => $qty_medium,
@@ -682,16 +710,10 @@ class AssetGoodReceiveController extends Controller
         }
 
         // 5. Stock card (asset_inventory_cards)
-        $lastCard = DB::table('asset_inventory_cards')
-            ->where('inventory_item_id', $inventoryItemId)
-            ->where('outlet_id', $outletId)
-            ->where(function ($q) use ($warehouseOutletId) {
-                if ($warehouseOutletId) {
-                    $q->where('warehouse_outlet_id', $warehouseOutletId);
-                } else {
-                    $q->whereNull('warehouse_outlet_id');
-                }
-            })
+        $lastCardQuery = DB::table('asset_inventory_cards')
+            ->where('inventory_item_id', $inventoryItemId);
+        AssetInventoryStockService::applyOwnerWarehouseScope($lastCardQuery, $ownerOutletId, $warehouseOutletId);
+        $lastCard = $lastCardQuery
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->first();
@@ -703,7 +725,8 @@ class AssetGoodReceiveController extends Controller
 
         DB::table('asset_inventory_cards')->insert([
             'inventory_item_id' => $inventoryItemId,
-            'outlet_id' => $outletId,
+            'owner_outlet_id' => $ownerOutletId,
+            'outlet_id' => $locationOutletId,
             'warehouse_outlet_id' => $warehouseOutletId,
             'date' => $receiveDate,
             'reference_type' => 'asset_good_receive',
@@ -728,23 +751,18 @@ class AssetGoodReceiveController extends Controller
         ]);
 
         // 6. Cost history (asset_inventory_cost_histories)
-        $lastCostHistory = DB::table('asset_inventory_cost_histories')
-            ->where('inventory_item_id', $inventoryItemId)
-            ->where('outlet_id', $outletId)
-            ->where(function ($q) use ($warehouseOutletId) {
-                if ($warehouseOutletId) {
-                    $q->where('warehouse_outlet_id', $warehouseOutletId);
-                } else {
-                    $q->whereNull('warehouse_outlet_id');
-                }
-            })
+        $lastCostQuery = DB::table('asset_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId);
+        AssetInventoryStockService::applyOwnerWarehouseScope($lastCostQuery, $ownerOutletId, $warehouseOutletId);
+        $lastCostHistory = $lastCostQuery
             ->orderByDesc('date')
             ->orderByDesc('created_at')
             ->first();
 
         DB::table('asset_inventory_cost_histories')->insert([
             'inventory_item_id' => $inventoryItemId,
-            'outlet_id' => $outletId,
+            'owner_outlet_id' => $ownerOutletId,
+            'outlet_id' => $locationOutletId,
             'warehouse_outlet_id' => $warehouseOutletId,
             'date' => $receiveDate,
             'reference_type' => 'asset_good_receive',
@@ -769,7 +787,8 @@ class AssetGoodReceiveController extends Controller
         int $itemId,
         int $unitId,
         float $qtyReceived,
-        int $outletId,
+        int $ownerOutletId,
+        int $locationOutletId,
         ?int $warehouseOutletId,
         int $grId
     ): void {
@@ -823,17 +842,11 @@ class AssetGoodReceiveController extends Controller
         }
 
         // Rollback stock
-        $currentStock = DB::table('asset_inventory_stocks')
-            ->where('inventory_item_id', $inventoryItem->id)
-            ->where('outlet_id', $outletId)
-            ->where(function ($q) use ($warehouseOutletId) {
-                if ($warehouseOutletId) {
-                    $q->where('warehouse_outlet_id', $warehouseOutletId);
-                } else {
-                    $q->whereNull('warehouse_outlet_id');
-                }
-            })
-            ->first();
+        $currentStock = AssetInventoryStockService::findStock(
+            $inventoryItem->id,
+            $ownerOutletId,
+            $warehouseOutletId
+        );
 
         if ($currentStock) {
             $newQtySmall = max(0, (float) $currentStock->qty_small - $qty_small);
@@ -1043,30 +1056,25 @@ class AssetGoodReceiveController extends Controller
         $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
 
         $user = auth()->user();
-        $outlets = [];
-        if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet', 'nama_outlet')
-                ->orderBy('nama_outlet')
-                ->get();
-        } else {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('id_outlet', $user->id_outlet)
-                ->select('id_outlet', 'nama_outlet')
-                ->get();
-        }
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet')
+            ->get();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
             ->orderBy('name')
             ->get();
 
+        $suggestedOwnerOutletId = AssetInventoryStockService::suggestedOwnerOutletIdFromPoItems($poItems);
+
         return response()->json([
             'po' => $po,
             'supplier' => $supplier,
             'pr' => $pr,
             'items' => $poItems,
+            'suggested_owner_outlet_id' => $suggestedOwnerOutletId,
             'outlets' => $outlets,
             'warehouse_outlets' => $warehouseOutlets,
             'user' => ['id_outlet' => $user->id_outlet],
@@ -1077,6 +1085,7 @@ class AssetGoodReceiveController extends Controller
     {
         $request->validate([
             'po_id' => 'required|integer',
+            'owner_outlet_id' => 'required|integer',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -1091,6 +1100,18 @@ class AssetGoodReceiveController extends Controller
             'items.*.notes' => 'nullable|string',
         ]);
 
+        if ($request->warehouse_outlet_id) {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $request->warehouse_outlet_id,
+                (int) $request->outlet_id
+            );
+        }
+
+        $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+            (int) $request->outlet_id,
+            $request->warehouse_outlet_id ? (int) $request->warehouse_outlet_id : null
+        );
+
         DB::beginTransaction();
         try {
             $grNumber = AssetGoodReceive::generateNumber();
@@ -1098,7 +1119,8 @@ class AssetGoodReceiveController extends Controller
             $gr = AssetGoodReceive::create([
                 'gr_number' => $grNumber,
                 'po_id' => $request->po_id,
-                'outlet_id' => $request->outlet_id,
+                'owner_outlet_id' => $request->owner_outlet_id,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $request->warehouse_outlet_id,
                 'receive_date' => $request->receive_date,
                 'received_by' => Auth::id(),
@@ -1128,7 +1150,8 @@ class AssetGoodReceiveController extends Controller
                     $itemData['unit_id'],
                     $qtyReceived,
                     $price,
-                    $request->outlet_id,
+                    (int) $request->owner_outlet_id,
+                    $locationOutletId,
                     $request->warehouse_outlet_id,
                     $request->receive_date,
                     $gr->id,
@@ -1177,7 +1200,8 @@ class AssetGoodReceiveController extends Controller
                     $item->item_id,
                     $item->unit_id,
                     (float) $item->qty_received,
-                    $gr->outlet_id,
+                    (int) $gr->owner_outlet_id,
+                    (int) $gr->outlet_id,
                     $gr->warehouse_outlet_id,
                     $gr->id
                 );

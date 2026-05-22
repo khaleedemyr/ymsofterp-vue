@@ -9,7 +9,7 @@ class AssetGoodReceive extends Model
     protected $table = 'asset_good_receives';
 
     protected $fillable = [
-        'gr_number', 'po_id', 'outlet_id', 'warehouse_outlet_id',
+        'gr_number', 'po_id', 'owner_outlet_id', 'outlet_id', 'warehouse_outlet_id',
         'receive_date', 'received_by', 'status', 'notes',
     ];
 
@@ -19,6 +19,7 @@ class AssetGoodReceive extends Model
 
     public function items() { return $this->hasMany(AssetGoodReceiveItem::class); }
     public function po() { return $this->belongsTo(PurchaseOrderOps::class, 'po_id'); }
+    public function ownerOutlet() { return $this->belongsTo(Outlet::class, 'owner_outlet_id', 'id_outlet'); }
     public function outlet() { return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet'); }
     public function warehouseOutlet() { return $this->belongsTo(WarehouseOutlet::class, 'warehouse_outlet_id'); }
     public function receiver() { return $this->belongsTo(User::class, 'received_by'); }

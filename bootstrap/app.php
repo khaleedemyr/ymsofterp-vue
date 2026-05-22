@@ -153,6 +153,15 @@ return Application::configure(basePath: dirname(__DIR__))
             ->appendOutputTo(storage_path('logs/expiring-vouchers-notifications.log'))
             ->description('Send notification to members who have vouchers expiring in 7 days');
 
+        // Instagram Login API — poll DM ke omnichannel (cadangan jika webhook tidak push)
+        if (filter_var(env('META_INSTAGRAM_INBOX_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
+            $schedule->command('meta:sync-instagram-inbox')
+                ->everyTwoMinutes()
+                ->withoutOverlapping()
+                ->runInBackground()
+                ->appendOutputTo(storage_path('logs/meta-instagram-inbox-sync.log'));
+        }
+
         // Cleanup old and excess device tokens - run daily at 2:00 AM
         $schedule->command('device-tokens:cleanup --days=30 --limit=5')
             ->dailyAt('02:00')

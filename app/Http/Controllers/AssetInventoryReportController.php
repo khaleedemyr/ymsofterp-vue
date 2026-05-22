@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Exports\AssetStockPositionExport;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Services\AssetInventoryStockService;
 
 class AssetInventoryReportController extends Controller
 {
@@ -19,6 +20,7 @@ class AssetInventoryReportController extends Controller
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
@@ -27,8 +29,10 @@ class AssetInventoryReportController extends Controller
                 'i.id as item_id',
                 'i.name as item_name',
                 'ai.id as inventory_item_id',
+                's.owner_outlet_id',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.id_outlet as outlet_id',
-                'o.nama_outlet as outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
                 'wo.name as warehouse_name',
                 's.qty_small',
@@ -43,14 +47,16 @@ class AssetInventoryReportController extends Controller
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
+            ->orderBy('oo.nama_outlet')
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');
 
-        if ($user->id_outlet != 1) {
-            $query->where('s.outlet_id', $user->id_outlet);
-        }
+        AssetInventoryStockService::applyOwnerVisibilityForUser($query, $user, 's.owner_outlet_id');
 
+        if ($request->filled('owner_outlet_id')) {
+            $query->where('s.owner_outlet_id', $request->owner_outlet_id);
+        }
         if ($request->filled('outlet_id')) {
             $query->where('s.outlet_id', $request->outlet_id);
         }
@@ -83,6 +89,7 @@ class AssetInventoryReportController extends Controller
     {
         return Excel::download(
             new AssetStockPositionExport(
+                $request->owner_outlet_id,
                 $request->outlet_id,
                 $request->warehouse_outlet_id
             ),
@@ -99,18 +106,19 @@ class AssetInventoryReportController extends Controller
 
         $inventoryItemId = $request->input('inventory_item_id');
         $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $ownerOutletId = $request->input('owner_outlet_id');
 
-        if (!$inventoryItemId || !$warehouseOutletId) {
-            return response()->json(['error' => 'inventory_item_id dan warehouse_outlet_id harus diisi'], 400);
+        if (!$inventoryItemId || !$warehouseOutletId || !$ownerOutletId) {
+            return response()->json(['error' => 'inventory_item_id, owner_outlet_id, dan warehouse_outlet_id harus diisi'], 400);
         }
 
         $now = now();
         $from = $request->input('from', $now->copy()->startOfMonth()->format('Y-m-d'));
         $to = $request->input('to', $now->copy()->endOfMonth()->format('Y-m-d'));
 
-        $saldoAwal = $this->getSaldoAwal($inventoryItemId, $warehouseOutletId, $from);
+        $saldoAwal = $this->getSaldoAwal($inventoryItemId, (int) $ownerOutletId, $warehouseOutletId, $from);
 
-        $cards = $this->getCardEntries($inventoryItemId, $warehouseOutletId, $from, $to);
+        $cards = $this->getCardEntries($inventoryItemId, (int) $ownerOutletId, $warehouseOutletId, $from, $to);
 
         return response()->json([
             'cards' => $cards->toArray(),
@@ -129,6 +137,7 @@ class AssetInventoryReportController extends Controller
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
@@ -137,8 +146,10 @@ class AssetInventoryReportController extends Controller
                 'i.id as item_id',
                 'i.name as item_name',
                 'ai.id as inventory_item_id',
+                's.owner_outlet_id',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.id_outlet as outlet_id',
-                'o.nama_outlet as outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
                 'wo.name as warehouse_name',
                 's.qty_small',
@@ -153,14 +164,16 @@ class AssetInventoryReportController extends Controller
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
+            ->orderBy('oo.nama_outlet')
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');
 
-        if ($user->id_outlet != 1) {
-            $query->where('s.outlet_id', $user->id_outlet);
-        }
+        AssetInventoryStockService::applyOwnerVisibilityForUser($query, $user, 's.owner_outlet_id');
 
+        if ($request->filled('owner_outlet_id')) {
+            $query->where('s.owner_outlet_id', $request->owner_outlet_id);
+        }
         if ($request->filled('outlet_id')) {
             $query->where('s.outlet_id', $request->outlet_id);
         }
@@ -194,17 +207,18 @@ class AssetInventoryReportController extends Controller
     {
         $inventoryItemId = $request->input('inventory_item_id');
         $warehouseOutletId = $request->input('warehouse_outlet_id');
+        $ownerOutletId = $request->input('owner_outlet_id');
 
-        if (!$inventoryItemId || !$warehouseOutletId) {
-            return response()->json(['error' => 'inventory_item_id dan warehouse_outlet_id harus diisi'], 400);
+        if (!$inventoryItemId || !$warehouseOutletId || !$ownerOutletId) {
+            return response()->json(['error' => 'inventory_item_id, owner_outlet_id, dan warehouse_outlet_id harus diisi'], 400);
         }
 
         $now = now();
         $from = $request->input('from', $now->copy()->startOfMonth()->format('Y-m-d'));
         $to = $request->input('to', $now->copy()->endOfMonth()->format('Y-m-d'));
 
-        $saldoAwal = $this->getSaldoAwal($inventoryItemId, $warehouseOutletId, $from);
-        $cards = $this->getCardEntries($inventoryItemId, $warehouseOutletId, $from, $to);
+        $saldoAwal = $this->getSaldoAwal($inventoryItemId, (int) $ownerOutletId, $warehouseOutletId, $from);
+        $cards = $this->getCardEntries($inventoryItemId, (int) $ownerOutletId, $warehouseOutletId, $from, $to);
 
         return response()->json([
             'success' => true,
@@ -216,7 +230,7 @@ class AssetInventoryReportController extends Controller
 
     // ─── Private helpers ─────────────────────────────────────────────
 
-    private function getSaldoAwal(int $inventoryItemId, int $warehouseOutletId, string $fromDate): array
+    private function getSaldoAwal(int $inventoryItemId, int $ownerOutletId, int $warehouseOutletId, string $fromDate): array
     {
         $dayBefore = \Carbon\Carbon::parse($fromDate)->subDay()->format('Y-m-d');
 
@@ -227,6 +241,7 @@ class AssetInventoryReportController extends Controller
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->where('c.inventory_item_id', $inventoryItemId)
+            ->where('c.owner_outlet_id', $ownerOutletId)
             ->where('c.warehouse_outlet_id', $warehouseOutletId)
             ->whereDate('c.date', '<=', $dayBefore)
             ->orderByDesc('c.date')
@@ -263,7 +278,7 @@ class AssetInventoryReportController extends Controller
         ];
     }
 
-    private function getCardEntries(int $inventoryItemId, int $warehouseOutletId, string $from, string $to)
+    private function getCardEntries(int $inventoryItemId, int $ownerOutletId, int $warehouseOutletId, string $from, string $to)
     {
         $query = DB::table('asset_inventory_cards as c')
             ->join('asset_inventory_items as ai', 'c.inventory_item_id', '=', 'ai.id')
@@ -273,6 +288,7 @@ class AssetInventoryReportController extends Controller
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->where('c.inventory_item_id', $inventoryItemId)
+            ->where('c.owner_outlet_id', $ownerOutletId)
             ->where('c.warehouse_outlet_id', $warehouseOutletId)
             ->whereDate('c.date', '>=', $from)
             ->whereDate('c.date', '<=', $to)

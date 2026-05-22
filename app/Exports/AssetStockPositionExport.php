@@ -12,12 +12,14 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths
 {
-    protected $outletId;
+    protected $ownerOutletId;
+    protected $locationOutletId;
     protected $warehouseOutletId;
 
-    public function __construct($outletId = null, $warehouseOutletId = null)
+    public function __construct($ownerOutletId = null, $locationOutletId = null, $warehouseOutletId = null)
     {
-        $this->outletId = $outletId;
+        $this->ownerOutletId = $ownerOutletId;
+        $this->locationOutletId = $locationOutletId;
         $this->warehouseOutletId = $warehouseOutletId;
     }
 
@@ -27,13 +29,15 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->select(
                 'i.name as item_name',
-                'o.nama_outlet as outlet_name',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 's.qty_small', 's.qty_medium', 's.qty_large',
                 's.value',
@@ -43,12 +47,16 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
+            ->orderBy('oo.nama_outlet')
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');
 
-        if ($this->outletId) {
-            $query->where('s.outlet_id', $this->outletId);
+        if ($this->ownerOutletId) {
+            $query->where('s.owner_outlet_id', $this->ownerOutletId);
+        }
+        if ($this->locationOutletId) {
+            $query->where('s.outlet_id', $this->locationOutletId);
         }
         if ($this->warehouseOutletId) {
             $query->where('s.warehouse_outlet_id', $this->warehouseOutletId);
@@ -61,7 +69,8 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             'Nama Barang',
-            'Outlet',
+            'Outlet Pemilik',
+            'Outlet Lokasi',
             'Warehouse',
             'Qty Small', 'Unit Small',
             'Qty Medium', 'Unit Medium',
@@ -75,16 +84,17 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             $row->item_name,
-            $row->outlet_name ?? '-',
+            $row->owner_outlet_name ?? '-',
+            $row->location_outlet_name ?? '-',
             $row->warehouse_name,
             $row->qty_small ? number_format($row->qty_small, 2) : '0.00',
-            $row->small_unit_name ?? '-',
+            $row->small_unit_name ?? '',
             $row->qty_medium ? number_format($row->qty_medium, 2) : '0.00',
-            $row->medium_unit_name ?? '-',
+            $row->medium_unit_name ?? '',
             $row->qty_large ? number_format($row->qty_large, 2) : '0.00',
-            $row->large_unit_name ?? '-',
-            $row->value ? number_format($row->value, 0) : '0',
-            $row->updated_at ? \Carbon\Carbon::parse($row->updated_at)->format('d/m/Y H:i:s') : '-',
+            $row->large_unit_name ?? '',
+            $row->value ? number_format($row->value, 2) : '0.00',
+            $row->updated_at,
         ];
     }
 
@@ -99,13 +109,9 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             'A' => 30,
-            'B' => 25,
-            'C' => 20,
-            'D' => 15, 'E' => 12,
-            'F' => 15, 'G' => 12,
-            'H' => 15, 'I' => 12,
-            'J' => 18,
-            'K' => 20,
+            'B' => 22,
+            'C' => 22,
+            'D' => 20,
         ];
     }
 }

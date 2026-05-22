@@ -67,6 +67,12 @@ Route::get('/webhooks/meta/messenger', [\App\Http\Controllers\Api\MetaMessengerW
 Route::post('/webhooks/meta/messenger', [\App\Http\Controllers\Api\MetaMessengerWebhookController::class, 'handle'])
     ->name('api.webhooks.meta.messenger');
 
+// Instagram API with Instagram Login (alur setup YouTube / dashboard Instagram > API setup)
+Route::get('/webhooks/meta/instagram', [\App\Http\Controllers\Api\MetaInstagramWebhookController::class, 'verify'])
+    ->name('api.webhooks.meta.instagram.verify');
+Route::post('/webhooks/meta/instagram', [\App\Http\Controllers\Api\MetaInstagramWebhookController::class, 'handle'])
+    ->name('api.webhooks.meta.instagram');
+
 // Test route for approvers
 Route::get('/test-po-ops-approvers', [\App\Http\Controllers\PurchaseOrderOpsController::class, 'getApprovers']);
 

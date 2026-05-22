@@ -2067,6 +2067,7 @@ class ItemController extends Controller
     {
         $q = $request->q;
         $warehouseOutletId = $request->warehouse_outlet_id;
+        $ownerOutletId = $request->owner_outlet_id ? (int) $request->owner_outlet_id : null;
 
         $outletId = null;
         if ($warehouseOutletId) {
@@ -2116,17 +2117,17 @@ class ItemController extends Controller
             ->limit(20)
             ->get();
 
-        if ($warehouseOutletId && $outletId) {
+        if ($warehouseOutletId && $ownerOutletId) {
             foreach ($items as $item) {
                 $inventoryItem = \DB::table('asset_inventory_items')
                     ->where('item_id', $item->id)->first();
 
                 if ($inventoryItem) {
-                    $stock = \DB::table('asset_inventory_stocks')
+                    $stockQuery = \DB::table('asset_inventory_stocks')
                         ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('outlet_id', $outletId)
-                        ->where('warehouse_outlet_id', $warehouseOutletId)
-                        ->first();
+                        ->where('owner_outlet_id', $ownerOutletId)
+                        ->where('warehouse_outlet_id', $warehouseOutletId);
+                    $stock = $stockQuery->first();
 
                     $item->stock_small = $stock->qty_small ?? 0;
                     $item->stock_medium = $stock->qty_medium ?? 0;

@@ -133,7 +133,11 @@ function deleteAdjustment() {
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <div class="flex gap-2">
-                        <span class="text-gray-500 w-28">Outlet:</span>
+                        <span class="text-gray-500 w-28">Pemilik:</span>
+                        <span class="font-medium">{{ adjustment.owner_outlet_name || '-' }}</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <span class="text-gray-500 w-28">Lokasi Outlet:</span>
                         <span class="font-medium">{{ adjustment.outlet_name }}</span>
                     </div>
                     <div class="flex gap-2">

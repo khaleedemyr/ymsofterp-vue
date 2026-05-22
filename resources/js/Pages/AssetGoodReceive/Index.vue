@@ -64,7 +64,8 @@
             <tr>
               <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">GR Number</th>
               <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">PO Number</th>
-              <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Outlet</th>
+              <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Pemilik</th>
+              <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Lokasi</th>
               <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Warehouse</th>
               <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Receive Date</th>
               <th class="px-5 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Status</th>
@@ -74,7 +75,7 @@
           </thead>
           <tbody class="divide-y divide-gray-100">
             <tr v-if="!goodReceives.data || !goodReceives.data.length">
-              <td colspan="8" class="text-center py-12 text-gray-400">
+              <td colspan="9" class="text-center py-12 text-gray-400">
                 <i class="fa-solid fa-inbox text-4xl mb-3 block"></i>
                 No Asset Good Receive data found.
               </td>
@@ -82,7 +83,8 @@
             <tr v-for="gr in goodReceives.data" :key="gr.id" class="hover:bg-blue-50 transition">
               <td class="px-5 py-3 font-semibold text-gray-800">{{ gr.gr_number }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.po_number }}</td>
-              <td class="px-5 py-3 text-gray-700">{{ gr.outlet_name }}</td>
+              <td class="px-5 py-3 text-gray-700">{{ gr.owner_outlet_name || '-' }}</td>
+              <td class="px-5 py-3 text-gray-700">{{ gr.location_outlet_name || '-' }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.warehouse_outlet_name || '-' }}</td>
               <td class="px-5 py-3 text-gray-700">{{ gr.receive_date }}</td>
               <td class="px-5 py-3">

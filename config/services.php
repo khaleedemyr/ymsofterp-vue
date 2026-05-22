@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\MetaInstagramTokens;
 use App\Support\MetaPageTokens;
 
 return [
@@ -62,6 +63,12 @@ return [
         /** @var array<string, string> page_id => page_access_token (multi Page Messenger) */
         'page_tokens' => MetaPageTokens::parse((string) env('META_PAGE_TOKENS', '{}')),
         'instagram_account_id' => env('META_INSTAGRAM_ACCOUNT_ID'),
+        /** Instagram API with Instagram Login (graph.instagram.com) */
+        'instagram_login_tokens' => MetaInstagramTokens::parse((string) env('META_INSTAGRAM_LOGIN_TOKENS', '{}')),
+        'instagram_login_access_token' => env('META_INSTAGRAM_LOGIN_ACCESS_TOKEN'),
+        'instagram_login_default_id' => env('META_INSTAGRAM_LOGIN_DEFAULT_ID'),
+        'instagram_graph_version' => env('META_INSTAGRAM_GRAPH_VERSION', 'v25.0'),
+        'instagram_inbox_sync_enabled' => env('META_INSTAGRAM_INBOX_SYNC_ENABLED', true),
         'graph_api_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'webhook_skip_signature_verify' => env('META_WEBHOOK_SKIP_SIGNATURE_VERIFY', false),

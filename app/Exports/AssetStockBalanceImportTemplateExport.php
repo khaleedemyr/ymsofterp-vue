@@ -114,7 +114,7 @@ class AssetStockBalanceSheet implements FromArray, WithHeadings, WithTitle, With
     public function array(): array
     {
         return [
-            ['AST001', 'Laptop Dell', 'Unit', 'Kantor Pusat', 1, 10, 15000000, 'Saldo awal asset 2024']
+            ['AST001', 'Laptop Dell', 'Unit', 'Outlet A', 'Outlet A', 1, 10, 15000000, 'Saldo awal asset 2024']
         ];
     }
 
@@ -124,6 +124,7 @@ class AssetStockBalanceSheet implements FromArray, WithHeadings, WithTitle, With
             'SKU',
             'Name',
             'Small Unit',
+            'Owner Outlet',
             'Outlet',
             'Warehouse Outlet ID',
             'Quantity',

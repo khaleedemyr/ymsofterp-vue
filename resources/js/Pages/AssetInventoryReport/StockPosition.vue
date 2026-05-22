@@ -18,10 +18,18 @@
         <input v-model="search" type="text" placeholder="Cari nama barang atau warehouse..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
 
         <div v-if="isHQ" class="flex items-center gap-2">
-          <label class="text-sm">Outlet</label>
+          <label class="text-sm">Pemilik</label>
+          <select v-model="selectedOwnerOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="">Semua Pemilik</option>
+            <option v-for="o in outlets" :key="'own-' + o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <label class="text-sm">Lokasi Outlet</label>
           <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="">Semua Outlet</option>
-            <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+            <option value="">Semua Lokasi</option>
+            <option v-for="o in outlets" :key="'loc-' + o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
           </select>
         </div>
 
@@ -55,7 +63,8 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
-                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Pemilik</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Lokasi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Small</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
@@ -66,7 +75,7 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!filteredStocks.length">
-                <td colspan="8" class="text-center py-10 text-gray-400">Tidak ada data stok asset.</td>
+                <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data stok asset.</td>
               </tr>
               <template v-for="row in paginatedStocks" :key="getItemKey(row)">
                 <tr
@@ -80,7 +89,8 @@
                       <span>{{ row.item_name }}</span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.outlet_name || '-' }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.owner_outlet_name || '-' }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.location_outlet_name || '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_name }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
                     <span v-if="Number(row.qty_small) > 0">{{ displayQty(row.qty_small) }} <span class="text-gray-400">{{ row.small_unit_name }}</span></span>
@@ -100,7 +110,7 @@
 
                 <!-- Stock Card Detail Row -->
                 <tr v-if="expandedItems.includes(getItemKey(row))" class="bg-gray-50">
-                  <td colspan="8" class="px-6 py-4">
+                  <td colspan="9" class="px-6 py-4">
                     <div v-if="loadingItems[getItemKey(row)]" class="text-center py-4">
                       <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                       <p class="mt-2 text-gray-600 text-sm">Memuat kartu stok...</p>
@@ -194,6 +204,7 @@ const isHQ = computed(() => String(props.user?.id_outlet) === '1');
 const search = ref('');
 const perPage = ref(25);
 const page = ref(1);
+const selectedOwnerOutlet = ref('');
 const selectedOutlet = ref('');
 const selectedWarehouse = ref('');
 const exporting = ref(false);
@@ -218,6 +229,9 @@ const filteredWarehouses = computed(() => {
 
 const filteredStocks = computed(() => {
   let data = stocks.value;
+  if (selectedOwnerOutlet.value) {
+    data = data.filter(row => String(row.owner_outlet_id) === String(selectedOwnerOutlet.value));
+  }
   if (selectedOutlet.value) {
     data = data.filter(row => String(row.outlet_id) === String(selectedOutlet.value));
   }
@@ -241,7 +255,7 @@ const paginatedStocks = computed(() => filteredStocks.value.slice(startIndex.val
 
 function prevPage() { if (page.value > 1) page.value--; }
 function nextPage() { if (page.value < totalPages.value) page.value++; }
-watch([perPage, search, selectedOutlet, selectedWarehouse], () => { page.value = 1; });
+watch([perPage, search, selectedOwnerOutlet, selectedOutlet, selectedWarehouse], () => { page.value = 1; });
 
 // When date range changes, clear cached stock card details so they reload with new dates
 watch([fromDate, toDate], () => {
@@ -251,7 +265,7 @@ watch([fromDate, toDate], () => {
 });
 
 function getItemKey(row) {
-  return `${row.inventory_item_id}-${row.warehouse_outlet_id}`;
+  return `${row.inventory_item_id}-${row.owner_outlet_id}-${row.warehouse_outlet_id}`;
 }
 
 async function toggleItemDetail(row) {
@@ -274,6 +288,7 @@ async function fetchItemDetail(row) {
     const response = await axios.get('/asset-inventory-report/stock-card/detail', {
       params: {
         inventory_item_id: row.inventory_item_id,
+        owner_outlet_id: row.owner_outlet_id,
         warehouse_outlet_id: row.warehouse_outlet_id,
         from: fromDate.value || undefined,
         to: toDate.value || undefined,
@@ -367,6 +382,7 @@ async function exportExcel() {
   exporting.value = true;
   try {
     const params = new URLSearchParams();
+    if (selectedOwnerOutlet.value) params.append('owner_outlet_id', selectedOwnerOutlet.value);
     if (selectedOutlet.value) params.append('outlet_id', selectedOutlet.value);
     if (selectedWarehouse.value) params.append('warehouse_outlet_id', selectedWarehouse.value);
     const url = '/asset-inventory-report/stock-position/export' + (params.toString() ? '?' + params.toString() : '');

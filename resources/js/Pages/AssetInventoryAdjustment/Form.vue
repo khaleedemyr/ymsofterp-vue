@@ -13,6 +13,7 @@ const props = defineProps({
 });
 
 const form = useForm({
+    owner_outlet_id: props.user.id_outlet == 1 ? '' : props.user.id_outlet,
     date: new Date().toISOString().slice(0, 10),
     outlet_id: props.user.id_outlet == 1 ? '' : props.user.id_outlet,
     warehouse_outlet_id: '',
@@ -40,7 +41,11 @@ const searchItems = debounce(async () => {
     isSearching.value = true;
     try {
         const { data } = await axios.get('/items/search-for-asset-transfer', {
-            params: { q: itemQuery.value, warehouse_outlet_id: form.warehouse_outlet_id }
+            params: {
+                q: itemQuery.value,
+                owner_outlet_id: form.owner_outlet_id,
+                warehouse_outlet_id: form.warehouse_outlet_id,
+            }
         });
         itemResults.value = data;
     } catch (e) { console.error(e); }
@@ -117,8 +122,12 @@ function moveApprover(idx, dir) {
 }
 
 function submitForm() {
+    if (!form.owner_outlet_id) {
+        Swal.fire('Error', 'Pilih outlet pemilik.', 'error');
+        return;
+    }
     if (!form.outlet_id) {
-        Swal.fire('Error', 'Pilih outlet.', 'error');
+        Swal.fire('Error', 'Pilih outlet lokasi.', 'error');
         return;
     }
     if (!form.warehouse_outlet_id) {
@@ -191,10 +200,20 @@ function submitForm() {
 
             <!-- Outlet / Warehouse / Date / Reason -->
             <div class="bg-white rounded-xl shadow p-6 mb-6">
-                <h2 class="text-lg font-semibold text-gray-800 mb-4"><i class="fa-solid fa-building text-teal-500 mr-2"></i>Lokasi & Detail</h2>
+                <h2 class="text-lg font-semibold text-gray-800 mb-4"><i class="fa-solid fa-building text-teal-500 mr-2"></i>Pemilik, Lokasi & Detail</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Outlet</label>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Outlet Pemilik</label>
+                        <select v-if="isHO" v-model="form.owner_outlet_id"
+                            class="w-full rounded-lg border-gray-300 text-sm focus:ring-teal-500 focus:border-teal-500">
+                            <option value="">Pilih Outlet Pemilik</option>
+                            <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                        </select>
+                        <input v-else type="text" :value="outlets.find(o => o.id_outlet == user.id_outlet)?.nama_outlet" disabled
+                            class="w-full rounded-lg border-gray-200 bg-gray-50 text-sm" />
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-1">Outlet Lokasi</label>
                         <select v-if="isHO" v-model="form.outlet_id"
                             class="w-full rounded-lg border-gray-300 text-sm focus:ring-teal-500 focus:border-teal-500">
                             <option value="">Pilih Outlet</option>

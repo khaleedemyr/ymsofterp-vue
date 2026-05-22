@@ -132,3 +132,5 @@ CREATE TABLE IF NOT EXISTS `asset_inventory_cost_histories` (
   KEY `idx_asset_cost_outlet` (`outlet_id`),
   KEY `idx_asset_cost_ref` (`reference_type`, `reference_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Ownership (pemilik vs lokasi): jalankan database/sql/asset_ownership.sql pada DB yang sudah ada.

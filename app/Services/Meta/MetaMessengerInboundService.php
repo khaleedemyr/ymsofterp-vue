@@ -136,7 +136,7 @@ class MetaMessengerInboundService
     private function storeInboundMessage(string $channel, string $pageOrIgId, array $event): void
     {
         $message = $event['message'];
-        $metaMessageId = (string) ($message['mid'] ?? '');
+        $metaMessageId = (string) ($message['mid'] ?? $message['message_id'] ?? $event['message_id'] ?? '');
         if ($metaMessageId === '') {
             Log::warning('Meta inbound skipped: missing message mid', [
                 'channel' => $channel,

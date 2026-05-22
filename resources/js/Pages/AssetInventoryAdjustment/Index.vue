@@ -143,7 +143,8 @@ function deleteAdjustment(id) {
                         <tr>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Nomor</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tanggal</th>
-                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Outlet</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Pemilik</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Lokasi</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Warehouse</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tipe</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Status</th>
@@ -153,11 +154,12 @@ function deleteAdjustment(id) {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         <tr v-if="!adjustments.data || !adjustments.data.length">
-                            <td colspan="8" class="px-5 py-8 text-center text-gray-400">Tidak ada data adjustment.</td>
+                            <td colspan="9" class="px-5 py-8 text-center text-gray-400">Tidak ada data adjustment.</td>
                         </tr>
                         <tr v-for="a in adjustments.data" :key="a.id" class="hover:bg-teal-50/30 transition">
                             <td class="px-5 py-3 font-semibold text-teal-700">{{ a.number }}</td>
                             <td class="px-5 py-3 text-sm text-gray-600">{{ a.date }}</td>
+                            <td class="px-5 py-3 text-sm text-gray-700">{{ a.owner_outlet_name || '-' }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ a.outlet_name }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ a.warehouse_outlet_name }}</td>
                             <td class="px-5 py-3">

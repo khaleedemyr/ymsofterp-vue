@@ -134,7 +134,8 @@ function deleteDisposal() {
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div class="flex gap-2"><span class="text-gray-500 w-28">Outlet:</span><span class="font-medium">{{ disposal.outlet_name }}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-500 w-28">Pemilik:</span><span class="font-medium">{{ disposal.owner_outlet_name || '-' }}</span></div>
+                    <div class="flex gap-2"><span class="text-gray-500 w-28">Lokasi:</span><span class="font-medium">{{ disposal.outlet_name }}</span></div>
                     <div class="flex gap-2"><span class="text-gray-500 w-28">Warehouse:</span><span class="font-medium">{{ disposal.warehouse_outlet_name }}</span></div>
                     <div class="flex gap-2"><span class="text-gray-500 w-28">Dibuat oleh:</span><span class="font-medium">{{ disposal.creator_name || '-' }}</span></div>
                     <div class="flex gap-2"><span class="text-gray-500 w-28">Deskripsi:</span><span>{{ disposal.description }}</span></div>

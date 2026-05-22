@@ -10,6 +10,7 @@ use App\Models\AssetInventoryTransfer;
 use App\Models\AssetInventoryTransferItem;
 use App\Models\AssetInventoryTransferApprovalFlow;
 use App\Services\NotificationService;
+use App\Services\AssetInventoryStockService;
 
 class AssetInventoryTransferController extends Controller
 {
@@ -22,12 +23,14 @@ class AssetInventoryTransferController extends Controller
         $query = DB::table('asset_inventory_transfers as t')
             ->leftJoin('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
             ->leftJoin('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as oo', 't.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as of', 'wf.outlet_id', '=', 'of.id_outlet')
             ->leftJoin('tbl_data_outlet as ot', 'wt.outlet_id', '=', 'ot.id_outlet')
             ->leftJoin('users as u', 't.created_by', '=', 'u.id')
             ->select(
                 't.id', 't.transfer_number', 't.transfer_date', 't.status',
-                't.notes', 't.created_by', 't.created_at',
+                't.notes', 't.created_by', 't.created_at', 't.owner_outlet_id',
+                'oo.nama_outlet as owner_outlet_name',
                 'wf.name as warehouse_outlet_from_name',
                 'wt.name as warehouse_outlet_to_name',
                 'of.nama_outlet as outlet_from_name',
@@ -36,10 +39,7 @@ class AssetInventoryTransferController extends Controller
             );
 
         if ($user->id_outlet != 1) {
-            $query->where(function ($q) use ($user) {
-                $q->where('wf.outlet_id', $user->id_outlet)
-                  ->orWhere('wt.outlet_id', $user->id_outlet);
-            });
+            $query->where('t.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -54,6 +54,9 @@ class AssetInventoryTransferController extends Controller
         }
         if ($request->status) {
             $query->where('t.status', $request->status);
+        }
+        if ($request->owner_outlet_id) {
+            $query->where('t.owner_outlet_id', $request->owner_outlet_id);
         }
         if ($request->outlet_id) {
             $query->where(function ($q) use ($request) {
@@ -72,7 +75,7 @@ class AssetInventoryTransferController extends Controller
 
         return inertia('AssetInventoryTransfer/Index', [
             'transfers' => $transfers,
-            'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id']),
+            'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id', 'owner_outlet_id']),
             'user' => $user,
             'outlets' => $outlets,
         ]);
@@ -103,6 +106,7 @@ class AssetInventoryTransferController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'transfer_date' => 'required|date',
             'warehouse_outlet_from_id' => 'required|integer',
             'warehouse_outlet_to_id' => 'required|integer|different:warehouse_outlet_from_id',
@@ -129,6 +133,7 @@ class AssetInventoryTransferController extends Controller
             $transfer = AssetInventoryTransfer::create([
                 'transfer_number' => $transferNumber,
                 'transfer_date' => $validated['transfer_date'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
                 'outlet_id' => $warehouseFrom->outlet_id,
                 'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
                 'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
@@ -198,6 +203,7 @@ class AssetInventoryTransferController extends Controller
 
         $this->assertUserCanView($user, $transfer);
 
+        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_id)->first();
         $outletFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletFrom->outlet_id ?? null)->first();
         $outletTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletTo->outlet_id ?? null)->first();
 
@@ -222,6 +228,7 @@ class AssetInventoryTransferController extends Controller
             'transfer_date' => $transfer->transfer_date->format('Y-m-d'),
             'status' => $transfer->status,
             'notes' => $transfer->notes,
+            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
             'warehouse_outlet_from_name' => optional($transfer->warehouseOutletFrom)->name,
             'warehouse_outlet_to_name' => optional($transfer->warehouseOutletTo)->name,
             'outlet_from_name' => $outletFrom->nama_outlet ?? '-',
@@ -471,12 +478,14 @@ class AssetInventoryTransferController extends Controller
         $query = DB::table('asset_inventory_transfers as t')
             ->leftJoin('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
             ->leftJoin('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as oo', 't.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as of', 'wf.outlet_id', '=', 'of.id_outlet')
             ->leftJoin('tbl_data_outlet as ot', 'wt.outlet_id', '=', 'ot.id_outlet')
             ->leftJoin('users as u', 't.created_by', '=', 'u.id')
             ->select(
                 't.id', 't.transfer_number', 't.transfer_date', 't.status',
                 't.notes', 't.created_at',
+                'oo.nama_outlet as owner_outlet_name',
                 'wf.name as warehouse_outlet_from_name',
                 'wt.name as warehouse_outlet_to_name',
                 'of.nama_outlet as outlet_from_name',
@@ -485,10 +494,7 @@ class AssetInventoryTransferController extends Controller
             );
 
         if ($user->id_outlet != 1) {
-            $query->where(function ($q) use ($user) {
-                $q->where('wf.outlet_id', $user->id_outlet)
-                  ->orWhere('wt.outlet_id', $user->id_outlet);
-            });
+            $query->where('t.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -550,6 +556,7 @@ class AssetInventoryTransferController extends Controller
 
         $this->assertUserCanView($user, $transfer);
 
+        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_id)->first();
         $outletFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletFrom->outlet_id ?? null)->first();
         $outletTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletTo->outlet_id ?? null)->first();
 
@@ -574,6 +581,7 @@ class AssetInventoryTransferController extends Controller
             'transfer_date' => $transfer->transfer_date->format('Y-m-d'),
             'status' => $transfer->status,
             'notes' => $transfer->notes,
+            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
             'warehouse_outlet_from_name' => optional($transfer->warehouseOutletFrom)->name,
             'warehouse_outlet_to_name' => optional($transfer->warehouseOutletTo)->name,
             'outlet_from_name' => $outletFrom->nama_outlet ?? '-',
@@ -619,6 +627,7 @@ class AssetInventoryTransferController extends Controller
     public function apiStore(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'transfer_date' => 'required|date',
             'warehouse_outlet_from_id' => 'required|integer',
             'warehouse_outlet_to_id' => 'required|integer|different:warehouse_outlet_from_id',
@@ -645,6 +654,7 @@ class AssetInventoryTransferController extends Controller
             $transfer = AssetInventoryTransfer::create([
                 'transfer_number' => $transferNumber,
                 'transfer_date' => $validated['transfer_date'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
                 'outlet_id' => $warehouseFrom->outlet_id,
                 'warehouse_outlet_from_id' => $validated['warehouse_outlet_from_id'],
                 'warehouse_outlet_to_id' => $validated['warehouse_outlet_to_id'],
@@ -742,21 +752,22 @@ class AssetInventoryTransferController extends Controller
 
     public function getStock(Request $request)
     {
-        $itemId = $request->item_id;
-        $warehouseOutletId = $request->warehouse_outlet_id;
+        $request->validate([
+            'item_id' => 'required|integer',
+            'owner_outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
+        ]);
 
-        $inventoryItem = DB::table('asset_inventory_items')->where('item_id', $itemId)->first();
+        $inventoryItem = DB::table('asset_inventory_items')->where('item_id', $request->item_id)->first();
         if (!$inventoryItem) {
             return response()->json(['stock_small' => 0, 'stock_medium' => 0, 'stock_large' => 0]);
         }
 
-        $outletId = DB::table('warehouse_outlets')->where('id', $warehouseOutletId)->value('outlet_id');
-
-        $stock = DB::table('asset_inventory_stocks')
-            ->where('inventory_item_id', $inventoryItem->id)
-            ->where('outlet_id', $outletId)
-            ->where('warehouse_outlet_id', $warehouseOutletId)
-            ->first();
+        $stock = AssetInventoryStockService::findStock(
+            (int) $inventoryItem->id,
+            (int) $request->owner_outlet_id,
+            (int) $request->warehouse_outlet_id
+        );
 
         return response()->json([
             'stock_small' => $stock->qty_small ?? 0,
@@ -771,6 +782,9 @@ class AssetInventoryTransferController extends Controller
     {
         $warehouseFrom = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_from_id)->first();
         $warehouseTo = DB::table('warehouse_outlets')->where('id', $transfer->warehouse_outlet_to_id)->first();
+        $ownerOutletId = (int) $transfer->owner_outlet_id;
+        $locationFromId = (int) $warehouseFrom->outlet_id;
+        $locationToId = (int) $warehouseTo->outlet_id;
 
         foreach ($transfer->items as $item) {
             $inventoryItem = DB::table('asset_inventory_items')->where('item_id', $item->item_id)->first();
@@ -782,11 +796,11 @@ class AssetInventoryTransferController extends Controller
             $qty_large = $item->qty_large ?? 0;
 
             // --- SOURCE: subtract stock ---
-            $stockFrom = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('outlet_id', $warehouseFrom->outlet_id)
-                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_from_id)
-                ->first();
+            $stockFrom = AssetInventoryStockService::findStock(
+                $inventory_item_id,
+                $ownerOutletId,
+                $transfer->warehouse_outlet_from_id
+            );
 
             if (!$stockFrom) {
                 throw new \Exception('Stok tidak ditemukan di warehouse outlet asal untuk item: ' . optional($item->item)->name);
@@ -807,16 +821,17 @@ class AssetInventoryTransferController extends Controller
                 ]);
 
             // --- DESTINATION: add stock (upsert) ---
-            $stockTo = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('outlet_id', $warehouseTo->outlet_id)
-                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
-                ->first();
+            $stockTo = AssetInventoryStockService::findStock(
+                $inventory_item_id,
+                $ownerOutletId,
+                $transfer->warehouse_outlet_to_id
+            );
 
             if (!$stockTo) {
                 DB::table('asset_inventory_stocks')->insert([
                     'inventory_item_id' => $inventory_item_id,
-                    'outlet_id' => $warehouseTo->outlet_id,
+                    'owner_outlet_id' => $ownerOutletId,
+                    'outlet_id' => $locationToId,
                     'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
@@ -860,21 +875,25 @@ class AssetInventoryTransferController extends Controller
             $smallConv = $itemMaster->small_conversion_qty ?: 1;
             $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
 
-            DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('outlet_id', $warehouseTo->outlet_id)
-                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
-                ->update([
-                    'last_cost_small' => $mac,
-                    'last_cost_medium' => $mac * $mediumConv,
-                    'last_cost_large' => $mac * $smallConv,
-                    'value' => ($stockTo->qty_small + $qty_small) * $mac,
-                ]);
+            $destStockQuery = DB::table('asset_inventory_stocks')
+                ->where('inventory_item_id', $inventory_item_id);
+            AssetInventoryStockService::applyOwnerWarehouseScope(
+                $destStockQuery,
+                $ownerOutletId,
+                $transfer->warehouse_outlet_to_id
+            );
+            $destStockQuery->update([
+                'last_cost_small' => $mac,
+                'last_cost_medium' => $mac * $mediumConv,
+                'last_cost_large' => $mac * $smallConv,
+                'value' => ($stockTo->qty_small + $qty_small) * $mac,
+            ]);
 
             // Stock card OUT (source)
             DB::table('asset_inventory_cards')->insert([
                 'inventory_item_id' => $inventory_item_id,
-                'outlet_id' => $warehouseFrom->outlet_id,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationFromId,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_from_id,
                 'date' => $transfer->transfer_date,
                 'reference_type' => 'asset_inventory_transfer',
@@ -901,7 +920,8 @@ class AssetInventoryTransferController extends Controller
             // Stock card IN (destination)
             DB::table('asset_inventory_cards')->insert([
                 'inventory_item_id' => $inventory_item_id,
-                'outlet_id' => $warehouseTo->outlet_id,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationToId,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                 'date' => $transfer->transfer_date,
                 'reference_type' => 'asset_inventory_transfer',
@@ -926,10 +946,14 @@ class AssetInventoryTransferController extends Controller
             ]);
 
             // Cost history at destination
-            $lastCostHistory = DB::table('asset_inventory_cost_histories')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('outlet_id', $warehouseTo->outlet_id)
-                ->where('warehouse_outlet_id', $transfer->warehouse_outlet_to_id)
+            $lastCostQuery = DB::table('asset_inventory_cost_histories')
+                ->where('inventory_item_id', $inventory_item_id);
+            AssetInventoryStockService::applyOwnerWarehouseScope(
+                $lastCostQuery,
+                $ownerOutletId,
+                $transfer->warehouse_outlet_to_id
+            );
+            $lastCostHistory = $lastCostQuery
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
@@ -939,7 +963,8 @@ class AssetInventoryTransferController extends Controller
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventory_item_id,
-                'outlet_id' => $warehouseTo->outlet_id,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationToId,
                 'warehouse_outlet_id' => $transfer->warehouse_outlet_to_id,
                 'date' => $transfer->transfer_date,
                 'reference_type' => 'asset_inventory_transfer',
@@ -1083,15 +1108,12 @@ class AssetInventoryTransferController extends Controller
             return;
         }
 
-        $transfer->loadMissing(['warehouseOutletFrom', 'warehouseOutletTo']);
         $uid = (int) ($user->id_outlet ?? 0);
         if ($uid <= 0) {
             abort(403, 'Anda tidak memiliki akses.');
         }
 
-        $fromOutletId = (int) ($transfer->warehouseOutletFrom->outlet_id ?? 0);
-        $toOutletId = (int) ($transfer->warehouseOutletTo->outlet_id ?? 0);
-        if ($fromOutletId !== $uid && $toOutletId !== $uid) {
+        if ((int) $transfer->owner_outlet_id !== $uid) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }

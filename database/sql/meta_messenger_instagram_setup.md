@@ -1,5 +1,8 @@
 # Meta Messenger & Instagram DM — setup omnichannel ERP
 
+> **Instagram DM (alur YouTube / Instagram Login):** gunakan panduan terpisah  
+> [`meta_instagram_login_setup.md`](meta_instagram_login_setup.md) — webhook `/api/webhooks/meta/instagram` + polling `meta:sync-instagram-inbox`.
+
 ## 1. Meta Developer (use case: Messenger from Meta)
 
 1. **Permissions** → Add: `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`, `pages_show_list`

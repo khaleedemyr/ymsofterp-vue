@@ -10,6 +10,7 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\AssetInventoryStockService;
 
 class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMultipleSheets
 {
@@ -57,17 +58,26 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
                         }
                     }
 
-                    $outlet = Outlet::where('nama_outlet', $row['outlet'])
+                    $locationOutlet = Outlet::where('nama_outlet', $row['outlet'])
                         ->where('status', 'A')
                         ->first();
 
-                    if (!$outlet) {
+                    if (!$locationOutlet) {
                         $inactiveOutlet = Outlet::where('nama_outlet', $row['outlet'])->first();
                         if ($inactiveOutlet) {
-                            throw new \Exception("Outlet '{$row['outlet']}' ditemukan tapi status tidak aktif");
+                            throw new \Exception("Outlet lokasi '{$row['outlet']}' ditemukan tapi status tidak aktif");
                         } else {
-                            throw new \Exception("Outlet '{$row['outlet']}' tidak ditemukan dalam database");
+                            throw new \Exception("Outlet lokasi '{$row['outlet']}' tidak ditemukan dalam database");
                         }
+                    }
+
+                    $ownerOutletName = !empty($row['owner_outlet']) ? trim($row['owner_outlet']) : $row['outlet'];
+                    $ownerOutlet = Outlet::where('nama_outlet', $ownerOutletName)
+                        ->where('status', 'A')
+                        ->first();
+
+                    if (!$ownerOutlet) {
+                        throw new \Exception("Outlet pemilik '{$ownerOutletName}' tidak ditemukan atau tidak aktif");
                     }
 
                     $warehouseOutlet = DB::table('warehouse_outlets')
@@ -77,6 +87,13 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
                     if (!$warehouseOutlet) {
                         throw new \Exception("Warehouse Outlet ID '{$row['warehouse_outlet_id']}' tidak ditemukan");
                     }
+
+                    if ((int) $warehouseOutlet->outlet_id !== (int) $locationOutlet->id_outlet) {
+                        throw new \Exception("Gudang ID {$row['warehouse_outlet_id']} tidak termasuk outlet lokasi '{$row['outlet']}'");
+                    }
+
+                    $locationOutletId = (int) $locationOutlet->id_outlet;
+                    $ownerOutletId = (int) $ownerOutlet->id_outlet;
 
                     if (!is_numeric($row['quantity'])) {
                         throw new \Exception("Quantity '{$row['quantity']}' harus berupa angka");
@@ -119,11 +136,11 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
                     $cost_large = $cost_medium * ($item->medium_conversion_qty ?: 1);
                     $value = $qty_small * $cost_small;
 
-                    $existingStock = DB::table('asset_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItemId)
-                        ->where('outlet_id', $outlet->id_outlet)
-                        ->where('warehouse_outlet_id', $row['warehouse_outlet_id'])
-                        ->first();
+                    $existingStock = AssetInventoryStockService::findStock(
+                        $inventoryItemId,
+                        $ownerOutletId,
+                        (int) $row['warehouse_outlet_id']
+                    );
 
                     if ($existingStock) {
                         DB::table('asset_inventory_stocks')
@@ -141,7 +158,8 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
                     } else {
                         DB::table('asset_inventory_stocks')->insert([
                             'inventory_item_id' => $inventoryItemId,
-                            'outlet_id' => $outlet->id_outlet,
+                            'owner_outlet_id' => $ownerOutletId,
+                            'outlet_id' => $locationOutletId,
                             'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                             'qty_small' => $qty_small,
                             'qty_medium' => $qty_medium,
@@ -157,8 +175,10 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
 
                     DB::table('asset_inventory_cards')->insert([
                         'inventory_item_id' => $inventoryItemId,
+                        'owner_outlet_id' => $ownerOutletId,
+                        'outlet_id' => $locationOutletId,
                         'warehouse_outlet_id' => $row['warehouse_outlet_id'],
-                        'date' => now(),
+                        'date' => now()->toDateString(),
                         'reference_type' => 'initial_balance',
                         'reference_id' => 0,
                         'in_qty_small' => $qty_small,
@@ -183,7 +203,8 @@ class AssetStockBalanceImport implements ToCollection, WithHeadingRow, WithMulti
 
                     DB::table('asset_inventory_cost_histories')->insert([
                         'inventory_item_id' => $inventoryItemId,
-                        'outlet_id' => $outlet->id_outlet,
+                        'owner_outlet_id' => $ownerOutletId,
+                        'outlet_id' => $locationOutletId,
                         'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                         'date' => now()->toDateString(),
                         'reference_type' => 'initial_balance',

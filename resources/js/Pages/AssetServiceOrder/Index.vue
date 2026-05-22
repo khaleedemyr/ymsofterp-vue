@@ -159,7 +159,8 @@ function deleteOrder(id) {
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tipe</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Nomor</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tanggal</th>
-                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Outlet</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Pemilik</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Lokasi</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Warehouse</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Supplier</th>
                             <th class="px-5 py-3 text-right text-xs font-semibold text-teal-700 uppercase">Est. Cost</th>
@@ -170,7 +171,7 @@ function deleteOrder(id) {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         <tr v-if="!serviceOrders.data || !serviceOrders.data.length">
-                            <td colspan="10" class="px-5 py-8 text-center text-gray-400">Tidak ada data service order.</td>
+                            <td colspan="11" class="px-5 py-8 text-center text-gray-400">Tidak ada data service order.</td>
                         </tr>
                         <tr v-for="s in serviceOrders.data" :key="s.id" class="hover:bg-teal-50/30 transition">
                             <td class="px-5 py-3">
@@ -180,6 +181,7 @@ function deleteOrder(id) {
                             </td>
                             <td class="px-5 py-3 font-semibold text-teal-700">{{ s.number }}</td>
                             <td class="px-5 py-3 text-sm text-gray-600">{{ s.date }}</td>
+                            <td class="px-5 py-3 text-sm text-gray-700">{{ s.owner_outlet_name || '-' }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ s.outlet_name }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ s.warehouse_outlet_name }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ s.supplier_name || '—' }}</td>

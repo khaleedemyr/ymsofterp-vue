@@ -10,6 +10,7 @@ use App\Models\AssetInventoryAdjustment;
 use App\Models\AssetInventoryAdjustmentItem;
 use App\Models\AssetInventoryAdjustmentApprovalFlow;
 use App\Services\NotificationService;
+use App\Services\AssetInventoryStockService;
 
 class AssetInventoryAdjustmentController extends Controller
 {
@@ -20,19 +21,21 @@ class AssetInventoryAdjustmentController extends Controller
         $user = auth()->user();
 
         $query = DB::table('asset_inventory_adjustments as a')
+            ->leftJoin('tbl_data_outlet as oo', 'a.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'a.created_by', '=', 'u.id')
             ->select(
                 'a.id', 'a.number', 'a.date', 'a.type', 'a.reason',
                 'a.status', 'a.created_by', 'a.created_at',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('a.outlet_id', $user->id_outlet);
+            $query->where('a.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -54,6 +57,9 @@ class AssetInventoryAdjustmentController extends Controller
         if ($request->type) {
             $query->where('a.type', $request->type);
         }
+        if ($request->owner_outlet_id) {
+            $query->where('a.owner_outlet_id', $request->owner_outlet_id);
+        }
         if ($request->outlet_id) {
             $query->where('a.outlet_id', $request->outlet_id);
         }
@@ -68,7 +74,7 @@ class AssetInventoryAdjustmentController extends Controller
 
         return inertia('AssetInventoryAdjustment/Index', [
             'adjustments' => $adjustments,
-            'filters' => $request->only(['search', 'from', 'to', 'status', 'type', 'outlet_id']),
+            'filters' => $request->only(['search', 'from', 'to', 'status', 'type', 'outlet_id', 'owner_outlet_id']),
             'user' => $user,
             'outlets' => $outlets,
         ]);
@@ -99,6 +105,7 @@ class AssetInventoryAdjustmentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -115,12 +122,22 @@ class AssetInventoryAdjustmentController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetInventoryAdjustment::generateNumber();
 
             $adjustment = AssetInventoryAdjustment::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'reason' => $validated['reason'],
@@ -200,6 +217,8 @@ class AssetInventoryAdjustmentController extends Controller
             }
         }
 
+        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $adjustment->owner_outlet_id)->first();
+
         $adjustmentData = [
             'id' => $adjustment->id,
             'number' => $adjustment->number,
@@ -207,6 +226,7 @@ class AssetInventoryAdjustmentController extends Controller
             'type' => $adjustment->type,
             'reason' => $adjustment->reason,
             'status' => $adjustment->status,
+            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
             'outlet_name' => optional($adjustment->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($adjustment->warehouseOutlet)->name,
             'creator_name' => optional($adjustment->creator)->nama_lengkap,
@@ -378,19 +398,21 @@ class AssetInventoryAdjustmentController extends Controller
         $user = Auth::user();
 
         $query = DB::table('asset_inventory_adjustments as a')
+            ->leftJoin('tbl_data_outlet as oo', 'a.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'a.created_by', '=', 'u.id')
             ->select(
                 'a.id', 'a.number', 'a.date', 'a.type', 'a.reason',
                 'a.status', 'a.created_at',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
             );
 
         if ($user->id_outlet != 1) {
-            $query->where('a.outlet_id', $user->id_outlet);
+            $query->where('a.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -474,6 +496,8 @@ class AssetInventoryAdjustmentController extends Controller
             }
         }
 
+        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $adjustment->owner_outlet_id)->first();
+
         return response()->json([
             'id' => $adjustment->id,
             'number' => $adjustment->number,
@@ -481,6 +505,7 @@ class AssetInventoryAdjustmentController extends Controller
             'type' => $adjustment->type,
             'reason' => $adjustment->reason,
             'status' => $adjustment->status,
+            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
             'outlet_name' => optional($adjustment->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($adjustment->warehouseOutlet)->name,
             'creator_name' => optional($adjustment->creator)->nama_lengkap,
@@ -517,6 +542,7 @@ class AssetInventoryAdjustmentController extends Controller
     public function apiStore(Request $request)
     {
         $validated = $request->validate([
+            'owner_outlet_id' => 'required|integer',
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -533,12 +559,22 @@ class AssetInventoryAdjustmentController extends Controller
 
         DB::beginTransaction();
         try {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $validated['warehouse_outlet_id'],
+                (int) $validated['outlet_id']
+            );
+            $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+                (int) $validated['outlet_id'],
+                (int) $validated['warehouse_outlet_id']
+            );
+
             $number = AssetInventoryAdjustment::generateNumber();
 
             $adjustment = AssetInventoryAdjustment::create([
                 'number' => $number,
                 'date' => $validated['date'],
-                'outlet_id' => $validated['outlet_id'],
+                'owner_outlet_id' => $validated['owner_outlet_id'],
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $validated['warehouse_outlet_id'],
                 'type' => $validated['type'],
                 'reason' => $validated['reason'],
@@ -616,7 +652,8 @@ class AssetInventoryAdjustmentController extends Controller
             throw new \Exception('Warehouse outlet tidak ditemukan');
         }
 
-        $outletId = $warehouseOutlet->outlet_id;
+        $ownerOutletId = (int) $adjustment->owner_outlet_id;
+        $locationOutletId = (int) $adjustment->outlet_id;
 
         foreach ($adjustment->items as $adjItem) {
             $itemMaster = DB::table('items')->where('id', $adjItem->item_id)->first();
@@ -667,11 +704,11 @@ class AssetInventoryAdjustmentController extends Controller
                 $qty_large = $smallConv > 0 ? $qty / $smallConv : 0;
             }
 
-            $stock = DB::table('asset_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $adjustment->warehouse_outlet_id)
-                ->first();
+            $stock = AssetInventoryStockService::findStock(
+                $inventoryItemId,
+                $ownerOutletId,
+                $adjustment->warehouse_outlet_id
+            );
 
             $costSmall = $stock->last_cost_small ?? 0;
             $costMedium = $stock->last_cost_medium ?? 0;
@@ -681,7 +718,8 @@ class AssetInventoryAdjustmentController extends Controller
                 if (!$stock) {
                     DB::table('asset_inventory_stocks')->insert([
                         'inventory_item_id' => $inventoryItemId,
-                        'outlet_id' => $outletId,
+                        'owner_outlet_id' => $ownerOutletId,
+                        'outlet_id' => $locationOutletId,
                         'warehouse_outlet_id' => $adjustment->warehouse_outlet_id,
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
@@ -714,7 +752,8 @@ class AssetInventoryAdjustmentController extends Controller
 
                 DB::table('asset_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $outletId,
+                    'owner_outlet_id' => $ownerOutletId,
+                    'outlet_id' => $locationOutletId,
                     'warehouse_outlet_id' => $adjustment->warehouse_outlet_id,
                     'date' => $adjustment->date,
                     'reference_type' => 'asset_stock_adjustment',
@@ -762,7 +801,8 @@ class AssetInventoryAdjustmentController extends Controller
 
                 DB::table('asset_inventory_cards')->insert([
                     'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $outletId,
+                    'owner_outlet_id' => $ownerOutletId,
+                    'outlet_id' => $locationOutletId,
                     'warehouse_outlet_id' => $adjustment->warehouse_outlet_id,
                     'date' => $adjustment->date,
                     'reference_type' => 'asset_stock_adjustment',
@@ -943,7 +983,7 @@ class AssetInventoryAdjustmentController extends Controller
         if ((int) ($user->id_outlet ?? 0) === 1) {
             return;
         }
-        if ((int) ($user->id_outlet ?? 0) !== (int) $adjustment->outlet_id) {
+        if ((int) ($user->id_outlet ?? 0) !== (int) $adjustment->owner_outlet_id) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
     }

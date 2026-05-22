@@ -19,14 +19,23 @@
           <!-- Outlet & Warehouse (Readonly) -->
           <div class="bg-white rounded-xl shadow-lg p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">
-              <i class="fa-solid fa-store mr-2 text-blue-500"></i> Outlet & Warehouse
+              <i class="fa-solid fa-store mr-2 text-blue-500"></i> Pemilik & Lokasi
             </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet Pemilik</label>
                 <input
                   type="text"
-                  :value="goodReceive.outlet?.nama_outlet || '-'"
+                  :value="goodReceive.owner_outlet_name || '-'"
+                  readonly
+                  class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Outlet Lokasi</label>
+                <input
+                  type="text"
+                  :value="goodReceive.location_outlet_name || '-'"
                   readonly
                   class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
                 />
@@ -209,6 +218,7 @@ const props = defineProps({
 
 const form = useForm({
   po_id: props.goodReceive.po_id,
+  owner_outlet_id: props.goodReceive.owner_outlet_id,
   outlet_id: props.goodReceive.outlet_id,
   warehouse_outlet_id: props.goodReceive.warehouse_outlet_id,
   receive_date: props.goodReceive.receive_date,

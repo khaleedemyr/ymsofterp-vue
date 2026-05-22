@@ -133,7 +133,8 @@ function deleteDisposal(id) {
                         <tr>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Nomor</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tanggal</th>
-                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Outlet</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Pemilik</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Lokasi</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Tipe</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Status</th>
                             <th class="px-5 py-3 text-left text-xs font-semibold text-teal-700 uppercase">Pembeli</th>
@@ -143,11 +144,12 @@ function deleteDisposal(id) {
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         <tr v-if="!disposals.data || !disposals.data.length">
-                            <td colspan="8" class="px-5 py-8 text-center text-gray-400">Tidak ada data disposal.</td>
+                            <td colspan="9" class="px-5 py-8 text-center text-gray-400">Tidak ada data disposal.</td>
                         </tr>
                         <tr v-for="d in disposals.data" :key="d.id" class="hover:bg-teal-50/30 transition">
                             <td class="px-5 py-3 font-semibold text-teal-700">{{ d.number }}</td>
                             <td class="px-5 py-3 text-sm text-gray-600">{{ d.date }}</td>
+                            <td class="px-5 py-3 text-sm text-gray-700">{{ d.owner_outlet_name || '-' }}</td>
                             <td class="px-5 py-3 text-sm text-gray-700">{{ d.outlet_name }}</td>
                             <td class="px-5 py-3">
                                 <span :class="typeBadge(d.type)" class="px-2.5 py-1 rounded-full text-xs font-semibold">{{ typeLabel(d.type) }}</span>

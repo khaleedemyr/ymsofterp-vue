@@ -11,6 +11,7 @@ use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Services\NotificationService;
+use App\Support\MetaInstagramTokens;
 use App\Support\OmniFlowDefinition;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -485,11 +486,19 @@ class OmniFlowRunner
 
         $channel = (string) $conversation->channel;
         if (in_array($channel, ['messenger', 'facebook', 'instagram'], true)) {
-            $result = app(\App\Services\Meta\MetaMessengerClient::class)->sendText(
-                $conversation->external_contact_id,
-                $body,
-                $conversation->phone_number_id
-            );
+            if ($channel === 'instagram' && $this->useInstagramLoginApi()) {
+                $result = app(\App\Services\Meta\MetaInstagramLoginClient::class)->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+            } else {
+                $result = app(\App\Services\Meta\MetaMessengerClient::class)->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+            }
             $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
         } elseif ($channel === 'whatsapp') {
             $result = app(MetaWhatsAppClient::class)->sendText(
@@ -639,5 +648,11 @@ class OmniFlowRunner
             ->where('id', $run->conversation_id)
             ->where('active_flow_run_id', $run->id)
             ->update(['active_flow_run_id' => null]);
+    }
+
+    private function useInstagramLoginApi(): bool
+    {
+        return MetaInstagramTokens::resolved() !== []
+            || (string) config('services.meta.instagram_login_access_token') !== '';
     }
 }

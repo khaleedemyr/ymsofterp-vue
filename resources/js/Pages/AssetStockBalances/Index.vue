@@ -39,16 +39,29 @@
           </div>
 
           <!-- Filters -->
-          <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700">Outlet</label>
+              <label class="block text-sm font-medium text-gray-700">Outlet Pemilik</label>
+              <select
+                v-model="filters.owner_outlet_id"
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                @change="filter"
+              >
+                <option value="">Semua Pemilik</option>
+                <option v-for="outlet in outlets" :key="'o-' + outlet.id_outlet" :value="outlet.id_outlet">
+                  {{ outlet.nama_outlet }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Outlet Lokasi</label>
               <select
                 v-model="filters.outlet_id"
                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                 @change="filter"
               >
-                <option value="">All Outlets</option>
-                <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                <option value="">Semua Lokasi</option>
+                <option v-for="outlet in outlets" :key="'l-' + outlet.id_outlet" :value="outlet.id_outlet">
                   {{ outlet.nama_outlet }}
                 </option>
               </select>
@@ -84,7 +97,8 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Barang</th>
-                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet</th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pemilik</th>
+                  <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lokasi</th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Warehouse</th>
                   <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Small</th>
                   <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Medium</th>
@@ -96,7 +110,7 @@
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
                 <tr v-if="stockBalances.data && stockBalances.data.length === 0">
-                  <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data.</td>
+                  <td colspan="10" class="text-center py-10 text-gray-400">Tidak ada data.</td>
                 </tr>
                 <tr v-for="balance in stockBalances.data" :key="balance.id">
                   <td class="px-6 py-4 whitespace-nowrap">
@@ -104,7 +118,10 @@
                     <div class="text-sm text-gray-500">{{ balance.product_code }}</div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {{ balance.nama_outlet }}
+                    {{ balance.owner_outlet_name }}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ balance.location_outlet_name }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {{ balance.warehouse_outlet_name || '-' }}
@@ -256,8 +273,12 @@
             <div class="mt-1 text-sm text-gray-900">{{ editItem.product_name }} ({{ editItem.product_code }})</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Outlet</label>
-            <div class="mt-1 text-sm text-gray-900">{{ editItem.nama_outlet }}</div>
+            <label class="block text-sm font-medium text-gray-700">Outlet Pemilik</label>
+            <div class="mt-1 text-sm text-gray-900">{{ editItem.owner_outlet_name }}</div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Outlet Lokasi</label>
+            <div class="mt-1 text-sm text-gray-900">{{ editItem.location_outlet_name }}</div>
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700">Warehouse</label>
@@ -339,6 +360,7 @@ export default {
     const editLoading = ref(false)
 
     const filters = ref({
+      owner_outlet_id: props.filters.owner_outlet_id || '',
       outlet_id: props.filters.outlet_id || '',
       warehouse_outlet_id: props.filters.warehouse_outlet_id || '',
       search: props.filters.search || '',
@@ -355,6 +377,7 @@ export default {
       clearTimeout(filterTimeout)
       filterTimeout = setTimeout(() => {
         router.get('/asset-stock-balances', {
+          owner_outlet_id: filters.value.owner_outlet_id || undefined,
           outlet_id: filters.value.outlet_id || undefined,
           warehouse_outlet_id: filters.value.warehouse_outlet_id || undefined,
           search: filters.value.search || undefined,

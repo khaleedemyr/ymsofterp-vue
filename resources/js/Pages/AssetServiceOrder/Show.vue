@@ -252,7 +252,11 @@ function deleteOrder() {
                         <div class="font-medium">{{ so.supplier_name || '—' }}</div>
                     </div>
                     <div>
-                        <div class="text-gray-400 text-xs mb-1">Outlet</div>
+                        <div class="text-gray-400 text-xs mb-1">Pemilik</div>
+                        <div>{{ so.owner_outlet_name || '-' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-400 text-xs mb-1">Lokasi Outlet</div>
                         <div>{{ so.outlet_name }}</div>
                     </div>
                     <div>

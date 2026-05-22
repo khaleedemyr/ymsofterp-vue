@@ -11,14 +11,18 @@ use App\Models\Item;
 use App\Exports\AssetStockBalanceImportTemplateExport;
 use App\Imports\AssetStockBalanceImport;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Services\AssetInventoryStockService;
 
 class AssetStockBalanceController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
+
         $query = DB::table('asset_inventory_stocks as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
+            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->join('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
@@ -29,8 +33,10 @@ class AssetStockBalanceController extends Controller
                 'i.id as product_id',
                 'i.name as product_name',
                 'i.sku as product_code',
+                'oo.id_outlet as owner_outlet_id',
+                'oo.nama_outlet as owner_outlet_name',
                 'o.id_outlet',
-                'o.nama_outlet',
+                'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
                 'wo.name as warehouse_outlet_name',
                 's.qty_small',
@@ -45,8 +51,13 @@ class AssetStockBalanceController extends Controller
                 's.updated_at'
             );
 
+        AssetInventoryStockService::applyOwnerVisibilityForUser($query, $user, 's.owner_outlet_id');
+
+        if ($request->owner_outlet_id) {
+            $query->where('s.owner_outlet_id', $request->owner_outlet_id);
+        }
         if ($request->outlet_id) {
-            $query->where('o.id_outlet', $request->outlet_id);
+            $query->where('s.outlet_id', $request->outlet_id);
         }
         if ($request->warehouse_outlet_id) {
             $query->where('wo.id', $request->warehouse_outlet_id);
@@ -77,7 +88,7 @@ class AssetStockBalanceController extends Controller
             'stockBalances' => $stockBalances,
             'outlets' => $outlets,
             'warehouseOutlets' => $warehouseOutlets,
-            'filters' => $request->only(['search', 'outlet_id', 'warehouse_outlet_id']),
+            'filters' => $request->only(['search', 'owner_outlet_id', 'outlet_id', 'warehouse_outlet_id']),
         ]);
     }
 
@@ -85,11 +96,22 @@ class AssetStockBalanceController extends Controller
     {
         $request->validate([
             'product_id' => 'required|exists:items,id',
-            'outlet_id' => 'required',
-            'warehouse_outlet_id' => 'required',
+            'owner_outlet_id' => 'required|integer',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'required|integer',
             'qty_small' => 'required|numeric|min:0',
             'cost' => 'required|numeric|min:0',
         ]);
+
+        AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+            (int) $request->warehouse_outlet_id,
+            (int) $request->outlet_id
+        );
+
+        $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+            (int) $request->outlet_id,
+            (int) $request->warehouse_outlet_id
+        );
 
         $item = DB::table('items')->where('id', $request->product_id)->first();
         if (!$item) {
@@ -124,19 +146,20 @@ class AssetStockBalanceController extends Controller
         $cost_large = $cost_medium * ($item->medium_conversion_qty ?: 1);
         $value = $qty_small * $cost_small;
 
-        $existing = DB::table('asset_inventory_stocks')
-            ->where('inventory_item_id', $inventoryItemId)
-            ->where('outlet_id', $request->outlet_id)
-            ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
-            ->first();
+        $existing = AssetInventoryStockService::findStock(
+            $inventoryItemId,
+            (int) $request->owner_outlet_id,
+            (int) $request->warehouse_outlet_id
+        );
 
         if ($existing) {
-            return back()->withErrors(['product_id' => 'Stok untuk item ini di outlet/warehouse ini sudah ada. Gunakan import atau edit.']);
+            return back()->withErrors(['product_id' => 'Stok untuk kombinasi pemilik/gudang ini sudah ada. Gunakan import atau edit.']);
         }
 
         DB::table('asset_inventory_stocks')->insert([
             'inventory_item_id' => $inventoryItemId,
-            'outlet_id' => $request->outlet_id,
+            'owner_outlet_id' => $request->owner_outlet_id,
+            'outlet_id' => $locationOutletId,
             'warehouse_outlet_id' => $request->warehouse_outlet_id,
             'qty_small' => $qty_small,
             'qty_medium' => $qty_medium,
@@ -151,8 +174,10 @@ class AssetStockBalanceController extends Controller
 
         DB::table('asset_inventory_cards')->insert([
             'inventory_item_id' => $inventoryItemId,
+            'owner_outlet_id' => $request->owner_outlet_id,
+            'outlet_id' => $locationOutletId,
             'warehouse_outlet_id' => $request->warehouse_outlet_id,
-            'date' => now(),
+            'date' => now()->toDateString(),
             'reference_type' => 'initial_balance',
             'reference_id' => 0,
             'in_qty_small' => $qty_small,
@@ -175,7 +200,8 @@ class AssetStockBalanceController extends Controller
 
         DB::table('asset_inventory_cost_histories')->insert([
             'inventory_item_id' => $inventoryItemId,
-            'outlet_id' => $request->outlet_id,
+            'owner_outlet_id' => $request->owner_outlet_id,
+            'outlet_id' => $locationOutletId,
             'warehouse_outlet_id' => $request->warehouse_outlet_id,
             'date' => now()->toDateString(),
             'reference_type' => 'initial_balance',

@@ -74,8 +74,12 @@
                 <p class="text-base text-gray-900">{{ goodReceive.po?.supplier?.name || '-' }}</p>
               </div>
               <div>
-                <label class="text-sm font-medium text-gray-500">Outlet</label>
-                <p class="text-base text-gray-900">{{ goodReceive.outlet?.nama_outlet || '-' }}</p>
+                <label class="text-sm font-medium text-gray-500">Outlet Pemilik</label>
+                <p class="text-base text-gray-900">{{ goodReceive.owner_outlet_name || '-' }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-500">Outlet Lokasi Simpan</label>
+                <p class="text-base text-gray-900">{{ goodReceive.location_outlet_name || '-' }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Warehouse</label>

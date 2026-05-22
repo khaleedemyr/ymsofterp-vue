@@ -10,6 +10,7 @@ use App\Models\OmniTeam;
 use App\Models\User;
 use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
+use App\Support\MetaInstagramTokens;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
 use App\Support\OmniLeadStages;
@@ -438,11 +439,19 @@ class OmnichannelInboxController extends Controller
                 if ($body === '') {
                     return response()->json(['message' => 'Pesan teks wajib diisi.'], 422);
                 }
-                $result = app(MetaMessengerClient::class)->sendText(
-                    $conversation->external_contact_id,
-                    $body,
-                    $conversation->phone_number_id
-                );
+                if ($channel === 'instagram' && $this->useInstagramLoginApi()) {
+                    $result = app(\App\Services\Meta\MetaInstagramLoginClient::class)->sendText(
+                        $conversation->external_contact_id,
+                        $body,
+                        $conversation->phone_number_id
+                    );
+                } else {
+                    $result = app(MetaMessengerClient::class)->sendText(
+                        $conversation->external_contact_id,
+                        $body,
+                        $conversation->phone_number_id
+                    );
+                }
                 $payload = is_array($result) ? $result : [];
                 $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
             } elseif ($channel === 'whatsapp') {
@@ -795,5 +804,11 @@ class OmnichannelInboxController extends Controller
         }
 
         return '+'.$digits;
+    }
+
+    private function useInstagramLoginApi(): bool
+    {
+        return MetaInstagramTokens::resolved() !== []
+            || (string) config('services.meta.instagram_login_access_token') !== '';
     }
 }
