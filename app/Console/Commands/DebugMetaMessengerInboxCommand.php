@@ -35,6 +35,12 @@ class DebugMetaMessengerInboxCommand extends Command
 
         foreach ($tokens as $pageKey => $token) {
             $this->line('');
+            if (preg_match('/^178414\d+$/', (string) $pageKey)) {
+                $this->warn("=== Page key: {$pageKey} — ini IG professional id, bukan Page. Pindah ke META_INSTAGRAM_LOGIN_TOKENS ===");
+
+                continue;
+            }
+
             $this->info("=== Page key: {$pageKey} ===");
 
             $me = Http::withToken($token)

@@ -62,7 +62,12 @@ class SyncMetaMessengerInboxCommand extends Command
         $this->info('Total imported: '.($result['imported'] ?? 0));
 
         if (($result['imported'] ?? 0) === 0) {
-            $this->warn('Imported 0 — cek token Page / permission pages_messaging / api_err.');
+            if ($recentMinutes !== null) {
+                $this->warn('Imported 0 dengan --recent: tidak ada DM baru dalam '.$recentMinutes.' menit, atau semua sudah ada di DB (lihat skip_db).');
+                $this->warn('Impor riwayat: php artisan meta:sync-messenger-inbox -v');
+            } else {
+                $this->warn('Imported 0 — semua pesan mungkin sudah ada di DB (skip_db) atau tidak ada pesan inbound.');
+            }
             $this->warn('Diagnosa: php artisan meta:debug-messenger-inbox');
         }
 

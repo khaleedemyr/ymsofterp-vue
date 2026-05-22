@@ -79,18 +79,46 @@ class MetaMessengerInboxSyncService
      */
     private function resolvePageTokenMap(): array
     {
-        $tokens = MetaPageTokens::resolved();
+        $raw = MetaPageTokens::resolved();
+        $tokens = [];
+        foreach ($raw as $pageId => $token) {
+            $pageId = (string) $pageId;
+            if ($this->isLikelyNonPageKey($pageId)) {
+                Log::info('Meta Messenger sync: skip non-Page key in META_PAGE_TOKENS', [
+                    'key' => $pageId,
+                    'hint' => 'Pindahkan ke META_INSTAGRAM_LOGIN_TOKENS jika ini akun IG',
+                ]);
+
+                continue;
+            }
+            $tokens[$pageId] = $token;
+        }
+
         if ($tokens !== []) {
             return $tokens;
         }
 
         $token = (string) config('services.meta.page_access_token', '');
         $pageId = (string) config('services.meta.page_id', '');
-        if ($token !== '' && $pageId !== '') {
+        if ($token !== '' && $pageId !== '' && ! $this->isLikelyNonPageKey($pageId)) {
             return [$pageId => $token];
         }
 
         return [];
+    }
+
+    /** IG professional id & key non-Page yang sering tercampur di META_PAGE_TOKENS. */
+    private function isLikelyNonPageKey(string $key): bool
+    {
+        if ($key === '') {
+            return true;
+        }
+
+        if (preg_match('/^178414\d+$/', $key)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
