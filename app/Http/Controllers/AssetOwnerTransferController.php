@@ -346,15 +346,28 @@ class AssetOwnerTransferController extends Controller
         $search = $request->get('search', '');
         $usersQuery = DB::table('users')
             ->leftJoin('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->leftJoin('tbl_data_outlet', 'users.id_outlet', '=', 'tbl_data_outlet.id_outlet')
             ->where('users.status', 'A');
+
         if ($search) {
             $usersQuery->where(function ($q) use ($search) {
                 $q->where('users.nama_lengkap', 'like', "%{$search}%")
-                    ->orWhere('users.email', 'like', "%{$search}%");
+                    ->orWhere('users.email', 'like', "%{$search}%")
+                    ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%")
+                    ->orWhere('tbl_data_outlet.nama_outlet', 'like', "%{$search}%");
             });
         }
-        $users = $usersQuery->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan')
-            ->orderBy('users.nama_lengkap')->limit(20)->get();
+
+        $users = $usersQuery->select(
+                'users.id',
+                'users.nama_lengkap as name',
+                'users.email',
+                'tbl_data_jabatan.nama_jabatan as jabatan',
+                'tbl_data_outlet.nama_outlet as outlet'
+            )
+            ->orderBy('users.nama_lengkap')
+            ->limit(20)
+            ->get();
 
         return response()->json(['success' => true, 'users' => $users]);
     }

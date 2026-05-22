@@ -60,6 +60,24 @@ function toggleApprover(u) {
 }
 function isApproverSelected(id) { return selectedApprovers.value.some(a => a.id === id); }
 
+function removeApprover(idx) {
+    selectedApprovers.value.splice(idx, 1);
+}
+
+function moveApprover(idx, dir) {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= selectedApprovers.value.length) return;
+    const tmp = selectedApprovers.value[idx];
+    selectedApprovers.value[idx] = selectedApprovers.value[newIdx];
+    selectedApprovers.value[newIdx] = tmp;
+    selectedApprovers.value = [...selectedApprovers.value];
+}
+
+function approverMeta(u) {
+    const parts = [u.jabatan, u.outlet].filter(Boolean);
+    return parts.length ? parts.join(' · ') : '-';
+}
+
 function submitForm() {
     if (!form.owner_outlet_from_id || !form.owner_outlet_to_id) return Swal.fire('Error', 'Pilih pemilik asal dan tujuan.', 'error');
     if (form.owner_outlet_from_id === form.owner_outlet_to_id) return Swal.fire('Error', 'Pemilik asal dan tujuan harus berbeda.', 'error');
@@ -121,25 +139,89 @@ function submitForm() {
                 <input v-model="itemQuery" :disabled="!form.owner_outlet_from_id || !form.warehouse_outlet_id" placeholder="Cari item..." class="w-full rounded-lg border-gray-300 text-sm mb-2 disabled:bg-gray-50 disabled:cursor-not-allowed" />
                 <p v-if="!form.owner_outlet_from_id || !form.warehouse_outlet_id" class="text-sm text-amber-600 mb-2">Pilih pemilik asal dan gudang terlebih dahulu.</p>
                 <div v-if="itemResults.length" class="border rounded-lg max-h-48 overflow-auto mb-3">
-                    <div v-for="it in itemResults" :key="it.id" @click="addItem(it)" class="px-3 py-2 hover:bg-violet-50 cursor-pointer text-sm">{{ it.name }} — stok {{ it.stock_small }}</div>
+                    <div v-for="it in itemResults" :key="it.id" @click="addItem(it)" class="px-3 py-2 hover:bg-violet-50 cursor-pointer text-sm border-b last:border-0">
+                        <span class="font-medium">{{ it.name }}</span>
+                        <span class="text-gray-400 ml-2">{{ it.sku }}</span>
+                        <span class="float-right text-gray-500">Stok: {{ it.stock_small }} {{ it.unit_small || '-' }}</span>
+                    </div>
                 </div>
-                <table v-if="form.items.length" class="min-w-full text-sm">
-                    <tr v-for="(it, idx) in form.items" :key="idx" class="border-t">
-                        <td class="py-2">{{ it.item_name }}</td>
-                        <td class="py-2">{{ it.stock_small }}</td>
-                        <td class="py-2"><input v-model.number="it.qty" type="number" min="0.01" :max="it.stock_small" class="w-20 border rounded" /></td>
-                        <td class="py-2"><button @click="removeItem(idx)" class="text-red-500"><i class="fa fa-times"></i></button></td>
-                    </tr>
-                </table>
+                <div v-if="form.items.length" class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">#</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">Item</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">Stok</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">Unit</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-500">Qty</th>
+                                <th class="px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="(it, idx) in form.items" :key="idx">
+                                <td class="px-3 py-2 text-gray-500">{{ idx + 1 }}</td>
+                                <td class="px-3 py-2">
+                                    <span class="font-medium text-gray-800">{{ it.item_name }}</span>
+                                    <span v-if="it.sku" class="text-xs text-gray-400 ml-1">{{ it.sku }}</span>
+                                </td>
+                                <td class="px-3 py-2 text-gray-600">{{ it.stock_small }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ it.unit_name }}</td>
+                                <td class="px-3 py-2">
+                                    <input v-model.number="it.qty" type="number" min="0.01" :max="it.stock_small" step="0.01" class="w-24 rounded border-gray-300 text-sm" />
+                                </td>
+                                <td class="px-3 py-2 text-center">
+                                    <button type="button" @click="removeItem(idx)" class="text-red-500 hover:text-red-700"><i class="fa fa-times"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow p-6 mb-6">
-                <h2 class="font-semibold mb-2">Approver</h2>
-                <input v-model="approverSearch" class="w-full rounded-lg border-gray-300 text-sm mb-2" placeholder="Cari approver" />
-                <div v-for="u in approverResults" :key="u.id" @click="toggleApprover(u)" class="px-3 py-1 hover:bg-gray-50 cursor-pointer text-sm">{{ u.name }}</div>
-                <div class="flex flex-wrap gap-2 mt-2">
-                    <span v-for="a in selectedApprovers" :key="a.id" class="bg-violet-100 text-violet-800 px-2 py-1 rounded text-xs">{{ a.name }}</span>
+                <h2 class="font-semibold mb-3"><i class="fa-solid fa-user-check text-violet-500 mr-2"></i>Approver</h2>
+
+                <div v-if="selectedApprovers.length" class="space-y-2 mb-4">
+                    <div v-for="(a, idx) in selectedApprovers" :key="a.id"
+                        class="flex items-center justify-between gap-2 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="bg-violet-600 text-white rounded-full w-6 h-6 flex-shrink-0 flex items-center justify-center text-xs font-bold">{{ idx + 1 }}</span>
+                            <div class="min-w-0">
+                                <div class="text-sm font-medium text-violet-900 truncate">{{ a.name }}</div>
+                                <div class="text-xs text-violet-600 truncate">{{ approverMeta(a) }}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button type="button" @click="moveApprover(idx, -1)" :disabled="idx === 0"
+                                class="text-violet-400 hover:text-violet-700 disabled:opacity-30 p-1" title="Naikkan urutan">
+                                <i class="fa-solid fa-chevron-up text-xs"></i>
+                            </button>
+                            <button type="button" @click="moveApprover(idx, 1)" :disabled="idx === selectedApprovers.length - 1"
+                                class="text-violet-400 hover:text-violet-700 disabled:opacity-30 p-1" title="Turunkan urutan">
+                                <i class="fa-solid fa-chevron-down text-xs"></i>
+                            </button>
+                            <button type="button" @click="removeApprover(idx)" class="text-red-500 hover:text-red-700 p-1 ml-1" title="Hapus">
+                                <i class="fa-solid fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
+                <input v-model="approverSearch" type="text" placeholder="Cari approver (nama / jabatan / outlet)..."
+                    class="w-full rounded-lg border-gray-300 text-sm focus:ring-violet-500 focus:border-violet-500 mb-2" />
+
+                <div v-if="approverResults.length" class="border rounded-lg divide-y max-h-48 overflow-auto">
+                    <div v-for="u in approverResults" :key="u.id" @click="toggleApprover(u)"
+                        :class="isApproverSelected(u.id) ? 'bg-violet-50' : 'hover:bg-gray-50'"
+                        class="px-4 py-2.5 flex items-center justify-between cursor-pointer">
+                        <div class="min-w-0">
+                            <div class="text-sm font-medium text-gray-800">{{ u.name }}</div>
+                            <div class="text-xs text-gray-500 truncate">{{ approverMeta(u) }}</div>
+                        </div>
+                        <i v-if="isApproverSelected(u.id)" class="fa-solid fa-check text-violet-600 flex-shrink-0 ml-2"></i>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">Urutan approver menentukan level approval (1 = pertama). Klik lagi pada nama di daftar untuk membatalkan pilihan.</p>
             </div>
 
             <div class="flex justify-end gap-2">
