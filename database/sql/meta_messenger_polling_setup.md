@@ -80,3 +80,20 @@ Buka **CRM → Omnichannel** juga memicu sync (max tiap ~30 detik, DM 45 menit t
 | `whatsapp` | Webhook |
 
 Balas chat Messenger tetap pakai **Page token** (`MetaMessengerClient`).
+
+## Avatar & badge Page
+
+- **Badge biru** di daftar chat = Facebook Page penerima (nama dari sync `/me` atau `META_PAGE_ACCOUNT_LABELS`).
+- **Foto profil** pelanggan diambil dari Graph API (`profile_pic`) saat sync / webhook.
+
+Isi label manual (opsional):
+
+```env
+META_PAGE_ACCOUNT_LABELS='{"1587793758107643":"Asian Grill","682421618556416":"Justus Steak"}'
+```
+
+Backfill avatar untuk chat lama:
+
+```bash
+php artisan meta:enrich-messenger-profiles --limit=200
+```

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\OmniConversation;
 use App\Services\Meta\MetaMessengerInboxSyncService;
 use Illuminate\Console\Command;
 
@@ -61,14 +62,32 @@ class SyncMetaMessengerInboxCommand extends Command
 
         $this->info('Total imported: '.($result['imported'] ?? 0));
 
+        $totalChecked = 0;
+        $totalSkipDb = 0;
+        foreach ($result['accounts'] as $account) {
+            if (! empty($account['skipped_invalid_token']) || isset($account['error'])) {
+                continue;
+            }
+            $totalChecked += (int) ($account['messages_checked'] ?? 0);
+            $totalSkipDb += (int) ($account['skipped_existing'] ?? 0);
+        }
+
         if (($result['imported'] ?? 0) === 0) {
-            if ($recentMinutes !== null) {
-                $this->warn('Imported 0 dengan --recent: tidak ada DM baru dalam '.$recentMinutes.' menit, atau semua sudah ada di DB (lihat skip_db).');
+            if ($totalChecked > 0 && $totalSkipDb >= $totalChecked) {
+                $this->info('Semua pesan dari API sudah ada di database (skip_db = checked). Sync OK — tidak perlu impor ulang.');
+            } elseif ($recentMinutes !== null) {
+                $this->warn('Imported 0 dengan --recent: tidak ada DM baru dalam '.$recentMinutes.' menit.');
                 $this->warn('Impor riwayat: php artisan meta:sync-messenger-inbox -v');
             } else {
-                $this->warn('Imported 0 — semua pesan mungkin sudah ada di DB (skip_db) atau tidak ada pesan inbound.');
+                $this->warn('Imported 0 — tidak ada pesan inbound baru dari API.');
             }
-            $this->warn('Diagnosa: php artisan meta:debug-messenger-inbox');
+
+            $dbCount = OmniConversation::query()->where('channel', 'messenger')->count();
+            $this->line("Percakapan Messenger di DB: {$dbCount}");
+            if ($dbCount > 0) {
+                $this->line('Buka CRM → Omnichannel. Chat lama bisa di bawah daftar (urut last_message_at, max 150). Cari nama kontak atau ikon Messenger biru.');
+            }
+            $this->warn('Diagnosa API: php artisan meta:debug-messenger-inbox');
         }
 
         return self::SUCCESS;

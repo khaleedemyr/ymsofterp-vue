@@ -225,16 +225,27 @@ class MetaMessengerInboundService
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }
 
-        if ($channel === 'instagram' && $conversationId) {
-            $conversation = OmniConversation::query()->find($conversationId);
+        if ($conversationId) {
+            $conversation = OmniConversation::query()->with('omniContact')->find($conversationId);
             $contact = $conversation?->omniContact;
             if ($conversation && $contact && (! $conversation->contact_name || ! $contact->avatar_url)) {
-                app(MetaInstagramProfileService::class)->enrichContactAndConversation(
-                    $contact,
-                    $conversation,
-                    $senderId,
-                    $pageOrIgId
-                );
+                if ($channel === 'instagram') {
+                    app(MetaInstagramProfileService::class)->enrichContactAndConversation(
+                        $contact,
+                        $conversation,
+                        $senderId,
+                        $pageOrIgId
+                    );
+                } elseif ($channel === 'messenger' && $pageOrIgId !== '') {
+                    $fallbackName = (string) ($event['sender']['name'] ?? '');
+                    app(MetaMessengerProfileService::class)->enrichContactAndConversation(
+                        $contact,
+                        $conversation,
+                        $senderId,
+                        $pageOrIgId,
+                        $fallbackName !== '' ? $fallbackName : null
+                    );
+                }
             }
         }
 

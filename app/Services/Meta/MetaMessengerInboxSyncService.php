@@ -7,6 +7,7 @@ use App\Jobs\ProcessOmniFlowJob;
 use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Support\MetaPageAccountRegistry;
 use App\Support\MetaPageTokens;
 use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
@@ -167,6 +168,7 @@ class MetaMessengerInboxSyncService
             $pageId = $resolvedId;
         }
         $pageName = (string) ($me->json('name') ?? '');
+        MetaPageAccountRegistry::remember($pageId, $pageName !== '' ? $pageName : null);
 
         $conversationRows = $this->fetchAllConversations($accessToken, $version, $pageId, $apiErrors);
         $conversationCount = count($conversationRows);
@@ -693,6 +695,7 @@ class MetaMessengerInboxSyncService
             return false;
         }
 
+        $fromName = (string) ($payload['from']['name'] ?? '');
         $contactKey = "messenger_{$senderPsid}";
         $conversationId = null;
         $inboundMessageId = null;
@@ -702,6 +705,7 @@ class MetaMessengerInboxSyncService
             DB::transaction(function () use (
                 $pageId,
                 $senderPsid,
+                $fromName,
                 $contactKey,
                 $metaMessageId,
                 $body,
@@ -712,7 +716,6 @@ class MetaMessengerInboxSyncService
                 &$inboundMessageId,
                 &$wasNew
             ) {
-                $fromName = (string) ($payload['from']['name'] ?? '');
                 $contact = OmniContact::query()->firstOrCreate(
                     ['phone_normalized' => $contactKey],
                     ['display_name' => $fromName !== '' ? $fromName : null]
@@ -801,6 +804,18 @@ class MetaMessengerInboxSyncService
                 NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
                 ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
             }
+        }
+
+        $conversation = OmniConversation::query()->with('omniContact')->find($conversationId);
+        $contact = $conversation?->omniContact;
+        if ($conversation && $contact && (! $conversation->contact_name || ! $contact->avatar_url)) {
+            app(MetaMessengerProfileService::class)->enrichContactAndConversation(
+                $contact,
+                $conversation,
+                $senderPsid,
+                $pageId,
+                $fromName !== '' ? $fromName : (string) ($payload['from']['name'] ?? null)
+            );
         }
 
         return true;

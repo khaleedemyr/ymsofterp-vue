@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Meta\MetaMessengerClient;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Support\MetaInstagramAccountRegistry;
+use App\Support\MetaPageAccountRegistry;
 use App\Support\MetaInstagramInboxSyncTrigger;
 use App\Support\MetaMessengerInboxSyncTrigger;
 use App\Support\MetaInstagramTokens;
@@ -92,6 +93,7 @@ class OmnichannelInboxController extends Controller
             'selectedConversation' => $selectedConversation,
             'messages' => $messages,
             'inbox' => $inbox,
+            'channelFilter' => $this->parseChannelFilter($request),
             'leadStageFilter' => $leadStageFilter,
             'leadStages' => OmniLeadStages::all(),
             'assignableUsers' => $assignableUsers,
@@ -167,33 +169,14 @@ class OmnichannelInboxController extends Controller
             $leadStageFilter = null;
         }
 
-        $query = OmniConversation::query()
-            ->with([
-                'member:id,nama_lengkap,mobile_phone,member_id,member_level,is_exclusive_member',
-                'omniContact:id,display_name,avatar_url',
-                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
-                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
-                'teams:id,name',
-            ]);
-
-        OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
-
-        if ($leadStageFilter) {
-            $query->where('lead_stage', $leadStageFilter);
-        }
-
-        $conversations = $query
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('id')
-            ->limit(150)
-            ->get()
-            ->map(fn (OmniConversation $c) => $this->formatConversation($c));
+        $conversations = $this->queryInboxConversations($request);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'conversations' => $conversations,
                 'inbox' => $inbox,
+                'channel_filter' => $this->parseChannelFilter($request),
                 'lead_stage_filter' => $leadStageFilter,
                 'lead_stages' => OmniLeadStages::all(),
                 'assignable_users' => OmnichannelUserOption::assignableOptions(),
@@ -720,12 +703,50 @@ class OmnichannelInboxController extends Controller
             $query->where('lead_stage', $leadStageFilter);
         }
 
+        $this->applyChannelFilter($query, $this->parseChannelFilter($request));
+
         return $query
             ->orderByDesc('last_message_at')
             ->orderByDesc('id')
             ->limit(150)
             ->get()
             ->map(fn (OmniConversation $c) => $this->formatConversation($c));
+    }
+
+    /**
+     * @return null|'whatsapp'|'instagram'|'messenger'
+     */
+    private function parseChannelFilter(Request $request): ?string
+    {
+        $channel = $request->get('channel');
+        if ($channel === null || $channel === '' || $channel === 'all') {
+            return null;
+        }
+
+        $allowed = ['whatsapp', 'instagram', 'messenger'];
+        if (! in_array($channel, $allowed, true)) {
+            return null;
+        }
+
+        return $channel;
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<OmniConversation>  $query
+     */
+    private function applyChannelFilter($query, ?string $channel): void
+    {
+        if ($channel === null) {
+            return;
+        }
+
+        if ($channel === 'messenger') {
+            $query->whereIn('channel', ['messenger', 'facebook']);
+
+            return;
+        }
+
+        $query->where('channel', $channel);
     }
 
     private function assertInboxAccess(Request $request): void
@@ -862,6 +883,7 @@ class OmnichannelInboxController extends Controller
 
         return match ((string) $conversation->channel) {
             'instagram' => MetaInstagramAccountRegistry::displayLabel($accountId),
+            'messenger', 'facebook' => MetaPageAccountRegistry::displayLabel($accountId),
             default => null,
         };
     }
@@ -872,7 +894,7 @@ class OmnichannelInboxController extends Controller
 
         return match ((string) $conversation->channel) {
             'instagram' => 'Instagram · '.$id,
-            'messenger', 'facebook' => 'Messenger · '.$id,
+            'messenger', 'facebook' => 'Messenger · '.(strlen($id) > 8 ? '…'.substr($id, -8) : $id),
             default => $this->formatDisplayPhone($id),
         };
     }

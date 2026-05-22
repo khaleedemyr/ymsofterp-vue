@@ -20,6 +20,22 @@
             </button>
           </div>
         </div>
+        <div class="border-b border-slate-200 p-3">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Kanal</p>
+          <div class="mt-2 space-y-1">
+            <button
+              v-for="opt in channelMenuOptions"
+              :key="opt.value ?? 'all'"
+              type="button"
+              class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm"
+              :class="channelFilter === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80'"
+              @click="setChannelFilter(opt.value)"
+            >
+              <i :class="[opt.icon, 'w-4 text-center', opt.iconColor || 'text-slate-400']" />
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
         <div class="flex-1 overflow-y-auto p-3">
           <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tahap lead</p>
           <div class="mt-2 space-y-0.5">
@@ -84,7 +100,8 @@
                   <span class="truncate text-sm font-medium text-slate-900">{{ conv.contact_name || conv.display_phone }}</span>
                   <span
                     v-if="conv.channel_account_label"
-                    class="inline-flex shrink-0 rounded-md bg-gradient-to-r from-purple-100 to-pink-100 px-1.5 py-0.5 text-[10px] font-semibold text-purple-900 ring-1 ring-purple-200/80"
+                    class="inline-flex shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ring-1"
+                    :class="channelAccountBadgeClass(conv.channel)"
                     :title="channelAccountBadgeTitle(conv)"
                   >
                     {{ conv.channel_account_label }}
@@ -114,7 +131,7 @@
             </div>
           </button>
           <p v-if="filteredConversations.length === 0" class="px-3 py-6 text-center text-xs text-slate-400">
-            Tidak ada percakapan.
+            {{ emptyListHint }}
           </p>
         </div>
       </aside>
@@ -143,7 +160,8 @@
                   </p>
                   <span
                     v-if="selectedConversation.channel_account_label"
-                    class="inline-flex shrink-0 rounded-md bg-gradient-to-r from-purple-100 to-pink-100 px-2 py-0.5 text-[11px] font-semibold text-purple-900 ring-1 ring-purple-200/80"
+                    class="inline-flex shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1"
+                    :class="channelAccountBadgeClass(selectedConversation.channel)"
                     :title="channelAccountBadgeTitle(selectedConversation)"
                   >
                     {{ selectedConversation.channel_account_label }}
@@ -486,7 +504,12 @@
               <template v-else>
                 <div v-if="selectedConversation.channel_account_label" class="flex justify-between gap-2">
                   <dt class="shrink-0 text-slate-500">Akun bisnis</dt>
-                  <dd class="text-right font-medium text-purple-900">{{ selectedConversation.channel_account_label }}</dd>
+                  <dd
+                    class="text-right font-medium"
+                    :class="selectedConversation.channel === 'messenger' || selectedConversation.channel === 'facebook' ? 'text-blue-900' : 'text-purple-900'"
+                  >
+                    {{ selectedConversation.channel_account_label }}
+                  </dd>
                 </div>
                 <div class="flex justify-between gap-2">
                   <dt class="shrink-0 text-slate-500">ID pelanggan</dt>
@@ -621,6 +644,7 @@ const props = defineProps({
   selectedConversation: { type: Object, default: null },
   messages: { type: Array, default: () => [] },
   inbox: { type: String, default: 'all' },
+  channelFilter: { type: String, default: null },
   leadStageFilter: { type: String, default: null },
   leadStages: { type: Array, default: () => [] },
   assignableUsers: { type: Array, default: () => [] },
@@ -638,6 +662,7 @@ const inboxPartialReloadKeys = [
   'selectedConversation',
   'messages',
   'inbox',
+  'channelFilter',
   'leadStageFilter',
   'leadStages',
   'assignableUsers',
@@ -659,6 +684,13 @@ function sortMessages(msgs) {
     return (Number(a.id) || 0) - (Number(b.id) || 0)
   })
 }
+
+const channelMenuOptions = [
+  { value: null, label: 'Semua kanal', icon: 'fa-solid fa-layer-group', iconColor: 'text-slate-400' },
+  { value: 'whatsapp', label: 'WhatsApp', icon: 'fa-brands fa-whatsapp', iconColor: 'text-emerald-600' },
+  { value: 'instagram', label: 'Instagram', icon: 'fa-brands fa-instagram', iconColor: 'text-pink-600' },
+  { value: 'messenger', label: 'Messenger', icon: 'fa-brands fa-facebook-messenger', iconColor: 'text-blue-600' },
+]
 
 const inboxMenuOptions = computed(() => {
   const restricted = !props.canSeeAllChats
@@ -720,7 +752,24 @@ const POLL_MS_TAB_VISIBLE = 8000
 const POLL_MS_TAB_HIDDEN = 30000
 
 const inbox = computed(() => props.inbox || 'all')
+const channelFilter = computed(() => props.channelFilter || null)
 const leadStageFilter = computed(() => props.leadStageFilter || null)
+
+const emptyListHint = computed(() => {
+  if (search.value.trim()) {
+    return 'Tidak ada percakapan yang cocok dengan pencarian.'
+  }
+  const labels = {
+    whatsapp: 'WhatsApp',
+    instagram: 'Instagram',
+    messenger: 'Messenger',
+  }
+  const ch = channelFilter.value
+  if (ch && labels[ch]) {
+    return `Tidak ada percakapan ${labels[ch]}.`
+  }
+  return 'Tidak ada percakapan.'
+})
 
 /** Tombol AI di composer — default aktif kecuali server kirim false eksplisit. */
 const showAiWriting = computed(() => props.aiWritingEnabled !== false)
@@ -842,13 +891,32 @@ function channelLabel(channel) {
   return 'WhatsApp'
 }
 
+function channelAccountBadgeClass(channel) {
+  if (channel === 'messenger' || channel === 'facebook') {
+    return 'bg-blue-100 text-blue-900 ring-blue-200/80'
+  }
+  if (channel === 'instagram') {
+    return 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-900 ring-purple-200/80'
+  }
+  return 'bg-emerald-50 text-emerald-900 ring-emerald-200/80'
+}
+
 function channelAccountBadgeTitle(conv) {
   if (!conv?.channel_account_label) return ''
   const id = conv.channel_account_id
-  if (id) {
-    return `DM masuk ke akun Instagram (${conv.channel_account_label}) · ID: ${id}`
+  const label = conv.channel_account_label
+  const ch = conv.channel
+  if (ch === 'messenger' || ch === 'facebook') {
+    return id
+      ? `DM masuk ke Facebook Page (${label}) · Page ID: ${id}`
+      : `DM masuk ke Facebook Page (${label})`
   }
-  return `DM masuk ke akun Instagram (${conv.channel_account_label})`
+  if (ch === 'instagram') {
+    return id
+      ? `DM masuk ke akun Instagram (${label}) · ID: ${id}`
+      : `DM masuk ke akun Instagram (${label})`
+  }
+  return id ? `${label} · ${id}` : label
 }
 
 function bubbleAlign(msg) {
@@ -949,6 +1017,11 @@ function stageDotClass(color) {
 
 function listQuery(extra = {}) {
   const q = { inbox: extra.inbox ?? inbox.value }
+  if ('channel' in extra) {
+    if (extra.channel) q.channel = extra.channel
+  } else if (channelFilter.value) {
+    q.channel = channelFilter.value
+  }
   if ('lead_stage' in extra) {
     if (extra.lead_stage) q.lead_stage = extra.lead_stage
   } else if (leadStageFilter.value) {
@@ -972,6 +1045,14 @@ function setInbox(val) {
 
 function setLeadStage(val) {
   router.get('/crm/omnichannel-inbox', listQuery({ lead_stage: val }), {
+    preserveState: true,
+    preserveScroll: true,
+    only: inboxPartialReloadKeys,
+  })
+}
+
+function setChannelFilter(val) {
+  router.get('/crm/omnichannel-inbox', listQuery({ channel: val }), {
     preserveState: true,
     preserveScroll: true,
     only: inboxPartialReloadKeys,
