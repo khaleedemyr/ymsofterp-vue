@@ -10,6 +10,7 @@ use App\Models\AssetGoodReceive;
 use App\Models\AssetGoodReceiveItem;
 use App\Models\ActivityLog;
 use App\Services\AssetInventoryStockService;
+use App\Services\LostBreakageReplacementService;
 
 class AssetGoodReceiveController extends Controller
 {
@@ -259,6 +260,15 @@ class AssetGoodReceiveController extends Controller
                     $gr->id,
                     $itemData['po_item_id']
                 );
+
+                app(LostBreakageReplacementService::class)->recordReplacementFromGrItem(
+                    (int) $gr->id,
+                    (int) $grItem->id,
+                    (int) $itemData['po_item_id'],
+                    $qtyReceived,
+                    (int) $itemData['unit_id'],
+                    (int) $itemData['item_id']
+                );
             }
 
             ActivityLog::create([
@@ -470,7 +480,7 @@ class AssetGoodReceiveController extends Controller
                 $price = (float) $itemData['price'];
                 $total = $qtyReceived * $price;
 
-                AssetGoodReceiveItem::create([
+                $grItem = AssetGoodReceiveItem::create([
                     'asset_good_receive_id' => $gr->id,
                     'po_item_id' => $itemData['po_item_id'],
                     'item_id' => $itemData['item_id'],
@@ -493,6 +503,15 @@ class AssetGoodReceiveController extends Controller
                     $request->receive_date,
                     $gr->id,
                     $itemData['po_item_id']
+                );
+
+                app(LostBreakageReplacementService::class)->recordReplacementFromGrItem(
+                    (int) $gr->id,
+                    (int) $grItem->id,
+                    (int) $itemData['po_item_id'],
+                    $qtyReceived,
+                    (int) $itemData['unit_id'],
+                    (int) $itemData['item_id']
                 );
             }
 
@@ -1133,7 +1152,7 @@ class AssetGoodReceiveController extends Controller
                 $price = (float) $itemData['price'];
                 $total = $qtyReceived * $price;
 
-                AssetGoodReceiveItem::create([
+                $grItem = AssetGoodReceiveItem::create([
                     'asset_good_receive_id' => $gr->id,
                     'po_item_id' => $itemData['po_item_id'],
                     'item_id' => $itemData['item_id'],
@@ -1156,6 +1175,15 @@ class AssetGoodReceiveController extends Controller
                     $request->receive_date,
                     $gr->id,
                     $itemData['po_item_id']
+                );
+
+                app(LostBreakageReplacementService::class)->recordReplacementFromGrItem(
+                    (int) $gr->id,
+                    (int) $grItem->id,
+                    (int) $itemData['po_item_id'],
+                    $qtyReceived,
+                    (int) $itemData['unit_id'],
+                    (int) $itemData['item_id']
                 );
             }
 

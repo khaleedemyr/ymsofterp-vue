@@ -52,6 +52,7 @@ export default {
     "depreciations": "Depreciations",
     "reports": "Reports",
     "lost_breakage": "Lost & Breakage",
+    "lost_breakage_replacement_backlog": "Asset Replacement",
     "asset_good_receive": "Asset Good Receive",
     "asset_inventory_transfer": "Asset Inventory Transfer",
     "asset_owner_transfer": "Asset Ownership Transfer",

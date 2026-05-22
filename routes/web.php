@@ -3411,6 +3411,8 @@ Route::get('/member/verify-email/{id}/{token}', [\App\Http\Controllers\Mobile\Me
 
 // Lost & Breakage
 Route::get('/lost-breakage', [\App\Http\Controllers\LostBreakageController::class, 'index'])->name('lost-breakage.index');
+Route::get('/lost-breakage/replacement-backlog', [\App\Http\Controllers\LostBreakageController::class, 'replacementBacklog'])->name('lost-breakage.replacement-backlog');
+Route::post('/lost-breakage/replacement-backlog/prepare-pr', [\App\Http\Controllers\LostBreakageController::class, 'preparePrFromBacklog'])->name('lost-breakage.replacement-backlog.prepare-pr');
 Route::get('/lost-breakage/create', [\App\Http\Controllers\LostBreakageController::class, 'create'])->name('lost-breakage.create');
 Route::get('/lost-breakage/approvers', [\App\Http\Controllers\LostBreakageController::class, 'getApprovers'])->name('lost-breakage.approvers');
 Route::get('/lost-breakage/get-item-units/{id}', [\App\Http\Controllers\LostBreakageController::class, 'getItemUnits'])->name('lost-breakage.get-item-units');

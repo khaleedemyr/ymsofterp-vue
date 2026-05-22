@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\PurchaseRequisition;
 use App\Models\PrKasbon;
 use App\Models\PurchaseRequisitionCategory;
+use App\Services\LostBreakageReplacementService;
 use App\Models\PurchaseRequisitionItem;
 use App\Models\PurchaseRequisitionApprovalFlow;
 use App\Models\PurchaseRequisitionAttachment;
@@ -687,14 +688,24 @@ class PurchaseRequisitionController extends Controller
 
         $assetItems = $this->getAssetItems();
 
+        $lbPrefill = null;
+        $prefillKey = $request->query('lb_prefill');
+        if (is_string($prefillKey) && str_starts_with($prefillKey, 'lb_pr_prefill_')) {
+            $lbPrefill = session($prefillKey);
+            if ($lbPrefill) {
+                session()->forget($prefillKey);
+            }
+        }
+
         return Inertia::render('PurchaseRequisition/Create', [
             'categories' => $categories,
             'outlets' => $outlets,
             'tickets' => $tickets,
             'divisions' => $divisions,
-            'initialMode' => $initialMode,
+            'initialMode' => $initialMode ?: ($lbPrefill ? 'pr_assets' : null),
             'initialTicketId' => $initialTicketId,
             'assetItems' => $assetItems,
+            'lbPrefill' => $lbPrefill,
         ]);
     }
 
@@ -747,6 +758,7 @@ class PurchaseRequisitionController extends Controller
             $rules['items.*.allowance_recipient_name'] = 'nullable|string|max:255'; // For allowance type
             $rules['items.*.allowance_account_number'] = 'nullable|string|max:100'; // For allowance type
             $rules['items.*.others_notes'] = 'nullable|string'; // For others type
+            $rules['items.*.lost_breakage_detail_id'] = 'nullable|integer|min:1';
         }
         
         $validated = $request->validate($rules);
@@ -919,9 +931,10 @@ class PurchaseRequisitionController extends Controller
                 ]);
             } else {
                 // Create items for other modes
+                $lbLinkPayload = [];
                 if (!empty($validated['items'])) {
                     foreach ($validated['items'] as $itemData) {
-                        PurchaseRequisitionItem::create([
+                        $pri = PurchaseRequisitionItem::create([
                             'purchase_requisition_id' => $purchaseRequisition->id,
                             'outlet_id' => $itemData['outlet_id'] ?? null, // For pr_ops mode
                             'category_id' => $itemData['category_id'] ?? null, // For pr_ops mode
@@ -935,7 +948,19 @@ class PurchaseRequisitionController extends Controller
                             'allowance_account_number' => $itemData['allowance_account_number'] ?? null, // For allowance type
                             'others_notes' => $itemData['others_notes'] ?? null, // For others type
                         ]);
+
+                        if ($validated['mode'] === 'pr_assets' && !empty($itemData['lost_breakage_detail_id'])) {
+                            $lbLinkPayload[] = [
+                                'lost_breakage_detail_id' => (int) $itemData['lost_breakage_detail_id'],
+                                'qty' => $itemData['qty'],
+                                'purchase_requisition_item_id' => $pri->id,
+                            ];
+                        }
                     }
+                }
+
+                if ($validated['mode'] === 'pr_assets' && !empty($lbLinkPayload)) {
+                    app(LostBreakageReplacementService::class)->linkPrItems($purchaseRequisition->id, $lbLinkPayload);
                 }
             }
 

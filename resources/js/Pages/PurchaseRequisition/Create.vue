@@ -15,6 +15,12 @@
       </div>
 
       <div class="bg-white rounded-xl shadow-lg p-6">
+        <div v-if="lbPrefill" class="mb-4 p-4 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-900">
+          <i class="fa fa-link mr-1"></i>
+          PR ini dibuat dari <strong>Sisa Penggantian L&amp;B</strong> ({{ lbPrefill.lines?.length || 0 }} baris).
+          Setelah PO → GR Asset, penggantian tercatat otomatis per qty diterima.
+        </div>
+
         <!-- Mode Switch -->
         <div class="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
           <div class="md:col-span-1">
@@ -2621,6 +2627,10 @@ const props = defineProps({
     type: [Number, String],
     default: null,
   },
+  lbPrefill: {
+    type: Object,
+    default: null,
+  },
 })
 
 // Search query for category
@@ -2689,7 +2699,8 @@ function newItem() {
     unit_price: 0,
     subtotal: 0,
     selectedAsset: null,
-    availableUnits: []
+    availableUnits: [],
+    lost_breakage_detail_id: null,
   }
 }
 
@@ -2783,6 +2794,59 @@ watch(() => form.mode, () => {
 // Close dropdown when clicking outside
 let clickOutsideHandler = null
 
+function applyLbPrefill() {
+  const prefill = props.lbPrefill
+  if (!prefill?.lines?.length) return
+
+  form.mode = 'pr_assets'
+  form.title = prefill.title || form.title
+  form.description = prefill.description || form.description
+
+  const categoryId = prefill.default_category_id ? String(prefill.default_category_id) : ''
+  const byOutlet = {}
+
+  prefill.lines.forEach((line) => {
+    const oid = String(line.owner_outlet_id)
+    if (!byOutlet[oid]) {
+      byOutlet[oid] = { outlet_id: oid, categories: {} }
+    }
+    const cid = categoryId || 'default'
+    if (!byOutlet[oid].categories[cid]) {
+      byOutlet[oid].categories[cid] = { category_id: categoryId, items: [] }
+    }
+
+    const asset = props.assetItems.find((a) => a.id === line.item_id) || {
+      id: line.item_id,
+      name: line.item_name,
+      sku: line.sku,
+      small_unit_id: line.unit_id,
+      small_unit_name: line.unit_name,
+      medium_unit_id: null,
+      large_unit_id: null,
+    }
+
+    const row = newItem()
+    row.lost_breakage_detail_id = line.lost_breakage_detail_id
+    row.selectedAsset = asset
+    row.item_name = line.item_name
+    row.availableUnits = buildUnitsForAssetItem(asset)
+    row.unit = line.unit_name || (row.availableUnits[0]?.name || '')
+    row.qty = line.qty_remaining
+    row.unit_price = 0
+    row.subtotal = 0
+
+    byOutlet[oid].categories[cid].items.push(row)
+  })
+
+  form.outlets = Object.values(byOutlet).map((o) => ({
+    outlet_id: o.outlet_id,
+    categories: Object.values(o.categories),
+  }))
+  let total = 0
+  form.outlets.forEach((_, oi) => { total += getOutletTotal(oi) })
+  form.amount = total
+}
+
 onMounted(() => {
   if (props.initialMode) {
     form.mode = props.initialMode
@@ -2790,6 +2854,10 @@ onMounted(() => {
 
   if (props.initialTicketId) {
     form.ticket_id = String(props.initialTicketId)
+  }
+
+  if (props.lbPrefill) {
+    applyLbPrefill()
   }
 
   clickOutsideHandler = (event) => {
@@ -3879,7 +3947,8 @@ const submitForm = async () => {
                 formData.items.push({
                   ...item,
                   outlet_id: outlet.outlet_id,
-                  category_id: category.category_id
+                  category_id: category.category_id,
+                  lost_breakage_detail_id: item.lost_breakage_detail_id || null,
                 })
               })
           })

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use App\Services\NotificationService;
 use App\Services\AssetInventoryStockService;
+use App\Services\LostBreakageReplacementService;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\LostBreakageExport;
 
@@ -1335,6 +1336,59 @@ class LostBreakageController extends Controller
             'success' => true,
             'message' => 'Penggantian tercatat.',
             'detail'  => $coll->first(),
+        ]);
+    }
+
+    public function replacementBacklog(Request $request)
+    {
+        $user = auth()->user();
+        $service = app(LostBreakageReplacementService::class);
+
+        $filters = $request->only(['search', 'owner_outlet_id', 'outlet_id', 'type', 'date_from', 'date_to']);
+        $rows = $service->pendingDetailRows($filters, $user);
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        return inertia('LostBreakage/ReplacementBacklog', [
+            'rows' => $rows,
+            'filters' => $filters,
+            'outlets' => $outlets,
+            'isAdmin' => (int) ($user->id_outlet ?? 0) === 1,
+            'prIntegrationReady' => $service->prLinesTableExists() && $service->replacementsTableExists(),
+        ]);
+    }
+
+    public function preparePrFromBacklog(Request $request)
+    {
+        $request->validate([
+            'detail_ids' => 'required|array|min:1',
+            'detail_ids.*' => 'integer|min:1',
+        ]);
+
+        $service = app(LostBreakageReplacementService::class);
+        if (!$service->prLinesTableExists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jalankan database/sql/lost_breakage_pr_integration.sql terlebih dahulu.',
+            ], 503);
+        }
+
+        try {
+            $prefill = $service->buildPrPrefill($request->detail_ids, auth()->user());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        $key = 'lb_pr_prefill_' . Auth::id() . '_' . uniqid('', true);
+        session([$key => $prefill]);
+
+        return response()->json([
+            'success' => true,
+            'redirect_url' => '/purchase-requisitions/create?mode=pr_assets&lb_prefill=' . urlencode($key),
         ]);
     }
 

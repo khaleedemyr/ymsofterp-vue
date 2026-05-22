@@ -6,6 +6,9 @@
           <i class="fa-solid fa-box-open text-orange-500"></i> Lost &amp; Breakage
         </h1>
         <div class="flex items-center gap-2">
+          <button @click="router.visit('/lost-breakage/replacement-backlog')" class="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-xl shadow hover:bg-teal-700 transition font-semibold text-sm">
+            <i class="fa fa-list-check"></i> Sisa Penggantian
+          </button>
           <button @click="goReport" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700 transition font-semibold text-sm">
             <i class="fa fa-chart-bar"></i> Report
           </button>

@@ -82,6 +82,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.depreciations'), icon: 'fa-solid fa-chart-line', route: '/asset-management/depreciations', code: 'asset_management_depreciations' },
             { name: () => t('sidebar.menus.reports'), icon: 'fa-solid fa-chart-bar', route: '/asset-management/reports', code: 'asset_management_reports' },
             { name: () => t('sidebar.menus.lost_breakage'), icon: 'fa-solid fa-box-open', route: '/lost-breakage', code: 'lost_breakage' },
+            { name: () => t('sidebar.menus.lost_breakage_replacement_backlog'), icon: 'fa-solid fa-list-check', route: '/lost-breakage/replacement-backlog', code: 'lost_breakage_replacement_backlog' },
             { name: () => t('sidebar.menus.asset_good_receive'), icon: 'fa-solid fa-truck-ramp-box', route: '/asset-good-receives', code: 'asset_good_receive' },
             { name: () => t('sidebar.menus.asset_inventory_transfer'), icon: 'fa-solid fa-right-left', route: '/asset-inventory-transfers', code: 'asset_inventory_transfer' },
             { name: () => t('sidebar.menus.asset_owner_transfer'), icon: 'fa-solid fa-people-arrows', route: '/asset-owner-transfers', code: 'asset_owner_transfer' },
@@ -971,7 +972,7 @@ function formatCurrency(amount) {
                 <div v-show="!group.collapsible || group.open.value" class="mt-1">
                     <Link
                         v-for="menu in group.menus"
-                        :key="menu.name"
+                        :key="menu.route"
                         :href="menu.route"
                         class="flex items-center gap-3 px-4 py-2.5 my-1 mx-2 rounded-lg text-gray-700 hover:text-blue-700 transition-all duration-200 sidebar-menu-modern relative group"
                         :class="[
