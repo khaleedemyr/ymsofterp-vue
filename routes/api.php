@@ -1244,6 +1244,15 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/omnichannel-inbox/conversations/{conversation}/internal-notes', [\App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('api.approval-app.omnichannel-inbox.internal-notes');
         Route::post('/omnichannel-inbox/ai-assist', [\App\Http\Controllers\OmnichannelInboxController::class, 'aiAssist'])->name('api.approval-app.omnichannel-inbox.ai-assist');
         Route::post('/omnichannel-inbox/conversations/{conversation}/pause-automation', [\App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('api.approval-app.omnichannel-inbox.pause-automation');
+
+        // Komentar post IG / FB — YMSoft App
+        Route::get('/instagram-comments/bootstrap', [\App\Http\Controllers\InstagramCommentsController::class, 'apiBootstrap'])->name('api.approval-app.instagram-comments.bootstrap');
+        Route::get('/instagram-comments/{igAccount}/media', [\App\Http\Controllers\InstagramCommentsController::class, 'media'])->name('api.approval-app.instagram-comments.media');
+        Route::get('/instagram-comments/{igAccount}/media/{mediaId}/comments', [\App\Http\Controllers\InstagramCommentsController::class, 'comments'])->name('api.approval-app.instagram-comments.comments');
+        Route::post('/instagram-comments/{igAccount}/comments/{commentId}/reply', [\App\Http\Controllers\InstagramCommentsController::class, 'reply'])->name('api.approval-app.instagram-comments.reply');
+        Route::get('/instagram-comments/facebook/{pageId}/posts', [\App\Http\Controllers\InstagramCommentsController::class, 'facebookPosts'])->name('api.approval-app.instagram-comments.facebook.posts');
+        Route::get('/instagram-comments/facebook/{pageId}/posts/{postId}/comments', [\App\Http\Controllers\InstagramCommentsController::class, 'facebookComments'])->name('api.approval-app.instagram-comments.facebook.comments');
+        Route::post('/instagram-comments/facebook/{pageId}/comments/{commentId}/reply', [\App\Http\Controllers\InstagramCommentsController::class, 'facebookReply'])->name('api.approval-app.instagram-comments.facebook.reply');
         
         // User Role Settings routes
         Route::get('/user-roles', [\App\Http\Controllers\UserRoleController::class, 'index'])->name('api.approval-app.user-roles.index');

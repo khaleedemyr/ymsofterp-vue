@@ -13,6 +13,25 @@ use RuntimeException;
 
 class InstagramCommentsController extends Controller
 {
+    /**
+     * Daftar akun IG & halaman FB untuk YMSoft App.
+     */
+    public function apiBootstrap(
+        Request $request,
+        MetaInstagramCommentsService $instagram,
+        MetaFacebookCommentsService $facebook
+    ): JsonResponse {
+        $this->assertAccess($request);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'instagram_accounts' => $instagram->listAccounts(),
+                'facebook_pages' => $facebook->listPages(),
+            ],
+        ]);
+    }
+
     public function index(
         Request $request,
         MetaInstagramCommentsService $instagram,
