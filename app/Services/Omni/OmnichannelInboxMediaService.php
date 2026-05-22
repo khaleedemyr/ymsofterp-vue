@@ -4,6 +4,7 @@ namespace App\Services\Omni;
 
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Services\Meta\MetaInstagramInboxSyncService;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Support\MetaInstagramTokens;
 use App\Support\MetaPageTokens;
@@ -90,20 +91,70 @@ class OmnichannelInboxMediaService
 
         $payload = is_array($message->payload) ? $message->payload : [];
         $channel = (string) $conversation->channel;
+        $accessToken = $this->resolveChannelAccessToken($conversation);
 
         $remoteUrl = OmniMetaMessagePayload::extractAttachmentUrl($payload);
         if ($remoteUrl !== null && $this->isMetaCdnUrl($remoteUrl)) {
-            if ($this->cacheRemoteUrl($message, $remoteUrl)) {
+            if ($this->cacheRemoteUrl($message, $remoteUrl, null, $accessToken)) {
                 return;
             }
         }
 
         match ($channel) {
             'whatsapp' => $this->ensureWhatsApp($message, $payload),
-            'instagram' => $this->ensureInstagram($message, $conversation, $payload),
-            'messenger', 'facebook' => $this->ensureMessenger($message, $conversation, $payload),
+            'instagram' => $this->ensureInstagram($message, $conversation, $payload, $accessToken),
+            'messenger', 'facebook' => $this->ensureMessenger($message, $conversation, $payload, $accessToken),
             default => null,
         };
+    }
+
+    /**
+     * Ambil ulang attachment dari Meta (IG) bila cache lokal belum ada.
+     */
+    public function attemptChannelRepair(OmniMessage $message, OmniConversation $conversation): void
+    {
+        $channel = (string) $conversation->channel;
+
+        if ($channel === 'instagram') {
+            $igId = (string) ($conversation->phone_number_id ?? '');
+            $token = $this->resolveChannelAccessToken($conversation);
+            if ($igId !== '' && $token !== '') {
+                app(MetaInstagramInboxSyncService::class)->repairMessageMedia($message, $token, $igId);
+            }
+
+            return;
+        }
+
+        if (in_array($channel, ['messenger', 'facebook'], true)) {
+            $this->ensureMessenger($message, $conversation, is_array($message->payload) ? $message->payload : [], $this->resolveChannelAccessToken($conversation));
+        }
+    }
+
+    private function resolveChannelAccessToken(OmniConversation $conversation): ?string
+    {
+        $accountId = (string) ($conversation->phone_number_id ?? '');
+
+        return match ((string) $conversation->channel) {
+            'instagram' => $this->pickToken(MetaInstagramTokens::resolved(), $accountId)
+                ?: (string) config('services.meta.instagram_login_access_token'),
+            'messenger', 'facebook' => $this->pickToken(MetaPageTokens::resolved(), $accountId)
+                ?: (string) config('services.meta.page_access_token'),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, string>  $tokens
+     */
+    private function pickToken(array $tokens, string $accountId): ?string
+    {
+        if ($accountId !== '' && isset($tokens[$accountId]) && $tokens[$accountId] !== '') {
+            return $tokens[$accountId];
+        }
+
+        $first = reset($tokens);
+
+        return is_string($first) && $first !== '' ? $first : null;
     }
 
     private function ensureWhatsApp(OmniMessage $message, array $payload): void
@@ -135,30 +186,25 @@ class OmnichannelInboxMediaService
         }
     }
 
-    private function ensureInstagram(OmniMessage $message, OmniConversation $conversation, array $payload): void
+    private function ensureInstagram(OmniMessage $message, OmniConversation $conversation, array $payload, ?string $accessToken = null): void
     {
-        $igId = (string) ($conversation->phone_number_id ?? '');
-        $tokens = MetaInstagramTokens::resolved();
-        $token = ($igId !== '' && isset($tokens[$igId])) ? $tokens[$igId] : (string) config('services.meta.instagram_login_access_token');
-        if ($token === '') {
-            $token = (string) (reset($tokens) ?: '');
-        }
-        if ($token === '') {
+        $token = $accessToken ?? $this->resolveChannelAccessToken($conversation);
+        if ($token === null || $token === '') {
             return;
         }
 
         $this->fetchMetaMessageAttachments($message, $payload, $token, 'instagram');
+
+        $message->refresh();
+        if ($this->needsResolve($message)) {
+            $this->attemptChannelRepair($message, $conversation);
+        }
     }
 
-    private function ensureMessenger(OmniMessage $message, OmniConversation $conversation, array $payload): void
+    private function ensureMessenger(OmniMessage $message, OmniConversation $conversation, array $payload, ?string $accessToken = null): void
     {
-        $pageId = (string) ($conversation->phone_number_id ?? '');
-        $tokens = MetaPageTokens::resolved();
-        $token = ($pageId !== '' && isset($tokens[$pageId])) ? $tokens[$pageId] : (string) config('services.meta.page_access_token');
-        if ($token === '') {
-            $token = (string) (reset($tokens) ?: '');
-        }
-        if ($token === '') {
+        $token = $accessToken ?? $this->resolveChannelAccessToken($conversation);
+        if ($token === null || $token === '') {
             return;
         }
 
@@ -213,7 +259,7 @@ class OmnichannelInboxMediaService
 
         $normalized = OmniMetaMessagePayload::normalize($merged);
         if ($normalized['attachment_url'] !== null) {
-            $this->cacheRemoteUrl($message, $normalized['attachment_url'], $normalized);
+            $this->cacheRemoteUrl($message, $normalized['attachment_url'], $normalized, $token);
         }
 
         $updates = ['payload' => array_merge($merged, [
@@ -231,11 +277,11 @@ class OmnichannelInboxMediaService
         $message->update($updates);
     }
 
-    private function cacheRemoteUrl(OmniMessage $message, string $remoteUrl, ?array $normalized = null): bool
+    private function cacheRemoteUrl(OmniMessage $message, string $remoteUrl, ?array $normalized = null, ?string $accessToken = null): bool
     {
         try {
-            $response = Http::timeout(45)->get($remoteUrl);
-            if (! $response->successful()) {
+            $response = $this->downloadRemoteContent($remoteUrl, $accessToken);
+            if ($response === null) {
                 return false;
             }
 
@@ -283,6 +329,33 @@ class OmnichannelInboxMediaService
     }
 
     /**
+     * Unduh URL CDN Meta (sering butuh access_token di query atau header).
+     */
+    private function downloadRemoteContent(string $remoteUrl, ?string $accessToken = null): ?\Illuminate\Http\Client\Response
+    {
+        $url = $remoteUrl;
+        $needsAuth = $this->isMetaCdnUrl($remoteUrl) || str_contains(strtolower($remoteUrl), 'fbsbx.com');
+
+        if ($accessToken !== null && $accessToken !== '' && $needsAuth && ! preg_match('/[?&]access_token=/i', $url)) {
+            $url .= (str_contains($url, '?') ? '&' : '?').'access_token='.urlencode($accessToken);
+        }
+
+        $response = Http::timeout(45)->get($url);
+        if ($response->successful()) {
+            return $response;
+        }
+
+        if ($accessToken !== null && $accessToken !== '' && $needsAuth) {
+            $authResponse = Http::withToken($accessToken)->timeout(45)->get($remoteUrl);
+            if ($authResponse->successful()) {
+                return $authResponse;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $downloaded
      */
     private function mergePayload(OmniMessage $message, array $downloaded): void
@@ -302,7 +375,7 @@ class OmnichannelInboxMediaService
         $message->update(['payload' => $merged]);
     }
 
-    private function isMetaCdnUrl(string $url): bool
+    public function isMetaCdnUrl(string $url): bool
     {
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
 
@@ -338,5 +411,28 @@ class OmnichannelInboxMediaService
         $relative = Storage::disk('public')->url($storedPath);
 
         return $this->absoluteUrl($relative);
+    }
+
+    /**
+     * URL aman untuk UI (web/app): jangan kirim CDN Meta yang kedaluwarsa — paksa muat ulang via /media.
+     */
+    public function clientSafeMediaUrl(OmniMessage $message, ?OmniConversation $conversation = null): ?string
+    {
+        $url = $this->resolvePublicUrl($message, $conversation, false);
+        if ($url !== null) {
+            return $url;
+        }
+
+        $payload = is_array($message->payload) ? $message->payload : [];
+        if (! empty($payload['local_media_path']) && is_string($payload['local_media_path'])) {
+            return $this->publicStorageUrl($payload['local_media_path']);
+        }
+
+        $candidate = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
+        if ($candidate !== null && ! $this->isMetaCdnUrl($candidate)) {
+            return $this->absoluteUrl($candidate);
+        }
+
+        return null;
     }
 }

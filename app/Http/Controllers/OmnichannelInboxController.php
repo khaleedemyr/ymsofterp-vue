@@ -771,6 +771,10 @@ class OmnichannelInboxController extends Controller
                 if ($enriched < $maxEnrich && $media->needsResolve($m)) {
                     $media->ensureCached($m, $conversation);
                     $m->refresh();
+                    if ($media->needsResolve($m)) {
+                        $media->attemptChannelRepair($m, $conversation);
+                        $m->refresh();
+                    }
                     $enriched++;
                 }
 
@@ -800,7 +804,12 @@ class OmnichannelInboxController extends Controller
         $media->ensureCached($message, $conversation);
         $message->refresh();
 
-        $url = $media->resolvePublicUrl($message, $conversation, false);
+        $url = $media->clientSafeMediaUrl($message, $conversation);
+        if ($url === null) {
+            $media->attemptChannelRepair($message, $conversation);
+            $message->refresh();
+            $url = $media->clientSafeMediaUrl($message, $conversation);
+        }
 
         return response()->json([
             'success' => $url !== null,
@@ -887,17 +896,7 @@ class OmnichannelInboxController extends Controller
         }
 
         $payload = is_array($message->payload) ? $message->payload : [];
-        $mediaUrl = app(OmnichannelInboxMediaService::class)
-            ->resolvePublicUrl($message, $conversation, false);
-        if ($mediaUrl === null) {
-            $mediaUrl = OmniMetaMessagePayload::mediaUrlForInbox($payload, (string) $message->message_type);
-            if ($mediaUrl !== null) {
-                $mediaUrl = str_starts_with($mediaUrl, 'http') ? $mediaUrl : url($mediaUrl);
-            }
-        }
-        if ($mediaUrl === null && ! empty($payload['local_media_path']) && is_string($payload['local_media_path'])) {
-            $mediaUrl = app(OmnichannelInboxMediaService::class)->publicStorageUrl($payload['local_media_path']);
-        }
+        $mediaUrl = app(OmnichannelInboxMediaService::class)->clientSafeMediaUrl($message, $conversation);
 
         $messageType = (string) $message->message_type;
         $mediaMime = (string) ($payload['media_mime'] ?? '');

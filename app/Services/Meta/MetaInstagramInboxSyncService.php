@@ -91,7 +91,7 @@ class MetaInstagramInboxSyncService
             return false;
         }
 
-        return $this->maybeEnrichExistingMessageMedia($message->fresh() ?? $message, $payload);
+        return $this->maybeEnrichExistingMessageMedia($message->fresh() ?? $message, $payload, $accessToken);
     }
 
     /**
@@ -278,7 +278,7 @@ class MetaInstagramInboxSyncService
                 $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
                 if ($existing) {
                     $fullPayload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
-                    if ($this->maybeEnrichExistingMessageMedia($existing, $fullPayload)) {
+                    if ($this->maybeEnrichExistingMessageMedia($existing, $fullPayload, $accessToken)) {
                         $imported++;
                     }
                     $skippedExisting++;
@@ -307,7 +307,7 @@ class MetaInstagramInboxSyncService
                     continue;
                 }
 
-                if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload)) {
+                if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload, $accessToken)) {
                     $imported++;
                 }
             }
@@ -384,7 +384,7 @@ class MetaInstagramInboxSyncService
             $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
             if ($existing) {
                 $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
-                if ($payload && $this->maybeEnrichExistingMessageMedia($existing, $payload)) {
+                if ($payload && $this->maybeEnrichExistingMessageMedia($existing, $payload, $accessToken)) {
                     $imported++;
                 }
                 $skippedExisting++;
@@ -418,7 +418,7 @@ class MetaInstagramInboxSyncService
                 continue;
             }
 
-            if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload)) {
+            if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload, $accessToken)) {
                 $imported++;
             }
         }
@@ -616,7 +616,7 @@ class MetaInstagramInboxSyncService
         return false;
     }
 
-    private function maybeEnrichExistingMessageMedia(OmniMessage $message, array $payload): bool
+    private function maybeEnrichExistingMessageMedia(OmniMessage $message, array $payload, ?string $accessToken = null): bool
     {
         $currentPayload = is_array($message->payload) ? $message->payload : [];
         if (! empty($currentPayload['local_media_path'])) {
@@ -655,7 +655,8 @@ class MetaInstagramInboxSyncService
             $attachmentUrl,
             (int) $message->conversation_id,
             (string) ($message->meta_message_id ?? $message->id),
-            $normalized['message_type'] !== 'text' ? $normalized['message_type'] : 'image'
+            $normalized['message_type'] !== 'text' ? $normalized['message_type'] : 'image',
+            $accessToken
         );
         if ($localPath !== null) {
             $merged['local_media_path'] = $localPath;
@@ -681,15 +682,16 @@ class MetaInstagramInboxSyncService
         ?string $remoteUrl,
         int $conversationId,
         string $metaMessageId,
-        string $messageType
+        string $messageType,
+        ?string $accessToken = null
     ): ?string {
         if ($remoteUrl === null || $remoteUrl === '' || $conversationId <= 0) {
             return null;
         }
 
         try {
-            $response = Http::timeout(45)->get($remoteUrl);
-            if (! $response->successful()) {
+            $response = $this->downloadInstagramMedia($remoteUrl, $accessToken);
+            if ($response === null) {
                 return null;
             }
 
@@ -716,11 +718,40 @@ class MetaInstagramInboxSyncService
         }
     }
 
+    private function downloadInstagramMedia(string $remoteUrl, ?string $accessToken): ?\Illuminate\Http\Client\Response
+    {
+        $url = $remoteUrl;
+        $host = strtolower((string) parse_url($remoteUrl, PHP_URL_HOST));
+        $needsAuth = str_contains($host, 'fbcdn.net')
+            || str_contains($host, 'facebook.com')
+            || str_contains($host, 'instagram.com')
+            || str_contains($host, 'fbsbx.com');
+
+        if ($accessToken !== null && $accessToken !== '' && $needsAuth && ! preg_match('/[?&]access_token=/i', $url)) {
+            $url .= (str_contains($url, '?') ? '&' : '?').'access_token='.urlencode($accessToken);
+        }
+
+        $response = Http::timeout(45)->get($url);
+        if ($response->successful()) {
+            return $response;
+        }
+
+        if ($accessToken !== null && $accessToken !== '' && $needsAuth) {
+            $authResponse = Http::withToken($accessToken)->timeout(45)->get($remoteUrl);
+            if ($authResponse->successful()) {
+                return $authResponse;
+            }
+        }
+
+        return null;
+    }
+
     private function storeInboundFromApi(
         string $igProfessionalId,
         string $senderIgsid,
         string $metaMessageId,
-        array $payload
+        array $payload,
+        ?string $accessToken = null
     ): bool {
         if ($senderIgsid === '') {
             return false;
@@ -848,7 +879,8 @@ class MetaInstagramInboxSyncService
                 $normalized['attachment_url'],
                 $conversationId,
                 $metaMessageId,
-                $messageType
+                $messageType,
+                $accessToken
             );
             if ($localPath !== null) {
                 $msg = OmniMessage::query()->find($inboundMessageId);

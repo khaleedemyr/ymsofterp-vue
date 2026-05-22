@@ -262,14 +262,30 @@
                   <span class="truncate">{{ msg.media_filename || 'Buka lampiran' }}</span>
                 </a>
                 <button
-                  v-else-if="!msg.media_url && (msg.message_type === 'image' || msg.message_type === 'video' || msg.message_type === 'document' || msg.message_type === 'audio' || ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]'].includes((msg.body || '').trim()))"
+                  v-else-if="needsMediaResolve(msg)"
                   type="button"
-                  class="mb-1 flex w-full items-center gap-1.5 rounded-md bg-white/50 px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-white/80"
+                  class="mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/80"
+                  :class="mediaResolveFailed[msg.id] ? 'bg-orange-50 text-orange-800' : 'bg-white/50 text-slate-700'"
                   :disabled="mediaResolving[msg.id]"
                   @click="resolveMessageMedia(msg)"
                 >
-                  <i class="fa-regular fa-image shrink-0 text-slate-500" :class="{ 'fa-spin fa-spinner': mediaResolving[msg.id] }" />
-                  {{ mediaResolving[msg.id] ? 'Memuat…' : mediaPlaceholderLabel(msg) }}
+                  <i
+                    class="shrink-0"
+                    :class="
+                      mediaResolving[msg.id]
+                        ? 'fa-solid fa-spinner fa-spin text-slate-500'
+                        : mediaResolveFailed[msg.id]
+                          ? 'fa-solid fa-rotate-right text-orange-600'
+                          : 'fa-regular fa-image text-slate-500'
+                    "
+                  />
+                  {{
+                    mediaResolving[msg.id]
+                      ? 'Memuat…'
+                      : mediaResolveFailed[msg.id]
+                        ? 'Gagal memuat — ketuk coba lagi'
+                        : mediaPlaceholderLabel(msg)
+                  }}
                 </button>
                 <p v-if="displayMessageBody(msg)" class="whitespace-pre-wrap break-words">{{ displayMessageBody(msg) }}</p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
@@ -942,6 +958,24 @@ const lightboxImages = ref([])
 const lightboxIndex = ref(0)
 const imageLoadFailed = ref({})
 const mediaResolving = ref({})
+const mediaResolveFailed = ref({})
+
+const MEDIA_PLACEHOLDER_BODIES = ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]', '[Dokumen]']
+
+function needsMediaResolve(msg) {
+  if (!msg?.id) {
+    return false
+  }
+  if (msg.media_url && !imageLoadFailed.value[msg.id]) {
+    return false
+  }
+  const type = msg.message_type
+  if (['image', 'video', 'document', 'audio', 'attachment', 'sticker'].includes(type)) {
+    return true
+  }
+  const body = String(msg.body || '').trim()
+  return MEDIA_PLACEHOLDER_BODIES.includes(body) || body.startsWith('[PDF:')
+}
 
 function isImageLikeMessage(msg) {
   if (!msg?.media_url || imageLoadFailed.value[msg.id]) {
@@ -967,7 +1001,10 @@ function isImageLikeMessage(msg) {
 function displayMessageBody(msg) {
   const body = (msg.body || '').trim()
   if (!body) return ''
-  if (msg.media_url && isImageLikeMessage(msg) && ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]'].includes(body)) {
+  if (needsMediaResolve(msg)) {
+    return ''
+  }
+  if (msg.media_url && isImageLikeMessage(msg) && MEDIA_PLACEHOLDER_BODIES.includes(body)) {
     return ''
   }
   return body
@@ -994,6 +1031,21 @@ function onImageLoadError(msg) {
   }
 }
 
+function applyResolvedMessage(msgId, patch) {
+  const idx = localMessages.value.findIndex((m) => m.id === msgId)
+  if (idx < 0) {
+    return false
+  }
+  localMessages.value = localMessages.value.map((m, i) => (i === idx ? { ...m, ...patch } : m))
+  const failedImg = { ...imageLoadFailed.value }
+  delete failedImg[msgId]
+  imageLoadFailed.value = failedImg
+  const failedMedia = { ...mediaResolveFailed.value }
+  delete failedMedia[msgId]
+  mediaResolveFailed.value = failedMedia
+  return true
+}
+
 async function resolveMessageMedia(msg) {
   if (!msg?.id || mediaResolving.value[msg.id]) {
     return
@@ -1001,24 +1053,32 @@ async function resolveMessageMedia(msg) {
   mediaResolving.value = { ...mediaResolving.value, [msg.id]: true }
   try {
     const { data } = await axios.get(`/crm/omnichannel-inbox/messages/${msg.id}/media`)
-    if (data?.message?.media_url) {
-      const idx = localMessages.value.findIndex((m) => m.id === msg.id)
-      if (idx >= 0) {
-        localMessages.value = localMessages.value.map((m, i) =>
-          i === idx ? { ...m, ...data.message } : m
-        )
-        const failed = { ...imageLoadFailed.value }
-        delete failed[msg.id]
-        imageLoadFailed.value = failed
-      }
+    const url = data?.media_url || data?.message?.media_url
+    if (url) {
+      const patch = data?.message ? { ...data.message } : { media_url: url }
+      applyResolvedMessage(msg.id, patch)
+    } else {
+      mediaResolveFailed.value = { ...mediaResolveFailed.value, [msg.id]: true }
     }
   } catch (e) {
     console.warn('resolveMessageMedia', e)
+    mediaResolveFailed.value = { ...mediaResolveFailed.value, [msg.id]: true }
   } finally {
     const next = { ...mediaResolving.value }
     delete next[msg.id]
     mediaResolving.value = next
   }
+}
+
+/** Muat otomatis lampiran yang masih placeholder (maks 8 per batch). */
+function autoResolvePendingMedia() {
+  const pending = localMessages.value.filter(
+    (m) =>
+      needsMediaResolve(m) &&
+      !mediaResolving.value[m.id] &&
+      !mediaResolveFailed.value[m.id]
+  )
+  pending.slice(0, 8).forEach((m) => resolveMessageMedia(m))
 }
 
 function mediaPlaceholderLabel(msg) {
@@ -1036,6 +1096,7 @@ function openMediaUrl(url) {
 
 watch(selectedId, () => {
   imageLoadFailed.value = {}
+  mediaResolveFailed.value = {}
 })
 
 function stageDotClass(color) {
@@ -1175,8 +1236,22 @@ function mergeMessagesFromProps(serverMsgs, conversationId) {
     }
   }
   for (const m of prev) {
-    if (m.id != null && !byId.has(m.id)) {
+    if (m.id == null) {
+      continue
+    }
+    const server = byId.get(m.id)
+    if (!server) {
       byId.set(m.id, m)
+      continue
+    }
+    if (!server.media_url && m.media_url) {
+      byId.set(m.id, {
+        ...server,
+        media_url: m.media_url,
+        message_type: m.message_type || server.message_type,
+        media_mime: m.media_mime || server.media_mime,
+        media_filename: m.media_filename || server.media_filename,
+      })
     }
   }
   return sortMessages([...byId.values()])
@@ -1197,6 +1272,7 @@ watch(
     if (shouldStickToBottom() && newTail) {
       scrollToBottom()
     }
+    nextTick(() => autoResolvePendingMedia())
   },
   { deep: true }
 )
@@ -1219,7 +1295,11 @@ watch(
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
       clearAttachment()
-      nextTick(() => scrollToBottom())
+      mediaResolveFailed.value = {}
+      nextTick(() => {
+        scrollToBottom()
+        autoResolvePendingMedia()
+      })
     }
   },
   { immediate: true }
