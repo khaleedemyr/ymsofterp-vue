@@ -419,8 +419,16 @@
                 <!-- Outlet Header -->
                 <div class="flex items-center justify-between mb-4">
                   <div class="flex-1">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Outlet *</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Outlet (Pemilik) *</label>
+                    <input
+                      v-if="outlet.lb_locked"
+                      type="text"
+                      :value="outlet.outlet_name || getOutletName(outlet.outlet_id)"
+                      disabled
+                      class="w-full md:w-64 px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-800 font-medium"
+                    />
                     <select
+                      v-else
                       v-model="outlet.outlet_id"
                       required
                       class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -438,7 +446,7 @@
                     <button
                       type="button"
                       @click="removeOutlet(outletIdx)"
-                      :disabled="form.outlets.length === 1"
+                      :disabled="form.outlets.length === 1 || (lbPrefillActive && outlet.lb_locked)"
                       class="text-red-500 hover:text-red-700 disabled:opacity-50"
                       title="Remove Outlet"
                     >
@@ -516,7 +524,10 @@
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex-1">
                         <label class="block text-sm font-medium text-gray-700 mb-2">Category *</label>
-                        <div class="relative category-dropdown-container">
+                        <div v-if="category.lb_locked && category.category_id" class="w-full md:w-64 px-3 py-2 border border-gray-200 rounded-md bg-gray-100 text-gray-800 text-sm font-medium">
+                          {{ getCategoryDisplayName(category.category_id) }}
+                        </div>
+                        <div v-else class="relative category-dropdown-container">
                           <div
                             @click.stop="showCategoryDropdown = !showCategoryDropdown"
                             class="w-full md:w-64 px-3 py-2 pr-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer bg-white flex items-center justify-between"
@@ -686,9 +697,10 @@
                           <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                             <div class="lg:col-span-12">
                               <label class="block text-xs font-semibold text-gray-500 mb-1.5">Pilih Item Asset</label>
+                              <p v-if="item.lb_note" class="text-xs text-teal-700 mb-1">{{ item.lb_note }}</p>
                               <multiselect
                                 v-model="item.selectedAsset"
-                                :options="props.assetItems"
+                                :options="assetOptionsForItem(item)"
                                 :searchable="true"
                                 :close-on-select="true"
                                 :show-labels="false"
@@ -743,11 +755,11 @@
                               <div class="grid grid-cols-3 gap-3">
                                 <div>
                                   <label class="block text-xs font-semibold text-gray-500 mb-1.5">Qty <span class="text-red-400">*</span></label>
-                                  <input type="number" min="0.01" step="0.01" v-model.number="item.qty" :disabled="!item.item_name" @input="calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx)" placeholder="0" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40" />
+                                  <input type="number" min="0.01" step="0.01" v-model.number="item.qty" :disabled="!item.item_name && !item.selectedAsset" @input="calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx)" placeholder="0" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40" />
                                 </div>
                                 <div>
                                   <label class="block text-xs font-semibold text-gray-500 mb-1.5">Unit <span class="text-red-400">*</span></label>
-                                  <select v-model="item.unit" :disabled="!item.item_name" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40">
+                                  <select v-model="item.unit" :disabled="!item.item_name && !item.selectedAsset" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-400/40 focus:border-blue-400 transition-all disabled:opacity-40">
                                     <option v-for="u in item.availableUnits" :key="u.id" :value="u.name">{{ u.name }} ({{ u.type }})</option>
                                   </select>
                                 </div>
@@ -2602,7 +2614,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
@@ -2645,6 +2657,8 @@ const userDivisionId = computed(() => currentUser.value.division_id || null)
 
 const loading = ref(false)
 const budgetInfo = ref(null)
+const skipModeReset = ref(false)
+const lbPrefillActive = computed(() => !!(props.lbPrefill?.lines?.length))
 
 const isMultiOutletMode = computed(() => ['pr_ops', 'purchase_payment', 'pr_assets'].includes(form.mode))
 
@@ -2701,7 +2715,13 @@ function newItem() {
     selectedAsset: null,
     availableUnits: [],
     lost_breakage_detail_id: null,
+    lb_note: null,
   }
+}
+
+function getOutletName(outletId) {
+  const o = props.outlets.find((x) => Number(x.id_outlet) === Number(outletId))
+  return o?.nama_outlet || `Outlet #${outletId}`
 }
 
 function newTravelItem() {
@@ -2732,20 +2752,88 @@ function newOutlet() {
   }
 }
 
+function resolveAssetForLine(line) {
+  const fromList = props.assetItems.find((a) => Number(a.id) === Number(line.item_id))
+  if (fromList) return fromList
+  if (line.asset) return line.asset
+  return {
+    id: line.item_id,
+    name: line.item_name,
+    sku: line.sku,
+    small_unit_id: line.unit_id,
+    small_unit_name: line.unit_name,
+    medium_unit_id: null,
+    large_unit_id: null,
+  }
+}
+
+function buildOutletsFromLbPrefill(prefill) {
+  const categoryId = prefill.default_category_id ? Number(prefill.default_category_id) : null
+  const byOutlet = {}
+
+  prefill.lines.forEach((line) => {
+    const oid = Number(line.owner_outlet_id)
+    if (!byOutlet[oid]) {
+      byOutlet[oid] = {
+        outlet_id: oid,
+        outlet_name: line.owner_outlet_name,
+        lb_locked: true,
+        categories: {},
+      }
+    }
+
+    const catKey = categoryId || 'lb'
+    if (!byOutlet[oid].categories[catKey]) {
+      byOutlet[oid].categories[catKey] = {
+        category_id: categoryId,
+        lb_locked: !!categoryId,
+        items: [],
+      }
+    }
+
+    const asset = resolveAssetForLine(line)
+    const row = newItem()
+    row.lost_breakage_detail_id = line.lost_breakage_detail_id
+    row.lb_note = `${line.header_number || ''} · ${line.type === 'breakage' ? 'Rusak' : 'Hilang'}`
+    row.selectedAsset = asset
+    row.item_name = asset.name
+    row.availableUnits = buildUnitsForAssetItem(asset)
+    row.unit = line.unit_name || row.availableUnits[0]?.name || ''
+    row.qty = Number(line.qty_remaining) || ''
+    row.unit_price = 0
+    row.subtotal = 0
+
+    byOutlet[oid].categories[catKey].items.push(row)
+  })
+
+  return Object.values(byOutlet).map((o) => ({
+    outlet_id: o.outlet_id,
+    outlet_name: o.outlet_name,
+    lb_locked: o.lb_locked,
+    categories: Object.values(o.categories).map((c) => ({
+      category_id: c.category_id,
+      lb_locked: c.lb_locked,
+      items: c.items,
+    })),
+  }))
+}
+
+const lbHasPrefill = !!(props.lbPrefill?.lines?.length)
+
 const kasbonAmountOptions = [500000, 1000000, 1500000, 2000000, 2500000, 3000000]
 const kasbonTerminOptions = [1, 2, 3]
 
 const form = reactive({
-  title: '',
-  description: '',
-  division_id: '',
+  title: lbHasPrefill ? (props.lbPrefill.title || '') : '',
+  description: lbHasPrefill ? (props.lbPrefill.description || '') : '',
+  division_id: lbHasPrefill && userDivisionId.value ? userDivisionId.value : '',
   category_id: '', // For non-pr_ops mode
   outlet_id: '', // For non-pr_ops mode
   ticket_id: '',
   currency: 'IDR',
   priority: 'MEDIUM',
   items: [newItem()], // For non-pr_ops mode
-  outlets: [newOutlet()], // For pr_ops mode: multi-outlet structure
+  outlets: lbHasPrefill ? buildOutletsFromLbPrefill(props.lbPrefill) : [newOutlet()],
   travel_outlets: [newOutlet()], // For travel_application mode: destination outlets
   travel_items: [newTravelItem()], // For travel_application mode: travel items
   travel_agenda: '', // For travel_application mode: work agenda
@@ -2754,7 +2842,7 @@ const form = reactive({
   kasbon_termin: 0, // For kasbon mode: termin 1-3x
   kasbon_reason: '', // For kasbon mode: reason/alasan kasbon
   approvers: [],
-  mode: 'pr_ops'
+  mode: lbHasPrefill ? 'pr_assets' : (props.initialMode || 'pr_ops'),
 })
 
 // Filtered categories based on mode and search (must be after form declaration)
@@ -2794,70 +2882,59 @@ watch(() => form.mode, () => {
 // Close dropdown when clicking outside
 let clickOutsideHandler = null
 
+function assetOptionsForItem(item) {
+  const base = props.assetItems || []
+  if (!item?.selectedAsset?.id) return base
+  if (base.some((a) => Number(a.id) === Number(item.selectedAsset.id))) return base
+  return [item.selectedAsset, ...base]
+}
+
+function runLbPrefillPostLoad() {
+  nextTick(() => {
+    form.outlets.forEach((outlet, outletIdx) => {
+      outlet.categories.forEach((category, categoryIdx) => {
+        category.items.forEach((item, itemIdx) => {
+          calculateSubtotalForCategory(outletIdx, categoryIdx, itemIdx)
+        })
+        if (outlet.outlet_id && category.category_id) {
+          loadBudgetInfoForCategory(outletIdx, categoryIdx, outlet.outlet_id, category.category_id)
+        }
+      })
+    })
+    if (typeof form.amount !== 'undefined') {
+      form.amount = totalAmount.value
+    }
+  })
+}
+
 function applyLbPrefill() {
   const prefill = props.lbPrefill
   if (!prefill?.lines?.length) return
 
+  skipModeReset.value = true
   form.mode = 'pr_assets'
   form.title = prefill.title || form.title
   form.description = prefill.description || form.description
-
-  const categoryId = prefill.default_category_id ? String(prefill.default_category_id) : ''
-  const byOutlet = {}
-
-  prefill.lines.forEach((line) => {
-    const oid = String(line.owner_outlet_id)
-    if (!byOutlet[oid]) {
-      byOutlet[oid] = { outlet_id: oid, categories: {} }
-    }
-    const cid = categoryId || 'default'
-    if (!byOutlet[oid].categories[cid]) {
-      byOutlet[oid].categories[cid] = { category_id: categoryId, items: [] }
-    }
-
-    const asset = props.assetItems.find((a) => a.id === line.item_id) || {
-      id: line.item_id,
-      name: line.item_name,
-      sku: line.sku,
-      small_unit_id: line.unit_id,
-      small_unit_name: line.unit_name,
-      medium_unit_id: null,
-      large_unit_id: null,
-    }
-
-    const row = newItem()
-    row.lost_breakage_detail_id = line.lost_breakage_detail_id
-    row.selectedAsset = asset
-    row.item_name = line.item_name
-    row.availableUnits = buildUnitsForAssetItem(asset)
-    row.unit = line.unit_name || (row.availableUnits[0]?.name || '')
-    row.qty = line.qty_remaining
-    row.unit_price = 0
-    row.subtotal = 0
-
-    byOutlet[oid].categories[cid].items.push(row)
-  })
-
-  form.outlets = Object.values(byOutlet).map((o) => ({
-    outlet_id: o.outlet_id,
-    categories: Object.values(o.categories),
-  }))
-  let total = 0
-  form.outlets.forEach((_, oi) => { total += getOutletTotal(oi) })
-  form.amount = total
+  if (userDivisionId.value) {
+    form.division_id = userDivisionId.value
+  }
+  form.outlets = buildOutletsFromLbPrefill(prefill)
+  skipModeReset.value = false
+  runLbPrefillPostLoad()
 }
 
 onMounted(() => {
-  if (props.initialMode) {
+  if (lbPrefillActive.value) {
+    if (userDivisionId.value && !form.division_id) {
+      form.division_id = userDivisionId.value
+    }
+    runLbPrefillPostLoad()
+  } else if (props.initialMode) {
     form.mode = props.initialMode
   }
 
   if (props.initialTicketId) {
     form.ticket_id = String(props.initialTicketId)
-  }
-
-  if (props.lbPrefill) {
-    applyLbPrefill()
   }
 
   clickOutsideHandler = (event) => {
@@ -2971,6 +3048,7 @@ watch(totalAmount, (newTotal) => {
 
 // Watch mode changes to reset structure
 watch(() => form.mode, (newMode) => {
+  if (skipModeReset.value) return
   if (['pr_ops', 'purchase_payment', 'pr_assets'].includes(newMode)) {
     // Reset to multi-outlet structure for pr_ops, purchase_payment, and pr_assets
     form.outlets = [newOutlet()]

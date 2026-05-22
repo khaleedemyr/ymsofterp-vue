@@ -139,14 +139,12 @@ class LostBreakageReplacementService
         $rows = $this->pendingDetailRows(['search' => null], $user);
         $byId = collect($rows)->keyBy('detail_id');
         $lines = [];
-        $ownerIds = [];
 
         foreach ($detailIds as $did) {
             $row = $byId->get($did);
             if (!$row) {
                 throw new \InvalidArgumentException("Baris #{$did} tidak valid atau sudah terpenuhi penggantiannya.");
             }
-            $ownerIds[(int) $row->owner_outlet_id] = true;
             $lines[] = [
                 'lost_breakage_detail_id' => (int) $row->detail_id,
                 'header_number' => $row->header_number,
@@ -163,11 +161,8 @@ class LostBreakageReplacementService
                 'location_outlet_id' => (int) $row->outlet_id,
                 'location_outlet_name' => $row->location_outlet_name,
                 'warehouse_outlet_name' => $row->warehouse_outlet_name,
+                'asset' => $this->assetItemSnapshot((int) $row->item_id, $row->item_name, $row->sku, (int) $row->unit_id, $row->unit_name),
             ];
-        }
-
-        if (count($ownerIds) > 1 && $user && (int) ($user->id_outlet ?? 0) !== 1) {
-            throw new \InvalidArgumentException('Semua baris harus dari pemilik outlet yang sama.');
         }
 
         $categoryId = $this->resolveDefaultAssetPrCategoryId();
@@ -179,6 +174,61 @@ class LostBreakageReplacementService
             'description' => 'PR Asset untuk penggantian Lost & Breakage. Baris: ' . implode(', ', $detailIds),
             'default_category_id' => $categoryId,
             'lines' => $lines,
+        ];
+    }
+
+    private function assetItemSnapshot(int $itemId, string $name, ?string $sku, int $unitId, ?string $unitName): array
+    {
+        $row = DB::table('items as i')
+            ->join('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('units as su', 'i.small_unit_id', '=', 'su.id')
+            ->leftJoin('units as mu', 'i.medium_unit_id', '=', 'mu.id')
+            ->leftJoin('units as lu', 'i.large_unit_id', '=', 'lu.id')
+            ->where('i.id', $itemId)
+            ->select(
+                'i.id',
+                'i.name',
+                'i.sku',
+                'c.name as category_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'su.name as small_unit_name',
+                'mu.name as medium_unit_name',
+                'lu.name as large_unit_name'
+            )
+            ->first();
+
+        if ($row) {
+            $image = DB::table('item_images')->where('item_id', $itemId)->value('path');
+
+            return [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'sku' => $row->sku,
+                'category_name' => $row->category_name,
+                'small_unit_id' => $row->small_unit_id,
+                'medium_unit_id' => $row->medium_unit_id,
+                'large_unit_id' => $row->large_unit_id,
+                'small_unit_name' => $row->small_unit_name,
+                'medium_unit_name' => $row->medium_unit_name,
+                'large_unit_name' => $row->large_unit_name,
+                'image' => $image,
+            ];
+        }
+
+        return [
+            'id' => $itemId,
+            'name' => $name,
+            'sku' => $sku,
+            'category_name' => null,
+            'small_unit_id' => $unitId,
+            'medium_unit_id' => null,
+            'large_unit_id' => null,
+            'small_unit_name' => $unitName,
+            'medium_unit_name' => null,
+            'large_unit_name' => null,
+            'image' => null,
         ];
     }
 
