@@ -250,8 +250,27 @@
                     @error="onImageLoadError(msg)"
                   />
                 </button>
+                <div v-else-if="msg.media_url && isVideoLikeMessage(msg)" class="mb-1 max-w-full">
+                  <video
+                    :src="msg.media_url"
+                    controls
+                    playsinline
+                    preload="metadata"
+                    referrerpolicy="no-referrer"
+                    class="max-h-56 max-w-full rounded-lg bg-black/5"
+                    @error="onVideoLoadError(msg)"
+                  />
+                  <button
+                    v-if="mediaResolveFailed[msg.id]"
+                    type="button"
+                    class="mt-1 text-xs text-orange-700 underline"
+                    @click="resolveMessageMedia(msg)"
+                  >
+                    Gagal memutar — coba muat ulang
+                  </button>
+                </div>
                 <a
-                  v-else-if="msg.media_url"
+                  v-else-if="msg.media_url && isCachedMediaUrl(msg.media_url)"
                   :href="msg.media_url"
                   target="_blank"
                   rel="noopener"
@@ -276,7 +295,9 @@
                         ? 'fa-solid fa-spinner fa-spin text-slate-500'
                         : mediaResolveFailed[msg.id]
                           ? 'fa-solid fa-rotate-right text-orange-600'
-                          : 'fa-regular fa-image text-slate-500'
+                          : isVideoLikeMessage(msg)
+                            ? 'fa-solid fa-video text-slate-500'
+                            : 'fa-regular fa-image text-slate-500'
                     "
                   />
                   {{
@@ -967,12 +988,38 @@ function isEphemeralMessage(msg) {
   return msg?.message_type === 'ephemeral' || body.includes('sekali lihat')
 }
 
+function isCachedMediaUrl(url) {
+  if (!url) return false
+  const u = String(url).toLowerCase()
+  return u.includes('/storage/') || u.includes('/omni-inbound/')
+}
+
+function isVideoLikeMessage(msg) {
+  if (!msg?.media_url || imageLoadFailed.value[msg.id]) {
+    return false
+  }
+  if (msg.message_type === 'video') {
+    return true
+  }
+  if (msg.media_mime && String(msg.media_mime).startsWith('video/')) {
+    return true
+  }
+  const url = String(msg.media_url).toLowerCase()
+  if (/\.(mp4|webm|mov|m4v)(\?|$)/.test(url)) {
+    return true
+  }
+  return String(msg.body || '').trim() === '[Video]'
+}
+
 function needsMediaResolve(msg) {
   if (!msg?.id || isEphemeralMessage(msg)) {
     return false
   }
-  if (msg.media_url && !imageLoadFailed.value[msg.id]) {
+  if (msg.media_url && isCachedMediaUrl(msg.media_url) && !imageLoadFailed.value[msg.id]) {
     return false
+  }
+  if (msg.media_url && !isCachedMediaUrl(msg.media_url) && !imageLoadFailed.value[msg.id]) {
+    return isVideoLikeMessage(msg) || isImageLikeMessage(msg) || MEDIA_PLACEHOLDER_BODIES.includes(String(msg.body || '').trim())
   }
   const type = msg.message_type
   if (['image', 'video', 'document', 'audio', 'attachment', 'sticker'].includes(type)) {
@@ -996,9 +1043,12 @@ function isImageLikeMessage(msg) {
   if (/\.(jpe?g|png|gif|webp)(\?|$)/.test(url)) {
     return true
   }
-  const body = String(msg.body || '')
-  if (body === '[Gambar]' || body === '[Lampiran]') {
+  const body = String(msg.body || '').trim()
+  if (body === '[Gambar]') {
     return true
+  }
+  if (isVideoLikeMessage(msg)) {
+    return false
   }
   return false
 }
@@ -1012,7 +1062,7 @@ function displayMessageBody(msg) {
   if (needsMediaResolve(msg)) {
     return ''
   }
-  if (msg.media_url && isImageLikeMessage(msg) && MEDIA_PLACEHOLDER_BODIES.includes(body)) {
+  if (msg.media_url && (isImageLikeMessage(msg) || isVideoLikeMessage(msg)) && MEDIA_PLACEHOLDER_BODIES.includes(body)) {
     return ''
   }
   return body
@@ -1033,10 +1083,19 @@ function openImageLightbox(msg) {
 }
 
 function onImageLoadError(msg) {
-  if (msg?.id) {
-    imageLoadFailed.value = { ...imageLoadFailed.value, [msg.id]: true }
-    resolveMessageMedia(msg)
+  if (!msg?.id || mediaResolving.value[msg.id] || mediaResolveFailed.value[msg.id]) {
+    return
   }
+  imageLoadFailed.value = { ...imageLoadFailed.value, [msg.id]: true }
+  resolveMessageMedia(msg)
+}
+
+function onVideoLoadError(msg) {
+  if (!msg?.id || mediaResolving.value[msg.id] || mediaResolveFailed.value[msg.id]) {
+    return
+  }
+  imageLoadFailed.value = { ...imageLoadFailed.value, [msg.id]: true }
+  resolveMessageMedia(msg)
 }
 
 function applyResolvedMessage(msgId, patch) {

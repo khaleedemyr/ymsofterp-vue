@@ -41,6 +41,8 @@ final class OmniMetaMessagePayload
                     $mime = (string) ($first['mime_type'] ?? '');
                     if (str_starts_with($mime, 'image/')) {
                         $messageType = 'image';
+                    } elseif (str_starts_with($mime, 'video/')) {
+                        $messageType = 'video';
                     }
                 }
                 $mediaMime = isset($first['mime_type']) ? (string) $first['mime_type'] : null;
@@ -66,13 +68,13 @@ final class OmniMetaMessagePayload
                 'video' => '[Video]',
                 'audio' => '[Audio]',
                 'document' => '[Berkas]',
-                'ephemeral' => '[Foto sekali lihat — tidak dapat ditampilkan di inbox]',
+                'ephemeral' => '[Media sekali lihat — tidak dapat ditampilkan di inbox]',
                 default => '[Lampiran]',
             };
         }
 
         if ($body === null && self::isEphemeralOnly($payload)) {
-            $body = '[Foto sekali lihat — tidak dapat ditampilkan di inbox]';
+            $body = '[Media sekali lihat — tidak dapat ditampilkan di inbox]';
             $messageType = 'ephemeral';
         }
 
@@ -221,7 +223,10 @@ final class OmniMetaMessagePayload
                 }
             }
             if (is_array($data)) {
-                foreach (['url', 'preview_url', 'src', 'animated_gif_url', 'raw_image_url', 'original_url'] as $k) {
+                $keys = $key === 'video_data'
+                    ? ['url', 'video_url', 'playable_url', 'download_url', 'preview_url', 'src']
+                    : ['url', 'preview_url', 'src', 'animated_gif_url', 'raw_image_url', 'original_url'];
+                foreach ($keys as $k) {
                     if (! empty($data[$k]) && is_string($data[$k])) {
                         $urls[] = $data[$k];
                     }
@@ -229,7 +234,7 @@ final class OmniMetaMessagePayload
             }
         }
 
-        foreach (['file_url', 'url', 'image_url'] as $k) {
+        foreach (['file_url', 'url', 'image_url', 'video_url'] as $k) {
             if (! empty($item[$k]) && is_string($item[$k])) {
                 $urls[] = $item[$k];
             }
@@ -237,7 +242,7 @@ final class OmniMetaMessagePayload
 
         $payload = $item['payload'] ?? null;
         if (is_array($payload)) {
-            foreach (['url', 'image_url', 'file_url'] as $k) {
+            foreach (['url', 'image_url', 'file_url', 'video_url'] as $k) {
                 if (! empty($payload[$k]) && is_string($payload[$k])) {
                     $urls[] = $payload[$k];
                 }
@@ -245,6 +250,26 @@ final class OmniMetaMessagePayload
         }
 
         return $urls;
+    }
+
+    public static function isVideoLike(array $payload, string $messageType = 'text', ?string $mediaMime = null): bool
+    {
+        if ($messageType === 'video' || str_starts_with((string) $mediaMime, 'video/')) {
+            return true;
+        }
+
+        foreach (self::attachmentsList($payload) as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $type = (string) ($item['type'] ?? '');
+            $mime = (string) ($item['mime_type'] ?? '');
+            if ($type === 'video' || str_starts_with($mime, 'video/')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function mediaUrlForInbox(array $payload, string $messageType = 'text'): ?string

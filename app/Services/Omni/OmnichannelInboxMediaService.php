@@ -366,14 +366,14 @@ class OmnichannelInboxMediaService
                 ->acceptJson()
                 ->timeout(30)
                 ->get("https://{$host}/{$version}/{$attachmentId}", [
-                    'fields' => 'url,image_url,file_url,mime_type',
+                    'fields' => 'url,image_url,file_url,video_url,mime_type',
                 ]);
 
             if (! $response->successful()) {
                 continue;
             }
 
-            foreach (['url', 'image_url', 'file_url'] as $key) {
+            foreach (['url', 'video_url', 'file_url', 'image_url'] as $key) {
                 $url = $response->json($key);
                 if (is_string($url) && $url !== '') {
                     return $url;

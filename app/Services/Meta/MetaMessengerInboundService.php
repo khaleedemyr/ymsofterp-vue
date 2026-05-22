@@ -329,7 +329,7 @@ class MetaMessengerInboundService
             'audio' => '[Audio]',
             'file' => (string) ($first['payload']['url'] ?? '[Berkas]'),
             'location' => '[Lokasi]',
-            'ephemeral' => '[Foto sekali lihat — tidak dapat ditampilkan di inbox]',
+            'ephemeral' => '[Media sekali lihat — tidak dapat ditampilkan di inbox]',
             'fallback' => (string) ($first['title'] ?? '[Lampiran]'),
             default => '['.$type.']',
         };

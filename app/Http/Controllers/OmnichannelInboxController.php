@@ -900,12 +900,18 @@ class OmnichannelInboxController extends Controller
 
         $messageType = (string) $message->message_type;
         $mediaMime = (string) ($payload['media_mime'] ?? '');
-        if ($mediaUrl !== null && ($messageType === 'attachment' || $messageType === 'text')
+        if (OmniMetaMessagePayload::isVideoLike($payload, $messageType, $mediaMime)) {
+            $messageType = 'video';
+        } elseif ($mediaUrl !== null && ($messageType === 'attachment' || $messageType === 'text')
             && ($mediaMime === '' || str_starts_with($mediaMime, 'image/'))) {
             $looksLikeImage = $mediaMime !== '' && str_starts_with($mediaMime, 'image/')
                 || preg_match('/\.(jpe?g|png|gif|webp)(\?|$)/i', $mediaUrl) === 1;
             if ($looksLikeImage) {
                 $messageType = 'image';
+            }
+        } elseif ($mediaUrl !== null && ($messageType === 'attachment' || $messageType === 'text')) {
+            if (preg_match('/\.(mp4|webm|mov|m4v)(\?|$)/i', $mediaUrl) === 1) {
+                $messageType = 'video';
             }
         }
 
