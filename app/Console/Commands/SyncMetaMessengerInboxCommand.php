@@ -33,6 +33,12 @@ class SyncMetaMessengerInboxCommand extends Command
         }
 
         foreach ($result['accounts'] as $account) {
+            if (! empty($account['skipped_invalid_token'])) {
+                $this->warn(($account['page_id'] ?? '?').': dilewati (bukan Page token — cek META_PAGE_TOKENS)');
+
+                continue;
+            }
+
             if (isset($account['error'])) {
                 $this->error(($account['page_id'] ?? '?').': '.$account['error']);
 

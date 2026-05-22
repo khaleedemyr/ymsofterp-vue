@@ -19,7 +19,13 @@ META_PAGE_ID=1587793758107643
 META_PAGE_ACCESS_TOKEN=EAA...
 ```
 
-**Jangan** masukkan token Instagram Login (`IGQ...`) atau IG professional id ke `META_PAGE_TOKENS` — itu field terpisah (`META_INSTAGRAM_LOGIN_TOKENS`).
+**Jangan** masukkan token Instagram Login (`IGQ...`) atau IG professional id (mis. `17841400914429846`) ke `META_PAGE_TOKENS` — itu field terpisah (`META_INSTAGRAM_LOGIN_TOKENS`). Entri salah akan dilewati saat sync.
+
+**`--recent=60`** hanya impor DM **60 menit terakhir**. Untuk riwayat lama, jalankan sekali tanpa `--recent`:
+
+```bash
+php artisan meta:sync-messenger-inbox -v
+```
 
 Permission minimal: `pages_messaging`, `pages_manage_metadata`, `pages_read_engagement`.
 

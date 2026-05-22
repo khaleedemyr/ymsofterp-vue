@@ -112,23 +112,36 @@ class MetaMessengerInboxSyncService
                 'fields' => 'id,name',
             ]);
 
-        $pageName = '';
-        if ($me->successful()) {
-            $resolvedId = (string) ($me->json('id') ?? '');
-            if ($resolvedId !== '') {
-                $pageId = $resolvedId;
-            }
-            $pageName = (string) ($me->json('name') ?? '');
+        if (! $me->successful()) {
+            Log::warning('Meta Messenger sync skipped: bukan Page token atau permission kurang', [
+                'configured_key' => $pageId,
+                'status' => $me->status(),
+                'body' => mb_substr($me->body(), 0, 400),
+            ]);
+
+            return [
+                'page_id' => $pageId,
+                'imported' => 0,
+                'conversations' => 0,
+                'messages_checked' => 0,
+                'skipped_existing' => 0,
+                'skipped_outbound' => 0,
+                'skipped_no_sender' => 0,
+                'api_errors' => 0,
+                'skipped_invalid_token' => true,
+                'error' => 'Bukan Page token — pindahkan ke META_INSTAGRAM_LOGIN_TOKENS atau hapus dari META_PAGE_TOKENS',
+            ];
         }
+
+        $pageName = '';
+        $resolvedId = (string) ($me->json('id') ?? '');
+        if ($resolvedId !== '') {
+            $pageId = $resolvedId;
+        }
+        $pageName = (string) ($me->json('name') ?? '');
 
         $conversationRows = $this->fetchAllConversations($accessToken, $version, $pageId, $apiErrors);
         $conversationCount = count($conversationRows);
-
-        if ($conversationCount === 0 && ! $me->successful()) {
-            throw new \RuntimeException(
-                'Token Page tidak valid atau tidak punya akses conversations: '.$me->body()
-            );
-        }
 
         foreach ($conversationRows as $row) {
             $conversationId = (string) ($row['id'] ?? '');
