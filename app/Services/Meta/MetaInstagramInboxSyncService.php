@@ -78,6 +78,7 @@ class MetaInstagramInboxSyncService
         $messagesChecked = 0;
         $skippedExisting = 0;
         $skippedOutbound = 0;
+        $skippedNoSender = 0;
         $apiErrors = 0;
         $conversationCount = 0;
 
@@ -115,6 +116,7 @@ class MetaInstagramInboxSyncService
                 $messagesChecked,
                 $skippedExisting,
                 $skippedOutbound,
+                $skippedNoSender,
                 $apiErrors
             );
         }
@@ -127,6 +129,7 @@ class MetaInstagramInboxSyncService
             'messages_checked' => $messagesChecked,
             'skipped_existing' => $skippedExisting,
             'skipped_outbound' => $skippedOutbound,
+            'skipped_no_sender' => $skippedNoSender,
             'api_errors' => $apiErrors,
         ];
 
@@ -147,6 +150,7 @@ class MetaInstagramInboxSyncService
         int &$messagesChecked,
         int &$skippedExisting,
         int &$skippedOutbound,
+        int &$skippedNoSender,
         int &$apiErrors
     ): void {
         $url = "https://graph.instagram.com/{$version}/{$metaConversationId}/messages";
@@ -164,16 +168,45 @@ class MetaInstagramInboxSyncService
 
             if (! $response->successful()) {
                 $apiErrors++;
-                Log::debug('Instagram messages page failed', [
+                Log::warning('Instagram messages edge failed, trying legacy fetch', [
                     'conversation' => $metaConversationId,
                     'status' => $response->status(),
-                    'body' => mb_substr($response->body(), 0, 300),
+                    'body' => mb_substr($response->body(), 0, 400),
                 ]);
+                $this->syncConversationMessagesLegacy(
+                    $accessToken,
+                    $version,
+                    $igProfessionalId,
+                    $metaConversationId,
+                    $imported,
+                    $messagesChecked,
+                    $skippedExisting,
+                    $skippedOutbound,
+                    $skippedNoSender,
+                    $apiErrors
+                );
 
-                break;
+                return;
             }
 
             $rows = $this->orderMessagesNewestFirst($response->json('data') ?? []);
+
+            if ($rows === [] && $pages === 0) {
+                $this->syncConversationMessagesLegacy(
+                    $accessToken,
+                    $version,
+                    $igProfessionalId,
+                    $metaConversationId,
+                    $imported,
+                    $messagesChecked,
+                    $skippedExisting,
+                    $skippedOutbound,
+                    $skippedNoSender,
+                    $apiErrors
+                );
+
+                return;
+            }
 
             foreach ($rows as $payload) {
                 if (! is_array($payload)) {
@@ -199,13 +232,22 @@ class MetaInstagramInboxSyncService
 
                 $consecutiveExisting = 0;
 
+                $payload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+
                 if ($this->isOutboundFromBusiness($payload, $igProfessionalId)) {
                     $skippedOutbound++;
 
                     continue;
                 }
 
-                if ($this->storeInboundFromApi($igProfessionalId, (string) ($payload['from']['id'] ?? ''), $messageId, $payload)) {
+                $senderId = (string) ($payload['from']['id'] ?? '');
+                if ($senderId === '') {
+                    $skippedNoSender++;
+
+                    continue;
+                }
+
+                if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload)) {
                     $imported++;
                 }
             }
@@ -219,6 +261,113 @@ class MetaInstagramInboxSyncService
             $query = [];
             $pages++;
         }
+    }
+
+    /**
+     * Cadangan: GET conversation?fields=messages lalu fetch tiap message id (lebih lambat, lebih kompatibel).
+     */
+    private function syncConversationMessagesLegacy(
+        string $accessToken,
+        string $version,
+        string $igProfessionalId,
+        string $metaConversationId,
+        int &$imported,
+        int &$messagesChecked,
+        int &$skippedExisting,
+        int &$skippedOutbound,
+        int &$skippedNoSender,
+        int &$apiErrors
+    ): void {
+        $detail = Http::withToken($accessToken)
+            ->acceptJson()
+            ->get("https://graph.instagram.com/{$version}/{$metaConversationId}", [
+                'fields' => 'messages',
+            ]);
+
+        if (! $detail->successful()) {
+            $apiErrors++;
+
+            return;
+        }
+
+        $messageRows = $this->orderMessagesNewestFirst($detail->json('messages.data') ?? []);
+        $consecutiveExisting = 0;
+
+        foreach ($messageRows as $msgRow) {
+            if (! is_array($msgRow)) {
+                continue;
+            }
+
+            $messageId = (string) ($msgRow['id'] ?? '');
+            if ($messageId === '') {
+                continue;
+            }
+
+            $messagesChecked++;
+
+            if (OmniMessage::query()->where('meta_message_id', $messageId)->exists()) {
+                $skippedExisting++;
+                $consecutiveExisting++;
+                if ($consecutiveExisting >= self::STOP_AFTER_CONSECUTIVE_EXISTING) {
+                    return;
+                }
+
+                continue;
+            }
+
+            $consecutiveExisting = 0;
+
+            $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
+            if ($payload === null) {
+                $apiErrors++;
+
+                continue;
+            }
+
+            if ($this->isOutboundFromBusiness($payload, $igProfessionalId)) {
+                $skippedOutbound++;
+
+                continue;
+            }
+
+            $senderId = (string) ($payload['from']['id'] ?? '');
+            if ($senderId === '') {
+                $skippedNoSender++;
+
+                continue;
+            }
+
+            if ($this->storeInboundFromApi($igProfessionalId, $senderId, $messageId, $payload)) {
+                $imported++;
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $partial
+     * @return array<string, mixed>|null
+     */
+    private function resolveMessagePayload(string $accessToken, string $version, array $partial): ?array
+    {
+        $fromId = (string) ($partial['from']['id'] ?? '');
+        $hasBody = array_key_exists('message', $partial);
+
+        if ($fromId !== '' && $hasBody) {
+            return $partial;
+        }
+
+        $messageId = (string) ($partial['id'] ?? '');
+        if ($messageId === '') {
+            return null;
+        }
+
+        $response = Http::withToken($accessToken)
+            ->acceptJson()
+            ->get("https://graph.instagram.com/{$version}/{$messageId}", [
+                'fields' => 'id,created_time,from,to,message',
+            ]);
+
+        return $response->successful() ? $response->json() : null;
     }
 
     /**
@@ -310,7 +459,7 @@ class MetaInstagramInboxSyncService
     {
         $fromId = (string) ($payload['from']['id'] ?? '');
         if ($fromId === '') {
-            return true;
+            return false;
         }
 
         if ($fromId === $igProfessionalId) {

@@ -114,8 +114,12 @@ Kalau cron tetap 0 untuk DM baru: pastikan scheduler **tanpa** `runInBackground`
 
 ```bash
 php artisan schedule:clear-cache
+php artisan meta:debug-instagram-inbox
 php artisan meta:sync-instagram-inbox -v
 ```
+
+Output sync sekarang **selalu** menampilkan baris per akun, mis.:
+`imported=0 skip_db=120 skip_out=5 api_err=0` — kirim screenshot baris ini jika masih bermasalah.
 
 Lihat `skipped_db` vs `imported` — kalau DM baru tetap 0, kirim DM dari **akun pribadi** (bukan akun bisnis IG yang sama).
 
