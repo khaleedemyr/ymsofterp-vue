@@ -21,7 +21,9 @@ const showLang = ref(false);
 const { locale, t } = useI18n();
 let notificationPollInterval = null;
 
-const allowedMenus = usePage().props.allowedMenus || [];
+const page = usePage();
+// Harus computed agar ikut refresh setelah login / perubahan role (Inertia layout persist)
+const allowedMenus = computed(() => page.props.allowedMenus ?? []);
 
 const menuGroups = [
     {
@@ -535,7 +537,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.guest_comment_ocr'), icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
             { name: () => t('sidebar.menus.customer_voice_command_center'), icon: 'fa-solid fa-headset', route: '/customer-voice-command-center', code: 'customer_voice_command_center' },
             { name: () => t('sidebar.menus.omnichannel_inbox'), icon: 'fa-solid fa-inbox', route: '/crm/omnichannel-inbox', code: 'omnichannel_inbox' },
-            { name: () => t('sidebar.menus.wa_broadcast'), icon: 'fa-brands fa-whatsapp', route: '/crm/wa-broadcast', code: 'wa_broadcast_view' },
+            { name: () => t('sidebar.menus.wa_broadcast'), icon: 'fa-brands fa-whatsapp', route: '/crm/wa-broadcast', code: 'wa_broadcast' },
             { name: () => t('sidebar.menus.instagram_comments'), icon: 'fa-brands fa-instagram', route: '/crm/instagram-comments', code: 'instagram_comments' },
             { name: () => t('sidebar.menus.omnichannel_teams'), icon: 'fa-solid fa-people-group', route: '/crm/omnichannel-teams', code: 'omnichannel_teams' },
             { name: () => t('sidebar.menus.omnichannel_flows'), icon: 'fa-solid fa-diagram-project', route: '/crm/omnichannel-flows', code: 'omnichannel_flows' },
@@ -574,7 +576,7 @@ const menuGroups = [
 const filteredMenuGroups = computed(() =>
   menuGroups.map(group => ({
     ...group,
-    menus: group.menus.filter(menu => !menu.code || allowedMenus.includes(menu.code))
+    menus: group.menus.filter(menu => !menu.code || allowedMenus.value.includes(menu.code))
   })).filter(group => group.menus.length > 0)
 );
 
@@ -606,7 +608,6 @@ function toggleFullscreen() {
     }
 }
 
-const page = usePage();
 const user = computed(() => page.props.auth?.user || { nama_lengkap: '', avatar: null });
 const isExternalUser = computed(() => Boolean(user.value?.is_external));
 const logoutRouteName = computed(() => (isExternalUser.value ? 'external.logout' : 'logout'));

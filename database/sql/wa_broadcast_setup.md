@@ -13,7 +13,16 @@ php artisan migrate
 # atau database/sql/create_wa_broadcast_tables.sql
 ```
 
-Menu: `database/sql/insert_wa_broadcast_menu.sql`
+Menu: `database/sql/insert_wa_broadcast_menu.sql` atau `php artisan migrate` (migration `2026_05_22_120001_insert_wa_broadcast_menu.php`)
+
+**Sidebar tidak muncul?**
+
+1. Di server: `php database/scripts/diagnose_wa_broadcast_sidebar.php <USER_ID>` (ganti USER_ID)
+2. Perbaiki otomatis: tambahkan `--fix` atau jalankan SQL `database/sql/fix_wa_broadcast_sidebar.sql`
+3. Logout → login, hard refresh browser
+4. Pastikan `npm run build` sudah di-deploy (AppLayout harus ada `wa_broadcast`)
+
+**Akar bug yang pernah terjadi:** permission `view` salah pakai `code='wa_broadcast'` (harus `wa_broadcast_view`), dan sync role gagal karena `erp_role_permission` tidak punya kolom `created_at`.
 
 ## Env
 
