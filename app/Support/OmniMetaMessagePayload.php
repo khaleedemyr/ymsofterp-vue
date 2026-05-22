@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Models\OmniMessage;
+
 /**
  * Normalisasi payload pesan Meta (Instagram / Messenger) untuk simpan & tampil di inbox.
  */
@@ -27,10 +29,11 @@ final class OmniMetaMessagePayload
             if ($first !== null) {
                 $rawType = (string) ($first['type'] ?? 'attachment');
                 $messageType = match ($rawType) {
-                    'image', 'animated_image_share' => 'image',
+                    'image', 'animated_image_share', 'ig_reel', 'reel' => 'image',
                     'video' => 'video',
                     'audio' => 'audio',
                     'file' => 'document',
+                    'ephemeral' => 'ephemeral',
                     'attachment' => 'attachment',
                     default => $rawType !== '' ? $rawType : 'attachment',
                 };
@@ -63,8 +66,14 @@ final class OmniMetaMessagePayload
                 'video' => '[Video]',
                 'audio' => '[Audio]',
                 'document' => '[Berkas]',
+                'ephemeral' => '[Foto sekali lihat — tidak dapat ditampilkan di inbox]',
                 default => '[Lampiran]',
             };
+        }
+
+        if ($body === null && self::isEphemeralOnly($payload)) {
+            $body = '[Foto sekali lihat — tidak dapat ditampilkan di inbox]';
+            $messageType = 'ephemeral';
         }
 
         return [
@@ -76,8 +85,95 @@ final class OmniMetaMessagePayload
         ];
     }
 
+    /**
+     * Pesan view-once dari kamera IG: webhook type=ephemeral tanpa URL (tidak bisa di-cache).
+     */
+    public static function isEphemeralOnly(array $payload): bool
+    {
+        $attachments = self::attachmentsList($payload);
+        if ($attachments === []) {
+            return false;
+        }
+
+        $hasEphemeral = false;
+        foreach ($attachments as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $type = (string) ($item['type'] ?? '');
+            if ($type === 'ephemeral') {
+                $hasEphemeral = true;
+                if (self::attachmentUrlCandidates($item) !== []) {
+                    return false;
+                }
+            }
+        }
+
+        return $hasEphemeral;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function extractAttachmentIds(array $payload): array
+    {
+        $ids = [];
+        foreach (self::attachmentsList($payload) as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $payloadObj = $item['payload'] ?? null;
+            if (is_array($payloadObj) && ! empty($payloadObj['attachment_id'])) {
+                $id = (string) $payloadObj['attachment_id'];
+                if ($id !== '' && ! in_array($id, $ids, true)) {
+                    $ids[] = $id;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function messageIdCandidates(OmniMessage $message): array
+    {
+        $payload = is_array($message->payload) ? $message->payload : [];
+        $candidates = [
+            (string) ($message->meta_message_id ?? ''),
+            (string) ($payload['id'] ?? ''),
+            (string) ($payload['mid'] ?? ''),
+            (string) ($payload['message_id'] ?? ''),
+        ];
+
+        $out = [];
+        foreach ($candidates as $c) {
+            $c = trim($c);
+            if ($c !== '' && ! in_array($c, $out, true)) {
+                $out[] = $c;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public static function attachmentsList(array $payload): array
+    {
+        $attachments = $payload['attachments']['data'] ?? $payload['attachments'] ?? [];
+
+        return is_array($attachments) ? $attachments : [];
+    }
+
     public static function extractAttachmentUrl(array $payload): ?string
     {
+        if (self::isEphemeralOnly($payload)) {
+            return null;
+        }
+
         if (isset($payload['local_media_url']) && is_string($payload['local_media_url']) && $payload['local_media_url'] !== '') {
             return $payload['local_media_url'];
         }
@@ -93,12 +189,7 @@ final class OmniMetaMessagePayload
             }
         }
 
-        $attachments = $payload['attachments']['data'] ?? $payload['attachments'] ?? [];
-        if (! is_array($attachments)) {
-            return null;
-        }
-
-        foreach ($attachments as $item) {
+        foreach (self::attachmentsList($payload) as $item) {
             if (! is_array($item)) {
                 continue;
             }
@@ -130,7 +221,7 @@ final class OmniMetaMessagePayload
                 }
             }
             if (is_array($data)) {
-                foreach (['url', 'preview_url', 'src'] as $k) {
+                foreach (['url', 'preview_url', 'src', 'animated_gif_url', 'raw_image_url', 'original_url'] as $k) {
                     if (! empty($data[$k]) && is_string($data[$k])) {
                         $urls[] = $data[$k];
                     }
@@ -138,15 +229,19 @@ final class OmniMetaMessagePayload
             }
         }
 
-        foreach (['file_url', 'url'] as $k) {
+        foreach (['file_url', 'url', 'image_url'] as $k) {
             if (! empty($item[$k]) && is_string($item[$k])) {
                 $urls[] = $item[$k];
             }
         }
 
         $payload = $item['payload'] ?? null;
-        if (is_array($payload) && ! empty($payload['url']) && is_string($payload['url'])) {
-            $urls[] = $payload['url'];
+        if (is_array($payload)) {
+            foreach (['url', 'image_url', 'file_url'] as $k) {
+                if (! empty($payload[$k]) && is_string($payload[$k])) {
+                    $urls[] = $payload[$k];
+                }
+            }
         }
 
         return $urls;

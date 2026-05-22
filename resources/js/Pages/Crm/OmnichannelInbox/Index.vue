@@ -962,8 +962,13 @@ const mediaResolveFailed = ref({})
 
 const MEDIA_PLACEHOLDER_BODIES = ['[Gambar]', '[Lampiran]', '[Video]', '[Audio]', '[Berkas]', '[Dokumen]']
 
+function isEphemeralMessage(msg) {
+  const body = String(msg?.body || '')
+  return msg?.message_type === 'ephemeral' || body.includes('sekali lihat')
+}
+
 function needsMediaResolve(msg) {
-  if (!msg?.id) {
+  if (!msg?.id || isEphemeralMessage(msg)) {
     return false
   }
   if (msg.media_url && !imageLoadFailed.value[msg.id]) {
@@ -1001,6 +1006,9 @@ function isImageLikeMessage(msg) {
 function displayMessageBody(msg) {
   const body = (msg.body || '').trim()
   if (!body) return ''
+  if (isEphemeralMessage(msg)) {
+    return body
+  }
   if (needsMediaResolve(msg)) {
     return ''
   }

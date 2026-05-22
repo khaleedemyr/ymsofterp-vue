@@ -9,6 +9,7 @@ use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
 use App\Support\OmniMetaMessageId;
+use App\Support\OmniMetaMessagePayload;
 use Carbon\Carbon;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -170,6 +171,18 @@ class MetaMessengerInboundService
 
         $body = $this->extractMessageBody($message);
         $messageType = $this->detectMessageType($message);
+        $normalized = OmniMetaMessagePayload::normalize($message);
+        if ($normalized['body'] !== null) {
+            $body = $normalized['body'];
+        }
+        if ($normalized['message_type'] !== 'text') {
+            $messageType = $normalized['message_type'];
+        }
+        $message = array_merge($message, array_filter([
+            'attachment_url' => $normalized['attachment_url'],
+            'media_mime' => $normalized['media_mime'],
+            'media_filename' => $normalized['media_filename'],
+        ], fn ($v) => $v !== null));
         $tsMs = (int) ($event['timestamp'] ?? 0);
         $sentAt = $tsMs > 0
             ? Carbon::createFromTimestamp((int) floor($tsMs / 1000), 'UTC')->timezone(config('app.timezone'))
@@ -257,7 +270,7 @@ class MetaMessengerInboundService
         if ($conversationId && $inboundMessageId) {
             $conversation = OmniConversation::query()->find($conversationId);
             $inbound = OmniMessage::query()->find($inboundMessageId);
-            if ($conversation && $inbound) {
+            if ($conversation && $inbound && ! OmniMetaMessagePayload::isEphemeralOnly($message)) {
                 app(OmnichannelInboxMediaService::class)->ensureCached($inbound, $conversation);
             }
 
@@ -316,6 +329,7 @@ class MetaMessengerInboundService
             'audio' => '[Audio]',
             'file' => (string) ($first['payload']['url'] ?? '[Berkas]'),
             'location' => '[Lokasi]',
+            'ephemeral' => '[Foto sekali lihat — tidak dapat ditampilkan di inbox]',
             'fallback' => (string) ($first['title'] ?? '[Lampiran]'),
             default => '['.$type.']',
         };

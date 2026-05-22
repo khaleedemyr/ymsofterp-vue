@@ -21,6 +21,9 @@ class OmnichannelInboxMediaService
     public function needsResolve(OmniMessage $message): bool
     {
         $payload = is_array($message->payload) ? $message->payload : [];
+        if (OmniMetaMessagePayload::isEphemeralOnly($payload) || (string) $message->message_type === 'ephemeral') {
+            return false;
+        }
         if (! empty($payload['local_media_path'])) {
             return false;
         }
@@ -94,9 +97,18 @@ class OmnichannelInboxMediaService
         $accessToken = $this->resolveChannelAccessToken($conversation);
 
         $remoteUrl = OmniMetaMessagePayload::extractAttachmentUrl($payload);
-        if ($remoteUrl !== null && $this->isMetaCdnUrl($remoteUrl)) {
+        if ($remoteUrl !== null && str_starts_with($remoteUrl, 'http')) {
             if ($this->cacheRemoteUrl($message, $remoteUrl, null, $accessToken)) {
                 return;
+            }
+        }
+
+        if ($accessToken !== null && $accessToken !== '') {
+            foreach (OmniMetaMessagePayload::extractAttachmentIds($payload) as $attachmentId) {
+                $fetched = $this->fetchAttachmentUrlById($attachmentId, $accessToken, $channel);
+                if ($fetched !== null && $this->cacheRemoteUrl($message, $fetched, null, $accessToken)) {
+                    return;
+                }
             }
         }
 
@@ -216,8 +228,8 @@ class OmnichannelInboxMediaService
      */
     private function fetchMetaMessageAttachments(OmniMessage $message, array $payload, string $token, string $platform): void
     {
-        $messageId = (string) ($message->meta_message_id ?? $payload['id'] ?? '');
-        if ($messageId === '') {
+        $messageIds = OmniMetaMessagePayload::messageIdCandidates($message);
+        if ($messageIds === []) {
             return;
         }
 
@@ -225,34 +237,42 @@ class OmnichannelInboxMediaService
             ? config('services.meta.instagram_graph_version', 'v25.0')
             : config('services.meta.graph_api_version', 'v25.0');
 
-        $host = $platform === 'instagram' ? 'graph.instagram.com' : 'graph.facebook.com';
-
-        $attResponse = Http::withToken($token)
-            ->acceptJson()
-            ->timeout(30)
-            ->get("https://{$host}/{$version}/{$messageId}/attachments", [
-                'fields' => 'type,mime_type,image_data,file_url,video_data,name,payload',
-            ]);
+        $hosts = $platform === 'instagram'
+            ? ['graph.instagram.com', 'graph.facebook.com']
+            : ['graph.facebook.com'];
 
         $merged = $payload;
-        if ($attResponse->successful()) {
-            $rows = $attResponse->json('data') ?? [];
-            if (is_array($rows) && $rows !== []) {
-                $merged['attachments'] = ['data' => $rows];
-            }
-        }
+        $fields = 'type,mime_type,image_data,file_url,video_data,name,payload,url,image_url';
 
-        if (empty($merged['attachments']['data'] ?? [])) {
-            $nested = Http::withToken($token)
-                ->acceptJson()
-                ->timeout(30)
-                ->get("https://{$host}/{$version}/{$messageId}", [
-                    'fields' => 'attachments{type,mime_type,image_data,file_url,video_data,name,payload}',
-                ]);
-            if ($nested->successful()) {
-                $extra = $nested->json('attachments');
-                if (is_array($extra)) {
-                    $merged['attachments'] = $extra;
+        foreach ($messageIds as $messageId) {
+            foreach ($hosts as $host) {
+                $attResponse = Http::withToken($token)
+                    ->acceptJson()
+                    ->timeout(30)
+                    ->get("https://{$host}/{$version}/{$messageId}/attachments", [
+                        'fields' => $fields,
+                    ]);
+
+                if ($attResponse->successful()) {
+                    $rows = $attResponse->json('data') ?? [];
+                    if (is_array($rows) && $rows !== []) {
+                        $merged['attachments'] = ['data' => $rows];
+                        break 2;
+                    }
+                }
+
+                $nested = Http::withToken($token)
+                    ->acceptJson()
+                    ->timeout(30)
+                    ->get("https://{$host}/{$version}/{$messageId}", [
+                        'fields' => 'id,attachments{type,mime_type,image_data,file_url,video_data,name,payload,url,image_url}',
+                    ]);
+                if ($nested->successful()) {
+                    $extra = $nested->json('attachments');
+                    if (is_array($extra) && ! empty($extra['data'] ?? $extra)) {
+                        $merged['attachments'] = $extra;
+                        break 2;
+                    }
                 }
             }
         }
@@ -326,6 +346,42 @@ class OmnichannelInboxMediaService
 
             return false;
         }
+    }
+
+    /**
+     * Ambil URL file dari attachment_id (webhook kamera IG kadang tanpa payload.url).
+     */
+    private function fetchAttachmentUrlById(string $attachmentId, string $token, string $channel): ?string
+    {
+        $version = $channel === 'instagram'
+            ? config('services.meta.instagram_graph_version', 'v25.0')
+            : config('services.meta.graph_api_version', 'v25.0');
+
+        $hosts = $channel === 'instagram'
+            ? ['graph.instagram.com', 'graph.facebook.com']
+            : ['graph.facebook.com'];
+
+        foreach ($hosts as $host) {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->timeout(30)
+                ->get("https://{$host}/{$version}/{$attachmentId}", [
+                    'fields' => 'url,image_url,file_url,mime_type',
+                ]);
+
+            if (! $response->successful()) {
+                continue;
+            }
+
+            foreach (['url', 'image_url', 'file_url'] as $key) {
+                $url = $response->json($key);
+                if (is_string($url) && $url !== '') {
+                    return $url;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
