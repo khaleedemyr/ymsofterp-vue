@@ -174,28 +174,30 @@
           </div>
 
           <div class="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-xl bg-[#128C7E] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0d6b5c] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="previewLoading || !hasRecipientSource"
+              @click="previewRecipients"
+            >
+              <i class="fa-solid fa-database" :class="{ 'fa-spin': previewLoading }" />
+              {{ previewLoading ? 'Menghitung dari database…' : 'Hitung penerima' }}
+            </button>
             <div
               class="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm"
               :class="previewBadgeClass"
             >
-              <i class="fa-solid fa-users" :class="{ 'fa-spin': previewLoading }" />
-              <template v-if="previewLoading">Menghitung dari database…</template>
-              <template v-else-if="previewError">
-                Gagal hitung — klik Hitung ulang
+              <i class="fa-solid fa-users" />
+              <template v-if="previewError">
+                Gagal hitung
               </template>
               <template v-else-if="previewCount !== null">
                 <strong>{{ previewCount.toLocaleString('id-ID') }}</strong> nomor unik sesuai filter
               </template>
-              <template v-else>Menghitung…</template>
+              <template v-else>
+                Belum dihitung — atur filter lalu klik tombol di kiri
+              </template>
             </div>
-            <button
-              type="button"
-              class="text-sm font-medium text-slate-600 underline hover:text-slate-900"
-              :disabled="previewLoading"
-              @click="previewRecipients(false)"
-            >
-              Hitung ulang
-            </button>
           </div>
           <p v-if="previewError" class="mt-2 text-xs text-red-700">{{ previewError }}</p>
           <p v-else-if="!hasRecipientSource" class="mt-2 text-xs text-amber-700">
@@ -452,7 +454,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -515,7 +517,7 @@ const showTemplateForm = ref(false)
 const creatingTemplate = ref(false)
 const templateSubmitMessage = ref('')
 
-let previewDebounceTimer = null
+let previewAbortController = null
 
 const hasRecipientSource = computed(() => {
   const hasManual = form.manualMemberIds.split(/[,\s]+/).some((s) => parseInt(s.trim(), 10) > 0)
@@ -524,7 +526,8 @@ const hasRecipientSource = computed(() => {
 
 const canSendNow = computed(() => {
   if (!hasRecipientSource.value) return false
-  if (previewCount.value === null) return true
+  if (previewLoading.value) return false
+  if (previewCount.value === null) return false
   return previewCount.value > 0
 })
 
@@ -626,37 +629,52 @@ function buildFilterDefinition() {
   return filters
 }
 
-async function previewRecipients(isAuto = true) {
+async function previewRecipients() {
   if (!hasRecipientSource.value) {
     previewCount.value = 0
     previewSample.value = []
-    previewError.value = ''
+    previewError.value = 'Centang minimal satu sumber penerima atau isi ID member manual.'
     return
   }
 
+  if (previewAbortController) {
+    previewAbortController.abort()
+  }
+  previewAbortController = new AbortController()
+
   previewLoading.value = true
   previewError.value = ''
-  if (!isAuto) formError.value = ''
+  formError.value = ''
   try {
-    const { data } = await axios.post('/crm/wa-broadcast/preview-recipients', {
-      filter_definition: buildFilterDefinition(),
-    })
+    const { data } = await axios.post(
+      '/crm/wa-broadcast/preview-recipients',
+      { filter_definition: buildFilterDefinition() },
+      { signal: previewAbortController.signal, timeout: 90000 }
+    )
     previewCount.value = data.count ?? 0
     previewSample.value = data.sample ?? []
   } catch (e) {
+    if (e.code === 'ERR_CANCELED' || e.name === 'CanceledError') {
+      return
+    }
     const msg = e.response?.data?.message || e.message || 'Gagal menghitung penerima'
     previewError.value = msg
     previewCount.value = null
     previewSample.value = []
-    if (!isAuto) formError.value = msg
+    formError.value = msg
   } finally {
     previewLoading.value = false
   }
 }
 
-function schedulePreview() {
-  clearTimeout(previewDebounceTimer)
-  previewDebounceTimer = setTimeout(() => previewRecipients(true), 600)
+/** Reset hasil hitung saat filter berubah (tanpa memanggil API). */
+function resetPreviewOnFilterChange() {
+  if (previewLoading.value) {
+    return
+  }
+  previewCount.value = null
+  previewSample.value = []
+  previewError.value = ''
 }
 
 watch(
@@ -674,12 +692,8 @@ watch(
     form.omni.search,
     form.manualMemberIds,
   ],
-  schedulePreview
+  resetPreviewOnFilterChange
 )
-
-onMounted(() => {
-  schedulePreview()
-})
 
 async function loadTemplates() {
   templatesLoading.value = true
@@ -730,8 +744,9 @@ async function createCampaign(startNow) {
   saving.value = true
   formError.value = ''
   try {
-    if (previewCount.value === null) {
-      await previewRecipients(true)
+    if (startNow && previewCount.value === null) {
+      formError.value = 'Klik "Hitung penerima" dulu sebelum kirim sekarang.'
+      return
     }
     if (startNow && previewCount.value === 0) {
       formError.value = 'Tidak ada penerima sesuai filter.'

@@ -20,33 +20,25 @@ class WaBroadcastRecipientResolver
      */
     public function resolve(array $filters, int $previewLimit = 5000): Collection
     {
-        $sources = $filters['sources'] ?? ['member', 'omni_contact'];
-        if (! is_array($sources)) {
-            $sources = ['member', 'omni_contact'];
-        }
-
+        $phones = [];
         $rows = collect();
-        $manualIds = $filters['manual_member_ids'] ?? [];
-        if (is_array($manualIds) && $manualIds !== []) {
-            $rows = $rows->merge($this->fromManualMembers($manualIds));
-        }
 
-        $manualPhones = $filters['manual_phones'] ?? [];
-        if (is_array($manualPhones) && $manualPhones !== []) {
-            $rows = $rows->merge($this->fromManualPhones($manualPhones));
-        }
+        foreach ($this->iterateRecipientRows($filters) as $row) {
+            $phone = (string) ($row['phone_normalized'] ?? '');
+            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
+                continue;
+            }
 
-        if (in_array('member', $sources, true)) {
-            $rows = $rows->merge($this->fromMembers($filters['member'] ?? []));
-        }
+            if (($filters['dedupe'] ?? true) !== false && isset($phones[$phone])) {
+                continue;
+            }
 
-        if (in_array('omni_contact', $sources, true)) {
-            $rows = $rows->merge($this->fromOmniContacts($filters['omni_contact'] ?? []));
-        }
+            $phones[$phone] = true;
+            $rows->push($row);
 
-        $dedupe = ($filters['dedupe'] ?? true) !== false;
-        if ($dedupe) {
-            $rows = $rows->unique('phone_normalized');
+            if ($rows->count() >= $previewLimit) {
+                break;
+            }
         }
 
         $exclude = $filters['exclude_phones'] ?? [];
@@ -58,10 +50,43 @@ class WaBroadcastRecipientResolver
             $rows = $rows->reject(fn ($r) => $excludeSet->has($r['phone_normalized']));
         }
 
-        return $rows
-            ->filter(fn ($r) => OmniPhoneNormalizer::isValidIndonesiaMobile($r['phone_normalized']))
-            ->take($previewLimit)
-            ->values();
+        return $rows->values();
+    }
+
+    /**
+     * Hitung + sample dalam satu pass (untuk preview UI, hindari double scan).
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{count: int, sample: Collection<int, array<string, mixed>>}
+     */
+    public function preview(array $filters, int $sampleLimit = 20): array
+    {
+        $phones = [];
+        $sample = collect();
+
+        foreach ($this->iterateRecipientRows($filters) as $row) {
+            $phone = (string) ($row['phone_normalized'] ?? '');
+            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
+                continue;
+            }
+
+            if (isset($phones[$phone])) {
+                continue;
+            }
+
+            $phones[$phone] = true;
+
+            if ($sample->count() < $sampleLimit) {
+                $sample->push($row);
+            }
+        }
+
+        $this->applyExcludePhones($filters, $phones);
+
+        return [
+            'count' => count($phones),
+            'sample' => $sample->values(),
+        ];
     }
 
     /**
@@ -71,8 +96,31 @@ class WaBroadcastRecipientResolver
      */
     public function count(array $filters): int
     {
+        if ($this->canUseFastMemberCount($filters)) {
+            return $this->countMembersFast($filters['member'] ?? []);
+        }
+
         $phones = [];
 
+        foreach ($this->iterateRecipientRows($filters) as $row) {
+            $phone = (string) ($row['phone_normalized'] ?? '');
+            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
+                continue;
+            }
+            $phones[$phone] = true;
+        }
+
+        $this->applyExcludePhones($filters, $phones);
+
+        return count($phones);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return \Generator<int, array<string, mixed>>
+     */
+    private function iterateRecipientRows(array $filters): \Generator
+    {
         $sources = $filters['sources'] ?? ['member', 'omni_contact'];
         if (! is_array($sources)) {
             $sources = ['member', 'omni_contact'];
@@ -80,51 +128,77 @@ class WaBroadcastRecipientResolver
 
         $manualIds = $filters['manual_member_ids'] ?? [];
         if (is_array($manualIds) && $manualIds !== []) {
-            $this->collectPhones($this->fromManualMembers($manualIds), $phones);
-        }
-
-        $manualPhones = $filters['manual_phones'] ?? [];
-        if (is_array($manualPhones) && $manualPhones !== []) {
-            $this->collectPhones($this->fromManualPhones($manualPhones), $phones);
-        }
-
-        if (in_array('member', $sources, true)) {
-            $this->collectPhones($this->fromMembers($filters['member'] ?? []), $phones);
-        }
-
-        if (in_array('omni_contact', $sources, true)) {
-            $this->collectPhones($this->fromOmniContacts($filters['omni_contact'] ?? []), $phones);
-        }
-
-        $exclude = $filters['exclude_phones'] ?? [];
-        if (is_array($exclude) && $exclude !== []) {
-            foreach ($exclude as $phone) {
-                $normalized = OmniPhoneNormalizer::normalize((string) $phone);
-                if ($normalized !== '') {
-                    unset($phones[$normalized]);
+            foreach ($this->fromManualMembers($manualIds) as $row) {
+                if (is_array($row)) {
+                    yield $row;
                 }
             }
         }
 
-        return count($phones);
+        $manualPhones = $filters['manual_phones'] ?? [];
+        if (is_array($manualPhones) && $manualPhones !== []) {
+            foreach ($this->fromManualPhones($manualPhones) as $row) {
+                if (is_array($row)) {
+                    yield $row;
+                }
+            }
+        }
+
+        if (in_array('member', $sources, true)) {
+            yield from $this->iterateMembers($filters['member'] ?? []);
+        }
+
+        if (in_array('omni_contact', $sources, true)) {
+            yield from $this->iterateOmniContacts($filters['omni_contact'] ?? []);
+        }
     }
 
     /**
-     * @param  Collection<int, array<string, mixed>|null>  $rows
      * @param  array<string, true>  $phones
+     * @param  array<string, mixed>  $filters
      */
-    private function collectPhones(Collection $rows, array &$phones): void
+    private function applyExcludePhones(array $filters, array &$phones): void
     {
-        foreach ($rows as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-            $phone = (string) ($row['phone_normalized'] ?? '');
-            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
-                continue;
-            }
-            $phones[$phone] = true;
+        $exclude = $filters['exclude_phones'] ?? [];
+        if (! is_array($exclude) || $exclude === []) {
+            return;
         }
+
+        foreach ($exclude as $phone) {
+            $normalized = OmniPhoneNormalizer::normalize((string) $phone);
+            if ($normalized !== '') {
+                unset($phones[$normalized]);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function canUseFastMemberCount(array $filters): bool
+    {
+        $sources = $filters['sources'] ?? [];
+        if (! is_array($sources) || $sources !== ['member']) {
+            return false;
+        }
+
+        if (! empty($filters['manual_member_ids']) || ! empty($filters['manual_phones'])) {
+            return false;
+        }
+
+        if (! empty($filters['exclude_phones'])) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $memberFilters
+     */
+    private function countMembersFast(array $memberFilters): int
+    {
+        return (int) $this->buildMemberQuery($memberFilters)->count();
     }
 
     /**
@@ -166,8 +240,24 @@ class WaBroadcastRecipientResolver
 
     /**
      * @param  array<string, mixed>  $memberFilters
+     * @return \Generator<int, array<string, mixed>>
      */
-    private function fromMembers(array $memberFilters): Collection
+    private function iterateMembers(array $memberFilters): \Generator
+    {
+        $query = $this->buildMemberQuery($memberFilters);
+
+        foreach ($query->select(['id', 'nama_lengkap', 'mobile_phone'])->orderBy('id')->cursor() as $member) {
+            $row = $this->rowFromMember($member, 'member');
+            if ($row !== null) {
+                yield $row;
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $memberFilters
+     */
+    private function buildMemberQuery(array $memberFilters): Builder
     {
         $query = MemberAppsMember::query();
         $this->applyStaticMemberFilters($query);
@@ -203,13 +293,7 @@ class WaBroadcastRecipientResolver
             });
         }
 
-        return $query
-            ->select(['id', 'nama_lengkap', 'mobile_phone'])
-            ->orderBy('id')
-            ->cursor()
-            ->map(fn (MemberAppsMember $m) => $this->rowFromMember($m, 'member'))
-            ->filter()
-            ->collect();
+        return $query;
     }
 
     private function rowFromMember(MemberAppsMember $member, string $source): ?array
@@ -231,21 +315,51 @@ class WaBroadcastRecipientResolver
 
     /**
      * @param  array<string, mixed>  $contactFilters
+     * @return \Generator<int, array<string, mixed>>
      */
-    private function fromOmniContacts(array $contactFilters): Collection
+    private function iterateOmniContacts(array $contactFilters): \Generator
+    {
+        $query = $this->buildOmniContactQuery($contactFilters);
+
+        foreach ($query->select(['id', 'phone_normalized', 'display_name', 'member_apps_member_id'])->orderBy('id')->cursor() as $contact) {
+            $normalized = OmniPhoneNormalizer::normalize((string) $contact->phone_normalized);
+            if ($normalized === '') {
+                continue;
+            }
+
+            yield [
+                'phone_normalized' => $normalized,
+                'wa_id' => $normalized,
+                'member_apps_member_id' => $contact->member_apps_member_id ? (int) $contact->member_apps_member_id : null,
+                'omni_contact_id' => (int) $contact->id,
+                'display_name' => $contact->display_name,
+                'source' => 'omni_contact',
+            ];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $contactFilters
+     */
+    private function buildOmniContactQuery(array $contactFilters): Builder
     {
         $query = OmniContact::query()
             ->whereNotNull('phone_normalized')
-            ->where('phone_normalized', '!=', '')
-            ->where(function (Builder $q) {
-                $q->whereNull('member_apps_member_id')
-                    ->orWhereHas('member', function (Builder $memberQuery) {
-                        $this->applyStaticMemberFilters($memberQuery);
-                    });
-            });
+            ->where('phone_normalized', '!=', '');
 
         if (! empty($contactFilters['transaction_from']) || ! empty($contactFilters['transaction_to'])) {
             $this->applyMemberTransactionDateFilterOnOmniContact($query, $contactFilters);
+        } else {
+            $query->where(function (Builder $q) {
+                $q->whereNull('member_apps_member_id')
+                    ->orWhereIn('member_apps_member_id', function ($sub) {
+                        $sub->select('id')
+                            ->from('member_apps_members')
+                            ->where('is_active', 1)
+                            ->whereNotNull('mobile_phone')
+                            ->where('mobile_phone', '!=', '');
+                    });
+            });
         }
 
         if (isset($contactFilters['has_member_link'])) {
@@ -264,27 +378,7 @@ class WaBroadcastRecipientResolver
             });
         }
 
-        return $query
-            ->select(['id', 'phone_normalized', 'display_name', 'member_apps_member_id'])
-            ->orderBy('id')
-            ->cursor()
-            ->map(function (OmniContact $c) {
-                $normalized = OmniPhoneNormalizer::normalize((string) $c->phone_normalized);
-                if ($normalized === '') {
-                    return null;
-                }
-
-                return [
-                    'phone_normalized' => $normalized,
-                    'wa_id' => $normalized,
-                    'member_apps_member_id' => $c->member_apps_member_id ? (int) $c->member_apps_member_id : null,
-                    'omni_contact_id' => (int) $c->id,
-                    'display_name' => $c->display_name,
-                    'source' => 'omni_contact',
-                ];
-            })
-            ->filter()
-            ->collect();
+        return $query;
     }
 
     /**
@@ -312,7 +406,7 @@ class WaBroadcastRecipientResolver
 
         $query->whereExists(function ($sub) use ($from, $to) {
             $sub->from('orders')
-                ->whereColumn('orders.member_id', 'member_apps_members.id')
+                ->whereColumn('orders.member_id', 'member_apps_members.member_id')
                 ->where('orders.status', 'paid');
 
             if ($from !== null) {
@@ -338,7 +432,7 @@ class WaBroadcastRecipientResolver
             $this->applyStaticMemberFilters($memberQuery);
             $memberQuery->whereExists(function ($sub) use ($from, $to) {
                 $sub->from('orders')
-                    ->whereColumn('orders.member_id', 'member_apps_members.id')
+                    ->whereColumn('orders.member_id', 'member_apps_members.member_id')
                     ->where('orders.status', 'paid');
 
                 if ($from !== null) {

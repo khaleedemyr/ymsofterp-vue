@@ -41,7 +41,7 @@ WA_BROADCAST_BATCH_SIZE=50
 - Member `is_active = 1` (kontak omni terhubung member ikut aturan ini)
 
 **Opsional:**
-- **transaction_from** / **transaction_to** — order `paid` di tabel `orders` (`orders.member_id` = member, `created_at` dalam rentang)
+- **transaction_from** / **transaction_to** — order `paid` di tabel `orders` (`orders.member_id` = `member_apps_members.member_id`, `created_at` dalam rentang)
 - **member** — level, spending, search, allow_notification, dll.
 - **omni_contact** — `omni_contacts.phone_normalized`
 - **manual_member_ids** — ID member dipilih manual
@@ -49,7 +49,7 @@ WA_BROADCAST_BATCH_SIZE=50
 
 ## Alur
 
-1. `/crm/wa-broadcast/create` → atur filter → jumlah penerima **otomatis** (debounce) atau **Hitung ulang**
+1. `/crm/wa-broadcast/create` → atur filter → klik **Hitung penerima** (manual, tidak auto)
 2. Template: **Buat template baru** (ajukan ke Meta via API) atau muat yang sudah **Approved**
 3. Simpan draft atau Kirim sekarang
 3. Job `BuildWaBroadcastRecipientsJob` → isi `wa_broadcast_recipients`

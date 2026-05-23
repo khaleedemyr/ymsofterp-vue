@@ -109,8 +109,9 @@ class WaBroadcastController extends Controller
         }
 
         try {
-            $count = $resolver->count($filters);
-            $sample = $resolver->resolve($filters, 20)->values();
+            $preview = $resolver->preview($filters, 20);
+            $count = $preview['count'];
+            $sample = $preview['sample'];
         } catch (\Throwable $e) {
             report($e);
 
