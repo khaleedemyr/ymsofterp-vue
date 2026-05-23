@@ -14,6 +14,8 @@ use Illuminate\Support\Collection;
  */
 class WaBroadcastRecipientResolver
 {
+    /** Samakan collation saat join orders.member_id ↔ member_apps_members.member_id */
+    private const MEMBER_ID_COLLATION = 'utf8mb4_unicode_ci';
     /**
      * @param  array<string, mixed>  $filters
      * @return Collection<int, array{phone_normalized: string, wa_id: string, member_apps_member_id: ?int, omni_contact_id: ?int, display_name: ?string, source: string}>
@@ -405,9 +407,9 @@ class WaBroadcastRecipientResolver
         }
 
         $query->whereExists(function ($sub) use ($from, $to) {
-            $sub->from('orders')
-                ->whereColumn('orders.member_id', 'member_apps_members.member_id')
-                ->where('orders.status', 'paid');
+            $sub->from('orders');
+            $this->whereOrderMemberIdMatchesMember($sub);
+            $sub->where('orders.status', 'paid');
 
             if ($from !== null) {
                 $sub->where('orders.created_at', '>=', $from);
@@ -431,9 +433,9 @@ class WaBroadcastRecipientResolver
         $query->whereHas('member', function (Builder $memberQuery) use ($from, $to) {
             $this->applyStaticMemberFilters($memberQuery);
             $memberQuery->whereExists(function ($sub) use ($from, $to) {
-                $sub->from('orders')
-                    ->whereColumn('orders.member_id', 'member_apps_members.member_id')
-                    ->where('orders.status', 'paid');
+                $sub->from('orders');
+                $this->whereOrderMemberIdMatchesMember($sub);
+                $sub->where('orders.status', 'paid');
 
                 if ($from !== null) {
                     $sub->where('orders.created_at', '>=', $from);
@@ -473,5 +475,13 @@ class WaBroadcastRecipientResolver
         }
 
         return [$from, $to];
+    }
+
+    private function whereOrderMemberIdMatchesMember(Builder $query): void
+    {
+        $collation = self::MEMBER_ID_COLLATION;
+        $query->whereRaw(
+            "orders.member_id COLLATE {$collation} = member_apps_members.member_id COLLATE {$collation}"
+        );
     }
 }
