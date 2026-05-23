@@ -2741,6 +2741,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/crm/wa-broadcast/create', [App\Http\Controllers\WaBroadcastController::class, 'create'])->name('crm.wa-broadcast.create');
     Route::post('/crm/wa-broadcast/preview-recipients', [App\Http\Controllers\WaBroadcastController::class, 'previewRecipients'])->name('crm.wa-broadcast.preview');
     Route::get('/crm/wa-broadcast/templates', [App\Http\Controllers\WaBroadcastController::class, 'templates'])->name('crm.wa-broadcast.templates');
+    Route::post('/crm/wa-broadcast/templates', [App\Http\Controllers\WaBroadcastController::class, 'storeTemplate'])->name('crm.wa-broadcast.templates.store');
     Route::post('/crm/wa-broadcast/campaigns', [App\Http\Controllers\WaBroadcastController::class, 'store'])->name('crm.wa-broadcast.store');
     Route::post('/crm/wa-broadcast/campaigns/{campaign}/start', [App\Http\Controllers\WaBroadcastController::class, 'start'])->name('crm.wa-broadcast.start');
     Route::post('/crm/wa-broadcast/campaigns/{campaign}/pause', [App\Http\Controllers\WaBroadcastController::class, 'pause'])->name('crm.wa-broadcast.pause');

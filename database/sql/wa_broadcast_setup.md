@@ -43,10 +43,17 @@ WA_BROADCAST_BATCH_SIZE=50
 
 ## Alur
 
-1. `/crm/wa-broadcast` → atur filter → Preview jumlah
-2. Pilih template Meta → Simpan draft atau Kirim sekarang
+1. `/crm/wa-broadcast/create` → atur filter → jumlah penerima **otomatis** (debounce) atau **Hitung ulang**
+2. Template: **Buat template baru** (ajukan ke Meta via API) atau muat yang sudah **Approved**
+3. Simpan draft atau Kirim sekarang
 3. Job `BuildWaBroadcastRecipientsJob` → isi `wa_broadcast_recipients`
 4. Job `SendWaBroadcastMessageJob` → kirim per nomor, hormati kuota harian
+
+## Template dari ERP
+
+- `POST /crm/wa-broadcast/templates` — body teks + variabel `{{1}}`, `{{2}}`, … + contoh nilai
+- Status awal **PENDING**; setelah **APPROVED** muncul di dropdown campaign
+- Token Meta perlu izin **whatsapp_business_management**
 
 ## Catatan Meta
 

@@ -217,6 +217,61 @@ class MetaWhatsAppClient
         return is_array($data) ? $data : [];
     }
 
+    /**
+     * Ajukan template pesan baru ke Meta (status awal biasanya PENDING, menunggu review).
+     *
+     * @param  list<string>  $bodyExampleRow  Satu nilai contoh per variabel {{1}}, {{2}}, … (urutan sama)
+     * @return array<string, mixed>
+     */
+    public function createMessageTemplate(
+        string $name,
+        string $category,
+        string $language,
+        string $bodyText,
+        array $bodyExampleRow = [],
+        ?string $wabaId = null
+    ): array {
+        $token = config('services.meta.whatsapp_access_token');
+        $wabaId = $wabaId ?: config('services.meta.whatsapp_business_account_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $wabaId) {
+            throw new RuntimeException('Meta WhatsApp API credentials are not configured.');
+        }
+
+        $bodyComponent = [
+            'type' => 'BODY',
+            'text' => $bodyText,
+        ];
+
+        if (preg_match('/\{\{\d+\}\}/', $bodyText) !== 0) {
+            if ($bodyExampleRow === []) {
+                throw new RuntimeException('Isi contoh variabel untuk setiap {{1}}, {{2}}, … pada body template.');
+            }
+            $bodyComponent['example'] = [
+                'body_text' => [array_values($bodyExampleRow)],
+            ];
+        }
+
+        $payload = [
+            'name' => $name,
+            'category' => strtoupper($category),
+            'language' => $language,
+            'components' => [$bodyComponent],
+        ];
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->post("https://graph.facebook.com/{$version}/{$wabaId}/message_templates", $payload);
+
+        if (! $response->successful()) {
+            $message = $response->json('error.message') ?? $response->body();
+            throw new RuntimeException('Meta template creation failed: '.$message, $response->status());
+        }
+
+        return $response->json() ?? [];
+    }
+
     public function sendDocument(string $toWaId, string $mediaId, ?string $caption = null, ?string $filename = null, ?string $phoneNumberId = null): array
     {
         $doc = ['id' => $mediaId];

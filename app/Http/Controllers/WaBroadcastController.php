@@ -119,16 +119,82 @@ class WaBroadcastController extends Controller
 
     public function templates(MetaWhatsAppClient $wa): JsonResponse
     {
-        $rows = collect($wa->listMessageTemplates())
-            ->filter(fn ($t) => is_array($t) && ($t['status'] ?? '') === 'APPROVED')
+        $all = collect($wa->listMessageTemplates())
+            ->filter(fn ($t) => is_array($t))
             ->map(fn ($t) => [
                 'name' => $t['name'] ?? '',
                 'language' => $t['language'] ?? 'id',
                 'category' => $t['category'] ?? '',
+                'status' => $t['status'] ?? '',
             ])
             ->values();
 
-        return response()->json(['templates' => $rows]);
+        $approved = $all
+            ->filter(fn ($t) => ($t['status'] ?? '') === 'APPROVED')
+            ->values();
+
+        return response()->json([
+            'templates' => $approved,
+            'all' => $all,
+        ]);
+    }
+
+    public function storeTemplate(Request $request, MetaWhatsAppClient $wa): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:128',
+            'category' => 'required|in:MARKETING,UTILITY,AUTHENTICATION',
+            'language' => 'required|string|max:16',
+            'body' => 'required|string|max:1024',
+            'body_examples' => 'nullable|array',
+            'body_examples.*' => 'nullable|string|max:500',
+        ]);
+
+        $name = strtolower(preg_replace('/[^a-z0-9]+/', '_', trim($data['name'])) ?? '');
+        $name = trim($name, '_');
+        if ($name === '' || strlen($name) < 3) {
+            return response()->json(['message' => 'Nama template minimal 3 karakter (huruf/angka, pakai underscore).'], 422);
+        }
+
+        $body = trim($data['body']);
+        $examples = array_values(array_filter(
+            array_map('strval', $data['body_examples'] ?? []),
+            fn (string $s) => $s !== ''
+        ));
+
+        if (preg_match('/\{\{\d+\}\}/', $body) !== 0) {
+            preg_match_all('/\{\{(\d+)\}\}/', $body, $matches);
+            $maxVar = (int) max(array_map('intval', $matches[1] ?? [0]));
+            if (count($examples) < $maxVar) {
+                return response()->json([
+                    'message' => "Body memakai variabel sampai {{{$maxVar}}}. Isi {$maxVar} contoh variabel (satu per baris).",
+                ], 422);
+            }
+            $examples = array_slice($examples, 0, $maxVar);
+        }
+
+        try {
+            $result = $wa->createMessageTemplate(
+                $name,
+                $data['category'],
+                $data['language'],
+                $body,
+                $examples
+            );
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Template diajukan ke Meta. Status awal biasanya PENDING — muat ulang daftar setelah disetujui.',
+            'template' => [
+                'name' => $name,
+                'language' => $data['language'],
+                'category' => $data['category'],
+                'status' => 'PENDING',
+            ],
+            'meta' => $result,
+        ]);
     }
 
     public function start(WaBroadcastCampaign $campaign, WaBroadcastCampaignService $service): JsonResponse

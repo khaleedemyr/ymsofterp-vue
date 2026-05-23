@@ -14,29 +14,26 @@
         </div>
       </div>
 
-      <!-- Template info -->
       <div class="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
         <div class="flex gap-3">
           <i class="fa-solid fa-circle-info mt-0.5 text-blue-600" />
           <div class="text-sm text-blue-900">
-            <p class="font-semibold">Di mana membuat template?</p>
+            <p class="font-semibold">Template WhatsApp</p>
             <p class="mt-1 text-blue-800/90">
-              Template WhatsApp <strong>tidak dibuat di ERP</strong>. Buat & ajukan persetujuan di
+              Buat & ajukan template langsung di ERP (langkah 3), atau buka
               <a
                 :href="metaTemplatesUrl"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="font-semibold underline"
-              >Meta WhatsApp Manager</a>
-              (WhatsApp Business). Setelah status <em>Approved</em>, klik
-              <strong>Muat template dari Meta</strong> di bawah untuk memilih template.
+              >Meta WhatsApp Manager</a>.
+              Setelah status <em>Approved</em>, pilih template untuk broadcast.
             </p>
           </div>
         </div>
       </div>
 
       <form class="space-y-6" @submit.prevent>
-        <!-- Step 1: Basic -->
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs text-white">1</span>
@@ -53,7 +50,6 @@
           </div>
         </section>
 
-        <!-- Step 2: Recipients -->
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs text-white">2</span>
@@ -71,7 +67,7 @@
             </label>
           </div>
 
-          <div v-if="form.sources.member" class="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+          <div v-if="form.sources.member" class="mt-4 space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
             <p class="text-xs font-semibold uppercase text-slate-500">Filter member</p>
             <div class="grid gap-2 sm:grid-cols-2">
               <label class="flex items-center gap-2 text-sm text-slate-700">
@@ -111,7 +107,7 @@
             />
           </div>
 
-          <div v-if="form.sources.omni" class="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+          <div v-if="form.sources.omni" class="mt-4 space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
             <p class="text-xs font-semibold uppercase text-slate-500">Filter kontak omnichannel</p>
             <select v-model="form.omni.has_member" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <option value="">Semua kontak</option>
@@ -136,22 +132,32 @@
             />
           </div>
 
-          <button
-            type="button"
-            class="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            :disabled="previewLoading"
-            @click="previewRecipients"
-          >
-            <i class="fa-solid fa-users" :class="{ 'fa-spin': previewLoading }" />
-            Hitung penerima
-          </button>
-
-          <div v-if="previewCount !== null" class="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            <strong>{{ previewCount.toLocaleString('id-ID') }}</strong> nomor unik siap dikirim
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <div
+              class="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm"
+              :class="previewLoading ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-900'"
+            >
+              <i class="fa-solid fa-users" :class="{ 'fa-spin': previewLoading }" />
+              <template v-if="previewLoading">Menghitung…</template>
+              <template v-else-if="previewCount !== null">
+                <strong>{{ previewCount.toLocaleString('id-ID') }}</strong> nomor unik sesuai filter
+              </template>
+              <template v-else>Atur filter — jumlah diperbarui otomatis</template>
+            </div>
+            <button
+              type="button"
+              class="text-sm font-medium text-slate-600 underline hover:text-slate-900"
+              :disabled="previewLoading"
+              @click="previewRecipients(false)"
+            >
+              Hitung ulang
+            </button>
           </div>
+          <p v-if="!hasRecipientSource" class="mt-2 text-xs text-amber-700">
+            Centang minimal satu sumber penerima atau isi ID member manual.
+          </p>
         </section>
 
-        <!-- Step 3: Message -->
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 class="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <span class="flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-xs text-white">3</span>
@@ -180,11 +186,100 @@
                 <i class="fa-solid fa-cloud-arrow-down" :class="{ 'fa-spin': templatesLoading }" />
                 Muat template dari Meta
               </button>
-              <span v-if="templates.length" class="text-xs text-slate-500">{{ templates.length }} template approved</span>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl border border-[#128C7E] px-4 py-2 text-sm font-medium text-[#128C7E] hover:bg-[#128C7E]/5"
+                @click="showTemplateForm = !showTemplateForm"
+              >
+                <i class="fa-solid fa-plus" />
+                {{ showTemplateForm ? 'Tutup form template' : 'Buat template baru' }}
+              </button>
+              <span v-if="templates.length" class="text-xs text-slate-500">{{ templates.length }} approved</span>
             </div>
 
+            <div
+              v-if="showTemplateForm"
+              class="mt-4 space-y-3 rounded-xl border border-dashed border-[#128C7E]/40 bg-[#128C7E]/5 p-4"
+            >
+              <p class="text-xs font-semibold uppercase text-[#0d6b5c]">Ajukan template ke Meta</p>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700">Nama template</label>
+                  <input
+                    v-model="newTemplate.name"
+                    type="text"
+                    class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    placeholder="promo_ramadan_2026"
+                  />
+                  <p class="mt-1 text-xs text-slate-500">Huruf kecil, angka, underscore (min. 3 karakter)</p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-slate-700">Kategori</label>
+                  <select v-model="newTemplate.category" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                    <option value="MARKETING">Marketing</option>
+                    <option value="UTILITY">Utility</option>
+                    <option value="AUTHENTICATION">Authentication</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Bahasa</label>
+                <input
+                  v-model="newTemplate.language"
+                  type="text"
+                  class="mt-1 w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="id"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Isi body</label>
+                <textarea
+                  v-model="newTemplate.body"
+                  rows="4"
+                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Halo {{1}}, diskon {{2}}% berlaku hingga {{3}}."
+                />
+              </div>
+              <div v-if="templateVarCount > 0">
+                <label class="block text-sm font-medium text-slate-700">
+                  Contoh variabel ({{ templateVarCount }} baris, urutan {{1}}…{{ templateVarCount }})
+                </label>
+                <textarea
+                  v-model="newTemplate.examplesText"
+                  :rows="Math.min(templateVarCount, 6)"
+                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"
+                  placeholder="Satu contoh per baris (Budi, lalu 20, lalu 31 Desember)"
+                />
+              </div>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-xl bg-[#128C7E] px-4 py-2 text-sm font-semibold text-white hover:bg-[#0d6b5c] disabled:opacity-50"
+                :disabled="creatingTemplate"
+                @click="submitNewTemplate"
+              >
+                <i class="fa-solid fa-paper-plane" :class="{ 'fa-spin': creatingTemplate }" />
+                Ajukan ke Meta
+              </button>
+              <p v-if="templateSubmitMessage" class="text-sm text-emerald-800">{{ templateSubmitMessage }}</p>
+            </div>
+
+            <ul v-if="allTemplates.length" class="mt-4 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs">
+              <li
+                v-for="t in allTemplates"
+                :key="t.name + t.language + t.status"
+                class="flex flex-wrap items-center gap-2 text-slate-700"
+              >
+                <span class="font-medium">{{ t.name }}</span>
+                <span class="text-slate-400">{{ t.language }}</span>
+                <span
+                  class="rounded px-1.5 py-0.5 font-semibold uppercase"
+                  :class="statusClass(t.status)"
+                >{{ t.status }}</span>
+              </li>
+            </ul>
+
             <div class="mt-4 space-y-3">
-              <label class="block text-sm font-medium text-slate-700">Pilih template</label>
+              <label class="block text-sm font-medium text-slate-700">Pilih template (approved)</label>
               <select
                 v-model="form.templateName"
                 class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
@@ -208,8 +303,8 @@
                 <textarea
                   v-model="form.templateParamsText"
                   rows="4"
-                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-mono"
-                  placeholder="Halo {{1}}, promo khusus…"
+                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 font-mono text-sm"
+                  placeholder="Nilai untuk {{1}}, lalu baris berikutnya untuk {{2}}, …"
                 />
               </div>
             </div>
@@ -246,7 +341,7 @@
           <button
             type="button"
             class="rounded-xl bg-[#128C7E] px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0d6b5c] disabled:opacity-50"
-            :disabled="saving || previewCount === 0"
+            :disabled="saving || !canSendNow"
             @click="createCampaign(true)"
           >
             {{ saving ? 'Memproses…' : 'Kirim sekarang' }}
@@ -258,7 +353,7 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -291,12 +386,52 @@ const form = reactive({
   sessionText: '',
 })
 
+const newTemplate = reactive({
+  name: '',
+  category: 'MARKETING',
+  language: 'id',
+  body: '',
+  examplesText: '',
+})
+
 const previewLoading = ref(false)
 const previewCount = ref(null)
 const templates = ref([])
+const allTemplates = ref([])
 const templatesLoading = ref(false)
 const saving = ref(false)
 const formError = ref('')
+const showTemplateForm = ref(false)
+const creatingTemplate = ref(false)
+const templateSubmitMessage = ref('')
+
+let previewDebounceTimer = null
+
+const hasRecipientSource = computed(() => {
+  const hasManual = form.manualMemberIds.split(/[,\s]+/).some((s) => parseInt(s.trim(), 10) > 0)
+  return form.sources.member || form.sources.omni || hasManual
+})
+
+const canSendNow = computed(() => {
+  if (!hasRecipientSource.value) return false
+  if (previewCount.value === null) return true
+  return previewCount.value > 0
+})
+
+const templateVarCount = computed(() => {
+  const matches = newTemplate.body.match(/\{\{\d+\}\}/g)
+  if (!matches?.length) return 0
+  const nums = matches.map((m) => parseInt(m.replace(/\D/g, ''), 10))
+  return Math.max(...nums, 0)
+})
+
+function statusClass(status) {
+  const s = (status || '').toUpperCase()
+  if (s === 'APPROVED') return 'bg-emerald-100 text-emerald-800'
+  if (s === 'PENDING') return 'bg-amber-100 text-amber-800'
+  if (s === 'REJECTED') return 'bg-red-100 text-red-800'
+  return 'bg-slate-200 text-slate-700'
+}
 
 function buildFilterDefinition() {
   const filters = {
@@ -333,21 +468,53 @@ function buildFilterDefinition() {
   return filters
 }
 
-async function previewRecipients() {
+async function previewRecipients(isAuto = true) {
+  if (!hasRecipientSource.value) {
+    previewCount.value = 0
+    return
+  }
+
   previewLoading.value = true
-  formError.value = ''
-  previewCount.value = null
+  if (!isAuto) formError.value = ''
   try {
     const { data } = await axios.post('/crm/wa-broadcast/preview-recipients', {
       filter_definition: buildFilterDefinition(),
     })
     previewCount.value = data.count ?? 0
   } catch (e) {
-    formError.value = e.response?.data?.message || e.message
+    if (!isAuto) {
+      formError.value = e.response?.data?.message || e.message
+    }
   } finally {
     previewLoading.value = false
   }
 }
+
+function schedulePreview() {
+  clearTimeout(previewDebounceTimer)
+  previewDebounceTimer = setTimeout(() => previewRecipients(true), 600)
+}
+
+watch(
+  () => [
+    form.sources.member,
+    form.sources.omni,
+    form.member.is_active,
+    form.member.allow_notification_only,
+    form.member.mobile_verified_only,
+    form.member.min_spending,
+    form.member.search,
+    form.member.levels.join(','),
+    form.omni.has_member,
+    form.omni.search,
+    form.manualMemberIds,
+  ],
+  schedulePreview
+)
+
+onMounted(() => {
+  schedulePreview()
+})
 
 async function loadTemplates() {
   templatesLoading.value = true
@@ -355,8 +522,9 @@ async function loadTemplates() {
   try {
     const { data } = await axios.get('/crm/wa-broadcast/templates')
     templates.value = data.templates ?? []
-    if (!templates.value.length) {
-      formError.value = 'Tidak ada template approved. Buat template di Meta WhatsApp Manager terlebih dahulu.'
+    allTemplates.value = data.all ?? data.templates ?? []
+    if (!templates.value.length && !allTemplates.value.length) {
+      formError.value = 'Belum ada template di Meta. Buat template di form di atas atau di WhatsApp Manager.'
     }
   } catch (e) {
     formError.value = e.response?.data?.message || 'Gagal memuat template dari Meta'
@@ -365,10 +533,46 @@ async function loadTemplates() {
   }
 }
 
+async function submitNewTemplate() {
+  creatingTemplate.value = true
+  templateSubmitMessage.value = ''
+  formError.value = ''
+  try {
+    const bodyExamples = newTemplate.examplesText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const { data } = await axios.post('/crm/wa-broadcast/templates', {
+      name: newTemplate.name,
+      category: newTemplate.category,
+      language: newTemplate.language,
+      body: newTemplate.body,
+      body_examples: bodyExamples,
+    })
+    templateSubmitMessage.value = data.message || 'Template diajukan.'
+    if (data.template?.name) {
+      form.templateName = data.template.name
+      form.templateLanguage = data.template.language || 'id'
+    }
+    await loadTemplates()
+  } catch (e) {
+    formError.value = e.response?.data?.message || e.message
+  } finally {
+    creatingTemplate.value = false
+  }
+}
+
 async function createCampaign(startNow) {
   saving.value = true
   formError.value = ''
   try {
+    if (previewCount.value === null) {
+      await previewRecipients(true)
+    }
+    if (startNow && previewCount.value === 0) {
+      formError.value = 'Tidak ada penerima sesuai filter.'
+      return
+    }
     await axios.post('/crm/wa-broadcast/campaigns', {
       name: form.name || 'Broadcast WA',
       message_type: form.messageType,
