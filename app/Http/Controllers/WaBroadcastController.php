@@ -108,8 +108,16 @@ class WaBroadcastController extends Controller
             $filters = [];
         }
 
-        $count = $resolver->count($filters);
-        $sample = $resolver->resolve($filters, 20)->values();
+        try {
+            $count = $resolver->count($filters);
+            $sample = $resolver->resolve($filters, 20)->values();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'message' => 'Gagal menghitung penerima: '.$e->getMessage(),
+            ], 500);
+        }
 
         return response()->json([
             'count' => $count,

@@ -135,14 +135,17 @@
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <div
               class="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm"
-              :class="previewLoading ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-900'"
+              :class="previewBadgeClass"
             >
               <i class="fa-solid fa-users" :class="{ 'fa-spin': previewLoading }" />
-              <template v-if="previewLoading">Menghitung…</template>
+              <template v-if="previewLoading">Menghitung dari database…</template>
+              <template v-else-if="previewError">
+                Gagal hitung — klik Hitung ulang
+              </template>
               <template v-else-if="previewCount !== null">
                 <strong>{{ previewCount.toLocaleString('id-ID') }}</strong> nomor unik sesuai filter
               </template>
-              <template v-else>Atur filter — jumlah diperbarui otomatis</template>
+              <template v-else>Menghitung…</template>
             </div>
             <button
               type="button"
@@ -153,9 +156,32 @@
               Hitung ulang
             </button>
           </div>
-          <p v-if="!hasRecipientSource" class="mt-2 text-xs text-amber-700">
+          <p v-if="previewError" class="mt-2 text-xs text-red-700">{{ previewError }}</p>
+          <p v-else-if="!hasRecipientSource" class="mt-2 text-xs text-amber-700">
             Centang minimal satu sumber penerima atau isi ID member manual.
           </p>
+          <p v-else class="mt-2 text-xs text-slate-500">
+            Data dari tabel <strong>member_apps_members</strong> dan/atau <strong>omni_contacts</strong> (query langsung ke database).
+          </p>
+          <div
+            v-if="previewSample.length"
+            class="mt-3 overflow-hidden rounded-xl border border-slate-200"
+          >
+            <p class="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+              Contoh penerima (maks. 20)
+            </p>
+            <ul class="max-h-36 divide-y divide-slate-100 overflow-y-auto text-xs">
+              <li
+                v-for="(row, idx) in previewSample"
+                :key="idx"
+                class="flex flex-wrap gap-2 px-3 py-2 text-slate-700"
+              >
+                <span class="font-medium">{{ row.display_name || '—' }}</span>
+                <span class="text-slate-500">{{ row.phone_normalized }}</span>
+                <span class="rounded bg-slate-100 px-1.5 text-slate-500">{{ row.source }}</span>
+              </li>
+            </ul>
+          </div>
         </section>
 
         <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -233,23 +259,51 @@
               </div>
               <div>
                 <label class="block text-sm font-medium text-slate-700">Isi body</label>
+                <p class="mt-1 text-xs text-slate-500">
+                  Variabel dinamis: tulis <code class="rounded bg-white px-1">&#123;&#123;1&#125;&#125;</code>,
+                  <code class="rounded bg-white px-1">&#123;&#123;2&#125;&#125;</code>, … (urutan angka harus berurutan).
+                </p>
                 <textarea
                   v-model="newTemplate.body"
                   rows="4"
-                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  class="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   placeholder="Halo {{1}}, diskon {{2}}% berlaku hingga {{3}}."
                 />
               </div>
-              <div v-if="templateVarCount > 0">
-                <label class="block text-sm font-medium text-slate-700">
-                  Contoh variabel ({{ templateVarCount }} baris, urutan {{1}}…{{ templateVarCount }})
-                </label>
-                <textarea
-                  v-model="newTemplate.examplesText"
-                  :rows="Math.min(templateVarCount, 6)"
-                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"
-                  placeholder="Satu contoh per baris (Budi, lalu 20, lalu 31 Desember)"
-                />
+              <div v-if="templateVarCount > 0" class="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                <p class="text-xs font-semibold text-slate-600">Keterangan & contoh pengisian variabel (wajib untuk Meta)</p>
+                <div class="hidden gap-2 text-xs font-medium text-slate-500 sm:grid sm:grid-cols-[7rem_1fr_1fr]">
+                  <span>Token</span>
+                  <span>Keterangan (internal)</span>
+                  <span>Contoh nilai (ke Meta)</span>
+                </div>
+                <div
+                  v-for="slot in templateVarSlots"
+                  :key="slot.n"
+                  class="grid gap-2 sm:grid-cols-[7rem_1fr_1fr]"
+                >
+                  <span class="self-center text-sm font-mono font-semibold text-[#128C7E]">{{ slot.token }}</span>
+                  <input
+                    v-model="slot.hint"
+                    type="text"
+                    class="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    :placeholder="slot.defaultHint"
+                  />
+                  <input
+                    v-model="slot.example"
+                    type="text"
+                    class="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    :placeholder="'Contoh: ' + slot.defaultExample"
+                  />
+                </div>
+                <p class="text-xs text-slate-500">Kolom tengah = keterangan (untuk tim). Kolom kanan = contoh nilai dikirim ke Meta saat review.</p>
+              </div>
+              <div
+                v-if="templateBodyPreview"
+                class="rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-800"
+              >
+                <p class="mb-1 text-xs font-semibold uppercase text-slate-500">Preview isi pesan</p>
+                <p class="whitespace-pre-wrap">{{ templateBodyPreview }}</p>
               </div>
               <button
                 type="button"
@@ -299,12 +353,16 @@
                 />
               </div>
               <div>
-                <label class="block text-sm font-medium text-slate-700">Variabel body (satu per baris, urutan {{1}}, {{2}}…)</label>
+                <label class="block text-sm font-medium text-slate-700">Variabel saat kirim campaign</label>
+                <p class="mt-1 text-xs text-slate-500">
+                  Satu nilai per baris: baris 1 = <code class="rounded bg-slate-100 px-1">&#123;&#123;1&#125;&#125;</code>,
+                  baris 2 = <code class="rounded bg-slate-100 px-1">&#123;&#123;2&#125;&#125;</code>, … (bisa nama member, kode promo, dll.)
+                </p>
                 <textarea
                   v-model="form.templateParamsText"
                   rows="4"
-                  class="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 font-mono text-sm"
-                  placeholder="Nilai untuk {{1}}, lalu baris berikutnya untuk {{2}}, …"
+                  class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-2.5 font-mono text-sm"
+                  placeholder="Baris 1 = nilai {{1}}, baris 2 = {{2}}, dst."
                 />
               </div>
             </div>
@@ -386,16 +444,26 @@ const form = reactive({
   sessionText: '',
 })
 
+const TEMPLATE_VAR_DEFAULTS = [
+  { hint: 'Nama pelanggan', example: 'Budi' },
+  { hint: 'Persen / nilai diskon', example: '20' },
+  { hint: 'Batas berlaku promo', example: '31 Desember 2026' },
+  { hint: 'Nama produk / outlet', example: 'Justus Kitchen' },
+  { hint: 'Kode voucher', example: 'PROMO20' },
+]
+
 const newTemplate = reactive({
   name: '',
   category: 'MARKETING',
   language: 'id',
   body: '',
-  examplesText: '',
 })
 
+const templateVarSlots = ref([])
 const previewLoading = ref(false)
 const previewCount = ref(null)
+const previewError = ref('')
+const previewSample = ref([])
 const templates = ref([])
 const allTemplates = ref([])
 const templatesLoading = ref(false)
@@ -423,6 +491,46 @@ const templateVarCount = computed(() => {
   if (!matches?.length) return 0
   const nums = matches.map((m) => parseInt(m.replace(/\D/g, ''), 10))
   return Math.max(...nums, 0)
+})
+
+const previewBadgeClass = computed(() => {
+  if (previewLoading.value) return 'bg-slate-100 text-slate-600'
+  if (previewError.value) return 'bg-red-50 text-red-800'
+  if (previewCount.value !== null) return 'bg-emerald-50 text-emerald-900'
+  return 'bg-slate-100 text-slate-600'
+})
+
+const templateBodyPreview = computed(() => {
+  if (!newTemplate.body.trim()) return ''
+  let text = newTemplate.body
+  for (const slot of templateVarSlots.value) {
+    const val = (slot.example || slot.defaultExample || '').trim()
+    if (val) {
+      text = text.split(`{{${slot.n}}}`).join(val)
+    }
+  }
+  return text
+})
+
+watch(templateVarCount, (count) => {
+  const prevByN = Object.fromEntries(templateVarSlots.value.map((s) => [s.n, s]))
+  const slots = []
+  for (let n = 1; n <= count; n++) {
+    const prev = prevByN[n]
+    const def = TEMPLATE_VAR_DEFAULTS[n - 1] ?? {
+      hint: `Isi variabel ${n}`,
+      example: `contoh_${n}`,
+    }
+    slots.push({
+      n,
+      token: `{{${n}}}`,
+      hint: prev?.hint ?? def.hint,
+      example: prev?.example ?? def.example,
+      defaultHint: def.hint,
+      defaultExample: def.example,
+    })
+  }
+  templateVarSlots.value = slots
 })
 
 function statusClass(status) {
@@ -471,20 +579,26 @@ function buildFilterDefinition() {
 async function previewRecipients(isAuto = true) {
   if (!hasRecipientSource.value) {
     previewCount.value = 0
+    previewSample.value = []
+    previewError.value = ''
     return
   }
 
   previewLoading.value = true
+  previewError.value = ''
   if (!isAuto) formError.value = ''
   try {
     const { data } = await axios.post('/crm/wa-broadcast/preview-recipients', {
       filter_definition: buildFilterDefinition(),
     })
     previewCount.value = data.count ?? 0
+    previewSample.value = data.sample ?? []
   } catch (e) {
-    if (!isAuto) {
-      formError.value = e.response?.data?.message || e.message
-    }
+    const msg = e.response?.data?.message || e.message || 'Gagal menghitung penerima'
+    previewError.value = msg
+    previewCount.value = null
+    previewSample.value = []
+    if (!isAuto) formError.value = msg
   } finally {
     previewLoading.value = false
   }
@@ -538,9 +652,8 @@ async function submitNewTemplate() {
   templateSubmitMessage.value = ''
   formError.value = ''
   try {
-    const bodyExamples = newTemplate.examplesText
-      .split('\n')
-      .map((s) => s.trim())
+    const bodyExamples = templateVarSlots.value
+      .map((s) => (s.example || '').trim())
       .filter(Boolean)
     const { data } = await axios.post('/crm/wa-broadcast/templates', {
       name: newTemplate.name,

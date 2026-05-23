@@ -63,11 +63,66 @@ class WaBroadcastRecipientResolver
     }
 
     /**
+     * Hitung nomor unik valid tanpa memuat seluruh dataset ke memori.
+     *
      * @param  array<string, mixed>  $filters
      */
     public function count(array $filters): int
     {
-        return $this->resolve($filters, PHP_INT_MAX)->count();
+        $phones = [];
+
+        $sources = $filters['sources'] ?? ['member', 'omni_contact'];
+        if (! is_array($sources)) {
+            $sources = ['member', 'omni_contact'];
+        }
+
+        $manualIds = $filters['manual_member_ids'] ?? [];
+        if (is_array($manualIds) && $manualIds !== []) {
+            $this->collectPhones($this->fromManualMembers($manualIds), $phones);
+        }
+
+        $manualPhones = $filters['manual_phones'] ?? [];
+        if (is_array($manualPhones) && $manualPhones !== []) {
+            $this->collectPhones($this->fromManualPhones($manualPhones), $phones);
+        }
+
+        if (in_array('member', $sources, true)) {
+            $this->collectPhones($this->fromMembers($filters['member'] ?? []), $phones);
+        }
+
+        if (in_array('omni_contact', $sources, true)) {
+            $this->collectPhones($this->fromOmniContacts($filters['omni_contact'] ?? []), $phones);
+        }
+
+        $exclude = $filters['exclude_phones'] ?? [];
+        if (is_array($exclude) && $exclude !== []) {
+            foreach ($exclude as $phone) {
+                $normalized = OmniPhoneNormalizer::normalize((string) $phone);
+                if ($normalized !== '') {
+                    unset($phones[$normalized]);
+                }
+            }
+        }
+
+        return count($phones);
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>|null>  $rows
+     * @param  array<string, true>  $phones
+     */
+    private function collectPhones(Collection $rows, array &$phones): void
+    {
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $phone = (string) ($row['phone_normalized'] ?? '');
+            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
+                continue;
+            }
+            $phones[$phone] = true;
+        }
     }
 
     /**
@@ -154,7 +209,8 @@ class WaBroadcastRecipientResolver
             ->orderBy('id')
             ->cursor()
             ->map(fn (MemberAppsMember $m) => $this->rowFromMember($m, 'member'))
-            ->filter();
+            ->filter()
+            ->collect();
     }
 
     private function rowFromMember(MemberAppsMember $member, string $source): ?array
@@ -218,6 +274,7 @@ class WaBroadcastRecipientResolver
                     'source' => 'omni_contact',
                 ];
             })
-            ->filter();
+            ->filter()
+            ->collect();
     }
 }
