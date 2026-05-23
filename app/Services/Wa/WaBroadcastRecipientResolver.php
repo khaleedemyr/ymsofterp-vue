@@ -7,7 +7,6 @@ use App\Models\OmniContact;
 use App\Support\OmniPhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 
 /**
@@ -57,7 +56,7 @@ class WaBroadcastRecipientResolver
     }
 
     /**
-     * Hitung + sample dalam satu pass (untuk preview UI, hindari double scan).
+     * Hitung + sample untuk UI — COUNT di SQL, sample dibatasi (tanpa scan seluruh tabel).
      *
      * @param  array<string, mixed>  $filters
      * @return array{count: int, sample: Collection<int, array<string, mixed>>}
@@ -66,28 +65,77 @@ class WaBroadcastRecipientResolver
     {
         $phones = [];
         $sample = collect();
+        $total = 0;
 
-        foreach ($this->iterateRecipientRows($filters) as $row) {
-            $phone = (string) ($row['phone_normalized'] ?? '');
-            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
-                continue;
-            }
+        $sources = $filters['sources'] ?? ['member', 'omni_contact'];
+        if (! is_array($sources)) {
+            $sources = ['member', 'omni_contact'];
+        }
 
-            if (isset($phones[$phone])) {
-                continue;
-            }
+        $dedupe = ($filters['dedupe'] ?? true) !== false;
+        $memberFilters = $filters['member'] ?? [];
+        $contactFilters = $filters['omni_contact'] ?? [];
 
-            $phones[$phone] = true;
+        $memberQuery = null;
+        $memberCount = 0;
 
-            if ($sample->count() < $sampleLimit) {
-                $sample->push($row);
+        if (in_array('member', $sources, true)) {
+            $memberQuery = $this->buildMemberQuery($memberFilters);
+            $memberCount = (int) (clone $memberQuery)->count();
+            $total += $memberCount;
+            $this->mergePreviewRows(
+                $this->fetchMemberRowsLimited($memberFilters, max(30, $sampleLimit * 3)),
+                $phones,
+                $sample,
+                $sampleLimit
+            );
+        }
+
+        if (in_array('omni_contact', $sources, true)) {
+            $omniQuery = $this->buildOmniContactQuery($contactFilters, $memberQuery, $dedupe);
+            $omniCount = (int) $omniQuery->count();
+            $total += $omniCount;
+            $this->mergePreviewRows(
+                $this->fetchOmniRowsLimited($omniQuery, max(30, $sampleLimit * 3)),
+                $phones,
+                $sample,
+                $sampleLimit
+            );
+        }
+
+        $manualIds = $filters['manual_member_ids'] ?? [];
+        if (is_array($manualIds) && $manualIds !== []) {
+            $total += $this->countManualMemberExtras($manualIds, $memberQuery);
+            $this->mergePreviewRows(
+                $this->fromManualMembers($manualIds),
+                $phones,
+                $sample,
+                $sampleLimit
+            );
+        }
+
+        $manualPhones = $filters['manual_phones'] ?? [];
+        if (is_array($manualPhones) && $manualPhones !== []) {
+            $total += $this->mergePreviewRows(
+                $this->fromManualPhones($manualPhones),
+                $phones,
+                $sample,
+                $sampleLimit
+            );
+        }
+
+        if (! empty($filters['exclude_phones']) && is_array($filters['exclude_phones'])) {
+            foreach ($filters['exclude_phones'] as $phone) {
+                $normalized = OmniPhoneNormalizer::normalize((string) $phone);
+                if ($normalized !== '' && isset($phones[$normalized])) {
+                    $total--;
+                    unset($phones[$normalized]);
+                }
             }
         }
 
-        $this->applyExcludePhones($filters, $phones);
-
         return [
-            'count' => count($phones),
+            'count' => max(0, $total),
             'sample' => $sample->values(),
         ];
     }
@@ -342,16 +390,117 @@ class WaBroadcastRecipientResolver
     }
 
     /**
+     * @param  Collection<int, array<string, mixed>|null>  $rows
+     */
+    private function mergePreviewRows(Collection $rows, array &$phones, Collection $sample, int $sampleLimit): int
+    {
+        $added = 0;
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $phone = (string) ($row['phone_normalized'] ?? '');
+            if ($phone === '' || ! OmniPhoneNormalizer::isValidIndonesiaMobile($phone)) {
+                continue;
+            }
+
+            if (isset($phones[$phone])) {
+                continue;
+            }
+
+            $phones[$phone] = true;
+            $added++;
+
+            if ($sample->count() < $sampleLimit) {
+                $sample->push($row);
+            }
+        }
+
+        return $added;
+    }
+
+    /**
+     * ID manual yang belum masuk hitungan query member (hindari double count).
+     *
+     * @param  list<int|string>  $manualIds
+     */
+    private function countManualMemberExtras(array $manualIds, ?Builder $memberQuery): int
+    {
+        $query = MemberAppsMember::query()
+            ->whereIn('id', array_map('intval', $manualIds))
+            ->where('is_active', 1)
+            ->whereNotNull('mobile_phone')
+            ->where('mobile_phone', '!=', '');
+
+        if ($memberQuery !== null) {
+            $query->whereNotIn('id', (clone $memberQuery)->select('id'));
+        }
+
+        return (int) $query->count();
+    }
+
+    /**
+     * @param  array<string, mixed>  $memberFilters
+     * @return Collection<int, array<string, mixed>|null>
+     */
+    private function fetchMemberRowsLimited(array $memberFilters, int $limit): Collection
+    {
+        return $this->buildMemberQuery($memberFilters)
+            ->select(['id', 'nama_lengkap', 'mobile_phone'])
+            ->orderBy('id')
+            ->limit($limit)
+            ->get()
+            ->map(fn (MemberAppsMember $m) => $this->rowFromMember($m, 'member'))
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function fetchOmniRowsLimited(Builder $query, int $limit): Collection
+    {
+        return (clone $query)
+            ->select(['id', 'phone_normalized', 'display_name', 'member_apps_member_id'])
+            ->orderBy('id')
+            ->limit($limit)
+            ->get()
+            ->map(function (OmniContact $c) {
+                $normalized = OmniPhoneNormalizer::normalize((string) $c->phone_normalized);
+                if ($normalized === '') {
+                    return null;
+                }
+
+                return [
+                    'phone_normalized' => $normalized,
+                    'wa_id' => $normalized,
+                    'member_apps_member_id' => $c->member_apps_member_id ? (int) $c->member_apps_member_id : null,
+                    'omni_contact_id' => (int) $c->id,
+                    'display_name' => $c->display_name,
+                    'source' => 'omni_contact',
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
      * @param  array<string, mixed>  $contactFilters
      */
-    private function buildOmniContactQuery(array $contactFilters): Builder
-    {
+    private function buildOmniContactQuery(
+        array $contactFilters,
+        ?Builder $memberQueryForDedupe = null,
+        bool $dedupeWithMembers = true
+    ): Builder {
         $query = OmniContact::query()
             ->whereNotNull('phone_normalized')
             ->where('phone_normalized', '!=', '');
 
         if (! empty($contactFilters['transaction_from']) || ! empty($contactFilters['transaction_to'])) {
-            $this->applyMemberTransactionDateFilterOnOmniContact($query, $contactFilters);
+            $memberIds = $this->buildMemberQuery($contactFilters)->select('id');
+            $query->whereIn('member_apps_member_id', $memberIds);
         } else {
             $query->where(function (Builder $q) {
                 $q->whereNull('member_apps_member_id')
@@ -362,6 +511,14 @@ class WaBroadcastRecipientResolver
                             ->whereNotNull('mobile_phone')
                             ->where('mobile_phone', '!=', '');
                     });
+            });
+        }
+
+        if ($dedupeWithMembers && $memberQueryForDedupe !== null) {
+            $memberIds = (clone $memberQueryForDedupe)->select('id');
+            $query->where(function (Builder $q) use ($memberIds) {
+                $q->whereNull('member_apps_member_id')
+                    ->orWhereNotIn('member_apps_member_id', $memberIds);
             });
         }
 
@@ -407,45 +564,28 @@ class WaBroadcastRecipientResolver
             return;
         }
 
-        $query->whereExists(function ($sub) use ($from, $to) {
-            $sub->from('orders');
-            $this->whereOrderMemberIdMatchesMember($sub);
-            $sub->where('orders.status', 'paid');
+        $collation = self::MEMBER_ID_COLLATION;
+        $bindings = ['paid'];
+        $dateSql = '';
 
-            if ($from !== null) {
-                $sub->where('orders.created_at', '>=', $from);
-            }
-            if ($to !== null) {
-                $sub->where('orders.created_at', '<=', $to);
-            }
-        });
-    }
-
-    /**
-     * @param  array<string, mixed>  $contactFilters
-     */
-    private function applyMemberTransactionDateFilterOnOmniContact(Builder $query, array $contactFilters): void
-    {
-        [$from, $to] = $this->parseTransactionDateRange($contactFilters);
-        if ($from === null && $to === null) {
-            return;
+        if ($from !== null) {
+            $dateSql .= ' AND orders.created_at >= ?';
+            $bindings[] = $from;
+        }
+        if ($to !== null) {
+            $dateSql .= ' AND orders.created_at <= ?';
+            $bindings[] = $to;
         }
 
-        $query->whereHas('member', function (Builder $memberQuery) use ($from, $to) {
-            $this->applyStaticMemberFilters($memberQuery);
-            $memberQuery->whereExists(function ($sub) use ($from, $to) {
-                $sub->from('orders');
-                $this->whereOrderMemberIdMatchesMember($sub);
-                $sub->where('orders.status', 'paid');
-
-                if ($from !== null) {
-                    $sub->where('orders.created_at', '>=', $from);
-                }
-                if ($to !== null) {
-                    $sub->where('orders.created_at', '<=', $to);
-                }
-            });
-        });
+        $query->whereRaw(
+            "member_apps_members.member_id COLLATE {$collation} IN (
+                SELECT DISTINCT orders.member_id COLLATE {$collation}
+                FROM orders
+                WHERE orders.status = ?
+                {$dateSql}
+            )",
+            $bindings
+        );
     }
 
     /**
@@ -476,13 +616,5 @@ class WaBroadcastRecipientResolver
         }
 
         return [$from, $to];
-    }
-
-    private function whereOrderMemberIdMatchesMember(Builder|QueryBuilder $query): void
-    {
-        $collation = self::MEMBER_ID_COLLATION;
-        $query->whereRaw(
-            "orders.member_id COLLATE {$collation} = member_apps_members.member_id COLLATE {$collation}"
-        );
     }
 }

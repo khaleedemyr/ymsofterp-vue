@@ -47,6 +47,14 @@ WA_BROADCAST_BATCH_SIZE=50
 - **manual_member_ids** — ID member dipilih manual
 - **dedupe** — satu nomor sekali per campaign
 
+## Performa hitung penerima
+
+Preview memakai `COUNT` SQL (bukan scan seluruh baris). Jika filter transaksi masih lambat, jalankan index (sekali):
+
+```sql
+CREATE INDEX idx_orders_status_created_member ON orders (status, created_at, member_id);
+```
+
 ## Alur
 
 1. `/crm/wa-broadcast/create` → atur filter → klik **Hitung penerima** (manual, tidak auto)
