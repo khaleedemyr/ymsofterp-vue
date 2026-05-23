@@ -31,11 +31,34 @@ class MetaInstagramInboxSyncService
     /** Berhenti scan thread jika N pesan teratas sudah ada di DB. */
     private const STOP_AFTER_CONSECUTIVE_EXISTING = 8;
 
+    private const RATE_LIMIT_CACHE_KEY = 'meta_instagram_api_rate_limited_until';
+
+    private bool $rateLimitHitThisRun = false;
+
+    public static function isRateLimited(): bool
+    {
+        $until = Cache::get(self::RATE_LIMIT_CACHE_KEY);
+
+        return is_numeric($until) && (int) $until > now()->timestamp;
+    }
+
     /**
      * @return array{imported: int, accounts: list<array<string, mixed>>}
      */
     public function syncAll(bool $verbose = false, ?int $recentMinutes = null): array
     {
+        if (self::isRateLimited()) {
+            Log::info('Meta Instagram inbox sync skipped: rate limit backoff active');
+
+            return [
+                'imported' => 0,
+                'accounts' => [[
+                    'skipped' => 'rate_limit_backoff',
+                    'imported' => 0,
+                ]],
+            ];
+        }
+
         $imported = 0;
         $accounts = [];
         $tokenMap = MetaInstagramTokens::resolved();
@@ -107,6 +130,7 @@ class MetaInstagramInboxSyncService
      */
     private function runSyncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false, ?int $recentMinutes = null): array
     {
+        $this->rateLimitHitThisRun = false;
         $version = config('services.meta.instagram_graph_version', 'v25.0');
         $imported = 0;
         $messagesChecked = 0;
@@ -133,9 +157,32 @@ class MetaInstagramInboxSyncService
         }
 
         $conversationRows = $this->fetchAllConversations($accessToken, $version, $igProfessionalId, $apiErrors);
-        $conversationCount = count($conversationRows);
+        if ($this->rateLimitHitThisRun) {
+            return [
+                'ig_id' => $igProfessionalId,
+                'username' => $igUsername,
+                'recent_minutes' => $recentMinutes,
+                'imported' => $imported,
+                'conversations' => 0,
+                'messages_checked' => $messagesChecked,
+                'skipped_existing' => $skippedExisting,
+                'skipped_outbound' => $skippedOutbound,
+                'skipped_no_sender' => $skippedNoSender,
+                'api_errors' => $apiErrors,
+                'rate_limited' => true,
+            ];
+        }
 
-        foreach ($conversationRows as $row) {
+        $conversationCount = count($conversationRows);
+        $maxConversations = $recentMinutes !== null
+            ? max(1, (int) config('omnichannel.instagram_max_conversations_per_poll', 12))
+            : $conversationCount;
+
+        foreach (array_slice($conversationRows, 0, $maxConversations) as $row) {
+            if ($this->rateLimitHitThisRun) {
+                break;
+            }
+
             $conversationId = (string) ($row['id'] ?? '');
             if ($conversationId === '') {
                 continue;
@@ -190,6 +237,10 @@ class MetaInstagramInboxSyncService
         int &$apiErrors,
         ?int $recentMinutes = null
     ): void {
+        if (self::isRateLimited() || $this->rateLimitHitThisRun) {
+            return;
+        }
+
         $cutoff = $recentMinutes !== null && $recentMinutes > 0
             ? now()->subMinutes($recentMinutes)
             : null;
@@ -211,6 +262,12 @@ class MetaInstagramInboxSyncService
 
             if (! $response->successful()) {
                 $apiErrors++;
+                if ($this->isRateLimitResponse($response)) {
+                    $this->activateRateLimitBackoff('messages edge', $metaConversationId);
+
+                    return;
+                }
+
                 Log::warning('Instagram messages edge failed, trying legacy fetch', [
                     'conversation' => $metaConversationId,
                     'status' => $response->status(),
@@ -277,7 +334,10 @@ class MetaInstagramInboxSyncService
 
                 $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
                 if ($existing) {
-                    $fullPayload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+                    $fullPayload = $payload;
+                    if (! $this->rateLimitHitThisRun && ! self::isRateLimited()) {
+                        $fullPayload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+                    }
                     if ($this->maybeEnrichExistingMessageMedia($existing, $fullPayload, $accessToken)) {
                         $imported++;
                     }
@@ -292,7 +352,9 @@ class MetaInstagramInboxSyncService
 
                 $consecutiveExisting = 0;
 
-                $payload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+                if (! $this->rateLimitHitThisRun && ! self::isRateLimited()) {
+                    $payload = $this->resolveMessagePayload($accessToken, $version, $payload) ?? $payload;
+                }
 
                 if ($this->isOutboundFromBusiness($payload, $igProfessionalId)) {
                     $skippedOutbound++;
@@ -339,6 +401,10 @@ class MetaInstagramInboxSyncService
         int &$apiErrors,
         ?int $recentMinutes = null
     ): void {
+        if (self::isRateLimited() || $this->rateLimitHitThisRun) {
+            return;
+        }
+
         $cutoff = $recentMinutes !== null && $recentMinutes > 0
             ? now()->subMinutes($recentMinutes)
             : null;
@@ -352,6 +418,9 @@ class MetaInstagramInboxSyncService
 
         if (! $detail->successful()) {
             $apiErrors++;
+            if ($this->isRateLimitResponse($detail)) {
+                $this->activateRateLimitBackoff('messages legacy', $metaConversationId);
+            }
 
             return;
         }
@@ -383,9 +452,11 @@ class MetaInstagramInboxSyncService
 
             $existing = OmniMessage::query()->where('meta_message_id', $messageId)->first();
             if ($existing) {
-                $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
-                if ($payload && $this->maybeEnrichExistingMessageMedia($existing, $payload, $accessToken)) {
-                    $imported++;
+                if (! $this->rateLimitHitThisRun && ! self::isRateLimited()) {
+                    $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
+                    if ($payload && $this->maybeEnrichExistingMessageMedia($existing, $payload, $accessToken)) {
+                        $imported++;
+                    }
                 }
                 $skippedExisting++;
                 $consecutiveExisting++;
@@ -397,6 +468,10 @@ class MetaInstagramInboxSyncService
             }
 
             $consecutiveExisting = 0;
+
+            if ($this->rateLimitHitThisRun || self::isRateLimited()) {
+                return;
+            }
 
             $payload = $this->resolveMessagePayload($accessToken, $version, $msgRow);
             if ($payload === null) {
@@ -513,6 +588,12 @@ class MetaInstagramInboxSyncService
 
             if (! $response->successful()) {
                 $apiErrors++;
+                if ($this->isRateLimitResponse($response)) {
+                    $this->activateRateLimitBackoff('list conversations', $igProfessionalId);
+
+                    return $all;
+                }
+
                 throw new \RuntimeException('List conversations failed: '.$response->body());
             }
 
@@ -913,5 +994,37 @@ class MetaInstagramInboxSyncService
         }
 
         return true;
+    }
+
+    private function isRateLimitResponse(\Illuminate\Http\Client\Response $response): bool
+    {
+        if (! in_array($response->status(), [403, 429], true)) {
+            return false;
+        }
+
+        $error = $response->json('error');
+        if (! is_array($error)) {
+            return $response->status() === 429;
+        }
+
+        $code = (int) ($error['code'] ?? 0);
+
+        return $code === 4
+            || $code === 17
+            || $code === 32
+            || ($error['is_transient'] ?? false) === true;
+    }
+
+    private function activateRateLimitBackoff(string $context, string $reference = ''): void
+    {
+        $this->rateLimitHitThisRun = true;
+        $minutes = max(5, (int) config('omnichannel.instagram_rate_limit_backoff_minutes', 20));
+        Cache::put(self::RATE_LIMIT_CACHE_KEY, now()->addMinutes($minutes)->timestamp, now()->addHours(3));
+
+        Log::warning('Meta Instagram API rate limit — sync paused', [
+            'context' => $context,
+            'reference' => mb_substr($reference, 0, 80),
+            'backoff_minutes' => $minutes,
+        ]);
     }
 }

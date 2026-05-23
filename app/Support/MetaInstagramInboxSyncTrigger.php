@@ -21,7 +21,11 @@ final class MetaInstagramInboxSyncTrigger
             return;
         }
 
-        $seconds = max(15, (int) config('omnichannel.instagram_inbox_poll_sync_seconds', 30));
+        if (MetaInstagramInboxSyncService::isRateLimited()) {
+            return;
+        }
+
+        $seconds = max(60, (int) config('omnichannel.instagram_inbox_poll_sync_seconds', 120));
         $lockKey = 'meta_instagram_inbox_sync_inbox_trigger';
 
         if (! Cache::add($lockKey, 1, now()->addSeconds($seconds))) {

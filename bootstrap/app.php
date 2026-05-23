@@ -155,9 +155,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // Instagram Login API — poll DM ke omnichannel (cadangan jika webhook tidak push)
         if (filter_var(env('META_INSTAGRAM_INBOX_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
-            // --recent=60: sync cepat (~1–2 menit) supaya cron tiap menit tidak ter-skip mutex lama
+            // --recent=60: sync ringan; tiap 5 menit + backoff saat Meta rate limit
             $schedule->command('meta:sync-instagram-inbox --recent=60')
-                ->everyMinute()
+                ->everyFiveMinutes()
                 ->withoutOverlapping(4)
                 ->appendOutputTo(storage_path('logs/meta-instagram-inbox-sync.log'));
         }
