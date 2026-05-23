@@ -36,7 +36,13 @@ WA_BROADCAST_BATCH_SIZE=50
 
 ## Filter penerima (JSON)
 
-- **member** — `member_apps_members.mobile_phone`
+**Filter statis (selalu):**
+- Nomor HP / `phone_normalized` terisi (tidak null & tidak kosong)
+- Member `is_active = 1` (kontak omni terhubung member ikut aturan ini)
+
+**Opsional:**
+- **transaction_from** / **transaction_to** — order `paid` di tabel `orders` (`orders.member_id` = member, `created_at` dalam rentang)
+- **member** — level, spending, search, allow_notification, dll.
 - **omni_contact** — `omni_contacts.phone_normalized`
 - **manual_member_ids** — ID member dipilih manual
 - **dedupe** — satu nomor sekali per campaign

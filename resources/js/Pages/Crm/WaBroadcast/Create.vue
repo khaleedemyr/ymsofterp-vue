@@ -56,6 +56,24 @@
             Penerima
           </h2>
 
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">Filter statis (selalu diterapkan)</p>
+            <ul class="mt-2 space-y-1 text-sm text-slate-700">
+              <li class="flex items-center gap-2">
+                <i class="fa-solid fa-check text-[#128C7E]" />
+                Nomor HP terisi (tidak null / kosong di database)
+              </li>
+              <li class="flex items-center gap-2">
+                <i class="fa-solid fa-check text-[#128C7E]" />
+                Member status <strong>aktif</strong> (<code class="text-xs">is_active = 1</code>)
+              </li>
+              <li class="flex items-center gap-2 text-slate-500">
+                <i class="fa-solid fa-info-circle" />
+                Kontak omnichannel: nomor WA terisi; jika terhubung member, member harus aktif
+              </li>
+            </ul>
+          </div>
+
           <div class="mt-4 flex flex-wrap gap-4">
             <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm has-[:checked]:border-[#128C7E] has-[:checked]:bg-[#128C7E]/5">
               <input v-model="form.sources.member" type="checkbox" class="rounded text-[#128C7E]" />
@@ -67,12 +85,35 @@
             </label>
           </div>
 
+          <div class="mt-4 space-y-3 rounded-xl border border-amber-100 bg-amber-50/50 p-4">
+            <p class="text-xs font-semibold uppercase text-amber-800">Transaksi aktif (opsional)</p>
+            <p class="text-xs text-amber-900/80">
+              Member yang punya order <strong>paid</strong> di tabel <code class="rounded bg-white px-1">orders</code> pada rentang tanggal.
+              Kosongkan jika tidak perlu filter transaksi.
+            </p>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Dari tanggal</label>
+                <input
+                  v-model="form.transactionFrom"
+                  type="date"
+                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700">Sampai tanggal</label>
+                <input
+                  v-model="form.transactionTo"
+                  type="date"
+                  class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
           <div v-if="form.sources.member" class="mt-4 space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
-            <p class="text-xs font-semibold uppercase text-slate-500">Filter member</p>
+            <p class="text-xs font-semibold uppercase text-slate-500">Filter member tambahan</p>
             <div class="grid gap-2 sm:grid-cols-2">
-              <label class="flex items-center gap-2 text-sm text-slate-700">
-                <input v-model="form.member.is_active" type="checkbox" class="rounded" /> Hanya aktif
-              </label>
               <label class="flex items-center gap-2 text-sm text-slate-700">
                 <input v-model="form.member.allow_notification_only" type="checkbox" class="rounded" /> allow_notification
               </label>
@@ -427,8 +468,9 @@ defineProps({
 const form = reactive({
   name: '',
   sources: { member: true, omni: true },
+  transactionFrom: '',
+  transactionTo: '',
   member: {
-    is_active: true,
     allow_notification_only: false,
     mobile_verified_only: false,
     levels: [],
@@ -552,12 +594,20 @@ function buildFilterDefinition() {
   if (form.sources.omni) filters.sources.push('omni_contact')
 
   filters.member = {
-    is_active: form.member.is_active,
     allow_notification_only: form.member.allow_notification_only,
     mobile_verified_only: form.member.mobile_verified_only,
     min_total_spending: form.member.min_spending ? Number(form.member.min_spending) : null,
     member_levels: form.member.levels.length ? [...form.member.levels] : [],
     search: form.member.search || null,
+  }
+
+  if (form.transactionFrom || form.transactionTo) {
+    const tx = {
+      transaction_from: form.transactionFrom || null,
+      transaction_to: form.transactionTo || null,
+    }
+    Object.assign(filters.member, tx)
+    Object.assign(filters.omni_contact, tx)
   }
 
   if (form.omni.has_member === 'yes') {
@@ -613,7 +663,8 @@ watch(
   () => [
     form.sources.member,
     form.sources.omni,
-    form.member.is_active,
+    form.transactionFrom,
+    form.transactionTo,
     form.member.allow_notification_only,
     form.member.mobile_verified_only,
     form.member.min_spending,

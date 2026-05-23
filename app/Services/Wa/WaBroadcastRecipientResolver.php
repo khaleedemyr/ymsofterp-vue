@@ -5,6 +5,8 @@ namespace App\Services\Wa;
 use App\Models\MemberAppsMember;
 use App\Models\OmniContact;
 use App\Support\OmniPhoneNormalizer;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
@@ -132,6 +134,7 @@ class WaBroadcastRecipientResolver
     {
         return MemberAppsMember::query()
             ->whereIn('id', array_map('intval', $memberIds))
+            ->where('is_active', 1)
             ->whereNotNull('mobile_phone')
             ->where('mobile_phone', '!=', '')
             ->get(['id', 'nama_lengkap', 'mobile_phone'])
@@ -166,13 +169,9 @@ class WaBroadcastRecipientResolver
      */
     private function fromMembers(array $memberFilters): Collection
     {
-        $query = MemberAppsMember::query()
-            ->whereNotNull('mobile_phone')
-            ->where('mobile_phone', '!=', '');
-
-        if (($memberFilters['is_active'] ?? true) !== false) {
-            $query->where('is_active', 1);
-        }
+        $query = MemberAppsMember::query();
+        $this->applyStaticMemberFilters($query);
+        $this->applyMemberTransactionDateFilter($query, $memberFilters);
 
         if (! empty($memberFilters['member_levels']) && is_array($memberFilters['member_levels'])) {
             $query->whereIn('member_level', $memberFilters['member_levels']);
@@ -237,7 +236,17 @@ class WaBroadcastRecipientResolver
     {
         $query = OmniContact::query()
             ->whereNotNull('phone_normalized')
-            ->where('phone_normalized', '!=', '');
+            ->where('phone_normalized', '!=', '')
+            ->where(function (Builder $q) {
+                $q->whereNull('member_apps_member_id')
+                    ->orWhereHas('member', function (Builder $memberQuery) {
+                        $this->applyStaticMemberFilters($memberQuery);
+                    });
+            });
+
+        if (! empty($contactFilters['transaction_from']) || ! empty($contactFilters['transaction_to'])) {
+            $this->applyMemberTransactionDateFilterOnOmniContact($query, $contactFilters);
+        }
 
         if (isset($contactFilters['has_member_link'])) {
             if (filter_var($contactFilters['has_member_link'], FILTER_VALIDATE_BOOLEAN)) {
@@ -276,5 +285,99 @@ class WaBroadcastRecipientResolver
             })
             ->filter()
             ->collect();
+    }
+
+    /**
+     * Filter statis: nomor HP terisi + member aktif.
+     */
+    private function applyStaticMemberFilters(Builder $query): void
+    {
+        $query
+            ->where('is_active', 1)
+            ->whereNotNull('mobile_phone')
+            ->where('mobile_phone', '!=', '');
+    }
+
+    /**
+     * Member dengan transaksi paid di tabel orders pada rentang tanggal.
+     *
+     * @param  array<string, mixed>  $memberFilters
+     */
+    private function applyMemberTransactionDateFilter(Builder $query, array $memberFilters): void
+    {
+        [$from, $to] = $this->parseTransactionDateRange($memberFilters);
+        if ($from === null && $to === null) {
+            return;
+        }
+
+        $query->whereExists(function ($sub) use ($from, $to) {
+            $sub->from('orders')
+                ->whereColumn('orders.member_id', 'member_apps_members.id')
+                ->where('orders.status', 'paid');
+
+            if ($from !== null) {
+                $sub->where('orders.created_at', '>=', $from);
+            }
+            if ($to !== null) {
+                $sub->where('orders.created_at', '<=', $to);
+            }
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $contactFilters
+     */
+    private function applyMemberTransactionDateFilterOnOmniContact(Builder $query, array $contactFilters): void
+    {
+        [$from, $to] = $this->parseTransactionDateRange($contactFilters);
+        if ($from === null && $to === null) {
+            return;
+        }
+
+        $query->whereHas('member', function (Builder $memberQuery) use ($from, $to) {
+            $this->applyStaticMemberFilters($memberQuery);
+            $memberQuery->whereExists(function ($sub) use ($from, $to) {
+                $sub->from('orders')
+                    ->whereColumn('orders.member_id', 'member_apps_members.id')
+                    ->where('orders.status', 'paid');
+
+                if ($from !== null) {
+                    $sub->where('orders.created_at', '>=', $from);
+                }
+                if ($to !== null) {
+                    $sub->where('orders.created_at', '<=', $to);
+                }
+            });
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array{0: ?Carbon, 1: ?Carbon}
+     */
+    private function parseTransactionDateRange(array $filters): array
+    {
+        $fromRaw = $filters['transaction_from'] ?? null;
+        $toRaw = $filters['transaction_to'] ?? null;
+
+        if (($fromRaw === null || $fromRaw === '') && ($toRaw === null || $toRaw === '')) {
+            return [null, null];
+        }
+
+        $from = ($fromRaw !== null && $fromRaw !== '')
+            ? Carbon::parse((string) $fromRaw)->startOfDay()
+            : null;
+        $to = ($toRaw !== null && $toRaw !== '')
+            ? Carbon::parse((string) $toRaw)->endOfDay()
+            : null;
+
+        if ($from === null && $to !== null) {
+            $from = $to->copy()->startOfDay();
+        }
+        if ($from !== null && $to === null) {
+            $to = $from->copy()->endOfDay();
+        }
+
+        return [$from, $to];
     }
 }
