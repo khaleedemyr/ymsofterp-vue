@@ -7,6 +7,7 @@ use App\Models\OmniContact;
 use App\Support\OmniPhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 
 /**
@@ -477,7 +478,7 @@ class WaBroadcastRecipientResolver
         return [$from, $to];
     }
 
-    private function whereOrderMemberIdMatchesMember(Builder $query): void
+    private function whereOrderMemberIdMatchesMember(Builder|QueryBuilder $query): void
     {
         $collation = self::MEMBER_ID_COLLATION;
         $query->whereRaw(
