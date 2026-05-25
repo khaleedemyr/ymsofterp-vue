@@ -70,7 +70,8 @@ Route::post('/webhooks/meta/messenger', [\App\Http\Controllers\Api\MetaMessenger
 // Instagram API with Instagram Login (alur setup YouTube / dashboard Instagram > API setup)
 Route::get('/webhooks/meta/instagram', [\App\Http\Controllers\Api\MetaInstagramWebhookController::class, 'verify'])
     ->name('api.webhooks.meta.instagram.verify');
-Route::post('/webhooks/meta/instagram', [\App\Http\Controllers\Api\MetaInstagramWebhookController::class, 'handle'])
+// POST: handler sama dengan Messenger (object=instagram) — hindari sig_invalid terpisah
+Route::post('/webhooks/meta/instagram', [\App\Http\Controllers\Api\MetaMessengerWebhookController::class, 'handle'])
     ->name('api.webhooks.meta.instagram');
 
 // Test route for approvers

@@ -27,7 +27,8 @@ class SyncMetaInstagramInboxCommand extends Command
         $result = $sync->syncAll($verbose, $recentMinutes);
 
         if ($result['accounts'] !== [] && isset($result['accounts'][0]['skipped']) && ($result['accounts'][0]['skipped'] ?? '') === 'rate_limit_backoff') {
-            $this->warn('Skipped: Meta Instagram rate limit backoff aktif — coba lagi nanti.');
+            $this->warn('Skipped: Meta Instagram rate limit backoff aktif.');
+            $this->warn('Jalankan: php artisan meta:debug-instagram-inbox --clear-rate-limit');
 
             return self::SUCCESS;
         }

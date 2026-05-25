@@ -12,7 +12,9 @@ Messenger/Page (jalur A) tetap bisa dipakai untuk Facebook Messenger; **Instagra
 
 | Field | Nilai |
 |-------|--------|
-| Callback URL | `https://{domain-erp}/api/webhooks/meta/instagram` |
+| Callback URL | `https://{domain-erp}/api/webhooks/meta/messenger` (sama dengan subscription `object=instagram` di App Webhooks) |
+
+Opsional lama `/api/webhooks/meta/instagram` — jika trace `sig_invalid`, ubah ke URL **messenger** di atas atau samakan `META_APP_SECRET` app ERP.
 | Verify token | sama dengan `META_WEBHOOK_VERIFY_TOKEN` |
 
 Subscribe field: **`messages`** (dan opsional messaging_postbacks, messaging_reactions).
@@ -89,7 +91,12 @@ Isi notifikasi: akun (Justus / Tempayan / Page FB), cuplikan post, nama & teks k
 
 Webhook Instagram Login sering **tidak push** di Development; andalkan polling + cron.
 
-Webhook kadang tidak push; ERP **poll** conversations tiap 1 menit (wajib cron jalan).
+Webhook kadang tidak push; ERP **poll** conversations **tiap 1 menit** (`schedule:run` + `meta:sync-instagram-inbox --recent=60`). Buka inbox juga trigger sync ~45 detik.
+
+Setelah sync manual, DM baru butuh **cron jalan** atau halaman inbox terbuka — bukan real-time seperti WA. Jika `imported=0` terus: `php artisan meta:debug-instagram-inbox --clear-rate-limit`.
+
+Webhook `sig_invalid` di trace → tambah di `.env` sementara:
+`OMNI_INSTAGRAM_WEBHOOK_RELAX_SIGNATURE=true` lalu `config:clear`, atau ubah callback IG ke `/api/webhooks/meta/messenger`.
 
 Cron memakai mode cepat `--recent=60` (hanya DM 60 menit terakhir). Impor riwayat penuh:
 
@@ -106,6 +113,15 @@ php artisan meta:enrich-instagram-profiles --limit=200
 Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/meta-instagram-inbox-sync.log`.
 
 ### DM tidak masuk lagi (WA sudah OK, IG mati)?
+
+Penyebab umum dari debug:
+
+1. **`Rate limit backoff AKTIF`** → sync otomatis di-skip. Jalankan:
+   ```bash
+   php artisan meta:debug-instagram-inbox --clear-rate-limit
+   php artisan meta:sync-instagram-inbox --recent=60 -v
+   ```
+2. **Webhook `/instagram` → `sig_invalid`** di trace → pesan tidak disimpan. Ubah callback Instagram Login ke **`/api/webhooks/meta/messenger`** (lihat tabel di atas).
 
 Instagram **bukan webhook utama** — andalkan **polling** + token `IGQ…` (~60 hari).
 

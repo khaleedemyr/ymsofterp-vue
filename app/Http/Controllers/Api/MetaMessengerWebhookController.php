@@ -52,8 +52,14 @@ class MetaMessengerWebhookController extends Controller
 
         if (! MetaWebhookSignature::isValid($request)) {
             MetaWebhookTrace::write('messenger', 'POST', $request, 'sig_invalid');
-            Log::warning('Meta Messenger webhook rejected: invalid signature');
-            abort(403, 'Invalid signature');
+            $object = (string) (json_decode($request->getContent(), true)['object'] ?? '');
+            $relaxIg = $object === 'instagram'
+                && filter_var(config('omnichannel.instagram_webhook_relax_signature', false), FILTER_VALIDATE_BOOLEAN);
+            if (! $relaxIg) {
+                Log::warning('Meta Messenger webhook rejected: invalid signature', ['object' => $object]);
+                abort(403, 'Invalid signature');
+            }
+            Log::warning('Meta Instagram webhook: invalid signature — processing anyway (OMNI_INSTAGRAM_WEBHOOK_RELAX_SIGNATURE)');
         }
 
         try {
