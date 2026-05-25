@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniFlowRun;
 use App\Models\OmniMessage;
@@ -18,6 +19,8 @@ use App\Support\MetaInstagramTokens;
 use App\Support\OmniMetaMessagePayload;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
+use App\Services\Omni\OmniContactProfileService;
+use App\Support\OmniContactMaritalStatus;
 use App\Support\OmniLeadStages;
 use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Support\OmnichannelAuthorization;
@@ -66,7 +69,8 @@ class OmnichannelInboxController extends Controller
             $conversation = OmniConversation::query()
                 ->with([
                     'member',
-                    'omniContact:id,display_name,avatar_url',
+                    'omniContact:id,display_name,avatar_url,marital_status,preferred_outlet_id,preferred_area',
+                    'omniContact.preferredOutlet:id_outlet,nama_outlet,lokasi',
                     'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                     'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                     'teams:id,name',
@@ -109,7 +113,27 @@ class OmnichannelInboxController extends Controller
             'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
                 || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
             'aiWritingEnabled' => filter_var(config('omnichannel.ai_writing.enabled', true), FILTER_VALIDATE_BOOLEAN),
+            'maritalStatusOptions' => OmniContactMaritalStatus::options(),
+            'outletOptions' => $this->outletOptionsForInbox(),
         ]);
+    }
+
+    /**
+     * @return list<array{id: int, name: string, location: ?string}>
+     */
+    private function outletOptionsForInbox(): array
+    {
+        return DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet', 'lokasi'])
+            ->map(fn ($row) => [
+                'id' => (int) $row->id_outlet,
+                'name' => (string) $row->nama_outlet,
+                'location' => $row->lokasi ? (string) $row->lokasi : null,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -134,7 +158,8 @@ class OmnichannelInboxController extends Controller
             $conversation = OmniConversation::query()
                 ->with([
                     'member',
-                    'omniContact:id,display_name,avatar_url',
+                    'omniContact:id,display_name,avatar_url,marital_status,preferred_outlet_id,preferred_area',
+                    'omniContact.preferredOutlet:id_outlet,nama_outlet,lokasi',
                     'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                     'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                     'teams:id,name',
@@ -206,7 +231,7 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
-    public function update(Request $request, OmniConversation $conversation): JsonResponse
+    public function update(Request $request, OmniConversation $conversation, OmniContactProfileService $contactProfile): JsonResponse
     {
         $this->assertInboxAccess($request);
         $user = $request->user();
@@ -228,6 +253,9 @@ class OmnichannelInboxController extends Controller
             'contact_email' => ['nullable', 'string', 'max:255'],
             'contact_company' => ['nullable', 'string', 'max:255'],
             'contact_job_title' => ['nullable', 'string', 'max:255'],
+            'marital_status' => ['nullable', 'string', Rule::in(OmniContactMaritalStatus::values())],
+            'preferred_outlet_id' => ['nullable', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'preferred_area' => ['nullable', 'string', 'max:255'],
         ]);
 
         $notify = (bool) ($validated['notify_assignees'] ?? false);
@@ -243,6 +271,20 @@ class OmnichannelInboxController extends Controller
         if (array_key_exists('assigned_team_ids', $validated)) {
             $assignedTeamIds = array_values(array_unique(array_filter($validated['assigned_team_ids'] ?? [])));
             unset($validated['assigned_team_ids']);
+        }
+
+        $contactProfilePayload = [];
+        if (array_key_exists('marital_status', $validated)) {
+            $contactProfilePayload['marital_status'] = $validated['marital_status'];
+            unset($validated['marital_status']);
+        }
+        if (array_key_exists('preferred_outlet_id', $validated)) {
+            $contactProfilePayload['preferred_outlet_id'] = $validated['preferred_outlet_id'];
+            unset($validated['preferred_outlet_id']);
+        }
+        if (array_key_exists('preferred_area', $validated)) {
+            $contactProfilePayload['preferred_area'] = $validated['preferred_area'];
+            unset($validated['preferred_area']);
         }
 
         $conversation->fill($validated);
@@ -266,6 +308,14 @@ class OmnichannelInboxController extends Controller
 
         $conversation->save();
 
+        if ($contactProfilePayload !== []) {
+            try {
+                $contactProfile->updateForConversation($conversation, $contactProfilePayload);
+            } catch (RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+        }
+
         $notifyUserIds = [];
         if ($notify && ($assignedIds !== null || $assignedTeamIds !== null)) {
             if ($assignedIds !== null) {
@@ -288,6 +338,8 @@ class OmnichannelInboxController extends Controller
         return response()->json([
             'conversation' => $this->formatConversation($conversation->fresh([
                 'member',
+                'omniContact:id,display_name,avatar_url,marital_status,preferred_outlet_id,preferred_area',
+                'omniContact.preferredOutlet:id_outlet,nama_outlet,lokasi',
                 'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
@@ -918,6 +970,7 @@ class OmnichannelInboxController extends Controller
                 'member_level' => $conversation->member->member_level,
                 'is_exclusive_member' => (bool) $conversation->member->is_exclusive_member,
             ] : null,
+            'contact_profile' => $this->formatContactProfile($omniContact),
             'automation_paused' => (bool) $conversation->automation_paused,
             'active_flow' => $conversation->relationLoaded('activeFlowRun') && $conversation->activeFlowRun
                 ? [
@@ -926,6 +979,38 @@ class OmnichannelInboxController extends Controller
                     'flow_name' => $conversation->activeFlowRun->flow?->name,
                 ]
                 : null,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   marital_status: ?string,
+     *   marital_status_label: ?string,
+     *   preferred_outlet_id: ?int,
+     *   preferred_outlet_name: ?string,
+     *   preferred_area: ?string
+     * }
+     */
+    private function formatContactProfile(?OmniContact $contact): array
+    {
+        if (! $contact) {
+            return [
+                'marital_status' => null,
+                'marital_status_label' => null,
+                'preferred_outlet_id' => null,
+                'preferred_outlet_name' => null,
+                'preferred_area' => null,
+            ];
+        }
+
+        $outlet = $contact->relationLoaded('preferredOutlet') ? $contact->preferredOutlet : null;
+
+        return [
+            'marital_status' => $contact->marital_status,
+            'marital_status_label' => OmniContactMaritalStatus::label($contact->marital_status),
+            'preferred_outlet_id' => $contact->preferred_outlet_id ? (int) $contact->preferred_outlet_id : null,
+            'preferred_outlet_name' => $outlet?->nama_outlet,
+            'preferred_area' => $contact->preferred_area,
         ];
     }
 

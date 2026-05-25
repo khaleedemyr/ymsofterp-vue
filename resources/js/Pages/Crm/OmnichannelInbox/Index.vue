@@ -575,6 +575,29 @@
                 <dt class="text-slate-500">Penanggung jawab</dt>
                 <dd class="mt-0.5 font-medium text-slate-900">{{ contactOwnerLabel }}</dd>
               </div>
+              <template v-if="selectedConversation.contact_profile">
+                <div
+                  v-if="selectedConversation.contact_profile.marital_status_label"
+                  class="flex justify-between gap-2 border-t border-slate-100 pt-1.5"
+                >
+                  <dt class="shrink-0 text-slate-500">Status marital</dt>
+                  <dd class="text-right">{{ selectedConversation.contact_profile.marital_status_label }}</dd>
+                </div>
+                <div
+                  v-if="selectedConversation.contact_profile.preferred_outlet_name"
+                  class="flex justify-between gap-2"
+                >
+                  <dt class="shrink-0 text-slate-500">Outlet pilihan</dt>
+                  <dd class="text-right">{{ selectedConversation.contact_profile.preferred_outlet_name }}</dd>
+                </div>
+                <div
+                  v-if="selectedConversation.contact_profile.preferred_area"
+                  class="flex justify-between gap-2"
+                >
+                  <dt class="shrink-0 text-slate-500">Area</dt>
+                  <dd class="text-right">{{ selectedConversation.contact_profile.preferred_area }}</dd>
+                </div>
+              </template>
             </dl>
           </div>
 
@@ -595,6 +618,47 @@
             </p>
             <p v-if="selectedConversation.member.member_id" class="mt-0.5 font-mono text-[11px] text-emerald-700">
               ID: {{ selectedConversation.member.member_id }}
+            </p>
+          </div>
+
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Profil kontak</p>
+          <div class="space-y-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+            <div>
+              <label class="text-[10px] font-semibold uppercase text-slate-500">Status marital</label>
+              <select
+                v-model="crmForm.marital_status"
+                class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+              >
+                <option value="">— Belum diisi —</option>
+                <option v-for="opt in maritalStatusOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] font-semibold uppercase text-slate-500">Outlet pilihan</label>
+              <select
+                v-model="crmForm.preferred_outlet_id"
+                class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+              >
+                <option :value="null">— Pilih outlet —</option>
+                <option v-for="o in outletOptions" :key="o.id" :value="o.id">
+                  {{ o.name }}{{ o.location ? ` (${o.location})` : '' }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] font-semibold uppercase text-slate-500">Area / wilayah</label>
+              <input
+                v-model="crmForm.preferred_area"
+                type="text"
+                maxlength="255"
+                class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                placeholder="Contoh: Jakarta Selatan, BSD, dll."
+              />
+            </div>
+            <p class="text-[10px] text-slate-500">
+              Disimpan per kontak (berlaku untuk semua chat kanal nomor/ID yang sama).
             </p>
           </div>
 
@@ -707,6 +771,8 @@ const props = defineProps({
   canManageOmnichannelFlows: { type: Boolean, default: false },
   messageTemplates: { type: Array, default: () => [] },
   aiWritingEnabled: { type: Boolean, default: true },
+  maritalStatusOptions: { type: Array, default: () => [] },
+  outletOptions: { type: Array, default: () => [] },
 })
 
 /** Kunci partial reload Inertia agar daftar chat, pesan, dan hak "lihat semua" selalu sinkron (satu sumber kebenaran). */
@@ -799,6 +865,9 @@ const crmForm = ref({
   assignees: [],
   assigned_teams: [],
   memo: '',
+  marital_status: '',
+  preferred_outlet_id: null,
+  preferred_area: '',
 })
 
 let pollTimer = null
@@ -1291,11 +1360,15 @@ function selectConversation(id) {
 
 function syncCrmFormFromConversation(conv) {
   if (!conv) return
+  const profile = conv.contact_profile || {}
   crmForm.value = {
     lead_stage: conv.lead_stage || 'new_lead',
     assignees: Array.isArray(conv.assignees) ? [...conv.assignees] : [],
     assigned_teams: Array.isArray(conv.assigned_teams) ? [...conv.assigned_teams] : [],
     memo: conv.memo || '',
+    marital_status: profile.marital_status || '',
+    preferred_outlet_id: profile.preferred_outlet_id ?? null,
+    preferred_area: profile.preferred_area || '',
   }
 }
 
@@ -1676,6 +1749,9 @@ async function saveCrmPanel() {
     assigned_user_ids: (f.assignees || []).map((a) => a.id),
     assigned_team_ids: (f.assigned_teams || []).map((t) => t.id),
     notify_assignees: notifyAssigneesOnSave.value,
+    marital_status: f.marital_status || null,
+    preferred_outlet_id: f.preferred_outlet_id || null,
+    preferred_area: f.preferred_area?.trim() || null,
   }
   try {
     await axios.patch(`/crm/omnichannel-inbox/conversations/${selectedId.value}`, payload)
