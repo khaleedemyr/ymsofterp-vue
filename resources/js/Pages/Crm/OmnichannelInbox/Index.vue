@@ -765,7 +765,7 @@
               >
                 <option :value="null">— Pilih outlet —</option>
                 <option v-for="o in outletOptions" :key="o.id" :value="o.id">
-                  {{ o.name }}{{ o.location ? ` (${o.location})` : '' }}
+                  {{ o.name }}
                 </option>
               </select>
             </div>
