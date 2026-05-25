@@ -2710,6 +2710,8 @@ Route::middleware(['auth'])->group(function () {
         ->where(['pageId' => '[0-9]+', 'commentId' => '[0-9_]+'])
         ->name('crm.instagram-comments.facebook.reply');
 
+    Route::get('/crm/omnichannel-chat-analytics', [App\Http\Controllers\OmnichannelChatAnalyticsController::class, 'index'])->name('crm.omnichannel-chat-analytics.index');
+
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
     Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');
     Route::patch('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('crm.omnichannel-inbox.update');

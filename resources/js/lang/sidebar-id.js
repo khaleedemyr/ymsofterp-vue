@@ -262,6 +262,7 @@ export default {
     "guest_comment_ocr": "Komentar Tamu (OCR)",
     "customer_voice_command_center": "Pusat Komando Suara Pelanggan",
     "omnichannel_inbox": "Inbox Omnichannel",
+    "omnichannel_chat_analytics": "Analisis Chat",
     "wa_broadcast": "Broadcast WhatsApp",
     "instagram_comments": "IG & FB Post / Komentar",
     "omnichannel_teams": "Tim Inbox Omnichannel",

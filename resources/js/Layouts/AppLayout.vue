@@ -32,6 +32,7 @@ const crmMenusFromDb = computed(() => page.props.crmMenusFromDb ?? []);
 /** Urutan menu omnichannel di grup CRM (sama pola erp_menu + permission view) */
 const CRM_DB_MENU_ORDER = [
     'omnichannel_inbox',
+    'omnichannel_chat_analytics',
     'wa_broadcast',
     'instagram_comments',
     'omnichannel_teams',
@@ -593,6 +594,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.guest_comment_ocr'), icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
             { name: () => t('sidebar.menus.customer_voice_command_center'), icon: 'fa-solid fa-headset', route: '/customer-voice-command-center', code: 'customer_voice_command_center' },
             { name: () => t('sidebar.menus.omnichannel_inbox'), icon: 'fa-solid fa-inbox', route: '/crm/omnichannel-inbox', code: 'omnichannel_inbox' },
+            { name: () => t('sidebar.menus.omnichannel_chat_analytics'), icon: 'fa-solid fa-chart-line', route: '/crm/omnichannel-chat-analytics', code: 'omnichannel_chat_analytics' },
             { name: () => t('sidebar.menus.wa_broadcast'), icon: 'fa-brands fa-whatsapp', route: '/crm/wa-broadcast', code: 'wa_broadcast' },
             { name: () => t('sidebar.menus.instagram_comments'), icon: 'fa-brands fa-instagram', route: '/crm/instagram-comments', code: 'instagram_comments' },
             { name: () => t('sidebar.menus.omnichannel_teams'), icon: 'fa-solid fa-people-group', route: '/crm/omnichannel-teams', code: 'omnichannel_teams' },
