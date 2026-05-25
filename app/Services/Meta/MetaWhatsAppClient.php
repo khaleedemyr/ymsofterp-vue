@@ -273,6 +273,35 @@ class MetaWhatsAppClient
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function getPhoneNumberDetails(?string $phoneNumberId = null): array
+    {
+        $token = config('services.meta.whatsapp_access_token');
+        $phoneNumberId = $phoneNumberId ?: config('services.meta.whatsapp_phone_number_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $phoneNumberId) {
+            throw new RuntimeException('META_WHATSAPP_ACCESS_TOKEN dan META_WHATSAPP_PHONE_NUMBER_ID wajib diisi.');
+        }
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->get("https://graph.facebook.com/{$version}/{$phoneNumberId}", [
+                'fields' => 'display_phone_number,verified_name,quality_rating,code_verification_status,platform_type',
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'Phone number lookup failed: '.$response->body(),
+                $response->status()
+            );
+        }
+
+        return $response->json() ?? [];
+    }
+
+    /**
      * App mana saja yang subscribe webhook WABA ini (mis. Sleekflow vs ERP).
      *
      * @return list<array<string, mixed>>

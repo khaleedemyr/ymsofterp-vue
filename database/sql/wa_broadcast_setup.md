@@ -179,11 +179,33 @@ META_WHATSAPP_WEBHOOK_ARCHIVE=true
 
 **Alur disarankan:** perbaiki webhook → kirim chat tes → cek folder arsip ada file `.json` → `php artisan meta:sync-whatsapp-inbox --replay` → cek inbox.
 
-**Arsip kosong (`File arsip pending: 0`)?**
+**Arsip kosong (`File arsip pending: 0`) + chat tes tidak masuk?**
 
-1. Meta belum POST ke server (callback salah / belum Verify) → cek `storage/logs/whatsapp-webhook.trace.log` setelah kirim chat
-2. POST ditolak signature **sebelum** arsip (versi lama) — deploy controller terbaru (arsip **sebelum** cek signature)
-3. `.env`: `META_WHATSAPP_WEBHOOK_ARCHIVE=true` + `php artisan config:clear`
+Ini berarti **Meta tidak mengirim POST** ke server (bukan masalah replay). `meta:sync-whatsapp-inbox --replay` tidak akan membantu.
+
+```bash
+php artisan meta:debug-whatsapp-webhook --probe
+php artisan meta:whatsapp-waba-subscribe
+php artisan meta:whatsapp-waba-subscribe --subscribe
+# Terminal 2 — kirim chat ke nomor WA production:
+tail -f storage/logs/whatsapp-webhook.trace.log
+```
+
+| Yang harus terlihat | Artinya |
+|---------------------|---------|
+| Trace `POST content_len>0` + `note=processed` | Webhook OK |
+| Trace kosong setelah kirim chat | Callback URL salah / belum Verify / WABA tidak subscribe ERP |
+| Trace `sig_invalid` | `META_APP_SECRET` salah (app `1302269045204850`) |
+| `subscribed_apps` tanpa YMSoft ERP | Jalankan `--subscribe` + token `META_WHATSAPP_ACCESS_TOKEN` valid |
+
+Checklist Meta Dashboard (app **YMSoft ERP**, bukan Sleekflow):
+
+1. WhatsApp → Configuration → Callback `https://ymsofterp.com/api/webhooks/meta/whatsapp`
+2. Verify token = `META_WEBHOOK_VERIFY_TOKEN` → **Verify and save**
+3. Field **`messages`** dicentang
+4. `.env`: `APP_URL=https://ymsofterp.com`, `META_WHATSAPP_WEBHOOK_ARCHIVE=true`
+
+Versi lama: POST ditolak signature sebelum arsip — deploy controller terbaru (arsip **sebelum** cek signature).
 
 **Error `Session has expired` di Pull Graph:** itu token **Facebook Page** (`META_PAGE_TOKENS`), bukan token WhatsApp. Abaikan untuk webhook; perbarui Page token hanya jika perlu pull Graph.
 
