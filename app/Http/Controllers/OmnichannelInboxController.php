@@ -788,7 +788,11 @@ class OmnichannelInboxController extends Controller
             $query->where('id', '<', $beforeId);
         }
 
-        $rows = $query->orderByDesc('id')->limit($limit + 1)->get();
+        $rows = $query
+            ->orderByDesc('sent_at')
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
         $hasMore = $rows->count() > $limit;
         if ($hasMore) {
             $rows = $rows->take($limit);

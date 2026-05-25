@@ -1069,6 +1069,10 @@ function isImageLikeMessage(msg) {
 }
 
 function displayMessageBody(msg) {
+  if (msg?.message_type === 'reaction') {
+    const emoji = (msg.body || '').trim()
+    return emoji && emoji !== '[reaction]' && emoji !== '[Reaksi]' ? emoji : 'Reaksi'
+  }
   const body = (msg.body || '').trim()
   if (!body) return ''
   if (isEphemeralMessage(msg)) {
@@ -1710,7 +1714,13 @@ async function pollInbox() {
         hasMoreOlder.value = !!data.has_more_older
       }
       if (data.oldest_message_id != null) {
-        oldestMessageId.value = data.oldest_message_id
+        const polledOldest = data.oldest_message_id
+        if (
+          oldestMessageId.value == null
+          || polledOldest < oldestMessageId.value
+        ) {
+          oldestMessageId.value = polledOldest
+        }
       } else if (merged.length > 0 && oldestMessageId.value == null) {
         oldestMessageId.value = merged[0]?.id ?? null
       }

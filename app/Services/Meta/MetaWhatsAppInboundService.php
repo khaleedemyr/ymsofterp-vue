@@ -8,6 +8,7 @@ use App\Models\MemberAppsMember;
 use App\Models\OmniContact;
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Support\OmniWhatsappPhoneNormalizer;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -62,7 +63,7 @@ class MetaWhatsAppInboundService
             ? Carbon::createFromTimestamp((int) $message['timestamp'], 'UTC')->timezone(config('app.timezone'))
             : now();
 
-        $normalizedPhone = $this->normalizePhone($from);
+        $normalizedPhone = OmniWhatsappPhoneNormalizer::normalize($from);
         if ($normalizedPhone === '') {
             $normalizedPhone = preg_replace('/\D/', '', $from) ?? '';
         }
@@ -232,7 +233,7 @@ class MetaWhatsAppInboundService
         ?int $memberId,
         int $omniContactId
     ): OmniConversation {
-        $lookupIds = $this->whatsappExternalIdCandidates($from, $normalizedPhone);
+        $lookupIds = OmniWhatsappPhoneNormalizer::lookupCandidates($from, $normalizedPhone);
 
         $conversation = OmniConversation::query()
             ->where('channel', 'whatsapp')
@@ -262,22 +263,6 @@ class MetaWhatsAppInboundService
             'omni_contact_id' => $omniContactId,
             'status' => 'open',
         ]);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function whatsappExternalIdCandidates(string $from, string $normalizedPhone): array
-    {
-        $digits = preg_replace('/\D/', '', $from) ?? '';
-
-        return array_values(array_unique(array_filter([
-            $from,
-            $normalizedPhone,
-            $digits,
-            $digits !== '' ? '0'.substr($digits, 1) : null,
-            $digits !== '' ? '+'.$digits : null,
-        ])));
     }
 
     private function shouldSkipInboundNotify(string $messageType): bool
@@ -329,7 +314,7 @@ class MetaWhatsAppInboundService
 
     private function findMemberIdByPhone(string $waId): ?int
     {
-        $normalized = $this->normalizePhone($waId);
+        $normalized = OmniWhatsappPhoneNormalizer::normalize($waId);
         if ($normalized === '') {
             return null;
         }
@@ -354,14 +339,4 @@ class MetaWhatsAppInboundService
         return $member?->id;
     }
 
-    private function normalizePhone(string $phone): string
-    {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
-
-        if (str_starts_with($digits, '0')) {
-            $digits = '62'.substr($digits, 1);
-        }
-
-        return $digits;
-    }
 }

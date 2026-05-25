@@ -152,7 +152,7 @@ grep "Meta WhatsApp" storage/logs/laravel.log | tail -30
 | `sig_invalid` di trace | `META_APP_SECRET` bukan secret app ERP `1302269045204850` |
 | POST ada, DB kosong | Error simpan — lihat `webhook processing failed` di laravel.log |
 | DB ada, UI kosong | Filter inbox / hak akses tim |
-| **Notif ada, inbox tidak** | Thread WA duplikat (`external_contact_id` format beda, nomor sama) — jalankan `php artisan omni:merge-whatsapp-conversations` setelah deploy fix normalisasi |
+| **Notif ada, inbox tidak** | Pesan di `omni_messages` tapi `conversation_id` beda (nomor MY `6013…` vs `136…`) — `php artisan omni:diagnose-whatsapp 60136181990` lalu `php artisan omni:merge-whatsapp-conversations` |
 
 Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (matikan setelah beres).
 

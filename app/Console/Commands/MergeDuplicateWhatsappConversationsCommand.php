@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\OmniConversation;
 use App\Models\OmniMessage;
+use App\Support\OmniWhatsappPhoneNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -27,7 +28,7 @@ class MergeDuplicateWhatsappConversationsCommand extends Command
 
         $groups = [];
         foreach ($conversations as $conversation) {
-            $key = $conversation->phone_number_id.'|'.$this->normalizePhone((string) $conversation->external_contact_id);
+            $key = $conversation->phone_number_id.'|'.OmniWhatsappPhoneNormalizer::normalize((string) $conversation->external_contact_id);
             if ($key === '|' || str_ends_with($key, '|')) {
                 continue;
             }
@@ -41,7 +42,7 @@ class MergeDuplicateWhatsappConversationsCommand extends Command
             }
 
             $canonical = $items[0];
-            $canonicalPhone = $this->normalizePhone((string) $canonical->external_contact_id);
+            $canonicalPhone = OmniWhatsappPhoneNormalizer::normalize((string) $canonical->external_contact_id);
             $duplicates = array_slice($items, 1);
 
             $this->line("Grup {$key}: simpan #{$canonical->id}, gabung ".count($duplicates).' duplikat');
@@ -101,16 +102,5 @@ class MergeDuplicateWhatsappConversationsCommand extends Command
             : "Selesai: {$merged} thread duplikat digabung.");
 
         return self::SUCCESS;
-    }
-
-    private function normalizePhone(string $phone): string
-    {
-        $digits = preg_replace('/\D/', '', $phone) ?? '';
-
-        if (str_starts_with($digits, '0')) {
-            $digits = '62'.substr($digits, 1);
-        }
-
-        return $digits;
     }
 }
