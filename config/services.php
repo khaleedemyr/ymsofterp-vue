@@ -73,6 +73,8 @@ return [
         'graph_api_version' => env('META_GRAPH_API_VERSION', 'v25.0'),
         'webhook_verify_token' => env('META_WEBHOOK_VERIFY_TOKEN'),
         'webhook_skip_signature_verify' => env('META_WEBHOOK_SKIP_SIGNATURE_VERIFY', false),
+        /** Simpan payload webhook WA ke storage (untuk meta:sync-whatsapp-inbox --replay) */
+        'whatsapp_webhook_archive' => env('META_WHATSAPP_WEBHOOK_ARCHIVE', true),
     ],
 
     'fcm' => [

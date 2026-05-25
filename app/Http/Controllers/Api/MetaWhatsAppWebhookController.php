@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\Meta\MetaWebhookSignature;
 use App\Services\Meta\MetaWhatsAppInboundService;
 use App\Support\MetaWebhookTrace;
+use App\Support\MetaWhatsAppWebhookArchive;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -55,6 +56,8 @@ class MetaWhatsAppWebhookController extends Controller
             Log::warning('Meta WhatsApp webhook rejected: invalid signature');
             abort(403, 'Invalid signature');
         }
+
+        MetaWhatsAppWebhookArchive::storeFromRequest($request);
 
         try {
             app(MetaWhatsAppInboundService::class)->processPayload($request->all());

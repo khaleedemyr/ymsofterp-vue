@@ -155,6 +155,29 @@ grep "Meta WhatsApp" storage/logs/laravel.log | tail -30
 
 Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (matikan setelah beres).
 
+## Sync manual WA ke database (server)
+
+WhatsApp **Cloud API tidak punya** poll conversation seperti IG/Messenger. Yang tersedia di ERP:
+
+1. **Webhook** (utama) — setiap chat masuk disimpan + diarsipkan ke `storage/app/meta-webhook-archive/whatsapp/`
+2. **Replay arsip** — tarik ulang payload yang sudah pernah POST ke server:
+
+```bash
+# Setelah deploy (pastikan META_WHATSAPP_WEBHOOK_ARCHIVE=true)
+php artisan meta:sync-whatsapp-inbox --replay
+# atau replay + percobaan pull Graph (sering gagal untuk WA)
+php artisan meta:sync-whatsapp-inbox
+php artisan meta:sync-whatsapp-inbox --recent=60
+```
+
+Env:
+
+```env
+META_WHATSAPP_WEBHOOK_ARCHIVE=true
+```
+
+**Alur disarankan:** perbaiki webhook → kirim chat tes → cek folder arsip ada file `.json` → `php artisan meta:sync-whatsapp-inbox --replay` → cek inbox.
+
 ## Catatan Meta
 
 - Broadcast massal wajib **template resmi**, bukan teks bebas
