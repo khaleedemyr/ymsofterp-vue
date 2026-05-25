@@ -316,6 +316,13 @@
                   }}
                 </button>
                 <p v-if="displayMessageBody(msg)" class="whitespace-pre-wrap break-words">{{ displayMessageBody(msg) }}</p>
+                <p
+                  v-if="msg.direction === 'internal' && msg.mentioned_users?.length"
+                  class="mt-1.5 text-[10px] text-amber-800"
+                >
+                  <i class="fa-solid fa-at mr-0.5" />
+                  {{ msg.mentioned_users.map((u) => formatUserOptionLabel(u)).join(', ') }}
+                </p>
                 <p class="mt-1 text-right text-[10px] leading-relaxed opacity-85">
                   <span
                     v-if="msg.direction === 'outbound' && msg.author_name"
@@ -387,7 +394,32 @@
               </div>
               <div class="relative min-w-0 flex-1">
                 <div
-                  v-if="templateMenuOpen && filteredTemplates.length > 0"
+                  v-if="mentionMenuOpen && composerMode === 'internal' && filteredMentionUsers.length > 0"
+                  class="absolute bottom-full left-0 right-0 z-30 mb-1 max-h-56 overflow-y-auto rounded-lg border border-amber-200 bg-white py-1 shadow-lg"
+                >
+                  <p class="border-b border-amber-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                    Tag rekan (@)
+                  </p>
+                  <button
+                    v-for="(u, idx) in filteredMentionUsers"
+                    :key="u.id"
+                    type="button"
+                    class="flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-amber-50"
+                    :class="idx === mentionMenuHighlight ? 'bg-amber-50' : ''"
+                    @mousedown.prevent="applyMention(u)"
+                  >
+                    <span class="font-medium text-slate-900">{{ u.name }}</span>
+                    <span class="mt-0.5 text-xs text-slate-500">{{ formatUserOptionLabel(u) }}</span>
+                  </button>
+                </div>
+                <p
+                  v-else-if="mentionMenuOpen && composerMode === 'internal'"
+                  class="absolute bottom-full left-0 mb-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                >
+                  Tidak ada user yang cocok.
+                </p>
+                <div
+                  v-else-if="templateMenuOpen && filteredTemplates.length > 0"
                   class="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
                 >
                   <p class="border-b border-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -847,6 +879,11 @@ const composerEl = ref(null)
 const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
+const mentionMenuOpen = ref(false)
+const mentionQuery = ref('')
+const mentionMenuHighlight = ref(0)
+/** @type {import('vue').Ref<number[]>} */
+const pendingMentionUserIds = ref([])
 const emojiPickerOpen = ref(false)
 const pendingAttachment = ref(null)
 const imageInputRef = ref(null)
@@ -959,9 +996,25 @@ const filteredConversations = computed(() => {
   })
 })
 
+const filteredMentionUsers = computed(() => {
+  const q = mentionQuery.value.trim().toLowerCase()
+  const list = props.assignableUsers || []
+  if (!q) {
+    return list.slice(0, 25)
+  }
+  return list
+    .filter((u) => {
+      const name = (u.name || '').toLowerCase()
+      const jabatan = (u.jabatan || '').toLowerCase()
+      const outlet = (u.outlet || '').toLowerCase()
+      return name.includes(q) || jabatan.includes(q) || outlet.includes(q)
+    })
+    .slice(0, 25)
+})
+
 const composerPlaceholder = computed(() => {
   if (composerMode.value === 'internal') {
-    return 'Catatan hanya untuk tim... (ketik / untuk template)'
+    return 'Catatan untuk tim... ketik @ untuk tag rekan (nama · outlet · jabatan)'
   }
   const ch = selectedConversation.value?.channel
   if (ch === 'instagram') {
@@ -1260,6 +1313,7 @@ function openMediaUrl(url) {
 watch(selectedId, () => {
   imageLoadFailed.value = {}
   mediaResolveFailed.value = {}
+  clearMentionState()
 })
 
 function stageDotClass(color) {
@@ -1538,9 +1592,19 @@ watch(
 function setComposerMode(mode) {
   composerMode.value = mode
   templateMenuOpen.value = false
+  mentionMenuOpen.value = false
+  mentionQuery.value = ''
+  pendingMentionUserIds.value = []
   emojiPickerOpen.value = false
   aiMenuOpen.value = false
   nextTick(() => composerEl.value?.focus())
+}
+
+function clearMentionState() {
+  mentionMenuOpen.value = false
+  mentionQuery.value = ''
+  mentionMenuHighlight.value = 0
+  pendingMentionUserIds.value = []
 }
 
 async function runAiAssist(action, opts = {}) {
@@ -1612,8 +1676,21 @@ function clearAttachment() {
 
 function onComposerInput() {
   const text = replyText.value
+  if (composerMode.value === 'internal') {
+    const mentionMatch = text.match(/@([^\n@]*)$/)
+    if (mentionMatch) {
+      mentionMenuOpen.value = true
+      mentionQuery.value = mentionMatch[1]
+      mentionMenuHighlight.value = 0
+      templateMenuOpen.value = false
+      templateQuery.value = ''
+      return
+    }
+    mentionMenuOpen.value = false
+    mentionQuery.value = ''
+  }
   const match = text.match(/\/([\p{L}\p{N}_-]*)$/u)
-  if (match) {
+  if (match && composerMode.value !== 'internal') {
     templateMenuOpen.value = true
     templateQuery.value = match[1]
     templateMenuHighlight.value = 0
@@ -1624,6 +1701,34 @@ function onComposerInput() {
 }
 
 function onComposerKeydown(e) {
+  if (mentionMenuOpen.value && composerMode.value === 'internal' && filteredMentionUsers.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionMenuHighlight.value = Math.min(
+        mentionMenuHighlight.value + 1,
+        filteredMentionUsers.value.length - 1
+      )
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionMenuHighlight.value = Math.max(mentionMenuHighlight.value - 1, 0)
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      mentionMenuOpen.value = false
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      const u = filteredMentionUsers.value[mentionMenuHighlight.value]
+      if (u) {
+        applyMention(u)
+      }
+      return
+    }
+  }
   if (!templateMenuOpen.value || filteredTemplates.value.length === 0) {
     return
   }
@@ -1654,6 +1759,18 @@ function onComposerKeydown(e) {
   }
 }
 
+function applyMention(user) {
+  if (!user?.id) return
+  const label = user.name || 'User'
+  replyText.value = replyText.value.replace(/@([^\n@]*)$/, `@${label} `)
+  if (!pendingMentionUserIds.value.includes(user.id)) {
+    pendingMentionUserIds.value = [...pendingMentionUserIds.value, user.id]
+  }
+  mentionMenuOpen.value = false
+  mentionQuery.value = ''
+  nextTick(() => composerEl.value?.focus())
+}
+
 function applyTemplateBody(body) {
   let text = body
   const c = selectedConversation.value
@@ -1676,6 +1793,9 @@ function applyTemplate(tpl) {
 }
 
 async function submitComposer() {
+  if (mentionMenuOpen.value && filteredMentionUsers.value.length > 0) {
+    return
+  }
   if (templateMenuOpen.value && filteredTemplates.value.length > 0) {
     return
   }
@@ -1684,6 +1804,8 @@ async function submitComposer() {
   if (!body && !pendingAttachment.value) return
   sending.value = true
   sendError.value = ''
+  const isInternal = composerMode.value === 'internal'
+  const mentionIds = isInternal ? [...pendingMentionUserIds.value] : []
   try {
     const formData = new FormData()
     if (body) {
@@ -1692,21 +1814,31 @@ async function submitComposer() {
     if (pendingAttachment.value) {
       formData.append('attachment', pendingAttachment.value)
     }
-    const url =
-      composerMode.value === 'internal'
-        ? `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`
-        : `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`
+    if (isInternal) {
+      mentionIds.forEach((id) => formData.append('mentioned_user_ids[]', String(id)))
+    }
+    const url = isInternal
+      ? `/crm/omnichannel-inbox/conversations/${selectedId.value}/internal-notes`
+      : `/crm/omnichannel-inbox/conversations/${selectedId.value}/messages`
     const { data } = await axios.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     if (data.message) {
       localMessages.value = sortMessages([...localMessages.value, data.message])
     }
+    if (data.conversation) {
+      liveSelectedConversation.value = data.conversation
+    }
     replyText.value = ''
     clearAttachment()
+    clearMentionState()
     scrollToBottom()
     await router.reload({
-      only: composerMode.value === 'internal' ? ['conversations'] : inboxPartialReloadKeys,
+      only: isInternal && mentionIds.length > 0
+        ? ['conversations', 'selectedConversation']
+        : isInternal
+          ? ['conversations']
+          : inboxPartialReloadKeys,
       preserveState: true,
       preserveScroll: true,
     })

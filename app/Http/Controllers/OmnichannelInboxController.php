@@ -20,6 +20,7 @@ use App\Support\OmniMetaMessagePayload;
 use App\Services\NotificationService;
 use App\Services\Omni\OmniAiWritingService;
 use App\Services\Omni\OmniContactProfileService;
+use App\Services\Omni\OmniInternalNoteMentionService;
 use App\Support\OmniContactMaritalStatus;
 use App\Support\OmniLeadStages;
 use App\Services\Omni\OmnichannelInboxMediaService;
@@ -679,8 +680,11 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
-    public function storeInternalNote(Request $request, OmniConversation $conversation): JsonResponse
-    {
+    public function storeInternalNote(
+        Request $request,
+        OmniConversation $conversation,
+        OmniInternalNoteMentionService $mentionService
+    ): JsonResponse {
         $this->assertInboxAccess($request);
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
@@ -692,6 +696,8 @@ class OmnichannelInboxController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:8192'],
             'attachment' => ['nullable', 'file', 'max:16384'],
+            'mentioned_user_ids' => ['nullable', 'array'],
+            'mentioned_user_ids.*' => ['integer'],
         ]);
 
         $body = trim((string) ($validated['body'] ?? ''));
@@ -699,6 +705,10 @@ class OmnichannelInboxController extends Controller
         if ($body === '' && ! $file) {
             return response()->json(['message' => 'Catatan atau lampiran wajib diisi.'], 422);
         }
+
+        $mentionedIds = $mentionService->resolveMentionedUserIds(
+            array_values($validated['mentioned_user_ids'] ?? [])
+        );
 
         $messageType = 'note';
         $payload = null;
@@ -714,6 +724,11 @@ class OmnichannelInboxController extends Controller
                 'media_filename' => $file->getClientOriginalName(),
                 'media_mime' => $mime,
             ];
+        }
+
+        if ($mentionedIds !== []) {
+            $payload = is_array($payload) ? $payload : [];
+            $payload['mentioned_user_ids'] = $mentionedIds;
         }
 
         $sentAt = now();
@@ -735,9 +750,26 @@ class OmnichannelInboxController extends Controller
             'last_message_preview' => mb_substr('[Catatan] '.$preview, 0, 500),
         ]);
 
-        return response()->json([
-            'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email')),
-        ]);
+        if ($mentionedIds !== []) {
+            $mentionService->applyMentions($conversation, $mentionedIds, $user, $preview);
+        }
+
+        $response = [
+            'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email'), $conversation),
+        ];
+
+        if ($mentionedIds !== []) {
+            $response['conversation'] = $this->formatConversation($conversation->fresh([
+                'member',
+                'omniContact:id,display_name,avatar_url,marital_status,preferred_outlet_id,preferred_area',
+                'omniContact.preferredOutlet:id_outlet,nama_outlet,lokasi',
+                'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                'teams:id,name',
+            ]));
+        }
+
+        return response()->json($response);
     }
 
     /**
@@ -1043,6 +1075,8 @@ class OmnichannelInboxController extends Controller
             }
         }
 
+        $mentionedUsers = app(OmniInternalNoteMentionService::class)->mentionedUsersFromPayload($payload);
+
         return [
             'id' => $message->id,
             'direction' => $message->direction,
@@ -1054,6 +1088,7 @@ class OmnichannelInboxController extends Controller
             'media_url' => $mediaUrl,
             'media_filename' => $payload['media_filename'] ?? null,
             'media_mime' => $payload['media_mime'] ?? null,
+            'mentioned_users' => $mentionedUsers,
         ];
     }
 
