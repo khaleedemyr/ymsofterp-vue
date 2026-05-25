@@ -442,7 +442,11 @@ class OmnichannelInboxController extends Controller
         ]);
 
         $context = null;
-        if (! empty($validated['conversation_id']) && config('omnichannel.ai_writing.include_context', true)) {
+        if (
+            $validated['action'] !== 'grammar'
+            && ! empty($validated['conversation_id'])
+            && config('omnichannel.ai_writing.include_context', true)
+        ) {
             $conversation = OmniConversation::query()->find($validated['conversation_id']);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
                 $context = [

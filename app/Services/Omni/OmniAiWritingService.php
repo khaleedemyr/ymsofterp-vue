@@ -4,6 +4,7 @@ namespace App\Services\Omni;
 
 use App\Models\OmniConversation;
 use App\Services\AIBudgetService;
+use App\Support\OmniChatSpellfix;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -41,17 +42,38 @@ class OmniAiWritingService
             throw new RuntimeException('Budget AI bulan ini sudah habis. Coba lagi bulan depan atau gunakan provider Gemini.');
         }
 
+        if ($action === 'grammar') {
+            $context = null;
+        }
+
+        $ruleFixed = $action === 'grammar' ? OmniChatSpellfix::apply($text) : $text;
+
+        if ($action === 'grammar' && mb_strlen($text) <= 24 && $ruleFixed !== $text) {
+            return $ruleFixed;
+        }
+
         $prompt = $this->buildPrompt($action, $text, $tone, $listStyle, $customPrompt, $context);
+        $lowTemperature = $action === 'grammar';
 
         $result = match ($provider) {
-            'claude' => $this->invokeClaude($prompt),
-            'openai' => $this->invokeOpenAi($prompt),
-            default => $this->invokeGemini($prompt),
+            'claude' => $this->invokeClaude($prompt, $lowTemperature),
+            'openai' => $this->invokeOpenAi($prompt, $lowTemperature),
+            default => $this->invokeGemini($prompt, $lowTemperature),
         };
 
         $result = $this->sanitizeOutput($result);
         if ($result === '') {
             throw new RuntimeException('AI tidak mengembalikan teks. Coba lagi.');
+        }
+
+        if ($action === 'grammar') {
+            if (! OmniChatSpellfix::isAcceptableCorrection($text, $result)) {
+                return $ruleFixed !== $text ? $ruleFixed : $text;
+            }
+            if (OmniChatSpellfix::isAcceptableCorrection($text, $ruleFixed)
+                && ! OmniChatSpellfix::isAcceptableCorrection($ruleFixed, $result)) {
+                return $ruleFixed;
+            }
         }
 
         return $result;
@@ -144,7 +166,10 @@ class OmniAiWritingService
             ."Pertahankan makna. Untuk chat WhatsApp pelanggan restoran/hospitality, sopan dan jelas.";
 
         $task = match ($action) {
-            'grammar' => 'Perbaiki ejaan, typo, tata bahasa, dan tanda baca. Pertahankan makna dan nada asli. Jangan tambah kalimat baru. Bahasa: sama dengan teks masukan (Indonesia atau Inggris).',
+            'grammar' => 'Koreksi HANYA typo/ejaan pada teks masukan. DILARANG menulis balasan baru, mengganti makna, atau menambah kata (mis. jangan ubah "ape?" menjadi "Silakan?"). '
+                .'Slang chat Indonesia yang umum boleh dirapikan ringan (ape→apa, gmn→gimana). '
+                .'Jika teks sudah wajar, kembalikan persis seperti masukan. Panjang hasil hampir sama. '
+                .'Contoh benar: "ape?" → "Apa?"; "yu" → "Yu" atau tetap "yu". Contoh salah: "ape?" → "Silakan?".',
             'tone' => 'Ubah nada/tone teks menjadi: '.$this->toneLabel($tone).'.',
             'translate_to_en' => 'Terjemahkan ke Bahasa Inggris yang natural untuk customer service.',
             'translate_to_id' => 'Terjemahkan ke Bahasa Indonesia yang natural untuk layanan pelanggan.',
@@ -227,16 +252,19 @@ class OmniAiWritingService
         return trim($text);
     }
 
-    private function invokeGemini(string $prompt): string
+    private function invokeGemini(string $prompt, bool $lowTemperature = false): string
     {
         $apiKey = (string) config('ai.gemini.api_key');
         $model = $this->resolveGeminiModel();
+        $temperature = $lowTemperature
+            ? 0.1
+            : (float) config('omnichannel.ai_writing.temperature', 0.4);
 
         $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($apiKey);
         $body = [
             'contents' => [['parts' => [['text' => $prompt]]]],
             'generationConfig' => [
-                'temperature' => (float) config('omnichannel.ai_writing.temperature', 0.4),
+                'temperature' => $temperature,
                 'maxOutputTokens' => (int) config('omnichannel.ai_writing.max_tokens', 2048),
             ],
         ];
@@ -277,10 +305,13 @@ class OmniAiWritingService
         return trim(implode("\n", $out));
     }
 
-    private function invokeClaude(string $prompt): string
+    private function invokeClaude(string $prompt, bool $lowTemperature = false): string
     {
         $apiKey = (string) config('ai.claude.api_key');
         $model = (string) config('omnichannel.ai_writing.claude_model', config('ai.claude.model', 'claude-haiku-4-5-20251001'));
+        $temperature = $lowTemperature
+            ? 0.1
+            : (float) config('omnichannel.ai_writing.temperature', 0.4);
 
         $http = Http::timeout((int) config('omnichannel.ai_writing.timeout', 60))
             ->withHeaders([
@@ -295,7 +326,7 @@ class OmniAiWritingService
         $response = $http->post('https://api.anthropic.com/v1/messages', [
             'model' => $model,
             'max_tokens' => (int) config('omnichannel.ai_writing.max_tokens', 2048),
-            'temperature' => (float) config('omnichannel.ai_writing.temperature', 0.4),
+            'temperature' => $temperature,
             'messages' => [['role' => 'user', 'content' => $prompt]],
         ]);
 
@@ -325,10 +356,13 @@ class OmniAiWritingService
         return $text;
     }
 
-    private function invokeOpenAi(string $prompt): string
+    private function invokeOpenAi(string $prompt, bool $lowTemperature = false): string
     {
         $apiKey = (string) config('ai.openai.api_key');
         $model = (string) config('omnichannel.ai_writing.openai_model', config('ai.openai.model', 'gpt-4o-mini'));
+        $temperature = $lowTemperature
+            ? 0.1
+            : (float) config('omnichannel.ai_writing.temperature', 0.4);
 
         $http = Http::timeout((int) config('omnichannel.ai_writing.timeout', 60))
             ->withToken($apiKey)
@@ -339,7 +373,7 @@ class OmniAiWritingService
 
         $response = $http->post('https://api.openai.com/v1/chat/completions', [
             'model' => $model,
-            'temperature' => (float) config('omnichannel.ai_writing.temperature', 0.4),
+            'temperature' => $temperature,
             'max_tokens' => (int) config('omnichannel.ai_writing.max_tokens', 2048),
             'messages' => [
                 ['role' => 'system', 'content' => 'Anda asisten menulis balasan chat customer service. Hanya keluarkan teks hasil akhir.'],

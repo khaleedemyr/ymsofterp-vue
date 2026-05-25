@@ -1764,7 +1764,6 @@ async function requestGrammarCorrection(text) {
   const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
     action: 'grammar',
     text,
-    conversation_id: selectedId.value ?? null,
   })
   if (data.success && data.text) {
     return String(data.text).trim()
