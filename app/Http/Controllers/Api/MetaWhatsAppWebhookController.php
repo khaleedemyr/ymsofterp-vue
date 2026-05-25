@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\Meta\MetaWebhookSignature;
 use App\Services\Meta\MetaWhatsAppInboundService;
+use App\Support\MetaWebhookTrace;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +17,8 @@ class MetaWhatsAppWebhookController extends Controller
      */
     public function verify(Request $request): Response
     {
+        MetaWebhookTrace::write('whatsapp', 'GET', $request, 'verify');
+
         $mode = $request->query('hub_mode') ?? $request->query('hub.mode');
         $token = $request->query('hub_verify_token') ?? $request->query('hub.verify_token');
         $challenge = $request->query('hub_challenge') ?? $request->query('hub.challenge');
@@ -40,14 +43,24 @@ class MetaWhatsAppWebhookController extends Controller
      */
     public function handle(Request $request): Response
     {
+        MetaWebhookTrace::write('whatsapp', 'POST', $request);
+
+        Log::info('Meta WhatsApp webhook POST received', [
+            'content_length' => strlen($request->getContent()),
+            'has_signature' => $request->header('X-Hub-Signature-256') !== null,
+        ]);
+
         if (! MetaWebhookSignature::isValid($request)) {
+            MetaWebhookTrace::write('whatsapp', 'POST', $request, 'sig_invalid');
             Log::warning('Meta WhatsApp webhook rejected: invalid signature');
             abort(403, 'Invalid signature');
         }
 
         try {
             app(MetaWhatsAppInboundService::class)->processPayload($request->all());
+            MetaWebhookTrace::write('whatsapp', 'POST', $request, 'processed');
         } catch (\Throwable $e) {
+            MetaWebhookTrace::write('whatsapp', 'POST', $request, 'error');
             Log::error('Meta WhatsApp webhook processing failed', [
                 'error' => $e->getMessage(),
             ]);

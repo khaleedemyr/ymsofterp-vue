@@ -134,7 +134,26 @@ Lalu `php artisan config:clear`.
 
 ### 5. Uji
 
-Kirim DM ke `0811-1018-8808` → harus muncul di **Omnichannel Inbox** ERP. Cek `storage/logs/laravel.log` jika tidak masuk (hanya error yang tercatat).
+Kirim DM ke `0811-1018-8808` → harus muncul di **Omnichannel Inbox** ERP.
+
+**Penting:** `subscribed_apps` (Postman) ≠ webhook aktif. Di **App Dashboard → WhatsApp → Configuration** wajib **Verify and save** callback + field **`messages`**.
+
+### 6. Chat dikirim tapi tidak masuk inbox
+
+```bash
+php artisan meta:debug-whatsapp-webhook
+tail -20 storage/logs/whatsapp-webhook.trace.log
+grep "Meta WhatsApp" storage/logs/laravel.log | tail -30
+```
+
+| Gejala | Penyebab umum |
+|--------|----------------|
+| Trace log **kosong** | Callback salah (harus ada `/api/`) atau belum Verify di App Dashboard |
+| `sig_invalid` di trace | `META_APP_SECRET` bukan secret app ERP `1302269045204850` |
+| POST ada, DB kosong | Error simpan — lihat `webhook processing failed` di laravel.log |
+| DB ada, UI kosong | Filter inbox / hak akses tim |
+
+Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (matikan setelah beres).
 
 ## Catatan Meta
 

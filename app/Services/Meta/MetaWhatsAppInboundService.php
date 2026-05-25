@@ -163,6 +163,12 @@ class MetaWhatsAppInboundService
         });
 
         if ($conversationId && $inboundMessageId) {
+            Log::info('Meta WhatsApp inbound stored', [
+                'conversation_id' => $conversationId,
+                'message_id' => $inboundMessageId,
+                'phone_number_id' => $phoneNumberId,
+                'from' => $from,
+            ]);
             NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }
