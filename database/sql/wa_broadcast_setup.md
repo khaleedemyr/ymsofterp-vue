@@ -161,6 +161,8 @@ grep "Meta WhatsApp" storage/logs/laravel.log | tail -30
 
 Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (matikan setelah beres).
 
+**Hanya GET `note=verify`, tidak ada POST baru?** Itu bukan “semua kanal mati” — artinya verify OK tapi **belum ada event pesan** dari Meta. Tes: kirim DM ke nomor WA sambil `tail -f storage/logs/whatsapp-webhook.trace.log`. IG/Messenger pakai jalur terpisah: `php artisan meta:debug-omni-webhooks`.
+
 ## Sync manual WA ke database (server)
 
 WhatsApp **Cloud API tidak punya** poll conversation seperti IG/Messenger. Yang tersedia di ERP:
