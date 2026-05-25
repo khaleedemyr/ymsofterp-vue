@@ -114,6 +114,35 @@ class DebugMetaWhatsAppWebhookCommand extends Command
             $this->line('');
         }
 
+        $appId = config('services.meta.app_id');
+        if ($appId && config('services.meta.whatsapp_access_token')) {
+            try {
+                $subs = $client->listAppWebhookSubscriptions();
+                $this->info('App webhook subscriptions (developers → Webhooks):');
+                if ($subs === []) {
+                    $this->error('  KOSONG — subscribe object whatsapp_business_account + field messages di App Dashboard.');
+                }
+                foreach ($subs as $sub) {
+                    $object = (string) ($sub['object'] ?? '?');
+                    $fields = $sub['fields'] ?? [];
+                    $fieldList = is_array($fields)
+                        ? implode(', ', array_map(fn ($f) => is_array($f) ? ($f['name'] ?? json_encode($f)) : (string) $f, $fields))
+                        : (string) $fields;
+                    $active = ($sub['active'] ?? false) ? 'active' : 'inactive';
+                    $callback = (string) ($sub['callback_url'] ?? '-');
+                    $this->line("  - object={$object} [{$active}] fields={$fieldList}");
+                    $this->line('    callback: '.$callback);
+                    if ($object === 'whatsapp_business_account' && ! str_contains($fieldList, 'messages')) {
+                        $this->error('    Field messages TIDAK terdaftar — chat WA tidak akan POST ke server.');
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->warn('App subscriptions: '.$e->getMessage());
+                $this->line('  Cek manual: App → Webhooks → whatsapp_business_account → messages.');
+            }
+            $this->line('');
+        }
+
         if ($this->option('probe')) {
             $host = parse_url($httpsWebhookUrl, PHP_URL_HOST) ?: 'ymsofterp.com';
             $this->info('Sertifikat TLS (port 443):');

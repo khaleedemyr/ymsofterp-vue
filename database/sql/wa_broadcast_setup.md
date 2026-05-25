@@ -163,6 +163,10 @@ Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (
 
 **Hanya GET `note=verify`, tidak ada POST baru?** Itu bukan “semua kanal mati” — artinya verify OK tapi **belum ada event pesan** dari Meta. Tes: kirim DM ke nomor WA sambil `tail -f storage/logs/whatsapp-webhook.trace.log`. IG/Messenger pakai jalur terpisah: `php artisan meta:debug-omni-webhooks`.
 
+**GET dari IP Indonesia (mis. 125.163.x) = tes curl/browser Anda**, bukan chat masuk. Chat WA asli = **POST** dari IP Meta (`69.171.x`, `173.252.x`, …) + `note=processed`.
+
+Di App Dashboard selain **WhatsApp → Configuration**, cek **Webhooks** (menu app) → subscribe **whatsapp_business_account** → centang **messages**. Tanpa ini, verify bisa sukses tapi POST pesan tidak jalan.
+
 ## Sync manual WA ke database (server)
 
 WhatsApp **Cloud API tidak punya** poll conversation seperti IG/Messenger. Yang tersedia di ERP:

@@ -302,6 +302,37 @@ class MetaWhatsAppClient
     }
 
     /**
+     * Subscription webhook level App (object + fields) — wajib ada messages untuk WA masuk.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listAppWebhookSubscriptions(): array
+    {
+        $token = config('services.meta.whatsapp_access_token');
+        $appId = config('services.meta.app_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $appId) {
+            throw new RuntimeException('META_APP_ID dan META_WHATSAPP_ACCESS_TOKEN wajib diisi.');
+        }
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->get("https://graph.facebook.com/{$version}/{$appId}/subscriptions");
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'App subscriptions failed: '.$response->body(),
+                $response->status()
+            );
+        }
+
+        $data = $response->json('data') ?? [];
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
      * App mana saja yang subscribe webhook WABA ini (mis. Sleekflow vs ERP).
      *
      * @return list<array<string, mixed>>

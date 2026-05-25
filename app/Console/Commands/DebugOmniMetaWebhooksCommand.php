@@ -35,7 +35,7 @@ class DebugOmniMetaWebhooksCommand extends Command
         $this->line('');
 
         $this->traceSummary('Messenger (Page)', 'messenger', $base.'/api/webhooks/meta/messenger');
-        $pageTokens = count(MetaPageTokens::parse((string) config('services.meta.page_tokens', '{}')));
+        $pageTokens = count(MetaPageTokens::resolved());
         $this->line('  Page token di META_PAGE_TOKENS: '.$pageTokens.($pageTokens === 0 ? ' (KOSONG — polling Messenger gagal)' : ''));
         $this->line('  Debug: php artisan meta:debug-messenger-inbox');
         $this->line('  Sync poll: php artisan meta:sync-messenger-inbox --recent=60 -v');
@@ -84,7 +84,7 @@ class DebugOmniMetaWebhooksCommand extends Command
             return;
         }
 
-        $lines = array_slice(file($path, FILE_IGNORE_NEW_LINES) ?: [], -5);
+        $lines = array_slice(file($path, FILE_IGNORE_NEW_LINES) ?: [], -30);
         $lastPost = null;
         $lastGet = null;
         foreach (array_reverse($lines) as $line) {
@@ -99,7 +99,7 @@ class DebugOmniMetaWebhooksCommand extends Command
         if ($lastPost) {
             $this->line('  POST terakhir: '.mb_substr($lastPost, 0, 120));
         } else {
-            $this->warn('  Belum ada POST di trace (5 baris terakhir)');
+            $this->warn('  Belum ada POST di trace (30 baris terakhir)');
         }
         if ($lastGet) {
             $this->line('  GET terakhir: '.mb_substr($lastGet, 0, 100));
