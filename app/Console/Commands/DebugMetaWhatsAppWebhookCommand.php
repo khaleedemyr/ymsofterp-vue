@@ -7,6 +7,7 @@ use App\Models\OmniMessage;
 use App\Services\Meta\MetaWhatsAppClient;
 use App\Support\MetaWhatsAppWebhookArchive;
 use Illuminate\Console\Command;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 
@@ -113,24 +114,52 @@ class DebugMetaWhatsAppWebhookCommand extends Command
             $this->line('');
         }
 
-        if ($this->option('probe') && $verifyToken) {
-            $this->info('Probe GET verify (dari server ini):');
-            $query = http_build_query([
-                'hub_mode' => 'subscribe',
-                'hub_verify_token' => $verifyToken,
-                'hub_challenge' => 'erp_probe_'.time(),
-            ]);
-            foreach (array_unique([$webhookUrl, $httpsWebhookUrl]) as $probeBase) {
-                $probeUrl = $probeBase.'?'.$query;
+        if ($this->option('probe')) {
+            $host = parse_url($httpsWebhookUrl, PHP_URL_HOST) ?: 'ymsofterp.com';
+            $this->info('Sertifikat TLS (port 443):');
+            $this->inspectTlsCertificate((string) $host);
+            $wwwHost = 'www.'.$host;
+            if ($wwwHost !== $host) {
+                $this->line('  --- www ---');
+                $this->inspectTlsCertificate($wwwHost);
+            }
+            $this->line('');
+
+            if ($verifyToken) {
+                $challenge = 'erp_probe_'.time();
+                $this->info('Probe route Laravel (internal, tanpa HTTPS):');
+                $internal = Request::create('/api/webhooks/meta/whatsapp', 'GET', [
+                    'hub_mode' => 'subscribe',
+                    'hub_verify_token' => $verifyToken,
+                    'hub_challenge' => $challenge,
+                ]);
+                $internalResponse = app()->handle($internal);
+                $internalOk = $internalResponse->getStatusCode() === 200
+                    && str_contains((string) $internalResponse->getContent(), $challenge);
+                $this->line('  '.($internalOk ? 'OK' : 'FAIL').' GET /api/webhooks/meta/whatsapp → HTTP '.$internalResponse->getStatusCode());
+                if (! $internalOk) {
+                    $this->warn('  Route/token Laravel bermasalah — cek META_WEBHOOK_VERIFY_TOKEN.');
+                }
+                $this->line('');
+
+                $this->info('Probe HTTPS publik (sama seperti Meta):');
+                $query = http_build_query([
+                    'hub_mode' => 'subscribe',
+                    'hub_verify_token' => $verifyToken,
+                    'hub_challenge' => $challenge,
+                ]);
                 try {
-                    $probe = Http::timeout(15)->get($probeUrl);
-                    $ok = $probe->status() === 200 && str_contains($probe->body(), 'erp_probe_');
-                    $this->line('  '.($ok ? 'OK' : 'FAIL').' '.$probeBase.' → HTTP '.$probe->status());
-                    if (! $ok && $probe->status() === 404) {
-                        $this->warn('    404: vhost http mungkin tidak mengarah ke Laravel — pakai HTTPS di APP_URL.');
-                    }
+                    $probe = Http::timeout(15)->get($httpsWebhookUrl.'?'.$query);
+                    $ok = $probe->status() === 200 && str_contains($probe->body(), $challenge);
+                    $this->line('  '.($ok ? 'OK' : 'FAIL').' '.$httpsWebhookUrl.' → HTTP '.$probe->status());
                 } catch (\Throwable $e) {
-                    $this->error('  Probe gagal '.$probeBase.': '.$e->getMessage());
+                    $msg = $e->getMessage();
+                    $this->error('  Probe HTTPS gagal: '.$msg);
+                    if (str_contains($msg, 'error 60') || str_contains($msg, 'certificate')) {
+                        $this->error('  SSL tidak cocok untuk '.$host.' — Meta Verify & save akan GAGAL sampai cert diperbaiki.');
+                        $this->line('  Perbaiki di cPanel: SSL/TLS → Let\'s Encrypt untuk ymsofterp.com + www.');
+                        $this->line('  Atau sesuaikan APP_URL + callback Meta ke hostname yang ada di sertifikat (mis. www.).');
+                    }
                 }
             }
             $this->line('');
@@ -186,15 +215,79 @@ class DebugMetaWhatsAppWebhookCommand extends Command
 
         $this->line('');
         $this->info('Urutan perbaikan (arsip 0 + chat tes tidak masuk):');
-        $this->line('  1. .env: APP_URL=https://ymsofterp.com → php artisan config:clear');
-        $this->line('  2. developers.facebook.com → app YMSoft ERP → WhatsApp → Configuration');
+        $this->line('  1. Perbaiki SSL agar cocok dengan hostname callback (lihat probe TLS di atas)');
+        $this->line('  2. .env: APP_URL=https://ymsofterp.com → php artisan config:clear');
+        $this->line('  3. developers.facebook.com → app YMSoft ERP → WhatsApp → Configuration');
         $this->line('     Callback: '.$httpsWebhookUrl);
         $this->line('     Verify token = META_WEBHOOK_VERIFY_TOKEN → klik Verify and save, centang messages');
-        $this->line('  3. php artisan meta:whatsapp-waba-subscribe --subscribe');
-        $this->line('  4. Kirim WA ke nomor production: tail -f storage/logs/whatsapp-webhook.trace.log');
-        $this->line('  5. Ada arsip .json? php artisan meta:sync-whatsapp-inbox --replay');
-        $this->line('  6. Jika POST sig_invalid: perbaiki META_APP_SECRET');
+        $this->line('  4. php artisan meta:whatsapp-waba-subscribe --subscribe');
+        $this->line('  5. Kirim WA ke nomor production: tail -f storage/logs/whatsapp-webhook.trace.log');
+        $this->line('  6. Ada arsip pending? php artisan meta:sync-whatsapp-inbox --replay');
 
         return self::SUCCESS;
+    }
+
+    private function inspectTlsCertificate(string $host): void
+    {
+        $context = stream_context_create([
+            'ssl' => [
+                'capture_peer_cert' => true,
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'SNI_enabled' => true,
+                'peer_name' => $host,
+            ],
+        ]);
+
+        $socket = @stream_socket_client(
+            'ssl://'.$host.':443',
+            $errno,
+            $errstr,
+            12,
+            STREAM_CLIENT_CONNECT,
+            $context
+        );
+
+        if ($socket === false) {
+            $this->warn("  {$host}: tidak bisa connect ({$errstr})");
+
+            return;
+        }
+
+        $params = stream_context_get_params($socket);
+        fclose($socket);
+
+        $cert = $params['options']['ssl']['peer_certificate'] ?? null;
+        if (! is_resource($cert) && ! is_string($cert)) {
+            $this->warn("  {$host}: sertifikat tidak terbaca");
+
+            return;
+        }
+
+        $parsed = openssl_x509_parse($cert);
+        if (! is_array($parsed)) {
+            $this->warn("  {$host}: parse sertifikat gagal");
+
+            return;
+        }
+
+        $cn = $parsed['subject']['CN'] ?? '?';
+        $sans = $parsed['extensions']['subjectAltName'] ?? '';
+        $validTo = isset($parsed['validTo_time_t'])
+            ? date('Y-m-d', (int) $parsed['validTo_time_t'])
+            : '?';
+
+        $this->line("  host={$host} CN={$cn} expires={$validTo}");
+        if ($sans !== '') {
+            $this->line('  SAN: '.preg_replace('/\s+/', ' ', trim($sans)));
+        }
+
+        $coversHost = stripos($cn, $host) !== false
+            || stripos($sans, $host) !== false;
+        if (! $coversHost && $cn !== '?') {
+            $this->error("  Sertifikat TIDAK mencakup {$host} — inilah penyebab cURL error 60 / Meta verify gagal.");
+        } else {
+            $this->info("  Sertifikat mencakup {$host} — OK untuk Meta.");
+        }
     }
 }

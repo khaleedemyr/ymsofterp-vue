@@ -131,7 +131,9 @@ META_WHATSAPP_BUSINESS_ACCOUNT_ID=830741246688763
 META_WEBHOOK_VERIFY_TOKEN=...
 ```
 
-**Wajib `APP_URL=https://`** — jika `http://`, probe verify 404 dan URL notifikasi/webhook salah. Meta hanya kirim POST ke callback **HTTPS** (trace log 25 Mei menunjukkan webhook sempat jalan lewat https).
+**Wajib `APP_URL=https://`** — jika `http://`, probe verify 404 dan URL notifikasi/webhook salah.
+
+**SSL harus cocok hostname** — jika probe gagal `cURL error 60: no alternative certificate subject name matches ymsofterp.com`, pasang Let's Encrypt untuk `ymsofterp.com` + `www` di cPanel, atau pakai hostname yang ada di sertifikat sebagai `APP_URL` dan callback Meta. Tanpa SSL valid, **Verify and save** di Meta Dashboard gagal dan chat baru bisa berhenti masuk.
 
 Lalu `php artisan config:clear`.
 
