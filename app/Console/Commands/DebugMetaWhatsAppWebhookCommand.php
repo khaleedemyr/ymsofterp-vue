@@ -117,7 +117,14 @@ class DebugMetaWhatsAppWebhookCommand extends Command
 
         $appId = config('services.meta.app_id');
         $appSecret = config('services.meta.app_secret');
-        if ($appId && $appSecret) {
+        if (! $appId) {
+            $this->error('META_APP_ID kosong di .env — tambahkan META_APP_ID=1302269045204850 lalu config:clear');
+            $this->line('  Tanpa ini, cek App webhook subscriptions via API gagal (error #190).');
+            $this->line('');
+        } elseif (! $appSecret) {
+            $this->error('META_APP_SECRET kosong — isi App Secret app YMSoft ERP di .env');
+            $this->line('');
+        } else {
             try {
                 $subs = $client->listAppWebhookSubscriptions();
                 $this->info('App webhook subscriptions (developers → Webhooks):');
@@ -140,6 +147,10 @@ class DebugMetaWhatsAppWebhookCommand extends Command
                 }
             } catch (\Throwable $e) {
                 $this->warn('App subscriptions: '.$e->getMessage());
+                if (str_contains($e->getMessage(), '190')) {
+                    $this->line('  Pastikan .env: META_APP_ID=1302269045204850 + META_APP_SECRET (App Secret, bukan token WA).');
+                    $this->line('  Deploy kode terbaru: git pull && php artisan config:clear');
+                }
                 $this->line('  Cek manual: App → Webhooks → whatsapp_business_account → messages.');
             }
             $this->line('');

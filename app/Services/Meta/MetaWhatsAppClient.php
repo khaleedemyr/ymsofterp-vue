@@ -316,12 +316,13 @@ class MetaWhatsAppClient
             throw new RuntimeException('META_APP_ID dan META_APP_SECRET wajib diisi (app access token).');
         }
 
-        // Endpoint /{app-id}/subscriptions memerlukan app token: {app-id}|{app-secret}
-        $appToken = $appId.'|'.$appSecret;
+        // Endpoint /{app-id}/subscriptions memerlukan app access token: {app-id}|{app-secret}
+        $appToken = trim((string) $appId).'|'.trim((string) $appSecret);
 
-        $response = Http::withToken($appToken)
-            ->acceptJson()
-            ->get("https://graph.facebook.com/{$version}/{$appId}/subscriptions");
+        $response = Http::acceptJson()
+            ->get("https://graph.facebook.com/{$version}/{$appId}/subscriptions", [
+                'access_token' => $appToken,
+            ]);
 
         if (! $response->successful()) {
             throw new RuntimeException(
