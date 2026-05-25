@@ -308,15 +308,18 @@ class MetaWhatsAppClient
      */
     public function listAppWebhookSubscriptions(): array
     {
-        $token = config('services.meta.whatsapp_access_token');
         $appId = config('services.meta.app_id');
+        $appSecret = config('services.meta.app_secret');
         $version = config('services.meta.graph_api_version', 'v25.0');
 
-        if (! $token || ! $appId) {
-            throw new RuntimeException('META_APP_ID dan META_WHATSAPP_ACCESS_TOKEN wajib diisi.');
+        if (! $appId || ! $appSecret) {
+            throw new RuntimeException('META_APP_ID dan META_APP_SECRET wajib diisi (app access token).');
         }
 
-        $response = Http::withToken($token)
+        // Endpoint /{app-id}/subscriptions memerlukan app token: {app-id}|{app-secret}
+        $appToken = $appId.'|'.$appSecret;
+
+        $response = Http::withToken($appToken)
             ->acceptJson()
             ->get("https://graph.facebook.com/{$version}/{$appId}/subscriptions");
 

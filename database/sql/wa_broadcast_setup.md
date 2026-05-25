@@ -125,6 +125,8 @@ Klik **Verify and save**. Test dari Meta harus HTTP 200.
 
 ```env
 APP_URL=https://ymsofterp.com
+META_APP_ID=1302269045204850
+META_APP_SECRET=...              # App Secret app YMSoft ERP (untuk signature + cek subscriptions)
 META_WHATSAPP_ACCESS_TOKEN=...   # token app ERP, bukan Sleekflow
 META_WHATSAPP_PHONE_NUMBER_ID=896059726934135
 META_WHATSAPP_BUSINESS_ACCOUNT_ID=830741246688763

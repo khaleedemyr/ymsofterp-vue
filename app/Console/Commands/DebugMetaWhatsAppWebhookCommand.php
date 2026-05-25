@@ -48,6 +48,7 @@ class DebugMetaWhatsAppWebhookCommand extends Command
         if (! str_contains($httpsWebhookUrl, '/api/webhooks/meta/whatsapp')) {
             $this->warn('  URL harus mengandung /api/webhooks/meta/whatsapp');
         }
+        $this->line('META_APP_ID: '.(config('services.meta.app_id') ?: '(kosong)'));
         $this->line('Phone Number ID: '.($phoneId ?: '(kosong)'));
         $this->line('WABA ID: '.($wabaId ?: '(kosong)'));
         $this->line('META_APP_SECRET: '.($appSecret !== '' && $appSecret !== null ? 'terisi' : 'KOSONG (signature tidak dicek)'));
@@ -115,7 +116,8 @@ class DebugMetaWhatsAppWebhookCommand extends Command
         }
 
         $appId = config('services.meta.app_id');
-        if ($appId && config('services.meta.whatsapp_access_token')) {
+        $appSecret = config('services.meta.app_secret');
+        if ($appId && $appSecret) {
             try {
                 $subs = $client->listAppWebhookSubscriptions();
                 $this->info('App webhook subscriptions (developers → Webhooks):');
