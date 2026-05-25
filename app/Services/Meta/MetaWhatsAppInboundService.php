@@ -108,19 +108,14 @@ class MetaWhatsAppInboundService
             }
             $contact->save();
 
-            $conversation = OmniConversation::query()->firstOrCreate(
-                [
-                    'channel' => 'whatsapp',
-                    'external_contact_id' => $from,
-                    'phone_number_id' => $phoneNumberId,
-                ],
-                [
-                    'waba_id' => $wabaId,
-                    'contact_name' => $contactName,
-                    'member_apps_member_id' => $memberId,
-                    'omni_contact_id' => $contact->id,
-                    'status' => 'open',
-                ]
+            $conversation = $this->resolveOrCreateWhatsappConversation(
+                $wabaId,
+                $phoneNumberId,
+                $from,
+                $normalizedPhone,
+                $contactName,
+                $memberId,
+                $contact->id
             );
 
             $conversation->omni_contact_id = $contact->id;
@@ -169,7 +164,9 @@ class MetaWhatsAppInboundService
                 'phone_number_id' => $phoneNumberId,
                 'from' => $from,
             ]);
-            NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
+            if (! $this->shouldSkipInboundNotify($messageType)) {
+                NotifyOmniInboundMessageJob::dispatch($conversationId, $inboundMessageId);
+            }
             ProcessOmniFlowJob::dispatch($conversationId, $inboundMessageId);
         }
     }
@@ -219,8 +216,75 @@ class MetaWhatsAppInboundService
             'interactive' => $message['interactive']['button_reply']['title']
                 ?? $message['interactive']['list_reply']['title']
                 ?? '[Pesan interaktif]',
+            'reaction' => isset($message['reaction']['emoji'])
+                ? (string) $message['reaction']['emoji']
+                : '[Reaksi]',
             default => '['.$type.']',
         };
+    }
+
+    private function resolveOrCreateWhatsappConversation(
+        string $wabaId,
+        string $phoneNumberId,
+        string $from,
+        string $normalizedPhone,
+        ?string $contactName,
+        ?int $memberId,
+        int $omniContactId
+    ): OmniConversation {
+        $lookupIds = $this->whatsappExternalIdCandidates($from, $normalizedPhone);
+
+        $conversation = OmniConversation::query()
+            ->where('channel', 'whatsapp')
+            ->where('phone_number_id', $phoneNumberId)
+            ->where(function ($query) use ($lookupIds, $omniContactId) {
+                $query->whereIn('external_contact_id', $lookupIds)
+                    ->orWhere('omni_contact_id', $omniContactId);
+            })
+            ->orderByDesc('last_message_at')
+            ->first();
+
+        if ($conversation) {
+            if ($conversation->external_contact_id !== $normalizedPhone) {
+                $conversation->external_contact_id = $normalizedPhone;
+            }
+
+            return $conversation;
+        }
+
+        return OmniConversation::query()->create([
+            'channel' => 'whatsapp',
+            'external_contact_id' => $normalizedPhone,
+            'phone_number_id' => $phoneNumberId,
+            'waba_id' => $wabaId,
+            'contact_name' => $contactName,
+            'member_apps_member_id' => $memberId,
+            'omni_contact_id' => $omniContactId,
+            'status' => 'open',
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function whatsappExternalIdCandidates(string $from, string $normalizedPhone): array
+    {
+        $digits = preg_replace('/\D/', '', $from) ?? '';
+
+        return array_values(array_unique(array_filter([
+            $from,
+            $normalizedPhone,
+            $digits,
+            $digits !== '' ? '0'.substr($digits, 1) : null,
+            $digits !== '' ? '+'.$digits : null,
+        ])));
+    }
+
+    private function shouldSkipInboundNotify(string $messageType): bool
+    {
+        $skip = config('omnichannel.whatsapp_inbound_skip_notify_types', ['reaction', 'sticker']);
+
+        return in_array($messageType, is_array($skip) ? $skip : [], true);
     }
 
     /**

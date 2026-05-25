@@ -152,6 +152,7 @@ grep "Meta WhatsApp" storage/logs/laravel.log | tail -30
 | `sig_invalid` di trace | `META_APP_SECRET` bukan secret app ERP `1302269045204850` |
 | POST ada, DB kosong | Error simpan — lihat `webhook processing failed` di laravel.log |
 | DB ada, UI kosong | Filter inbox / hak akses tim |
+| **Notif ada, inbox tidak** | Thread WA duplikat (`external_contact_id` format beda, nomor sama) — jalankan `php artisan omni:merge-whatsapp-conversations` setelah deploy fix normalisasi |
 
 Debug sementara: `META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true` lalu `config:clear` (matikan setelah beres).
 
@@ -177,6 +178,14 @@ META_WHATSAPP_WEBHOOK_ARCHIVE=true
 ```
 
 **Alur disarankan:** perbaiki webhook → kirim chat tes → cek folder arsip ada file `.json` → `php artisan meta:sync-whatsapp-inbox --replay` → cek inbox.
+
+**Arsip kosong (`File arsip pending: 0`)?**
+
+1. Meta belum POST ke server (callback salah / belum Verify) → cek `storage/logs/whatsapp-webhook.trace.log` setelah kirim chat
+2. POST ditolak signature **sebelum** arsip (versi lama) — deploy controller terbaru (arsip **sebelum** cek signature)
+3. `.env`: `META_WHATSAPP_WEBHOOK_ARCHIVE=true` + `php artisan config:clear`
+
+**Error `Session has expired` di Pull Graph:** itu token **Facebook Page** (`META_PAGE_TOKENS`), bukan token WhatsApp. Abaikan untuk webhook; perbarui Page token hanya jika perlu pull Graph.
 
 ## Catatan Meta
 

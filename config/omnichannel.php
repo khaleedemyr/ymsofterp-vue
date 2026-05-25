@@ -15,6 +15,12 @@ return [
      */
     'inbound_notify_dedupe_minutes' => (int) env('OMNI_INBOUND_NOTIFY_DEDUPE_MINUTES', 3),
 
+    /** Tipe pesan WA masuk yang tidak memicu push/in-app (reaksi, stiker, dll.). */
+    'whatsapp_inbound_skip_notify_types' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('OMNI_WHATSAPP_SKIP_NOTIFY_TYPES', 'reaction,sticker'))
+    ))),
+
     /** Notifikasi push hanya untuk pesan masuk sync dalam N menit terakhir (hindari spam saat impor riwayat). */
     'instagram_sync_notify_within_minutes' => (int) env('OMNI_INSTAGRAM_SYNC_NOTIFY_WITHIN_MINUTES', 30),
 

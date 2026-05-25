@@ -46,18 +46,22 @@ class MetaWhatsAppWebhookController extends Controller
     {
         MetaWebhookTrace::write('whatsapp', 'POST', $request);
 
+        // Arsip dulu (sebelum cek signature) supaya bisa di-replay jika META_APP_SECRET salah.
+        $archivedPath = MetaWhatsAppWebhookArchive::storeFromRequest($request);
+
         Log::info('Meta WhatsApp webhook POST received', [
             'content_length' => strlen($request->getContent()),
             'has_signature' => $request->header('X-Hub-Signature-256') !== null,
+            'archived' => $archivedPath !== null ? basename($archivedPath) : null,
         ]);
 
         if (! MetaWebhookSignature::isValid($request)) {
             MetaWebhookTrace::write('whatsapp', 'POST', $request, 'sig_invalid');
-            Log::warning('Meta WhatsApp webhook rejected: invalid signature');
+            Log::warning('Meta WhatsApp webhook rejected: invalid signature', [
+                'hint' => 'Periksa META_APP_SECRET app YMSoft ERP (1302269045204850), lalu replay arsip: php artisan meta:sync-whatsapp-inbox --replay',
+            ]);
             abort(403, 'Invalid signature');
         }
-
-        MetaWhatsAppWebhookArchive::storeFromRequest($request);
 
         try {
             app(MetaWhatsAppInboundService::class)->processPayload($request->all());

@@ -55,7 +55,10 @@ class SyncMetaWhatsAppInboxCommand extends Command
             }
             if (($account['source'] ?? '') === 'page_conversations') {
                 if (! empty($account['error'])) {
-                    $this->warn('Pull Graph: '.$account['error']);
+                    $this->warn('Pull Graph (opsional, bukan webhook WA): '.$account['error']);
+                    if (str_contains((string) $account['error'], 'Session has expired') || str_contains((string) $account['error'], 'code":190')) {
+                        $this->line('  → Token Page (META_PAGE_TOKENS) kedaluwarsa — perbarui di Meta. Webhook WA pakai META_WHATSAPP_ACCESS_TOKEN + META_APP_SECRET.');
+                    }
                 } else {
                     $this->line(sprintf(
                         'Pull Graph: conv=%d checked=%d imported=%d',
