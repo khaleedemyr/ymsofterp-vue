@@ -31,7 +31,12 @@ class MetaInstagramInboxSyncService
     /** Berhenti scan thread jika N pesan teratas sudah ada di DB. */
     private const STOP_AFTER_CONSECUTIVE_EXISTING = 8;
 
-    private const RATE_LIMIT_CACHE_KEY = 'meta_instagram_api_rate_limited_until';
+    public const RATE_LIMIT_CACHE_KEY = 'meta_instagram_api_rate_limited_until';
+
+    public static function clearRateLimitBackoff(): void
+    {
+        Cache::forget(self::RATE_LIMIT_CACHE_KEY);
+    }
 
     private bool $rateLimitHitThisRun = false;
 

@@ -105,6 +105,25 @@ php artisan meta:enrich-instagram-profiles --limit=200
 
 Pastikan **cron** Laravel jalan (`schedule:run` per menit). Log: `storage/logs/meta-instagram-inbox-sync.log`.
 
+### DM tidak masuk lagi (WA sudah OK, IG mati)?
+
+Instagram **bukan webhook utama** — andalkan **polling** + token `IGQ…` (~60 hari).
+
+```bash
+php artisan meta:debug-instagram-inbox
+php artisan meta:debug-instagram-inbox --clear-rate-limit   # jika rate limit backoff
+php artisan meta:sync-instagram-inbox --recent=60 -v
+tail -3 storage/logs/messenger-webhook.trace.log
+tail -3 storage/logs/instagram-login-webhook.trace.log
+```
+
+| Gejala debug | Tindakan |
+|--------------|----------|
+| `/me gagal` / token error | Generate token baru di Meta → update `.env` → `config:clear` |
+| `Rate limit backoff AKTIF` | `--clear-rate-limit` lalu sync lagi |
+| `imported=0` + `api_errors>0` | Token / permission / rate limit |
+| Webhook POST ada, DB kosong | Cek `laravel.log` `Meta Messenger/Instagram inbound` |
+
 ### DM saya kirim tapi tidak muncul di inbox?
 
 1. **Tes manual dulu** (di server production):
