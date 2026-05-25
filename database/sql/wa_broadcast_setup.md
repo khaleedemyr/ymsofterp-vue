@@ -69,6 +69,73 @@ CREATE INDEX idx_orders_status_created_member ON orders (status, created_at, mem
 - Status awal **PENDING**; setelah **APPROVED** muncul di dropdown campaign
 - Token Meta perlu izin **whatsapp_business_management**
 
+## WhatsApp production → ERP (bukan Sleekflow)
+
+Jika `GET /{WABA_ID}/subscribed_apps` hanya menampilkan **Sleekflow** (`812364635796464`), webhook DM production masuk ke Sleekflow, bukan ERP.
+
+**ID referensi (Justus Steakhouse production):**
+
+| Item | ID |
+|------|-----|
+| WABA | `830741246688763` |
+| Phone Number ID | `896059726934135` (`+62 811-1018-8808`) |
+| Meta App ERP (YMSoft) | `1302269045204850` |
+| Meta App Sleekflow | `812364635796464` |
+
+### 1. Lepas Sleekflow dari WABA
+
+Salah satu (wajib, supaya slot webhook tidak dipegang Sleekflow):
+
+- Di **Sleekflow**: putuskan / unsubscribe nomor WhatsApp Business ini, atau
+- **Meta Business Suite** → Settings → Partners / Integrated apps → cabut akses Sleekflow ke WABA ini.
+
+### 2. Subscribe app ERP ke WABA
+
+Token harus dari **app ERP** (`1302269045204850`) — System User dengan akses WABA + izin `whatsapp_business_management`, `whatsapp_business_messaging`.
+
+**Di server (setelah Sleekflow dilepas):**
+
+```bash
+php artisan meta:whatsapp-waba-subscribe              # cek siapa yang subscribe
+php artisan meta:whatsapp-waba-subscribe --subscribe  # daftarkan app ERP ke WABA
+```
+
+Harus muncul **YMSoft ERP** (`1302269045204850`), bukan hanya Sleekflow (`812364635796464`).
+
+Atau manual API:
+
+```http
+POST https://graph.facebook.com/v21.0/830741246688763/subscribed_apps
+Authorization: Bearer {META_WHATSAPP_ACCESS_TOKEN_ERP}
+```
+
+### 3. Webhook di Meta App Dashboard (ERP)
+
+[developers.facebook.com](https://developers.facebook.com) → app **YMSoft ERP** → WhatsApp → Configuration:
+
+| Field | Nilai |
+|-------|--------|
+| Callback URL | `https://ymsofterp.com/api/webhooks/meta/whatsapp` |
+| Verify token | sama dengan `META_WEBHOOK_VERIFY_TOKEN` di `.env` production |
+| Webhook fields | centang **`messages`** (dan field lain jika perlu) |
+
+Klik **Verify and save**. Test dari Meta harus HTTP 200.
+
+### 4. `.env` production (nomor asli, bukan test)
+
+```env
+META_WHATSAPP_ACCESS_TOKEN=...   # token app ERP, bukan Sleekflow
+META_WHATSAPP_PHONE_NUMBER_ID=896059726934135
+META_WHATSAPP_BUSINESS_ACCOUNT_ID=830741246688763
+META_WEBHOOK_VERIFY_TOKEN=...
+```
+
+Lalu `php artisan config:clear`.
+
+### 5. Uji
+
+Kirim DM ke `0811-1018-8808` → harus muncul di **Omnichannel Inbox** ERP. Cek `storage/logs/laravel.log` jika tidak masuk (hanya error yang tercatat).
+
 ## Catatan Meta
 
 - Broadcast massal wajib **template resmi**, bukan teks bebas

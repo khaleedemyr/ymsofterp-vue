@@ -272,6 +272,66 @@ class MetaWhatsAppClient
         return $response->json() ?? [];
     }
 
+    /**
+     * App mana saja yang subscribe webhook WABA ini (mis. Sleekflow vs ERP).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listSubscribedApps(?string $wabaId = null): array
+    {
+        $token = config('services.meta.whatsapp_access_token');
+        $wabaId = $wabaId ?: config('services.meta.whatsapp_business_account_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $wabaId) {
+            throw new RuntimeException('META_WHATSAPP_ACCESS_TOKEN dan META_WHATSAPP_BUSINESS_ACCOUNT_ID wajib diisi.');
+        }
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->get("https://graph.facebook.com/{$version}/{$wabaId}/subscribed_apps");
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'List subscribed_apps failed: '.$response->body(),
+                $response->status()
+            );
+        }
+
+        $data = $response->json('data') ?? [];
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Subscribe app ERP (pemilik token) ke WABA — jalankan setelah Sleekflow dilepas.
+     *
+     * @return array<string, mixed>
+     */
+    public function subscribeWabaToApp(?string $wabaId = null): array
+    {
+        $token = config('services.meta.whatsapp_access_token');
+        $wabaId = $wabaId ?: config('services.meta.whatsapp_business_account_id');
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        if (! $token || ! $wabaId) {
+            throw new RuntimeException('META_WHATSAPP_ACCESS_TOKEN dan META_WHATSAPP_BUSINESS_ACCOUNT_ID wajib diisi.');
+        }
+
+        $response = Http::withToken($token)
+            ->acceptJson()
+            ->post("https://graph.facebook.com/{$version}/{$wabaId}/subscribed_apps");
+
+        if (! $response->successful()) {
+            throw new RuntimeException(
+                'Subscribe WABA failed: '.$response->body(),
+                $response->status()
+            );
+        }
+
+        return $response->json() ?? [];
+    }
+
     public function sendDocument(string $toWaId, string $mediaId, ?string $caption = null, ?string $filename = null, ?string $phoneNumberId = null): array
     {
         $doc = ['id' => $mediaId];
