@@ -144,7 +144,7 @@ class OmniAiWritingService
             ."Pertahankan makna. Untuk chat WhatsApp pelanggan restoran/hospitality, sopan dan jelas.";
 
         $task = match ($action) {
-            'grammar' => 'Perbaiki ejaan, tata bahasa, dan tanda baca. Bahasa: sama dengan teks masukan (Indonesia atau Inggris).',
+            'grammar' => 'Perbaiki ejaan, typo, tata bahasa, dan tanda baca. Pertahankan makna dan nada asli. Jangan tambah kalimat baru. Bahasa: sama dengan teks masukan (Indonesia atau Inggris).',
             'tone' => 'Ubah nada/tone teks menjadi: '.$this->toneLabel($tone).'.',
             'translate_to_en' => 'Terjemahkan ke Bahasa Inggris yang natural untuk customer service.',
             'translate_to_id' => 'Terjemahkan ke Bahasa Indonesia yang natural untuk layanan pelanggan.',

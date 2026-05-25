@@ -87,4 +87,14 @@ return [
         'include_context' => env('OMNI_AI_INCLUDE_CONTEXT', true),
     ],
 
+    /*
+    | Composer balasan inbox: spellcheck browser + opsi perbaikan ejaan AI saat kirim.
+    */
+    'composer' => [
+        'spellcheck' => filter_var(env('OMNI_COMPOSER_SPELLCHECK', true), FILTER_VALIDATE_BOOLEAN),
+        'auto_grammar_on_send' => filter_var(env('OMNI_AUTO_GRAMMAR_ON_SEND', true), FILTER_VALIDATE_BOOLEAN),
+        'auto_grammar_max_chars' => (int) env('OMNI_AUTO_GRAMMAR_MAX_CHARS', 2500),
+        'auto_grammar_min_chars' => (int) env('OMNI_AUTO_GRAMMAR_MIN_CHARS', 4),
+    ],
+
 ];

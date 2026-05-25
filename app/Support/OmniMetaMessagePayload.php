@@ -14,9 +14,28 @@ final class OmniMetaMessagePayload
      */
     public static function normalize(array $payload): array
     {
+        $storyReply = OmniInstagramStoryReply::extract($payload);
+
         $body = isset($payload['message']) && is_string($payload['message']) && trim($payload['message']) !== ''
             ? trim($payload['message'])
             : null;
+        if ($body === null && isset($payload['text']) && is_string($payload['text']) && trim($payload['text']) !== '') {
+            $body = trim($payload['text']);
+        }
+
+        if ($storyReply !== null) {
+            $storyUrl = $storyReply['story_url'] ?? null;
+            $isVideo = OmniInstagramStoryReply::isVideoUrl($storyUrl);
+
+            return [
+                'body' => $body ?? '[Balasan story]',
+                'message_type' => 'story_reply',
+                'attachment_url' => $storyUrl,
+                'media_mime' => $isVideo ? 'video/mp4' : ($storyUrl ? 'image/jpeg' : null),
+                'media_filename' => null,
+                'story_reply' => $storyReply,
+            ];
+        }
 
         $messageType = 'text';
         $attachmentUrl = self::extractAttachmentUrl($payload);

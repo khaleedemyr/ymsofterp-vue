@@ -182,7 +182,8 @@ class MetaMessengerInboundService
             'attachment_url' => $normalized['attachment_url'],
             'media_mime' => $normalized['media_mime'],
             'media_filename' => $normalized['media_filename'],
-        ], fn ($v) => $v !== null));
+            'story_reply' => $normalized['story_reply'] ?? null,
+        ], fn ($v) => $v !== null && $v !== []));
         $tsMs = (int) ($event['timestamp'] ?? 0);
         $sentAt = $tsMs > 0
             ? Carbon::createFromTimestamp((int) floor($tsMs / 1000), 'UTC')->timezone(config('app.timezone'))

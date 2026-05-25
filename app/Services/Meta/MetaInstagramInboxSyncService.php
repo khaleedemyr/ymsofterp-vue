@@ -254,7 +254,7 @@ class MetaInstagramInboxSyncService
 
         $url = "https://graph.instagram.com/{$version}/{$metaConversationId}/messages";
         $query = [
-            'fields' => 'id,created_time,from,to,message,attachments{type,mime_type,image_data,file_url,video_data,name}',
+            'fields' => 'id,created_time,from,to,message,story,attachments{type,mime_type,image_data,file_url,video_data,name,payload}',
             'limit' => self::MESSAGE_PAGE_LIMIT,
         ];
         $pages = 0;
@@ -528,7 +528,7 @@ class MetaInstagramInboxSyncService
         $response = Http::withToken($accessToken)
             ->acceptJson()
             ->get("https://graph.instagram.com/{$version}/{$messageId}", [
-                'fields' => 'id,created_time,from,to,message',
+                'fields' => 'id,created_time,from,to,message,story',
             ]);
 
         $data = $response->successful() ? $response->json() : [];
@@ -727,9 +727,10 @@ class MetaInstagramInboxSyncService
 
         $attachmentUrl = $normalized['attachment_url'] ?? OmniMetaMessagePayload::extractAttachmentUrl($currentPayload);
 
-        $merged = array_merge($currentPayload, $payload, [
+        $merged = array_merge($currentPayload, $payload, array_filter([
             'attachment_url' => $attachmentUrl,
-        ]);
+            'story_reply' => $normalized['story_reply'] ?? ($currentPayload['story_reply'] ?? null),
+        ], fn ($v) => $v !== null && $v !== []));
         if ($normalized['media_mime'] !== null) {
             $merged['media_mime'] = $normalized['media_mime'];
         }
@@ -752,6 +753,9 @@ class MetaInstagramInboxSyncService
         if (($message->message_type === 'text' || $message->message_type === null || $message->message_type === '')
             && $normalized['message_type'] !== 'text') {
             $updates['message_type'] = $normalized['message_type'];
+        }
+        if ($normalized['message_type'] === 'story_reply') {
+            $updates['message_type'] = 'story_reply';
         }
         if (! $message->body && $normalized['body']) {
             $updates['body'] = $normalized['body'];
@@ -855,6 +859,12 @@ class MetaInstagramInboxSyncService
         }
         if ($normalized['media_filename'] !== null) {
             $payload['media_filename'] = $normalized['media_filename'];
+        }
+        if (! empty($normalized['story_reply'])) {
+            $payload['story_reply'] = $normalized['story_reply'];
+            if ($normalized['message_type'] === 'story_reply') {
+                $messageType = 'story_reply';
+            }
         }
 
         $created = (string) ($payload['created_time'] ?? '');

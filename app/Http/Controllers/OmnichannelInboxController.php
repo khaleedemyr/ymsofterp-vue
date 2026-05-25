@@ -22,6 +22,7 @@ use App\Services\Omni\OmniAiWritingService;
 use App\Services\Omni\OmniContactProfileService;
 use App\Services\Omni\OmniInternalNoteMentionService;
 use App\Support\OmniContactMaritalStatus;
+use App\Support\OmniInstagramStoryReply;
 use App\Support\OmniLeadStages;
 use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Support\OmnichannelAuthorization;
@@ -114,6 +115,10 @@ class OmnichannelInboxController extends Controller
             'canManageOmnichannelFlows' => OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_flows_view')
                 || OmnichannelAuthorization::userHasPermission((int) $request->user()->id, 'omnichannel_teams_view'),
             'aiWritingEnabled' => filter_var(config('omnichannel.ai_writing.enabled', true), FILTER_VALIDATE_BOOLEAN),
+            'composerSpellcheck' => filter_var(config('omnichannel.composer.spellcheck', true), FILTER_VALIDATE_BOOLEAN),
+            'autoGrammarOnSendDefault' => filter_var(config('omnichannel.composer.auto_grammar_on_send', true), FILTER_VALIDATE_BOOLEAN),
+            'autoGrammarMaxChars' => (int) config('omnichannel.composer.auto_grammar_max_chars', 2500),
+            'autoGrammarMinChars' => (int) config('omnichannel.composer.auto_grammar_min_chars', 4),
             'maritalStatusOptions' => OmniContactMaritalStatus::options(),
             'outletOptions' => $this->outletOptionsForInbox(),
         ]);
@@ -1076,6 +1081,10 @@ class OmnichannelInboxController extends Controller
         }
 
         $mentionedUsers = app(OmniInternalNoteMentionService::class)->mentionedUsersFromPayload($payload);
+        $storyReply = OmniInstagramStoryReply::fromPayload($payload);
+        if ($storyReply !== null && $messageType === 'text') {
+            $messageType = 'story_reply';
+        }
 
         return [
             'id' => $message->id,
@@ -1089,6 +1098,7 @@ class OmnichannelInboxController extends Controller
             'media_filename' => $payload['media_filename'] ?? null,
             'media_mime' => $payload['media_mime'] ?? null,
             'mentioned_users' => $mentionedUsers,
+            'story_reply' => $storyReply,
         ];
     }
 

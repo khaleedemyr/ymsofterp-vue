@@ -242,8 +242,65 @@
                 <p v-if="msg.direction === 'internal'" class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
+                <div
+                  v-if="isStoryReplyMessage(msg)"
+                  class="mb-2 overflow-hidden rounded-xl border border-purple-200/90 bg-gradient-to-b from-purple-50/90 to-white"
+                >
+                  <p class="px-3 pt-2 text-[11px] font-medium italic text-purple-900">
+                    {{ storyReplyLabel(msg) }}
+                  </p>
+                  <div
+                    v-if="storyReplyMediaUrl(msg)"
+                    class="relative mx-2 mt-1 overflow-hidden rounded-lg bg-slate-900"
+                  >
+                    <video
+                      v-if="storyReplyIsVideo(msg)"
+                      :src="storyReplyMediaUrl(msg)"
+                      controls
+                      playsinline
+                      preload="metadata"
+                      referrerpolicy="no-referrer"
+                      class="max-h-52 w-full object-contain"
+                      @error="onVideoLoadError(msg)"
+                    />
+                    <button
+                      v-else
+                      type="button"
+                      class="block w-full"
+                      @click="openImageLightbox(msg)"
+                    >
+                      <img
+                        :src="storyReplyMediaUrl(msg)"
+                        alt="Preview story"
+                        referrerpolicy="no-referrer"
+                        class="max-h-52 w-full object-cover"
+                        loading="lazy"
+                        @error="onImageLoadError(msg)"
+                      />
+                    </button>
+                  </div>
+                  <button
+                    v-else-if="needsMediaResolve(msg)"
+                    type="button"
+                    class="mx-2 mb-1 flex w-[calc(100%-1rem)] items-center gap-2 rounded-lg bg-white/80 px-3 py-2 text-left text-xs text-slate-700"
+                    :disabled="mediaResolving[msg.id]"
+                    @click="resolveMessageMedia(msg)"
+                  >
+                    <i class="fa-brands fa-instagram text-purple-600" />
+                    {{ mediaResolving[msg.id] ? 'Memuat story…' : 'Muat preview story' }}
+                  </button>
+                  <a
+                    v-if="storyViewUrl(msg)"
+                    :href="storyViewUrl(msg)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="mx-3 mb-2 mt-1 inline-block text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                  >
+                    View story
+                  </a>
+                </div>
                 <button
-                  v-if="msg.media_url && isImageLikeMessage(msg)"
+                  v-else-if="msg.media_url && isImageLikeMessage(msg)"
                   type="button"
                   class="mb-1 block max-w-full overflow-hidden rounded-lg ring-0 transition hover:ring-2 hover:ring-emerald-400/80 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   @click="openImageLightbox(msg)"
@@ -455,7 +512,11 @@
                     ? 'focus:border-amber-500 focus:ring-amber-500'
                     : 'focus:border-emerald-500 focus:ring-emerald-500'"
                   :placeholder="composerPlaceholder"
-                  :disabled="sending"
+                  :disabled="sending || grammarChecking"
+                  :spellcheck="composerSpellcheckEnabled"
+                  lang="id"
+                  autocapitalize="sentences"
+                  autocomplete="off"
                   @input="onComposerInput"
                   @keydown="onComposerKeydown"
                 />
@@ -474,11 +535,40 @@
                 type="submit"
                 class="shrink-0 rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 :class="composerMode === 'internal' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'"
-                :disabled="sending || (!replyText.trim() && !pendingAttachment)"
+                :disabled="sending || grammarChecking || (!replyText.trim() && !pendingAttachment)"
               >
-                <i v-if="sending" class="fa-solid fa-spinner fa-spin" />
-                <span v-else>{{ composerMode === 'internal' ? 'Simpan' : 'Kirim' }}</span>
+                <i v-if="sending || grammarChecking" class="fa-solid fa-spinner fa-spin" />
+                <span v-else>{{ sendButtonLabel }}</span>
               </button>
+              </div>
+              <div
+                v-if="composerMode === 'reply' && (composerSpellcheckEnabled || showAiWriting)"
+                class="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-slate-500"
+              >
+                <label
+                  v-if="showAiWriting"
+                  class="inline-flex cursor-pointer items-center gap-1.5"
+                >
+                  <input
+                    v-model="autoGrammarOnSend"
+                    type="checkbox"
+                    class="rounded border-slate-300 text-violet-600"
+                    :disabled="sending || grammarChecking"
+                  />
+                  <span>Perbaiki typo otomatis saat kirim (AI)</span>
+                </label>
+                <span v-if="composerSpellcheckEnabled" class="text-slate-400">
+                  <i class="fa-solid fa-spell-check mr-0.5" /> Garis merah = ejaan browser
+                </span>
+                <button
+                  v-if="showAiWriting && replyText.trim()"
+                  type="button"
+                  class="font-medium text-violet-700 hover:text-violet-900 hover:underline disabled:opacity-50"
+                  :disabled="aiLoading || grammarChecking || sending"
+                  @click="runAiAssist('grammar')"
+                >
+                  Perbaiki ejaan sekarang
+                </button>
               </div>
             </form>
             <div v-if="showAiWriting" class="relative border-t border-slate-100 px-3 py-2">
@@ -496,6 +586,9 @@
                 v-if="aiMenuOpen"
                 class="absolute bottom-full left-3 right-3 z-50 mb-1 max-h-[min(20rem,50vh)] overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
               >
+                <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-violet-900 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('grammar')">
+                  <i class="fa-solid fa-spell-check w-4 text-violet-600" /> Perbaiki ejaan & tata bahasa
+                </button>
                 <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('simplify')">
                   <i class="fa-solid fa-wand-magic-sparkles w-4 text-slate-400" /> Sederhanakan teks
                 </button>
@@ -519,9 +612,6 @@
                 </button>
                 <div class="border-t border-slate-100 px-2 py-1">
                   <p class="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Lainnya</p>
-                  <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('grammar')">
-                    <i class="fa-solid fa-spell-check w-4 text-slate-400" /> Perbaiki ejaan & tata bahasa
-                  </button>
                   <button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-violet-50 disabled:opacity-50" :disabled="aiLoading" @click="runAiAssist('translate_to_en')">
                     <i class="fa-solid fa-language w-4 text-slate-400" /> Terjemahkan ke Inggris
                   </button>
@@ -803,6 +893,10 @@ const props = defineProps({
   canManageOmnichannelFlows: { type: Boolean, default: false },
   messageTemplates: { type: Array, default: () => [] },
   aiWritingEnabled: { type: Boolean, default: true },
+  composerSpellcheck: { type: Boolean, default: true },
+  autoGrammarOnSendDefault: { type: Boolean, default: true },
+  autoGrammarMaxChars: { type: Number, default: 2500 },
+  autoGrammarMinChars: { type: Number, default: 4 },
   maritalStatusOptions: { type: Array, default: () => [] },
   outletOptions: { type: Array, default: () => [] },
 })
@@ -892,6 +986,9 @@ const pausingAutomation = ref(false)
 const aiMenuOpen = ref(false)
 const aiLoading = ref(false)
 const aiError = ref('')
+const grammarChecking = ref(false)
+const LS_AUTO_GRAMMAR = 'omni_inbox_auto_grammar_send'
+const autoGrammarOnSend = ref(props.autoGrammarOnSendDefault !== false)
 /** ID chat yang sedang dipilih user; cegah poll mengembalikan chat lama dari URL. */
 const pendingConversationId = ref(null)
 const crmSaving = ref(false)
@@ -938,6 +1035,13 @@ const emptyListHint = computed(() => {
 
 /** Tombol AI di composer — default aktif kecuali server kirim false eksplisit. */
 const showAiWriting = computed(() => props.aiWritingEnabled !== false)
+const composerSpellcheckEnabled = computed(() => props.composerSpellcheck !== false)
+
+const sendButtonLabel = computed(() => {
+  if (grammarChecking.value) return 'Memeriksa ejaan...'
+  if (sending.value) return composerMode.value === 'internal' ? 'Menyimpan...' : 'Mengirim...'
+  return composerMode.value === 'internal' ? 'Simpan' : 'Kirim'
+})
 
 /** Diperbarui poll axios + sinkron dari props saat navigasi Inertia. */
 const liveConversations = ref([...(props.conversations || [])])
@@ -1023,7 +1127,7 @@ const composerPlaceholder = computed(() => {
   if (ch === 'messenger' || ch === 'facebook') {
     return 'Kirim ke Messenger... (ketik / untuk template balasan)'
   }
-  return 'Kirim ke WhatsApp... (ketik / untuk template balasan)'
+  return 'Kirim ke WhatsApp... (/ template · Ctrl+Shift+E perbaiki ejaan)'
 })
 
 const filteredTemplates = computed(() => {
@@ -1159,14 +1263,44 @@ function needsMediaResolve(msg) {
     return isVideoLikeMessage(msg) || isImageLikeMessage(msg) || MEDIA_PLACEHOLDER_BODIES.includes(String(msg.body || '').trim())
   }
   const type = msg.message_type
-  if (['image', 'video', 'document', 'audio', 'attachment', 'sticker'].includes(type)) {
+  if (['image', 'video', 'document', 'audio', 'attachment', 'sticker', 'story_reply'].includes(type)) {
+    return true
+  }
+  if (isStoryReplyMessage(msg) && !storyReplyMediaUrl(msg)) {
     return true
   }
   const body = String(msg.body || '').trim()
   return MEDIA_PLACEHOLDER_BODIES.includes(body) || body.startsWith('[PDF:')
 }
 
+function isStoryReplyMessage(msg) {
+  return msg?.message_type === 'story_reply' || !!(msg?.story_reply?.story_url || msg?.story_reply?.story_id)
+}
+
+function storyReplyLabel(msg) {
+  return msg?.story_reply?.label || 'Membalas story Anda'
+}
+
+function storyReplyMediaUrl(msg) {
+  return msg?.media_url || msg?.story_reply?.story_url || null
+}
+
+function storyReplyIsVideo(msg) {
+  if (isVideoLikeMessage(msg)) {
+    return true
+  }
+  const url = storyReplyMediaUrl(msg)
+  return url ? /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url) : false
+}
+
+function storyViewUrl(msg) {
+  return storyReplyMediaUrl(msg)
+}
+
 function isImageLikeMessage(msg) {
+  if (isStoryReplyMessage(msg)) {
+    return false
+  }
   if (!msg?.media_url || imageLoadFailed.value[msg.id]) {
     return false
   }
@@ -1200,8 +1334,14 @@ function displayMessageBody(msg) {
   if (isEphemeralMessage(msg)) {
     return body
   }
-  if (needsMediaResolve(msg)) {
+  if (needsMediaResolve(msg) && !isStoryReplyMessage(msg)) {
     return ''
+  }
+  if (isStoryReplyMessage(msg)) {
+    if (!body || body === '[Balasan story]') {
+      return ''
+    }
+    return body
   }
   if (msg.media_url && (isImageLikeMessage(msg) || isVideoLikeMessage(msg)) && MEDIA_PLACEHOLDER_BODIES.includes(body)) {
     return ''
@@ -1481,6 +1621,7 @@ function mergeMessagesFromProps(serverMsgs, conversationId) {
         message_type: m.message_type || server.message_type,
         media_mime: m.media_mime || server.media_mime,
         media_filename: m.media_filename || server.media_filename,
+        story_reply: m.story_reply || server.story_reply,
       })
     }
   }
@@ -1607,6 +1748,89 @@ function clearMentionState() {
   pendingMentionUserIds.value = []
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function normalizeTextForCompare(str) {
+  return String(str).replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+async function requestGrammarCorrection(text) {
+  const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
+    action: 'grammar',
+    text,
+    conversation_id: selectedId.value ?? null,
+  })
+  if (data.success && data.text) {
+    return String(data.text).trim()
+  }
+  return text
+}
+
+/**
+ * Jika opsi aktif & teks berubah setelah AI, tanya user sebelum kirim ke pelanggan.
+ * @returns {Promise<string|null>} teks untuk dikirim, atau null jika dibatalkan
+ */
+async function resolveOutboundBodyBeforeSend(rawBody) {
+  if (
+    !autoGrammarOnSend.value
+    || !showAiWriting.value
+    || composerMode.value !== 'reply'
+    || !rawBody
+  ) {
+    return rawBody
+  }
+  const minLen = props.autoGrammarMinChars ?? 4
+  const maxLen = props.autoGrammarMaxChars ?? 2500
+  if (rawBody.length < minLen || rawBody.length > maxLen) {
+    return rawBody
+  }
+
+  grammarChecking.value = true
+  try {
+    const corrected = await requestGrammarCorrection(rawBody)
+    if (normalizeTextForCompare(corrected) === normalizeTextForCompare(rawBody)) {
+      return rawBody
+    }
+
+    const result = await Swal.fire({
+      title: 'Perbaikan ejaan disarankan',
+      html: `<p class="text-left text-sm text-slate-600 mb-2">Sistem mendeteksi kemungkinan typo. Pilih versi yang akan dikirim ke pelanggan:</p>
+        <p class="text-left text-xs font-semibold text-slate-500 mb-1">Asli</p>
+        <div class="text-left text-sm bg-slate-50 border border-slate-200 p-2 rounded-lg mb-3 whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(rawBody)}</div>
+        <p class="text-left text-xs font-semibold text-emerald-800 mb-1">Disarankan AI</p>
+        <div class="text-left text-sm bg-emerald-50 border border-emerald-200 p-2 rounded-lg whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(corrected)}</div>`,
+      icon: 'info',
+      width: 520,
+      showCancelButton: true,
+      showDenyButton: true,
+      confirmButtonText: 'Kirim yang diperbaiki',
+      denyButtonText: 'Kirim teks asli',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#059669',
+      denyButtonColor: '#64748b',
+    })
+
+    if (result.isConfirmed) {
+      return corrected
+    }
+    if (result.isDenied) {
+      return rawBody
+    }
+    return null
+  } catch (e) {
+    aiError.value = e.response?.data?.message || 'Gagal memeriksa ejaan. Kirim manual atau coba lagi.'
+    return null
+  } finally {
+    grammarChecking.value = false
+  }
+}
+
 async function runAiAssist(action, opts = {}) {
   if (!replyText.value.trim()) {
     aiError.value = 'Tulis dulu teks di kotak balasan.'
@@ -1616,19 +1840,27 @@ async function runAiAssist(action, opts = {}) {
   aiError.value = ''
   aiMenuOpen.value = false
   try {
-    const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
-      action,
-      text: replyText.value,
-      tone: opts.tone ?? null,
-      list_style: opts.listStyle ?? null,
-      custom_prompt: opts.customPrompt ?? null,
-      conversation_id: selectedId.value ?? null,
-    })
-    if (data.success && data.text) {
-      replyText.value = data.text
-      nextTick(() => composerEl.value?.focus())
+    let text = null
+    if (action === 'grammar') {
+      text = await requestGrammarCorrection(replyText.value)
     } else {
-      aiError.value = data.message || 'AI tidak mengembalikan teks.'
+      const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
+        action,
+        text: replyText.value,
+        tone: opts.tone ?? null,
+        list_style: opts.listStyle ?? null,
+        custom_prompt: opts.customPrompt ?? null,
+        conversation_id: selectedId.value ?? null,
+      })
+      if (data.success && data.text) {
+        text = data.text
+      } else {
+        aiError.value = data.message || 'AI tidak mengembalikan teks.'
+      }
+    }
+    if (text) {
+      replyText.value = text
+      nextTick(() => composerEl.value?.focus())
     }
   } catch (e) {
     aiError.value = e.response?.data?.message || 'Gagal memproses AI Writing Assistant.'
@@ -1701,6 +1933,17 @@ function onComposerInput() {
 }
 
 function onComposerKeydown(e) {
+  if (
+    showAiWriting.value
+    && composerMode.value === 'reply'
+    && e.ctrlKey
+    && e.shiftKey
+    && (e.key === 'E' || e.key === 'e')
+  ) {
+    e.preventDefault()
+    runAiAssist('grammar')
+    return
+  }
   if (mentionMenuOpen.value && composerMode.value === 'internal' && filteredMentionUsers.value.length > 0) {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
@@ -1800,12 +2043,22 @@ async function submitComposer() {
     return
   }
   if (!selectedId.value) return
-  const body = replyText.value.trim()
+  let body = replyText.value.trim()
   if (!body && !pendingAttachment.value) return
-  sending.value = true
   sendError.value = ''
   const isInternal = composerMode.value === 'internal'
   const mentionIds = isInternal ? [...pendingMentionUserIds.value] : []
+
+  if (!isInternal && body) {
+    const resolved = await resolveOutboundBodyBeforeSend(body)
+    if (resolved === null) {
+      return
+    }
+    body = resolved
+    replyText.value = resolved
+  }
+
+  sending.value = true
   try {
     const formData = new FormData()
     if (body) {
@@ -2019,7 +2272,23 @@ function formatTime(iso) {
   })
 }
 
+watch(autoGrammarOnSend, (v) => {
+  try {
+    localStorage.setItem(LS_AUTO_GRAMMAR, v ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+})
+
 onMounted(() => {
+  try {
+    const stored = localStorage.getItem(LS_AUTO_GRAMMAR)
+    if (stored !== null) {
+      autoGrammarOnSend.value = stored === '1'
+    }
+  } catch {
+    /* ignore */
+  }
   const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   if (csrf) {
     axios.defaults.headers.common['X-CSRF-TOKEN'] = csrf

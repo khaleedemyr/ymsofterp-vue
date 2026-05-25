@@ -36,7 +36,7 @@ class OmnichannelInboxMediaService
         $type = (string) $message->message_type;
         $body = trim((string) $message->body);
 
-        if (in_array($type, ['image', 'video', 'audio', 'document', 'attachment', 'sticker'], true)) {
+        if (in_array($type, ['image', 'video', 'audio', 'document', 'attachment', 'sticker', 'story_reply'], true)) {
             return true;
         }
 
