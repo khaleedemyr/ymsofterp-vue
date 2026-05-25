@@ -20,6 +20,9 @@ class DebugMetaWhatsAppWebhookCommand extends Command
     public function handle(MetaWhatsAppClient $client): int
     {
         $webhookUrl = url('/api/webhooks/meta/whatsapp');
+        $httpsWebhookUrl = str_starts_with($webhookUrl, 'http://')
+            ? 'https://'.substr($webhookUrl, 7)
+            : $webhookUrl;
         $phoneId = config('services.meta.whatsapp_phone_number_id');
         $wabaId = config('services.meta.whatsapp_business_account_id');
         $appSecret = config('services.meta.app_secret');
@@ -32,11 +35,16 @@ class DebugMetaWhatsAppWebhookCommand extends Command
         $this->info('=== Webhook WhatsApp ERP ===');
         $this->line('APP_URL: '.($appUrl ?: '(kosong)'));
         if ($appUrl && ! str_starts_with($appUrl, 'https://')) {
-            $this->warn('  APP_URL harus https:// — Meta menolak callback http.');
+            $this->error('  APP_URL pakai http — ubah ke https://ymsofterp.com lalu config:clear.');
+            $this->line('  Callback Meta yang benar (HTTPS): '.$httpsWebhookUrl);
         }
-        $this->line('Webhook URL (wajib sama di Meta App Dashboard):');
+        $this->line('Webhook URL dari APP_URL (jangan dipakai di Meta jika http):');
         $this->line('  '.$webhookUrl);
-        if (! str_contains($webhookUrl, '/api/webhooks/meta/whatsapp')) {
+        if ($httpsWebhookUrl !== $webhookUrl) {
+            $this->info('Webhook URL production (pakai ini di Meta Dashboard):');
+            $this->line('  '.$httpsWebhookUrl);
+        }
+        if (! str_contains($httpsWebhookUrl, '/api/webhooks/meta/whatsapp')) {
             $this->warn('  URL harus mengandung /api/webhooks/meta/whatsapp');
         }
         $this->line('Phone Number ID: '.($phoneId ?: '(kosong)'));
@@ -107,19 +115,23 @@ class DebugMetaWhatsAppWebhookCommand extends Command
 
         if ($this->option('probe') && $verifyToken) {
             $this->info('Probe GET verify (dari server ini):');
-            $probeUrl = $webhookUrl.'?'.http_build_query([
+            $query = http_build_query([
                 'hub_mode' => 'subscribe',
                 'hub_verify_token' => $verifyToken,
                 'hub_challenge' => 'erp_probe_'.time(),
             ]);
-            try {
-                $probe = Http::timeout(15)->get($probeUrl);
-                $this->line('  HTTP '.$probe->status().' body='.mb_substr($probe->body(), 0, 80));
-                if ($probe->status() !== 200) {
-                    $this->warn('  Harus 200 + challenge — cek META_WEBHOOK_VERIFY_TOKEN & route /api/webhooks/meta/whatsapp');
+            foreach (array_unique([$webhookUrl, $httpsWebhookUrl]) as $probeBase) {
+                $probeUrl = $probeBase.'?'.$query;
+                try {
+                    $probe = Http::timeout(15)->get($probeUrl);
+                    $ok = $probe->status() === 200 && str_contains($probe->body(), 'erp_probe_');
+                    $this->line('  '.($ok ? 'OK' : 'FAIL').' '.$probeBase.' → HTTP '.$probe->status());
+                    if (! $ok && $probe->status() === 404) {
+                        $this->warn('    404: vhost http mungkin tidak mengarah ke Laravel — pakai HTTPS di APP_URL.');
+                    }
+                } catch (\Throwable $e) {
+                    $this->error('  Probe gagal '.$probeBase.': '.$e->getMessage());
                 }
-            } catch (\Throwable $e) {
-                $this->error('  Probe gagal: '.$e->getMessage());
             }
             $this->line('');
         }
@@ -174,14 +186,14 @@ class DebugMetaWhatsAppWebhookCommand extends Command
 
         $this->line('');
         $this->info('Urutan perbaikan (arsip 0 + chat tes tidak masuk):');
-        $this->line('  1. developers.facebook.com → app YMSoft ERP → WhatsApp → Configuration');
-        $this->line('     Callback: '.$webhookUrl);
+        $this->line('  1. .env: APP_URL=https://ymsofterp.com → php artisan config:clear');
+        $this->line('  2. developers.facebook.com → app YMSoft ERP → WhatsApp → Configuration');
+        $this->line('     Callback: '.$httpsWebhookUrl);
         $this->line('     Verify token = META_WEBHOOK_VERIFY_TOKEN → klik Verify and save, centang messages');
-        $this->line('  2. php artisan meta:whatsapp-waba-subscribe --subscribe');
-        $this->line('  3. Kirim WA ke nomor production, di terminal lain: tail -f storage/logs/whatsapp-webhook.trace.log');
-        $this->line('     Harus muncul baris POST content_len>0 (bukan hanya GET verify)');
-        $this->line('  4. Jika POST sig_invalid: perbaiki META_APP_SECRET atau META_WEBHOOK_SKIP_SIGNATURE_VERIFY=true');
-        $this->line('  5. php artisan config:clear — replay hanya berguna jika arsip ada file .json');
+        $this->line('  3. php artisan meta:whatsapp-waba-subscribe --subscribe');
+        $this->line('  4. Kirim WA ke nomor production: tail -f storage/logs/whatsapp-webhook.trace.log');
+        $this->line('  5. Ada arsip .json? php artisan meta:sync-whatsapp-inbox --replay');
+        $this->line('  6. Jika POST sig_invalid: perbaiki META_APP_SECRET');
 
         return self::SUCCESS;
     }

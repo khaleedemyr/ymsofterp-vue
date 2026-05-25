@@ -124,11 +124,14 @@ Klik **Verify and save**. Test dari Meta harus HTTP 200.
 ### 4. `.env` production (nomor asli, bukan test)
 
 ```env
+APP_URL=https://ymsofterp.com
 META_WHATSAPP_ACCESS_TOKEN=...   # token app ERP, bukan Sleekflow
 META_WHATSAPP_PHONE_NUMBER_ID=896059726934135
 META_WHATSAPP_BUSINESS_ACCOUNT_ID=830741246688763
 META_WEBHOOK_VERIFY_TOKEN=...
 ```
+
+**Wajib `APP_URL=https://`** — jika `http://`, probe verify 404 dan URL notifikasi/webhook salah. Meta hanya kirim POST ke callback **HTTPS** (trace log 25 Mei menunjukkan webhook sempat jalan lewat https).
 
 Lalu `php artisan config:clear`.
 
