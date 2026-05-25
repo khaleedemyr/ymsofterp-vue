@@ -233,6 +233,13 @@ class OmnichannelInboxController extends Controller
                     ->all(),
                 'can_see_all_chats' => $canSeeAll,
                 'message_templates' => OmniMessageTemplate::listActiveForInbox(),
+                'marital_status_options' => OmniContactMaritalStatus::options(),
+                'outlet_options' => $this->outletOptionsForInbox(),
+                'ai_writing_enabled' => filter_var(config('omnichannel.ai_writing.enabled', true), FILTER_VALIDATE_BOOLEAN),
+                'composer_spellcheck' => filter_var(config('omnichannel.composer.spellcheck', true), FILTER_VALIDATE_BOOLEAN),
+                'auto_grammar_on_send_default' => filter_var(config('omnichannel.composer.auto_grammar_on_send', true), FILTER_VALIDATE_BOOLEAN),
+                'auto_grammar_max_chars' => (int) config('omnichannel.composer.auto_grammar_max_chars', 2500),
+                'auto_grammar_min_chars' => (int) config('omnichannel.composer.auto_grammar_min_chars', 4),
             ],
         ]);
     }
