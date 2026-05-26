@@ -107,6 +107,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FlowCanvas from '@/Components/OmnichannelFlows/FlowCanvas.vue'
 import FlowNodeConfigPanel from '@/Components/OmnichannelFlows/FlowNodeConfigPanel.vue'
@@ -207,14 +208,14 @@ function submit() {
     if (mode === 'cta_url') {
       const url = String(cfg.cta_url?.url || '').trim()
       if (!/^https:\/\//i.test(url)) {
-        window.alert('Node Kirim pesan WA: URL tombol harus diawali https://')
+        Swal.fire('Peringatan', 'Node Kirim pesan WA: URL tombol harus diawali https://', 'warning')
         return
       }
     }
     if (mode === 'quick_reply') {
       const hasBtn = (cfg.buttons || []).some((b) => String(b?.title || '').trim() !== '')
       if (!hasBtn) {
-        window.alert('Node Kirim pesan WA: isi minimal satu label tombol balas.')
+        Swal.fire('Peringatan', 'Node Kirim pesan WA: isi minimal satu label tombol balas.', 'warning')
         return
       }
     }

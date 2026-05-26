@@ -108,6 +108,7 @@
 <script setup>
 import { ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
+import Swal from 'sweetalert2'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 defineProps({
@@ -132,8 +133,17 @@ function toggleActive(flow) {
   })
 }
 
-function destroyFlow(id) {
-  if (!confirm('Hapus flow ini?')) return
+async function destroyFlow(id) {
+  const result = await Swal.fire({
+    title: 'Hapus flow ini?',
+    text: 'Flow yang dihapus tidak bisa dikembalikan.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!result.isConfirmed) return
   router.delete(`/crm/omnichannel-flows/${id}`)
 }
 </script>
