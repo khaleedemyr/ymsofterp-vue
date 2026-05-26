@@ -169,6 +169,29 @@ export function inferSendMessageMode(config) {
   return 'text'
 }
 
+function isConditionRuleComplete(rule) {
+  if (!rule || typeof rule !== 'object') return false
+  const field = String(rule.field || '')
+  if (field === 'message_contains' || field === 'message_not_contains') {
+    return String(rule.value ?? '').trim() !== ''
+  }
+  if (field === 'message_contains_any') {
+    const parts = String(rule.value ?? '')
+      .split(/[,;|]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return parts.length > 0
+  }
+  if (field === 'hour_between') {
+    return String(rule.from ?? '').trim() !== '' && String(rule.to ?? '').trim() !== ''
+  }
+  if (field === 'no_assignee') return true
+  if (field === 'has_member') return rule.value === true || rule.value === false
+  if (field === 'lead_stage') return String(rule.value ?? '').trim() !== ''
+  if (field === 'channel') return String(rule.value ?? '').trim() !== ''
+  return true
+}
+
 function serializeNodeConfig(nodeType, config) {
   const out = { ...config }
   if (nodeType === 'assign_team') {
@@ -178,6 +201,13 @@ function serializeNodeConfig(nodeType, config) {
   if (nodeType === 'assign_users') {
     out.user_ids = (out._users || []).map((u) => u.id)
     delete out._users
+  }
+  if (nodeType === 'condition') {
+    const rules = Array.isArray(out.rules) ? out.rules : []
+    out.rules = rules.filter((rule) => isConditionRuleComplete(rule))
+    if (out.rules.length === 0) {
+      out.rules = [{ field: 'message_contains', value: '' }]
+    }
   }
   if (nodeType === 'send_message') {
     const mode = inferSendMessageMode(out)

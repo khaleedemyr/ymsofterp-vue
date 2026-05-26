@@ -225,6 +225,7 @@ class OmnichannelFlowController extends Controller
             ],
             'conditionFields' => [
                 ['value' => 'message_contains', 'label' => 'Pesan mengandung teks'],
+                ['value' => 'message_contains_any', 'label' => 'Pesan mengandung salah satu kata (pisah koma)'],
                 ['value' => 'message_not_contains', 'label' => 'Pesan tidak mengandung teks'],
                 ['value' => 'hour_between', 'label' => 'Jam (rentang WIB)'],
                 ['value' => 'no_assignee', 'label' => 'Belum ada penugasan'],

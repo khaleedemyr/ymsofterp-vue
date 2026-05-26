@@ -183,16 +183,20 @@ function nodesForSave() {
     (canvasRef.value?.getFlowSnapshot?.()?.nodes ?? []).map((n) => [n.id, n]),
   )
 
+  const sel = selectedNode.value
+
   return nodes.value.map((n) => {
     const snapNode = snapById[n.id]
+    const live = n.id === sel?.id && sel ? sel : n
     return {
       ...n,
       position: snapNode?.position
         ? { x: snapNode.position.x, y: snapNode.position.y }
         : { x: n.position.x, y: n.position.y },
       data: {
-        ...n.data,
-        config: { ...(n.data?.config || {}) },
+        nodeType: live.data?.nodeType,
+        label: live.data?.label,
+        config: JSON.parse(JSON.stringify(live.data?.config || {})),
       },
     }
   })

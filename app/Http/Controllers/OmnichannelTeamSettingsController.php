@@ -71,9 +71,9 @@ class OmnichannelTeamSettingsController extends Controller
             403
         );
 
-        $validated = $request->validate([
-            'user_ids' => OmnichannelUserOption::assignableUserIdRules(),
-        ]);
+        $validated = $request->validate(
+            OmnichannelUserOption::assignableUserIdRules('user_ids')
+        );
 
         $ids = array_values(array_unique(array_map('intval', $validated['user_ids'] ?? [])));
 
@@ -104,7 +104,7 @@ class OmnichannelTeamSettingsController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
-            'user_ids' => OmnichannelUserOption::assignableUserIdRules(),
+            ...OmnichannelUserOption::assignableUserIdRules('user_ids'),
         ]);
 
         $team = OmniTeam::query()->create([
@@ -129,7 +129,7 @@ class OmnichannelTeamSettingsController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
-            'user_ids' => OmnichannelUserOption::assignableUserIdRules(),
+            ...OmnichannelUserOption::assignableUserIdRules('user_ids'),
         ]);
 
         if (array_key_exists('name', $validated)) {

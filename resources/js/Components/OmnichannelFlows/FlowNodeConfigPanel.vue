@@ -55,9 +55,14 @@
 
     <div v-if="node.data.nodeType === 'condition'" class="space-y-2">
       <select v-model="node.data.config.match" class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs">
-        <option value="all">Semua aturan harus cocok</option>
-        <option value="any">Salah satu aturan cocok</option>
+        <option value="all">Semua aturan harus cocok (AND)</option>
+        <option value="any">Salah satu aturan cocok (OR)</option>
       </select>
+      <p class="text-[10px] leading-relaxed text-amber-800">
+        Contoh: kata <strong>Reservasi</strong> atau <strong>Booking</strong> → pilih <strong>OR</strong>, atau satu aturan
+        <strong>「Pesan mengandung salah satu kata」</strong> isi <code class="rounded bg-amber-100 px-1">reservasi, booking</code>.
+        Mode <strong>AND</strong> hanya jalan jika satu pesan memenuhi semua aturan sekaligus.
+      </p>
       <div
         v-for="(rule, ri) in node.data.config.rules"
         :key="ri"
@@ -102,6 +107,15 @@
           <select v-model="rule.value" class="w-full rounded border px-2 py-1 text-xs">
             <option v-for="ls in leadStages" :key="ls.value" :value="ls.value">{{ ls.label }}</option>
           </select>
+        </template>
+        <template v-else-if="rule.field === 'message_contains_any'">
+          <input
+            v-model="rule.value"
+            type="text"
+            class="w-full rounded border px-2 py-1 text-xs"
+            placeholder="reservasi, booking, order"
+          />
+          <p class="text-[10px] text-slate-500">Pisahkan kata dengan koma. Cocok jika pesan mengandung salah satu kata.</p>
         </template>
         <template v-else>
           <input v-model="rule.value" type="text" class="w-full rounded border px-2 py-1 text-xs" placeholder="nilai" />

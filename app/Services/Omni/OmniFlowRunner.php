@@ -383,7 +383,7 @@ class OmniFlowRunner
         $results = [];
 
         foreach ($rules as $rule) {
-            if (! is_array($rule)) {
+            if (! is_array($rule) || ! $this->isConditionRuleComplete($rule)) {
                 continue;
             }
             $results[] = $this->evaluateRule($rule, $conversation, $message);
@@ -409,6 +409,7 @@ class OmniFlowRunner
 
         return match ($field) {
             'message_contains' => $this->textContains($message?->body, (string) $value),
+            'message_contains_any' => $this->textContainsAny($message?->body, (string) $value),
             'message_not_contains' => ! $this->textContains($message?->body, (string) $value),
             'hour_between' => $this->timeBetween(
                 $rule['from'] ?? '00:00',
@@ -433,6 +434,54 @@ class OmniFlowRunner
         }
 
         return mb_stripos($haystack, $needle) !== false;
+    }
+
+    private function textContainsAny(?string $haystack, string $needlesCsv): bool
+    {
+        if ($haystack === null || trim($needlesCsv) === '') {
+            return false;
+        }
+
+        $parts = preg_split('/[,;|]+/u', $needlesCsv) ?: [];
+        foreach ($parts as $part) {
+            $needle = trim($part);
+            if ($needle !== '' && mb_stripos($haystack, $needle) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $rule
+     */
+    private function isConditionRuleComplete(array $rule): bool
+    {
+        $field = (string) ($rule['field'] ?? '');
+        if ($field === 'message_contains' || $field === 'message_not_contains') {
+            return trim((string) ($rule['value'] ?? '')) !== '';
+        }
+        if ($field === 'message_contains_any') {
+            $parts = preg_split('/[,;|]+/u', (string) ($rule['value'] ?? '')) ?: [];
+
+            return array_filter(array_map('trim', $parts)) !== [];
+        }
+        if ($field === 'hour_between') {
+            return trim((string) ($rule['from'] ?? '')) !== ''
+                && trim((string) ($rule['to'] ?? '')) !== '';
+        }
+        if ($field === 'no_assignee') {
+            return true;
+        }
+        if ($field === 'has_member') {
+            return array_key_exists('value', $rule);
+        }
+        if ($field === 'lead_stage' || $field === 'channel') {
+            return trim((string) ($rule['value'] ?? '')) !== '';
+        }
+
+        return true;
     }
 
     /**

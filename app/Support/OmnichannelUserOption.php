@@ -31,19 +31,18 @@ class OmnichannelUserOption
     }
 
     /**
-     * Validasi ID user untuk penugasan omnichannel.
+     * Validasi array ID user untuk penugasan omnichannel.
      *
-     * @return array<int, mixed>
+     * @return array<string, list<mixed>>
      */
-    public static function assignableUserIdRules(): array
+    public static function assignableUserIdRules(string $key = 'user_ids'): array
     {
         return [
-            'nullable',
-            'array',
-            Rule::forEach(fn () => [
+            $key => ['nullable', 'array'],
+            $key.'.*' => [
                 'integer',
                 Rule::exists('users', 'id')->where('status', 'A'),
-            ]),
+            ],
         ];
     }
 

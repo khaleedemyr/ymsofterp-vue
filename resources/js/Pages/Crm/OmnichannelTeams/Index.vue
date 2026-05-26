@@ -317,9 +317,10 @@ const memberSelections = reactive({})
 watch(
   () => props.fullAccessUsers,
   (list) => {
-    fullAccessSelection.value = Array.isArray(list) ? [...list] : []
+    if (fullAccessSaving.value) return
+    fullAccessSelection.value = Array.isArray(list) ? list.map((u) => ({ ...u })) : []
   },
-  { immediate: true, deep: true }
+  { immediate: true },
 )
 
 watch(
@@ -329,10 +330,10 @@ watch(
       delete memberSelections[key]
     }
     for (const t of teams || []) {
-      memberSelections[t.id] = Array.isArray(t.members) ? [...t.members] : []
+      memberSelections[t.id] = Array.isArray(t.members) ? t.members.map((m) => ({ ...m })) : []
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true },
 )
 
 function formatUserOptionLabel(opt) {
@@ -342,49 +343,90 @@ function formatUserOptionLabel(opt) {
 }
 
 function saveFullAccess() {
+  const ids = (fullAccessSelection.value || [])
+    .map((u) => Number(u?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
   fullAccessSaving.value = true
   router.put(
     '/crm/omnichannel-teams/full-access-users',
-    {
-      user_ids: (fullAccessSelection.value || []).map((u) => u.id),
-    },
+    { user_ids: ids },
     {
       preserveScroll: true,
+      only: ['fullAccessUsers'],
+      onSuccess: () => {
+        fullAccessSelection.value = (props.fullAccessUsers || []).map((u) => ({ ...u }))
+      },
       onFinish: () => {
         fullAccessSaving.value = false
       },
-    }
+    },
   )
 }
 
+function showInertiaErrors(errors) {
+  const lines = Object.entries(errors || {}).flatMap(([field, msgs]) => {
+    const list = Array.isArray(msgs) ? msgs : [msgs]
+    return list.map((m) => `${field}: ${m}`)
+  })
+  if (lines.length === 0) return
+  Swal.fire('Gagal menyimpan', lines.join('\n'), 'error')
+}
+
 function submitCreate() {
+  const name = createName.value.trim()
+  if (!name) {
+    Swal.fire('Peringatan', 'Nama tim wajib diisi.', 'warning')
+    return
+  }
+
+  const userIds = (createMembers.value || [])
+    .map((m) => Number(m?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
   createSubmitting.value = true
   router.post(
     '/crm/omnichannel-teams',
     {
-      name: createName.value.trim(),
+      name,
       description: createDescription.value.trim() || null,
-      user_ids: (createMembers.value || []).map((m) => m.id),
+      user_ids: userIds,
     },
     {
       preserveScroll: true,
-      onFinish: () => {
-        createSubmitting.value = false
-      },
+      only: ['teams'],
       onSuccess: () => {
         createName.value = ''
         createDescription.value = ''
         createMembers.value = []
+        Swal.fire({ icon: 'success', title: 'Tim dibuat', timer: 1800, showConfirmButton: false })
       },
-    }
+      onError: (errors) => showInertiaErrors(errors),
+      onFinish: () => {
+        createSubmitting.value = false
+      },
+    },
   )
 }
 
 function saveTeamMembers(teamId) {
   const members = memberSelections[teamId] || []
-  router.patch(`/crm/omnichannel-teams/${teamId}`, {
-    user_ids: members.map((m) => m.id),
-  }, { preserveScroll: true })
+  const userIds = members
+    .map((m) => Number(m?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+  router.patch(
+    `/crm/omnichannel-teams/${teamId}`,
+    { user_ids: userIds },
+    {
+      preserveScroll: true,
+      only: ['teams'],
+      onSuccess: () => {
+        Swal.fire({ icon: 'success', title: 'Anggota tim disimpan', timer: 1500, showConfirmButton: false })
+      },
+      onError: (errors) => showInertiaErrors(errors),
+    },
+  )
 }
 
 async function destroyTeam(teamId) {

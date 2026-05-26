@@ -255,7 +255,7 @@ class OmnichannelInboxController extends Controller
         );
 
         $validated = $request->validate([
-            'assigned_user_ids' => OmnichannelUserOption::assignableUserIdRules(),
+            ...OmnichannelUserOption::assignableUserIdRules('assigned_user_ids'),
             'assigned_team_ids' => ['nullable', 'array'],
             'assigned_team_ids.*' => ['integer', 'exists:omni_teams,id'],
             'notify_assignees' => ['sometimes', 'boolean'],
