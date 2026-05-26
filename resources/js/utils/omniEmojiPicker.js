@@ -150,6 +150,22 @@ export const omniEmojiPickerList = omniEmojiCategories.flatMap((c) => c.emojis)
  * @param {string} emoji
  * @param {() => void} [afterInsert]
  */
+/** Sesuaikan tinggi textarea dengan isi; scroll internal setelah maxPx. */
+export function autoResizeTextarea(el, options = {}) {
+  const { minPx = 40 } = options
+  const maxPx = options.maxPx ?? (
+    typeof window !== 'undefined'
+      ? Math.min(320, Math.floor(window.innerHeight * 0.4))
+      : 220
+  )
+  if (!el) return
+  el.style.height = 'auto'
+  const scroll = el.scrollHeight
+  const height = Math.min(Math.max(scroll, minPx), maxPx)
+  el.style.height = `${height}px`
+  el.style.overflowY = scroll > maxPx ? 'auto' : 'hidden'
+}
+
 export function insertEmojiIntoTextarea(el, textRef, emoji, afterInsert) {
   const text = textRef.value ?? ''
   if (!el) {

@@ -520,7 +520,7 @@
                   ref="composerEl"
                   v-model="replyText"
                   rows="1"
-                  class="w-full resize-none rounded-2xl border border-slate-200 py-2 pl-4 pr-10 text-sm focus:outline-none focus:ring-1"
+                  class="w-full min-h-[2.5rem] resize-none overflow-y-hidden rounded-2xl border border-slate-200 py-2 pl-4 pr-10 text-sm leading-snug focus:outline-none focus:ring-1"
                   :class="composerMode === 'internal'
                     ? 'focus:border-amber-500 focus:ring-amber-500'
                     : 'focus:border-emerald-500 focus:ring-emerald-500'"
@@ -886,7 +886,7 @@ import VueEasyLightbox from 'vue-easy-lightbox'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
+import { autoResizeTextarea, insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 import { inferSendMessageMode } from '@/utils/omniFlowGraph'
 import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
 
@@ -984,6 +984,12 @@ const sending = ref(false)
 const sendError = ref('')
 const messagesEl = ref(null)
 const composerEl = ref(null)
+
+function resizeComposer() {
+  nextTick(() => autoResizeTextarea(composerEl.value))
+}
+
+watch(replyText, resizeComposer)
 const templateMenuOpen = ref(false)
 const templateQuery = ref('')
 const templateMenuHighlight = ref(0)
@@ -1491,6 +1497,7 @@ watch(selectedId, () => {
   imageLoadFailed.value = {}
   mediaResolveFailed.value = {}
   clearMentionState()
+  resizeComposer()
 })
 
 function stageDotClass(color) {
@@ -1775,7 +1782,10 @@ function setComposerMode(mode) {
   pendingMentionUserIds.value = []
   emojiPickerOpen.value = false
   aiMenuOpen.value = false
-  nextTick(() => composerEl.value?.focus())
+  nextTick(() => {
+    composerEl.value?.focus()
+    resizeComposer()
+  })
 }
 
 function clearMentionState() {
@@ -1896,7 +1906,10 @@ async function runAiAssist(action, opts = {}) {
     }
     if (text) {
       replyText.value = text
-      nextTick(() => composerEl.value?.focus())
+      nextTick(() => {
+        composerEl.value?.focus()
+        resizeComposer()
+      })
     }
   } catch (e) {
     aiError.value = e.response?.data?.message || 'Gagal memproses AI Writing Assistant.'
@@ -1925,6 +1938,7 @@ async function openAiCustomPrompt() {
 function insertEmoji(emoji) {
   insertEmojiIntoTextarea(composerEl.value, replyText, emoji, () => {
     emojiPickerOpen.value = false
+    resizeComposer()
   })
 }
 
@@ -2048,7 +2062,10 @@ function applyMention(user) {
   }
   mentionMenuOpen.value = false
   mentionQuery.value = ''
-  nextTick(() => composerEl.value?.focus())
+  nextTick(() => {
+    composerEl.value?.focus()
+    resizeComposer()
+  })
 }
 
 function applyTemplateBody(body) {
@@ -2097,7 +2114,10 @@ function applyTemplate(tpl) {
   }
   templateMenuOpen.value = false
   templateQuery.value = ''
-  nextTick(() => composerEl.value?.focus())
+  nextTick(() => {
+    composerEl.value?.focus()
+    resizeComposer()
+  })
 }
 
 async function submitComposer() {
@@ -2374,6 +2394,7 @@ onMounted(() => {
   restartInboxPollTimer()
   document.addEventListener('visibilitychange', onInboxVisibilityChange)
   window.addEventListener('focus', onInboxWindowFocus)
+  resizeComposer()
 })
 
 onUnmounted(() => {
