@@ -43,6 +43,9 @@ class FoodGoodReceiveReportExport implements FromCollection, WithHeadings, WithM
             'Qty Received',
             'Remaining Qty',
             'Unit',
+            'Harga',
+            'Subtotal',
+            'Total Nilai GR',
             'Notes'
         ];
     }
@@ -63,6 +66,9 @@ class FoodGoodReceiveReportExport implements FromCollection, WithHeadings, WithM
             number_format($row['qty_received'] ?? 0, 2),
             number_format($row['remaining_qty'] ?? 0, 2),
             $row['unit_name'] ?? '-',
+            number_format($row['unit_price'] ?? 0, 2),
+            number_format($row['subtotal'] ?? 0, 2),
+            number_format($row['total_amount'] ?? 0, 2),
             $row['notes'] ?? '-'
         ];
     }

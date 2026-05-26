@@ -27,7 +27,13 @@ class FoodGoodReceiveReportController extends Controller
                 's.code as supplier_code',
                 'u.nama_lengkap as received_by_name',
                 'gr.created_at',
-                DB::raw('(SELECT COUNT(*) FROM food_good_receive_items WHERE good_receive_id = gr.id) as total_items')
+                DB::raw('(SELECT COUNT(*) FROM food_good_receive_items WHERE good_receive_id = gr.id) as total_items'),
+                DB::raw('(
+                    SELECT COALESCE(SUM(gri_amt.qty_received * COALESCE(poi_amt.price, 0)), 0)
+                    FROM food_good_receive_items gri_amt
+                    LEFT JOIN purchase_order_food_items poi_amt ON gri_amt.po_item_id = poi_amt.id
+                    WHERE gri_amt.good_receive_id = gr.id
+                ) as total_amount')
             );
 
         // Filter berdasarkan tanggal
@@ -72,6 +78,7 @@ class FoodGoodReceiveReportController extends Controller
             $itemsQuery = DB::table('food_good_receive_items as gri')
                 ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
                 ->leftJoin('units as u_item', 'gri.unit_id', '=', 'u_item.id')
+                ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
                 ->select(
                     'gri.good_receive_id',
                     'gri.id as item_id',
@@ -80,7 +87,9 @@ class FoodGoodReceiveReportController extends Controller
                     'gri.qty_ordered',
                     'gri.qty_received',
                     DB::raw('(gri.qty_received - gri.used_qty) as remaining_qty'),
-                    'u_item.name as unit_name'
+                    'u_item.name as unit_name',
+                    DB::raw('COALESCE(poi.price, 0) as unit_price'),
+                    DB::raw('(gri.qty_received * COALESCE(poi.price, 0)) as subtotal')
                 )
                 ->whereIn('gri.good_receive_id', $grIds);
 
@@ -99,11 +108,19 @@ class FoodGoodReceiveReportController extends Controller
                 }
                 $itemsData[$grId][] = $item;
             }
+
+            if ($request->filled('item_id')) {
+                foreach ($grResults as $gr) {
+                    $gr->total_amount = collect($itemsData[$gr->id] ?? [])
+                        ->sum(fn ($line) => (float) ($line->subtotal ?? 0));
+                }
+            }
         }
 
         // Get summary data
         $summary = DB::table('food_good_receives as gr')
             ->leftJoin('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
+            ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
             ->leftJoin('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('suppliers as s', 'gr.supplier_id', '=', 's.id')
             ->when($request->filled('from_date'), function($q) use ($request) {
@@ -131,7 +148,8 @@ class FoodGoodReceiveReportController extends Controller
             })
             ->select(
                 DB::raw('COUNT(DISTINCT gr.id) as total_gr'),
-                DB::raw('SUM(gri.qty_received) as total_qty_received')
+                DB::raw('SUM(gri.qty_received) as total_qty_received'),
+                DB::raw('SUM(gri.qty_received * COALESCE(poi.price, 0)) as total_amount')
             )
             ->first();
 
@@ -765,7 +783,13 @@ class FoodGoodReceiveReportController extends Controller
                 'po.date as po_date',
                 's.name as supplier_name',
                 's.code as supplier_code',
-                'u.nama_lengkap as received_by_name'
+                'u.nama_lengkap as received_by_name',
+                DB::raw('(
+                    SELECT COALESCE(SUM(gri_amt.qty_received * COALESCE(poi_amt.price, 0)), 0)
+                    FROM food_good_receive_items gri_amt
+                    LEFT JOIN purchase_order_food_items poi_amt ON gri_amt.po_item_id = poi_amt.id
+                    WHERE gri_amt.good_receive_id = gr.id
+                ) as total_amount')
             );
 
         // Apply filters
@@ -799,6 +823,7 @@ class FoodGoodReceiveReportController extends Controller
         $itemsQuery = DB::table('food_good_receive_items as gri')
             ->leftJoin('items as i', 'gri.item_id', '=', 'i.id')
             ->leftJoin('units as u_item', 'gri.unit_id', '=', 'u_item.id')
+            ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
             ->select(
                 'gri.good_receive_id',
                 'i.name as item_name',
@@ -806,7 +831,9 @@ class FoodGoodReceiveReportController extends Controller
                 'gri.qty_ordered',
                 'gri.qty_received',
                 DB::raw('(gri.qty_received - gri.used_qty) as remaining_qty'),
-                'u_item.name as unit_name'
+                'u_item.name as unit_name',
+                DB::raw('COALESCE(poi.price, 0) as unit_price'),
+                DB::raw('(gri.qty_received * COALESCE(poi.price, 0)) as subtotal')
             )
             ->whereIn('gri.good_receive_id', $grIds);
 
@@ -837,6 +864,9 @@ class FoodGoodReceiveReportController extends Controller
                         'qty_received' => $item->qty_received,
                         'remaining_qty' => $item->remaining_qty,
                         'unit_name' => $item->unit_name,
+                        'unit_price' => (float) $item->unit_price,
+                        'subtotal' => (float) $item->subtotal,
+                        'total_amount' => (float) $gr->total_amount,
                         'notes' => $gr->notes
                     ];
                 }
@@ -856,6 +886,9 @@ class FoodGoodReceiveReportController extends Controller
                     'qty_received' => 0,
                     'remaining_qty' => 0,
                     'unit_name' => '',
+                    'unit_price' => 0,
+                    'subtotal' => 0,
+                    'total_amount' => (float) $gr->total_amount,
                     'notes' => $gr->notes
                 ];
             }

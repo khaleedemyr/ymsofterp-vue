@@ -22,6 +22,7 @@ class EmployeeResignationApprovalFlow extends Model
     ];
 
     protected $casts = [
+        'approval_level' => 'integer',
         'approved_at' => 'datetime',
         'rejected_at' => 'datetime',
     ];

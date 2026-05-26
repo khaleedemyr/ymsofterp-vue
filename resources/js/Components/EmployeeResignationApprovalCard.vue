@@ -229,8 +229,8 @@
                         </div>
                     </div>
 
-                    <!-- Approval Actions -->
-                    <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <!-- Approval Actions (only current sequential approver) -->
+                    <div v-if="selectedResignation.can_approve" class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                         <button @click="showRejectModal" 
                                 :disabled="isRejecting"
                                 class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -245,6 +245,10 @@
                             <i v-else class="fa fa-spinner fa-spin mr-2"></i>
                             {{ isApproving ? 'Memproses...' : 'Setujui' }}
                         </button>
+                    </div>
+                    <div v-else class="pt-4 border-t border-gray-200 dark:border-gray-700 text-sm text-amber-600 dark:text-amber-400">
+                        <i class="fa fa-clock mr-1"></i>
+                        Menunggu persetujuan level sebelumnya. Anda belum dapat menyetujui pengajuan ini.
                     </div>
                 </div>
             </div>
@@ -565,8 +569,10 @@ async function approveMultiple() {
         const resignationIds = Array.from(selectedApprovals.value);
         const promises = resignationIds.map(async (resignationId) => {
             try {
+                const resignation = pendingApprovals.value.find((r) => r.id === resignationId);
                 await axios.post(`/employee-resignations/${resignationId}/approve`, {
-                    note: ''
+                    note: '',
+                    approval_flow_id: resignation?.approval_flow_id ?? undefined,
                 });
                 return { success: true, resignationId };
             } catch (err) {
@@ -646,8 +652,11 @@ async function approveMultipleAll() {
         const resignationIds = Array.from(selectedAllApprovals.value);
         const promises = resignationIds.map(async (resignationId) => {
             try {
+                const resignation = allApprovals.value.find((r) => r.id === resignationId)
+                    ?? pendingApprovals.value.find((r) => r.id === resignationId);
                 await axios.post(`/employee-resignations/${resignationId}/approve`, {
-                    note: ''
+                    note: '',
+                    approval_flow_id: resignation?.approval_flow_id ?? undefined,
                 });
                 return { success: true, resignationId };
             } catch (err) {
@@ -689,7 +698,10 @@ async function approveResignation() {
     isApproving.value = true;
     try {
         const response = await axios.post(`/employee-resignations/${selectedResignation.value.id}/approve`, {
-            note: ''
+            note: '',
+            approval_flow_id: selectedResignation.value.current_approval_flow_id
+                ?? selectedResignation.value.approval_flow_id
+                ?? undefined,
         });
         
         if (response.data && response.data.success) {
@@ -739,7 +751,10 @@ function showRejectModal() {
             isRejecting.value = true;
             try {
                 const response = await axios.post(`/employee-resignations/${selectedResignation.value.id}/reject`, {
-                    note: result.value
+                    note: result.value,
+                    approval_flow_id: selectedResignation.value.current_approval_flow_id
+                        ?? selectedResignation.value.approval_flow_id
+                        ?? undefined,
                 });
                 if (response.data.success) {
                     const resignationId = selectedResignation.value?.id;

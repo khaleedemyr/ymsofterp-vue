@@ -113,7 +113,7 @@
       </div>
 
       <!-- Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
           <div class="p-6">
             <div class="flex items-center">
@@ -145,6 +145,22 @@
             </div>
           </div>
         </div>
+
+        <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div class="p-6">
+            <div class="flex items-center">
+              <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-amber-500 rounded-md flex items-center justify-center">
+                  <i class="fa-solid fa-coins text-white"></i>
+                </div>
+              </div>
+              <div class="ml-4">
+                <p class="text-sm font-medium text-gray-500">Total Nilai</p>
+                <p class="text-2xl font-semibold text-gray-900">{{ formatCurrency(summary.total_amount) }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Results Table -->
@@ -168,6 +184,7 @@
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO Date</th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supplier</th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Count</th>
+                  <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Nilai</th>
                   <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received By</th>
                 </tr>
               </thead>
@@ -206,6 +223,9 @@
                         {{ gr.total_items }} items
                       </span>
                     </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-medium">
+                      {{ formatCurrency(gr.total_amount) }}
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {{ gr.received_by_name }}
                     </td>
@@ -213,7 +233,7 @@
                   
                   <!-- Expanded Items Row -->
                   <tr v-if="expandedRows.includes(gr.id)" class="bg-gray-50">
-                    <td colspan="8" class="px-6 py-4">
+                    <td colspan="9" class="px-6 py-4">
                       <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
                           <h4 class="text-sm font-medium text-gray-900">Items in {{ gr.gr_number }}</h4>
@@ -228,6 +248,8 @@
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Received</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remaining Qty</th>
                                 <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Harga</th>
+                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
                               </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
@@ -250,8 +272,24 @@
                                 <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                                   {{ item.unit_name }}
                                 </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 text-right">
+                                  {{ formatCurrency(item.unit_price) }}
+                                </td>
+                                <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900 text-right font-medium">
+                                  {{ formatCurrency(item.subtotal) }}
+                                </td>
                               </tr>
                             </tbody>
+                            <tfoot v-if="getItemsForGR(gr.id).length" class="bg-gray-50">
+                              <tr>
+                                <td colspan="6" class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase">
+                                  Total Nilai
+                                </td>
+                                <td colspan="2" class="px-4 py-2 text-right text-sm font-bold text-gray-900">
+                                  {{ formatCurrency(gr.total_amount) }}
+                                </td>
+                              </tr>
+                            </tfoot>
                           </table>
                         </div>
                       </div>
@@ -390,6 +428,16 @@ const formatDate = (date) => {
 const formatNumber = (number) => {
   if (!number) return '0'
   return new Intl.NumberFormat('id-ID').format(number)
+}
+
+const formatCurrency = (amount) => {
+  const value = Number(amount) || 0
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value)
 }
 </script>
 

@@ -274,6 +274,12 @@ class EmployeeResignationController extends Controller
 
         // For API requests (from approval card)
         if (request()->expectsJson() || request()->wantsJson()) {
+            $viewer = Auth::user();
+            $viewerIsSuperadmin = $viewer && $viewer->id_role === '5af56935b011a';
+            $actionableFlow = $this->userCanActOnResignation($employeeResignation, $viewer, $viewerIsSuperadmin)
+                ? $this->resolveNextPendingApprovalFlow($employeeResignation)
+                : null;
+
             return response()->json([
                 'success' => true,
                 'resignation' => [
@@ -314,10 +320,8 @@ class EmployeeResignationController extends Controller
                             ] : null,
                         ];
                     }),
-                    'current_approval_flow_id' => $employeeResignation->approvalFlows()
-                        ->where('approver_id', Auth::id())
-                        ->where('status', 'PENDING')
-                        ->value('id'),
+                    'current_approval_flow_id' => $actionableFlow?->id,
+                    'can_approve' => $actionableFlow !== null,
                 ]
             ]);
         }
@@ -351,6 +355,61 @@ class EmployeeResignationController extends Controller
         }
         
         return 'RES-' . $year . $month . '-' . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Approval flows sorted by level (numeric).
+     */
+    private function sortedApprovalFlows(EmployeeResignation $resignation)
+    {
+        return $resignation->approvalFlows->sortBy(fn ($flow) => (int) $flow->approval_level)->values();
+    }
+
+    private function normalizedFlowStatus($flow): string
+    {
+        return strtoupper((string) ($flow->status ?? ''));
+    }
+
+    /**
+     * Lowest-level PENDING flow whose previous levels are all APPROVED.
+     */
+    private function resolveNextPendingApprovalFlow(EmployeeResignation $resignation): ?EmployeeResignationApprovalFlow
+    {
+        $flows = $this->sortedApprovalFlows($resignation);
+
+        foreach ($flows as $flow) {
+            if ($this->normalizedFlowStatus($flow) !== 'PENDING') {
+                continue;
+            }
+
+            $level = (int) $flow->approval_level;
+            $previousApproved = $flows
+                ->filter(fn ($f) => (int) $f->approval_level < $level)
+                ->every(fn ($f) => $this->normalizedFlowStatus($f) === 'APPROVED');
+
+            if ($previousApproved) {
+                return $flow;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the user may approve/reject now (sequential flow).
+     */
+    private function userCanActOnResignation(EmployeeResignation $resignation, $user, bool $isSuperadmin = false): bool
+    {
+        $nextFlow = $this->resolveNextPendingApprovalFlow($resignation);
+        if (!$nextFlow) {
+            return false;
+        }
+
+        if ($isSuperadmin) {
+            return true;
+        }
+
+        return (int) $nextFlow->approver_id === (int) $user->id;
     }
 
     /**
@@ -449,43 +508,15 @@ class EmployeeResignationController extends Controller
             })->get();
         }
 
-        // Filter to only show approvals where user is the next approver
-        // and all previous approval levels have been approved
-        $filteredResignations = $pendingResignations->filter(function($resignation) use ($user, $isSuperadmin) {
-            // Get all approval flows sorted by level
-            $allFlows = $resignation->approvalFlows->sortBy('approval_level');
-            $pendingFlows = $allFlows->where('status', 'PENDING');
-            $nextApprover = $pendingFlows->first();
-            
-            if (!$nextApprover) {
-                return false;
-            }
-
-            // Check if all previous approval levels have been approved
-            $nextApprovalLevel = $nextApprover->approval_level;
-            $previousFlows = $allFlows->where('approval_level', '<', $nextApprovalLevel);
-            $allPreviousApproved = $previousFlows->every(function($flow) {
-                return $flow->status === 'APPROVED';
-            });
-
-            // If previous levels are not all approved, don't show this approval
-            if (!$allPreviousApproved) {
-                return false;
-            }
-
-            // Check if user is the next approver
-            if ($isSuperadmin) {
-                return true; // Superadmin can approve any (but still need previous levels approved)
-            }
-
-            return $nextApprover->approver_id == $user->id;
+        // Only show when this user is the current sequential approver
+        $filteredResignations = $pendingResignations->filter(function ($resignation) use ($user, $isSuperadmin) {
+            return $this->userCanActOnResignation($resignation, $user, $isSuperadmin);
         });
 
         // Map to include approver name and level
-        $mappedResignations = $filteredResignations->map(function($resignation) use ($user) {
-            $pendingFlows = $resignation->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
-            $nextApprover = $pendingFlows->first();
-            
+        $mappedResignations = $filteredResignations->map(function ($resignation) {
+            $nextApprover = $this->resolveNextPendingApprovalFlow($resignation);
+
             return [
                 'id' => $resignation->id,
                 'resignation_number' => $resignation->resignation_number,
@@ -508,7 +539,9 @@ class EmployeeResignationController extends Controller
                 ] : null,
                 'created_at' => $resignation->created_at,
                 'approval_level' => $nextApprover ? $nextApprover->approval_level : null,
+                'approval_flow_id' => $nextApprover ? $nextApprover->id : null,
                 'approver_name' => $nextApprover && $nextApprover->approver ? $nextApprover->approver->nama_lengkap : null,
+                'can_approve' => true,
             ];
         })
         ->sortByDesc('created_at')
@@ -551,12 +584,10 @@ class EmployeeResignationController extends Controller
 
             $currentApprover = Auth::user();
             $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
-            
-            // Get all approval flows sorted by level
-            $allFlows = $employeeResignation->approvalFlows()->orderBy('approval_level')->get();
-            $pendingFlows = $allFlows->where('status', 'PENDING')->sortBy('approval_level');
-            $nextApprover = $pendingFlows->first();
-            
+
+            $employeeResignation->load('approvalFlows.approver');
+            $nextApprover = $this->resolveNextPendingApprovalFlow($employeeResignation);
+
             if (!$nextApprover) {
                 return response()->json([
                     'success' => false,
@@ -564,47 +595,27 @@ class EmployeeResignationController extends Controller
                 ], 400);
             }
 
-            // Check if all previous approval levels have been approved
-            $nextApprovalLevel = $nextApprover->approval_level;
-            $previousFlows = $allFlows->where('approval_level', '<', $nextApprovalLevel);
-            $allPreviousApproved = $previousFlows->every(function($flow) {
-                return $flow->status === 'APPROVED';
-            });
-
-            // If previous levels are not all approved, don't allow approval
-            if (!$allPreviousApproved) {
+            if (!$this->userCanActOnResignation($employeeResignation, $currentApprover, $isSuperadmin)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Approval sebelumnya belum selesai. Harus menunggu approval level sebelumnya terlebih dahulu.'
-                ], 400);
+                ], 403);
             }
 
-            // Get current approval flow for this approver
-            // If approval_flow_id is provided, use it; otherwise find by approver_id
             if ($request->has('approval_flow_id')) {
                 $currentApprovalFlow = $employeeResignation->approvalFlows()
                     ->where('id', $request->approval_flow_id)
                     ->where('status', 'PENDING')
                     ->first();
-            } else {
-                // For superadmin, approve the next pending level
-                if ($isSuperadmin) {
-                    $currentApprovalFlow = $nextApprover;
-                } else {
-                    // Regular users: must be the next approver
-                    $currentApprovalFlow = $employeeResignation->approvalFlows()
-                        ->where('approver_id', $currentApprover->id)
-                        ->where('status', 'PENDING')
-                        ->where('approval_level', $nextApprovalLevel)
-                        ->first();
-                }
-            }
 
-            if (!$currentApprovalFlow) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You are not authorized to approve this employee resignation. Please wait for previous approval levels to be completed.'
-                ], 403);
+                if (!$currentApprovalFlow || (int) $currentApprovalFlow->id !== (int) $nextApprover->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You are not authorized to approve this employee resignation. Please wait for previous approval levels to be completed.'
+                    ], 403);
+                }
+            } else {
+                $currentApprovalFlow = $nextApprover;
             }
 
             // Approve current level
@@ -695,26 +706,32 @@ class EmployeeResignationController extends Controller
             DB::beginTransaction();
 
             $currentApprover = Auth::user();
-            
-            // Get current approval flow for this approver
-            // If approval_flow_id is provided, use it; otherwise find by approver_id
+            $isSuperadmin = $currentApprover->id_role === '5af56935b011a';
+
+            $employeeResignation->load('approvalFlows.approver');
+            $nextApprover = $this->resolveNextPendingApprovalFlow($employeeResignation);
+
+            if (!$nextApprover || !$this->userCanActOnResignation($employeeResignation, $currentApprover, $isSuperadmin)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Approval sebelumnya belum selesai. Harus menunggu approval level sebelumnya terlebih dahulu.'
+                ], 403);
+            }
+
             if ($request->has('approval_flow_id')) {
                 $currentApprovalFlow = $employeeResignation->approvalFlows()
                     ->where('id', $request->approval_flow_id)
                     ->where('status', 'PENDING')
                     ->first();
-            } else {
-                $currentApprovalFlow = $employeeResignation->approvalFlows()
-                    ->where('approver_id', $currentApprover->id)
-                    ->where('status', 'PENDING')
-                    ->first();
-            }
 
-            if (!$currentApprovalFlow) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'You are not authorized to reject this employee resignation.'
-                ], 403);
+                if (!$currentApprovalFlow || (int) $currentApprovalFlow->id !== (int) $nextApprover->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You are not authorized to reject this employee resignation.'
+                    ], 403);
+                }
+            } else {
+                $currentApprovalFlow = $nextApprover;
             }
 
             // Reject current level
