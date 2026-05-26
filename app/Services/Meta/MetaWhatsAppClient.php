@@ -19,25 +19,102 @@ class MetaWhatsAppClient
             throw new RuntimeException('Meta WhatsApp API credentials are not configured.');
         }
 
-        $response = Http::withToken($token)
-            ->acceptJson()
-            ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/messages", [
-                'messaging_product' => 'whatsapp',
-                'to' => $toWaId,
-                'type' => 'text',
-                'text' => [
-                    'body' => $text,
-                ],
-            ]);
+        return $this->postMessage([
+            'messaging_product' => 'whatsapp',
+            'to' => $toWaId,
+            'type' => 'text',
+            'text' => [
+                'body' => $text,
+            ],
+        ], $phoneNumberId);
+    }
 
-        if (! $response->successful()) {
-            throw new RuntimeException(
-                'Meta WhatsApp send failed: '.$response->body(),
-                $response->status()
-            );
+    /**
+     * Pesan teks + tombol balas cepat (maks. 3). Tombol tidak bisa berisi URL — gunakan sendInteractiveCtaUrl untuk link.
+     *
+     * @param  list<array{id: string, title: string}>  $buttons
+     */
+    public function sendInteractiveReplyButtons(
+        string $toWaId,
+        string $body,
+        array $buttons,
+        ?string $phoneNumberId = null
+    ): array {
+        $body = trim($body);
+        if ($body === '') {
+            throw new RuntimeException('Body pesan interaktif wajib diisi.');
         }
 
-        return $response->json();
+        $actionButtons = [];
+        foreach (array_slice($buttons, 0, 3) as $btn) {
+            $id = trim((string) ($btn['id'] ?? ''));
+            $title = trim((string) ($btn['title'] ?? ''));
+            if ($id === '' || $title === '') {
+                continue;
+            }
+            $actionButtons[] = [
+                'type' => 'reply',
+                'reply' => [
+                    'id' => mb_substr($id, 0, 256),
+                    'title' => mb_substr($title, 0, 20),
+                ],
+            ];
+        }
+
+        if ($actionButtons === []) {
+            throw new RuntimeException('Minimal satu tombol balas wajib diisi.');
+        }
+
+        return $this->postMessage([
+            'messaging_product' => 'whatsapp',
+            'to' => $toWaId,
+            'type' => 'interactive',
+            'interactive' => [
+                'type' => 'button',
+                'body' => ['text' => mb_substr($body, 0, 1024)],
+                'action' => ['buttons' => $actionButtons],
+            ],
+        ], $phoneNumberId);
+    }
+
+    /**
+     * Pesan teks + satu tombol yang membuka URL (https).
+     */
+    public function sendInteractiveCtaUrl(
+        string $toWaId,
+        string $body,
+        string $displayText,
+        string $url,
+        ?string $phoneNumberId = null
+    ): array {
+        $body = trim($body);
+        $displayText = trim($displayText);
+        $url = trim($url);
+
+        if ($body === '' || $displayText === '' || $url === '') {
+            throw new RuntimeException('Teks pesan, label tombol, dan URL wajib diisi.');
+        }
+
+        if (! preg_match('#^https://#i', $url)) {
+            throw new RuntimeException('URL tombol harus diawali https://');
+        }
+
+        return $this->postMessage([
+            'messaging_product' => 'whatsapp',
+            'to' => $toWaId,
+            'type' => 'interactive',
+            'interactive' => [
+                'type' => 'cta_url',
+                'body' => ['text' => mb_substr($body, 0, 1024)],
+                'action' => [
+                    'name' => 'cta_url',
+                    'parameters' => [
+                        'display_text' => mb_substr($displayText, 0, 20),
+                        'url' => $url,
+                    ],
+                ],
+            ],
+        ], $phoneNumberId);
     }
 
     public function uploadMedia(string $absolutePath, string $mimeType, ?string $phoneNumberId = null): string

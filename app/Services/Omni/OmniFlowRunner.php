@@ -16,6 +16,7 @@ use App\Support\OmniFlowDefinition;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 class OmniFlowRunner
@@ -477,6 +478,18 @@ class OmniFlowRunner
      */
     private function executeSendMessage(array $config, OmniConversation $conversation, array $context): void
     {
+        $channel = (string) $conversation->channel;
+        $messageMode = (string) ($config['message_mode'] ?? 'text');
+        if ($messageMode !== 'text' && $channel !== 'whatsapp') {
+            $messageMode = 'text';
+        }
+
+        if (in_array($messageMode, ['image', 'document'], true)) {
+            $this->executeSendMessageWithMedia($config, $conversation, $messageMode);
+
+            return;
+        }
+
         $body = trim((string) ($config['body'] ?? ''));
         if ($body === '') {
             return;
@@ -484,7 +497,7 @@ class OmniFlowRunner
 
         $body = $this->replacePlaceholders($body, $conversation);
 
-        $channel = (string) $conversation->channel;
+        $messageType = 'text';
         if (in_array($channel, ['messenger', 'facebook', 'instagram'], true)) {
             if ($channel === 'instagram' && $this->useInstagramLoginApi()) {
                 $result = app(\App\Services\Meta\MetaInstagramLoginClient::class)->sendText(
@@ -501,12 +514,43 @@ class OmniFlowRunner
             }
             $metaMessageId = (string) ($result['message_id'] ?? $result['messages'][0]['id'] ?? '');
         } elseif ($channel === 'whatsapp') {
-            $result = app(MetaWhatsAppClient::class)->sendText(
-                $conversation->external_contact_id,
-                $body,
-                $conversation->phone_number_id
-            );
+            $wa = app(MetaWhatsAppClient::class);
+            $previewSuffix = '';
+
+            if ($messageMode === 'quick_reply') {
+                $buttons = $this->normalizeQuickReplyButtons($config['buttons'] ?? []);
+                $result = $wa->sendInteractiveReplyButtons(
+                    $conversation->external_contact_id,
+                    $body,
+                    $buttons,
+                    $conversation->phone_number_id
+                );
+                $messageType = 'interactive';
+                $previewSuffix = ' · Tombol: '.implode(', ', array_column($buttons, 'title'));
+            } elseif ($messageMode === 'cta_url') {
+                $cta = is_array($config['cta_url'] ?? null) ? $config['cta_url'] : [];
+                $displayText = $this->replacePlaceholders(trim((string) ($cta['display_text'] ?? 'Buka link')), $conversation);
+                $url = $this->replacePlaceholders(trim((string) ($cta['url'] ?? '')), $conversation);
+                $result = $wa->sendInteractiveCtaUrl(
+                    $conversation->external_contact_id,
+                    $body,
+                    $displayText,
+                    $url,
+                    $conversation->phone_number_id
+                );
+                $messageType = 'interactive';
+                $previewSuffix = ' · ['.$displayText.']';
+            } else {
+                $result = $wa->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+                $messageType = 'text';
+            }
+
             $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+            $body = mb_substr($body.$previewSuffix, 0, 500);
         } else {
             throw new RuntimeException('Kirim otomatis belum didukung untuk channel: '.$channel);
         }
@@ -517,7 +561,7 @@ class OmniFlowRunner
             'user_id' => null,
             'direction' => 'outbound',
             'meta_message_id' => $metaMessageId !== '' ? $metaMessageId : null,
-            'message_type' => 'text',
+            'message_type' => $messageType,
             'body' => $body,
             'payload' => array_merge($result, ['omni_flow_automation' => true]),
             'status' => 'sent',
@@ -528,6 +572,98 @@ class OmniFlowRunner
             'last_message_at' => $sentAt,
             'last_message_preview' => mb_substr($body, 0, 500),
         ]);
+    }
+
+    /**
+     * Kirim gambar atau PDF dari berkas yang diunggah di editor flow.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function executeSendMessageWithMedia(
+        array $config,
+        OmniConversation $conversation,
+        string $messageMode
+    ): void {
+        if ((string) $conversation->channel !== 'whatsapp') {
+            throw new RuntimeException('Lampiran otomasi hanya didukung untuk WhatsApp.');
+        }
+
+        $storagePath = trim((string) ($config['media_path'] ?? ''));
+        if ($storagePath === '' || ! Storage::disk('public')->exists($storagePath)) {
+            throw new RuntimeException('Berkas flow tidak ditemukan. Unggah ulang lampiran di editor flow.');
+        }
+
+        $absolutePath = Storage::disk('public')->path($storagePath);
+        $mime = trim((string) ($config['media_mime'] ?? ''));
+        if ($mime === '') {
+            $mime = mime_content_type($absolutePath) ?: 'application/octet-stream';
+        }
+        $filename = trim((string) ($config['media_filename'] ?? ''));
+        if ($filename === '') {
+            $filename = basename($storagePath);
+        }
+
+        $caption = trim((string) ($config['body'] ?? ''));
+        if ($caption !== '') {
+            $caption = $this->replacePlaceholders($caption, $conversation);
+        }
+
+        $wa = app(MetaWhatsAppClient::class);
+        $mediaId = $wa->uploadMedia($absolutePath, $mime, $conversation->phone_number_id);
+
+        if ($messageMode === 'image') {
+            $result = $wa->sendImage(
+                $conversation->external_contact_id,
+                $mediaId,
+                $caption !== '' ? $caption : null,
+                $conversation->phone_number_id
+            );
+            $messageType = 'image';
+            $preview = $caption !== '' ? $caption : '[Gambar]';
+        } else {
+            $result = $wa->sendDocument(
+                $conversation->external_contact_id,
+                $mediaId,
+                $caption !== '' ? $caption : null,
+                $filename,
+                $conversation->phone_number_id
+            );
+            $messageType = 'document';
+            $preview = $caption !== '' ? $caption : '[PDF: '.$filename.']';
+        }
+
+        $localUrl = $this->publicStorageUrl($storagePath);
+        $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+        $sentAt = now();
+
+        OmniMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'user_id' => null,
+            'direction' => 'outbound',
+            'meta_message_id' => $metaMessageId !== '' ? $metaMessageId : null,
+            'message_type' => $messageType,
+            'body' => $preview,
+            'payload' => array_merge(is_array($result) ? $result : [], [
+                'omni_flow_automation' => true,
+                'local_media_url' => $localUrl,
+                'media_filename' => $filename,
+                'media_mime' => $mime,
+            ]),
+            'status' => 'sent',
+            'sent_at' => $sentAt,
+        ]);
+
+        $conversation->update([
+            'last_message_at' => $sentAt,
+            'last_message_preview' => mb_substr($preview, 0, 500),
+        ]);
+    }
+
+    private function publicStorageUrl(string $storedPath): string
+    {
+        $relative = Storage::disk('public')->url($storedPath);
+
+        return str_starts_with($relative, 'http') ? $relative : url($relative);
     }
 
     /**
@@ -604,6 +740,45 @@ class OmniFlowRunner
                 'url' => $url,
             ]);
         }
+    }
+
+    /**
+     * @param  mixed  $buttonsRaw
+     * @return list<array{id: string, title: string}>
+     */
+    private function normalizeQuickReplyButtons(mixed $buttonsRaw): array
+    {
+        if (! is_array($buttonsRaw)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($buttonsRaw as $i => $btn) {
+            if (! is_array($btn)) {
+                continue;
+            }
+            $title = trim((string) ($btn['title'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+            $id = trim((string) ($btn['id'] ?? ''));
+            if ($id === '') {
+                $id = 'btn_'.($i + 1);
+            }
+            $out[] = [
+                'id' => preg_replace('/[^a-zA-Z0-9_\-]/', '_', $id) ?: 'btn_'.($i + 1),
+                'title' => $title,
+            ];
+            if (count($out) >= 3) {
+                break;
+            }
+        }
+
+        if ($out === []) {
+            throw new RuntimeException('Tombol balas: isi minimal satu label tombol.');
+        }
+
+        return $out;
     }
 
     private function replacePlaceholders(string $text, OmniConversation $conversation): string

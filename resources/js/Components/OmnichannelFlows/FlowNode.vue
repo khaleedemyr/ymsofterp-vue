@@ -59,8 +59,24 @@ const nodeTitle = computed(() => nodeTypeLabel(nodeType.value, props.nodePalette
 const summary = computed(() => {
   const cfg = props.data?.config || {}
   switch (nodeType.value) {
-    case 'send_message':
-      return cfg.body ? cfg.body.slice(0, 60) : '— isi pesan —'
+    case 'send_message': {
+      const preview = cfg.body ? cfg.body.slice(0, 40) : '— isi pesan —'
+      if (cfg.message_mode === 'quick_reply') {
+        const n = (cfg.buttons || []).filter((b) => b?.title?.trim()).length
+        return n ? `${preview} · ${n} tombol` : `${preview} · tombol balas`
+      }
+      if (cfg.message_mode === 'cta_url') {
+        const label = cfg.cta_url?.display_text?.trim() || 'link'
+        return `${preview} · [${label}]`
+      }
+      if (cfg.message_mode === 'image') {
+        return cfg.media_filename ? `🖼 ${cfg.media_filename}` : '🖼 Gambar'
+      }
+      if (cfg.message_mode === 'document') {
+        return cfg.media_filename ? `📎 ${cfg.media_filename}` : '📎 PDF'
+      }
+      return preview
+    }
     case 'condition': {
       const n = (cfg.rules || []).length
       return n ? `${n} aturan` : 'Tanpa aturan'

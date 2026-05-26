@@ -10,8 +10,10 @@ use App\Support\OmniFlowDefinition;
 use App\Support\OmniLeadStages;
 use App\Support\OmnichannelAuthorization;
 use App\Support\OmnichannelUserOption;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -98,6 +100,39 @@ class OmnichannelFlowController extends Controller
 
         return redirect()->route('crm.omnichannel-flows.index')
             ->with('success', $flow->is_active ? 'Flow diaktifkan.' : 'Flow dinonaktifkan.');
+    }
+
+    /**
+     * Unggah gambar/PDF untuk node Kirim pesan WA (disimpan di storage publik, path masuk ke definition flow).
+     */
+    public function uploadFlowMedia(Request $request): JsonResponse
+    {
+        $this->assertFlowAccess($request);
+
+        $validated = $request->validate([
+            'file' => [
+                'required',
+                'file',
+                'max:16384',
+                'mimes:jpeg,jpg,png,gif,webp,pdf',
+            ],
+        ]);
+
+        $file = $validated['file'];
+        $mime = $file->getMimeType() ?: 'application/octet-stream';
+        $isImage = str_starts_with($mime, 'image/');
+        $storedPath = $file->store('omni-flow-media/'.date('Y/m'), 'public');
+        $relative = Storage::disk('public')->url($storedPath);
+        $mediaUrl = str_starts_with($relative, 'http') ? $relative : url($relative);
+
+        return response()->json([
+            'success' => true,
+            'media_path' => $storedPath,
+            'media_url' => $mediaUrl,
+            'media_filename' => $file->getClientOriginalName(),
+            'media_mime' => $mime,
+            'media_kind' => $isImage ? 'image' : 'document',
+        ]);
     }
 
     /**

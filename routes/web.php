@@ -2732,6 +2732,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/crm/omnichannel-flows', [App\Http\Controllers\OmnichannelFlowController::class, 'index'])->name('crm.omnichannel-flows.index');
     Route::get('/crm/omnichannel-flows/create', [App\Http\Controllers\OmnichannelFlowController::class, 'create'])->name('crm.omnichannel-flows.create');
+    Route::post('/crm/omnichannel-flows/upload-media', [App\Http\Controllers\OmnichannelFlowController::class, 'uploadFlowMedia'])->name('crm.omnichannel-flows.upload-media');
     Route::post('/crm/omnichannel-flows', [App\Http\Controllers\OmnichannelFlowController::class, 'store'])->name('crm.omnichannel-flows.store');
     Route::get('/crm/omnichannel-flows/{flow}/edit', [App\Http\Controllers\OmnichannelFlowController::class, 'edit'])->name('crm.omnichannel-flows.edit');
     Route::patch('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'update'])->name('crm.omnichannel-flows.update');

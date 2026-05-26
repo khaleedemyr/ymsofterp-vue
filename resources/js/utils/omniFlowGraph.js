@@ -32,7 +32,16 @@ export function defaultNodeConfig(nodeType) {
     case 'condition':
       return { match: 'all', rules: [{ field: 'message_contains', value: '' }] }
     case 'send_message':
-      return { body: '' }
+      return {
+        body: '',
+        message_mode: 'text',
+        buttons: [{ id: 'btn_1', title: '' }],
+        cta_url: { display_text: 'Buka link', url: '' },
+        media_path: '',
+        media_url: '',
+        media_filename: '',
+        media_mime: '',
+      }
     case 'assign_team':
       return { _teams: [], team_ids: [] }
     case 'assign_users':
@@ -102,6 +111,21 @@ export function hydrateNodes(nodes, teams, users) {
       }
       config.rules.forEach((rule) => ensureHourBetweenRule(rule))
     }
+    if (data.nodeType === 'send_message') {
+      if (!config.message_mode) {
+        config.message_mode = 'text'
+      }
+      if (!Array.isArray(config.buttons)) {
+        config.buttons = [{ id: 'btn_1', title: '' }]
+      }
+      if (!config.cta_url || typeof config.cta_url !== 'object') {
+        config.cta_url = { display_text: 'Buka link', url: '' }
+      }
+      if (config.media_path && !config.media_url) {
+        const p = String(config.media_path).replace(/^\/+/, '')
+        config.media_url = `/storage/${p}`
+      }
+    }
     const nodeType = data.nodeType || ''
     if (nodeType && (!data.label || data.label === nodeType)) {
       data.label = nodeTypeLabel(nodeType)
@@ -124,6 +148,36 @@ function serializeNodeConfig(nodeType, config) {
   if (nodeType === 'assign_users') {
     out.user_ids = (out._users || []).map((u) => u.id)
     delete out._users
+  }
+  if (nodeType === 'send_message') {
+    const mode = out.message_mode || 'text'
+    if (mode !== 'quick_reply') {
+      delete out.buttons
+    } else {
+      out.buttons = (out.buttons || [])
+        .filter((b) => String(b?.title || '').trim() !== '')
+        .slice(0, 3)
+        .map((b, i) => ({
+          id: String(b?.id || '').trim() || `btn_${i + 1}`,
+          title: String(b.title).trim().slice(0, 20),
+        }))
+    }
+    if (mode !== 'cta_url') {
+      delete out.cta_url
+    } else if (out.cta_url) {
+      out.cta_url = {
+        display_text: String(out.cta_url.display_text || 'Buka link').trim().slice(0, 20),
+        url: String(out.cta_url.url || '').trim(),
+      }
+    }
+    if (mode !== 'image' && mode !== 'document') {
+      delete out.media_path
+      delete out.media_url
+      delete out.media_filename
+      delete out.media_mime
+    } else {
+      delete out.media_url
+    }
   }
   return out
 }

@@ -112,21 +112,137 @@
       <p class="text-[10px] text-slate-500">Cabang <strong>Ya</strong> / <strong>Tidak</strong> di node kondisi.</p>
     </div>
 
-    <div v-else-if="node.data.nodeType === 'send_message'">
-      <p class="text-[10px] text-slate-500">Variabel: {{nama}}, {{nomor}}, {{nama_depan}}</p>
-      <div class="relative mt-1">
+    <div v-else-if="node.data.nodeType === 'send_message'" class="space-y-3">
+      <p class="text-[10px] text-slate-500">Variabel: {{nama}}, {{nomor}}, {{nama_depan}} (bisa di teks & URL)</p>
+
+      <div>
+        <label class="text-[10px] font-semibold uppercase text-slate-500">Tipe pesan</label>
+        <select
+          v-model="node.data.config.message_mode"
+          class="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+        >
+          <option value="text">Teks biasa</option>
+          <option value="quick_reply">Teks + tombol balas (maks. 3)</option>
+          <option value="cta_url">Teks + tombol buka link</option>
+          <option value="image">Gambar (+ caption opsional)</option>
+          <option value="document">PDF / dokumen (+ caption opsional)</option>
+        </select>
+      </div>
+
+      <div
+        v-if="node.data.config.message_mode === 'image' || node.data.config.message_mode === 'document'"
+        class="space-y-2 rounded-lg border border-violet-200 bg-violet-50/60 p-2"
+      >
+        <p class="text-[10px] text-violet-900">
+          Unggah {{ node.data.config.message_mode === 'image' ? 'gambar (JPG, PNG, WebP, maks. 16 MB)' : 'PDF (maks. 16 MB)' }}.
+          Hanya WhatsApp.
+        </p>
+        <input
+          type="file"
+          :accept="node.data.config.message_mode === 'image' ? 'image/jpeg,image/png,image/webp,image/gif' : 'application/pdf'"
+          class="w-full text-xs"
+          :disabled="mediaUploading"
+          @change="onFlowMediaSelected"
+        />
+        <p v-if="mediaUploading" class="text-[10px] text-violet-800">Mengunggah...</p>
+        <div v-if="node.data.config.media_filename" class="rounded border border-violet-100 bg-white p-2 text-xs">
+          <p class="font-medium text-slate-800">{{ node.data.config.media_filename }}</p>
+          <a
+            v-if="node.data.config.media_url"
+            :href="node.data.config.media_url"
+            target="_blank"
+            rel="noopener"
+            class="text-[10px] text-emerald-700 hover:underline"
+          >
+            Pratinjau berkas
+          </a>
+          <button type="button" class="mt-1 block text-[10px] text-red-600" @click="clearFlowMedia">
+            Hapus lampiran
+          </button>
+        </div>
+        <img
+          v-if="node.data.config.message_mode === 'image' && node.data.config.media_url"
+          :src="node.data.config.media_url"
+          alt="Pratinjau"
+          class="max-h-28 w-full rounded object-contain"
+        />
+      </div>
+
+      <div v-if="showMessageBodyField" class="relative">
+        <label class="text-[10px] font-semibold uppercase text-slate-500">
+          {{ isMediaMode ? 'Caption (opsional)' : 'Isi pesan' }}
+        </label>
         <textarea
           ref="sendMsgBodyEl"
           v-model="node.data.config.body"
-          rows="5"
-          class="w-full rounded-lg border border-slate-200 py-2 pl-2 pr-10 text-sm"
-          placeholder="Isi pesan WhatsApp..."
+          rows="4"
+          class="mt-1 w-full rounded-lg border border-slate-200 py-2 pl-2 pr-10 text-sm"
+          :placeholder="isMediaMode ? 'Teks di bawah gambar/PDF (opsional)...' : 'Isi pesan WhatsApp...'"
         />
         <OmniEmojiPickerButton
           class="absolute bottom-2 right-2"
           button-size="sm"
           panel-width="16rem"
           @select="insertSendMessageEmoji"
+        />
+      </div>
+
+      <div v-if="node.data.config.message_mode === 'quick_reply'" class="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
+        <p class="text-[10px] text-emerald-900">
+          Tombol balas cepat — pelanggan mengetuk lalu WA mengirim teks tombol (bukan membuka link). Maks. 3 tombol, label maks. 20 karakter.
+        </p>
+        <div
+          v-for="(btn, bi) in node.data.config.buttons"
+          :key="bi"
+          class="space-y-1 rounded border border-emerald-100 bg-white p-2"
+        >
+          <input
+            v-model="btn.title"
+            type="text"
+            maxlength="20"
+            class="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+            :placeholder="`Label tombol ${bi + 1}`"
+          />
+          <input
+            v-model="btn.id"
+            type="text"
+            maxlength="64"
+            class="w-full rounded border border-slate-200 px-2 py-1 text-[10px] text-slate-600"
+            placeholder="ID internal (opsional, untuk otomasi lanjutan)"
+          />
+          <button
+            v-if="node.data.config.buttons.length > 1"
+            type="button"
+            class="text-[10px] text-red-600"
+            @click="node.data.config.buttons.splice(bi, 1)"
+          >
+            Hapus tombol
+          </button>
+        </div>
+        <button
+          v-if="node.data.config.buttons.length < 3"
+          type="button"
+          class="text-xs font-medium text-emerald-800"
+          @click="addQuickReplyButton"
+        >
+          + Tambah tombol
+        </button>
+      </div>
+
+      <div v-else-if="node.data.config.message_mode === 'cta_url'" class="space-y-2 rounded-lg border border-sky-200 bg-sky-50/60 p-2">
+        <p class="text-[10px] text-sky-900">Satu tombol yang membuka URL (harus https://). Cocok untuk menu, reservasi, atau form.</p>
+        <input
+          v-model="node.data.config.cta_url.display_text"
+          type="text"
+          maxlength="20"
+          class="w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+          placeholder="Teks tombol, mis. Buka reservasi"
+        />
+        <input
+          v-model="node.data.config.cta_url.url"
+          type="url"
+          class="w-full rounded border border-slate-200 px-2 py-1.5 text-sm"
+          placeholder="https://..."
         />
       </div>
     </div>
@@ -163,6 +279,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
@@ -181,8 +298,16 @@ const props = defineProps({
 defineEmits(['remove-node'])
 
 const sendMsgBodyEl = ref(null)
+const mediaUploading = ref(false)
 
 const nodeTitle = computed(() => nodeTypeLabel(props.node?.data?.nodeType))
+
+const isMediaMode = computed(() => {
+  const m = props.node?.data?.config?.message_mode
+  return m === 'image' || m === 'document'
+})
+
+const showMessageBodyField = computed(() => true)
 
 function insertSendMessageEmoji(emoji) {
   const config = props.node?.data?.config
@@ -229,6 +354,62 @@ function addRule() {
     props.node.data.config.rules = []
   }
   props.node.data.config.rules.push({ field: 'message_contains', value: '' })
+}
+
+function addQuickReplyButton() {
+  const cfg = props.node?.data?.config
+  if (!cfg) return
+  if (!Array.isArray(cfg.buttons)) {
+    cfg.buttons = []
+  }
+  if (cfg.buttons.length >= 3) return
+  cfg.buttons.push({ id: `btn_${cfg.buttons.length + 1}`, title: '' })
+}
+
+function clearFlowMedia() {
+  const cfg = props.node?.data?.config
+  if (!cfg) return
+  cfg.media_path = ''
+  cfg.media_url = ''
+  cfg.media_filename = ''
+  cfg.media_mime = ''
+}
+
+async function onFlowMediaSelected(event) {
+  const file = event.target?.files?.[0]
+  const cfg = props.node?.data?.config
+  if (!file || !cfg) return
+
+  mediaUploading.value = true
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    const { data } = await axios.post('/crm/omnichannel-flows/upload-media', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    if (!data?.success) {
+      throw new Error(data?.message || 'Gagal mengunggah')
+    }
+    cfg.media_path = data.media_path
+    cfg.media_url = data.media_url
+    cfg.media_filename = data.media_filename
+    cfg.media_mime = data.media_mime
+    if (data.media_kind === 'image' && cfg.message_mode === 'document') {
+      cfg.message_mode = 'image'
+    }
+    if (data.media_kind === 'document' && cfg.message_mode === 'image') {
+      cfg.message_mode = 'document'
+    }
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message || 'Gagal mengunggah berkas'
+    window.alert(msg)
+  } finally {
+    mediaUploading.value = false
+    if (event.target) {
+      event.target.value = ''
+    }
+  }
 }
 
 defineExpose({ normalizeConditionRules })
