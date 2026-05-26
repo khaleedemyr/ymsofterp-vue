@@ -83,7 +83,7 @@
             v-model:nodes="nodes"
             v-model:edges="edges"
             :node-palette="nodePalette"
-            @node-selected="selectedNode = $event"
+            @node-selected="onNodeSelected"
           />
         </main>
 
@@ -159,6 +159,15 @@ function paletteDragClass(color) {
 function onPaletteDragStart(event, nodeType) {
   event.dataTransfer.setData('application/omniflow', nodeType)
   event.dataTransfer.effectAllowed = 'move'
+}
+
+function onNodeSelected(node) {
+  if (!node) {
+    selectedNode.value = null
+    return
+  }
+  const live = nodes.value.find((n) => n.id === node.id)
+  selectedNode.value = live ?? node
 }
 
 function removeNode(nodeId) {
