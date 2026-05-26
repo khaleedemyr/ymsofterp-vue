@@ -72,7 +72,15 @@
             />
           </div>
           <div class="sm:col-span-2">
-            <label class="text-xs font-medium text-slate-600">Isi pesan</label>
+            <OmniWaMessageConfigFields
+              v-model:message-mode="tplMessageMode"
+              :config="tplConfig"
+            />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-xs font-medium text-slate-600">
+              {{ tplMessageMode === 'image' || tplMessageMode === 'document' ? 'Caption (opsional)' : 'Isi pesan' }}
+            </label>
             <div class="relative mt-1">
               <textarea
                 ref="tplBodyEl"
@@ -86,6 +94,8 @@
               <OmniEmojiPickerButton
                 v-model:open="tplEmojiOpen"
                 class="absolute bottom-2 right-2"
+                teleport
+                placement="top"
                 @select="insertTplEmoji"
               />
             </div>
@@ -119,6 +129,9 @@
                   <span v-if="tpl.shortcut" class="font-mono text-xs text-emerald-700">/{{ tpl.shortcut }}</span>
                   <span v-if="!tpl.is_active" class="ml-1 rounded bg-slate-200 px-1.5 text-[10px] text-slate-600">Nonaktif</span>
                   <span class="ml-1 text-[10px] font-normal text-slate-400">#{{ tpl.sort_order }}</span>
+                </p>
+                <p v-if="templateModeSummary(tpl)" class="mt-0.5 text-[10px] font-medium text-emerald-700">
+                  {{ templateModeSummary(tpl) }}
                 </p>
                 <p class="mt-1 whitespace-pre-wrap text-xs text-slate-600">{{ tpl.body }}</p>
               </div>
@@ -242,11 +255,14 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
+import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
+import OmniWaMessageConfigFields from '@/Components/Omnichannel/OmniWaMessageConfigFields.vue'
+import { inferSendMessageMode } from '@/utils/omniFlowGraph'
 
 const props = defineProps({
   teams: { type: Array, default: () => [] },
@@ -263,13 +279,38 @@ const createDescription = ref('')
 const createMembers = ref([])
 const createSubmitting = ref(false)
 
+function defaultTplConfig() {
+  return {
+    buttons: [{ id: 'btn_1', title: '' }],
+    cta_url: { display_text: 'Buka link', url: '' },
+    media_path: '',
+    media_url: '',
+    media_filename: '',
+    media_mime: '',
+  }
+}
+
 const tplTitle = ref('')
 const tplShortcut = ref('')
 const tplBody = ref('')
+const tplMessageMode = ref('text')
+const tplConfig = reactive(defaultTplConfig())
 const tplActive = ref(true)
 const tplSubmitting = ref(false)
 const tplBodyEl = ref(null)
 const tplEmojiOpen = ref(false)
+
+function templateModeSummary(tpl) {
+  const mode = tpl.message_mode || inferSendMessageMode({ ...tpl.config, body: tpl.body })
+  if (mode === 'quick_reply') return 'WA · tombol balas'
+  if (mode === 'cta_url') {
+    const label = tpl.config?.cta_url?.display_text?.trim() || 'link'
+    return `WA · tombol [${label}]`
+  }
+  if (mode === 'image') return 'WA · gambar'
+  if (mode === 'document') return 'WA · PDF'
+  return ''
+}
 
 const memberSelections = reactive({})
 
@@ -346,8 +387,17 @@ function saveTeamMembers(teamId) {
   }, { preserveScroll: true })
 }
 
-function destroyTeam(teamId) {
-  if (!confirm('Hapus tim ini? Penugasan chat ke tim ini akan dilepas.')) return
+async function destroyTeam(teamId) {
+  const result = await Swal.fire({
+    title: 'Hapus tim ini?',
+    text: 'Penugasan chat ke tim ini akan dilepas.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!result.isConfirmed) return
   router.delete(`/crm/omnichannel-teams/${teamId}`, { preserveScroll: true })
 }
 
@@ -358,6 +408,23 @@ function insertTplEmoji(emoji) {
 }
 
 function submitCreateTemplate() {
+  const cfg = { ...tplConfig, body: tplBody.value }
+  const mode = inferSendMessageMode({ ...cfg, message_mode: tplMessageMode.value })
+  if (mode === 'cta_url') {
+    const url = String(cfg.cta_url?.url || '').trim()
+    if (!/^https:\/\//i.test(url)) {
+      Swal.fire('Peringatan', 'URL tombol harus diawali https://', 'warning')
+      return
+    }
+  }
+  if (mode === 'quick_reply') {
+    const hasBtn = (cfg.buttons || []).some((b) => String(b?.title || '').trim() !== '')
+    if (!hasBtn) {
+      Swal.fire('Peringatan', 'Isi minimal satu label tombol balas.', 'warning')
+      return
+    }
+  }
+
   tplSubmitting.value = true
   router.post(
     '/crm/omnichannel-teams/message-templates',
@@ -365,6 +432,14 @@ function submitCreateTemplate() {
       title: tplTitle.value.trim(),
       shortcut: tplShortcut.value.trim() || null,
       body: tplBody.value.trim(),
+      message_mode: mode,
+      config: {
+        buttons: cfg.buttons,
+        cta_url: cfg.cta_url,
+        media_path: cfg.media_path,
+        media_filename: cfg.media_filename,
+        media_mime: cfg.media_mime,
+      },
       is_active: tplActive.value,
     },
     {
@@ -376,6 +451,8 @@ function submitCreateTemplate() {
         tplTitle.value = ''
         tplShortcut.value = ''
         tplBody.value = ''
+        tplMessageMode.value = 'text'
+        Object.assign(tplConfig, defaultTplConfig())
         tplActive.value = true
         tplEmojiOpen.value = false
       },
@@ -389,8 +466,16 @@ function toggleTemplateActive(tpl) {
   }, { preserveScroll: true })
 }
 
-function destroyTemplate(id) {
-  if (!confirm('Hapus template ini?')) return
+async function destroyTemplate(id) {
+  const result = await Swal.fire({
+    title: 'Hapus template ini?',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!result.isConfirmed) return
   router.delete(`/crm/omnichannel-teams/message-templates/${id}`, { preserveScroll: true })
 }
 </script>

@@ -2726,6 +2726,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/crm/omnichannel-teams', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'store'])->name('crm.omnichannel-teams.store');
     Route::patch('/crm/omnichannel-teams/{team}', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'update'])->name('crm.omnichannel-teams.update');
     Route::delete('/crm/omnichannel-teams/{team}', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'destroy'])->name('crm.omnichannel-teams.destroy');
+    Route::post('/crm/omnichannel-teams/message-templates/upload-media', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'uploadMedia'])->name('crm.omnichannel-teams.message-templates.upload-media');
     Route::post('/crm/omnichannel-teams/message-templates', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'store'])->name('crm.omnichannel-teams.message-templates.store');
     Route::patch('/crm/omnichannel-teams/message-templates/{messageTemplate}', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'update'])->name('crm.omnichannel-teams.message-templates.update');
     Route::delete('/crm/omnichannel-teams/message-templates/{messageTemplate}', [App\Http\Controllers\OmnichannelMessageTemplateController::class, 'destroy'])->name('crm.omnichannel-teams.message-templates.destroy');

@@ -44,14 +44,10 @@ class OmnichannelTeamSettingsController extends Controller
             ->orderBy('sort_order')
             ->orderBy('title')
             ->get()
-            ->map(fn (OmniMessageTemplate $t) => [
-                'id' => $t->id,
-                'title' => $t->title,
-                'shortcut' => $t->shortcut,
-                'body' => $t->body,
+            ->map(fn (OmniMessageTemplate $t) => array_merge($t->toInboxPayload(), [
                 'is_active' => (bool) $t->is_active,
                 'sort_order' => (int) $t->sort_order,
-            ])
+            ]))
             ->values()
             ->all();
 

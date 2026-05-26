@@ -499,13 +499,18 @@ class OmnichannelInboxController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:4096'],
             'attachment' => ['nullable', 'file', 'max:16384'],
+            'send_config' => ['nullable'],
         ]);
 
         $body = trim((string) ($validated['body'] ?? ''));
         $file = $request->file('attachment');
+        $sendConfig = $this->parseSendConfig($request->input('send_config'));
 
-        if ($body === '' && ! $file) {
-            return response()->json(['message' => 'Pesan atau lampiran wajib diisi.'], 422);
+        if ($body === '' && ! $file && ($sendConfig['message_mode'] ?? 'text') === 'text') {
+            $hasMedia = trim((string) ($sendConfig['media_path'] ?? '')) !== '';
+            if (! $hasMedia) {
+                return response()->json(['message' => 'Pesan atau lampiran wajib diisi.'], 422);
+            }
         }
 
         $channel = (string) $conversation->channel;
@@ -584,7 +589,18 @@ class OmnichannelInboxController extends Controller
                 }
             } elseif ($channel === 'whatsapp') {
                 $client = app(MetaWhatsAppClient::class);
-                if ($file) {
+                $templateMode = (string) ($sendConfig['message_mode'] ?? 'text');
+                if (! $file && $templateMode !== 'text' && $sendConfig !== []) {
+                    $sent = app(\App\Services\Omni\OmniWhatsappOutboundService::class)->send(
+                        $conversation,
+                        $body,
+                        $sendConfig
+                    );
+                    $messageType = $sent['message_type'];
+                    $preview = $sent['body'];
+                    $payload = $sent['payload'];
+                    $metaMessageId = $sent['meta_message_id'];
+                } elseif ($file) {
                 $mime = $file->getMimeType() ?: 'application/octet-stream';
                 $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
                 $localUrl = Storage::disk('public')->url($storedPath);
@@ -1176,5 +1192,22 @@ class OmnichannelInboxController extends Controller
         return str_starts_with($relative, 'http')
             ? $relative
             : url($relative);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function parseSendConfig(mixed $raw): array
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

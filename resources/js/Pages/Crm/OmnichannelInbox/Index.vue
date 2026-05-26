@@ -426,6 +426,16 @@
                   <i class="fa-solid fa-xmark" />
                 </button>
               </div>
+              <div
+                v-if="pendingTemplateSendLabel"
+                class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+              >
+                <i class="fa-brands fa-whatsapp" />
+                <span class="min-w-0 flex-1">{{ pendingTemplateSendLabel }}</span>
+                <button type="button" class="text-emerald-700 hover:text-red-600" @click="clearPendingTemplateSend">
+                  <i class="fa-solid fa-xmark" />
+                </button>
+              </div>
               <div class="flex items-end gap-2">
               <input ref="imageInputRef" type="file" accept="image/*" class="hidden" @change="onPickAttachment" />
               <input ref="fileInputRef" type="file" class="hidden" @change="onPickAttachment" />
@@ -494,6 +504,9 @@
                       {{ tpl.title }}
                       <span v-if="tpl.shortcut" class="font-mono text-xs text-emerald-700">/{{ tpl.shortcut }}</span>
                     </span>
+                    <span v-if="templateModeSummary(tpl)" class="mt-0.5 text-[10px] font-medium text-emerald-700">
+                      {{ templateModeSummary(tpl) }}
+                    </span>
                     <span class="mt-0.5 line-clamp-2 text-xs text-slate-500">{{ tpl.body }}</span>
                   </button>
                 </div>
@@ -535,7 +548,7 @@
                 type="submit"
                 class="shrink-0 rounded-full px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 :class="composerMode === 'internal' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'"
-                :disabled="sending || grammarChecking || (!replyText.trim() && !pendingAttachment)"
+                :disabled="sending || grammarChecking || !canSubmitComposer"
               >
                 <i v-if="sending || grammarChecking" class="fa-solid fa-spinner fa-spin" />
                 <span v-else>{{ sendButtonLabel }}</span>
@@ -874,6 +887,7 @@ import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
+import { inferSendMessageMode } from '@/utils/omniFlowGraph'
 import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
 
 const props = defineProps({
@@ -980,6 +994,29 @@ const mentionMenuHighlight = ref(0)
 const pendingMentionUserIds = ref([])
 const emojiPickerOpen = ref(false)
 const pendingAttachment = ref(null)
+/** @type {import('vue').Ref<Record<string, unknown>|null>} */
+const pendingTemplateSend = ref(null)
+
+const pendingTemplateSendLabel = computed(() => {
+  const cfg = pendingTemplateSend.value
+  if (!cfg) return ''
+  const mode = String(cfg.message_mode || 'text')
+  if (mode === 'quick_reply') return 'Template WA · tombol balas'
+  if (mode === 'cta_url') {
+    const label = cfg.cta_url?.display_text || 'link'
+    return `Template WA · tombol [${label}]`
+  }
+  if (mode === 'image') return 'Template WA · gambar'
+  if (mode === 'document') return 'Template WA · PDF'
+  return ''
+})
+
+const canSubmitComposer = computed(() => {
+  if (replyText.value.trim() || pendingAttachment.value) return true
+  const mode = pendingTemplateSend.value?.message_mode
+  return mode === 'image' || mode === 'document'
+})
+
 const imageInputRef = ref(null)
 const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
@@ -1895,6 +1932,7 @@ function onPickAttachment(e) {
   const file = e.target?.files?.[0]
   if (file) {
     pendingAttachment.value = file
+    clearPendingTemplateSend()
   }
   if (e.target) {
     e.target.value = ''
@@ -2026,9 +2064,37 @@ function applyTemplateBody(body) {
   return text
 }
 
+function templateModeSummary(tpl) {
+  const mode = tpl.message_mode || inferSendMessageMode({ ...(tpl.config || {}), body: tpl.body })
+  if (mode === 'quick_reply') return 'WA · tombol balas'
+  if (mode === 'cta_url') {
+    const label = tpl.config?.cta_url?.display_text?.trim() || 'link'
+    return `WA · [${label}]`
+  }
+  if (mode === 'image') return 'WA · gambar'
+  if (mode === 'document') return 'WA · PDF'
+  return ''
+}
+
+function clearPendingTemplateSend() {
+  pendingTemplateSend.value = null
+}
+
 function applyTemplate(tpl) {
   const body = applyTemplateBody(tpl.body)
   replyText.value = replyText.value.replace(/\/[\p{L}\p{N}_-]*$/u, body)
+  const mode = tpl.message_mode || inferSendMessageMode({ ...(tpl.config || {}), body: tpl.body })
+  if (mode !== 'text' && selectedConversation.value?.channel === 'whatsapp') {
+    pendingTemplateSend.value = {
+      message_mode: mode,
+      ...(tpl.config || {}),
+    }
+  } else {
+    pendingTemplateSend.value = null
+    if (mode !== 'text' && selectedConversation.value?.channel !== 'whatsapp') {
+      Swal.fire('Info', 'Tombol & lampiran template hanya untuk chat WhatsApp. Teks tetap dimasukkan.', 'info')
+    }
+  }
   templateMenuOpen.value = false
   templateQuery.value = ''
   nextTick(() => composerEl.value?.focus())
@@ -2043,7 +2109,9 @@ async function submitComposer() {
   }
   if (!selectedId.value) return
   let body = replyText.value.trim()
-  if (!body && !pendingAttachment.value) return
+  const tplMode = pendingTemplateSend.value?.message_mode
+  const tplMediaOnly = tplMode === 'image' || tplMode === 'document'
+  if (!body && !pendingAttachment.value && !tplMediaOnly) return
   sendError.value = ''
   const isInternal = composerMode.value === 'internal'
   const mentionIds = isInternal ? [...pendingMentionUserIds.value] : []
@@ -2066,6 +2134,9 @@ async function submitComposer() {
     if (pendingAttachment.value) {
       formData.append('attachment', pendingAttachment.value)
     }
+    if (!isInternal && pendingTemplateSend.value && selectedConversation.value?.channel === 'whatsapp' && !pendingAttachment.value) {
+      formData.append('send_config', JSON.stringify(pendingTemplateSend.value))
+    }
     if (isInternal) {
       mentionIds.forEach((id) => formData.append('mentioned_user_ids[]', String(id)))
     }
@@ -2083,6 +2154,7 @@ async function submitComposer() {
     }
     replyText.value = ''
     clearAttachment()
+    clearPendingTemplateSend()
     clearMentionState()
     scrollToBottom()
     await router.reload({
