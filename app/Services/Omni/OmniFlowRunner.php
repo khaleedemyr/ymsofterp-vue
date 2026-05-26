@@ -482,6 +482,7 @@ class OmniFlowRunner
     private function executeSendMessage(array $config, OmniConversation $conversation, array $context): void
     {
         $channel = (string) $conversation->channel;
+        $config = OmniFlowDefinition::normalizeSendMessageConfig($config);
         $messageMode = $this->resolveSendMessageMode($config, $channel);
 
         if (in_array($messageMode, ['image', 'document'], true)) {
@@ -749,39 +750,15 @@ class OmniFlowRunner
      */
     private function resolveSendMessageMode(array $config, string $channel): string
     {
-        $mode = (string) ($config['message_mode'] ?? 'text');
         if ($channel !== 'whatsapp') {
             return 'text';
         }
 
-        $cta = is_array($config['cta_url'] ?? null) ? $config['cta_url'] : [];
-        $ctaUrl = trim((string) ($cta['url'] ?? ''));
-        $ctaLabel = trim((string) ($cta['display_text'] ?? ''));
-        if ($ctaUrl !== '' && $ctaLabel !== '') {
-            return 'cta_url';
-        }
+        $config = OmniFlowDefinition::normalizeSendMessageConfig($config);
+        $mode = (string) ($config['message_mode'] ?? 'text');
 
-        if ($mode === 'quick_reply' || $mode === 'cta_url' || $mode === 'image' || $mode === 'document') {
+        if (in_array($mode, ['quick_reply', 'cta_url', 'image', 'document'], true)) {
             return $mode;
-        }
-
-        $buttons = $config['buttons'] ?? [];
-        if (is_array($buttons)) {
-            foreach ($buttons as $btn) {
-                if (is_array($btn) && trim((string) ($btn['title'] ?? '')) !== '') {
-                    return 'quick_reply';
-                }
-            }
-        }
-
-        $mediaPath = trim((string) ($config['media_path'] ?? ''));
-        if ($mediaPath !== '') {
-            $mime = (string) ($config['media_mime'] ?? '');
-            if (str_starts_with($mime, 'image/')) {
-                return 'image';
-            }
-
-            return 'document';
         }
 
         return 'text';

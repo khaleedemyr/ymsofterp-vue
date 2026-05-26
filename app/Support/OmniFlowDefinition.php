@@ -298,9 +298,24 @@ class OmniFlowDefinition
     public static function normalizeForStorage(array $definition): array
     {
         if (self::isGraph($definition)) {
+            $nodes = array_values($definition['nodes'] ?? []);
+            foreach ($nodes as $i => $node) {
+                if (! is_array($node)) {
+                    continue;
+                }
+                if (self::nodeType($node) !== 'send_message') {
+                    continue;
+                }
+                $data = is_array($node['data'] ?? null) ? $node['data'] : [];
+                $config = is_array($data['config'] ?? null) ? $data['config'] : [];
+                $data['config'] = self::normalizeSendMessageConfig($config);
+                $node['data'] = $data;
+                $nodes[$i] = $node;
+            }
+
             return [
                 'version' => self::VERSION_GRAPH,
-                'nodes' => array_values($definition['nodes'] ?? []),
+                'nodes' => $nodes,
                 'edges' => array_values($definition['edges'] ?? []),
             ];
         }
@@ -308,5 +323,87 @@ class OmniFlowDefinition
         $steps = array_values($definition['steps'] ?? []);
 
         return self::linearToGraph($steps);
+    }
+
+    /**
+     * Pastikan message_mode & field terkait konsisten saat disimpan/dijalankan.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    public static function normalizeSendMessageConfig(array $config): array
+    {
+        $cta = is_array($config['cta_url'] ?? null) ? $config['cta_url'] : [];
+        $ctaUrl = trim((string) ($cta['url'] ?? ''));
+        $ctaLabel = trim((string) ($cta['display_text'] ?? ''));
+        if ($ctaUrl !== '' && $ctaLabel !== '' && preg_match('#^https://#i', $ctaUrl)) {
+            $config['message_mode'] = 'cta_url';
+            $config['cta_url'] = [
+                'display_text' => mb_substr($ctaLabel, 0, 20),
+                'url' => $ctaUrl,
+            ];
+            unset($config['buttons'], $config['media_path'], $config['media_url'], $config['media_filename'], $config['media_mime']);
+
+            return $config;
+        }
+
+        $mediaPath = trim((string) ($config['media_path'] ?? ''));
+        if ($mediaPath !== '') {
+            $mime = (string) ($config['media_mime'] ?? '');
+            $config['message_mode'] = str_starts_with($mime, 'image/') ? 'image' : 'document';
+            unset($config['buttons'], $config['cta_url'], $config['media_url']);
+
+            return $config;
+        }
+
+        $buttons = $config['buttons'] ?? [];
+        $normalizedButtons = [];
+        if (is_array($buttons)) {
+            foreach (array_slice($buttons, 0, 3) as $i => $btn) {
+                if (! is_array($btn)) {
+                    continue;
+                }
+                $title = trim((string) ($btn['title'] ?? ''));
+                if ($title === '') {
+                    continue;
+                }
+                $id = trim((string) ($btn['id'] ?? ''));
+                if ($id === '') {
+                    $id = 'btn_'.($i + 1);
+                }
+                $normalizedButtons[] = [
+                    'id' => $id,
+                    'title' => mb_substr($title, 0, 20),
+                ];
+            }
+        }
+
+        if ($normalizedButtons !== []) {
+            $config['message_mode'] = 'quick_reply';
+            $config['buttons'] = $normalizedButtons;
+            unset($config['cta_url'], $config['media_path'], $config['media_url'], $config['media_filename'], $config['media_mime']);
+
+            return $config;
+        }
+
+        $mode = (string) ($config['message_mode'] ?? 'text');
+        if (! in_array($mode, ['text', 'quick_reply', 'cta_url', 'image', 'document'], true)) {
+            $mode = 'text';
+        }
+        $config['message_mode'] = $mode;
+
+        if ($mode !== 'quick_reply') {
+            unset($config['buttons']);
+        }
+        if ($mode !== 'cta_url') {
+            unset($config['cta_url']);
+        }
+        if ($mode !== 'image' && $mode !== 'document') {
+            unset($config['media_path'], $config['media_url'], $config['media_filename'], $config['media_mime']);
+        } else {
+            unset($config['media_url']);
+        }
+
+        return $config;
     }
 }

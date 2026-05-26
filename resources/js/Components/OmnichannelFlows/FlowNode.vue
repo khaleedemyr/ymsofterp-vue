@@ -45,7 +45,7 @@
 <script setup>
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-import { nodeColorClass, nodeTypeLabel } from '@/utils/omniFlowGraph'
+import { nodeColorClass, nodeTypeLabel, inferSendMessageMode } from '@/utils/omniFlowGraph'
 
 const props = defineProps({
   data: { type: Object, required: true },
@@ -61,18 +61,19 @@ const summary = computed(() => {
   switch (nodeType.value) {
     case 'send_message': {
       const preview = cfg.body ? cfg.body.slice(0, 40) : '— isi pesan —'
-      if (cfg.message_mode === 'quick_reply') {
+      const mode = inferSendMessageMode(cfg)
+      if (mode === 'quick_reply') {
         const n = (cfg.buttons || []).filter((b) => b?.title?.trim()).length
         return n ? `${preview} · ${n} tombol` : `${preview} · tombol balas`
       }
-      if (cfg.message_mode === 'cta_url') {
+      if (mode === 'cta_url') {
         const label = cfg.cta_url?.display_text?.trim() || 'link'
         return `${preview} · [${label}]`
       }
-      if (cfg.message_mode === 'image') {
+      if (mode === 'image') {
         return cfg.media_filename ? `🖼 ${cfg.media_filename}` : '🖼 Gambar'
       }
-      if (cfg.message_mode === 'document') {
+      if (mode === 'document') {
         return cfg.media_filename ? `📎 ${cfg.media_filename}` : '📎 PDF'
       }
       return preview

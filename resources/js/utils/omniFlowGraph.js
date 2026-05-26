@@ -139,6 +139,36 @@ export function hydrateNodes(nodes, teams, users) {
   })
 }
 
+/** Tentukan mode kirim dari isi config (dropdown bisa belum tersinkron ke canvas). */
+export function inferSendMessageMode(config) {
+  if (!config || typeof config !== 'object') return 'text'
+
+  const ctaUrl = String(config.cta_url?.url || '').trim()
+  const ctaLabel = String(config.cta_url?.display_text || '').trim()
+  if (ctaUrl !== '' && ctaLabel !== '' && /^https:\/\//i.test(ctaUrl)) {
+    return 'cta_url'
+  }
+
+  const mediaPath = String(config.media_path || '').trim()
+  if (mediaPath !== '') {
+    const mime = String(config.media_mime || '')
+    return mime.startsWith('image/') ? 'image' : 'document'
+  }
+
+  const buttons = Array.isArray(config.buttons) ? config.buttons : []
+  const hasButton = buttons.some((b) => String(b?.title || '').trim() !== '')
+  if (hasButton) {
+    return 'quick_reply'
+  }
+
+  const mode = String(config.message_mode || 'text')
+  if (mode === 'quick_reply' || mode === 'cta_url' || mode === 'image' || mode === 'document') {
+    return mode
+  }
+
+  return 'text'
+}
+
 function serializeNodeConfig(nodeType, config) {
   const out = { ...config }
   if (nodeType === 'assign_team') {
@@ -150,7 +180,8 @@ function serializeNodeConfig(nodeType, config) {
     delete out._users
   }
   if (nodeType === 'send_message') {
-    const mode = out.message_mode || 'text'
+    const mode = inferSendMessageMode(out)
+    out.message_mode = mode
     if (mode !== 'quick_reply') {
       delete out.buttons
     } else {

@@ -114,6 +114,7 @@ import {
   ensureDefinition,
   hydrateEdges,
   hydrateNodes,
+  inferSendMessageMode,
   serializeDefinition,
 } from '@/utils/omniFlowGraph'
 
@@ -175,22 +176,22 @@ function removeNode(nodeId) {
   selectedNode.value = null
 }
 
-/** Panel kanan mengedit salinan node — gabungkan ke snapshot canvas sebelum simpan. */
+/** Simpan dari nodes (tempat panel mengedit config), posisi dari snapshot Vue Flow. */
 function nodesForSave() {
-  const snap = canvasRef.value?.getFlowSnapshot?.()
-  const list = snap?.nodes ?? nodes.value
-  const sel = selectedNode.value
-  if (!sel?.id) return list
+  const snapById = Object.fromEntries(
+    (canvasRef.value?.getFlowSnapshot?.()?.nodes ?? []).map((n) => [n.id, n]),
+  )
 
-  return list.map((n) => {
-    if (n.id !== sel.id) return n
+  return nodes.value.map((n) => {
+    const snapNode = snapById[n.id]
     return {
       ...n,
-      position: { ...n.position, ...sel.position },
+      position: snapNode?.position
+        ? { x: snapNode.position.x, y: snapNode.position.y }
+        : { x: n.position.x, y: n.position.y },
       data: {
         ...n.data,
-        ...sel.data,
-        config: { ...(sel.data?.config || {}) },
+        config: { ...(n.data?.config || {}) },
       },
     }
   })
@@ -198,6 +199,26 @@ function nodesForSave() {
 
 function submit() {
   if (!form.name.trim()) return
+
+  for (const n of nodes.value) {
+    if (n.data?.nodeType !== 'send_message') continue
+    const cfg = n.data?.config || {}
+    const mode = inferSendMessageMode(cfg)
+    if (mode === 'cta_url') {
+      const url = String(cfg.cta_url?.url || '').trim()
+      if (!/^https:\/\//i.test(url)) {
+        window.alert('Node Kirim pesan WA: URL tombol harus diawali https://')
+        return
+      }
+    }
+    if (mode === 'quick_reply') {
+      const hasBtn = (cfg.buttons || []).some((b) => String(b?.title || '').trim() !== '')
+      if (!hasBtn) {
+        window.alert('Node Kirim pesan WA: isi minimal satu label tombol balas.')
+        return
+      }
+    }
+  }
 
   submitting.value = true
   const snap = canvasRef.value?.getFlowSnapshot?.()
