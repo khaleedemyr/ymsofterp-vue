@@ -944,7 +944,7 @@ const props = defineProps({
   leadStages: { type: Array, default: () => [] },
   assignableUsers: { type: Array, default: () => [] },
   assignableTeams: { type: Array, default: () => [] },
-  canSeeAllChats: { type: Boolean, default: true },
+  canSeeAllChats: { type: Boolean, default: false },
   canManageOmnichannelTeams: { type: Boolean, default: false },
   canManageOmnichannelFlows: { type: Boolean, default: false },
   messageTemplates: { type: Array, default: () => [] },
@@ -997,21 +997,33 @@ const channelMenuOptions = [
 
 const inboxMenuOptions = computed(() => {
   const restricted = !props.canSeeAllChats
-  const options = [
+  if (restricted) {
+    return [
+      {
+        value: 'mine',
+        label: 'Ditugaskan ke saya',
+        icon: 'fa-solid fa-user',
+        hint: 'Hanya chat yang ditugaskan langsung ke Anda (user assignee).',
+      },
+      {
+        value: 'all',
+        label: 'Tim saya',
+        icon: 'fa-solid fa-users',
+        hint: 'Chat yang ditugaskan ke tim omnichannel Anda (selain tab Ditugaskan ke saya).',
+      },
+    ]
+  }
+
+  return [
     {
       value: 'all',
-      label: restricted ? 'Semua (relevan)' : 'Semua',
+      label: 'Semua',
       icon: 'fa-solid fa-inbox',
-      hint: restricted
-        ? 'Hanya percakapan yang ditugaskan ke Anda atau tim Anda. Daftar "lihat semua inbox" diatur di menu Tim Inbox Omnichannel.'
-        : 'Semua percakapan (Anda ada di daftar lihat semua inbox)',
+      hint: 'Semua percakapan (Anda ada di daftar lihat semua inbox)',
     },
     { value: 'mine', label: 'Ditugaskan ke saya', icon: 'fa-solid fa-user', hint: '' },
+    { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' },
   ]
-  if (! restricted) {
-    options.push({ value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' })
-  }
-  return options
 })
 
 const search = ref('')
@@ -2371,6 +2383,9 @@ async function pollInbox() {
   try {
     const { data } = await axios.get('/crm/omnichannel-inbox/poll', { params: listQuery() })
     liveConversations.value = data.conversations ?? []
+    if (data.can_see_all_chats === false && inbox.value === 'unassigned') {
+      setInbox('mine')
+    }
 
     const sel = data.selected_conversation
     const convId = sel?.id ?? null

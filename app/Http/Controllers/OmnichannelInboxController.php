@@ -49,18 +49,14 @@ class OmnichannelInboxController extends Controller
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-
-        $inbox = $request->get('inbox', 'all');
-        if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
-            $inbox = 'all';
-        }
+        $inbox = $this->resolveInboxFilter($request, $canSeeAll);
 
         $leadStageFilter = $request->get('lead_stage');
         if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {
             $leadStageFilter = null;
         }
 
-        $conversations = $this->queryInboxConversations($request);
+        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
 
         $selectedId = $request->integer('conversation')
             ?: ($conversations->first()['id'] ?? null);
@@ -155,7 +151,8 @@ class OmnichannelInboxController extends Controller
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-        $conversations = $this->queryInboxConversations($request);
+        $inbox = $this->resolveInboxFilter($request, $canSeeAll);
+        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
 
         $selectedConversation = null;
         $messages = [];
@@ -191,6 +188,7 @@ class OmnichannelInboxController extends Controller
             'messages' => $messages,
             'has_more_older' => $messagePage['has_more_older'],
             'oldest_message_id' => $messagePage['oldest_message_id'],
+            'can_see_all_chats' => $canSeeAll,
         ]);
     }
 
@@ -205,18 +203,14 @@ class OmnichannelInboxController extends Controller
 
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-
-        $inbox = $request->get('inbox', 'all');
-        if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
-            $inbox = 'all';
-        }
+        $inbox = $this->resolveInboxFilter($request, $canSeeAll);
 
         $leadStageFilter = $request->get('lead_stage');
         if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {
             $leadStageFilter = null;
         }
 
-        $conversations = $this->queryInboxConversations($request);
+        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
 
         return response()->json([
             'success' => true,
@@ -766,15 +760,28 @@ class OmnichannelInboxController extends Controller
     /**
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
-    private function queryInboxConversations(Request $request): \Illuminate\Support\Collection
+    private function resolveInboxFilter(Request $request, bool $canSeeAll): string
     {
-        $user = $request->user();
-        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-
-        $inbox = $request->get('inbox', 'all');
+        $inbox = (string) $request->get('inbox', $canSeeAll ? 'all' : 'mine');
         if (! in_array($inbox, ['all', 'mine', 'unassigned'], true)) {
-            $inbox = 'all';
+            return $canSeeAll ? 'all' : 'mine';
         }
+
+        if (! $canSeeAll && $inbox === 'unassigned') {
+            return 'mine';
+        }
+
+        return $inbox;
+    }
+
+    private function queryInboxConversations(
+        Request $request,
+        ?string $inbox = null,
+        ?bool $canSeeAll = null
+    ): \Illuminate\Support\Collection {
+        $user = $request->user();
+        $canSeeAll ??= OmnichannelAuthorization::canSeeAllChats($user);
+        $inbox ??= $this->resolveInboxFilter($request, $canSeeAll);
 
         $leadStageFilter = $request->get('lead_stage');
         if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {

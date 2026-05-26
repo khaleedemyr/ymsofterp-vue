@@ -83,6 +83,10 @@ class OmnichannelAuthorization
             return true;
         }
 
+        if (! self::conversationHasExplicitAssignment($conversation)) {
+            return false;
+        }
+
         $teamIds = self::teamIdsForUser($uid);
         if ($teamIds !== [] && $conversation->teams()->whereIn('omni_teams.id', $teamIds)->exists()) {
             return true;
@@ -92,48 +96,90 @@ class OmnichannelAuthorization
     }
 
     /**
-     * Percakapan yang ditugaskan ke user (langsung, multi-assignee, atau tim).
+     * Apakah percakapan punya penugasan (user atau tim).
      */
-    public static function applyAssignedToUserScope(Builder $query, User $user): void
+    public static function conversationHasExplicitAssignment(OmniConversation $conversation): bool
+    {
+        if ($conversation->assigned_user_id !== null) {
+            return true;
+        }
+
+        if ($conversation->relationLoaded('assignees')) {
+            if ($conversation->assignees->isNotEmpty()) {
+                return true;
+            }
+        } elseif ($conversation->assignees()->exists()) {
+            return true;
+        }
+
+        if ($conversation->relationLoaded('teams')) {
+            return $conversation->teams->isNotEmpty();
+        }
+
+        return $conversation->teams()->exists();
+    }
+
+    /**
+     * Chat harus punya penugasan eksplisit (bukan inbox terbuka / belum ditugaskan).
+     */
+    public static function applyHasExplicitAssignmentScope(Builder $query): void
+    {
+        $query->where(function (Builder $q) {
+            $q->whereNotNull('assigned_user_id')
+                ->orWhereHas('assignees')
+                ->orWhereHas('teams');
+        });
+    }
+
+    /**
+     * Ditugaskan langsung ke user (assigned_user_id atau pivot assignees).
+     */
+    public static function applyDirectAssigneeScope(Builder $query, User $user): void
     {
         $uid = (int) $user->id;
-        $teamIds = self::teamIdsForUser($uid);
-        $query->where(function (Builder $q) use ($uid, $teamIds) {
+        $query->where(function (Builder $q) use ($uid) {
             $q->where('assigned_user_id', $uid)
                 ->orWhereHas('assignees', fn ($sub) => $sub->where('users.id', $uid));
-            if ($teamIds !== []) {
-                $q->orWhereHas('teams', fn ($sub) => $sub->whereIn('omni_teams.id', $teamIds));
-            }
         });
     }
 
     public static function applyInboxVisibility(Builder $query, User $user, string $inbox, bool $canSeeAll): void
     {
+        if ($canSeeAll) {
+            if ($inbox === 'mine') {
+                self::applyDirectAssigneeScope($query, $user);
+            } elseif ($inbox === 'unassigned') {
+                $query->whereDoesntHave('assignees')
+                    ->whereDoesntHave('teams')
+                    ->whereNull('assigned_user_id');
+            }
+
+            return;
+        }
+
+        // User biasa: hanya chat yang sudah ditugaskan ke mereka / tim mereka.
+        self::applyHasExplicitAssignmentScope($query);
+
         if ($inbox === 'mine') {
-            self::applyAssignedToUserScope($query, $user);
+            self::applyDirectAssigneeScope($query, $user);
 
             return;
         }
 
         if ($inbox === 'unassigned') {
-            if (! $canSeeAll) {
-                $query->whereRaw('0 = 1');
-
-                return;
-            }
-
-            $query->whereDoesntHave('assignees')
-                ->whereDoesntHave('teams')
-                ->whereNull('assigned_user_id');
+            $query->whereRaw('0 = 1');
 
             return;
         }
 
-        if ($canSeeAll) {
+        // inbox === 'all' → tab "Tim saya": hanya lewat penugasan tim
+        $teamIds = self::teamIdsForUser((int) $user->id);
+        if ($teamIds === []) {
+            $query->whereRaw('0 = 1');
+
             return;
         }
 
-        // Tab "Semua" untuk user biasa = hanya chat yang ditugaskan (bukan seluruh inbox).
-        self::applyAssignedToUserScope($query, $user);
+        $query->whereHas('teams', fn ($sub) => $sub->whereIn('omni_teams.id', $teamIds));
     }
 }
