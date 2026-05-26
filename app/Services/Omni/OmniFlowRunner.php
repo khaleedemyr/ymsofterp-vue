@@ -312,7 +312,10 @@ class OmniFlowRunner
                 }
 
                 $this->executeStep($type, $config, $conversation, $message, $context);
-                $this->logStep($run, $stepIndex, $type, 'ok', 'Langkah selesai');
+                $logDetail = $type === 'send_message'
+                    ? 'Pesan terkirim ('.$this->resolveSendMessageMode($config, (string) $conversation->channel).')'
+                    : 'Langkah selesai';
+                $this->logStep($run, $stepIndex, $type, 'ok', $logDetail);
                 $currentId = OmniFlowDefinition::nextNodeId($currentId, $outgoing) ?: '';
                 $stepIndex++;
             } catch (\Throwable $e) {
@@ -479,10 +482,7 @@ class OmniFlowRunner
     private function executeSendMessage(array $config, OmniConversation $conversation, array $context): void
     {
         $channel = (string) $conversation->channel;
-        $messageMode = (string) ($config['message_mode'] ?? 'text');
-        if ($messageMode !== 'text' && $channel !== 'whatsapp') {
-            $messageMode = 'text';
-        }
+        $messageMode = $this->resolveSendMessageMode($config, $channel);
 
         if (in_array($messageMode, ['image', 'document'], true)) {
             $this->executeSendMessageWithMedia($config, $conversation, $messageMode);
@@ -740,6 +740,51 @@ class OmniFlowRunner
                 'url' => $url,
             ]);
         }
+    }
+
+    /**
+     * Deteksi mode kirim dari config (termasuk jika UI lama tidak menyimpan message_mode).
+     *
+     * @param  array<string, mixed>  $config
+     */
+    private function resolveSendMessageMode(array $config, string $channel): string
+    {
+        $mode = (string) ($config['message_mode'] ?? 'text');
+        if ($channel !== 'whatsapp') {
+            return 'text';
+        }
+
+        $cta = is_array($config['cta_url'] ?? null) ? $config['cta_url'] : [];
+        $ctaUrl = trim((string) ($cta['url'] ?? ''));
+        $ctaLabel = trim((string) ($cta['display_text'] ?? ''));
+        if ($ctaUrl !== '' && $ctaLabel !== '') {
+            return 'cta_url';
+        }
+
+        if ($mode === 'quick_reply' || $mode === 'cta_url' || $mode === 'image' || $mode === 'document') {
+            return $mode;
+        }
+
+        $buttons = $config['buttons'] ?? [];
+        if (is_array($buttons)) {
+            foreach ($buttons as $btn) {
+                if (is_array($btn) && trim((string) ($btn['title'] ?? '')) !== '') {
+                    return 'quick_reply';
+                }
+            }
+        }
+
+        $mediaPath = trim((string) ($config['media_path'] ?? ''));
+        if ($mediaPath !== '') {
+            $mime = (string) ($config['media_mime'] ?? '');
+            if (str_starts_with($mime, 'image/')) {
+                return 'image';
+            }
+
+            return 'document';
+        }
+
+        return 'text';
     }
 
     /**

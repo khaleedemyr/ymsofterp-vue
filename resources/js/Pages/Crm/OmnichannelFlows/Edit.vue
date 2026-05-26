@@ -166,6 +166,27 @@ function removeNode(nodeId) {
   selectedNode.value = null
 }
 
+/** Panel kanan mengedit salinan node — gabungkan ke snapshot canvas sebelum simpan. */
+function nodesForSave() {
+  const snap = canvasRef.value?.getFlowSnapshot?.()
+  const list = snap?.nodes ?? nodes.value
+  const sel = selectedNode.value
+  if (!sel?.id) return list
+
+  return list.map((n) => {
+    if (n.id !== sel.id) return n
+    return {
+      ...n,
+      position: { ...n.position, ...sel.position },
+      data: {
+        ...n.data,
+        ...sel.data,
+        config: { ...(sel.data?.config || {}) },
+      },
+    }
+  })
+}
+
 function submit() {
   if (!form.name.trim()) return
 
@@ -178,7 +199,7 @@ function submit() {
     channel: form.channel || null,
     priority: form.priority,
     definition: serializeDefinition(
-      snap?.nodes ?? nodes.value,
+      nodesForSave(),
       snap?.edges ?? edges.value,
     ),
   }

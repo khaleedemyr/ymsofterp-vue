@@ -279,6 +279,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useVueFlow } from '@vue-flow/core'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
@@ -296,6 +297,9 @@ const props = defineProps({
 })
 
 defineEmits(['remove-node'])
+
+const FLOW_CANVAS_ID = 'omni-flow-canvas'
+const { updateNodeData } = useVueFlow({ id: FLOW_CANVAS_ID })
 
 const sendMsgBodyEl = ref(null)
 const mediaUploading = ref(false)
@@ -341,6 +345,20 @@ function normalizeConditionRules() {
 }
 
 watch(() => props.node?.id, normalizeConditionRules, { immediate: true })
+
+/** Sinkronkan perubahan config panel ke node di canvas (Vue Flow tidak otomatis). */
+watch(
+  () => props.node?.data?.config,
+  (config) => {
+    const id = props.node?.id
+    if (!id || !config) return
+    updateNodeData(id, (node) => ({
+      ...node.data,
+      config: { ...config },
+    }))
+  },
+  { deep: true },
+)
 
 function onRuleFieldChange(rule) {
   if (rule.field === 'hour_between') {

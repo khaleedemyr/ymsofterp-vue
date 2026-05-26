@@ -67,6 +67,7 @@ class MetaWhatsAppClient
 
         return $this->postMessage([
             'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
             'to' => $toWaId,
             'type' => 'interactive',
             'interactive' => [
@@ -101,6 +102,7 @@ class MetaWhatsAppClient
 
         return $this->postMessage([
             'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
             'to' => $toWaId,
             'type' => 'interactive',
             'interactive' => [
