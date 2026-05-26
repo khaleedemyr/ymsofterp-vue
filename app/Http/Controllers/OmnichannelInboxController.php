@@ -25,10 +25,12 @@ use App\Support\OmniContactMaritalStatus;
 use App\Support\OmniInstagramStoryReply;
 use App\Support\OmniLeadStages;
 use App\Services\Omni\OmnichannelInboxMediaService;
+use App\Services\Omni\OmnichannelInboxOutboundMediaService;
 use App\Support\OmnichannelAuthorization;
 use App\Support\OmnichannelUserOption;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -499,12 +501,19 @@ class OmnichannelInboxController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:4096'],
             'attachment' => ['nullable', 'file', 'max:16384'],
+            'attachments' => ['nullable', 'array', 'max:'.OmnichannelInboxOutboundMediaService::MAX_ATTACHMENTS],
+            'attachments.*' => ['file', 'max:16384'],
             'send_config' => ['nullable'],
         ]);
 
         $body = trim((string) ($validated['body'] ?? ''));
-        $file = $request->file('attachment');
+        $files = $this->collectOutboundAttachments($request);
+        $file = $files[0] ?? null;
         $sendConfig = $this->parseSendConfig($request->input('send_config'));
+
+        if (count($files) > 1) {
+            return $this->sendMultipleOutboundAttachments($request, $conversation, $files, $body);
+        }
 
         if ($body === '' && ! $file && ($sendConfig['message_mode'] ?? 'text') === 'text') {
             $hasMedia = trim((string) ($sendConfig['media_path'] ?? '')) !== '';
@@ -526,40 +535,11 @@ class OmnichannelInboxController extends Controller
                     $recipient = $conversation->external_contact_id;
 
                     if ($file) {
-                        $mime = $file->getMimeType() ?: 'application/octet-stream';
-                        $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
-                        $publicUrl = $this->publicStorageUrl($storedPath);
-                        $isImage = str_starts_with($mime, 'image/');
-
-                        if ($isImage) {
-                            if ($file->getSize() > 8 * 1024 * 1024) {
-                                return response()->json(['message' => 'Gambar untuk Instagram maksimal 8 MB.'], 422);
-                            }
-                            if (! in_array($mime, ['image/jpeg', 'image/jpg', 'image/png'], true)) {
-                                return response()->json(['message' => 'Instagram mendukung gambar PNG atau JPEG.'], 422);
-                            }
-                            $result = $igClient->sendImage($recipient, $publicUrl, $conversation->phone_number_id);
-                            $messageType = 'image';
-                            $preview = $body !== '' ? $body : '[Gambar]';
-                        } elseif ($mime === 'application/pdf') {
-                            if ($file->getSize() > 25 * 1024 * 1024) {
-                                return response()->json(['message' => 'PDF untuk Instagram maksimal 25 MB.'], 422);
-                            }
-                            $result = $igClient->sendFile($recipient, $publicUrl, $conversation->phone_number_id);
-                            $messageType = 'document';
-                            $preview = $body !== '' ? $body : '[PDF: '.$file->getClientOriginalName().']';
-                        } else {
-                            return response()->json([
-                                'message' => 'Lampiran Instagram: gambar (PNG/JPEG) atau PDF. Video/audio belum didukung di inbox.',
-                            ], 422);
-                        }
-
-                        $payload = array_merge(is_array($result) ? $result : [], [
-                            'local_media_url' => $publicUrl,
-                            'media_filename' => $file->getClientOriginalName(),
-                            'media_mime' => $mime,
-                        ]);
-                        $metaMessageId = (string) ($result['message_id'] ?? '');
+                        $sent = app(OmnichannelInboxOutboundMediaService::class)->sendOutboundFile($conversation, $file);
+                        $messageType = $sent['message_type'];
+                        $preview = $body !== '' ? $body : $sent['preview'];
+                        $payload = $sent['payload'];
+                        $metaMessageId = $sent['meta_message_id'];
 
                         if ($body !== '') {
                             $igClient->sendText($recipient, $body, $conversation->phone_number_id);
@@ -601,40 +581,15 @@ class OmnichannelInboxController extends Controller
                     $payload = $sent['payload'];
                     $metaMessageId = $sent['meta_message_id'];
                 } elseif ($file) {
-                $mime = $file->getMimeType() ?: 'application/octet-stream';
-                $storedPath = $file->store("omni-outbound/{$conversation->id}", 'public');
-                $localUrl = Storage::disk('public')->url($storedPath);
-                $absolutePath = Storage::disk('public')->path($storedPath);
-                $mediaId = $client->uploadMedia($absolutePath, $mime, $conversation->phone_number_id);
-                $isImage = str_starts_with($mime, 'image/');
-
-                if ($isImage) {
-                    $result = $client->sendImage(
-                        $conversation->external_contact_id,
-                        $mediaId,
-                        $body !== '' ? $body : null,
-                        $conversation->phone_number_id
+                    $sent = app(OmnichannelInboxOutboundMediaService::class)->sendOutboundFile(
+                        $conversation,
+                        $file,
+                        $body !== '' ? $body : null
                     );
-                    $messageType = 'image';
-                    $preview = $body !== '' ? $body : '[Gambar]';
-                } else {
-                    $result = $client->sendDocument(
-                        $conversation->external_contact_id,
-                        $mediaId,
-                        $body !== '' ? $body : null,
-                        $file->getClientOriginalName(),
-                        $conversation->phone_number_id
-                    );
-                    $messageType = 'document';
-                    $preview = $body !== '' ? $body : '[Lampiran: '.$file->getClientOriginalName().']';
-                }
-
-                $payload = array_merge(is_array($result) ? $result : [], [
-                    'local_media_url' => $localUrl,
-                    'media_filename' => $file->getClientOriginalName(),
-                    'media_mime' => $mime,
-                ]);
-                $metaMessageId = (string) ($result['messages'][0]['id'] ?? '');
+                    $messageType = $sent['message_type'];
+                    $preview = $sent['preview'];
+                    $payload = $sent['payload'];
+                    $metaMessageId = $sent['meta_message_id'];
             } else {
                 $result = $client->sendText(
                     $conversation->external_contact_id,
@@ -728,13 +683,15 @@ class OmnichannelInboxController extends Controller
         $validated = $request->validate([
             'body' => ['nullable', 'string', 'max:8192'],
             'attachment' => ['nullable', 'file', 'max:16384'],
+            'attachments' => ['nullable', 'array', 'max:'.OmnichannelInboxOutboundMediaService::MAX_ATTACHMENTS],
+            'attachments.*' => ['file', 'max:16384'],
             'mentioned_user_ids' => ['nullable', 'array'],
             'mentioned_user_ids.*' => ['integer'],
         ]);
 
         $body = trim((string) ($validated['body'] ?? ''));
-        $file = $request->file('attachment');
-        if ($body === '' && ! $file) {
+        $files = $this->collectOutboundAttachments($request);
+        if ($body === '' && $files === []) {
             return response()->json(['message' => 'Catatan atau lampiran wajib diisi.'], 422);
         }
 
@@ -742,52 +699,54 @@ class OmnichannelInboxController extends Controller
             array_values($validated['mentioned_user_ids'] ?? [])
         );
 
-        $messageType = 'note';
-        $payload = null;
-        $preview = $body;
-
-        if ($file) {
-            $mime = $file->getMimeType() ?: 'application/octet-stream';
-            $storedPath = $file->store("omni-internal/{$conversation->id}", 'public');
-            $messageType = str_starts_with($mime, 'image/') ? 'image' : 'document';
-            $preview = $body !== '' ? $body : ($messageType === 'image' ? '[Gambar]' : '[Lampiran: '.$file->getClientOriginalName().']');
-            $payload = [
-                'local_media_url' => Storage::disk('public')->url($storedPath),
-                'media_filename' => $file->getClientOriginalName(),
-                'media_mime' => $mime,
-            ];
-        }
-
-        if ($mentionedIds !== []) {
-            $payload = is_array($payload) ? $payload : [];
-            $payload['mentioned_user_ids'] = $mentionedIds;
-        }
-
         $sentAt = now();
+        $created = [];
+        $lastPreview = $body;
 
-        $message = OmniMessage::query()->create([
-            'conversation_id' => $conversation->id,
-            'user_id' => $request->user()->id,
-            'direction' => 'internal',
-            'meta_message_id' => null,
-            'message_type' => $messageType,
-            'body' => $body !== '' ? $body : $preview,
-            'payload' => $payload,
-            'status' => null,
-            'sent_at' => $sentAt,
-        ]);
+        if ($files === []) {
+            $message = $this->createInternalNoteMessage(
+                $conversation,
+                $request->user()->id,
+                $body,
+                null,
+                $mentionedIds,
+                $sentAt
+            );
+            $created[] = $message;
+            $lastPreview = $body;
+        } else {
+            foreach ($files as $index => $file) {
+                $noteBody = $index === 0 ? $body : '';
+                $message = $this->createInternalNoteMessage(
+                    $conversation,
+                    $request->user()->id,
+                    $noteBody,
+                    $file,
+                    $index === 0 ? $mentionedIds : [],
+                    $sentAt
+                );
+                $created[] = $message;
+                $lastPreview = $message->body;
+            }
+        }
 
         $conversation->update([
             'last_message_at' => $sentAt,
-            'last_message_preview' => mb_substr('[Catatan] '.$preview, 0, 500),
+            'last_message_preview' => mb_substr('[Catatan] '.$lastPreview, 0, 500),
         ]);
 
         if ($mentionedIds !== []) {
-            $mentionService->applyMentions($conversation, $mentionedIds, $user, $preview);
+            $mentionService->applyMentions($conversation, $mentionedIds, $user, $lastPreview);
         }
 
+        $formatted = array_map(
+            fn (OmniMessage $m) => $this->formatMessage($m->load('author:id,nama_lengkap,email'), $conversation),
+            $created
+        );
+
         $response = [
-            'message' => $this->formatMessage($message->load('author:id,nama_lengkap,email'), $conversation),
+            'messages' => $formatted,
+            'message' => $formatted[count($formatted) - 1] ?? null,
         ];
 
         if ($mentionedIds !== []) {
@@ -1192,6 +1151,162 @@ class OmnichannelInboxController extends Controller
         return str_starts_with($relative, 'http')
             ? $relative
             : url($relative);
+    }
+
+    /**
+     * @param  list<int>  $mentionedIds
+     */
+    private function createInternalNoteMessage(
+        OmniConversation $conversation,
+        int $userId,
+        string $body,
+        ?UploadedFile $file,
+        array $mentionedIds,
+        \Illuminate\Support\Carbon $sentAt
+    ): OmniMessage {
+        $messageType = 'note';
+        $payload = null;
+        $preview = $body;
+
+        if ($file) {
+            $mime = $file->getMimeType() ?: 'application/octet-stream';
+            $storedPath = $file->store("omni-internal/{$conversation->id}", 'public');
+            $messageType = str_starts_with($mime, 'image/') ? 'image' : 'document';
+            $preview = $body !== '' ? $body : ($messageType === 'image' ? '[Gambar]' : '[Lampiran: '.$file->getClientOriginalName().']');
+            $payload = [
+                'local_media_url' => Storage::disk('public')->url($storedPath),
+                'media_filename' => $file->getClientOriginalName(),
+                'media_mime' => $mime,
+            ];
+        }
+
+        if ($mentionedIds !== []) {
+            $payload = is_array($payload) ? $payload : [];
+            $payload['mentioned_user_ids'] = $mentionedIds;
+        }
+
+        return OmniMessage::query()->create([
+            'conversation_id' => $conversation->id,
+            'user_id' => $userId,
+            'direction' => 'internal',
+            'meta_message_id' => null,
+            'message_type' => $messageType,
+            'body' => $body !== '' ? $body : $preview,
+            'payload' => $payload,
+            'status' => null,
+            'sent_at' => $sentAt,
+        ]);
+    }
+
+    /**
+     * @return list<UploadedFile>
+     */
+    private function collectOutboundAttachments(Request $request): array
+    {
+        $files = [];
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $uploaded) {
+                if ($uploaded instanceof UploadedFile) {
+                    $files[] = $uploaded;
+                }
+            }
+        }
+        if ($request->hasFile('attachment')) {
+            $files[] = $request->file('attachment');
+        }
+
+        return array_slice($files, 0, OmnichannelInboxOutboundMediaService::MAX_ATTACHMENTS);
+    }
+
+    /**
+     * @param  list<UploadedFile>  $files
+     */
+    private function sendMultipleOutboundAttachments(
+        Request $request,
+        OmniConversation $conversation,
+        array $files,
+        string $body
+    ): JsonResponse {
+        $sendConfig = $this->parseSendConfig($request->input('send_config'));
+        if (($sendConfig['message_mode'] ?? 'text') !== 'text' && $sendConfig !== []) {
+            return response()->json([
+                'message' => 'Template WA (tombol/lampiran) tidak bisa digabung dengan beberapa gambar sekaligus.',
+            ], 422);
+        }
+
+        $channel = (string) $conversation->channel;
+
+        foreach ($files as $file) {
+            $mime = $file->getMimeType() ?: '';
+            if (! str_starts_with($mime, 'image/')) {
+                return response()->json([
+                    'message' => 'Kirim beberapa file sekaligus hanya untuk gambar. Untuk PDF atau dokumen, kirim satu per satu.',
+                ], 422);
+            }
+        }
+
+        if ($channel === 'whatsapp' || ($channel === 'instagram' && $this->useInstagramLoginApi())) {
+            // supported
+        } else {
+            return response()->json([
+                'message' => 'Kirim beberapa gambar sekaligus belum didukung untuk channel ini.',
+            ], 422);
+        }
+
+        $mediaService = app(OmnichannelInboxOutboundMediaService::class);
+        $sentAt = now();
+        $created = [];
+        $lastPreview = $body !== '' ? $body : '[Gambar]';
+        $caption = $body;
+
+        try {
+            foreach ($files as $index => $file) {
+                $cap = $index === 0 && $channel === 'whatsapp' ? ($caption !== '' ? $caption : null) : null;
+                $sent = $mediaService->sendOutboundFile($conversation, $file, $cap);
+                $msgBody = $sent['body'] !== '' ? $sent['body'] : ($cap ?? '');
+                $message = OmniMessage::query()->create([
+                    'conversation_id' => $conversation->id,
+                    'user_id' => $request->user()->id,
+                    'direction' => 'outbound',
+                    'meta_message_id' => $sent['meta_message_id'] !== '' ? $sent['meta_message_id'] : null,
+                    'message_type' => $sent['message_type'],
+                    'body' => $msgBody !== '' ? $msgBody : $sent['preview'],
+                    'payload' => $sent['payload'],
+                    'status' => 'sent',
+                    'sent_at' => $sentAt,
+                ]);
+                $created[] = $this->formatMessage($message->load('author:id,nama_lengkap,email'));
+                $lastPreview = $sent['preview'];
+            }
+
+            if ($channel === 'instagram' && $this->useInstagramLoginApi() && $body !== '') {
+                $igClient = app(\App\Services\Meta\MetaInstagramLoginClient::class);
+                $igClient->sendText(
+                    $conversation->external_contact_id,
+                    $body,
+                    $conversation->phone_number_id
+                );
+            }
+        } catch (RuntimeException $e) {
+            if ($created !== []) {
+                return response()->json([
+                    'message' => 'Sebagian gambar terkirim, lalu gagal: '.$e->getMessage(),
+                    'messages' => $created,
+                ], 502);
+            }
+
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $conversation->update([
+            'last_message_at' => $sentAt,
+            'last_message_preview' => mb_substr($lastPreview, 0, 500),
+        ]);
+
+        return response()->json([
+            'messages' => $created,
+            'message' => $created[count($created) - 1] ?? null,
+        ]);
     }
 
     /**

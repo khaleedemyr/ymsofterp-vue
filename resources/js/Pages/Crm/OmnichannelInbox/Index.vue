@@ -417,14 +417,49 @@
             </div>
             <form class="flex flex-col gap-2 p-3" @submit.prevent="submitComposer">
               <div
-                v-if="pendingAttachment"
-                class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                v-if="pendingAttachments.length"
+                class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
               >
-                <i class="fa-solid fa-paperclip text-emerald-700" />
-                <span class="min-w-0 flex-1 truncate">{{ pendingAttachment.name }}</span>
-                <button type="button" class="text-slate-500 hover:text-red-600" @click="clearAttachment">
-                  <i class="fa-solid fa-xmark" />
-                </button>
+                <div class="mb-1.5 flex items-center justify-between gap-2 text-xs text-slate-600">
+                  <span>
+                    {{ pendingAttachments.length }} lampiran
+                    <span v-if="pendingAttachments.length >= maxComposerAttachments" class="text-amber-700">
+                      (maks. {{ maxComposerAttachments }})
+                    </span>
+                  </span>
+                  <button type="button" class="text-slate-500 hover:text-red-600" @click="clearAttachments">
+                    Hapus semua
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <div
+                    v-for="(file, idx) in pendingAttachments"
+                    :key="`${file.name}-${file.size}-${idx}`"
+                    class="group relative flex max-w-[7rem] flex-col items-center gap-1"
+                  >
+                    <img
+                      v-if="attachmentPreviewUrls[idx]"
+                      :src="attachmentPreviewUrls[idx]"
+                      :alt="file.name"
+                      class="h-16 w-16 rounded-lg border border-slate-200 object-cover"
+                    />
+                    <div
+                      v-else
+                      class="flex h-16 w-16 items-center justify-center rounded-lg border border-slate-200 bg-white px-1 text-center text-[10px] text-slate-600"
+                    >
+                      <i class="fa-solid fa-file mb-0.5 text-emerald-700" />
+                    </div>
+                    <span class="line-clamp-2 w-full text-center text-[10px] text-slate-600">{{ file.name }}</span>
+                    <button
+                      type="button"
+                      class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-white opacity-90 hover:bg-red-600"
+                      :title="`Hapus ${file.name}`"
+                      @click="removeAttachment(idx)"
+                    >
+                      <i class="fa-solid fa-xmark text-[10px]" />
+                    </button>
+                  </div>
+                </div>
               </div>
               <div
                 v-if="pendingTemplateSendLabel"
@@ -437,13 +472,20 @@
                 </button>
               </div>
               <div class="flex items-end gap-2">
-              <input ref="imageInputRef" type="file" accept="image/*" class="hidden" @change="onPickAttachment" />
-              <input ref="fileInputRef" type="file" class="hidden" @change="onPickAttachment" />
+              <input
+                ref="imageInputRef"
+                type="file"
+                accept="image/*"
+                multiple
+                class="hidden"
+                @change="onPickImages"
+              />
+              <input ref="fileInputRef" type="file" class="hidden" @change="onPickFile" />
               <div class="flex shrink-0 flex-col gap-1">
                 <button
                   type="button"
                   class="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-                  title="Gambar"
+                  title="Gambar (bisa pilih beberapa)"
                   :disabled="sending"
                   @click="imageInputRef?.click()"
                 >
@@ -999,7 +1041,10 @@ const mentionMenuHighlight = ref(0)
 /** @type {import('vue').Ref<number[]>} */
 const pendingMentionUserIds = ref([])
 const emojiPickerOpen = ref(false)
-const pendingAttachment = ref(null)
+const maxComposerAttachments = 10
+/** @type {import('vue').Ref<File[]>} */
+const pendingAttachments = ref([])
+const attachmentPreviewUrls = ref([])
 /** @type {import('vue').Ref<Record<string, unknown>|null>} */
 const pendingTemplateSend = ref(null)
 
@@ -1018,7 +1063,7 @@ const pendingTemplateSendLabel = computed(() => {
 })
 
 const canSubmitComposer = computed(() => {
-  if (replyText.value.trim() || pendingAttachment.value) return true
+  if (replyText.value.trim() || pendingAttachments.value.length > 0) return true
   const mode = pendingTemplateSend.value?.message_mode
   return mode === 'image' || mode === 'document'
 })
@@ -1942,19 +1987,77 @@ function insertEmoji(emoji) {
   })
 }
 
-function onPickAttachment(e) {
+function syncAttachmentPreviews() {
+  attachmentPreviewUrls.value.forEach((url) => {
+    if (url) {
+      URL.revokeObjectURL(url)
+    }
+  })
+  attachmentPreviewUrls.value = pendingAttachments.value.map((file) =>
+    file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+  )
+}
+
+function addPendingAttachments(files) {
+  if (!files.length) {
+    return
+  }
+  const onlyImages = files.every((f) => f.type.startsWith('image/'))
+  if (!onlyImages) {
+    Swal.fire('Info', 'Pilih beberapa file sekaligus hanya untuk gambar. Untuk PDF, gunakan ikon lampiran.', 'info')
+    return
+  }
+  const room = maxComposerAttachments - pendingAttachments.value.length
+  if (room <= 0) {
+    Swal.fire('Info', `Maksimal ${maxComposerAttachments} gambar per kirim.`, 'info')
+    return
+  }
+  const next = [...pendingAttachments.value, ...files.slice(0, room)]
+  if (files.length > room) {
+    Swal.fire('Info', `Hanya ${room} gambar ditambahkan (maks. ${maxComposerAttachments} per kirim).`, 'info')
+  }
+  pendingAttachments.value = next
+  clearPendingTemplateSend()
+  syncAttachmentPreviews()
+}
+
+function onPickImages(e) {
+  const files = Array.from(e.target?.files || []).filter((f) => f.type.startsWith('image/'))
+  addPendingAttachments(files)
+  if (e.target) {
+    e.target.value = ''
+  }
+}
+
+function onPickFile(e) {
   const file = e.target?.files?.[0]
   if (file) {
-    pendingAttachment.value = file
+    pendingAttachments.value = [file]
     clearPendingTemplateSend()
+    syncAttachmentPreviews()
   }
   if (e.target) {
     e.target.value = ''
   }
 }
 
-function clearAttachment() {
-  pendingAttachment.value = null
+function removeAttachment(index) {
+  const url = attachmentPreviewUrls.value[index]
+  if (url) {
+    URL.revokeObjectURL(url)
+  }
+  pendingAttachments.value = pendingAttachments.value.filter((_, i) => i !== index)
+  syncAttachmentPreviews()
+}
+
+function clearAttachments() {
+  attachmentPreviewUrls.value.forEach((url) => {
+    if (url) {
+      URL.revokeObjectURL(url)
+    }
+  })
+  pendingAttachments.value = []
+  attachmentPreviewUrls.value = []
 }
 
 function onComposerInput() {
@@ -2128,10 +2231,14 @@ async function submitComposer() {
     return
   }
   if (!selectedId.value) return
+  if (pendingAttachments.value.length > 1 && pendingTemplateSend.value) {
+    sendError.value = 'Template WA tidak bisa digabung dengan beberapa gambar. Hapus template atau kirim satu gambar.'
+    return
+  }
   let body = replyText.value.trim()
   const tplMode = pendingTemplateSend.value?.message_mode
   const tplMediaOnly = tplMode === 'image' || tplMode === 'document'
-  if (!body && !pendingAttachment.value && !tplMediaOnly) return
+  if (!body && pendingAttachments.value.length === 0 && !tplMediaOnly) return
   sendError.value = ''
   const isInternal = composerMode.value === 'internal'
   const mentionIds = isInternal ? [...pendingMentionUserIds.value] : []
@@ -2151,10 +2258,14 @@ async function submitComposer() {
     if (body) {
       formData.append('body', body)
     }
-    if (pendingAttachment.value) {
-      formData.append('attachment', pendingAttachment.value)
+    if (pendingAttachments.value.length === 1) {
+      formData.append('attachment', pendingAttachments.value[0])
+    } else if (pendingAttachments.value.length > 1) {
+      pendingAttachments.value.forEach((file) => {
+        formData.append('attachments[]', file)
+      })
     }
-    if (!isInternal && pendingTemplateSend.value && selectedConversation.value?.channel === 'whatsapp' && !pendingAttachment.value) {
+    if (!isInternal && pendingTemplateSend.value && selectedConversation.value?.channel === 'whatsapp' && pendingAttachments.value.length === 0) {
       formData.append('send_config', JSON.stringify(pendingTemplateSend.value))
     }
     if (isInternal) {
@@ -2166,14 +2277,19 @@ async function submitComposer() {
     const { data } = await axios.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
-    if (data.message) {
-      localMessages.value = sortMessages([...localMessages.value, data.message])
+    const newMessages = data.messages?.length
+      ? data.messages
+      : data.message
+        ? [data.message]
+        : []
+    if (newMessages.length) {
+      localMessages.value = sortMessages([...localMessages.value, ...newMessages])
     }
     if (data.conversation) {
       liveSelectedConversation.value = data.conversation
     }
     replyText.value = ''
-    clearAttachment()
+    clearAttachments()
     clearPendingTemplateSend()
     clearMentionState()
     scrollToBottom()
@@ -2405,6 +2521,7 @@ onUnmounted(() => {
   clearTimeout(pollKickTimer)
   document.removeEventListener('visibilitychange', onInboxVisibilityChange)
   window.removeEventListener('focus', onInboxWindowFocus)
+  clearAttachments()
 })
 </script>
 
