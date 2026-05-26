@@ -88,28 +88,40 @@ class OmnichannelAuthorization
             return true;
         }
 
-        return ! $conversation->assignees()->exists()
-            && ! $conversation->teams()->exists()
-            && $conversation->assigned_user_id === null;
+        return false;
+    }
+
+    /**
+     * Percakapan yang ditugaskan ke user (langsung, multi-assignee, atau tim).
+     */
+    public static function applyAssignedToUserScope(Builder $query, User $user): void
+    {
+        $uid = (int) $user->id;
+        $teamIds = self::teamIdsForUser($uid);
+        $query->where(function (Builder $q) use ($uid, $teamIds) {
+            $q->where('assigned_user_id', $uid)
+                ->orWhereHas('assignees', fn ($sub) => $sub->where('users.id', $uid));
+            if ($teamIds !== []) {
+                $q->orWhereHas('teams', fn ($sub) => $sub->whereIn('omni_teams.id', $teamIds));
+            }
+        });
     }
 
     public static function applyInboxVisibility(Builder $query, User $user, string $inbox, bool $canSeeAll): void
     {
         if ($inbox === 'mine') {
-            $uid = (int) $user->id;
-            $teamIds = self::teamIdsForUser($uid);
-            $query->where(function (Builder $q) use ($uid, $teamIds) {
-                $q->where('assigned_user_id', $uid)
-                    ->orWhereHas('assignees', fn ($sub) => $sub->where('users.id', $uid));
-                if ($teamIds !== []) {
-                    $q->orWhereHas('teams', fn ($sub) => $sub->whereIn('omni_teams.id', $teamIds));
-                }
-            });
+            self::applyAssignedToUserScope($query, $user);
 
             return;
         }
 
         if ($inbox === 'unassigned') {
+            if (! $canSeeAll) {
+                $query->whereRaw('0 = 1');
+
+                return;
+            }
+
             $query->whereDoesntHave('assignees')
                 ->whereDoesntHave('teams')
                 ->whereNull('assigned_user_id');
@@ -121,19 +133,7 @@ class OmnichannelAuthorization
             return;
         }
 
-        $uid = (int) $user->id;
-        $teamIds = self::teamIdsForUser($uid);
-        $query->where(function (Builder $q) use ($uid, $teamIds) {
-            $q->where('assigned_user_id', $uid)
-                ->orWhereHas('assignees', fn ($sub) => $sub->where('users.id', $uid));
-            if ($teamIds !== []) {
-                $q->orWhereHas('teams', fn ($sub) => $sub->whereIn('omni_teams.id', $teamIds));
-            }
-            $q->orWhere(function (Builder $q2) {
-                $q2->whereDoesntHave('assignees')
-                    ->whereDoesntHave('teams')
-                    ->whereNull('assigned_user_id');
-            });
-        });
+        // Tab "Semua" untuk user biasa = hanya chat yang ditugaskan (bukan seluruh inbox).
+        self::applyAssignedToUserScope($query, $user);
     }
 }

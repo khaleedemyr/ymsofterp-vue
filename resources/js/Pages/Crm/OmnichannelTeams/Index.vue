@@ -14,7 +14,7 @@
       <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h2 class="text-sm font-semibold text-slate-800">Pengguna yang melihat semua inbox</h2>
         <p class="mt-1 text-xs text-slate-500">
-          Pilih satu atau lebih user di bawah (daftar lengkap, bisa dicari). Hanya user yang terdaftar di sini yang mendapat tampilan tab &quot;Semua&quot; penuh. User lain tetap melihat percakapan relevan (tugas pribadi, tim, atau belum ditugaskan).
+          Pilih satu atau lebih user di bawah (daftar lengkap, bisa dicari). Hanya user yang terdaftar di sini yang mendapat tampilan tab &quot;Semua&quot; penuh dan notifikasi semua chat masuk. User lain hanya melihat chat yang ditugaskan ke mereka atau tim mereka.
         </p>
         <label class="mt-3 block text-xs font-medium text-slate-600">Pilih pengguna</label>
         <Multiselect

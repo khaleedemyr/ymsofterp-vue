@@ -997,18 +997,21 @@ const channelMenuOptions = [
 
 const inboxMenuOptions = computed(() => {
   const restricted = !props.canSeeAllChats
-  return [
+  const options = [
     {
       value: 'all',
       label: restricted ? 'Semua (relevan)' : 'Semua',
       icon: 'fa-solid fa-inbox',
       hint: restricted
-        ? 'Percakapan yang ditugaskan ke Anda, tim Anda, atau belum ditugaskan. Daftar "lihat semua" diatur di menu Tim Inbox Omnichannel.'
+        ? 'Hanya percakapan yang ditugaskan ke Anda atau tim Anda. Daftar "lihat semua inbox" diatur di menu Tim Inbox Omnichannel.'
         : 'Semua percakapan (Anda ada di daftar lihat semua inbox)',
     },
     { value: 'mine', label: 'Ditugaskan ke saya', icon: 'fa-solid fa-user', hint: '' },
-    { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' },
   ]
+  if (! restricted) {
+    options.push({ value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' })
+  }
+  return options
 })
 
 const search = ref('')

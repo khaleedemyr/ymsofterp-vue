@@ -83,7 +83,7 @@ class OmnichannelInboundNotificationService
     }
 
     /**
-     * Admin inbox (lihat semua) + penugasan langsung + anggota tim terkait.
+     * User di daftar "lihat semua inbox" + yang punya akses ke percakapan (ditugaskan / tim).
      *
      * @return list<int>
      */
@@ -114,17 +114,26 @@ class OmnichannelInboundNotificationService
             return [];
         }
 
-        $activeWithInbox = User::query()
+        $users = User::query()
             ->whereIn('id', $ids)
             ->where('status', 'A')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+            ->get();
 
-        return array_values(array_filter(
-            $activeWithInbox,
-            fn (int $uid) => OmnichannelAuthorization::userHasPermission($uid, 'omnichannel_inbox_view')
-        ));
+        return $users
+            ->filter(function (User $user) use ($conversation) {
+                if (! OmnichannelAuthorization::userHasPermission((int) $user->id, 'omnichannel_inbox_view')) {
+                    return false;
+                }
+
+                return OmnichannelAuthorization::userCanAccessConversation(
+                    $user,
+                    $conversation,
+                    OmnichannelAuthorization::canSeeAllChats($user)
+                );
+            })
+            ->map(fn (User $user) => (int) $user->id)
+            ->values()
+            ->all();
     }
 
     private function alreadyNotifiedRecently(
