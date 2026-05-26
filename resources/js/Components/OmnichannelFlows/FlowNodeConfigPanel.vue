@@ -183,6 +183,8 @@
           class="absolute bottom-2 right-2"
           button-size="sm"
           panel-width="16rem"
+          :teleport="true"
+          placement="top"
           @select="insertSendMessageEmoji"
         />
       </div>
