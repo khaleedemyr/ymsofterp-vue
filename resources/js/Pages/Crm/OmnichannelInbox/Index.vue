@@ -476,9 +476,10 @@
                     v-if="msg.direction === 'outbound'"
                     type="button"
                     class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+                    title="Ubah isi sebagai draft baru (pesan lama tidak bisa diedit)"
                     @click="editMessageDraft(msg)"
                   >
-                    <i class="fa-regular fa-pen-to-square mr-1" />Edit
+                    <i class="fa-regular fa-pen-to-square mr-1" />Ubah Draft
                   </button>
                 </div>
               </div>
@@ -512,7 +513,7 @@
                 <div class="mb-1 flex items-center justify-between gap-2">
                   <p class="font-semibold">
                     <i class="fa-regular fa-pen-to-square mr-1" />
-                    Edit draft dari pesan sebelumnya (akan kirim pesan baru)
+                    Ubah draft dari pesan sebelumnya (pesan lama tetap, ini kirim baru)
                   </p>
                   <button
                     type="button"
@@ -2104,6 +2105,13 @@ function editMessageDraft(msg) {
     sent_at: msg.sent_at || null,
   }
   replyText.value = displayMessageBody(msg) || ''
+  Swal.fire({
+    icon: 'info',
+    title: 'Mode Ubah Draft',
+    text: 'Pesan yang sudah terkirim tidak bisa di-edit via channel. Ini akan membuat draft baru untuk dikirim ulang.',
+    timer: 2200,
+    showConfirmButton: false,
+  })
   nextTick(() => {
     composerEl.value?.focus()
     resizeComposer()
