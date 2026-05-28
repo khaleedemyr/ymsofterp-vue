@@ -490,6 +490,13 @@
                   >
                     <i class="fa-regular fa-pen-to-square mr-1" />Ubah Draft
                   </button>
+                  <button
+                    type="button"
+                    class="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100 hover:text-red-700"
+                    @click="deleteMessageForMe(msg)"
+                  >
+                    <i class="fa-regular fa-trash-can mr-1" />Delete
+                  </button>
                 </div>
               </div>
             </div>
@@ -2126,6 +2133,33 @@ function editMessageDraft(msg) {
     composerEl.value?.focus()
     resizeComposer()
   })
+}
+
+async function deleteMessageForMe(msg) {
+  if (!msg?.id || !selectedId.value) return
+  const result = await Swal.fire({
+    title: 'Delete pesan ini?',
+    text: 'Pesan hanya dihapus dari tampilan Anda.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, delete',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!result.isConfirmed) return
+
+  try {
+    await axios.delete(`/crm/omnichannel-inbox/messages/${msg.id}`)
+    localMessages.value = localMessages.value.filter((m) => m.id !== msg.id)
+    if (replyToMessage.value?.id === msg.id) {
+      clearReplyTarget()
+    }
+    if (editSourceMessage.value?.id === msg.id) {
+      clearEditSource()
+    }
+  } catch (e) {
+    Swal.fire('Error', e.response?.data?.message || 'Gagal delete pesan.', 'error')
+  }
 }
 
 function escapeHtml(str) {

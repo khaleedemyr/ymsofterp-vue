@@ -15,12 +15,14 @@ class OmniMessage extends Model
         'message_type',
         'body',
         'payload',
+        'deleted_for_user_ids',
         'status',
         'sent_at',
     ];
 
     protected $casts = [
         'payload' => 'array',
+        'deleted_for_user_ids' => 'array',
         'sent_at' => 'datetime',
     ];
 

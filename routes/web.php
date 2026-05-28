@@ -2717,6 +2717,7 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('crm.omnichannel-inbox.update');
     Route::get('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('crm.omnichannel-inbox.messages');
     Route::get('/crm/omnichannel-inbox/messages/{message}/media', [App\Http\Controllers\OmnichannelInboxController::class, 'messageMedia'])->name('crm.omnichannel-inbox.message-media');
+    Route::delete('/crm/omnichannel-inbox/messages/{message}', [App\Http\Controllers\OmnichannelInboxController::class, 'deleteMessageForMe'])->name('crm.omnichannel-inbox.messages.delete-for-me');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('crm.omnichannel-inbox.send');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/internal-notes', [App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('crm.omnichannel-inbox.internal-notes');
     Route::post('/crm/omnichannel-inbox/ai-assist', [App\Http\Controllers\OmnichannelInboxController::class, 'aiAssist'])->name('crm.omnichannel-inbox.ai-assist');
