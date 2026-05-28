@@ -1,8 +1,49 @@
 <template>
   <AppLayout>
-    <div class="flex h-[calc(100vh-7rem)] min-h-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div class="flex h-[calc(100vh-7rem)] min-h-[520px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:flex-row">
+      <div class="border-b border-slate-200 bg-white p-2 lg:hidden">
+        <div class="grid grid-cols-4 gap-1">
+          <button
+            type="button"
+            class="rounded-md px-2 py-1.5 text-[11px] font-medium"
+            :class="mobilePanel === 'filters' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'"
+            @click="mobilePanel = 'filters'"
+          >
+            Filter
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1.5 text-[11px] font-medium"
+            :class="mobilePanel === 'list' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'"
+            @click="mobilePanel = 'list'"
+          >
+            Daftar
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1.5 text-[11px] font-medium disabled:opacity-50"
+            :class="mobilePanel === 'chat' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'"
+            :disabled="!selectedConversation"
+            @click="mobilePanel = 'chat'"
+          >
+            Chat
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1.5 text-[11px] font-medium disabled:opacity-50"
+            :class="mobilePanel === 'detail' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700'"
+            :disabled="!selectedConversation"
+            @click="mobilePanel = 'detail'"
+          >
+            Detail
+          </button>
+        </div>
+      </div>
       <!-- Kolom 1: filter inbox & lifecycle -->
-      <nav class="flex w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50">
+      <nav
+        class="w-full shrink-0 flex-col border-r border-slate-200 bg-slate-50 lg:flex lg:w-52"
+        :class="mobilePanel === 'filters' ? 'flex' : 'hidden'"
+      >
         <div class="border-b border-slate-200 p-3">
           <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Inbox</p>
           <div class="mt-2 space-y-1">
@@ -64,7 +105,10 @@
       </nav>
 
       <!-- Kolom 2: daftar percakapan -->
-      <aside class="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white">
+      <aside
+        class="w-full shrink-0 flex-col border-r border-slate-200 bg-white lg:flex lg:w-72"
+        :class="mobilePanel === 'list' ? 'flex' : 'hidden'"
+      >
         <div class="border-b border-slate-200 px-3 py-2">
           <input
             v-model="search"
@@ -137,10 +181,20 @@
       </aside>
 
       <!-- Kolom 3: thread chat -->
-      <section class="flex min-w-0 flex-1 flex-col bg-[#e5ddd5]">
+      <section
+        class="min-w-0 flex-1 flex-col bg-[#e5ddd5] lg:flex"
+        :class="mobilePanel === 'chat' ? 'flex' : 'hidden'"
+      >
         <template v-if="selectedConversation">
           <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
             <div class="flex min-w-0 flex-1 items-center gap-2">
+              <button
+                type="button"
+                class="mr-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 lg:hidden"
+                @click="mobilePanel = 'list'"
+              >
+                <i class="fa-solid fa-arrow-left" />
+              </button>
               <div
                 class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full"
                 :class="channelAvatarClass(selectedConversation.channel)"
@@ -236,9 +290,19 @@
               :class="bubbleAlign(msg)"
             >
               <div
-                class="max-w-[82%] rounded-lg px-3 py-2 text-sm shadow-sm"
+                class="relative max-w-[82%] rounded-lg px-3 py-2 text-sm shadow-sm"
                 :class="bubbleClass(msg)"
               >
+                <button
+                  v-if="composerMode === 'reply' && msg.direction !== 'internal'"
+                  type="button"
+                  class="absolute right-1 top-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-white/70 hover:text-slate-800"
+                  title="Reply pesan ini"
+                  @click="prepareReply(msg)"
+                >
+                  <i class="fa-solid fa-reply mr-1" />
+                  Reply
+                </button>
                 <p v-if="msg.direction === 'internal'" class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
@@ -416,6 +480,28 @@
               </button>
             </div>
             <form class="flex flex-col gap-2 p-3" @submit.prevent="submitComposer">
+              <div
+                v-if="replyToMessage && composerMode === 'reply'"
+                class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+              >
+                <div class="mb-1 flex items-center justify-between gap-2">
+                  <p class="font-semibold">
+                    <i class="fa-solid fa-reply mr-1" />
+                    Membalas {{ replyTargetLabel(replyToMessage) }}
+                  </p>
+                  <button
+                    type="button"
+                    class="text-emerald-700 hover:text-red-600"
+                    title="Batal reply"
+                    @click="clearReplyTarget"
+                  >
+                    <i class="fa-solid fa-xmark" />
+                  </button>
+                </div>
+                <p class="line-clamp-2 text-[11px] text-emerald-800">
+                  {{ replySnippet(replyToMessage) }}
+                </p>
+              </div>
               <div
                 v-if="pendingAttachments.length"
                 class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
@@ -694,7 +780,11 @@
       </section>
 
       <!-- Kolom 4: informasi detail kontak + CRM -->
-      <aside v-if="selectedConversation" class="flex w-80 shrink-0 flex-col border-l border-slate-200 bg-slate-50">
+      <aside
+        v-if="selectedConversation"
+        class="w-full shrink-0 flex-col border-l border-slate-200 bg-slate-50 lg:flex lg:w-80"
+        :class="mobilePanel === 'detail' ? 'flex' : 'hidden'"
+      >
         <div class="border-b border-slate-200 px-3 py-2">
           <p class="text-xs font-semibold text-slate-800">Informasi detail kontak</p>
           <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
@@ -1027,6 +1117,7 @@ const inboxMenuOptions = computed(() => {
 })
 
 const search = ref('')
+const mobilePanel = ref(props.selectedConversation?.id ? 'chat' : 'list')
 const selectedId = ref(props.selectedConversation?.id ?? null)
 const localMessages = ref(sortMessages(props.messages || []))
 /** ID percakapan yang isi localMessages saat ini — cegah merge pesan chat lain saat pindah kontak. */
@@ -1041,6 +1132,7 @@ const sending = ref(false)
 const sendError = ref('')
 const messagesEl = ref(null)
 const composerEl = ref(null)
+const replyToMessage = ref(null)
 
 function resizeComposer() {
   nextTick(() => autoResizeTextarea(composerEl.value))
@@ -1628,6 +1720,8 @@ function isStaleConversationProps(convId) {
 
 function selectConversation(id) {
   pendingConversationId.value = id
+  mobilePanel.value = 'chat'
+  clearReplyTarget()
   selectedId.value = id
   localMessagesConversationId.value = null
   localMessages.value = []
@@ -1820,6 +1914,7 @@ watch(
       oldestMessageId.value = props.messagesOldestId ?? null
       stickScrollBottom.value = true
       composerMode.value = 'reply'
+      clearReplyTarget()
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
       clearAttachment()
@@ -1830,12 +1925,18 @@ watch(
         autoResolvePendingMedia()
       })
     }
+    if (!newId && mobilePanel.value !== 'list') {
+      mobilePanel.value = 'list'
+    }
   },
   { immediate: true }
 )
 
 function setComposerMode(mode) {
   composerMode.value = mode
+  if (mode !== 'reply') {
+    clearReplyTarget()
+  }
   templateMenuOpen.value = false
   mentionMenuOpen.value = false
   mentionQuery.value = ''
@@ -1853,6 +1954,41 @@ function clearMentionState() {
   mentionQuery.value = ''
   mentionMenuHighlight.value = 0
   pendingMentionUserIds.value = []
+}
+
+function replyTargetLabel(msg) {
+  if (!msg) return 'pesan'
+  if (msg.direction === 'outbound') return msg.author_name ? `${msg.author_name}` : 'tim'
+  return selectedConversation.value?.contact_name || selectedConversation.value?.display_phone || 'pelanggan'
+}
+
+function replySnippet(msg) {
+  if (!msg) return ''
+  const body = displayMessageBody(msg)
+  if (body) return body
+  if (msg.message_type === 'image') return '[Gambar]'
+  if (msg.message_type === 'video') return '[Video]'
+  if (msg.message_type === 'audio') return '[Audio]'
+  if (msg.message_type === 'document') return `[Dokumen${msg.media_filename ? `: ${msg.media_filename}` : ''}]`
+  return '[Lampiran]'
+}
+
+function clearReplyTarget() {
+  replyToMessage.value = null
+}
+
+function prepareReply(msg) {
+  if (!msg || composerMode.value !== 'reply') return
+  replyToMessage.value = {
+    id: msg.id,
+    direction: msg.direction,
+    author_name: msg.author_name || null,
+    message_type: msg.message_type || null,
+    media_filename: msg.media_filename || null,
+    body: msg.body || '',
+    sent_at: msg.sent_at || null,
+  }
+  nextTick(() => composerEl.value?.focus())
 }
 
 function escapeHtml(str) {
@@ -2267,6 +2403,16 @@ async function submitComposer() {
     replyText.value = resolved
   }
 
+  if (!isInternal && replyToMessage.value) {
+    const label = replyTargetLabel(replyToMessage.value)
+    const snippet = replySnippet(replyToMessage.value)
+    const quoteHeader = `↪️ Reply ke ${label}`
+    const quoteBody = `> ${snippet}`.split('\n').join('\n> ')
+    body = body
+      ? `${quoteHeader}\n${quoteBody}\n\n${body}`
+      : `${quoteHeader}\n${quoteBody}`
+  }
+
   sending.value = true
   try {
     const formData = new FormData()
@@ -2304,6 +2450,7 @@ async function submitComposer() {
       liveSelectedConversation.value = data.conversation
     }
     replyText.value = ''
+    clearReplyTarget()
     clearAttachments()
     clearPendingTemplateSend()
     clearMentionState()
