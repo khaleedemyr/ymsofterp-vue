@@ -661,6 +661,25 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
+    public function archiveConversation(Request $request, OmniConversation $conversation): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
+        $conversation->status = 'closed';
+        $conversation->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Chat berhasil diarsipkan.',
+        ]);
+    }
+
     public function storeInternalNote(
         Request $request,
         OmniConversation $conversation,
@@ -795,7 +814,8 @@ class OmnichannelInboxController extends Controller
                 'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
-            ]);
+            ])
+            ->where('status', '!=', 'closed');
 
         OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
 

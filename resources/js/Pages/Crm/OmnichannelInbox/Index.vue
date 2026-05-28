@@ -251,6 +251,15 @@
             >
               {{ pausingAutomation ? '...' : 'Hentikan otomasi' }}
             </button>
+            <button
+              type="button"
+              class="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+              :disabled="archivingConversation"
+              @click="archiveSelectedConversation"
+            >
+              <i class="fa-regular fa-trash-can mr-1" />
+              {{ archivingConversation ? 'Menghapus...' : 'Delete chat' }}
+            </button>
           </div>
 
           <div
@@ -1227,6 +1236,7 @@ const canSubmitComposer = computed(() => {
 const imageInputRef = ref(null)
 const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
+const archivingConversation = ref(false)
 const aiMenuOpen = ref(false)
 const aiLoading = ref(false)
 const aiError = ref('')
@@ -2617,6 +2627,41 @@ async function pauseAutomation() {
     /* ignore */
   } finally {
     pausingAutomation.value = false
+  }
+}
+
+async function archiveSelectedConversation() {
+  if (!selectedId.value || archivingConversation.value) return
+  const result = await Swal.fire({
+    title: 'Delete chat ini?',
+    text: 'Chat akan diarsipkan dan hilang dari inbox aktif.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, delete',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  })
+  if (!result.isConfirmed) return
+
+  archivingConversation.value = true
+  try {
+    await axios.delete(`/crm/omnichannel-inbox/conversations/${selectedId.value}`)
+    clearReplyTarget()
+    clearEditSource()
+    replyText.value = ''
+    localMessages.value = []
+    selectedId.value = null
+    mobilePanel.value = 'list'
+
+    await router.reload({
+      only: inboxPartialReloadKeys,
+      preserveState: true,
+      preserveScroll: true,
+    })
+  } catch (e) {
+    Swal.fire('Error', e.response?.data?.message || 'Gagal menghapus chat.', 'error')
+  } finally {
+    archivingConversation.value = false
   }
 }
 

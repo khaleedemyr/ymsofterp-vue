@@ -2720,6 +2720,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'sendMessage'])->name('crm.omnichannel-inbox.send');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/internal-notes', [App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('crm.omnichannel-inbox.internal-notes');
     Route::post('/crm/omnichannel-inbox/ai-assist', [App\Http\Controllers\OmnichannelInboxController::class, 'aiAssist'])->name('crm.omnichannel-inbox.ai-assist');
+    Route::delete('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'archiveConversation'])->name('crm.omnichannel-inbox.archive');
 
     Route::put('/crm/omnichannel-teams/full-access-users', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'updateFullAccessUsers'])->name('crm.omnichannel-teams.full-access');
     Route::get('/crm/omnichannel-teams', [App\Http\Controllers\OmnichannelTeamSettingsController::class, 'index'])->name('crm.omnichannel-teams.index');
