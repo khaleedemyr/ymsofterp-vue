@@ -290,19 +290,9 @@
               :class="bubbleAlign(msg)"
             >
               <div
-                class="relative max-w-[82%] rounded-lg px-3 py-2 text-sm shadow-sm"
+                class="max-w-[82%] rounded-lg px-3 py-2 text-sm shadow-sm"
                 :class="bubbleClass(msg)"
               >
-                <button
-                  v-if="composerMode === 'reply' && msg.direction !== 'internal'"
-                  type="button"
-                  class="absolute right-1 top-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-white/70 hover:text-slate-800"
-                  title="Reply pesan ini"
-                  @click="prepareReply(msg)"
-                >
-                  <i class="fa-solid fa-reply mr-1" />
-                  Reply
-                </button>
                 <p v-if="msg.direction === 'internal'" class="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                   Catatan internal{{ msg.author_name ? ' · ' + msg.author_name : '' }}
                 </p>
@@ -456,6 +446,41 @@
                     <span v-if="msg.direction === 'outbound' && msg.status"> · {{ msg.status }}</span>
                   </span>
                 </p>
+                <div
+                  v-if="msg.direction !== 'internal'"
+                  class="mt-1.5 flex flex-wrap items-center justify-end gap-1"
+                >
+                  <button
+                    v-if="composerMode === 'reply'"
+                    type="button"
+                    class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+                    @click="prepareReply(msg)"
+                  >
+                    <i class="fa-solid fa-reply mr-1" />Reply
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+                    @click="forwardMessage(msg)"
+                  >
+                    <i class="fa-solid fa-share mr-1" />Forward
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+                    @click="copyMessage(msg)"
+                  >
+                    <i class="fa-regular fa-copy mr-1" />Copy
+                  </button>
+                  <button
+                    v-if="msg.direction === 'outbound'"
+                    type="button"
+                    class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
+                    @click="editMessageDraft(msg)"
+                  >
+                    <i class="fa-regular fa-pen-to-square mr-1" />Edit
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -480,6 +505,28 @@
               </button>
             </div>
             <form class="flex flex-col gap-2 p-3" @submit.prevent="submitComposer">
+              <div
+                v-if="editSourceMessage && composerMode === 'reply'"
+                class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
+              >
+                <div class="mb-1 flex items-center justify-between gap-2">
+                  <p class="font-semibold">
+                    <i class="fa-regular fa-pen-to-square mr-1" />
+                    Edit draft dari pesan sebelumnya (akan kirim pesan baru)
+                  </p>
+                  <button
+                    type="button"
+                    class="text-blue-700 hover:text-red-600"
+                    title="Batal edit draft"
+                    @click="clearEditSource"
+                  >
+                    <i class="fa-solid fa-xmark" />
+                  </button>
+                </div>
+                <p class="line-clamp-2 text-[11px] text-blue-800">
+                  {{ replySnippet(editSourceMessage) }}
+                </p>
+              </div>
               <div
                 v-if="replyToMessage && composerMode === 'reply'"
                 class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
@@ -1133,6 +1180,7 @@ const sendError = ref('')
 const messagesEl = ref(null)
 const composerEl = ref(null)
 const replyToMessage = ref(null)
+const editSourceMessage = ref(null)
 
 function resizeComposer() {
   nextTick(() => autoResizeTextarea(composerEl.value))
@@ -1722,6 +1770,7 @@ function selectConversation(id) {
   pendingConversationId.value = id
   mobilePanel.value = 'chat'
   clearReplyTarget()
+  clearEditSource()
   selectedId.value = id
   localMessagesConversationId.value = null
   localMessages.value = []
@@ -1915,9 +1964,10 @@ watch(
       stickScrollBottom.value = true
       composerMode.value = 'reply'
       clearReplyTarget()
+      clearEditSource()
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
-      clearAttachment()
+      clearAttachments()
       mediaResolveFailed.value = {}
       nextTick(() => {
         scrollToBottom()
@@ -1936,6 +1986,7 @@ function setComposerMode(mode) {
   composerMode.value = mode
   if (mode !== 'reply') {
     clearReplyTarget()
+    clearEditSource()
   }
   templateMenuOpen.value = false
   mentionMenuOpen.value = false
@@ -1977,8 +2028,13 @@ function clearReplyTarget() {
   replyToMessage.value = null
 }
 
+function clearEditSource() {
+  editSourceMessage.value = null
+}
+
 function prepareReply(msg) {
   if (!msg || composerMode.value !== 'reply') return
+  clearEditSource()
   replyToMessage.value = {
     id: msg.id,
     direction: msg.direction,
@@ -1989,6 +2045,69 @@ function prepareReply(msg) {
     sent_at: msg.sent_at || null,
   }
   nextTick(() => composerEl.value?.focus())
+}
+
+async function copyMessage(msg) {
+  const text = replySnippet(msg)
+  if (!text) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const temp = document.createElement('textarea')
+      temp.value = text
+      temp.setAttribute('readonly', '')
+      temp.style.position = 'absolute'
+      temp.style.left = '-9999px'
+      document.body.appendChild(temp)
+      temp.select()
+      document.execCommand('copy')
+      document.body.removeChild(temp)
+    }
+    Swal.fire({ icon: 'success', title: 'Tersalin', text: 'Pesan berhasil disalin', timer: 1200, showConfirmButton: false })
+  } catch {
+    Swal.fire('Info', 'Gagal menyalin otomatis. Coba salin manual.', 'info')
+  }
+}
+
+function forwardMessage(msg) {
+  if (composerMode.value !== 'reply') {
+    setComposerMode('reply')
+  }
+  clearReplyTarget()
+  clearEditSource()
+  clearPendingTemplateSend()
+  clearAttachments()
+  const snippet = replySnippet(msg)
+  replyText.value = snippet ? `↪️ Forwarded message\n${snippet}` : '↪️ Forwarded message'
+  nextTick(() => {
+    composerEl.value?.focus()
+    resizeComposer()
+  })
+}
+
+function editMessageDraft(msg) {
+  if (!msg || msg.direction !== 'outbound') return
+  if (composerMode.value !== 'reply') {
+    setComposerMode('reply')
+  }
+  clearReplyTarget()
+  clearPendingTemplateSend()
+  clearAttachments()
+  editSourceMessage.value = {
+    id: msg.id,
+    direction: msg.direction,
+    author_name: msg.author_name || null,
+    message_type: msg.message_type || null,
+    media_filename: msg.media_filename || null,
+    body: msg.body || '',
+    sent_at: msg.sent_at || null,
+  }
+  replyText.value = displayMessageBody(msg) || ''
+  nextTick(() => {
+    composerEl.value?.focus()
+    resizeComposer()
+  })
 }
 
 function escapeHtml(str) {
@@ -2450,6 +2569,7 @@ async function submitComposer() {
       liveSelectedConversation.value = data.conversation
     }
     replyText.value = ''
+    clearEditSource()
     clearReplyTarget()
     clearAttachments()
     clearPendingTemplateSend()
