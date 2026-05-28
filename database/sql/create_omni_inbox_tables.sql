@@ -120,8 +120,6 @@ CREATE TABLE IF NOT EXISTS `omni_messages` (
 
     `payload` JSON NULL,
 
-    `deleted_for_user_ids` JSON NULL,
-
     `status` VARCHAR(32) NULL,
 
     `sent_at` TIMESTAMP NULL,

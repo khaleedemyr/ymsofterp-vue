@@ -661,25 +661,6 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
-    public function archiveConversation(Request $request, OmniConversation $conversation): JsonResponse
-    {
-        $this->assertInboxAccess($request);
-        $user = $request->user();
-        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-        abort_unless(
-            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
-            403
-        );
-
-        $conversation->status = 'closed';
-        $conversation->save();
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Chat berhasil diarsipkan.',
-        ]);
-    }
-
     public function storeInternalNote(
         Request $request,
         OmniConversation $conversation,
@@ -814,8 +795,7 @@ class OmnichannelInboxController extends Controller
                 'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
                 'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
                 'teams:id,name',
-            ])
-            ->where('status', '!=', 'closed');
+            ]);
 
         OmnichannelAuthorization::applyInboxVisibility($query, $user, $inbox, $canSeeAll);
 
@@ -884,15 +864,7 @@ class OmnichannelInboxController extends Controller
         $limit = min(max((int) ($request?->input('limit', self::MESSAGES_PAGE_SIZE)), 10), 80);
         $beforeId = $request?->integer('before_id') ?: null;
         $enrichMedia = ! filter_var($request?->input('no_enrich', false), FILTER_VALIDATE_BOOLEAN);
-        $viewerUserId = (int) ($request?->user()?->id ?? 0);
-
         $query = $conversation->messages()->with('author:id,nama_lengkap,email');
-        if ($viewerUserId > 0) {
-            $query->where(function ($q) use ($viewerUserId) {
-                $q->whereNull('deleted_for_user_ids')
-                    ->orWhereRaw('JSON_CONTAINS(deleted_for_user_ids, ?, "$") = 0', [json_encode($viewerUserId)]);
-            });
-        }
         if ($beforeId) {
             $query->where('id', '<', $beforeId);
         }
@@ -951,10 +923,6 @@ class OmnichannelInboxController extends Controller
             OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
             403
         );
-        if ($this->isMessageDeletedForUser($message, (int) $user->id)) {
-            abort(404);
-        }
-
         $media = app(OmnichannelInboxMediaService::class);
         $media->ensureCached($message, $conversation);
         $message->refresh();
@@ -971,52 +939,6 @@ class OmnichannelInboxController extends Controller
             'media_url' => $url,
             'message' => $this->formatMessage($message, $conversation),
         ]);
-    }
-
-    public function deleteMessageForMe(Request $request, OmniMessage $message): JsonResponse
-    {
-        $this->assertInboxAccess($request);
-        $user = $request->user();
-        $conversation = $message->conversation;
-        if (! $conversation) {
-            abort(404);
-        }
-        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
-        abort_unless(
-            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
-            403
-        );
-
-        $userId = (int) $user->id;
-        $deletedFor = collect($message->deleted_for_user_ids ?? [])
-            ->map(fn ($id) => (int) $id)
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
-        if (! in_array($userId, $deletedFor, true)) {
-            $deletedFor[] = $userId;
-            $message->deleted_for_user_ids = array_values(array_unique($deletedFor));
-            $message->save();
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Pesan dihapus dari tampilan Anda.',
-        ]);
-    }
-
-    private function isMessageDeletedForUser(OmniMessage $message, int $userId): bool
-    {
-        if ($userId <= 0) {
-            return false;
-        }
-        $deletedFor = collect($message->deleted_for_user_ids ?? [])
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
-        return in_array($userId, $deletedFor, true);
     }
 
     private function formatConversation(OmniConversation $conversation): array

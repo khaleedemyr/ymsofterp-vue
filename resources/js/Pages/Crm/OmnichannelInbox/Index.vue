@@ -251,15 +251,6 @@
             >
               {{ pausingAutomation ? '...' : 'Hentikan otomasi' }}
             </button>
-            <button
-              type="button"
-              class="shrink-0 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
-              :disabled="archivingConversation"
-              @click="archiveSelectedConversation"
-            >
-              <i class="fa-regular fa-trash-can mr-1" />
-              {{ archivingConversation ? 'Menghapus...' : 'Delete chat' }}
-            </button>
           </div>
 
           <div
@@ -481,22 +472,6 @@
                   >
                     <i class="fa-regular fa-copy mr-1" />Copy
                   </button>
-                  <button
-                    v-if="msg.direction === 'outbound'"
-                    type="button"
-                    class="rounded bg-white/70 px-2 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-white hover:text-slate-900"
-                    title="Ubah isi sebagai draft baru (pesan lama tidak bisa diedit)"
-                    @click="editMessageDraft(msg)"
-                  >
-                    <i class="fa-regular fa-pen-to-square mr-1" />Ubah Draft
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-600 hover:bg-red-100 hover:text-red-700"
-                    @click="deleteMessageForMe(msg)"
-                  >
-                    <i class="fa-regular fa-trash-can mr-1" />Delete
-                  </button>
                 </div>
               </div>
             </div>
@@ -522,28 +497,6 @@
               </button>
             </div>
             <form class="flex flex-col gap-2 p-3" @submit.prevent="submitComposer">
-              <div
-                v-if="editSourceMessage && composerMode === 'reply'"
-                class="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900"
-              >
-                <div class="mb-1 flex items-center justify-between gap-2">
-                  <p class="font-semibold">
-                    <i class="fa-regular fa-pen-to-square mr-1" />
-                    Ubah draft dari pesan sebelumnya (pesan lama tetap, ini kirim baru)
-                  </p>
-                  <button
-                    type="button"
-                    class="text-blue-700 hover:text-red-600"
-                    title="Batal edit draft"
-                    @click="clearEditSource"
-                  >
-                    <i class="fa-solid fa-xmark" />
-                  </button>
-                </div>
-                <p class="line-clamp-2 text-[11px] text-blue-800">
-                  {{ replySnippet(editSourceMessage) }}
-                </p>
-              </div>
               <div
                 v-if="replyToMessage && composerMode === 'reply'"
                 class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
@@ -1197,7 +1150,6 @@ const sendError = ref('')
 const messagesEl = ref(null)
 const composerEl = ref(null)
 const replyToMessage = ref(null)
-const editSourceMessage = ref(null)
 
 function resizeComposer() {
   nextTick(() => autoResizeTextarea(composerEl.value))
@@ -1243,7 +1195,6 @@ const canSubmitComposer = computed(() => {
 const imageInputRef = ref(null)
 const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
-const archivingConversation = ref(false)
 const aiMenuOpen = ref(false)
 const aiLoading = ref(false)
 const aiError = ref('')
@@ -1788,7 +1739,6 @@ function selectConversation(id) {
   pendingConversationId.value = id
   mobilePanel.value = 'chat'
   clearReplyTarget()
-  clearEditSource()
   selectedId.value = id
   localMessagesConversationId.value = null
   localMessages.value = []
@@ -1982,7 +1932,6 @@ watch(
       stickScrollBottom.value = true
       composerMode.value = 'reply'
       clearReplyTarget()
-      clearEditSource()
       templateMenuOpen.value = false
       emojiPickerOpen.value = false
       clearAttachments()
@@ -2004,7 +1953,6 @@ function setComposerMode(mode) {
   composerMode.value = mode
   if (mode !== 'reply') {
     clearReplyTarget()
-    clearEditSource()
   }
   templateMenuOpen.value = false
   mentionMenuOpen.value = false
@@ -2046,13 +1994,8 @@ function clearReplyTarget() {
   replyToMessage.value = null
 }
 
-function clearEditSource() {
-  editSourceMessage.value = null
-}
-
 function prepareReply(msg) {
   if (!msg || composerMode.value !== 'reply') return
-  clearEditSource()
   replyToMessage.value = {
     id: msg.id,
     direction: msg.direction,
@@ -2093,7 +2036,6 @@ function forwardMessage(msg) {
     setComposerMode('reply')
   }
   clearReplyTarget()
-  clearEditSource()
   clearPendingTemplateSend()
   clearAttachments()
   const snippet = replySnippet(msg)
@@ -2102,64 +2044,6 @@ function forwardMessage(msg) {
     composerEl.value?.focus()
     resizeComposer()
   })
-}
-
-function editMessageDraft(msg) {
-  if (!msg || msg.direction !== 'outbound') return
-  if (composerMode.value !== 'reply') {
-    setComposerMode('reply')
-  }
-  clearReplyTarget()
-  clearPendingTemplateSend()
-  clearAttachments()
-  editSourceMessage.value = {
-    id: msg.id,
-    direction: msg.direction,
-    author_name: msg.author_name || null,
-    message_type: msg.message_type || null,
-    media_filename: msg.media_filename || null,
-    body: msg.body || '',
-    sent_at: msg.sent_at || null,
-  }
-  replyText.value = displayMessageBody(msg) || ''
-  Swal.fire({
-    icon: 'info',
-    title: 'Mode Ubah Draft',
-    text: 'Pesan yang sudah terkirim tidak bisa di-edit via channel. Ini akan membuat draft baru untuk dikirim ulang.',
-    timer: 2200,
-    showConfirmButton: false,
-  })
-  nextTick(() => {
-    composerEl.value?.focus()
-    resizeComposer()
-  })
-}
-
-async function deleteMessageForMe(msg) {
-  if (!msg?.id || !selectedId.value) return
-  const result = await Swal.fire({
-    title: 'Delete pesan ini?',
-    text: 'Pesan hanya dihapus dari tampilan Anda.',
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonText: 'Ya, delete',
-    cancelButtonText: 'Batal',
-    confirmButtonColor: '#dc2626',
-  })
-  if (!result.isConfirmed) return
-
-  try {
-    await axios.delete(`/crm/omnichannel-inbox/messages/${msg.id}`)
-    localMessages.value = localMessages.value.filter((m) => m.id !== msg.id)
-    if (replyToMessage.value?.id === msg.id) {
-      clearReplyTarget()
-    }
-    if (editSourceMessage.value?.id === msg.id) {
-      clearEditSource()
-    }
-  } catch (e) {
-    Swal.fire('Error', e.response?.data?.message || 'Gagal delete pesan.', 'error')
-  }
 }
 
 function escapeHtml(str) {
@@ -2621,7 +2505,6 @@ async function submitComposer() {
       liveSelectedConversation.value = data.conversation
     }
     replyText.value = ''
-    clearEditSource()
     clearReplyTarget()
     clearAttachments()
     clearPendingTemplateSend()
@@ -2661,41 +2544,6 @@ async function pauseAutomation() {
     /* ignore */
   } finally {
     pausingAutomation.value = false
-  }
-}
-
-async function archiveSelectedConversation() {
-  if (!selectedId.value || archivingConversation.value) return
-  const result = await Swal.fire({
-    title: 'Delete chat ini?',
-    text: 'Chat akan diarsipkan dan hilang dari inbox aktif.',
-    icon: 'warning',
-    showCancelButton: true,
-    confirmButtonText: 'Ya, delete',
-    cancelButtonText: 'Batal',
-    confirmButtonColor: '#dc2626',
-  })
-  if (!result.isConfirmed) return
-
-  archivingConversation.value = true
-  try {
-    await axios.delete(`/crm/omnichannel-inbox/conversations/${selectedId.value}`)
-    clearReplyTarget()
-    clearEditSource()
-    replyText.value = ''
-    localMessages.value = []
-    selectedId.value = null
-    mobilePanel.value = 'list'
-
-    await router.reload({
-      only: inboxPartialReloadKeys,
-      preserveState: true,
-      preserveScroll: true,
-    })
-  } catch (e) {
-    Swal.fire('Error', e.response?.data?.message || 'Gagal menghapus chat.', 'error')
-  } finally {
-    archivingConversation.value = false
   }
 }
 
