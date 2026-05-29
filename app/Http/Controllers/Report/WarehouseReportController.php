@@ -536,60 +536,12 @@ class WarehouseReportController extends Controller
         $from = $request->from;
         $to = $request->to;
 
-        // Helper function to get GR data from outlet_food_good_receives (sama dengan rekap FJ)
-        $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
-            $query = DB::table('outlet_food_good_receives as gr')
-                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->where('o.nama_outlet', $customer)
-                ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to)
-                ->whereNull('gr.deleted_at'); // Filter GR yang belum dihapus
+        // GR Food + GR Serial (sama dengan rekap FJ utama)
+        $getGRData = function ($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+            $food = $this->rekapFjFetchFoodGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
+            $serial = $this->rekapFjFetchSerialGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
 
-            // Apply warehouse condition
-            if (is_array($warehouseCondition)) {
-                $query->whereIn('w.name', $warehouseCondition);
-            } else {
-                $query->where('w.name', $warehouseCondition);
-            }
-
-            // Apply sub-category condition if provided
-            if ($subCategoryCondition) {
-                if (is_array($subCategoryCondition)) {
-                    $query->whereIn('sc.name', $subCategoryCondition);
-                } else {
-                    $query->where('sc.name', $subCategoryCondition);
-                }
-            }
-
-            // Apply exclude sub-categories if provided
-            if ($excludeSubCategories) {
-                $query->whereNotIn('sc.name', $excludeSubCategories);
-            }
-
-            return $query->select(
-                    'it.name as item_name',
-                    'cat.name as category',
-                    'u.name as unit',
-                    DB::raw('SUM(i.received_qty) as received_qty'),
-                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
-                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
-                )
-                ->groupBy('it.name', 'cat.name', 'u.name')
-                ->orderBy('cat.name')
-                ->orderBy('it.name')
-                ->get();
+            return $this->rekapFjMergeFjDetailRows($food, $serial);
         };
 
         // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
@@ -679,70 +631,19 @@ class WarehouseReportController extends Controller
             $from = $request->from;
             $to = $request->to;
 
-        // Helper function to get GR data with grouping to avoid duplicates (sama dengan rekap FJ)
-        $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
-            $query = DB::table('outlet_food_good_receives as gr')
-                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->where('o.nama_outlet', $customer)
-                ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to)
-                ->whereNull('gr.deleted_at'); // Filter GR yang belum dihapus
+        $getGRData = function ($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+            $food = $this->rekapFjFetchFoodGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
+            $serial = $this->rekapFjFetchSerialGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
 
-            // Apply warehouse condition
-            if (is_array($warehouseCondition)) {
-                $query->whereIn('w.name', $warehouseCondition);
-            } else {
-                $query->where('w.name', $warehouseCondition);
-            }
-
-            // Apply sub-category condition if provided
-            if ($subCategoryCondition) {
-                if (is_array($subCategoryCondition)) {
-                    $query->whereIn('sc.name', $subCategoryCondition);
-                } else {
-                    $query->where('sc.name', $subCategoryCondition);
-                }
-            }
-
-            // Apply exclude sub-categories if provided
-            if ($excludeSubCategories) {
-                $query->whereNotIn('sc.name', $excludeSubCategories);
-            }
-
-            return $query->select(
-                    'it.name as item_name',
-                    'cat.name as category',
-                    'u.name as unit',
-                    DB::raw('SUM(i.received_qty) as received_qty'),
-                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
-                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
-                )
-                ->groupBy('it.name', 'cat.name', 'u.name')
-                ->orderBy('cat.name')
-                ->orderBy('it.name')
-                ->get();
+            return $this->rekapFjMergeFjDetailRows($food, $serial);
         };
 
-        // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
         $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
         $chemicalGR = $getGRData('MAIN STORE', 'Chemical');
         $stationaryGR = $getGRData('MAIN STORE', 'Stationary');
         $marketingGR = $getGRData('MAIN STORE', 'Marketing');
 
-        // Use only GR data (no GR Supplier to match main report)
         $mainKitchen = $mainKitchenGR;
         $mainStore = $mainStoreGR;
         $chemical = $chemicalGR;
@@ -827,63 +728,13 @@ class WarehouseReportController extends Controller
             $from = $request->from;
             $to = $request->to;
 
-        // Helper function to get GR data (same as fjDetail and fjDetailPdf)
-        $getGRData = function($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
-            $query = DB::table('outlet_food_good_receives as gr')
-                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->where('o.nama_outlet', $customer)
-                ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to)
-                ->whereNull('gr.deleted_at');
+        $getGRData = function ($warehouseCondition, $subCategoryCondition = null, $excludeSubCategories = null) use ($customer, $from, $to) {
+            $food = $this->rekapFjFetchFoodGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
+            $serial = $this->rekapFjFetchSerialGrDetailRows($customer, $from, $to, $warehouseCondition, $subCategoryCondition, $excludeSubCategories);
 
-            // Apply warehouse condition
-            if (is_array($warehouseCondition)) {
-                $query->whereIn('w.name', $warehouseCondition);
-            } else {
-                $query->where('w.name', $warehouseCondition);
-            }
-
-            // Apply sub-category condition if provided
-            if ($subCategoryCondition) {
-                if (is_array($subCategoryCondition)) {
-                    $query->whereIn('sc.name', $subCategoryCondition);
-                } else {
-                    $query->where('sc.name', $subCategoryCondition);
-                }
-            }
-
-            // Apply exclude sub-categories if provided
-            if ($excludeSubCategories) {
-                $query->whereNotIn('sc.name', $excludeSubCategories);
-            }
-
-            return $query->select(
-                    'it.name as item_name',
-                    'cat.name as category',
-                    'u.name as unit',
-                    DB::raw('SUM(i.received_qty) as received_qty'),
-                    DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
-                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
-                )
-                ->groupBy('it.name', 'cat.name', 'u.name')
-                ->orderBy('cat.name')
-                ->orderBy('it.name')
-                ->get();
+            return $this->rekapFjMergeFjDetailRows($food, $serial);
         };
 
-            // Get data from outlet_food_good_receives (only GR, no GR Supplier to match main report)
             $mainKitchenGR = $getGRData(['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
             $mainStoreGR = $getGRData('MAIN STORE', null, ['Chemical', 'Stationary', 'Marketing']);
             $chemicalGR = $getGRData('MAIN STORE', 'Chemical');

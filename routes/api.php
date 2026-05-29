@@ -266,6 +266,7 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/delivery-orders/{id}', [\App\Http\Controllers\DeliveryOrderController::class, 'destroy'])->whereNumber('id');
         Route::get('/packing-list/{id}/items', [\App\Http\Controllers\DeliveryOrderController::class, 'getPackingListItems']);
         Route::post('/delivery-order/validate-serial', [\App\Http\Controllers\DeliveryOrderController::class, 'validateSerial']);
+        Route::post('/delivery-order/resolve-scan', [\App\Http\Controllers\DeliveryOrderController::class, 'resolveScan']);
 
         // MK Production serial routes
         Route::post('/mk-production/{id}/generate-serials', [\App\Http\Controllers\MKProductionController::class, 'generateSerials']);

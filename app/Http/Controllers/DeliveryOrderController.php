@@ -207,30 +207,14 @@ class DeliveryOrderController extends Controller
                 'i.name as item_name',
                 'doi.qty_packing_list',
                 'doi.qty_scan',
+                'doi.qty_scan_barcode',
                 'doi.unit',
                 'doi.serial_numbers'
             )
             ->where('doi.delivery_order_id', $id)
             ->get();
 
-        // If serial mode, enrich items with serial detail from inventory_item_serials
-        if (($order->scan_mode ?? 'barcode') === 'serial') {
-            $items = $items->map(function ($item) use ($id) {
-                $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
-                $item->serial_list = [];
-                if (!empty($serialNumbers)) {
-                    $item->serial_list = DB::table('inventory_item_serials as s')
-                        ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
-                        ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
-                        ->whereIn('s.serial_number', $serialNumbers)
-                        ->where('s.item_id', $item->item_id)
-                        ->select('s.id', 's.serial_number', 's.out_at', 's.repack_unit_id', 's.repack_qty', 'ru.name as repack_unit_name', 'u.name as unit_name')
-                        ->get()
-                        ->toArray();
-                }
-                return $item;
-            });
-        }
+        $items = $this->enrichDeliveryOrderItemsWithSerialList($items);
 
         return Inertia::render('DeliveryOrder/Show', [
             'order' => $order,
@@ -300,7 +284,8 @@ class DeliveryOrderController extends Controller
             }
         }
         
-        $scanMode = $request->input('scan_mode', 'barcode');
+        $scannedSerials = $request->input('scanned_serials', []);
+        $scanMode = $this->resolveScanModeForStore($request, $scannedSerials);
         $outletId = $request->input('outlet_id');
         $warehouseOutletId = $request->input('warehouse_outlet_id');
         
@@ -331,9 +316,9 @@ class DeliveryOrderController extends Controller
             // OPTIMIZED: Batch process items instead of individual loops
             $this->processDeliveryOrderItemsBatch($doId, $request->items, $isROSupplierGR, $grId, $warehouseId);
             
-            // Process serial numbers if in serial mode
-            if ($scanMode === 'serial' && !empty($request->scanned_serials)) {
-                $this->processSerialScans($doId, $doNumber, $request->scanned_serials, $outletId, $warehouseOutletId);
+            // Process serial numbers when any serial was scanned (serial or mixed mode)
+            if (!empty($scannedSerials)) {
+                $this->processSerialScans($doId, $doNumber, $scannedSerials, $outletId, $warehouseOutletId);
             }
             
             // Update status RO menjadi delivered hanya jika semua packing list sudah dibuat DO
@@ -514,7 +499,7 @@ class DeliveryOrderController extends Controller
                 // Prepare delivery order item
                 $barcode = $this->processBarcode($item['barcode'] ?? null);
                 
-                $deliveryOrderItems[] = [
+                $row = [
                     'delivery_order_id' => $doId,
                     'item_id' => $realItemId,
                     'barcode' => $barcode,
@@ -524,6 +509,10 @@ class DeliveryOrderController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('delivery_order_items', 'qty_scan_barcode')) {
+                    $row['qty_scan_barcode'] = (float) ($item['qty_scan_barcode'] ?? 0);
+                }
+                $deliveryOrderItems[] = $row;
                 
                 // Prepare inventory update
                 $inventoryUpdates[] = [
@@ -1507,8 +1496,8 @@ class DeliveryOrderController extends Controller
                     ->where('reference_id', $id)
                     ->delete();
             }
-            // Rollback serial numbers if DO was in serial mode
-            if (($order->scan_mode ?? 'barcode') === 'serial') {
+            // Rollback serial numbers if DO had serial scans
+            if ($this->deliveryOrderUsesSerialTracking($order->scan_mode ?? 'barcode')) {
                 $this->rollbackSerialScans($id, $order->number ?? '');
             }
             
@@ -2411,6 +2400,77 @@ class DeliveryOrderController extends Controller
     }
 
     /**
+     * Resolve scanned code as serial or item barcode (DB lookup, for mixed DO).
+     */
+    public function resolveScan(Request $request)
+    {
+        $request->validate([
+            'code' => 'required|string|max:100',
+            'packing_list_id' => 'required',
+            'warehouse_id' => 'required|integer',
+            'item_ids' => 'required|array',
+        ]);
+
+        $code = trim($request->code);
+        $warehouseId = (int) $request->warehouse_id;
+        $itemIds = array_map('intval', $request->item_ids);
+
+        if ($code === '') {
+            return response()->json([
+                'type' => 'unknown',
+                'message' => 'Kode scan kosong.',
+            ], 200);
+        }
+
+        $serial = DB::table('inventory_item_serials')
+            ->where('serial_number', $code)
+            ->first();
+
+        if ($serial) {
+            $validation = $this->validateSerialForDeliveryOrder($code, $warehouseId, $itemIds);
+            if (!$validation['valid']) {
+                return response()->json([
+                    'type' => 'serial',
+                    'valid' => false,
+                    'message' => $validation['message'],
+                ], 200);
+            }
+
+            return response()->json([
+                'type' => 'serial',
+                'valid' => true,
+                'message' => $validation['message'],
+                'serial' => $validation['serial'],
+            ], 200);
+        }
+
+        $barcodeRow = DB::table('item_barcodes')
+            ->where('barcode', $code)
+            ->whereIn('item_id', $itemIds)
+            ->first();
+
+        if ($barcodeRow) {
+            $itemName = DB::table('items')->where('id', $barcodeRow->item_id)->value('name');
+
+            return response()->json([
+                'type' => 'barcode',
+                'valid' => true,
+                'message' => 'Barcode item ditemukan.',
+                'barcode' => [
+                    'code' => $code,
+                    'item_id' => (int) $barcodeRow->item_id,
+                    'item_name' => $itemName ?? '',
+                ],
+            ], 200);
+        }
+
+        return response()->json([
+            'type' => 'unknown',
+            'message' => 'Kode tidak dikenali. Pastikan barcode barang atau nomor seri sesuai packing list.',
+        ], 200);
+    }
+
+    /**
      * Validate a serial number for DO serial scan mode.
      * Checks: exists, not yet out, item matches packing list, warehouse matches.
      */
@@ -2425,8 +2485,18 @@ class DeliveryOrderController extends Controller
 
         $serialNumber = trim($request->serial_number);
         $warehouseId = (int) $request->warehouse_id;
-        $itemIds = $request->item_ids;
+        $itemIds = array_map('intval', $request->item_ids);
 
+        $validation = $this->validateSerialForDeliveryOrder($serialNumber, $warehouseId, $itemIds);
+
+        return response()->json($validation, 200);
+    }
+
+    /**
+     * Shared serial validation for DO scan (validate-serial & resolve-scan).
+     */
+    private function validateSerialForDeliveryOrder(string $serialNumber, int $warehouseId, array $itemIds): array
+    {
         $serial = DB::table('inventory_item_serials as s')
             ->leftJoin('items as i', 's.item_id', '=', 'i.id')
             ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
@@ -2450,38 +2520,38 @@ class DeliveryOrderController extends Controller
             ->first();
 
         if (!$serial) {
-            return response()->json([
+            return [
                 'valid' => false,
-                'message' => 'Nomor seri tidak ditemukan.'
-            ], 200);
+                'message' => 'Nomor seri tidak ditemukan.',
+            ];
         }
 
         if ($serial->is_out) {
-            return response()->json([
+            return [
                 'valid' => false,
-                'message' => 'Nomor seri sudah keluar (sudah digunakan di DO lain).'
-            ], 200);
+                'message' => 'Nomor seri sudah keluar (sudah digunakan di DO lain).',
+            ];
         }
 
         if ($serial->warehouse_id != $warehouseId) {
-            return response()->json([
+            return [
                 'valid' => false,
-                'message' => 'Nomor seri tidak sesuai warehouse yang dipilih.'
-            ], 200);
+                'message' => 'Nomor seri tidak sesuai warehouse yang dipilih.',
+            ];
         }
 
-        if (!in_array($serial->item_id, array_map('intval', $itemIds))) {
-            return response()->json([
+        if (!in_array((int) $serial->item_id, $itemIds, true)) {
+            return [
                 'valid' => false,
-                'message' => 'Nomor seri tidak sesuai dengan item di Packing List.'
-            ], 200);
+                'message' => 'Nomor seri tidak sesuai dengan item di Packing List.',
+            ];
         }
 
         $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
             ? (float) $serial->repack_qty
             : 1;
 
-        return response()->json([
+        return [
             'valid' => true,
             'message' => 'Nomor seri valid.',
             'serial' => [
@@ -2497,8 +2567,92 @@ class DeliveryOrderController extends Controller
                 'repack_qty' => $serial->repack_qty,
                 'repack_unit_name' => $serial->repack_unit_name,
                 'effective_qty' => $effectiveQty,
-            ]
-        ], 200);
+            ],
+        ];
+    }
+
+    private function deliveryOrderUsesSerialTracking(string $scanMode): bool
+    {
+        return in_array($scanMode, ['serial', 'mixed'], true);
+    }
+
+    private function resolveScanModeForStore(Request $request, array $scannedSerials): string
+    {
+        $requested = $request->input('scan_mode');
+        if (in_array($requested, ['barcode', 'serial', 'mixed'], true)) {
+            return $requested;
+        }
+
+        if (empty($scannedSerials)) {
+            return 'barcode';
+        }
+
+        $serialItemIds = collect($scannedSerials)
+            ->pluck('item_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique();
+
+        $packingLineIds = collect($request->input('items', []))->pluck('id')->filter()->map(fn ($id) => (int) $id);
+        $itemIdByLine = [];
+        if ($packingLineIds->isNotEmpty()) {
+            $isRo = is_string($request->packing_list_id) && str_starts_with($request->packing_list_id, 'gr_');
+            if ($isRo) {
+                $grId = (int) substr($request->packing_list_id, 3);
+                $itemIdByLine = DB::table('food_good_receive_items')
+                    ->whereIn('id', $packingLineIds)
+                    ->pluck('item_id', 'id')
+                    ->toArray();
+            } else {
+                $itemIdByLine = DB::table('food_packing_list_items as fpli')
+                    ->join('food_floor_order_items as ffoi', 'fpli.food_floor_order_item_id', '=', 'ffoi.id')
+                    ->whereIn('fpli.id', $packingLineIds)
+                    ->pluck('ffoi.item_id', 'fpli.id')
+                    ->toArray();
+            }
+        }
+
+        $hasBarcodeOnlyQty = collect($request->input('items', []))->contains(function ($row) use ($serialItemIds, $itemIdByLine) {
+            $lineId = (int) ($row['id'] ?? 0);
+            $itemId = (int) ($itemIdByLine[$lineId] ?? 0);
+            $barcodeQty = (float) ($row['qty_scan_barcode'] ?? 0);
+            if ($barcodeQty > 0) {
+                return true;
+            }
+            if ($itemId > 0 && $serialItemIds->contains($itemId)) {
+                return false;
+            }
+            return (float) ($row['qty_scan'] ?? 0) > 0;
+        });
+
+        return $hasBarcodeOnlyQty ? 'mixed' : 'serial';
+    }
+
+    private function enrichDeliveryOrderItemsWithSerialList($items)
+    {
+        return $items->map(function ($item) {
+            $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
+            $item->serial_list = [];
+            if (!empty($serialNumbers) && is_array($serialNumbers)) {
+                $item->serial_list = DB::table('inventory_item_serials as s')
+                    ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+                    ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+                    ->whereIn('s.serial_number', $serialNumbers)
+                    ->where('s.item_id', $item->item_id)
+                    ->select(
+                        's.id',
+                        's.serial_number',
+                        's.out_at',
+                        's.repack_unit_id',
+                        's.repack_qty',
+                        'ru.name as repack_unit_name',
+                        'u.name as unit_name'
+                    )
+                    ->get()
+                    ->toArray();
+            }
+
+            return $item;
+        });
     }
 
     /**
@@ -2664,24 +2818,7 @@ class DeliveryOrderController extends Controller
             ->where('doi.delivery_order_id', $id)
             ->get();
 
-        if (($order->scan_mode ?? 'barcode') === 'serial') {
-            $items = $items->map(function ($item) use ($id) {
-                $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
-                $item->serial_list = [];
-                if (!empty($serialNumbers)) {
-                    $item->serial_list = DB::table('inventory_item_serials as s')
-                        ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
-                        ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
-                        ->whereIn('s.serial_number', $serialNumbers)
-                        ->where('s.item_id', $item->item_id)
-                        ->select('s.id', 's.serial_number', 's.out_at', 's.repack_unit_id', 's.repack_qty', 'ru.name as repack_unit_name', 'u.name as unit_name')
-                        ->get()
-                        ->toArray();
-                }
-
-                return $item;
-            });
-        }
+        $items = $this->enrichDeliveryOrderItemsWithSerialList($items);
 
         return response()->json([
             'success' => true,

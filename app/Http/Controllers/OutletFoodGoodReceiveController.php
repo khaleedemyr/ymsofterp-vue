@@ -422,6 +422,11 @@ class OutletFoodGoodReceiveController extends Controller
             $costHistoryInserts = [];
             
             foreach ($validated['items'] as $item) {
+                // Item dengan nomor seri di DO diterima lewat GR Serial Outlet (hindari double stok)
+                if ($this->deliveryOrderItemSkipsFoodGr($validated['delivery_order_id'], (int) $item['item_id'])) {
+                    continue;
+                }
+
                 // Prepare GR item insert
                 $grItemsToInsert[] = [
                     'outlet_food_good_receive_id' => $grId,
@@ -1115,6 +1120,8 @@ class OutletFoodGoodReceiveController extends Controller
                 'i.name as item_name',
                 'doi.qty_packing_list',
                 'doi.qty_scan',
+                'doi.qty_scan_barcode',
+                'doi.serial_numbers',
                 'doi.unit',
                 DB::raw('GROUP_CONCAT(ib.barcode) as barcodes'),
                 'u.name as unit_name',
@@ -1122,11 +1129,22 @@ class OutletFoodGoodReceiveController extends Controller
                 'u.id as unit_id'
             )
             ->where('doi.delivery_order_id', $do_id)
-            ->groupBy('doi.id', 'doi.item_id', 'i.name', 'doi.qty_packing_list', 'doi.qty_scan', 'doi.unit', 'u.name', 'u.type', 'u.id')
+            ->groupBy('doi.id', 'doi.item_id', 'i.name', 'doi.qty_packing_list', 'doi.qty_scan', 'doi.qty_scan_barcode', 'doi.serial_numbers', 'doi.unit', 'u.name', 'u.type', 'u.id')
             ->get();
-        // Mapping barcodes ke array
-        $items = $items->map(function($item) {
+        // Mapping barcodes + target GR Food (qty barcode) vs GR Serial
+        $items = $items->map(function ($item) {
             $item->barcodes = $item->barcodes ? explode(',', $item->barcodes) : [];
+            $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
+            $hasSerial = is_array($serialNumbers) && count($serialNumbers) > 0;
+            $barcodeQty = (float) ($item->qty_scan_barcode ?? 0);
+            if ($hasSerial && $barcodeQty <= 0) {
+                $barcodeQty = max(0, (float) $item->qty_packing_list - (float) $item->qty_scan);
+            }
+            $item->qty_food_target = $barcodeQty;
+            $item->has_serial_portion = $hasSerial;
+            $item->receive_via_serial_only = $hasSerial && $barcodeQty <= 0.001;
+            $item->receive_via_serial = $item->receive_via_serial_only;
+            $item->qty_scan = $item->receive_via_serial_only ? (float) $item->qty_packing_list : 0;
             return $item;
         });
 
@@ -1466,4 +1484,32 @@ class OutletFoodGoodReceiveController extends Controller
 
         return true; // Semua DO sudah di-GR
     }
-} 
+
+    /**
+     * Lewati GR Food jika item DO hanya nomor seri (tanpa qty barcode).
+     */
+    private function deliveryOrderItemSkipsFoodGr(int $deliveryOrderId, int $itemId): bool
+    {
+        $row = DB::table('delivery_order_items')
+            ->where('delivery_order_id', $deliveryOrderId)
+            ->where('item_id', $itemId)
+            ->first(['serial_numbers', 'qty_scan_barcode', 'qty_scan']);
+
+        if (!$row) {
+            return false;
+        }
+
+        $barcodeQty = (float) ($row->qty_scan_barcode ?? 0);
+        if ($barcodeQty > 0) {
+            return false;
+        }
+
+        if (!$row->serial_numbers) {
+            return false;
+        }
+
+        $serialNumbers = json_decode($row->serial_numbers, true);
+
+        return is_array($serialNumbers) && count($serialNumbers) > 0;
+    }
+}

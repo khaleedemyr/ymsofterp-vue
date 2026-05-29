@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="w-full min-h-screen py-8 px-2 md:px-6 flex flex-col items-center">
       <h1 class="text-3xl font-bold mb-8 text-blue-800 flex items-center gap-3">
-        <i class="fa-solid fa-barcode text-blue-500"></i> Delivery Order (Scan Barang)
+        <i class="fa-solid fa-barcode text-blue-500"></i> Delivery Order (Scan Barang / Nomor Seri)
       </h1>
       <!-- Filter Warehouse Division -->
       <div class="mb-6 flex flex-col md:flex-row gap-4 items-center w-full max-w-xl">
@@ -79,6 +79,12 @@
             <tr v-for="item in packingListItems" :key="item.id" :class="statusClass(item)">
               <td class="px-4 py-2 text-base">
                 {{ item.name }}
+                <span v-if="itemHasSerials(item)" class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
+                  <i class="fa-solid fa-hashtag mr-0.5"></i> SN: {{ getSerialQtySum(item) }}
+                </span>
+                <span v-if="Number(item.qty_scan_barcode) > 0" class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                  <i class="fa-solid fa-barcode mr-0.5"></i> BC: {{ Number(item.qty_scan_barcode).toFixed(2) }}
+                </span>
                 <div class="text-xs text-gray-500 mt-1 space-y-1">
                   <div v-if="item.units && item.stock">
                     <div v-if="item.units.small_unit && item.stock.small !== undefined">
@@ -112,32 +118,21 @@
           </tbody>
         </table>
       </div>
-      <!-- Mode Toggle -->
-      <div v-if="packingListItems.length && !isLoadingItems" class="mb-6 w-full max-w-xl flex justify-center animate-fade-in">
-        <div class="inline-flex rounded-xl overflow-hidden shadow border border-blue-200">
-          <button @click="scanMode = 'barcode'" :class="scanMode === 'barcode' ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'" class="px-6 py-2 font-bold text-base transition-all">
-            <i class="fa-solid fa-barcode mr-1"></i> Mode Barcode
-          </button>
-          <button @click="scanMode = 'serial'" :class="scanMode === 'serial' ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-50'" class="px-6 py-2 font-bold text-base transition-all">
-            <i class="fa-solid fa-hashtag mr-1"></i> Mode Nomor Seri
-          </button>
-        </div>
-      </div>
+      <!-- Unified scan (auto-detect barcode vs nomor seri) -->
+      <div v-if="packingListItems.length && !isLoadingItems" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
+        <label class="font-semibold text-lg mb-2">Scan Barcode / Nomor Seri</label>
+        <p class="text-xs text-gray-500 mb-3 text-center">Sistem otomatis mengenali jenis sticker. Format qty opsional: <code class="bg-gray-100 px-1 rounded">KODE 2.5</code></p>
+        <input
+          ref="unifiedScanInput"
+          v-model="unifiedScanVal"
+          @keyup.enter="onUnifiedScan"
+          :disabled="resolvingScan"
+          class="border-2 border-indigo-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-indigo-500 shadow-lg"
+          placeholder="Scan di sini..."
+          autofocus
+        />
+        <div v-if="scanFeedback" :class="scanFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px] text-center">{{ scanFeedback }}</div>
 
-      <!-- Scan Barcode (barcode mode) -->
-      <div v-if="packingListItems.length && !isLoadingItems && scanMode === 'barcode'" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
-        <label class="font-semibold text-lg mb-2">Scan Barcode</label>
-        <input ref="barcodeInput" v-model="barcodeInputVal" @keyup.enter="onScanBarcode" class="border-2 border-blue-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-blue-500 shadow-lg" placeholder="Scan barcode di sini..." autofocus />
-        <div v-if="scanFeedback" :class="scanFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ scanFeedback }}</div>
-      </div>
-
-      <!-- Scan Serial (serial mode) -->
-      <div v-if="packingListItems.length && !isLoadingItems && scanMode === 'serial'" class="mb-8 w-full max-w-xl flex flex-col items-center animate-fade-in">
-        <label class="font-semibold text-lg mb-2 text-purple-700">Scan Nomor Seri</label>
-        <input ref="serialInput" v-model="serialInputVal" @keyup.enter="onScanSerial" class="border-2 border-purple-400 rounded-lg px-4 py-3 w-full text-xl text-center focus:ring-2 focus:ring-purple-500 shadow-lg" placeholder="Scan nomor seri di sini..." autofocus />
-        <div v-if="serialFeedback" :class="serialFeedbackClass" class="mt-4 font-bold text-xl min-h-[32px]">{{ serialFeedback }}</div>
-
-        <!-- Scanned serials list per item -->
         <div v-if="hasScannedSerials" class="mt-6 w-full">
           <div class="text-sm font-bold text-purple-800 mb-2">Nomor Seri yang sudah di-scan:</div>
           <div v-for="item in packingListItems" :key="'serial-' + item.id">
@@ -229,9 +224,11 @@ const selectedPackingListId = ref('');
 const selectedWarehouseDivision = ref('');
 const isLoadingItems = ref(false);
 const barcodeInputVal = ref('');
+const unifiedScanVal = ref('');
+const resolvingScan = ref(false);
 const scanFeedback = ref('');
 const scanFeedbackClass = ref('');
-const barcodeInput = ref(null);
+const unifiedScanInput = ref(null);
 const showConfirmModal = ref(false);
 const showQtyModal = ref(false);
 const qtyModalValue = ref(0.01);
@@ -249,16 +246,51 @@ const doNumber = ref('');
 const error = ref("");
 const isLoading = ref(false);
 
-// Serial mode state
-const scanMode = ref('barcode');
-const serialInputVal = ref('');
-const serialFeedback = ref('');
-const serialFeedbackClass = ref('');
-const serialInput = ref(null);
-const scannedSerials = reactive({});  // { item_id: [serial_number, ...] }
+const scannedSerials = reactive({});  // { item_id: [{ serial_number, effective_qty, ... }] }
 
-const isReadyToSubmit = computed(() => packingListItems.length > 0 && packingListItems.some(i => i.qty_scan > 0));
 const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr => arr && arr.length > 0));
+
+function getSerialQtySum(item) {
+  const itemId = item.item_id || item.id;
+  const serials = scannedSerials[itemId] || [];
+  return serials.reduce((sum, s) => sum + (Number(s.effective_qty) || 1), 0);
+}
+
+function syncItemQtyScan(item) {
+  item.qty_scan_barcode = Number(item.qty_scan_barcode) || 0;
+  item.qty_scan = item.qty_scan_barcode + getSerialQtySum(item);
+}
+
+function itemHasSerials(item) {
+  return getSerialQtySum(item) > 0;
+}
+
+function getMaxBarcodeQty(item) {
+  const target = Number(item.qty) || 0;
+  return Math.max(0, target - getSerialQtySum(item));
+}
+
+function isItemComplete(item) {
+  const target = Number(item.qty) || 0;
+  const total = Number(item.qty_scan) || 0;
+  if (total <= 0) return false;
+  if (Math.abs(total - target) < 0.001) return true;
+  if (total < target) return !!item.reason;
+  return false;
+}
+
+const isReadyToSubmit = computed(() => {
+  if (!packingListItems.length) return false;
+  return packingListItems.every(isItemComplete);
+});
+
+function computeScanMode() {
+  const hasSerial = hasScannedSerials.value;
+  const hasBarcodeQty = packingListItems.some((item) => Number(item.qty_scan_barcode) > 0);
+  if (hasSerial && hasBarcodeQty) return 'mixed';
+  if (hasSerial) return 'serial';
+  return 'barcode';
+}
 const isROSupplierGR = computed(() => {
   const value = selectedPackingListId.value;
   return value && typeof value === 'string' && value.startsWith('gr_');
@@ -294,6 +326,7 @@ function onWarehouseDivisionChange() {
   // Reset selected packing list
   selectedPackingListId.value = '';
   packingListItems.splice(0, packingListItems.length);
+  Object.keys(scannedSerials).forEach((k) => delete scannedSerials[k]);
   
   console.log('=== onWarehouseDivisionChange END ===');
 }
@@ -310,7 +343,8 @@ async function onPackingListChange() {
   
   // Set loading state
   isLoadingItems.value = true;
-  packingListItems.splice(0, packingListItems.length); // Clear items
+  packingListItems.splice(0, packingListItems.length);
+  Object.keys(scannedSerials).forEach((k) => delete scannedSerials[k]);
   
   console.log('Calling API for:', value);
   
@@ -321,7 +355,8 @@ async function onPackingListChange() {
     
     packingListItems.splice(0, packingListItems.length, ...res.data.items.map(item => ({
       ...item,
-      qty_scan: 0
+      qty_scan: 0,
+      qty_scan_barcode: 0,
     })));
     
     console.log('Packing list items after update:', packingListItems);
@@ -332,28 +367,122 @@ async function onPackingListChange() {
     isLoadingItems.value = false;
   }
   
+  unifiedScanVal.value = '';
   barcodeInputVal.value = '';
   scanFeedback.value = '';
-  nextTick(() => barcodeInput.value?.focus());
+  nextTick(() => unifiedScanInput.value?.focus());
   console.log('=== onPackingListChange END ===');
 }
 
-function onScanBarcode() {
-  const input = barcodeInputVal.value.trim();
-  if (!input) return;
-  let code = input;
-  let qty = null; // Tidak ada default qty, harus scan dengan qty atau input manual
-  // Ubah parsing qty agar bisa menerima pecahan
-  const match = input.match(/^([\S]+)\s+(\d+(?:\.\d+)?)$/);
+function applySerialScan(serialNumber, serial) {
+  const matchedItem = packingListItems.find((i) => (i.item_id || i.id) == serial.item_id);
+  if (!matchedItem) {
+    scanFeedback.value = '❌ Item tidak ditemukan di Packing List!';
+    scanFeedbackClass.value = 'text-red-600';
+    return;
+  }
+  const effectiveQty = Number(serial.effective_qty) || 1;
+  const remainingSerial = Number(matchedItem.qty) - (Number(matchedItem.qty_scan_barcode) || 0) - getSerialQtySum(matchedItem);
+  if (effectiveQty > remainingSerial + 0.001) {
+    scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit})`;
+    scanFeedbackClass.value = 'text-red-600';
+    return;
+  }
+  if (!scannedSerials[serial.item_id]) {
+    scannedSerials[serial.item_id] = [];
+  }
+  scannedSerials[serial.item_id].push({
+    serial_number: serialNumber,
+    effective_qty: effectiveQty,
+    repack_unit_name: serial.repack_unit_name || null,
+    repack_qty: serial.repack_qty || null,
+    unit_name: serial.unit_name || null,
+  });
+  syncItemQtyScan(matchedItem);
+  const convLabel = serial.repack_unit_name
+    ? ` (1 ${serial.repack_unit_name} = ${parseFloat(Number(serial.repack_qty).toFixed(4))} ${serial.unit_name})`
+    : '';
+  scanFeedback.value = `✅ [Seri] ${serial.item_name} - ${serialNumber}${convLabel} (+${effectiveQty})`;
+  scanFeedbackClass.value = 'text-green-600';
+}
+
+async function onUnifiedScan() {
+  const raw = unifiedScanVal.value.trim();
+  if (!raw || resolvingScan.value) return;
+
+  let code = raw;
+  let presetQty = null;
+  const match = raw.match(/^([\S]+)\s+(\d+(?:\.\d+)?)$/);
   if (match) {
     code = match[1];
-    qty = parseFloat(match[2]);
+    presetQty = parseFloat(match[2]);
+  }
+
+  for (const [, serials] of Object.entries(scannedSerials)) {
+    if (serials.some((s) => s.serial_number === code)) {
+      scanFeedback.value = '❌ Nomor seri sudah di-scan sebelumnya!';
+      scanFeedbackClass.value = 'text-red-600';
+      unifiedScanVal.value = '';
+      nextTick(() => unifiedScanInput.value?.focus());
+      return;
+    }
+  }
+
+  const pl = selectedPackingList.value;
+  const warehouseId = pl?.warehouse_id || 1;
+  const itemIds = packingListItems.map((i) => i.item_id || i.id);
+
+  resolvingScan.value = true;
+  scanFeedback.value = '';
+  try {
+    const res = await axios.post('/api/delivery-order/resolve-scan', {
+      code,
+      packing_list_id: selectedPackingListId.value,
+      warehouse_id: warehouseId,
+      item_ids: itemIds,
+    });
+
+    if (res.data.type === 'serial') {
+      if (!res.data.valid) {
+        scanFeedback.value = `❌ ${res.data.message}`;
+        scanFeedbackClass.value = 'text-red-600';
+      } else {
+        applySerialScan(code, res.data.serial);
+      }
+    } else if (res.data.type === 'barcode') {
+      barcodeInputVal.value = code;
+      onScanBarcode(code, presetQty);
+    } else {
+      scanFeedback.value = `❌ ${res.data.message || 'Kode tidak dikenali.'}`;
+      scanFeedbackClass.value = 'text-red-600';
+    }
+  } catch (_e) {
+    scanFeedback.value = '❌ Gagal memproses scan (server error).';
+    scanFeedbackClass.value = 'text-red-600';
+  } finally {
+    resolvingScan.value = false;
+    unifiedScanVal.value = '';
+    nextTick(() => unifiedScanInput.value?.focus());
+  }
+}
+
+function onScanBarcode(overrideCode = null, overrideQty = undefined) {
+  const input = (overrideCode ?? barcodeInputVal.value).trim();
+  if (!input) return;
+  let code = input;
+  let qty = overrideQty !== undefined ? overrideQty : null;
+  if (overrideQty === undefined) {
+    const match = input.match(/^([\S]+)\s+(\d+(?:\.\d+)?)$/);
+    if (match) {
+      code = match[1];
+      qty = parseFloat(match[2]);
+    }
   }
   // Cari item yang barcodes-nya mengandung code
   const item = packingListItems.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
   if (item) {
-    const maxQty = Number(item.qty);
-    const currentScan = Number(item.qty_scan || 0);
+    const maxBarcode = getMaxBarcodeQty(item);
+    const currentBarcode = Number(item.qty_scan_barcode || 0);
     
     // Cari stock yang sesuai dengan unit item dengan unit conversion yang proper
     let stock = 0;
@@ -418,33 +547,32 @@ function onScanBarcode() {
     console.log('=== FINAL STOCK VALIDATION ===');
     console.log('Available stock:', stock, stockUnit);
     console.log('Requested qty:', qty);
-    console.log('Current scan:', currentScan);
-    console.log('Total needed:', currentScan + qty);
-    console.log('Stock >= needed?', stock >= (currentScan + qty));
+    console.log('Current barcode:', currentBarcode);
+    console.log('Total needed:', currentBarcode + qty);
+    console.log('Stock >= needed?', stock >= (currentBarcode + qty));
     
     // Validasi stock tersedia
     if (stock <= 0) {
       scanFeedback.value = `❌ Stok tidak tersedia (${stock} ${stockUnit})`;
       scanFeedbackClass.value = 'text-red-600';
       barcodeInputVal.value = '';
-      nextTick(() => barcodeInput.value?.focus());
+      nextTick(() => unifiedScanInput.value?.focus());
       return;
     }
     
     // Validasi qty scan tidak melebihi stock yang tersedia
-    if (currentScan + qty > stock) {
+    if (currentBarcode + qty > stock) {
       scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${stockUnit})`;
       scanFeedbackClass.value = 'text-red-600';
       barcodeInputVal.value = '';
-      nextTick(() => barcodeInput.value?.focus());
+      nextTick(() => unifiedScanInput.value?.focus());
       return;
     }
     
     // Selalu tampilkan modal input qty jika scan tanpa qty (qty === null, artinya user tidak input qty di barcode)
     if (qty === null) {
       qtyModalItem.value = item;
-      // Default value sesuai sisa qty yang belum di-scan
-      const remainingQty = maxQty - currentScan;
+      const remainingQty = maxBarcode - currentBarcode;
       qtyModalValue.value = Math.max(0.01, remainingQty);
       showQtyModal.value = true;
       barcodeInputVal.value = '';
@@ -457,29 +585,28 @@ function onScanBarcode() {
     
     // Jika qty sudah diinput di barcode, langsung proses
     if (qty !== null) {
-      // Validasi qty scan tidak melebihi qty packing list
-      if (currentScan + qty > maxQty) {
-        scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxQty - currentScan})`;
+      if (currentBarcode + qty > maxBarcode) {
+        scanFeedback.value = `❌ Qty barcode melebihi sisa (max barcode: ${maxBarcode}, sisa: ${(maxBarcode - currentBarcode).toFixed(2)})`;
         scanFeedbackClass.value = 'text-red-600';
         barcodeInputVal.value = '';
-        nextTick(() => barcodeInput.value?.focus());
+        nextTick(() => unifiedScanInput.value?.focus());
         return;
       }
       
-      // Validasi qty scan tidak melebihi stock yang tersedia
-      if (currentScan + qty > stock) {
+      if (currentBarcode + qty > stock) {
         scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (${stock} ${stockUnit})`;
         scanFeedbackClass.value = 'text-red-600';
         barcodeInputVal.value = '';
-        nextTick(() => barcodeInput.value?.focus());
+        nextTick(() => unifiedScanInput.value?.focus());
         return;
       }
       
-      item.qty_scan = currentScan + qty;
-      scanFeedback.value = `✅ Berhasil scan ${qty} ${item.unit}`;
+      item.qty_scan_barcode = currentBarcode + qty;
+      syncItemQtyScan(item);
+      scanFeedback.value = `✅ [Barcode] +${qty} ${item.unit} (BC: ${item.qty_scan_barcode}/${maxBarcode})`;
       scanFeedbackClass.value = 'text-green-600';
       barcodeInputVal.value = '';
-      nextTick(() => barcodeInput.value?.focus());
+      if (!overrideCode) nextTick(() => unifiedScanInput.value?.focus());
       return;
     }
   } else {
@@ -487,91 +614,21 @@ function onScanBarcode() {
     scanFeedbackClass.value = 'text-red-600';
   }
   barcodeInputVal.value = '';
-  nextTick(() => barcodeInput.value?.focus());
-}
-
-async function onScanSerial() {
-  const input = serialInputVal.value.trim();
-  if (!input) return;
-
-  serialFeedback.value = '';
-  serialFeedbackClass.value = '';
-
-  for (const [itemId, serials] of Object.entries(scannedSerials)) {
-    if (serials.some(s => s.serial_number === input)) {
-      serialFeedback.value = '❌ Nomor seri sudah di-scan sebelumnya!';
-      serialFeedbackClass.value = 'text-red-600';
-      serialInputVal.value = '';
-      nextTick(() => serialInput.value?.focus());
-      return;
-    }
-  }
-
-  // Get warehouse_id from selected packing list
-  const pl = selectedPackingList.value;
-  const warehouseId = pl?.warehouse_id || 1;
-  const itemIds = packingListItems.map(i => i.item_id || i.id);
-
-  try {
-    const res = await axios.post('/api/delivery-order/validate-serial', {
-      serial_number: input,
-      packing_list_id: selectedPackingListId.value,
-      warehouse_id: warehouseId,
-      item_ids: itemIds,
-    });
-
-    if (res.data.valid) {
-      const serial = res.data.serial;
-      const matchedItem = packingListItems.find(i => (i.item_id || i.id) == serial.item_id);
-      if (!matchedItem) {
-        serialFeedback.value = '❌ Item tidak ditemukan di Packing List!';
-        serialFeedbackClass.value = 'text-red-600';
-      } else {
-        const effectiveQty = Number(serial.effective_qty) || 1;
-        if (!scannedSerials[serial.item_id]) {
-          scannedSerials[serial.item_id] = [];
-        }
-        scannedSerials[serial.item_id].push({
-          serial_number: input,
-          effective_qty: effectiveQty,
-          repack_unit_name: serial.repack_unit_name || null,
-          repack_qty: serial.repack_qty || null,
-          unit_name: serial.unit_name || null,
-        });
-        matchedItem.qty_scan = (Number(matchedItem.qty_scan) || 0) + effectiveQty;
-        const convLabel = serial.repack_unit_name
-          ? ` (1 ${serial.repack_unit_name} = ${parseFloat(Number(serial.repack_qty).toFixed(4))} ${serial.unit_name})`
-          : '';
-        serialFeedback.value = `✅ ${serial.item_name} - ${input}${convLabel} (+${effectiveQty})`;
-        serialFeedbackClass.value = 'text-green-600';
-      }
-    } else {
-      serialFeedback.value = `❌ ${res.data.message}`;
-      serialFeedbackClass.value = 'text-red-600';
-    }
-  } catch (e) {
-    serialFeedback.value = '❌ Gagal validasi nomor seri (server error).';
-    serialFeedbackClass.value = 'text-red-600';
-  }
-
-  serialInputVal.value = '';
-  nextTick(() => serialInput.value?.focus());
+  if (!overrideCode) nextTick(() => unifiedScanInput.value?.focus());
 }
 
 function removeSerial(item, idx) {
   const itemId = item.item_id || item.id;
   if (scannedSerials[itemId] && scannedSerials[itemId].length > idx) {
-    const removed = scannedSerials[itemId][idx];
-    const effectiveQty = Number(removed?.effective_qty) || 1;
     scannedSerials[itemId].splice(idx, 1);
-    item.qty_scan = Math.max(0, (Number(item.qty_scan) || 0) - effectiveQty);
+    syncItemQtyScan(item);
   }
 }
 
 function confirmQtyModal() {
   const item = qtyModalItem.value;
-  const maxQty = Number(item.qty);
-  const currentScan = Number(item.qty_scan || 0);
+  const maxBarcode = getMaxBarcodeQty(item);
+  const currentBarcode = Number(item.qty_scan_barcode || 0);
   const inputQty = Number(qtyModalValue.value);
   
   // Cari stock yang sesuai dengan unit item dengan unit conversion yang proper
@@ -637,9 +694,9 @@ function confirmQtyModal() {
   console.log('=== QTY MODAL FINAL VALIDATION ===');
   console.log('Available stock:', stock, stockUnit);
   console.log('Input qty:', inputQty);
-  console.log('Current scan:', currentScan);
-  console.log('Total needed:', currentScan + inputQty);
-  console.log('Stock >= needed?', stock >= (currentScan + inputQty));
+  console.log('Current barcode:', currentBarcode);
+  console.log('Total needed:', currentBarcode + inputQty);
+  console.log('Stock >= needed?', stock >= (currentBarcode + inputQty));
   
   // Validasi stock tersedia
   if (stock <= 0) {
@@ -650,8 +707,8 @@ function confirmQtyModal() {
   }
   
   // Validasi qty scan tidak melebihi stock yang tersedia
-  if (currentScan + inputQty > stock) {
-    const maxAllowed = stock - currentScan;
+  if (currentBarcode + inputQty > stock) {
+    const maxAllowed = stock - currentBarcode;
     qtyModalValue.value = Math.max(0.01, maxAllowed);
     scanFeedback.value = `❌ Qty scan tidak boleh melebihi stock (sisa: ${maxAllowed} ${stockUnit})`;
     scanFeedbackClass.value = 'text-red-600';
@@ -659,30 +716,28 @@ function confirmQtyModal() {
     return;
   }
   
-  // Validasi qty scan tidak melebihi qty packing list
-  if (currentScan + inputQty > maxQty) {
-    const maxAllowed = maxQty - currentScan;
+  if (currentBarcode + inputQty > maxBarcode) {
+    const maxAllowed = maxBarcode - currentBarcode;
     qtyModalValue.value = Math.max(0.01, maxAllowed);
-    scanFeedback.value = `❌ Qty scan tidak boleh lebih dari ${maxQty} (sisa: ${maxAllowed})`;
+    scanFeedback.value = `❌ Qty barcode melebihi sisa (max: ${maxBarcode}, sisa: ${maxAllowed.toFixed(2)})`;
     scanFeedbackClass.value = 'text-red-600';
     nextTick(() => document.getElementById('qty-modal-input')?.focus());
     return;
   }
-  // Hapus pembatasan inputQty < 1, biarkan user input < 1
-  if (inputQty < maxQty) {
-    // Tampilkan modal alasan
+  const targetTotal = Number(item.qty);
+  if (inputQty + getSerialQtySum(item) < targetTotal) {
     showQtyModal.value = false;
     showReasonModal.value = true;
     selectedReason.value = '';
     return;
   }
-  // Jika qty sama, langsung set
-  item.qty_scan = inputQty;
+  item.qty_scan_barcode = currentBarcode + inputQty;
   item.reason = '';
+  syncItemQtyScan(item);
   showQtyModal.value = false;
-  scanFeedback.value = `✔️ ${item.name} (${item.qty_scan}/${item.qty})`;
+  scanFeedback.value = `✔️ ${item.name} (BC: ${item.qty_scan_barcode}, SN: ${getSerialQtySum(item)}, total: ${item.qty_scan}/${item.qty})`;
   scanFeedbackClass.value = 'text-green-700';
-  nextTick(() => barcodeInput.value?.focus());
+  nextTick(() => unifiedScanInput.value?.focus());
 }
 
 function handleQtyModalKey(e) {
@@ -691,12 +746,14 @@ function handleQtyModalKey(e) {
 
 function selectReason(reason) {
   const item = qtyModalItem.value;
-  item.qty_scan = Number(qtyModalValue.value);
+  const addQty = Number(qtyModalValue.value);
+  item.qty_scan_barcode = (Number(item.qty_scan_barcode) || 0) + addQty;
   item.reason = reason;
+  syncItemQtyScan(item);
   showReasonModal.value = false;
-  scanFeedback.value = `✔️ ${item.name} (${item.qty_scan}/${item.qty}) - ${reason}`;
+  scanFeedback.value = `✔️ ${item.name} (total: ${item.qty_scan}/${item.qty}) - ${reason}`;
   scanFeedbackClass.value = 'text-yellow-700';
-  nextTick(() => barcodeInput.value?.focus());
+  nextTick(() => unifiedScanInput.value?.focus());
 }
 
 function statusClass(item) {
@@ -791,17 +848,14 @@ async function submitDO() {
     const random = Math.random().toString(36).substring(2,6).toUpperCase();
     doNumber.value = `DO${date}${random}`;
     // Build scanned_serials payload for serial mode
-    const scannedSerialsPayload = scanMode.value === 'serial'
-      ? Object.entries(scannedSerials)
-          .filter(([, serials]) => serials && serials.length > 0)
-          .map(([itemId, serials]) => ({ item_id: parseInt(itemId), serial_numbers: serials.map(s => s.serial_number) }))
-      : [];
+    const scannedSerialsPayload = Object.entries(scannedSerials)
+      .filter(([, serials]) => serials && serials.length > 0)
+      .map(([itemId, serials]) => ({ item_id: parseInt(itemId), serial_numbers: serials.map((s) => s.serial_number) }));
 
-    // Buat DO baru
     const pl = selectedPackingList.value;
     const doRes = await axios.post('/delivery-order', {
       packing_list_id: selectedPackingListId.value,
-      scan_mode: scanMode.value,
+      scan_mode: computeScanMode(),
       outlet_id: pl?.outlet_id || null,
       warehouse_outlet_id: pl?.warehouse_outlet_id || null,
       scanned_serials: scannedSerialsPayload,
@@ -810,6 +864,7 @@ async function submitDO() {
         barcode: Array.isArray(item.barcode) && item.barcode.length > 0 ? item.barcode : (item.barcode ? [item.barcode] : []),
         qty: item.qty,
         qty_scan: item.qty_scan,
+        qty_scan_barcode: Number(item.qty_scan_barcode) || 0,
         unit: item.unit
       }))
     });

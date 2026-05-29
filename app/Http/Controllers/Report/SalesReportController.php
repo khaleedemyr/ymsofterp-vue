@@ -1054,91 +1054,18 @@ class SalesReportController extends Controller
      */
     public function reportSalesPivotSpecial(Request $request)
     {
-        // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
-        // FIX: Ubah JOIN delivery_orders menjadi LEFT JOIN karena ada delivery_order yang sudah dihapus
-        $query = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-            })
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->select(
-                'o.nama_outlet as customer',
-                'o.is_outlet',
-                'it.id as item_id',
-                'it.name as item_name',
-                'sc.name as sub_category',
-                'w.name as warehouse',
-                DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
-            );
+        $from = $request->filled('from') ? $request->from : null;
+        $to = $request->filled('to') ? $request->to : null;
 
-        if ($request->filled('from')) {
-            $query->whereDate('gr.receive_date', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $query->whereDate('gr.receive_date', '<=', $request->to);
-        }
-        
-        // Filter GR yang belum dihapus
-        $query->whereNull('gr.deleted_at');
-        
-        // Filter only items with valid warehouse (to ensure proper categorization)
-        $query->whereNotNull('w.name');
+        // GR Food (floor order price) — logic tidak diubah
+        $report1Items = $this->rekapFjFetchFoodGrPivotItemRows($from, $to);
+        // Tambahan: GR Nomor Seri (cost_small) — hanya jika tabel ada, tidak mengganggu stream Food
+        $report1Items = $report1Items->concat($this->rekapFjFetchSerialGrPivotItemRows($from, $to));
 
-        // Group by item first (like detail) to avoid double counting
-        $report1Items = $query->groupBy('o.nama_outlet', 'o.is_outlet', 'it.id', 'it.name', 'sc.name', 'w.name')
-            ->get();
-
-        // Now aggregate by outlet (same logic as detail)
-        $report1 = [];
-        foreach ($report1Items as $item) {
-            $key = $item->customer;
-            if (!isset($report1[$key])) {
-                $report1[$key] = (object)[
-                    'customer' => $item->customer,
-                    'is_outlet' => $item->is_outlet,
-                    'main_kitchen' => 0,
-                    'main_store' => 0,
-                    'chemical' => 0,
-                    'stationary' => 0,
-                    'marketing' => 0,
-                    'line_total' => 0
-                ];
-            }
-            
-            $subtotal = $item->item_subtotal;
-            $warehouse = $item->warehouse ? trim($item->warehouse) : null;
-            $subCategory = $item->sub_category ? trim($item->sub_category) : null;
-            
-            // Categorize by warehouse and sub-category (same logic as detail)
-            if ($warehouse && in_array($warehouse, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'])) {
-                $report1[$key]->main_kitchen += $subtotal;
-            } elseif ($warehouse && strtoupper($warehouse) === 'MAIN STORE') {
-                if ($subCategory && strtoupper($subCategory) === 'CHEMICAL') {
-                    $report1[$key]->chemical += $subtotal;
-                } elseif ($subCategory && strtoupper($subCategory) === 'STATIONARY') {
-                    $report1[$key]->stationary += $subtotal;
-                } elseif ($subCategory && strtoupper($subCategory) === 'MARKETING') {
-                    $report1[$key]->marketing += $subtotal;
-                } else {
-                    $report1[$key]->main_store += $subtotal;
-                }
-            } else {
-                // If warehouse is null or doesn't match, still add to line_total but don't categorize
-                // This shouldn't happen normally, but handle it gracefully
-            }
-            
-            $report1[$key]->line_total += $subtotal;
-        }
-        
-        $report1 = collect(array_values($report1))->sortByDesc('is_outlet')->sortBy('customer')->values();
+        $report1 = collect(array_values($this->rekapFjAggregatePivotItemRowsByOutlet($report1Items)))
+            ->sortByDesc('is_outlet')
+            ->sortBy('customer')
+            ->values();
 
         // Convert report1 to outletData format (only GR, no GR Supplier to match detail calculation)
         $outletData = [];
@@ -1308,92 +1235,14 @@ class SalesReportController extends Controller
                 return response()->json(['error' => 'Rentang tanggal harus diisi'], 400);
             }
             
-            // Use EXACTLY the same logic as reportSalesPivotSpecial method
-            // Use same logic as detail: group by item first, then sum by outlet (to avoid double counting)
-            // FIX: Ubah JOIN delivery_orders menjadi LEFT JOIN karena ada delivery_order yang sudah dihapus
-            $query = DB::table('outlet_food_good_receives as gr')
-                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->select(
-                    'o.nama_outlet as customer',
-                    'o.is_outlet',
-                    'it.id as item_id',
-                    'it.name as item_name',
-                    'sc.name as sub_category',
-                    'w.name as warehouse',
-                    DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
-                );
+            // Sama dengan reportSalesPivotSpecial (Food + Serial)
+            $report1Items = $this->rekapFjFetchFoodGrPivotItemRows($from, $to);
+            $report1Items = $report1Items->concat($this->rekapFjFetchSerialGrPivotItemRows($from, $to));
 
-            if ($request->filled('from')) {
-                $query->whereDate('gr.receive_date', '>=', $request->from);
-            }
-            if ($request->filled('to')) {
-                $query->whereDate('gr.receive_date', '<=', $request->to);
-            }
-            
-            // Filter GR yang belum dihapus
-            $query->whereNull('gr.deleted_at');
-            
-            // Filter only items with valid warehouse (to ensure proper categorization)
-            $query->whereNotNull('w.name');
-
-            // Group by item first (like detail) to avoid double counting
-            $report1Items = $query->groupBy('o.nama_outlet', 'o.is_outlet', 'it.id', 'it.name', 'sc.name', 'w.name')
-                ->get();
-
-            // Now aggregate by outlet (same logic as detail)
-            $report1 = [];
-            foreach ($report1Items as $item) {
-                $key = $item->customer;
-                if (!isset($report1[$key])) {
-                    $report1[$key] = (object)[
-                        'customer' => $item->customer,
-                        'is_outlet' => $item->is_outlet,
-                        'main_kitchen' => 0,
-                        'main_store' => 0,
-                        'chemical' => 0,
-                        'stationary' => 0,
-                        'marketing' => 0,
-                        'line_total' => 0
-                    ];
-                }
-                
-                $subtotal = $item->item_subtotal;
-                $warehouse = $item->warehouse ? trim($item->warehouse) : null;
-                $subCategory = $item->sub_category ? trim($item->sub_category) : null;
-                
-                // Categorize by warehouse and sub-category (same logic as detail)
-                if ($warehouse && in_array($warehouse, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'])) {
-                    $report1[$key]->main_kitchen += $subtotal;
-                } elseif ($warehouse && strtoupper($warehouse) === 'MAIN STORE') {
-                    if ($subCategory && strtoupper($subCategory) === 'CHEMICAL') {
-                        $report1[$key]->chemical += $subtotal;
-                    } elseif ($subCategory && strtoupper($subCategory) === 'STATIONARY') {
-                        $report1[$key]->stationary += $subtotal;
-                    } elseif ($subCategory && strtoupper($subCategory) === 'MARKETING') {
-                        $report1[$key]->marketing += $subtotal;
-                    } else {
-                        $report1[$key]->main_store += $subtotal;
-                    }
-                } else {
-                    // If warehouse is null or doesn't match, still add to line_total but don't categorize
-                    // This shouldn't happen normally, but handle it gracefully
-                }
-                
-                $report1[$key]->line_total += $subtotal;
-            }
-            
-            $report1 = collect(array_values($report1))->sortByDesc('is_outlet')->sortBy('customer')->values();
+            $report1 = collect(array_values($this->rekapFjAggregatePivotItemRowsByOutlet($report1Items)))
+                ->sortByDesc('is_outlet')
+                ->sortBy('customer')
+                ->values();
 
             // Convert report1 to outletData format (only GR, no GR Supplier to match detail calculation)
             $outletData = [];

@@ -76,12 +76,26 @@
                   <i class="fa fa-info-circle"></i> SPS
                 </button>
               </td>
-              <td class="px-4 py-2 text-base">{{ item.item_name }}</td>
-              <td class="px-4 py-2 text-right text-lg">{{ item.qty_packing_list }}</td>
+              <td class="px-4 py-2 text-base">
+                {{ item.item_name }}
+                <span v-if="item.receive_via_serial_only" class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
+                  GR Serial
+                </span>
+                <span v-else-if="item.has_serial_portion" class="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                  BC + Serial
+                </span>
+              </td>
+              <td class="px-4 py-2 text-right text-lg">
+                {{ item.qty_packing_list }}
+                <div v-if="item.has_serial_portion && !item.receive_via_serial_only" class="text-xs text-gray-500">
+                  Target barcode: {{ item.qty_food_target }}
+                </div>
+              </td>
               <td class="px-4 py-2 text-base">{{ item.unit }}</td>
               <td class="px-4 py-2 text-right text-lg font-bold">{{ item.qty_scan }}</td>
               <td class="px-4 py-2 text-center">
-                <span v-if="Number(item.qty_scan) === 0" class="text-gray-400 font-bold text-lg">Belum Scan</span>
+                <span v-if="item.receive_via_serial" class="text-purple-700 font-bold text-sm">Via GR Serial</span>
+                <span v-else-if="Number(item.qty_scan) === 0" class="text-gray-400 font-bold text-lg">Belum Scan</span>
                 <span v-else-if="Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2)" class="text-green-700 font-bold text-lg animate-pulse">OK</span>
                 <span v-else-if="Number(item.qty_scan) > Number(item.qty_packing_list)" class="text-red-700 font-bold text-lg animate-pulse">Lebih</span>
                 <span v-else class="text-yellow-700 font-bold text-lg animate-pulse">Kurang</span>
@@ -202,7 +216,14 @@ const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
 
-const isReadyToSubmit = computed(() => items.length > 0);
+function isGrItemComplete(item) {
+  if (item.receive_via_serial_only) return true;
+  const scanned = Number(item.qty_scan) || 0;
+  const target = Number(item.qty_food_target ?? item.qty_packing_list) || 0;
+  return scanned >= target - 0.001;
+}
+
+const isReadyToSubmit = computed(() => items.length > 0 && items.every(isGrItemComplete));
 
 onMounted(() => {
   axios.get('/outlet-food-good-receives/available-dos').then(res => {
@@ -216,7 +237,10 @@ function onDOChange() {
   axios.get(`/outlet-food-good-receives/do-detail/${doOpt.id}`)
     .then(res => {
       doDetail.value = res.data;
-      items.splice(0, items.length, ...res.data.items.map(item => ({ ...item, qty_scan: 0 })));
+      items.splice(0, items.length, ...res.data.items.map(item => ({
+        ...item,
+        qty_scan: item.receive_via_serial ? Number(item.qty_packing_list) : 0,
+      })));
       barcodeInputVal.value = '';
       scanFeedback.value = '';
       nextTick(() => barcodeInput.value?.focus());
@@ -234,8 +258,15 @@ function onScanBarcode() {
     qty = parseFloat(match[2]) || 1;
   }
   const item = items.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
+  if (item && item.receive_via_serial_only) {
+    scanFeedback.value = '❌ Item ini pakai nomor seri. Terima lewat menu GR Serial Outlet.';
+    scanFeedbackClass.value = 'text-red-600';
+    barcodeInputVal.value = '';
+    nextTick(() => barcodeInput.value?.focus());
+    return;
+  }
   if (item) {
-    const maxQty = Number(item.qty_packing_list);
+    const maxQty = Number(item.qty_food_target ?? item.qty_packing_list);
     const currentScan = Number(item.qty_scan || 0);
     if (item.unit_type === 'kiloan') {
       qtyModalItem.value = item;
@@ -276,17 +307,17 @@ function onScanBarcode() {
       qty = remainingQty;
     }
     item.qty_scan = currentScan + qty;
-    const isExact = Number(item.qty_scan).toFixed(2) === Number(item.qty_packing_list).toFixed(2);
-    const isOver = Number(item.qty_scan) > Number(item.qty_packing_list);
+    const isExact = Number(item.qty_scan).toFixed(2) === Number(maxQty).toFixed(2);
+    const isOver = Number(item.qty_scan) > Number(maxQty);
     
     if (isExact) {
-      scanFeedback.value = `✅ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LENGKAP!`;
+      scanFeedback.value = `✅ ${item.item_name} (${item.qty_scan.toFixed(2)}/${maxQty}) - LENGKAP!`;
       scanFeedbackClass.value = 'text-green-700';
     } else if (isOver) {
-      scanFeedback.value = `⚠️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list}) - LEBIH!`;
+      scanFeedback.value = `⚠️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${maxQty}) - LEBIH!`;
       scanFeedbackClass.value = 'text-red-700';
     } else {
-      scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${item.qty_packing_list})`;
+      scanFeedback.value = `✔️ ${item.item_name} (${item.qty_scan.toFixed(2)}/${maxQty})`;
       scanFeedbackClass.value = 'text-yellow-700';
     }
   } else {
@@ -444,12 +475,14 @@ async function submitGR() {
       receive_date: new Date().toISOString().split('T')[0], // Gunakan tanggal hari ini
       notes: '',
       warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id ? Number(doDetail.value.do.warehouse_outlet_id) : null,
-      items: items.map(i => ({
-        item_id: Number(i.item_id),
-        qty: Number(i.qty_packing_list),
-        unit_id: Number(i.unit_id),
-        received_qty: Number(i.qty_scan)
-      }))
+      items: items
+        .filter(i => !i.receive_via_serial_only && Number(i.qty_food_target ?? 0) > 0)
+        .map(i => ({
+          item_id: Number(i.item_id),
+          qty: Number(i.qty_food_target ?? i.qty_packing_list),
+          unit_id: Number(i.unit_id),
+          received_qty: Number(i.qty_scan),
+        }))
     };
     
     
@@ -458,6 +491,10 @@ async function submitGR() {
       throw new Error('Delivery Order ID tidak boleh kosong');
     }
     
+    const barcodeOnlyItems = items.filter((i) => !i.receive_via_serial_only && Number(i.qty_food_target ?? i.qty_packing_list) > 0);
+    if (barcodeOnlyItems.length === 0) {
+      throw new Error('Semua item di DO ini memakai nomor seri. Gunakan menu GR Serial Outlet.');
+    }
     if (!payload.items || payload.items.length === 0) {
       throw new Error('Items tidak boleh kosong');
     }
