@@ -1135,11 +1135,11 @@ class OutletFoodGoodReceiveController extends Controller
         $items = $items->map(function ($item) {
             $item->barcodes = $item->barcodes ? explode(',', $item->barcodes) : [];
             $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
-            $hasSerial = is_array($serialNumbers) && count($serialNumbers) > 0;
-            $barcodeQty = (float) ($item->qty_scan_barcode ?? 0);
-            if ($hasSerial && $barcodeQty <= 0) {
-                $barcodeQty = max(0, (float) $item->qty_packing_list - (float) $item->qty_scan);
+            if (! is_array($serialNumbers)) {
+                $serialNumbers = [];
             }
+            $hasSerial = count($serialNumbers) > 0;
+            $barcodeQty = $this->resolveFoodGrBarcodeTarget($item, $hasSerial, $serialNumbers);
             $item->qty_food_target = $barcodeQty;
             $item->has_serial_portion = $hasSerial;
             $item->receive_via_serial_only = $hasSerial && $barcodeQty <= 0.001;
@@ -1483,6 +1483,56 @@ class OutletFoodGoodReceiveController extends Controller
         }
 
         return true; // Semua DO sudah di-GR
+    }
+
+    /**
+     * Target qty scan barcode untuk GR Outlet (selaras DO Form: qty - serial).
+     * DO lama tanpa qty_scan_barcode & tanpa serial → full qty packing list.
+     */
+    private function resolveFoodGrBarcodeTarget(object $item, bool $hasSerial, array $serialNumbers): float
+    {
+        $packingQty = (float) ($item->qty_packing_list ?? 0);
+        $barcodeQty = (float) ($item->qty_scan_barcode ?? 0);
+
+        if (! $hasSerial) {
+            return $packingQty;
+        }
+
+        if ($barcodeQty > 0) {
+            return $barcodeQty;
+        }
+
+        $serialQty = $this->sumSerialEffectiveQty($serialNumbers, (int) ($item->item_id ?? 0));
+
+        return max(0, $packingQty - $serialQty);
+    }
+
+    private function sumSerialEffectiveQty(array $serialNumbers, int $itemId): float
+    {
+        if ($serialNumbers === []) {
+            return 0;
+        }
+
+        $query = DB::table('inventory_item_serials')
+            ->whereIn('serial_number', $serialNumbers);
+
+        if ($itemId > 0) {
+            $query->where('item_id', $itemId);
+        }
+
+        $serials = $query->select('repack_unit_id', 'repack_qty')->get();
+
+        if ($serials->isEmpty()) {
+            return (float) count($serialNumbers);
+        }
+
+        return (float) $serials->sum(function ($serial) {
+            if ($serial->repack_unit_id && (float) $serial->repack_qty > 0) {
+                return (float) $serial->repack_qty;
+            }
+
+            return 1;
+        });
     }
 
     /**

@@ -88,7 +88,7 @@
               <td class="px-4 py-2 text-right text-lg">
                 {{ item.qty_packing_list }}
                 <div v-if="item.has_serial_portion && !item.receive_via_serial_only" class="text-xs text-gray-500">
-                  Target barcode: {{ item.qty_food_target }}
+                  Target barcode: {{ getBarcodeTarget(item) }}
                 </div>
               </td>
               <td class="px-4 py-2 text-base">{{ item.unit }}</td>
@@ -216,10 +216,17 @@ const spsModal = ref(false);
 const spsItem = ref({});
 const spsLoading = ref(false);
 
+function getBarcodeTarget(item) {
+  if (item.receive_via_serial_only) return 0;
+  const foodTarget = Number(item.qty_food_target);
+  if (foodTarget > 0) return foodTarget;
+  return Number(item.qty_packing_list) || 0;
+}
+
 function isGrItemComplete(item) {
   if (item.receive_via_serial_only) return true;
   const scanned = Number(item.qty_scan) || 0;
-  const target = Number(item.qty_food_target ?? item.qty_packing_list) || 0;
+  const target = getBarcodeTarget(item);
   return scanned >= target - 0.001;
 }
 
@@ -266,7 +273,7 @@ function onScanBarcode() {
     return;
   }
   if (item) {
-    const maxQty = Number(item.qty_food_target ?? item.qty_packing_list);
+    const maxQty = getBarcodeTarget(item);
     const currentScan = Number(item.qty_scan || 0);
     if (item.unit_type === 'kiloan') {
       qtyModalItem.value = item;
@@ -476,10 +483,10 @@ async function submitGR() {
       notes: '',
       warehouse_outlet_id: doDetail.value?.do?.warehouse_outlet_id ? Number(doDetail.value.do.warehouse_outlet_id) : null,
       items: items
-        .filter(i => !i.receive_via_serial_only && Number(i.qty_food_target ?? 0) > 0)
+        .filter(i => !i.receive_via_serial_only && getBarcodeTarget(i) > 0)
         .map(i => ({
           item_id: Number(i.item_id),
-          qty: Number(i.qty_food_target ?? i.qty_packing_list),
+          qty: getBarcodeTarget(i),
           unit_id: Number(i.unit_id),
           received_qty: Number(i.qty_scan),
         }))
@@ -491,7 +498,7 @@ async function submitGR() {
       throw new Error('Delivery Order ID tidak boleh kosong');
     }
     
-    const barcodeOnlyItems = items.filter((i) => !i.receive_via_serial_only && Number(i.qty_food_target ?? i.qty_packing_list) > 0);
+    const barcodeOnlyItems = items.filter((i) => !i.receive_via_serial_only && getBarcodeTarget(i) > 0);
     if (barcodeOnlyItems.length === 0) {
       throw new Error('Semua item di DO ini memakai nomor seri. Gunakan menu GR Serial Outlet.');
     }
