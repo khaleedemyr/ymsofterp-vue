@@ -1123,6 +1123,7 @@ class OutletFoodGoodReceiveController extends Controller
                 'doi.qty_scan_barcode',
                 'doi.serial_numbers',
                 'doi.unit',
+                'doi.barcode as do_item_barcode',
                 'u.name as unit_name',
                 'u.type as unit_type',
                 'u.id as unit_id'
@@ -1139,7 +1140,11 @@ class OutletFoodGoodReceiveController extends Controller
 
         // Mapping barcodes + target GR Food (qty barcode) vs GR Serial
         $items = $items->map(function ($item) use ($barcodeMap) {
-            $item->barcodes = $this->buildItemScanCodes($item, $barcodeMap->get($item->item_id));
+            $item->barcodes = $this->buildItemScanCodes(
+                $item,
+                $barcodeMap->get($item->item_id),
+                $item->do_item_barcode ?? null
+            );
             $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
             if (! is_array($serialNumbers)) {
                 $serialNumbers = [];
@@ -1203,6 +1208,7 @@ class OutletFoodGoodReceiveController extends Controller
             return response()->json([
                 'found' => false,
                 'message' => 'Barcode / SKU / kode barang tidak ditemukan di DO ini.',
+                'hint' => $this->buildGrScanHint((int) $request->delivery_order_id),
             ]);
         }
 
@@ -1518,7 +1524,11 @@ class OutletFoodGoodReceiveController extends Controller
     }
 
     /**
-     * Cari item DO dari kode scan (item_barcodes.barcode atau items.sku).
+     * Cari item DO dari kode scan:
+     * - delivery_order_items.barcode (snapshot DO)
+     * - item_barcodes.barcode
+     * - items.sku (kode barang / Code di label)
+     * - fallback nama item jika item_id master beda (duplikat record)
      */
     private function findDoItemIdByScanCode(int $doId, string $rawCode): ?int
     {
@@ -1527,16 +1537,24 @@ class OutletFoodGoodReceiveController extends Controller
             return null;
         }
 
-        $doItemIds = DB::table('delivery_order_items')
-            ->where('delivery_order_id', $doId)
-            ->pluck('item_id')
-            ->unique()
-            ->filter()
-            ->values()
-            ->all();
+        $doLines = DB::table('delivery_order_items as doi')
+            ->join('items as i', 'doi.item_id', '=', 'i.id')
+            ->where('doi.delivery_order_id', $doId)
+            ->select('doi.item_id', 'doi.barcode', 'i.sku', 'i.name')
+            ->get();
 
-        if ($doItemIds === []) {
+        if ($doLines->isEmpty()) {
             return null;
+        }
+
+        $doItemIds = $doLines->pluck('item_id')->map(fn ($id) => (int) $id)->unique()->values()->all();
+
+        foreach ($doLines as $line) {
+            foreach ($this->splitGrScanCodeParts($line->barcode ?? null) as $part) {
+                if ($this->grScanCodesMatch($code, $part)) {
+                    return (int) $line->item_id;
+                }
+            }
         }
 
         $barcodeRows = DB::table('item_barcodes')
@@ -1550,18 +1568,117 @@ class OutletFoodGoodReceiveController extends Controller
             }
         }
 
-        $items = DB::table('items')
-            ->whereIn('id', $doItemIds)
-            ->select('id', 'sku')
+        foreach ($doLines as $line) {
+            if (! empty($line->sku) && $this->grScanCodesMatch($code, (string) $line->sku)) {
+                return (int) $line->item_id;
+            }
+        }
+
+        $globalBarcodeRows = DB::table('item_barcodes as ib')
+            ->join('items as i', 'i.id', '=', 'ib.item_id')
+            ->select('ib.item_id', 'ib.barcode', 'i.name')
             ->get();
 
-        foreach ($items as $item) {
-            if (! empty($item->sku) && $this->grScanCodesMatch($code, (string) $item->sku)) {
+        foreach ($globalBarcodeRows as $row) {
+            if (! $this->grScanCodesMatch($code, (string) $row->barcode)) {
+                continue;
+            }
+            if (in_array((int) $row->item_id, $doItemIds, true)) {
+                return (int) $row->item_id;
+            }
+            $matched = $this->matchDoLineByItemName($doLines, (string) $row->name);
+            if ($matched) {
+                return (int) $matched->item_id;
+            }
+        }
+
+        $globalSkuItems = DB::table('items')
+            ->whereNotNull('sku')
+            ->where('sku', '!=', '')
+            ->select('id', 'sku', 'name')
+            ->get();
+
+        foreach ($globalSkuItems as $item) {
+            if (! $this->grScanCodesMatch($code, (string) $item->sku)) {
+                continue;
+            }
+            if (in_array((int) $item->id, $doItemIds, true)) {
                 return (int) $item->id;
+            }
+            $matched = $this->matchDoLineByItemName($doLines, (string) $item->name);
+            if ($matched) {
+                return (int) $matched->item_id;
             }
         }
 
         return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitGrScanCodeParts(?string $raw): array
+    {
+        if ($raw === null || trim($raw) === '') {
+            return [];
+        }
+
+        return collect(preg_split('/[\s,;]+/', trim($raw)) ?: [])
+            ->map(fn ($part) => trim((string) $part))
+            ->filter(fn ($part) => $part !== '')
+            ->values()
+            ->all();
+    }
+
+    private function matchDoLineByItemName($doLines, string $name): ?object
+    {
+        $target = trim($name);
+        if ($target === '') {
+            return null;
+        }
+
+        return $doLines->first(function ($line) use ($target) {
+            return trim((string) $line->name) === $target;
+        });
+    }
+
+    /**
+     * Daftar kode scan yang valid per item DO (untuk debug saat scan gagal).
+     */
+    private function buildGrScanHint(int $doId): array
+    {
+        $lines = DB::table('delivery_order_items as doi')
+            ->join('items as i', 'doi.item_id', '=', 'i.id')
+            ->where('doi.delivery_order_id', $doId)
+            ->select('doi.item_id', 'doi.barcode', 'i.name', 'i.sku')
+            ->get();
+
+        if ($lines->isEmpty()) {
+            return [];
+        }
+
+        $itemIds = $lines->pluck('item_id')->unique()->values();
+        $barcodeMap = DB::table('item_barcodes')
+            ->whereIn('item_id', $itemIds)
+            ->select('item_id', 'barcode')
+            ->get()
+            ->groupBy('item_id');
+
+        return $lines->map(function ($line) use ($barcodeMap) {
+            $codes = collect($this->splitGrScanCodeParts($line->barcode ?? null));
+            foreach ($barcodeMap->get($line->item_id, collect()) as $row) {
+                $codes->push(trim((string) $row->barcode));
+            }
+            if (! empty($line->sku)) {
+                $codes->push(trim((string) $line->sku));
+            }
+
+            return [
+                'item_id' => (int) $line->item_id,
+                'item_name' => (string) $line->name,
+                'scan_codes' => $codes->filter()->unique()->values()->all(),
+            ];
+        })->values()->all();
     }
 
     private function normalizeGrScanCode(string $code): string
@@ -1605,12 +1722,16 @@ class OutletFoodGoodReceiveController extends Controller
      * @param  \Illuminate\Support\Collection<int, object>|null  $barcodeRows
      * @return list<string>
      */
-    private function buildItemScanCodes(object $item, $barcodeRows = null): array
+    private function buildItemScanCodes(object $item, $barcodeRows = null, ?string $doLineBarcode = null): array
     {
         $codes = collect($barcodeRows ?? [])
             ->pluck('barcode')
             ->map(fn ($barcode) => trim((string) $barcode))
             ->filter(fn ($barcode) => $barcode !== '');
+
+        foreach ($this->splitGrScanCodeParts($doLineBarcode) as $part) {
+            $codes->push($part);
+        }
 
         if (! empty($item->item_sku)) {
             $codes->push(trim((string) $item->item_sku));

@@ -276,6 +276,7 @@ async function resolveItemByScanCode(code) {
       return {
         item: null,
         message: res.data?.message || 'Barcode / SKU tidak cocok dengan item di DO ini.',
+        hint: res.data?.hint,
       };
     } catch (e) {
       if (e?.response?.status === 404) {
@@ -340,7 +341,7 @@ function onScanBarcode() {
 }
 
 async function processScanBarcode(code, qty) {
-  const { item, message: resolveMessage } = await resolveItemByScanCode(code);
+  const { item, message: resolveMessage, hint: resolveHint } = await resolveItemByScanCode(code);
   if (item && item.receive_via_serial_only) {
     scanFeedback.value = '❌ Item ini pakai nomor seri. Terima lewat menu GR Serial Outlet.';
     scanFeedbackClass.value = 'text-red-600';
@@ -400,7 +401,16 @@ async function processScanBarcode(code, qty) {
       scanFeedbackClass.value = 'text-yellow-700';
     }
   } else {
-    scanFeedback.value = `❌ ${resolveMessage || 'Barcode tidak ditemukan di DO!'}`;
+    let msg = resolveMessage || 'Barcode tidak ditemukan di DO!';
+    if (Array.isArray(resolveHint) && resolveHint.length > 0) {
+      const codes = resolveHint
+        .flatMap(h => (h.scan_codes || []).map(c => `${h.item_name}: ${c}`))
+        .slice(0, 5);
+      if (codes.length > 0) {
+        msg += ` Kode valid: ${codes.join(' | ')}`;
+      }
+    }
+    scanFeedback.value = `❌ ${msg}`;
     scanFeedbackClass.value = 'text-red-600';
   }
   barcodeInputVal.value = '';
