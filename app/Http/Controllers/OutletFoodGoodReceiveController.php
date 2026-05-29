@@ -1197,35 +1197,7 @@ class OutletFoodGoodReceiveController extends Controller
             'code' => 'required|string|max:100',
         ]);
 
-        $code = trim($request->code);
-        $doId = (int) $request->delivery_order_id;
-
-        $doItemIds = DB::table('delivery_order_items')
-            ->where('delivery_order_id', $doId)
-            ->pluck('item_id')
-            ->unique()
-            ->filter()
-            ->values()
-            ->all();
-
-        if ($doItemIds === []) {
-            return response()->json([
-                'found' => false,
-                'message' => 'DO tidak memiliki item.',
-            ]);
-        }
-
-        $itemId = DB::table('item_barcodes')
-            ->where('barcode', $code)
-            ->whereIn('item_id', $doItemIds)
-            ->value('item_id');
-
-        if (! $itemId) {
-            $itemId = DB::table('items')
-                ->whereIn('id', $doItemIds)
-                ->where('sku', $code)
-                ->value('id');
-        }
+        $itemId = $this->findDoItemIdByScanCode((int) $request->delivery_order_id, (string) $request->code);
 
         if (! $itemId) {
             return response()->json([
@@ -1236,7 +1208,7 @@ class OutletFoodGoodReceiveController extends Controller
 
         return response()->json([
             'found' => true,
-            'item_id' => (int) $itemId,
+            'item_id' => $itemId,
             'message' => 'Item ditemukan.',
         ]);
     }
@@ -1543,6 +1515,86 @@ class OutletFoodGoodReceiveController extends Controller
         }
 
         return true; // Semua DO sudah di-GR
+    }
+
+    /**
+     * Cari item DO dari kode scan (item_barcodes.barcode atau items.sku).
+     */
+    private function findDoItemIdByScanCode(int $doId, string $rawCode): ?int
+    {
+        $code = $this->normalizeGrScanCode($rawCode);
+        if ($code === '') {
+            return null;
+        }
+
+        $doItemIds = DB::table('delivery_order_items')
+            ->where('delivery_order_id', $doId)
+            ->pluck('item_id')
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($doItemIds === []) {
+            return null;
+        }
+
+        $barcodeRows = DB::table('item_barcodes')
+            ->whereIn('item_id', $doItemIds)
+            ->select('item_id', 'barcode')
+            ->get();
+
+        foreach ($barcodeRows as $row) {
+            if ($this->grScanCodesMatch($code, (string) $row->barcode)) {
+                return (int) $row->item_id;
+            }
+        }
+
+        $items = DB::table('items')
+            ->whereIn('id', $doItemIds)
+            ->select('id', 'sku')
+            ->get();
+
+        foreach ($items as $item) {
+            if (! empty($item->sku) && $this->grScanCodesMatch($code, (string) $item->sku)) {
+                return (int) $item->id;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeGrScanCode(string $code): string
+    {
+        $code = trim($code);
+        $code = preg_replace('/^\]C\d/i', '', $code) ?? $code;
+        $code = preg_replace('/[\x00-\x1F\x7F]/u', '', $code) ?? $code;
+
+        return trim($code);
+    }
+
+    private function grScanCodesMatch(string $left, string $right): bool
+    {
+        $a = $this->normalizeGrScanCode($left);
+        $b = $this->normalizeGrScanCode($right);
+
+        if ($a === '' || $b === '') {
+            return false;
+        }
+
+        if ($a === $b) {
+            return true;
+        }
+
+        if (strcasecmp($a, $b) === 0) {
+            return true;
+        }
+
+        if (ctype_digit($a) && ctype_digit($b)) {
+            return ltrim($a, '0') === ltrim($b, '0');
+        }
+
+        return false;
     }
 
     /**

@@ -224,18 +224,29 @@ function getBarcodeTarget(item) {
 }
 
 function normalizeScanCode(code) {
-  return String(code ?? '').trim();
+  return String(code ?? '').trim().replace(/^\]C\d/i, '');
+}
+
+function scanCodesMatch(a, b) {
+  const left = normalizeScanCode(a);
+  const right = normalizeScanCode(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.toLowerCase() === right.toLowerCase()) return true;
+  if (/^\d+$/.test(left) && /^\d+$/.test(right)) {
+    return left.replace(/^0+/, '') === right.replace(/^0+/, '');
+  }
+  return false;
 }
 
 function itemMatchesScanCode(item, code) {
   const normalized = normalizeScanCode(code);
   if (!normalized) return false;
-  if (Array.isArray(item.barcodes) && item.barcodes.some(b => normalizeScanCode(b) === normalized)) {
-    return true;
-  }
-  if (normalizeScanCode(item.barcode) === normalized) return true;
-  if (normalizeScanCode(item.item_sku) === normalized) return true;
-  return false;
+  const candidates = [];
+  if (Array.isArray(item.barcodes)) candidates.push(...item.barcodes);
+  if (item.barcode) candidates.push(item.barcode);
+  if (item.item_sku) candidates.push(item.item_sku);
+  return candidates.some(b => scanCodesMatch(normalized, b));
 }
 
 function findItemByScanCode(code) {
@@ -243,26 +254,45 @@ function findItemByScanCode(code) {
 }
 
 async function resolveItemByScanCode(code) {
-  let item = findItemByScanCode(code);
-  if (item || !selectedDOId.value) return item;
+  const normalized = normalizeScanCode(code);
+  if (!normalized) return { item: null, message: 'Kode scan kosong.' };
 
-  try {
-    const res = await axios.post('/outlet-food-good-receives/resolve-barcode', {
-      delivery_order_id: Number(selectedDOId.value),
-      code: normalizeScanCode(code),
-    });
-    if (res.data?.found && res.data.item_id) {
-      item = items.find(i => Number(i.item_id) === Number(res.data.item_id));
-      if (item && !itemMatchesScanCode(item, code)) {
-        if (!Array.isArray(item.barcodes)) item.barcodes = [];
-        item.barcodes.push(normalizeScanCode(code));
+  if (selectedDOId.value) {
+    try {
+      const res = await axios.post('/outlet-food-good-receives/resolve-barcode', {
+        delivery_order_id: Number(selectedDOId.value),
+        code: normalized,
+      });
+      if (res.data?.found && res.data.item_id) {
+        const item = items.find(i => Number(i.item_id) === Number(res.data.item_id));
+        if (item) {
+          if (!itemMatchesScanCode(item, normalized)) {
+            if (!Array.isArray(item.barcodes)) item.barcodes = [];
+            if (!item.barcodes.includes(normalized)) item.barcodes.push(normalized);
+          }
+          return { item, message: null };
+        }
       }
+      return {
+        item: null,
+        message: res.data?.message || 'Barcode / SKU tidak cocok dengan item di DO ini.',
+      };
+    } catch (e) {
+      if (e?.response?.status === 404) {
+        return {
+          item: null,
+          message: 'Endpoint resolve barcode belum ada di server. Deploy backend terbaru.',
+        };
+      }
+      console.warn('resolve-barcode failed', e);
     }
-  } catch (e) {
-    console.warn('resolve-barcode failed', e);
   }
 
-  return item;
+  const item = findItemByScanCode(normalized);
+  return {
+    item: item ?? null,
+    message: item ? null : 'Barcode / SKU tidak ditemukan di DO.',
+  };
 }
 
 function isGrItemComplete(item) {
@@ -310,7 +340,7 @@ function onScanBarcode() {
 }
 
 async function processScanBarcode(code, qty) {
-  const item = await resolveItemByScanCode(code);
+  const { item, message: resolveMessage } = await resolveItemByScanCode(code);
   if (item && item.receive_via_serial_only) {
     scanFeedback.value = '❌ Item ini pakai nomor seri. Terima lewat menu GR Serial Outlet.';
     scanFeedbackClass.value = 'text-red-600';
@@ -370,7 +400,7 @@ async function processScanBarcode(code, qty) {
       scanFeedbackClass.value = 'text-yellow-700';
     }
   } else {
-    scanFeedback.value = '❌ Barcode tidak ditemukan di DO!';
+    scanFeedback.value = `❌ ${resolveMessage || 'Barcode tidak ditemukan di DO!'}`;
     scanFeedbackClass.value = 'text-red-600';
   }
   barcodeInputVal.value = '';
