@@ -231,6 +231,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-food-good-receives', [OutletFoodGoodReceiveController::class, 'apiIndex']);
         Route::get('/outlet-food-good-receives/available-dos', [OutletFoodGoodReceiveController::class, 'availableDOs']);
         Route::get('/outlet-food-good-receives/do-detail/{doId}', [OutletFoodGoodReceiveController::class, 'doDetail']);
+        Route::post('/outlet-food-good-receives/resolve-barcode', [OutletFoodGoodReceiveController::class, 'resolveBarcode']);
         Route::get('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'apiShow']);
         Route::post('/outlet-food-good-receives', [OutletFoodGoodReceiveController::class, 'store']);
         Route::delete('/outlet-food-good-receives/{id}', [OutletFoodGoodReceiveController::class, 'destroy']);

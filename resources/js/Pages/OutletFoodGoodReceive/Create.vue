@@ -223,6 +223,48 @@ function getBarcodeTarget(item) {
   return Number(item.qty_packing_list) || 0;
 }
 
+function normalizeScanCode(code) {
+  return String(code ?? '').trim();
+}
+
+function itemMatchesScanCode(item, code) {
+  const normalized = normalizeScanCode(code);
+  if (!normalized) return false;
+  if (Array.isArray(item.barcodes) && item.barcodes.some(b => normalizeScanCode(b) === normalized)) {
+    return true;
+  }
+  if (normalizeScanCode(item.barcode) === normalized) return true;
+  if (normalizeScanCode(item.item_sku) === normalized) return true;
+  return false;
+}
+
+function findItemByScanCode(code) {
+  return items.find(i => itemMatchesScanCode(i, code));
+}
+
+async function resolveItemByScanCode(code) {
+  let item = findItemByScanCode(code);
+  if (item || !selectedDOId.value) return item;
+
+  try {
+    const res = await axios.post('/outlet-food-good-receives/resolve-barcode', {
+      delivery_order_id: Number(selectedDOId.value),
+      code: normalizeScanCode(code),
+    });
+    if (res.data?.found && res.data.item_id) {
+      item = items.find(i => Number(i.item_id) === Number(res.data.item_id));
+      if (item && !itemMatchesScanCode(item, code)) {
+        if (!Array.isArray(item.barcodes)) item.barcodes = [];
+        item.barcodes.push(normalizeScanCode(code));
+      }
+    }
+  } catch (e) {
+    console.warn('resolve-barcode failed', e);
+  }
+
+  return item;
+}
+
 function isGrItemComplete(item) {
   if (item.receive_via_serial_only) return true;
   const scanned = Number(item.qty_scan) || 0;
@@ -264,7 +306,11 @@ function onScanBarcode() {
     code = match[1];
     qty = parseFloat(match[2]) || 1;
   }
-  const item = items.find(i => Array.isArray(i.barcodes) ? i.barcodes.includes(code) : i.barcode === code);
+  processScanBarcode(code, qty);
+}
+
+async function processScanBarcode(code, qty) {
+  const item = await resolveItemByScanCode(code);
   if (item && item.receive_via_serial_only) {
     scanFeedback.value = '❌ Item ini pakai nomor seri. Terima lewat menu GR Serial Outlet.';
     scanFeedbackClass.value = 'text-red-600';
@@ -295,11 +341,7 @@ function onScanBarcode() {
       });
       return;
     }
-    // Untuk item non-kiloan, qty default = 1 jika scan tanpa qty
-    if (qty === 1 && !input.match(/\s+\d/)) {
-      qty = 1;
-    }
-    
+
     // Jika scan akan melebihi qty DO, set ke qty DO maksimal
     if (currentScan + qty > maxQty) {
       const remainingQty = maxQty - currentScan;

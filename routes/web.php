@@ -1364,6 +1364,7 @@ Route::get('/outlet-food-good-receives/scan-do', [\App\Http\Controllers\OutletFo
 Route::get('/api/delivery-orders/validate', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'validateDO']);
 Route::get('/outlet-food-good-receives/create-from-do/{delivery_order_id}', [\App\Http\Controllers\OutletFoodGoodReceiveController::class, 'createFromDO'])->name('outlet-food-good-receives.create-from-do');
 Route::get('/outlet-food-good-receives/do-detail/{do_id}', [OutletFoodGoodReceiveController::class, 'doDetail']);
+Route::post('/outlet-food-good-receives/resolve-barcode', [OutletFoodGoodReceiveController::class, 'resolveBarcode']);
 Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/submit', [OutletFoodGoodReceiveController::class, 'submit']);
 Route::post('/outlet-food-good-receives/{outlet_food_good_receive}/process-stock', [OutletFoodGoodReceiveController::class, 'processStock']);
 

@@ -1113,27 +1113,33 @@ class OutletFoodGoodReceiveController extends Controller
         $items = DB::table('delivery_order_items as doi')
             ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'doi.unit', '=', 'u.name')
-            ->leftJoin('item_barcodes as ib', 'i.id', '=', 'ib.item_id')
             ->select(
                 'doi.id as delivery_order_item_id',
                 'doi.item_id',
                 'i.name as item_name',
+                'i.sku as item_sku',
                 'doi.qty_packing_list',
                 'doi.qty_scan',
                 'doi.qty_scan_barcode',
                 'doi.serial_numbers',
                 'doi.unit',
-                DB::raw('GROUP_CONCAT(ib.barcode) as barcodes'),
                 'u.name as unit_name',
                 'u.type as unit_type',
                 'u.id as unit_id'
             )
             ->where('doi.delivery_order_id', $do_id)
-            ->groupBy('doi.id', 'doi.item_id', 'i.name', 'doi.qty_packing_list', 'doi.qty_scan', 'doi.qty_scan_barcode', 'doi.serial_numbers', 'doi.unit', 'u.name', 'u.type', 'u.id')
             ->get();
+
+        $itemIds = $items->pluck('item_id')->unique()->filter()->values();
+        $barcodeMap = DB::table('item_barcodes')
+            ->whereIn('item_id', $itemIds)
+            ->select('item_id', 'barcode')
+            ->get()
+            ->groupBy('item_id');
+
         // Mapping barcodes + target GR Food (qty barcode) vs GR Serial
-        $items = $items->map(function ($item) {
-            $item->barcodes = $item->barcodes ? explode(',', $item->barcodes) : [];
+        $items = $items->map(function ($item) use ($barcodeMap) {
+            $item->barcodes = $this->buildItemScanCodes($item, $barcodeMap->get($item->item_id));
             $serialNumbers = $item->serial_numbers ? json_decode($item->serial_numbers, true) : [];
             if (! is_array($serialNumbers)) {
                 $serialNumbers = [];
@@ -1178,6 +1184,60 @@ class OutletFoodGoodReceiveController extends Controller
             'do' => $do,
             'items' => $items,
             'po_info' => $poInfo,
+        ]);
+    }
+
+    /**
+     * Resolve scan GR: cocokkan kode barcode item (item_barcodes) atau SKU/kode barang (items.sku).
+     */
+    public function resolveBarcode(Request $request)
+    {
+        $request->validate([
+            'delivery_order_id' => 'required|integer|exists:delivery_orders,id',
+            'code' => 'required|string|max:100',
+        ]);
+
+        $code = trim($request->code);
+        $doId = (int) $request->delivery_order_id;
+
+        $doItemIds = DB::table('delivery_order_items')
+            ->where('delivery_order_id', $doId)
+            ->pluck('item_id')
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($doItemIds === []) {
+            return response()->json([
+                'found' => false,
+                'message' => 'DO tidak memiliki item.',
+            ]);
+        }
+
+        $itemId = DB::table('item_barcodes')
+            ->where('barcode', $code)
+            ->whereIn('item_id', $doItemIds)
+            ->value('item_id');
+
+        if (! $itemId) {
+            $itemId = DB::table('items')
+                ->whereIn('id', $doItemIds)
+                ->where('sku', $code)
+                ->value('id');
+        }
+
+        if (! $itemId) {
+            return response()->json([
+                'found' => false,
+                'message' => 'Barcode / SKU / kode barang tidak ditemukan di DO ini.',
+            ]);
+        }
+
+        return response()->json([
+            'found' => true,
+            'item_id' => (int) $itemId,
+            'message' => 'Item ditemukan.',
         ]);
     }
 
@@ -1483,6 +1543,28 @@ class OutletFoodGoodReceiveController extends Controller
         }
 
         return true; // Semua DO sudah di-GR
+    }
+
+    /**
+     * Kode scan GR Outlet — selaras label cetak:
+     * - Barcode (strip) / baris "SKU" → item_barcodes.barcode
+     * - Baris "Code" / kode barang   → items.sku
+     *
+     * @param  \Illuminate\Support\Collection<int, object>|null  $barcodeRows
+     * @return list<string>
+     */
+    private function buildItemScanCodes(object $item, $barcodeRows = null): array
+    {
+        $codes = collect($barcodeRows ?? [])
+            ->pluck('barcode')
+            ->map(fn ($barcode) => trim((string) $barcode))
+            ->filter(fn ($barcode) => $barcode !== '');
+
+        if (! empty($item->item_sku)) {
+            $codes->push(trim((string) $item->item_sku));
+        }
+
+        return $codes->unique()->values()->all();
     }
 
     /**
