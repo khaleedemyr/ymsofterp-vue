@@ -296,14 +296,15 @@ async function resolveItemByScanCode(code) {
   };
 }
 
-function isGrItemComplete(item) {
-  if (item.receive_via_serial_only) return true;
-  const scanned = Number(item.qty_scan) || 0;
-  const target = getBarcodeTarget(item);
-  return scanned >= target - 0.001;
-}
-
-const isReadyToSubmit = computed(() => items.length > 0 && items.every(isGrItemComplete));
+/** GR partial: cukup ada minimal satu item yang sudah discan (qty > 0). */
+const isReadyToSubmit = computed(() => {
+  if (items.length === 0) return false;
+  return items.some((item) => {
+    if (item.receive_via_serial_only) return false;
+    if (getBarcodeTarget(item) <= 0) return false;
+    return Number(item.qty_scan) > 0;
+  }) || items.every((item) => item.receive_via_serial_only || item.receive_via_serial);
+});
 
 onMounted(() => {
   axios.get('/outlet-food-good-receives/available-dos').then(res => {
@@ -479,12 +480,21 @@ async function confirmSubmit() {
   }
   
   // Cek apakah ada item yang belum di-scan (hanya warning, bukan error)
-  const unscannedItems = items.filter(item => Number(item.qty_scan) === 0);
+  const unscannedItems = items.filter(item => !item.receive_via_serial_only && Number(item.qty_scan) === 0);
   const incompleteItems = items.filter(item => {
+    if (item.receive_via_serial_only) return false;
     const qtyScan = Number(item.qty_scan);
-    const qtyDO = Number(item.qty_packing_list);
-    return qtyScan > 0 && qtyScan < qtyDO;
+    const qtyDO = Number(getBarcodeTarget(item));
+    return qtyScan > 0 && qtyScan < qtyDO - 0.001;
   });
+
+  const hasAnyReceived = items.some(
+    (item) => !item.receive_via_serial_only && getBarcodeTarget(item) > 0 && Number(item.qty_scan) > 0,
+  ) || items.every((item) => item.receive_via_serial_only || item.receive_via_serial);
+
+  if (!hasAnyReceived) {
+    errors.push('Minimal satu item harus discan sebelum submit');
+  }
   
   if (errors.length > 0) {
     await Swal.fire({
@@ -499,11 +509,11 @@ async function confirmSubmit() {
   
   // Tampilkan warning jika ada item yang belum di-scan atau incomplete
   let warningMessage = '';
-  if (unscannedItems.length > 0) {
-    warningMessage += `<p><strong>⚠️ ${unscannedItems.length} item belum di-scan:</strong><br>${unscannedItems.map(i => i.item_name).join(', ')}</p>`;
-  }
   if (incompleteItems.length > 0) {
-    warningMessage += `<p><strong>⚠️ ${incompleteItems.length} item qty scan kurang dari DO:</strong><br>${incompleteItems.map(i => `${i.item_name} (${i.qty_scan}/${i.qty_packing_list})`).join(', ')}</p>`;
+    warningMessage += `<p><strong>⚠️ ${incompleteItems.length} item qty scan kurang dari DO (akan disimpan sesuai qty diterima):</strong><br>${incompleteItems.map(i => `${i.item_name} (${i.qty_scan}/${getBarcodeTarget(i)})`).join(', ')}</p>`;
+  }
+  if (unscannedItems.length > 0) {
+    warningMessage += `<p><strong>⚠️ ${unscannedItems.length} item belum discan (qty diterima = 0):</strong><br>${unscannedItems.map(i => i.item_name).join(', ')}</p>`;
   }
   
   // Tampilkan konfirmasi dengan detail
