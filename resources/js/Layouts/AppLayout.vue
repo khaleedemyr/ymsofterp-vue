@@ -347,6 +347,12 @@ const menuGroups = [
                 route: '/reports/rekap-pb1-outlet',
                 code: 'rekap_pb1_outlet',
             },
+            {
+                name: () => t('sidebar.menus.payroll_finance_report'),
+                icon: 'fa-solid fa-coins',
+                route: '/payroll/finance-report',
+                code: 'payroll_finance_report',
+            },
             { name: () => t('sidebar.menus.report_hutang'), icon: 'fa-solid fa-file-invoice-dollar', route: '/debt-report', code: 'debt_report' },
         ],
     },

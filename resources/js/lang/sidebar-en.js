@@ -186,6 +186,7 @@ export default {
     "report_penjualan_pivot_per_outlet_per_sub_kategori": "Report Penjualan Pivot per Outlet per Sub Kategori",
     "report_rekap_fj": "Report Rekap FJ",
     "rekap_pb1_outlet": "Rekap PB1 Outlet",
+    "payroll_finance_report": "Payroll Finance Report",
     "report_hutang": "Report Hutang",
     "purchase_order_foods": "Purchase Order Foods",
     "purchase_order_ops": "Purchase Order Ops",
