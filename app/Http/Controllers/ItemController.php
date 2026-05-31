@@ -2699,6 +2699,7 @@ class ItemController extends Controller
                 'warehouse_division' => $item->warehouseDivision?->name,
                 'category' => $item->category?->name,
                 'sub_category' => $item->subCategory?->name,
+                'exp' => (int) ($item->exp ?? 0),
             ],
             'barcodes' => $item->barcodes->map(fn ($b) => [
                 'id' => $b->id,
