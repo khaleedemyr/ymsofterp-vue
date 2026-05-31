@@ -3,12 +3,22 @@
 namespace App\Http\Controllers;
 
 use App\Models\CustomPayrollItem;
+use App\Models\EmployeeResignation;
 use App\Services\PayrollGajiSplitCalculator;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PayrollFinanceReportController extends Controller
@@ -61,53 +71,127 @@ class PayrollFinanceReportController extends Controller
             abort(404, 'Payroll belum di-generate untuk periode ini.');
         }
 
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $spreadsheet = new Spreadsheet();
+
+        $paymentHeaders = [
+            'No', 'Nama Karyawan', 'Jabatan', 'Divisi', 'Level', 'Join Date', 'Keterangan',
+            'Nama Rekening', 'No. Rekening', 'Gaji Akhir Bulan', 'Gaji Tanggal 8', 'Total Gaji',
+        ];
+        $paymentRows = [];
+        $rowNum = 1;
+        foreach ($report['payment_rows'] as $row) {
+            $paymentRows[] = [
+                $rowNum++,
+                $row['nama_lengkap'],
+                $row['jabatan'],
+                $row['divisi'],
+                $row['level'],
+                $this->formatDateForExport($row['tanggal_masuk']),
+                $this->formatEmployeeStatusLabel($row),
+                $row['nama_rekening'],
+                $row['no_rekening'],
+                $row['total_gaji_akhir_bulan'],
+                $row['total_gaji_tanggal_8'],
+                $row['total_gaji'],
+            ];
+        }
+        $paymentTotal = [
+            'TOTAL',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            $report['summary']['total_gaji_akhir_bulan'],
+            $report['summary']['total_gaji_tanggal_8'],
+            $report['summary']['total_gaji'],
+        ];
 
         $sheet1 = $spreadsheet->getActiveSheet();
         $sheet1->setTitle('Pembayaran Gaji');
-        $sheet1->setCellValue('A1', 'LAPORAN FINANCE - PEMBAYARAN GAJI');
-        $sheet1->setCellValue('A2', 'Outlet: ' . $report['outlet_name']);
-        $sheet1->setCellValue('A3', 'Periode: ' . $report['periode']);
+        $this->writeFormattedReportSheet(
+            $sheet1,
+            'LAPORAN PAYROLL - PEMBAYARAN GAJI',
+            $report['outlet_name'],
+            $report['periode'],
+            $paymentHeaders,
+            $paymentRows,
+            [10, 11, 12],
+            [9],
+            $paymentTotal
+        );
 
-        $paymentExport = collect($report['payment_rows'])->map(fn (array $row) => [
-            'Nama Karyawan' => $row['nama_lengkap'],
-            'Nama Rekening' => $row['nama_rekening'],
-            'No. Rekening' => $row['no_rekening'],
-            'Gaji Akhir Bulan' => $row['total_gaji_akhir_bulan'],
-            'Gaji Tanggal 8' => $row['total_gaji_tanggal_8'],
-            'Total Gaji' => $row['total_gaji'],
-        ])->values()->all();
-
-        if (! empty($paymentExport)) {
-            $headers = array_keys($paymentExport[0]);
-            $sheet1->fromArray($headers, null, 'A5');
-            $sheet1->fromArray($paymentExport, null, 'A6');
+        $bpjsHeaders = [
+            'No',
+            'Nama Karyawan',
+            'NIK',
+            'Jabatan',
+            'Divisi',
+            'Level',
+            'Join Date',
+            'Keterangan',
+            'BPJS Kesehatan (Perusahaan)',
+            'JHT (Perusahaan)',
+            'JP (Perusahaan)',
+            'JKK (Perusahaan)',
+            'JKM (Perusahaan)',
+            'Total BPJS Perusahaan',
+        ];
+        $bpjsRows = [];
+        $rowNum = 1;
+        foreach ($report['bpjs_rows'] as $row) {
+            $bpjsRows[] = [
+                $rowNum++,
+                $row['nama_lengkap'],
+                $row['nik'],
+                $row['jabatan'],
+                $row['divisi'],
+                $row['level'],
+                $this->formatDateForExport($row['tanggal_masuk']),
+                $this->formatEmployeeStatusLabel($row),
+                $row['kes_perusahaan'],
+                $row['jht_perusahaan'],
+                $row['jp_perusahaan'],
+                $row['jkk_perusahaan'],
+                $row['jkm_perusahaan'],
+                $row['total_bpjs_perusahaan'],
+            ];
         }
+        $bpjsTotal = [
+            'TOTAL',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            array_sum(array_column($report['bpjs_rows'], 'kes_perusahaan')),
+            array_sum(array_column($report['bpjs_rows'], 'jht_perusahaan')),
+            array_sum(array_column($report['bpjs_rows'], 'jp_perusahaan')),
+            array_sum(array_column($report['bpjs_rows'], 'jkk_perusahaan')),
+            array_sum(array_column($report['bpjs_rows'], 'jkm_perusahaan')),
+            $report['summary']['total_bpjs_perusahaan'],
+        ];
 
         $sheet2 = $spreadsheet->createSheet();
         $sheet2->setTitle('BPJS Perusahaan');
-        $sheet2->setCellValue('A1', 'LAPORAN FINANCE - BPJS PERUSAHAAN');
-        $sheet2->setCellValue('A2', 'Outlet: ' . $report['outlet_name']);
-        $sheet2->setCellValue('A3', 'Periode: ' . $report['periode']);
+        $this->writeFormattedReportSheet(
+            $sheet2,
+            'LAPORAN PAYROLL - BPJS PERUSAHAAN',
+            $report['outlet_name'],
+            $report['periode'],
+            $bpjsHeaders,
+            $bpjsRows,
+            [9, 10, 11, 12, 13, 14],
+            [3],
+            $bpjsTotal
+        );
 
-        $bpjsExport = collect($report['bpjs_rows'])->map(fn (array $row) => [
-            'Nama Karyawan' => $row['nama_lengkap'],
-            'NIK' => $row['nik'],
-            'BPJS Kesehatan (Perusahaan)' => $row['kes_perusahaan'],
-            'JHT (Perusahaan)' => $row['jht_perusahaan'],
-            'JP (Perusahaan)' => $row['jp_perusahaan'],
-            'JKK (Perusahaan)' => $row['jkk_perusahaan'],
-            'JKM (Perusahaan)' => $row['jkm_perusahaan'],
-            'Total BPJS Perusahaan' => $row['total_bpjs_perusahaan'],
-        ])->values()->all();
-
-        if (! empty($bpjsExport)) {
-            $headers = array_keys($bpjsExport[0]);
-            $sheet2->fromArray($headers, null, 'A5');
-            $sheet2->fromArray($bpjsExport, null, 'A6');
-        }
-
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer = new Xlsx($spreadsheet);
         $filename = sprintf(
             'finance-payroll-%s-%s-%s.xlsx',
             preg_replace('/[^a-zA-Z0-9_-]+/', '_', $report['outlet_name'] ?? 'outlet'),
@@ -160,6 +244,8 @@ class PayrollFinanceReportController extends Controller
 
         $start = date('Y-m-d', strtotime("$year-$month-26 -1 month"));
         $end = date('Y-m-d', strtotime("$year-$month-25"));
+        $startDate = Carbon::parse($start)->startOfDay();
+        $endDate = Carbon::parse($end)->endOfDay();
         $periode = Carbon::parse($start)->format('d/m/Y') . ' - ' . Carbon::parse($end)->format('d/m/Y');
 
         $payrollGenerated = DB::table('payroll_generated')
@@ -177,6 +263,9 @@ class PayrollFinanceReportController extends Controller
 
         $details = DB::table('payroll_generated_details as pgd')
             ->join('users as u', 'u.id', '=', 'pgd.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->leftJoin('tbl_data_divisi as d', 'd.id', '=', 'u.division_id')
+            ->leftJoin('tbl_data_level as l', 'l.id', '=', 'j.id_level')
             ->where('pgd.payroll_generated_id', $payrollGenerated->id)
             ->orderBy('u.nama_lengkap')
             ->select(
@@ -184,7 +273,11 @@ class PayrollFinanceReportController extends Controller
                 'u.nama_lengkap as user_nama_lengkap',
                 'u.nama_rekening as user_nama_rekening',
                 'u.no_rekening as user_no_rekening',
-                'u.nik as user_nik'
+                'u.nik as user_nik',
+                'u.tanggal_masuk',
+                'j.nama_jabatan',
+                'd.nama_divisi',
+                'l.nama_level'
             )
             ->get();
 
@@ -194,6 +287,15 @@ class PayrollFinanceReportController extends Controller
                 'periode' => $periode,
             ]);
         }
+
+        $userIds = $details->pluck('user_id')->all();
+        $resignations = EmployeeResignation::where('status', 'approved')
+            ->whereBetween('resignation_date', [$start, $end])
+            ->whereIn('employee_id', $userIds)
+            ->get()
+            ->keyBy('employee_id');
+
+        [$mutationOutMap, $mutationInMap] = $this->buildMutationMaps($outletName, $start, $end, $userIds);
 
         $customItemsByUser = CustomPayrollItem::forOutlet($outletId)
             ->forPeriod($month, $year)
@@ -232,7 +334,16 @@ class PayrollFinanceReportController extends Controller
                 'city_ledger_total' => $detail->city_ledger_total ?? 0,
             ]);
 
-            $paymentRows[] = [
+            $employeeMeta = $this->buildEmployeeRowMeta(
+                $detail,
+                $resignations,
+                $mutationOutMap,
+                $mutationInMap,
+                $startDate,
+                $endDate
+            );
+
+            $paymentRows[] = array_merge($employeeMeta, [
                 'user_id' => $detail->user_id,
                 'nama_lengkap' => $detail->user_nama_lengkap ?: ($detail->nama_lengkap ?? '-'),
                 'nama_rekening' => $detail->user_nama_rekening ?: '-',
@@ -240,7 +351,7 @@ class PayrollFinanceReportController extends Controller
                 'total_gaji_akhir_bulan' => $gajiSplit['total_gaji_akhir_bulan'],
                 'total_gaji_tanggal_8' => $gajiSplit['total_gaji_tanggal_8'],
                 'total_gaji' => $gajiSplit['total_gaji'],
-            ];
+            ]);
 
             $sumAkhirBulan += $gajiSplit['total_gaji_akhir_bulan'];
             $sumTanggal8 += $gajiSplit['total_gaji_tanggal_8'];
@@ -248,7 +359,7 @@ class PayrollFinanceReportController extends Controller
 
             $bpjsRow = $this->mapBpjsPerusahaanRow($detail);
             if ($bpjsRow !== null) {
-                $bpjsRows[] = $bpjsRow;
+                $bpjsRows[] = array_merge($employeeMeta, $bpjsRow);
                 $sumBpjsPerusahaan += $bpjsRow['total_bpjs_perusahaan'];
             }
         }
@@ -359,6 +470,128 @@ class PayrollFinanceReportController extends Controller
         ];
     }
 
+    /**
+     * @param  array<int, int|string>  $userIds
+     * @return array{array<int, array<string, string>>, array<int, array<string, string>>}
+     */
+    private function buildMutationMaps(?string $outletName, string $start, string $end, array $userIds): array
+    {
+        $mutationOutMap = [];
+        $mutationInMap = [];
+
+        if (! $outletName || $userIds === []) {
+            return [$mutationOutMap, $mutationInMap];
+        }
+
+        $baseQuery = fn () => DB::table('employee_movements')
+            ->where('employment_type', 'mutation')
+            ->whereNotNull('employment_effective_date')
+            ->where('employment_effective_date', '>', $start)
+            ->where('employment_effective_date', '<=', $end)
+            ->whereIn('status', ['executed', 'approved', 'pending'])
+            ->whereIn('employee_id', $userIds)
+            ->select('employee_id', 'unit_property_from', 'unit_property_to', 'employment_effective_date');
+
+        foreach ($baseQuery()->where('unit_property_from', $outletName)->get() as $mutation) {
+            $mutationOutMap[$mutation->employee_id] = [
+                'effective_date' => $mutation->employment_effective_date,
+                'outlet_from' => $mutation->unit_property_from,
+                'outlet_to' => $mutation->unit_property_to,
+            ];
+        }
+
+        foreach ($baseQuery()->where('unit_property_to', $outletName)->get() as $mutation) {
+            if (isset($mutationOutMap[$mutation->employee_id])) {
+                continue;
+            }
+
+            $mutationInMap[$mutation->employee_id] = [
+                'effective_date' => $mutation->employment_effective_date,
+                'outlet_from' => $mutation->unit_property_from,
+                'outlet_to' => $mutation->unit_property_to,
+            ];
+        }
+
+        return [$mutationOutMap, $mutationInMap];
+    }
+
+    /**
+     * @param  Collection<int, EmployeeResignation>  $resignations
+     * @param  array<int, array<string, string>>  $mutationOutMap
+     * @param  array<int, array<string, string>>  $mutationInMap
+     * @return array<string, mixed>
+     */
+    private function buildEmployeeRowMeta(
+        object $detail,
+        Collection $resignations,
+        array $mutationOutMap,
+        array $mutationInMap,
+        Carbon $startDate,
+        Carbon $endDate
+    ): array {
+        $resignationDate = null;
+        $resignation = $resignations->get($detail->user_id);
+        if ($resignation && $resignation->resignation_date) {
+            $resignDate = Carbon::parse($resignation->resignation_date);
+            if ($resignDate->between($startDate, $endDate)) {
+                $resignationDate = $resignDate->format('Y-m-d');
+            }
+        }
+
+        $mutation = $mutationOutMap[$detail->user_id] ?? $mutationInMap[$detail->user_id] ?? null;
+        $isMutated = $mutation !== null;
+
+        $tanggalMasuk = $detail->tanggal_masuk
+            ? Carbon::parse($detail->tanggal_masuk)->format('Y-m-d')
+            : null;
+
+        return [
+            'jabatan' => $detail->jabatan ?: ($detail->nama_jabatan ?? '-'),
+            'divisi' => $detail->divisi ?: ($detail->nama_divisi ?? '-'),
+            'level' => $detail->nama_level ?? '-',
+            'tanggal_masuk' => $tanggalMasuk,
+            'is_mutated_employee' => $isMutated,
+            'mutation_effective_date' => $isMutated
+                ? Carbon::parse($mutation['effective_date'])->format('Y-m-d')
+                : null,
+            'mutation_outlet_from' => $isMutated ? ($mutation['outlet_from'] ?? null) : null,
+            'mutation_outlet_to' => $isMutated ? ($mutation['outlet_to'] ?? null) : null,
+            'resignation_date' => $resignationDate,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function formatEmployeeStatusLabel(array $row): string
+    {
+        $parts = [];
+
+        if (! empty($row['is_mutated_employee']) && ! empty($row['mutation_effective_date'])) {
+            $parts[] = sprintf(
+                'Mutasi: %s dari %s → %s',
+                $this->formatDateForExport($row['mutation_effective_date']),
+                $row['mutation_outlet_from'] ?? '-',
+                $row['mutation_outlet_to'] ?? '-'
+            );
+        }
+
+        if (! empty($row['resignation_date'])) {
+            $parts[] = 'Resign: ' . $this->formatDateForExport($row['resignation_date']);
+        }
+
+        return $parts !== [] ? implode(' | ', $parts) : '-';
+    }
+
+    private function formatDateForExport(?string $date): string
+    {
+        if (! $date) {
+            return '-';
+        }
+
+        return Carbon::parse($date)->format('d/m/Y');
+    }
+
     private function getOutlets(): Collection
     {
         return DB::table('tbl_data_outlet')
@@ -394,5 +627,151 @@ class PayrollFinanceReportController extends Controller
             'id' => $y,
             'name' => (string) $y,
         ]);
+    }
+
+    /**
+     * @param  array<int, string>  $headers
+     * @param  array<int, array<int, mixed>>  $rows
+     * @param  array<int, int>  $numericColIndexes  1-based column indexes
+     * @param  array<int, int>  $textColIndexes  1-based column indexes (e.g. NIK, no rekening)
+     * @param  array<int, mixed>|null  $totalRow
+     */
+    private function writeFormattedReportSheet(
+        Worksheet $sheet,
+        string $title,
+        ?string $outletName,
+        ?string $periode,
+        array $headers,
+        array $rows,
+        array $numericColIndexes,
+        array $textColIndexes = [],
+        ?array $totalRow = null
+    ): void {
+        $colCount = count($headers);
+        $lastCol = Coordinate::stringFromColumnIndex($colCount);
+        $headerRow = 5;
+        $dataStartRow = $headerRow + 1;
+        $dataEndRow = $rows !== [] ? $dataStartRow + count($rows) - 1 : $headerRow;
+        $totalRowIndex = $rows !== [] && $totalRow !== null ? $dataEndRow + 1 : null;
+        $tableEndRow = $totalRowIndex ?? $dataEndRow;
+
+        $sheet->setCellValue('A1', $title);
+        $sheet->mergeCells("A1:{$lastCol}1");
+        $sheet->setCellValue('A2', 'Outlet: ' . ($outletName ?: '-'));
+        $sheet->mergeCells("A2:{$lastCol}2");
+        $sheet->setCellValue('A3', 'Periode: ' . ($periode ?: '-'));
+        $sheet->mergeCells("A3:{$lastCol}3");
+
+        $sheet->fromArray($headers, null, 'A' . $headerRow);
+
+        if ($rows !== []) {
+            $sheet->fromArray($rows, null, 'A' . $dataStartRow);
+
+            foreach ($rows as $rowOffset => $row) {
+                foreach ($textColIndexes as $colIndex) {
+                    $col = Coordinate::stringFromColumnIndex($colIndex);
+                    $excelRow = $dataStartRow + $rowOffset;
+                    $value = $row[$colIndex - 1] ?? '';
+                    $sheet->setCellValueExplicit("{$col}{$excelRow}", (string) $value, DataType::TYPE_STRING);
+                }
+            }
+        }
+
+        if ($totalRowIndex !== null) {
+            $sheet->fromArray($totalRow, null, 'A' . $totalRowIndex);
+        }
+
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 14, 'color' => ['rgb' => '1E3A8A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT, 'vertical' => Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getStyle('A2:A3')->applyFromArray([
+            'font' => ['size' => 11, 'color' => ['rgb' => '374151']],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'],
+            ],
+            'alignment' => [
+                'horizontal' => Alignment::HORIZONTAL_CENTER,
+                'vertical' => Alignment::VERTICAL_CENTER,
+                'wrapText' => true,
+            ],
+        ]);
+        $sheet->getRowDimension($headerRow)->setRowHeight(24);
+
+        if ($rows !== []) {
+            for ($row = $dataStartRow; $row <= $dataEndRow; $row++) {
+                if (($row - $dataStartRow) % 2 === 1) {
+                    $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                        'fill' => [
+                            'fillType' => Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => 'F8FAFC'],
+                        ],
+                    ]);
+                }
+            }
+        }
+
+        if ($totalRowIndex !== null) {
+            $sheet->getStyle("A{$totalRowIndex}:{$lastCol}{$totalRowIndex}")->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '0F172A'],
+                ],
+            ]);
+            $sheet->getStyle("A{$totalRowIndex}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        }
+
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$tableEndRow}")
+            ->getBorders()
+            ->getAllBorders()
+            ->setBorderStyle(Border::BORDER_THIN)
+            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('FFD1D5DB'));
+
+        foreach ($numericColIndexes as $colIndex) {
+            $col = Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->getStyle("{$col}{$dataStartRow}:{$col}{$tableEndRow}")
+                ->getNumberFormat()
+                ->setFormatCode('#,##0');
+            $sheet->getStyle("{$col}{$dataStartRow}:{$col}{$tableEndRow}")
+                ->getAlignment()
+                ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        }
+
+        foreach ($textColIndexes as $colIndex) {
+            $col = Coordinate::stringFromColumnIndex($colIndex);
+            $endRow = max($dataEndRow, $totalRowIndex ?? $dataEndRow);
+            $sheet->getStyle("{$col}{$dataStartRow}:{$col}{$endRow}")
+                ->getNumberFormat()
+                ->setFormatCode(NumberFormat::FORMAT_TEXT);
+        }
+
+        $sheet->getStyle("A{$dataStartRow}:A{$tableEndRow}")
+            ->getAlignment()
+            ->setHorizontal(Alignment::HORIZONTAL_CENTER);
+
+        $leftAlignUntil = min(3, $colCount);
+        for ($colIndex = 2; $colIndex <= $leftAlignUntil; $colIndex++) {
+            if (in_array($colIndex, $numericColIndexes, true)) {
+                continue;
+            }
+            $col = Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->getStyle("{$col}{$dataStartRow}:{$col}{$tableEndRow}")
+                ->getAlignment()
+                ->setHorizontal(Alignment::HORIZONTAL_LEFT);
+        }
+
+        for ($colIndex = 1; $colIndex <= $colCount; $colIndex++) {
+            $col = Coordinate::stringFromColumnIndex($colIndex);
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $sheet->freezePane('A' . $dataStartRow);
     }
 }

@@ -1,4 +1,4 @@
--- Laporan Finance Payroll — erp_menu + erp_permission (parent HO Finance = 5)
+-- Laporan Payroll — erp_menu + erp_permission (parent HO Finance = 5)
 -- Jalankan sekali di MySQL (paste seluruh blok).
 
 START TRANSACTION;
@@ -12,7 +12,7 @@ INSERT INTO `erp_menu` (
     `created_at`,
     `updated_at`
 ) VALUES (
-    'Laporan Finance Payroll',
+    'Laporan Payroll',
     'payroll_finance_report',
     5,
     '/payroll/finance-report',

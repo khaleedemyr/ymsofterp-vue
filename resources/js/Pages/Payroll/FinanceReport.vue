@@ -39,6 +39,19 @@ function formatCurrency(value) {
   }).format(num);
 }
 
+function formatDate(dateString) {
+  if (!dateString) {
+    return '';
+  }
+
+  const date = new Date(dateString);
+  return date.toLocaleDateString('id-ID', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
 const monthName = computed(() => {
   const found = props.months?.find((m) => m.id === month.value);
   return found?.name || month.value;
@@ -79,7 +92,7 @@ function exportReport() {
 </script>
 
 <template>
-  <AppLayout title="Laporan Finance Payroll">
+  <AppLayout title="Laporan Payroll">
     <div class="w-full min-h-[60vh] flex flex-col py-4">
       <div v-if="loading" class="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
         <div class="animate-spin rounded-full h-20 w-20 border-t-4 border-b-4 border-blue-500"></div>
@@ -88,7 +101,7 @@ function exportReport() {
       <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 class="text-2xl font-bold text-blue-800 flex items-center gap-2">
           <i class="fa-solid fa-coins text-amber-500"></i>
-          Laporan Finance Payroll
+          Laporan Payroll
         </h1>
         <p class="text-sm text-gray-500">
           Data dari payroll yang sudah di-generate
@@ -202,6 +215,10 @@ function exportReport() {
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Jabatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Divisi</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Level</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Join Date</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Rekening</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No. Rekening</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Akhir Bulan</th>
@@ -212,7 +229,36 @@ function exportReport() {
               <tbody class="bg-white divide-y divide-gray-100">
                 <tr v-for="(row, index) in paymentRows" :key="row.user_id" class="hover:bg-gray-50">
                   <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
-                  <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.nama_lengkap }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-900">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium">{{ row.nama_lengkap }}</span>
+                      <span
+                        v-if="row.is_mutated_employee"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                      >
+                        Mutasi
+                      </span>
+                      <span
+                        v-if="row.resignation_date"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                      >
+                        Resign
+                      </span>
+                    </div>
+                    <div
+                      v-if="row.is_mutated_employee && row.mutation_effective_date"
+                      class="text-xs text-purple-600 mt-1 font-medium"
+                    >
+                      Mutasi: {{ formatDate(row.mutation_effective_date) }} dari {{ row.mutation_outlet_from }} → {{ row.mutation_outlet_to }}
+                    </div>
+                    <div v-if="row.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
+                      Resign: {{ formatDate(row.resignation_date) }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.jabatan }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.divisi }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.level }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700">{{ row.nama_rekening }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ row.no_rekening }}</td>
                   <td class="px-4 py-3 text-sm text-right font-semibold text-blue-700">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</td>
@@ -222,7 +268,7 @@ function exportReport() {
               </tbody>
               <tfoot class="bg-slate-900 text-white">
                 <tr>
-                  <td colspan="4" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
+                  <td colspan="8" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_gaji) }}</td>
@@ -238,6 +284,10 @@ function exportReport() {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">NIK</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Jabatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Divisi</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Level</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Join Date</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Kesehatan</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">JHT</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">JP</th>
@@ -248,12 +298,41 @@ function exportReport() {
               </thead>
               <tbody class="bg-white divide-y divide-gray-100">
                 <tr v-if="!bpjsRows?.length">
-                  <td colspan="9" class="px-4 py-8 text-center text-gray-500">Tidak ada data BPJS perusahaan untuk periode ini.</td>
+                  <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data BPJS perusahaan untuk periode ini.</td>
                 </tr>
                 <tr v-for="(row, index) in bpjsRows" :key="row.user_id" class="hover:bg-gray-50">
                   <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
-                  <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.nama_lengkap }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-900">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-medium">{{ row.nama_lengkap }}</span>
+                      <span
+                        v-if="row.is_mutated_employee"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                      >
+                        Mutasi
+                      </span>
+                      <span
+                        v-if="row.resignation_date"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                      >
+                        Resign
+                      </span>
+                    </div>
+                    <div
+                      v-if="row.is_mutated_employee && row.mutation_effective_date"
+                      class="text-xs text-purple-600 mt-1 font-medium"
+                    >
+                      Mutasi: {{ formatDate(row.mutation_effective_date) }} dari {{ row.mutation_outlet_from }} → {{ row.mutation_outlet_to }}
+                    </div>
+                    <div v-if="row.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
+                      Resign: {{ formatDate(row.resignation_date) }}
+                    </div>
+                  </td>
                   <td class="px-4 py-3 text-sm text-gray-700">{{ row.nik }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.jabatan }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.divisi }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.level }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.kes_perusahaan) }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.jht_perusahaan) }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.jp_perusahaan) }}</td>
@@ -264,7 +343,7 @@ function exportReport() {
               </tbody>
               <tfoot v-if="bpjsRows?.length" class="bg-teal-900 text-white">
                 <tr>
-                  <td colspan="8" class="px-4 py-3 text-sm font-bold text-right">TOTAL BPJS PERUSAHAAN</td>
+                  <td colspan="13" class="px-4 py-3 text-sm font-bold text-right">TOTAL BPJS PERUSAHAAN</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_bpjs_perusahaan) }}</td>
                 </tr>
               </tfoot>
