@@ -15,6 +15,7 @@ use App\Services\PayrollBpjsCalculator;
 use App\Services\PayrollGajiSplitCalculator;
 use App\Services\PayrollKasbonService;
 use App\Services\PayrollSplitPoolCalculator;
+use App\Services\PayrollGeneratePhaseService;
 
 class PayrollReportController extends Controller
 {
@@ -4811,6 +4812,7 @@ class PayrollReportController extends Controller
     public function generatePayroll(Request $request)
     {
         $request->validate([
+            'gajian_type' => 'required|in:gajian1,gajian2',
             'outlet_id' => 'required|integer',
             'month' => 'required|integer|between:1,12',
             'year' => 'required|integer|min:2020',
@@ -4821,147 +4823,14 @@ class PayrollReportController extends Controller
             'payroll_data' => 'required|array',
         ]);
 
-        try {
-            DB::beginTransaction();
-
-            $outletId = $request->outlet_id;
-            $month = $request->month;
-            $year = $request->year;
-            $serviceCharge = $request->service_charge ?? 0;
-            $lbAmount = $request->lb_amount ?? 0;
-            $deviasiAmount = $request->deviasi_amount ?? 0;
-            $cityLedgerAmount = $request->city_ledger_amount ?? 0;
-            $payrollData = $request->payroll_data;
-
-            // Cek apakah payroll untuk periode ini sudah ada
-            $existingPayroll = DB::table('payroll_generated')
-                ->where('outlet_id', $outletId)
-                ->where('month', $month)
-                ->where('year', $year)
-                ->first();
-
-            $kasbonService = app(PayrollKasbonService::class);
-
-            if ($existingPayroll) {
-                // Update jika sudah ada
-                DB::table('payroll_generated')
-                    ->where('id', $existingPayroll->id)
-                    ->update([
-                        'service_charge' => $serviceCharge,
-                        'lb_amount' => $lbAmount,
-                        'deviasi_amount' => $deviasiAmount,
-                        'city_ledger_amount' => $cityLedgerAmount,
-                        'status' => 'generated',
-                        'updated_at' => now(),
-                        'updated_by' => auth()->id(),
-                    ]);
-
-                $payrollId = $existingPayroll->id;
-
-                $kasbonService->reversePayrollDeductions((int) $payrollId);
-                
-                // Hapus detail lama
-                DB::table('payroll_generated_details')
-                    ->where('payroll_generated_id', $payrollId)
-                    ->delete();
-            } else {
-                // Insert baru
-                $payrollId = DB::table('payroll_generated')->insertGetId([
-                    'outlet_id' => $outletId,
-                    'month' => $month,
-                    'year' => $year,
-                    'service_charge' => $serviceCharge,
-                    'lb_amount' => $lbAmount,
-                    'deviasi_amount' => $deviasiAmount,
-                    'city_ledger_amount' => $cityLedgerAmount,
-                    'status' => 'generated',
-                    'created_at' => now(),
-                    'created_by' => auth()->id(),
-                    'updated_at' => now(),
-                    'updated_by' => auth()->id(),
-                ]);
-            }
-
-            // Simpan detail payroll per karyawan
-            foreach ($payrollData as $item) {
-                DB::table('payroll_generated_details')->insert([
-                    'payroll_generated_id' => $payrollId,
-                    'user_id' => $item['user_id'],
-                    'nik' => $item['nik'] ?? null,
-                    'nama_lengkap' => $item['nama_lengkap'] ?? null,
-                    'jabatan' => $item['jabatan'] ?? null,
-                    'divisi' => $item['divisi'] ?? null,
-                    'point' => $item['point'] ?? 0,
-                    'gaji_pokok' => $item['gaji_pokok'] ?? 0,
-                    'tunjangan' => $item['tunjangan'] ?? 0,
-                    'total_telat' => $item['total_telat'] ?? 0,
-                    'total_lembur' => $item['total_lembur'] ?? 0,
-                    'nominal_lembur_per_jam' => $item['nominal_lembur_per_jam'] ?? 0,
-                    'gaji_lembur' => $item['gaji_lembur'] ?? 0,
-                    'nominal_uang_makan' => $item['nominal_uang_makan'] ?? 0,
-                    'uang_makan' => $item['uang_makan'] ?? 0,
-                    'service_charge_by_point' => $item['service_charge_by_point'] ?? 0,
-                    'service_charge_pro_rate' => $item['service_charge_pro_rate'] ?? 0,
-                    'service_charge' => $item['service_charge'] ?? 0,
-                    'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
-                    'bpjs_tk' => $item['bpjs_tk'] ?? 0,
-                    'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
-                        ? json_encode($item['bpjs_perusahaan_detail'])
-                        : null,
-                    'lb_by_point' => $item['lb_by_point'] ?? 0,
-                    'lb_pro_rate' => $item['lb_pro_rate'] ?? 0,
-                    'lb_total' => $item['lb_total'] ?? 0,
-                    'deviasi_by_point' => $item['deviasi_by_point'] ?? 0,
-                    'deviasi_pro_rate' => $item['deviasi_pro_rate'] ?? 0,
-                    'deviasi_total' => $item['deviasi_total'] ?? 0,
-                    'city_ledger_by_point' => $item['city_ledger_by_point'] ?? 0,
-                    'city_ledger_pro_rate' => $item['city_ledger_pro_rate'] ?? 0,
-                    'city_ledger_total' => $item['city_ledger_total'] ?? 0,
-                    'ph_bonus' => $item['ph_bonus'] ?? 0,
-                    'custom_earnings' => $item['custom_earnings'] ?? 0,
-                    'custom_deductions' => $item['custom_deductions'] ?? 0,
-                    'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
-                    'potongan_telat' => $item['potongan_telat'] ?? 0,
-                    'total_alpha' => $item['total_alpha'] ?? 0,
-                    'potongan_alpha' => $item['potongan_alpha'] ?? 0,
-                    'potongan_unpaid_leave' => $item['potongan_unpaid_leave'] ?? 0,
-                    'potongan_kasbon' => $item['potongan_kasbon'] ?? 0,
-                    'pr_kasbon_id' => $item['pr_kasbon_id'] ?? null,
-                    'kasbon_cicilan_ke' => $item['kasbon_cicilan_ke'] ?? null,
-                    'total_gaji' => $item['total_gaji'] ?? 0,
-                    'hari_kerja' => $item['hari_kerja'] ?? 0,
-                    'periode' => $item['periode'] ?? null,
-                    'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
-                    'leave_data' => isset($item['leave_data']) ? json_encode($item['leave_data']) : (isset($item['izin_cuti_breakdown']) ? json_encode($item['izin_cuti_breakdown']) : null),
-                    'payment_method' => $item['payment_method'] ?? 'transfer', // Use payment_method from item or default to transfer
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-
-            $kasbonService->applyPayrollDeductions((int) $payrollId, $payrollData);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Payroll berhasil di-generate dan disimpan',
-                'payroll_id' => $payrollId
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Error generating payroll: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Gagal generate payroll: ' . $e->getMessage()
-            ], 500);
-        }
+        return $this->persistPayrollPhase($request, 'generate');
     }
 
-    // Edit Payroll - Update payroll yang sudah di-generate
+    // Edit Payroll - Update payroll yang sudah di-generate (per fase)
     public function editPayroll(Request $request)
     {
         $request->validate([
+            'gajian_type' => 'required|in:gajian1,gajian2',
             'payroll_id' => 'required|integer',
             'service_charge' => 'nullable|numeric|min:0',
             'lb_amount' => 'nullable|numeric|min:0',
@@ -4970,128 +4839,143 @@ class PayrollReportController extends Controller
             'payroll_data' => 'required|array',
         ]);
 
+        return $this->persistPayrollPhase($request, 'edit');
+    }
+
+    private function persistPayrollPhase(Request $request, string $action)
+    {
         try {
             DB::beginTransaction();
 
-            $payrollId = $request->payroll_id;
-            $serviceCharge = $request->service_charge ?? 0;
-            $lbAmount = $request->lb_amount ?? 0;
-            $deviasiAmount = $request->deviasi_amount ?? 0;
-            $cityLedgerAmount = $request->city_ledger_amount ?? 0;
+            $gajianType = $request->gajian_type;
+            $phaseService = app(PayrollGeneratePhaseService::class);
+            $kasbonService = app(PayrollKasbonService::class);
             $payrollData = $request->payroll_data;
+            $amounts = [
+                'service_charge' => $request->service_charge ?? 0,
+                'lb_amount' => $request->lb_amount ?? 0,
+                'deviasi_amount' => $request->deviasi_amount ?? 0,
+                'city_ledger_amount' => $request->city_ledger_amount ?? 0,
+            ];
 
-            // Cek apakah payroll ada
-            $payroll = DB::table('payroll_generated')
-                ->where('id', $payrollId)
-                ->first();
+            $statusColumn = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'gajian2_status' : 'gajian1_status';
+            $generatedAtColumn = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'gajian2_generated_at' : 'gajian1_generated_at';
+            $phaseLabel = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'Gajian 2 (Tanggal 8)' : 'Gajian 1 (Akhir Bulan)';
 
-            if (!$payroll) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payroll tidak ditemukan'
-                ], 404);
+            if ($action === 'edit') {
+                $payroll = DB::table('payroll_generated')->where('id', $request->payroll_id)->first();
+                if (!$payroll) {
+                    return response()->json(['success' => false, 'message' => 'Payroll tidak ditemukan'], 404);
+                }
+                $payrollId = (int) $payroll->id;
+            } else {
+                $payroll = DB::table('payroll_generated')
+                    ->where('outlet_id', $request->outlet_id)
+                    ->where('month', $request->month)
+                    ->where('year', $request->year)
+                    ->first();
+
+                if ($payroll) {
+                    $payrollId = (int) $payroll->id;
+                } else {
+                    $payrollId = DB::table('payroll_generated')->insertGetId([
+                        'outlet_id' => $request->outlet_id,
+                        'month' => $request->month,
+                        'year' => $request->year,
+                        'service_charge' => 0,
+                        'lb_amount' => 0,
+                        'deviasi_amount' => 0,
+                        'city_ledger_amount' => 0,
+                        'status' => 'draft',
+                        'gajian1_status' => 'draft',
+                        'gajian2_status' => 'draft',
+                        'created_at' => now(),
+                        'created_by' => auth()->id(),
+                        'updated_at' => now(),
+                        'updated_by' => auth()->id(),
+                    ]);
+                    $payroll = DB::table('payroll_generated')->where('id', $payrollId)->first();
+                }
             }
 
-            // Cek status, jika locked tidak bisa di-edit
-            if ($payroll->status === 'locked') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payroll sudah di-lock dan tidak bisa di-edit'
-                ], 403);
+            if ($locked = $phaseService->assertPhaseNotLocked($payroll, $gajianType)) {
+                return response()->json($locked, $locked['code']);
             }
 
-            // Update payroll header
-            DB::table('payroll_generated')
-                ->where('id', $payrollId)
-                ->update([
-                    'service_charge' => $serviceCharge,
-                    'lb_amount' => $lbAmount,
-                    'deviasi_amount' => $deviasiAmount,
-                    'city_ledger_amount' => $cityLedgerAmount,
-                    'status' => 'generated',
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN2 && ($payroll->gajian1_status ?? 'draft') !== 'generated') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Generate Gajian 1 terlebih dahulu sebelum Generate Gajian 2',
+                ], 422);
+            }
+
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN1) {
+                $kasbonService->reversePayrollDeductions($payrollId);
+            }
+
+            $headerUpdate = array_merge(
+                $phaseService->headerUpdatesForPhase($gajianType, $amounts),
+                [
+                    $statusColumn => 'generated',
+                    $generatedAtColumn => now(),
                     'updated_at' => now(),
                     'updated_by' => auth()->id(),
-                ]);
+                ]
+            );
 
-            $kasbonServiceEdit = app(PayrollKasbonService::class);
-            $kasbonServiceEdit->reversePayrollDeductions((int) $payrollId);
+            DB::table('payroll_generated')->where('id', $payrollId)->update($headerUpdate);
 
-            // Hapus detail lama
-            DB::table('payroll_generated_details')
-                ->where('payroll_generated_id', $payrollId)
-                ->delete();
-
-            // Simpan detail payroll per karyawan
             foreach ($payrollData as $item) {
-                DB::table('payroll_generated_details')->insert([
-                    'payroll_generated_id' => $payrollId,
-                    'user_id' => $item['user_id'],
-                    'nik' => $item['nik'] ?? null,
-                    'nama_lengkap' => $item['nama_lengkap'] ?? null,
-                    'jabatan' => $item['jabatan'] ?? null,
-                    'divisi' => $item['divisi'] ?? null,
-                    'point' => $item['point'] ?? 0,
-                    'gaji_pokok' => $item['gaji_pokok'] ?? 0,
-                    'tunjangan' => $item['tunjangan'] ?? 0,
-                    'total_telat' => $item['total_telat'] ?? 0,
-                    'total_lembur' => $item['total_lembur'] ?? 0,
-                    'nominal_lembur_per_jam' => $item['nominal_lembur_per_jam'] ?? 0,
-                    'gaji_lembur' => $item['gaji_lembur'] ?? 0,
-                    'nominal_uang_makan' => $item['nominal_uang_makan'] ?? 0,
-                    'uang_makan' => $item['uang_makan'] ?? 0,
-                    'service_charge_by_point' => $item['service_charge_by_point'] ?? 0,
-                    'service_charge_pro_rate' => $item['service_charge_pro_rate'] ?? 0,
-                    'service_charge' => $item['service_charge'] ?? 0,
-                    'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
-                    'bpjs_tk' => $item['bpjs_tk'] ?? 0,
-                    'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
-                        ? json_encode($item['bpjs_perusahaan_detail'])
-                        : null,
-                    'lb_by_point' => $item['lb_by_point'] ?? 0,
-                    'lb_pro_rate' => $item['lb_pro_rate'] ?? 0,
-                    'lb_total' => $item['lb_total'] ?? 0,
-                    'deviasi_by_point' => $item['deviasi_by_point'] ?? 0,
-                    'deviasi_pro_rate' => $item['deviasi_pro_rate'] ?? 0,
-                    'deviasi_total' => $item['deviasi_total'] ?? 0,
-                    'city_ledger_by_point' => $item['city_ledger_by_point'] ?? 0,
-                    'city_ledger_pro_rate' => $item['city_ledger_pro_rate'] ?? 0,
-                    'city_ledger_total' => $item['city_ledger_total'] ?? 0,
-                    'ph_bonus' => $item['ph_bonus'] ?? 0,
-                    'custom_earnings' => $item['custom_earnings'] ?? 0,
-                    'custom_deductions' => $item['custom_deductions'] ?? 0,
-                    'gaji_per_menit' => $item['gaji_per_menit'] ?? 0,
-                    'potongan_telat' => $item['potongan_telat'] ?? 0,
-                    'total_alpha' => $item['total_alpha'] ?? 0,
-                    'potongan_alpha' => $item['potongan_alpha'] ?? 0,
-                    'potongan_unpaid_leave' => $item['potongan_unpaid_leave'] ?? 0,
-                    'potongan_kasbon' => $item['potongan_kasbon'] ?? 0,
-                    'pr_kasbon_id' => $item['pr_kasbon_id'] ?? null,
-                    'kasbon_cicilan_ke' => $item['kasbon_cicilan_ke'] ?? null,
-                    'total_gaji' => $item['total_gaji'] ?? 0,
-                    'hari_kerja' => $item['hari_kerja'] ?? 0,
-                    'periode' => $item['periode'] ?? null,
-                    'custom_items' => isset($item['custom_items']) ? json_encode($item['custom_items']) : null,
-                    'leave_data' => isset($item['leave_data']) ? json_encode($item['leave_data']) : (isset($item['izin_cuti_breakdown']) ? json_encode($item['izin_cuti_breakdown']) : null),
-                    'payment_method' => $item['payment_method'] ?? 'transfer', // Use existing payment_method or default to transfer
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                $userId = (int) ($item['user_id'] ?? 0);
+                if ($userId <= 0) {
+                    continue;
+                }
+
+                $existing = DB::table('payroll_generated_details')
+                    ->where('payroll_generated_id', $payrollId)
+                    ->where('user_id', $userId)
+                    ->first();
+
+                $phaseFields = $phaseService->phaseFieldsFromItem($gajianType, $item);
+                $baseFields = $phaseService->baseFieldsFromItem($item);
+                $merged = $phaseService->mergeDetailRow($existing, $phaseFields, $baseFields);
+
+                if ($existing) {
+                    $updatePayload = $phaseService->detailInsertPayload($payrollId, $userId, $merged);
+                    unset($updatePayload['created_at']);
+                    DB::table('payroll_generated_details')
+                        ->where('id', $existing->id)
+                        ->update($updatePayload);
+                } else {
+                    DB::table('payroll_generated_details')->insert(
+                        $phaseService->detailInsertPayload($payrollId, $userId, $merged)
+                    );
+                }
             }
 
-            $kasbonServiceEdit->applyPayrollDeductions((int) $payrollId, $payrollData);
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN1) {
+                $kasbonService->applyPayrollDeductions($payrollId, $payrollData);
+            }
+
+            $phaseService->syncOverallStatus($payrollId);
 
             DB::commit();
 
+            $verb = $action === 'edit' ? 'di-update' : 'di-generate';
+
             return response()->json([
                 'success' => true,
-                'message' => 'Payroll berhasil di-update'
+                'message' => "{$phaseLabel} berhasil {$verb} dan disimpan",
+                'payroll_id' => $payrollId,
+                'gajian_type' => $gajianType,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Error editing payroll: ' . $e->getMessage());
+            \Log::error("Error {$action} payroll phase: " . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal update payroll: ' . $e->getMessage()
+                'message' => 'Gagal menyimpan payroll: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -5150,60 +5034,115 @@ class PayrollReportController extends Controller
         }
     }
 
-    // Rollback Payroll - Hapus payroll yang sudah di-generate
+    // Rollback Payroll - Hapus payroll atau reset per fase
     public function rollbackPayroll(Request $request)
     {
         $request->validate([
             'payroll_id' => 'required|integer',
+            'gajian_type' => 'nullable|in:gajian1,gajian2',
         ]);
 
         try {
             DB::beginTransaction();
 
-            $payrollId = $request->payroll_id;
+            $payrollId = (int) $request->payroll_id;
+            $gajianType = $request->gajian_type;
+            $phaseService = app(PayrollGeneratePhaseService::class);
+            $kasbonService = app(PayrollKasbonService::class);
 
-            // Cek apakah payroll ada
-            $payroll = DB::table('payroll_generated')
-                ->where('id', $payrollId)
-                ->first();
+            $payroll = DB::table('payroll_generated')->where('id', $payrollId)->first();
 
             if (!$payroll) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payroll tidak ditemukan'
+                    'message' => 'Payroll tidak ditemukan',
                 ], 404);
             }
 
-            // Cek status, jika locked tidak bisa di-rollback
             if ($payroll->status === 'locked') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Payroll sudah di-lock dan tidak bisa di-rollback'
+                    'message' => 'Payroll sudah di-lock dan tidak bisa di-rollback',
                 ], 403);
             }
 
-            // Hapus detail terlebih dahulu (karena foreign key constraint)
-            DB::table('payroll_generated_details')
-                ->where('payroll_generated_id', $payrollId)
-                ->delete();
+            if (!$gajianType) {
+                $kasbonService->reversePayrollDeductions($payrollId);
+                DB::table('payroll_generated_details')->where('payroll_generated_id', $payrollId)->delete();
+                DB::table('payroll_generated')->where('id', $payrollId)->delete();
 
-            // Hapus payroll header
-            DB::table('payroll_generated')
-                ->where('id', $payrollId)
-                ->delete();
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Payroll berhasil di-rollback (dihapus)',
+                ]);
+            }
+
+            if ($locked = $phaseService->assertPhaseNotLocked($payroll, $gajianType)) {
+                return response()->json($locked, $locked['code']);
+            }
+
+            $statusColumn = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'gajian2_status' : 'gajian1_status';
+            $generatedAtColumn = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'gajian2_generated_at' : 'gajian1_generated_at';
+            $phaseLabel = $gajianType === PayrollGeneratePhaseService::GAJIAN2 ? 'Gajian 2' : 'Gajian 1';
+
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN1) {
+                $kasbonService->reversePayrollDeductions($payrollId);
+            }
+
+            $clearFields = $phaseService->clearPhaseDetailFields($gajianType);
+            $details = DB::table('payroll_generated_details')->where('payroll_generated_id', $payrollId)->get();
+
+            foreach ($details as $detail) {
+                $merged = array_merge((array) $detail, $clearFields);
+                $merged['total_gaji'] = $phaseService->calculateTotalGaji($merged);
+
+                $updatePayload = $phaseService->detailInsertPayload($payrollId, (int) $detail->user_id, $merged);
+                unset($updatePayload['created_at'], $updatePayload['payroll_generated_id'], $updatePayload['user_id']);
+
+                DB::table('payroll_generated_details')->where('id', $detail->id)->update($updatePayload);
+            }
+
+            $headerUpdate = [
+                $statusColumn => 'draft',
+                $generatedAtColumn => null,
+                'updated_at' => now(),
+                'updated_by' => auth()->id(),
+            ];
+
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN2) {
+                $headerUpdate = array_merge($headerUpdate, [
+                    'service_charge' => 0,
+                    'lb_amount' => 0,
+                    'deviasi_amount' => 0,
+                    'city_ledger_amount' => 0,
+                ]);
+            }
+
+            DB::table('payroll_generated')->where('id', $payrollId)->update($headerUpdate);
+
+            $payroll = DB::table('payroll_generated')->where('id', $payrollId)->first();
+            if (($payroll->gajian1_status ?? 'draft') === 'draft' && ($payroll->gajian2_status ?? 'draft') === 'draft') {
+                DB::table('payroll_generated_details')->where('payroll_generated_id', $payrollId)->delete();
+                DB::table('payroll_generated')->where('id', $payrollId)->delete();
+            } else {
+                $phaseService->syncOverallStatus($payrollId);
+            }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Payroll berhasil di-rollback (dihapus)'
+                'message' => "{$phaseLabel} berhasil di-rollback",
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Error rolling back payroll: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal rollback payroll: ' . $e->getMessage()
+                'message' => 'Gagal rollback payroll: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -5225,25 +5164,35 @@ class PayrollReportController extends Controller
                 ->first();
 
             if ($payroll) {
+                $gajian1Status = $payroll->gajian1_status ?? (($payroll->status ?? 'draft') === 'generated' ? 'generated' : 'draft');
+                $gajian2Status = $payroll->gajian2_status ?? (($payroll->status ?? 'draft') === 'generated' ? 'generated' : 'draft');
+
                 return response()->json([
                     'success' => true,
                     'exists' => true,
                     'payroll_id' => $payroll->id,
                     'status' => $payroll->status,
+                    'gajian1_status' => $gajian1Status,
+                    'gajian2_status' => $gajian2Status,
+                    'gajian1_generated_at' => $payroll->gajian1_generated_at ?? null,
+                    'gajian2_generated_at' => $payroll->gajian2_generated_at ?? null,
                     'created_at' => $payroll->created_at,
                     'updated_at' => $payroll->updated_at,
                 ]);
-            } else {
-                return response()->json([
-                    'success' => true,
-                    'exists' => false,
-                ]);
             }
+
+            return response()->json([
+                'success' => true,
+                'exists' => false,
+                'gajian1_status' => 'draft',
+                'gajian2_status' => 'draft',
+            ]);
         } catch (\Exception $e) {
             \Log::error('Error getting payroll status: ' . $e->getMessage());
+
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mendapatkan status payroll: ' . $e->getMessage()
+                'message' => 'Gagal mendapatkan status payroll: ' . $e->getMessage(),
             ], 500);
         }
     }

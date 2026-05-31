@@ -56,6 +56,26 @@ const generating = ref(false);
 const searchQuery = ref('');
 const payrollStatus = ref(null);
 const payrollId = ref(null);
+const gajian1Status = ref('draft');
+const gajian2Status = ref('draft');
+const gajian1GeneratedAt = ref(null);
+const gajian2GeneratedAt = ref(null);
+
+const isAnyPhaseGenerated = computed(() =>
+  gajian1Status.value === 'generated' || gajian2Status.value === 'generated'
+);
+
+function phaseStatusLabel(status) {
+  if (status === 'generated') return 'Generated';
+  if (status === 'locked') return 'Locked';
+  return 'Draft';
+}
+
+function phaseStatusClass(status) {
+  if (status === 'generated') return 'bg-green-100 text-green-800';
+  if (status === 'locked') return 'bg-red-100 text-red-800';
+  return 'bg-yellow-100 text-yellow-800';
+}
 
 // Expandable rows state
 const expandedRows = ref(new Set());
@@ -757,6 +777,10 @@ async function checkPayrollStatus() {
   if (!outletId.value || !month.value || !year.value) {
     payrollStatus.value = null;
     payrollId.value = null;
+    gajian1Status.value = 'draft';
+    gajian2Status.value = 'draft';
+    gajian1GeneratedAt.value = null;
+    gajian2GeneratedAt.value = null;
     return;
   }
 
@@ -764,7 +788,7 @@ async function checkPayrollStatus() {
     const response = await axios.get('/payroll/report/status', {
       params: {
         outlet_id: parseInt(outletId.value),
-        month: parseInt(month.value), // CRITICAL FIX: Send as integer, not formatted string
+        month: parseInt(month.value),
         year: parseInt(year.value),
       }
     });
@@ -772,37 +796,57 @@ async function checkPayrollStatus() {
     if (response.data.success && response.data.exists) {
       payrollStatus.value = response.data.status;
       payrollId.value = response.data.payroll_id;
+      gajian1Status.value = response.data.gajian1_status || 'draft';
+      gajian2Status.value = response.data.gajian2_status || 'draft';
+      gajian1GeneratedAt.value = response.data.gajian1_generated_at || null;
+      gajian2GeneratedAt.value = response.data.gajian2_generated_at || null;
     } else {
       payrollStatus.value = null;
       payrollId.value = null;
+      gajian1Status.value = 'draft';
+      gajian2Status.value = 'draft';
+      gajian1GeneratedAt.value = null;
+      gajian2GeneratedAt.value = null;
     }
   } catch (error) {
     console.error('Error checking payroll status:', error);
     payrollStatus.value = null;
     payrollId.value = null;
+    gajian1Status.value = 'draft';
+    gajian2Status.value = 'draft';
   }
 }
 
-// Generate Payroll
-async function generatePayroll() {
+async function persistPayrollPhase(gajianType, action = 'generate') {
   if (!outletId.value || !month.value || !year.value) {
     Swal.fire('Peringatan', 'Pilih outlet, bulan, dan tahun terlebih dahulu', 'warning');
     return;
   }
 
   if (!props.payrollData || props.payrollData.length === 0) {
-    Swal.fire('Peringatan', 'Tidak ada data payroll untuk di-generate', 'warning');
+    Swal.fire('Peringatan', 'Tidak ada data payroll untuk disimpan', 'warning');
+    return;
+  }
+
+  const isGajian1 = gajianType === 'gajian1';
+  const phaseLabel = isGajian1 ? 'Gajian 1 (Akhir Bulan)' : 'Gajian 2 (Tanggal 8)';
+  const actionLabel = action === 'edit' ? 'Update' : 'Generate';
+
+  if (!isGajian1 && gajian1Status.value !== 'generated') {
+    Swal.fire('Peringatan', 'Generate Gajian 1 terlebih dahulu sebelum Generate Gajian 2', 'warning');
     return;
   }
 
   const result = await Swal.fire({
-    title: 'Generate Payroll?',
-    text: 'Apakah Anda yakin ingin menyimpan payroll ini ke database?',
+    title: `${actionLabel} ${phaseLabel}?`,
+    text: action === 'edit'
+      ? `Perbarui data ${phaseLabel} yang sudah tersimpan?`
+      : `Simpan ${phaseLabel} ke database? Fase lain tidak akan di-overwrite.`,
     icon: 'question',
     showCancelButton: true,
     confirmButtonColor: '#3085d6',
     cancelButtonColor: '#d33',
-    confirmButtonText: 'Ya, Generate!',
+    confirmButtonText: `Ya, ${actionLabel}!`,
     cancelButtonText: 'Batal'
   });
 
@@ -810,23 +854,29 @@ async function generatePayroll() {
 
   generating.value = true;
   try {
-    const response = await axios.post('/payroll/report/generate', {
+    const endpoint = action === 'edit' ? '/payroll/report/edit' : '/payroll/report/generate';
+    const payload = {
+      gajian_type: gajianType,
       outlet_id: outletId.value,
-      month: parseInt(month.value), // CRITICAL FIX: Send as integer, not formatted string
-      year: parseInt(year.value), // Ensure year is also integer
+      month: parseInt(month.value),
+      year: parseInt(year.value),
       service_charge: serviceCharge.value || 0,
       lb_amount: lbAmount.value || 0,
       deviasi_amount: deviasiAmount.value || 0,
       city_ledger_amount: cityLedgerAmount.value || 0,
-      payroll_data: props.payrollData
-    });
+      payroll_data: props.payrollData,
+    };
+
+    if (action === 'edit') {
+      payload.payroll_id = payrollId.value;
+    }
+
+    const response = await axios.post(endpoint, payload);
 
     if (response.data.success) {
       Swal.fire('Sukses', response.data.message, 'success');
-      payrollId.value = response.data.payroll_id;
-      payrollStatus.value = 'generated';
+      payrollId.value = response.data.payroll_id || payrollId.value;
       await checkPayrollStatus();
-      // Set default payment_method untuk semua item
       if (props.payrollData && props.payrollData.length > 0) {
         props.payrollData.forEach(item => {
           if (!item.payment_method) {
@@ -834,23 +884,37 @@ async function generatePayroll() {
           }
         });
       }
-      // Reload data untuk mendapatkan payment_method dari database
       await lihatData();
     } else {
       Swal.fire('Error', response.data.message, 'error');
     }
   } catch (error) {
-    console.error('Error generating payroll:', error);
-    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat generate payroll', 'error');
+    console.error(`Error ${action} payroll phase:`, error);
+    Swal.fire('Error', error.response?.data?.message || `Terjadi kesalahan saat ${actionLabel.toLowerCase()} payroll`, 'error');
   } finally {
     generating.value = false;
   }
 }
 
+async function generatePayrollGajian1() {
+  await persistPayrollPhase('gajian1', 'generate');
+}
+
+async function generatePayrollGajian2() {
+  await persistPayrollPhase('gajian2', 'generate');
+}
+
+async function editPayrollGajian1() {
+  await persistPayrollPhase('gajian1', 'edit');
+}
+
+async function editPayrollGajian2() {
+  await persistPayrollPhase('gajian2', 'edit');
+}
+
 // Update Payment Method
 async function updatePaymentMethod(userId, paymentMethod) {
-  // Jika belum generate, hanya update local data (tidak save ke database)
-  if (payrollStatus.value !== 'generated') {
+  if (!isAnyPhaseGenerated.value) {
     const item = props.payrollData.find(p => p.user_id === userId);
     if (item) {
       item.payment_method = paymentMethod;
@@ -895,71 +959,29 @@ async function updatePaymentMethod(userId, paymentMethod) {
   }
 }
 
-// Edit Payroll
-async function editPayroll() {
+// Rollback Payroll per fase atau seluruhnya
+async function rollbackPayroll(gajianType = null) {
   if (!payrollId.value) {
     Swal.fire('Peringatan', 'Payroll belum di-generate', 'warning');
     return;
   }
 
-  if (!props.payrollData || props.payrollData.length === 0) {
-    Swal.fire('Peringatan', 'Tidak ada data payroll untuk di-update', 'warning');
-    return;
-  }
+  const phaseLabel = gajianType === 'gajian1'
+    ? 'Gajian 1'
+    : gajianType === 'gajian2'
+      ? 'Gajian 2'
+      : 'seluruh payroll';
 
   const result = await Swal.fire({
-    title: 'Edit Payroll?',
-    text: 'Apakah Anda yakin ingin mengupdate payroll ini?',
-    icon: 'question',
-    showCancelButton: true,
-    confirmButtonColor: '#3085d6',
-    cancelButtonColor: '#d33',
-    confirmButtonText: 'Ya, Update!',
-    cancelButtonText: 'Batal'
-  });
-
-  if (!result.isConfirmed) return;
-
-  generating.value = true;
-  try {
-    const response = await axios.post('/payroll/report/edit', {
-      payroll_id: payrollId.value,
-      service_charge: serviceCharge.value || 0,
-      lb_amount: lbAmount.value || 0,
-      deviasi_amount: deviasiAmount.value || 0,
-      city_ledger_amount: cityLedgerAmount.value || 0,
-      payroll_data: props.payrollData
-    });
-
-    if (response.data.success) {
-      Swal.fire('Sukses', response.data.message, 'success');
-      await checkPayrollStatus();
-    } else {
-      Swal.fire('Error', response.data.message, 'error');
-    }
-  } catch (error) {
-    console.error('Error editing payroll:', error);
-    Swal.fire('Error', error.response?.data?.message || 'Terjadi kesalahan saat edit payroll', 'error');
-  } finally {
-    generating.value = false;
-  }
-}
-
-// Rollback Payroll
-async function rollbackPayroll() {
-  if (!payrollId.value) {
-    Swal.fire('Peringatan', 'Payroll belum di-generate', 'warning');
-    return;
-  }
-
-  const result = await Swal.fire({
-    title: 'Rollback Payroll?',
-    text: 'Apakah Anda yakin ingin menghapus payroll yang sudah di-generate? Tindakan ini tidak dapat dibatalkan!',
+    title: `Rollback ${phaseLabel}?`,
+    text: gajianType
+      ? `Reset data ${phaseLabel} ke draft. Fase lain tidak dihapus.`
+      : 'Hapus seluruh payroll yang sudah di-generate? Tindakan ini tidak dapat dibatalkan!',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#d33',
     cancelButtonColor: '#3085d6',
-    confirmButtonText: 'Ya, Hapus!',
+    confirmButtonText: 'Ya, Rollback!',
     cancelButtonText: 'Batal'
   });
 
@@ -968,14 +990,20 @@ async function rollbackPayroll() {
   generating.value = true;
   try {
     const response = await axios.post('/payroll/report/rollback', {
-      payroll_id: payrollId.value
+      payroll_id: payrollId.value,
+      gajian_type: gajianType,
     });
 
     if (response.data.success) {
       Swal.fire('Sukses', response.data.message, 'success');
-      payrollId.value = null;
-      payrollStatus.value = null;
+      if (!gajianType) {
+        payrollId.value = null;
+        payrollStatus.value = null;
+      }
       await checkPayrollStatus();
+      if (!payrollId.value) {
+        await lihatData();
+      }
     } else {
       Swal.fire('Error', response.data.message, 'error');
     }
@@ -1140,46 +1168,87 @@ onMounted(() => {
           </button>
           
           <button
-            v-if="!payrollStatus || payrollStatus === 'draft'"
-            @click="generatePayroll"
-            class="bg-gradient-to-br from-green-400 to-green-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            v-if="gajian1Status !== 'generated' && gajian1Status !== 'locked'"
+            @click="generatePayrollGajian1"
+            class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-5 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
             :disabled="!outletId || !month || !year || generating || !payrollData || payrollData.length === 0"
           >
-            <i class="fa-solid fa-save"></i> {{ generating ? 'Generating...' : 'Generate Payroll' }}
+            <i class="fa-solid fa-calendar-check"></i> {{ generating ? 'Menyimpan...' : 'Generate Gajian 1' }}
           </button>
-          
+
           <button
-            v-if="payrollStatus === 'generated'"
-            @click="editPayroll"
-            class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
-            :disabled="!outletId || !month || !year || generating || !payrollData || payrollData.length === 0"
+            v-if="gajian1Status === 'generated'"
+            @click="editPayrollGajian1"
+            class="bg-gradient-to-br from-blue-300 to-blue-500 text-white px-5 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!payrollId || generating || !payrollData || payrollData.length === 0 || gajian1Status === 'locked'"
           >
-            <i class="fa-solid fa-edit"></i> {{ generating ? 'Updating...' : 'Edit Payroll' }}
+            <i class="fa-solid fa-edit"></i> {{ generating ? 'Menyimpan...' : 'Edit Gajian 1' }}
           </button>
-          
+
           <button
-            v-if="payrollStatus === 'generated'"
-            @click="rollbackPayroll"
-            class="bg-gradient-to-br from-red-400 to-red-600 text-white px-6 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            v-if="gajian2Status !== 'generated' && gajian2Status !== 'locked'"
+            @click="generatePayrollGajian2"
+            class="bg-gradient-to-br from-green-400 to-green-600 text-white px-5 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!outletId || !month || !year || generating || !payrollData || payrollData.length === 0 || gajian1Status !== 'generated'"
+          >
+            <i class="fa-solid fa-money-bill-wave"></i> {{ generating ? 'Menyimpan...' : 'Generate Gajian 2' }}
+          </button>
+
+          <button
+            v-if="gajian2Status === 'generated'"
+            @click="editPayrollGajian2"
+            class="bg-gradient-to-br from-green-300 to-green-500 text-white px-5 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
+            :disabled="!payrollId || generating || !payrollData || payrollData.length === 0 || gajian2Status === 'locked'"
+          >
+            <i class="fa-solid fa-edit"></i> {{ generating ? 'Menyimpan...' : 'Edit Gajian 2' }}
+          </button>
+
+          <button
+            v-if="isAnyPhaseGenerated"
+            @click="rollbackPayroll(null)"
+            class="bg-gradient-to-br from-red-400 to-red-600 text-white px-5 py-2 rounded-xl shadow-xl hover:scale-105 hover:shadow-2xl transition-all duration-300 font-bold"
             :disabled="!payrollId || generating || payrollStatus === 'locked'"
           >
-            <i class="fa-solid fa-undo"></i> {{ generating ? 'Rolling back...' : 'Rollback Payroll' }}
+            <i class="fa-solid fa-undo"></i> {{ generating ? 'Rolling back...' : 'Rollback Semua' }}
           </button>
         </div>
         
         <!-- Payroll Status Badge -->
-        <div v-if="payrollStatus" class="mt-4 flex items-center gap-2">
-          <span class="px-4 py-2 rounded-lg font-semibold text-sm"
-                :class="{
-                  'bg-yellow-100 text-yellow-800': payrollStatus === 'draft',
-                  'bg-green-100 text-green-800': payrollStatus === 'generated',
-                  'bg-red-100 text-red-800': payrollStatus === 'locked'
-                }">
-            <i class="fa-solid fa-info-circle mr-2"></i>
-            Status: {{ payrollStatus === 'draft' ? 'Draft' : payrollStatus === 'generated' ? 'Generated' : 'Locked' }}
+        <div v-if="payrollId || isAnyPhaseGenerated" class="mt-4 flex flex-wrap items-center gap-2">
+          <span class="px-4 py-2 rounded-lg font-semibold text-sm" :class="phaseStatusClass(gajian1Status)">
+            <i class="fa-solid fa-calendar-day mr-2"></i>
+            Gajian 1: {{ phaseStatusLabel(gajian1Status) }}
+            <span v-if="gajian1GeneratedAt" class="font-normal opacity-80">({{ gajian1GeneratedAt }})</span>
           </span>
+          <span class="px-4 py-2 rounded-lg font-semibold text-sm" :class="phaseStatusClass(gajian2Status)">
+            <i class="fa-solid fa-calendar-week mr-2"></i>
+            Gajian 2: {{ phaseStatusLabel(gajian2Status) }}
+            <span v-if="gajian2GeneratedAt" class="font-normal opacity-80">({{ gajian2GeneratedAt }})</span>
+          </span>
+          <button
+            v-if="gajian1Status === 'generated' && payrollStatus !== 'locked'"
+            @click="rollbackPayroll('gajian1')"
+            class="text-xs px-3 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+            :disabled="generating"
+          >
+            Rollback Gajian 1
+          </button>
+          <button
+            v-if="gajian2Status === 'generated' && payrollStatus !== 'locked'"
+            @click="rollbackPayroll('gajian2')"
+            class="text-xs px-3 py-1 rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100"
+            :disabled="generating"
+          >
+            Rollback Gajian 2
+          </button>
           <span v-if="payrollStatus === 'locked'" class="text-sm text-gray-600">
             <i class="fa-solid fa-lock mr-1"></i> Payroll sudah di-lock dan tidak bisa di-edit atau di-rollback
+          </span>
+          <span v-else-if="gajian1Status !== 'generated'" class="text-sm text-gray-600">
+            Generate Gajian 1 dulu (~akhir bulan, periode absensi 26–25)
+          </span>
+          <span v-else-if="gajian2Status !== 'generated'" class="text-sm text-gray-600">
+            Gajian 2 bisa di-generate setelah bulan kalender selesai (SC, L&amp;B, deviasi, city ledger)
           </span>
         </div>
       </div>
