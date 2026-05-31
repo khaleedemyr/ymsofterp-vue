@@ -2643,11 +2643,10 @@ class ItemController extends Controller
             ->withCount('barcodes');
 
         if ($request->filled('search')) {
-            $search = $request->search;
+            $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                     ->orWhere('sku', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%")
                     ->orWhereHas('barcodes', function ($bq) use ($search) {
                         $bq->where('barcode', 'like', "%{$search}%");
                     });
@@ -2662,7 +2661,7 @@ class ItemController extends Controller
                 'id' => $item->id,
                 'name' => $item->name,
                 'sku' => $item->sku,
-                'code' => $item->code,
+                'code' => $item->sku,
                 'category_name' => $item->category?->name,
                 'barcode_count' => (int) $item->barcodes_count,
             ];
@@ -2696,7 +2695,7 @@ class ItemController extends Controller
                 'id' => $item->id,
                 'name' => $item->name,
                 'sku' => $item->sku,
-                'code' => $item->code,
+                'code' => $item->sku,
                 'warehouse_division' => $item->warehouseDivision?->name,
                 'category' => $item->category?->name,
                 'sub_category' => $item->subCategory?->name,
