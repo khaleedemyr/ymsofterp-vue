@@ -39,7 +39,7 @@
             @endif
         </div>
         <h1>SLIP GAJI KARYAWAN</h1>
-        <p>Periode: {{ $periode }}</p>
+        <p>Periode: {{ $periode_label ?? $periode }}</p>
     </div>
 
     <table class="info-table">
@@ -53,7 +53,7 @@
             <td class="info-label">NIK:</td>
             <td>{{ $user->nik }}</td>
             <td class="info-label">Periode:</td>
-            <td>{{ $periode }}</td>
+            <td>{{ $periode_label ?? $periode }}</td>
         </tr>
         <tr>
             <td class="info-label">Jabatan:</td>
@@ -93,7 +93,7 @@
     @include('payroll.partials.slip_salary_table')
 
     <div class="grand-total">
-        TOTAL GAJI BERSIH PERIODE {{ $periode }}: Rp {{ number_format($total_gaji_combined, 0, ',', '.') }}
+        TOTAL GAJI BERSIH PERIODE {{ $periode_label ?? $periode }}: Rp {{ number_format($total_gaji_combined, 0, ',', '.') }}
     </div>
 
     <div class="footer">

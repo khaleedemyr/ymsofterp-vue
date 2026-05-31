@@ -125,7 +125,7 @@
             @endif
         </div>
         <h1>SLIP GAJI KARYAWAN</h1>
-        <p>Periode: {{ $periode }}</p>
+        <p>Periode: {{ $periode_label ?? $periode }}</p>
         @if(isset($type))
             <p style="font-weight: bold; color: #1976d2;">
                 @if($type === 'gajian1')
@@ -163,7 +163,7 @@
             </div>
             <div class="info-row">
                 <span class="info-label">Periode:</span>
-                <span>{{ $periode }}</span>
+                <span>{{ $periode_label ?? $periode }}</span>
             </div>
             <div class="info-row">
                 <span class="info-label">Hari Kerja:</span>
@@ -173,7 +173,7 @@
     </div>
 
     <div class="period-box">
-        <strong>Periode Penggajian: {{ $periode }}</strong>
+        <strong>Periode Penggajian: {{ $periode_label ?? $periode }}</strong>
     </div>
 
     @php

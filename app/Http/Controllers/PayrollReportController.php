@@ -4343,6 +4343,7 @@ class PayrollReportController extends Controller
         } else {
             $periode = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
         }
+        $periodeLabel = $this->formatPayrollPeriodMonthLabel((int) $month, (int) $year);
         
         // Get leave types untuk mapping nama leave type
         $leaveTypes = DB::table('leave_types')->get()->keyBy('id');
@@ -4402,6 +4403,7 @@ class PayrollReportController extends Controller
                 'jabatan' => $jabatan,
                 'divisi' => $divisi,
                 'periode' => $periode,
+                'periode_label' => $periodeLabel,
                 'type' => $type,
                 'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
                 'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
@@ -4454,6 +4456,7 @@ class PayrollReportController extends Controller
             'jabatan' => $jabatan,
             'divisi' => $divisi,
             'periode' => $periode,
+            'periode_label' => $periodeLabel,
             'type' => $type,
             'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
             'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
@@ -4755,6 +4758,7 @@ class PayrollReportController extends Controller
         } else {
             $periode = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
         }
+        $periodeLabel = $this->formatPayrollPeriodMonthLabel((int) $month, (int) $year);
         
         // Get leave types untuk mapping nama leave type
         $leaveTypes = DB::table('leave_types')->get()->keyBy('id');
@@ -4813,6 +4817,7 @@ class PayrollReportController extends Controller
             'divisi' => $divisi,
             'outlet' => $outlet,
             'periode' => $periode,
+            'periode_label' => $periodeLabel,
             'type' => $type,
             'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
             'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
@@ -5412,7 +5417,7 @@ class PayrollReportController extends Controller
                     'month' => $month,
                     'year' => $year,
                     'periode' => $payroll->periode,
-                    'periode_label' => $payroll->periode ?: "Periode {$month}/{$year}",
+                    'periode_label' => $this->formatPayrollPeriodMonthLabel($month, $year),
                     'total_gaji' => round($visibleTotal),
                     'total_gajian1' => $gajiSplit['total_gaji_akhir_bulan'],
                     'total_gajian2' => $gajiSplit['total_gaji_tanggal_8'],
@@ -5497,6 +5502,10 @@ class PayrollReportController extends Controller
                     'type' => $type,
                     'type_label' => $type === 'gajian1' ? 'Gajian 1 (Akhir Bulan)' : 'Gajian 2 (Tanggal 8)',
                     'periode' => $payrollDetail->periode,
+                    'periode_label' => $this->formatPayrollPeriodMonthLabel(
+                        (int) $payrollDetail->month,
+                        (int) $payrollDetail->year
+                    ),
                 ]
             ];
             
@@ -5697,6 +5706,20 @@ class PayrollReportController extends Controller
     /**
      * @return array<string, mixed>|null
      */
+    /**
+     * Label periode untuk tampilan (mis. "April 2026").
+     */
+    private function formatPayrollPeriodMonthLabel(int $month, int $year): string
+    {
+        if ($month < 1 || $month > 12 || $year <= 0) {
+            return 'Periode';
+        }
+
+        return Carbon::createFromDate($year, $month, 1)
+            ->locale('id')
+            ->translatedFormat('F Y');
+    }
+
     private function buildUserPayrollCombinedSlipContext(int $payrollDetailId, int $userId): ?array
     {
         $payrollDetail = DB::table('payroll_generated_details as pgd')
@@ -5761,6 +5784,10 @@ class PayrollReportController extends Controller
             'divisi' => $divisi,
             'outlet' => $outlet,
             'periode' => $payrollDetail->periode,
+            'periode_label' => $this->formatPayrollPeriodMonthLabel(
+                (int) $payrollDetail->month,
+                (int) $payrollDetail->year
+            ),
             'month' => $payrollDetail->month,
             'year' => $payrollDetail->year,
             'hari_kerja' => $payrollDetail->hari_kerja ?? 0,
