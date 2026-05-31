@@ -202,6 +202,7 @@ function exportReport() {
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Rekening</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No. Rekening</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Akhir Bulan</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Tanggal 8</th>
@@ -212,6 +213,7 @@ function exportReport() {
                 <tr v-for="(row, index) in paymentRows" :key="row.user_id" class="hover:bg-gray-50">
                   <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
                   <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.nama_lengkap }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.nama_rekening }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ row.no_rekening }}</td>
                   <td class="px-4 py-3 text-sm text-right font-semibold text-blue-700">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatCurrency(row.total_gaji_tanggal_8) }}</td>
@@ -220,7 +222,7 @@ function exportReport() {
               </tbody>
               <tfoot class="bg-slate-900 text-white">
                 <tr>
-                  <td colspan="3" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
+                  <td colspan="4" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_gaji) }}</td>

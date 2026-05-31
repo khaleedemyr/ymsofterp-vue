@@ -71,6 +71,7 @@ class PayrollFinanceReportController extends Controller
 
         $paymentExport = collect($report['payment_rows'])->map(fn (array $row) => [
             'Nama Karyawan' => $row['nama_lengkap'],
+            'Nama Rekening' => $row['nama_rekening'],
             'No. Rekening' => $row['no_rekening'],
             'Gaji Akhir Bulan' => $row['total_gaji_akhir_bulan'],
             'Gaji Tanggal 8' => $row['total_gaji_tanggal_8'],
@@ -174,9 +175,17 @@ class PayrollFinanceReportController extends Controller
             ]);
         }
 
-        $details = DB::table('payroll_generated_details')
-            ->where('payroll_generated_id', $payrollGenerated->id)
-            ->orderBy('nama_lengkap')
+        $details = DB::table('payroll_generated_details as pgd')
+            ->join('users as u', 'u.id', '=', 'pgd.user_id')
+            ->where('pgd.payroll_generated_id', $payrollGenerated->id)
+            ->orderBy('u.nama_lengkap')
+            ->select(
+                'pgd.*',
+                'u.nama_lengkap as user_nama_lengkap',
+                'u.nama_rekening as user_nama_rekening',
+                'u.no_rekening as user_no_rekening',
+                'u.nik as user_nik'
+            )
             ->get();
 
         if ($details->isEmpty()) {
@@ -225,8 +234,9 @@ class PayrollFinanceReportController extends Controller
 
             $paymentRows[] = [
                 'user_id' => $detail->user_id,
-                'nama_lengkap' => $detail->nama_lengkap,
-                'no_rekening' => $detail->no_rekening ?: '-',
+                'nama_lengkap' => $detail->user_nama_lengkap ?: ($detail->nama_lengkap ?? '-'),
+                'nama_rekening' => $detail->user_nama_rekening ?: '-',
+                'no_rekening' => $detail->user_no_rekening ?: '-',
                 'total_gaji_akhir_bulan' => $gajiSplit['total_gaji_akhir_bulan'],
                 'total_gaji_tanggal_8' => $gajiSplit['total_gaji_tanggal_8'],
                 'total_gaji' => $gajiSplit['total_gaji'],
@@ -338,8 +348,8 @@ class PayrollFinanceReportController extends Controller
 
         return [
             'user_id' => $detail->user_id,
-            'nama_lengkap' => $detail->nama_lengkap,
-            'nik' => $detail->nik ?? '-',
+            'nama_lengkap' => $detail->user_nama_lengkap ?? ($detail->nama_lengkap ?? '-'),
+            'nik' => $detail->user_nik ?? ($detail->nik ?? '-'),
             'kes_perusahaan' => round($lineAmounts['kes_perusahaan']),
             'jht_perusahaan' => round($lineAmounts['jht_perusahaan']),
             'jp_perusahaan' => round($lineAmounts['jp_perusahaan']),
