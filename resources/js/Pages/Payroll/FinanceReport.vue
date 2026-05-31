@@ -17,6 +17,9 @@ const props = defineProps({
 const activeTab = ref('payment');
 const loading = ref(false);
 const exporting = ref(false);
+const expandedRows = ref(new Set());
+
+const paymentTableColCount = 11;
 
 const outletId = ref(props.filter?.outlet_id || '');
 const month = ref(formatMonth(props.filter?.month) || formatMonth(new Date().getMonth() + 1));
@@ -60,6 +63,20 @@ function isCashPayment(value) {
   return (value || 'transfer') === 'cash';
 }
 
+function toggleExpand(userId) {
+  const next = new Set(expandedRows.value);
+  if (next.has(userId)) {
+    next.delete(userId);
+  } else {
+    next.add(userId);
+  }
+  expandedRows.value = next;
+}
+
+function isRowExpanded(userId) {
+  return expandedRows.value.has(userId);
+}
+
 const monthName = computed(() => {
   const found = props.months?.find((m) => m.id === month.value);
   return found?.name || month.value;
@@ -73,6 +90,7 @@ function loadReport() {
   }
 
   loading.value = true;
+  expandedRows.value = new Set();
   router.get('/payroll/finance-report', {
     outlet_id: outletId.value,
     month: month.value,
@@ -221,7 +239,8 @@ function exportReport() {
             <table class="min-w-full divide-y divide-gray-200">
               <thead class="bg-slate-800 text-white">
                 <tr>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">No</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase w-12">No</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase w-12"></th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Jabatan</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Divisi</th>
@@ -230,67 +249,111 @@ function exportReport() {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Rekening</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No. Rekening</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase">Metode Bayar</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Akhir Bulan</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Tanggal 8</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Gaji</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-100">
-                <tr v-for="(row, index) in paymentRows" :key="row.user_id" class="hover:bg-gray-50">
-                  <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-900">
-                    <div class="flex items-center gap-2 flex-wrap">
-                      <span class="font-medium">{{ row.nama_lengkap }}</span>
-                      <span
-                        v-if="row.is_mutated_employee"
-                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                <template v-for="(row, index) in paymentRows" :key="row.user_id">
+                  <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
+                    <td class="px-2 py-3 text-center">
+                      <button
+                        type="button"
+                        class="w-7 h-7 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-all duration-200 mx-auto"
+                        :title="isRowExpanded(row.user_id) ? 'Sembunyikan detail gaji' : 'Lihat detail gaji'"
+                        @click="toggleExpand(row.user_id)"
                       >
-                        Mutasi
-                      </span>
-                      <span
-                        v-if="row.resignation_date"
-                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                        <i :class="isRowExpanded(row.user_id) ? 'fa fa-chevron-up' : 'fa fa-chevron-down'"></i>
+                      </button>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-900">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-medium">{{ row.nama_lengkap }}</span>
+                        <span
+                          v-if="row.is_mutated_employee"
+                          class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                        >
+                          Mutasi
+                        </span>
+                        <span
+                          v-if="row.resignation_date"
+                          class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                        >
+                          Resign
+                        </span>
+                      </div>
+                      <div
+                        v-if="row.is_mutated_employee && row.mutation_effective_date"
+                        class="text-xs text-purple-600 mt-1 font-medium"
                       >
-                        Resign
+                        Mutasi: {{ formatDate(row.mutation_effective_date) }} dari {{ row.mutation_outlet_from }} → {{ row.mutation_outlet_to }}
+                      </div>
+                      <div v-if="row.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
+                        Resign: {{ formatDate(row.resignation_date) }}
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.jabatan }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.divisi }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.level }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.nama_rekening }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ row.no_rekening }}</td>
+                    <td class="px-4 py-3 text-sm text-center">
+                      <span
+                        class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                        :class="isCashPayment(row.payment_method)
+                          ? 'bg-purple-100 text-purple-800 border-purple-300'
+                          : 'bg-blue-100 text-blue-800 border-blue-300'"
+                      >
+                        {{ formatPaymentMethod(row.payment_method) }}
                       </span>
-                    </div>
-                    <div
-                      v-if="row.is_mutated_employee && row.mutation_effective_date"
-                      class="text-xs text-purple-600 mt-1 font-medium"
-                    >
-                      Mutasi: {{ formatDate(row.mutation_effective_date) }} dari {{ row.mutation_outlet_from }} → {{ row.mutation_outlet_to }}
-                    </div>
-                    <div v-if="row.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
-                      Resign: {{ formatDate(row.resignation_date) }}
-                    </div>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.jabatan }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.divisi }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.level }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700">{{ row.nama_rekening }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ row.no_rekening }}</td>
-                  <td class="px-4 py-3 text-sm text-center">
-                    <span
-                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border"
-                      :class="isCashPayment(row.payment_method)
-                        ? 'bg-purple-100 text-purple-800 border-purple-300'
-                        : 'bg-blue-100 text-blue-800 border-blue-300'"
-                    >
-                      {{ formatPaymentMethod(row.payment_method) }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-right font-semibold text-blue-700">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</td>
-                  <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatCurrency(row.total_gaji_tanggal_8) }}</td>
-                  <td class="px-4 py-3 text-sm text-right font-bold text-green-700">{{ formatCurrency(row.total_gaji) }}</td>
-                </tr>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-right font-bold text-green-700">{{ formatCurrency(row.total_gaji) }}</td>
+                  </tr>
+                  <tr v-if="isRowExpanded(row.user_id)" class="bg-slate-50 border-t border-slate-100">
+                    <td colspan="2"></td>
+                    <td :colspan="paymentTableColCount - 3" class="px-4 py-3">
+                      <div class="flex flex-wrap gap-3">
+                        <div class="rounded-xl border border-blue-200 bg-white px-4 py-3 min-w-[180px] shadow-sm">
+                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Gaji Akhir Bulan</div>
+                          <div class="text-lg font-bold text-blue-700 mt-1">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</div>
+                        </div>
+                        <div class="rounded-xl border border-indigo-200 bg-white px-4 py-3 min-w-[180px] shadow-sm">
+                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Gaji Tanggal 8</div>
+                          <div class="text-lg font-bold text-indigo-700 mt-1">{{ formatCurrency(row.total_gaji_tanggal_8) }}</div>
+                        </div>
+                        <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 min-w-[180px] shadow-sm">
+                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Gaji</div>
+                          <div class="text-lg font-bold text-green-700 mt-1">{{ formatCurrency(row.total_gaji) }}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td></td>
+                  </tr>
+                </template>
               </tbody>
               <tfoot class="bg-slate-900 text-white">
                 <tr>
-                  <td colspan="9" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
-                  <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</td>
-                  <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</td>
+                  <td :colspan="paymentTableColCount - 1" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_gaji) }}</td>
+                </tr>
+                <tr class="bg-slate-800">
+                  <td :colspan="paymentTableColCount" class="px-4 py-3">
+                    <div class="flex flex-wrap justify-end gap-6 text-sm">
+                      <span>
+                        <span class="text-slate-400">Gaji Akhir Bulan:</span>
+                        <span class="font-bold text-blue-300 ml-2">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</span>
+                      </span>
+                      <span>
+                        <span class="text-slate-400">Gaji Tanggal 8:</span>
+                        <span class="font-bold text-indigo-300 ml-2">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</span>
+                      </span>
+                      <span>
+                        <span class="text-slate-400">Total Gaji:</span>
+                        <span class="font-bold text-amber-300 ml-2">{{ formatCurrency(summary?.total_gaji) }}</span>
+                      </span>
+                    </div>
+                  </td>
                 </tr>
               </tfoot>
             </table>
