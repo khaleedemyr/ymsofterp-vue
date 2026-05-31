@@ -2106,15 +2106,52 @@ function normalizeTextForCompare(str) {
   return String(str).replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+function grammarTextsDiffer(original, corrected) {
+  const a = String(original).trim()
+  const b = String(corrected).trim()
+  if (a === b) return false
+  return normalizeTextForCompare(a) !== normalizeTextForCompare(b)
+}
+
+function elevateGrammarSwalZIndex() {
+  const el = Swal.getContainer?.()
+  if (el) {
+    el.style.zIndex = '99999'
+  }
+}
+
+async function showGrammarChoiceModal(rawBody, corrected) {
+  return Swal.fire({
+    title: 'Perbaikan ejaan disarankan',
+    html: `<p class="text-left text-sm text-slate-600 mb-2">Sistem mendeteksi kemungkinan typo. Pilih versi yang akan dikirim ke pelanggan:</p>
+        <p class="text-left text-xs font-semibold text-slate-500 mb-1">Asli</p>
+        <div class="text-left text-sm bg-slate-50 border border-slate-200 p-2 rounded-lg mb-3 whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(rawBody)}</div>
+        <p class="text-left text-xs font-semibold text-emerald-800 mb-1">Disarankan AI</p>
+        <div class="text-left text-sm bg-emerald-50 border border-emerald-200 p-2 rounded-lg whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(corrected)}</div>`,
+    icon: 'info',
+    width: 520,
+    showCancelButton: true,
+    showDenyButton: true,
+    confirmButtonText: 'Perbaiki ejaan',
+    denyButtonText: 'Kirim asli',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#059669',
+    denyButtonColor: '#64748b',
+    focusConfirm: true,
+    customClass: { container: 'omni-grammar-swal-container' },
+    didOpen: elevateGrammarSwalZIndex,
+  })
+}
+
 async function requestGrammarCorrection(text) {
   const { data } = await axios.post('/crm/omnichannel-inbox/ai-assist', {
     action: 'grammar',
     text,
   })
-  if (data.success && data.text) {
+  if (data?.success && typeof data.text === 'string' && data.text.trim() !== '') {
     return String(data.text).trim()
   }
-  return text
+  throw new Error(data?.message || 'AI tidak mengembalikan hasil perbaikan ejaan.')
 }
 
 /**
@@ -2139,27 +2176,11 @@ async function resolveOutboundBodyBeforeSend(rawBody) {
   grammarChecking.value = true
   try {
     const corrected = await requestGrammarCorrection(rawBody)
-    if (normalizeTextForCompare(corrected) === normalizeTextForCompare(rawBody)) {
+    if (!grammarTextsDiffer(rawBody, corrected)) {
       return rawBody
     }
 
-    const result = await Swal.fire({
-      title: 'Perbaikan ejaan disarankan',
-      html: `<p class="text-left text-sm text-slate-600 mb-2">Sistem mendeteksi kemungkinan typo. Pilih versi yang akan dikirim ke pelanggan:</p>
-        <p class="text-left text-xs font-semibold text-slate-500 mb-1">Asli</p>
-        <div class="text-left text-sm bg-slate-50 border border-slate-200 p-2 rounded-lg mb-3 whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(rawBody)}</div>
-        <p class="text-left text-xs font-semibold text-emerald-800 mb-1">Disarankan AI</p>
-        <div class="text-left text-sm bg-emerald-50 border border-emerald-200 p-2 rounded-lg whitespace-pre-wrap max-h-32 overflow-y-auto">${escapeHtml(corrected)}</div>`,
-      icon: 'info',
-      width: 520,
-      showCancelButton: true,
-      showDenyButton: true,
-      confirmButtonText: 'Kirim yang diperbaiki',
-      denyButtonText: 'Kirim teks asli',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#059669',
-      denyButtonColor: '#64748b',
-    })
+    const result = await showGrammarChoiceModal(rawBody, corrected)
 
     if (result.isConfirmed) {
       return corrected
@@ -2169,7 +2190,22 @@ async function resolveOutboundBodyBeforeSend(rawBody) {
     }
     return null
   } catch (e) {
-    aiError.value = e.response?.data?.message || 'Gagal memeriksa ejaan. Kirim manual atau coba lagi.'
+    const message = e.response?.data?.message || e.message || 'Gagal memeriksa ejaan.'
+    aiError.value = message
+    const fallback = await Swal.fire({
+      title: 'Periksa ejaan gagal',
+      html: `<p class="text-sm text-slate-600">${escapeHtml(message)}</p><p class="text-sm text-slate-600 mt-2">Tetap kirim teks asli?</p>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Kirim asli',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#64748b',
+      customClass: { container: 'omni-grammar-swal-container' },
+      didOpen: elevateGrammarSwalZIndex,
+    })
+    if (fallback.isConfirmed) {
+      return rawBody
+    }
     return null
   } finally {
     grammarChecking.value = false
@@ -2211,7 +2247,7 @@ async function runAiAssist(action, opts = {}) {
       })
     }
   } catch (e) {
-    aiError.value = e.response?.data?.message || 'Gagal memproses AI Writing Assistant.'
+    aiError.value = e.response?.data?.message || e.message || 'Gagal memproses AI Writing Assistant.'
   } finally {
     aiLoading.value = false
   }
@@ -2809,5 +2845,11 @@ onUnmounted(() => {
 }
 .omni-assign-multiselect :deep(.multiselect__content-wrapper) {
   max-height: 220px;
+}
+</style>
+
+<style>
+.omni-grammar-swal-container {
+  z-index: 99999 !important;
 }
 </style>
