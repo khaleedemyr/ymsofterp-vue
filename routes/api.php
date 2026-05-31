@@ -388,6 +388,12 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/auth/logout', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'logout']);
         Route::post('/user/upload-banner', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadBanner']);
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
+        Route::patch('/user/update-profile', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updateProfile'])
+            ->name('api.approval-app.user.update-profile');
+        Route::patch('/user/update-password', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updatePassword'])
+            ->name('api.approval-app.user.update-password');
+        Route::post('/user/update-signature', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updateSignature'])
+            ->name('api.approval-app.user.update-signature');
         Route::get('/allowed-menus', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'getAllowedMenus']);
 
         // Announcement & Birthday routes for Approval App
