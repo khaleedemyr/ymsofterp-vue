@@ -135,6 +135,8 @@ class PayrollFinanceReportController extends Controller
             'Divisi',
             'Level',
             'Join Date',
+            'No. BPJS Kesehatan',
+            'No. BPJS Ketenagakerjaan',
             'Keterangan',
             'BPJS Kesehatan (Perusahaan)',
             'JHT (Perusahaan)',
@@ -154,6 +156,8 @@ class PayrollFinanceReportController extends Controller
                 $row['divisi'],
                 $row['level'],
                 $this->formatDateForExport($row['tanggal_masuk']),
+                $row['bpjs_health_number'] ?? '-',
+                $row['bpjs_employment_number'] ?? '-',
                 $this->formatEmployeeStatusLabel($row),
                 $row['kes_perusahaan'],
                 $row['jht_perusahaan'],
@@ -165,6 +169,8 @@ class PayrollFinanceReportController extends Controller
         }
         $bpjsTotal = [
             'TOTAL',
+            '',
+            '',
             '',
             '',
             '',
@@ -189,8 +195,8 @@ class PayrollFinanceReportController extends Controller
             $report['periode'],
             $bpjsHeaders,
             $bpjsRows,
-            [9, 10, 11, 12, 13, 14],
-            [3],
+            [11, 12, 13, 14, 15, 16],
+            [3, 8, 9],
             $bpjsTotal
         );
 
@@ -278,6 +284,8 @@ class PayrollFinanceReportController extends Controller
                 'u.no_rekening as user_no_rekening',
                 'u.nik as user_nik',
                 'u.tanggal_masuk',
+                'u.bpjs_health_number as user_bpjs_health_number',
+                'u.bpjs_employment_number as user_bpjs_employment_number',
                 'j.nama_jabatan',
                 'd.nama_divisi',
                 'l.nama_level'
@@ -473,6 +481,8 @@ class PayrollFinanceReportController extends Controller
             'user_id' => $detail->user_id,
             'nama_lengkap' => $detail->user_nama_lengkap ?? ($detail->nama_lengkap ?? '-'),
             'nik' => $detail->user_nik ?? ($detail->nik ?? '-'),
+            'bpjs_health_number' => $this->formatUserBpjsNumber($detail->user_bpjs_health_number ?? null),
+            'bpjs_employment_number' => $this->formatUserBpjsNumber($detail->user_bpjs_employment_number ?? null),
             'kes_perusahaan' => round($lineAmounts['kes_perusahaan']),
             'jht_perusahaan' => round($lineAmounts['jht_perusahaan']),
             'jp_perusahaan' => round($lineAmounts['jp_perusahaan']),
@@ -480,6 +490,13 @@ class PayrollFinanceReportController extends Controller
             'jkm_perusahaan' => round($lineAmounts['jkm_perusahaan']),
             'total_bpjs_perusahaan' => round((float) ($bpjsDetail['total_perusahaan'] ?? 0)),
         ];
+    }
+
+    private function formatUserBpjsNumber(?string $value): string
+    {
+        $trimmed = trim((string) ($value ?? ''));
+
+        return $trimmed !== '' ? $trimmed : '-';
     }
 
     /**

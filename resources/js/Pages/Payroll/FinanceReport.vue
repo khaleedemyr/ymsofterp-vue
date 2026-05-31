@@ -462,6 +462,8 @@ function exportReport() {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Divisi</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Level</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Join Date</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal whitespace-nowrap">No. BPJS Kesehatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal whitespace-nowrap">No. BPJS Ketenagakerjaan</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Kesehatan</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JHT</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JP</th>
@@ -472,7 +474,7 @@ function exportReport() {
               </thead>
               <tbody class="bg-white divide-y divide-gray-100">
                 <tr v-if="!bpjsRows?.length">
-                  <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data BPJS perusahaan untuk periode ini.</td>
+                  <td colspan="15" class="px-4 py-8 text-center text-gray-500">Tidak ada data BPJS perusahaan untuk periode ini.</td>
                 </tr>
                 <tr
                   v-for="(row, index) in bpjsRows"
@@ -512,6 +514,8 @@ function exportReport() {
                   <td class="px-4 py-3 text-sm text-gray-700">{{ row.divisi }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700">{{ row.level }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700 font-mono whitespace-nowrap">{{ row.bpjs_health_number || '-' }}</td>
+                  <td class="px-4 py-3 text-sm text-gray-700 font-mono whitespace-nowrap">{{ row.bpjs_employment_number || '-' }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.kes_perusahaan) }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.jht_perusahaan) }}</td>
                   <td class="px-4 py-3 text-sm text-right text-teal-700">{{ formatCurrency(row.jp_perusahaan) }}</td>
@@ -522,7 +526,7 @@ function exportReport() {
               </tbody>
               <tfoot v-if="bpjsRows?.length" class="bg-teal-900 text-white">
                 <tr>
-                  <td colspan="13" class="px-4 py-3 text-sm font-bold text-right">TOTAL BPJS PERUSAHAAN</td>
+                  <td colspan="14" class="px-4 py-3 text-sm font-bold text-right">TOTAL BPJS PERUSAHAAN</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_bpjs_perusahaan) }}</td>
                 </tr>
               </tfoot>
