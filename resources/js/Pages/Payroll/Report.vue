@@ -322,8 +322,14 @@ const summary = computed(() => {
     totalBPJSJKN: 0,
     totalBPJSTK: 0,
     totalBpjsPerusahaan: 0,
+    totalLBByPoint: 0,
+    totalLBProRate: 0,
     totalLB: 0,
+    totalDeviasiByPoint: 0,
+    totalDeviasiProRate: 0,
     totalDeviasi: 0,
+    totalCityLedgerByPoint: 0,
+    totalCityLedgerProRate: 0,
     totalCityLedger: 0,
     totalPHBonus: 0,
     totalCustomEarnings: 0,
@@ -332,6 +338,8 @@ const summary = computed(() => {
     totalPotonganAlpha: 0,
     totalPotonganUnpaidLeave: 0,
     totalPotonganKasbon: 0,
+    totalGajiAkhirBulan: 0,
+    totalGajiTanggal8: 0,
     totalGaji: 0,
   };
   if (!data || data.length === 0) {
@@ -358,8 +366,14 @@ const summary = computed(() => {
       const d = item.bpjs_perusahaan_detail;
       return sum + Number(d?.total_perusahaan || 0);
     }, 0),
+    totalLBByPoint: sumPayrollField(data, 'lb_by_point'),
+    totalLBProRate: sumPayrollField(data, 'lb_pro_rate'),
     totalLB: sumPayrollField(data, 'lb_total'),
+    totalDeviasiByPoint: sumPayrollField(data, 'deviasi_by_point'),
+    totalDeviasiProRate: sumPayrollField(data, 'deviasi_pro_rate'),
     totalDeviasi: sumPayrollField(data, 'deviasi_total'),
+    totalCityLedgerByPoint: sumPayrollField(data, 'city_ledger_by_point'),
+    totalCityLedgerProRate: sumPayrollField(data, 'city_ledger_pro_rate'),
     totalCityLedger: sumPayrollField(data, 'city_ledger_total'),
     totalPHBonus: sumPayrollField(data, 'ph_bonus'),
     totalCustomEarnings: sumPayrollField(data, 'custom_earnings'),
@@ -368,6 +382,8 @@ const summary = computed(() => {
     totalPotonganAlpha: sumPayrollField(data, 'potongan_alpha'),
     totalPotonganUnpaidLeave: sumPayrollField(data, 'potongan_unpaid_leave'),
     totalPotonganKasbon: sumPayrollField(data, 'potongan_kasbon'),
+    totalGajiAkhirBulan: sumPayrollField(data, 'total_gaji_akhir_bulan'),
+    totalGajiTanggal8: sumPayrollField(data, 'total_gaji_tanggal_8'),
     totalGaji: sumPayrollField(data, 'total_gaji'),
   };
 });
@@ -1296,9 +1312,15 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS Perusahaan</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total L & B</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Deviasi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total City Ledger</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">PH Bonus</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Earnings</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Deductions</th>
@@ -1306,6 +1328,8 @@ onMounted(() => {
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Alpha</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Unpaid Leave</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Kasbon</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Akhir Bulan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Tanggal 8</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Gaji</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Payment Method</th>
                   <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
@@ -1472,6 +1496,24 @@ onMounted(() => {
                       <span v-else class="text-gray-400 text-xs">—</span>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.lb == 1" class="text-red-600">
+                        {{ formatCurrency(item.lb_by_point || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(L & B Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.lb == 1" class="text-red-600">
+                        {{ formatCurrency(item.lb_pro_rate || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(L & B Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.lb == 1" class="text-red-600 font-bold">
                         {{ formatCurrency(item.lb_total || 0) }}
                       </span>
@@ -1481,12 +1523,48 @@ onMounted(() => {
                       </span>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.deviasi == 1" class="text-red-600">
+                        {{ formatCurrency(item.deviasi_by_point || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(Deviasi Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.deviasi == 1" class="text-red-600">
+                        {{ formatCurrency(item.deviasi_pro_rate || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(Deviasi Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
                       <span v-if="item.master_data && item.master_data.deviasi == 1" class="text-red-600 font-bold">
                         {{ formatCurrency(item.deviasi_total || 0) }}
                       </span>
                       <span v-else class="text-gray-400">
                         {{ formatCurrency(0) }}
                         <span class="text-xs text-red-500 ml-1">(Deviasi Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.city_ledger == 1" class="text-red-600">
+                        {{ formatCurrency(item.city_ledger_by_point || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(City Ledger Disabled)</span>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold">
+                      <span v-if="item.master_data && item.master_data.city_ledger == 1" class="text-red-600">
+                        {{ formatCurrency(item.city_ledger_pro_rate || 0) }}
+                      </span>
+                      <span v-else class="text-gray-400">
+                        {{ formatCurrency(0) }}
+                        <span class="text-xs text-red-500 ml-1">(City Ledger Disabled)</span>
                       </span>
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold">
@@ -1535,6 +1613,12 @@ onMounted(() => {
                       >
                         Cicilan {{ item.kasbon_cicilan_ke }}{{ item.kasbon_termin_total ? '/' + item.kasbon_termin_total : '' }}
                       </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-blue-600 bg-blue-50 rounded-lg">
+                      {{ formatCurrency(item.total_gaji_akhir_bulan || 0) }}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-center font-bold text-indigo-600 bg-indigo-50 rounded-lg">
+                      {{ formatCurrency(item.total_gaji_tanggal_8 || 0) }}
                     </td>
                     <td class="px-4 py-3 text-sm text-center font-bold text-green-600 bg-green-50 rounded-lg">
                       {{ formatCurrency(item.total_gaji) }}
@@ -1776,8 +1860,14 @@ onMounted(() => {
                   <td class="px-4 py-3 text-center text-teal-300" title="Informasi; tidak mengurangi THP">
                     {{ formatCurrency(summary.totalBpjsPerusahaan) }}
                   </td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalLBByPoint) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalLBProRate) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalLB) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalDeviasiByPoint) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalDeviasiProRate) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalDeviasi) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalCityLedgerByPoint) }}</td>
+                  <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalCityLedgerProRate) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalCityLedger) }}</td>
                   <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalPHBonus) }}</td>
                   <td class="px-4 py-3 text-center text-green-300">{{ formatCurrency(summary.totalCustomEarnings) }}</td>
@@ -1786,6 +1876,8 @@ onMounted(() => {
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganAlpha) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganUnpaidLeave) }}</td>
                   <td class="px-4 py-3 text-center text-red-300">{{ formatCurrency(summary.totalPotonganKasbon) }}</td>
+                  <td class="px-4 py-3 text-center text-blue-300">{{ formatCurrency(summary.totalGajiAkhirBulan) }}</td>
+                  <td class="px-4 py-3 text-center text-indigo-300">{{ formatCurrency(summary.totalGajiTanggal8) }}</td>
                   <td class="px-4 py-3 text-center text-lg text-amber-300 bg-slate-900">{{ formatCurrency(summary.totalGaji) }}</td>
                   <td class="px-4 py-3 text-center text-slate-400">—</td>
                   <td class="px-4 py-3 text-center text-slate-400">—</td>

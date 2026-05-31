@@ -13,12 +13,49 @@ use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\PayrollBpjsCalculator;
 use App\Services\PayrollKasbonService;
+use App\Services\PayrollSplitPoolCalculator;
 
 class PayrollReportController extends Controller
 {
     private function attendanceReportHelper(): AttendanceReportController
     {
         return app(AttendanceReportController::class);
+    }
+
+    /**
+     * @param  array<string, float|int>  $components
+     * @return array{total_gaji_akhir_bulan: float, total_gaji_tanggal_8: float, total_gaji: float}
+     */
+    private function calculateGajiSplitTotals(array $components): array
+    {
+        $totalGajiAkhirBulan =
+            (float) ($components['gaji_pokok'] ?? 0)
+            + (float) ($components['tunjangan'] ?? 0)
+            + (float) ($components['custom_earnings_gajian1'] ?? 0)
+            - (float) ($components['custom_deductions_gajian1'] ?? 0)
+            - (float) ($components['bpjs_jkn'] ?? 0)
+            - (float) ($components['bpjs_tk'] ?? 0)
+            - (float) ($components['potongan_telat'] ?? 0)
+            - (float) ($components['potongan_alpha'] ?? 0)
+            - (float) ($components['potongan_unpaid_leave'] ?? 0)
+            - (float) ($components['potongan_kasbon'] ?? 0);
+
+        $totalGajiTanggal8 =
+            (float) ($components['service_charge'] ?? 0)
+            + (float) ($components['uang_makan'] ?? 0)
+            + (float) ($components['gaji_lembur'] ?? 0)
+            + (float) ($components['ph_bonus'] ?? 0)
+            + (float) ($components['custom_earnings_gajian2'] ?? 0)
+            - (float) ($components['lb_total'] ?? 0)
+            - (float) ($components['deviasi_total'] ?? 0)
+            - (float) ($components['city_ledger_total'] ?? 0)
+            - (float) ($components['custom_deductions_gajian2'] ?? 0);
+
+        return [
+            'total_gaji_akhir_bulan' => round($totalGajiAkhirBulan),
+            'total_gaji_tanggal_8' => round($totalGajiTanggal8),
+            'total_gaji' => round($totalGajiAkhirBulan + $totalGajiTanggal8),
+        ];
     }
 
     public function index(Request $request)
@@ -494,10 +531,18 @@ class PayrollReportController extends Controller
                             'bpjs_jkn' => 0,
                             'bpjs_tk' => 0,
                             'bpjs_perusahaan_detail' => null,
+                            'lb_by_point' => 0,
+                            'lb_pro_rate' => 0,
                             'lb_total' => 0,
+                            'deviasi_by_point' => 0,
+                            'deviasi_pro_rate' => 0,
                             'deviasi_total' => 0,
+                            'city_ledger_by_point' => 0,
+                            'city_ledger_pro_rate' => 0,
                             'city_ledger_total' => 0,
                             'ph_bonus' => 0,
+                            'total_gaji_akhir_bulan' => 0,
+                            'total_gaji_tanggal_8' => 0,
                             'total_gaji' => 0,
                             'hari_kerja' => 0,
                             'gaji_per_menit' => 500,
@@ -608,8 +653,31 @@ class PayrollReportController extends Controller
                         'city_ledger' => 0,
                     ]);
                     
-                    // Hitung total gaji dari data yang sudah di-generate
-                    $totalGaji = $detail->total_gaji ?? 0;
+                    // Hitung total gaji dari komponen (gajian 1 + gajian 2)
+                    $gajiSplit = $this->calculateGajiSplitTotals([
+                        'gaji_pokok' => $detail->gaji_pokok ?? 0,
+                        'tunjangan' => $detail->tunjangan ?? 0,
+                        'custom_earnings_gajian1' => $customEarningsGajian1,
+                        'custom_deductions_gajian1' => $customDeductionsGajian1,
+                        'bpjs_jkn' => $detail->bpjs_jkn ?? 0,
+                        'bpjs_tk' => $detail->bpjs_tk ?? 0,
+                        'potongan_telat' => $detail->potongan_telat ?? 0,
+                        'potongan_alpha' => $detail->potongan_alpha ?? 0,
+                        'potongan_unpaid_leave' => $detail->potongan_unpaid_leave ?? 0,
+                        'potongan_kasbon' => $detail->potongan_kasbon ?? 0,
+                        'service_charge' => $detail->service_charge ?? 0,
+                        'uang_makan' => $detail->uang_makan ?? 0,
+                        'gaji_lembur' => $detail->gaji_lembur ?? 0,
+                        'ph_bonus' => $detail->ph_bonus ?? 0,
+                        'custom_earnings_gajian2' => $customEarningsGajian2,
+                        'custom_deductions_gajian2' => $customDeductionsGajian2,
+                        'lb_total' => $detail->lb_total ?? 0,
+                        'deviasi_total' => $detail->deviasi_total ?? 0,
+                        'city_ledger_total' => $detail->city_ledger_total ?? 0,
+                    ]);
+                    $totalGajiAkhirBulan = $gajiSplit['total_gaji_akhir_bulan'];
+                    $totalGajiTanggal8 = $gajiSplit['total_gaji_tanggal_8'];
+                    $totalGaji = $gajiSplit['total_gaji'];
                     
                     // Format data sesuai dengan struktur yang dibutuhkan frontend
                     $payrollDataItem = [
@@ -639,8 +707,14 @@ class PayrollReportController extends Controller
                         'bpjs_perusahaan_detail' => ! empty($detail->bpjs_perusahaan_detail)
                             ? (json_decode($detail->bpjs_perusahaan_detail, true) ?: null)
                             : null,
+                        'lb_by_point' => round($detail->lb_by_point ?? 0),
+                        'lb_pro_rate' => round($detail->lb_pro_rate ?? 0),
                         'lb_total' => round($detail->lb_total ?? 0),
+                        'deviasi_by_point' => round($detail->deviasi_by_point ?? 0),
+                        'deviasi_pro_rate' => round($detail->deviasi_pro_rate ?? 0),
                         'deviasi_total' => round($detail->deviasi_total ?? 0),
+                        'city_ledger_by_point' => round($detail->city_ledger_by_point ?? 0),
+                        'city_ledger_pro_rate' => round($detail->city_ledger_pro_rate ?? 0),
                         'city_ledger_total' => round($detail->city_ledger_total ?? 0),
                         'ph_bonus' => round($detail->ph_bonus ?? 0),
                         'custom_earnings' => round($customEarningsGajian1),
@@ -661,6 +735,8 @@ class PayrollReportController extends Controller
                         'pr_kasbon_id' => $detail->pr_kasbon_id ?? null,
                         'kasbon_cicilan_ke' => $detail->kasbon_cicilan_ke ?? null,
                         'kasbon_pr_number' => null,
+                        'total_gaji_akhir_bulan' => $totalGajiAkhirBulan,
+                        'total_gaji_tanggal_8' => $totalGajiTanggal8,
                         'total_gaji' => round($totalGaji),
                         'hari_kerja' => $detail->hari_kerja ?? 0,
                         'total_izin_cuti' => $totalIzinCuti,
@@ -1196,126 +1272,28 @@ class PayrollReportController extends Controller
                 (int) $outletId
             );
 
-            // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
-            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
-            $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
-            $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
-            
-            foreach ($userData as $data) {
-                if ($data['masterData']->sc == 1) {
-                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
-                    if ($data['isMutatedEmployee'] ?? false) {
-                        // Total hari kerja = outlet lama + outlet baru
-                        $hariKerjaSC = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                        
-                        \Log::info('SC Pool - Mutated employee using TOTAL work days', [
-                            'user_id' => $data['user']->id,
-                            'nama_lengkap' => $data['user']->nama_lengkap,
-                            'hari_kerja_outlet_lama' => $data['hariKerjaOutletLama'] ?? 0,
-                            'hari_kerja_outlet_baru' => $data['hariKerjaOutletBaru'] ?? 0,
-                            'hari_kerja_total' => $hariKerjaSC,
-                            'point' => $data['userPoint']
-                        ]);
-                    } else {
-                        // Karyawan biasa: gunakan hariKerjaUntukServiceCharge
-                        $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                    }
-                    
-                    $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
-                    $totalHariKerja += $hariKerjaSC;
-                }
-            }
+            // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
+            $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc');
+            $totalPointHariKerja = $scPool['totalPointHariKerja'];
+            $totalHariKerja = $scPool['totalHariKerja'];
+            $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
+            $rateByPoint = $scRates['rateByPoint'];
+            $rateProRate = $scRates['rateProRate'];
 
-            // Step 3: Hitung rate service charge (50:50)
-            $serviceChargeByPoint = 0; // 50% untuk by point
-            $serviceChargeProRate = 0; // 50% untuk pro rate
-            $rateByPoint = 0; // Rate per (point × hari kerja)
-            $rateProRate = 0; // Rate per hari kerja
+            $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb');
+            $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
+            $rateLBByPoint = $lbRates['rateByPoint'];
+            $rateLBProRate = $lbRates['rateProRate'];
 
-            if ($serviceCharge > 0) {
-                $serviceChargeByPoint = $serviceCharge / 2; // 50%
-                $serviceChargeProRate = $serviceCharge / 2; // 50%
+            $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi');
+            $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
+            $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
+            $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-                if ($totalPointHariKerja > 0) {
-                    $rateByPoint = $serviceChargeByPoint / $totalPointHariKerja;
-                }
-                if ($totalHariKerja > 0) {
-                    $rateProRate = $serviceChargeProRate / $totalHariKerja;
-                }
-            }
-
-            // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
-            $totalPointHariKerjaLB = 0;
-            foreach ($userData as $data) {
-                if ($data['masterData']->lb == 1) {
-                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
-                    if ($data['isMutatedEmployee'] ?? false) {
-                        $hariKerjaLB = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                    } else {
-                        $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                    }
-                    $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
-                }
-            }
-
-            // Step 3b: Hitung rate L & B (100% by point × hari kerja)
-            $rateLBByPoint = 0;
-
-            if ($lbAmount > 0 && $totalPointHariKerjaLB > 0) {
-                $rateLBByPoint = $lbAmount / $totalPointHariKerjaLB;
-            }
-
-            // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
-            $totalPointHariKerjaDeviasi = 0;
-            foreach ($userData as $data) {
-                if ($data['masterData']->deviasi == 1) {
-                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
-                    if ($data['isMutatedEmployee'] ?? false) {
-                        $hariKerjaDeviasi = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                    } else {
-                        $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                    }
-                    $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
-                }
-            }
-
-            // Step 3c: Hitung rate Deviasi (100% by point × hari kerja)
-            $rateDeviasiByPoint = 0;
-
-            if ($deviasiAmount > 0 && $totalPointHariKerjaDeviasi > 0) {
-                $rateDeviasiByPoint = $deviasiAmount / $totalPointHariKerjaDeviasi;
-            }
-
-            // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // KARYAWAN MUTASI: Gunakan TOTAL hari kerja (outlet lama + outlet baru) untuk pool calculation
-            $totalPointHariKerjaCityLedger = 0;
-            foreach ($userData as $data) {
-                if ($data['masterData']->city_ledger == 1) {
-                    // SPECIAL CASE: Karyawan mutasi harus pakai TOTAL hari kerja
-                    if ($data['isMutatedEmployee'] ?? false) {
-                        $hariKerjaCityLedger = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                    } else {
-                        $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                    }
-                    $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
-                }
-            }
-
-            // Step 3d: Hitung rate City Ledger (100% by point × hari kerja)
-            $rateCityLedgerByPoint = 0;
-
-            if ($cityLedgerAmount > 0 && $totalPointHariKerjaCityLedger > 0) {
-                $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointHariKerjaCityLedger;
-            }
+            $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger');
+            $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
+            $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
+            $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
 
             // Step 4: Hitung service charge per user dan total gaji
             foreach ($userData as $userId => $data) {
@@ -1490,96 +1468,27 @@ class PayrollReportController extends Controller
                 }
 
                 // Hitung service charge (By Point dan Pro Rate) jika enabled
-                // PENTING: Gunakan hariKerjaUntukServiceCharge yang sudah dihitung di Step 1 untuk konsistensi
-                // Untuk karyawan yang mutasi, hitung pro rate berdasarkan effective_date
                 $serviceChargeByPointAmount = 0;
                 $serviceChargeProRateAmount = 0;
                 $serviceChargeTotal = 0;
-                
+
                 if ($masterData->sc == 1 && $serviceCharge > 0) {
-                    // Jika karyawan mutasi, hitung pro rate berdasarkan effective_date
-                    // PENTING: Service charge menggunakan periode gajian 2 (1-30), bukan periode gajian 1 (26-25)
-                    if ($isMutatedEmployee && $mutationEffectiveDate) {
-                        // Periode gajian 2: 1-30/31 bulan yang dipilih (untuk service charge dll)
-                        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
-                        $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
-                        
-                        // Jika mutasi terjadi sebelum tanggal 1 bulan yang dipilih, tidak ikut dihitung untuk service charge
-                        // Karena service charge dihitung dari tanggal 1
-                        if ($mutationEffectiveDate->lt($gajian2Start)) {
-                            // Mutasi sebelum tanggal 1, tidak ikut dihitung untuk service charge
-                            $serviceChargeByPointAmount = 0;
-                            $serviceChargeProRateAmount = 0;
-                            $serviceChargeTotal = 0;
-                            
-                            \Log::info('Service charge untuk karyawan mutasi - Mutasi sebelum tanggal 1', [
-                                'user_id' => $user->id,
-                                'nama_lengkap' => $user->nama_lengkap,
-                                'mutation_effective_date' => $mutationEffectiveDate->format('Y-m-d'),
-                                'gajian2_start' => $gajian2Start->format('Y-m-d'),
-                                'service_charge_total' => 0
-                            ]);
-                        } else {
-                            // Mutasi pada atau setelah tanggal 1, hitung pro rate
-                            // Hitung hari kalender di outlet lama: dari tanggal 1 sampai (effective_date - 1)
-                            $hariKalenderOutletLama = $gajian2Start->diffInDays($mutationEffectiveDate->copy()->subDay()) + 1;
-                            if ($hariKalenderOutletLama < 0) $hariKalenderOutletLama = 0;
-                            
-                            // Hitung hari kalender di outlet baru: dari effective_date sampai akhir bulan
-                            $hariKalenderOutletBaru = $mutationEffectiveDate->diffInDays($gajian2End) + 1;
-                            if ($hariKalenderOutletBaru < 0) $hariKalenderOutletBaru = 0;
-                            
-                            $totalHariKalenderPeriode = $gajian2Start->diffInDays($gajian2End) + 1;
-                            
-                            // Service charge by point = rate × (point × hari kalender outlet lama) + rate × (point × hari kalender outlet baru)
-                            // Untuk sementara, kita hitung berdasarkan proporsi hari kalender
-                            $proporsiOutletLama = $hariKalenderOutletLama / $totalHariKalenderPeriode;
-                            $proporsiOutletBaru = $hariKalenderOutletBaru / $totalHariKalenderPeriode;
-                            
-                            // Service charge by point di outlet lama
-                            $serviceChargeByPointOutletLama = $rateByPoint * ($userPoint * $hariKalenderOutletLama);
-                            // Service charge by point di outlet baru (akan dihitung dengan rate outlet baru, tapi untuk sementara kita gunakan rate yang sama)
-                            $serviceChargeByPointOutletBaru = $rateByPoint * ($userPoint * $hariKalenderOutletBaru);
-                            $serviceChargeByPointAmount = $serviceChargeByPointOutletLama + $serviceChargeByPointOutletBaru;
-                            
-                            // Service charge pro rate di outlet lama
-                            $serviceChargeProRateOutletLama = $rateProRate * $hariKalenderOutletLama;
-                            // Service charge pro rate di outlet baru
-                            $serviceChargeProRateOutletBaru = $rateProRate * $hariKalenderOutletBaru;
-                            $serviceChargeProRateAmount = $serviceChargeProRateOutletLama + $serviceChargeProRateOutletBaru;
-                            
-                            // Total service charge per user
-                            $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
-                            
-                            \Log::info('Service charge untuk karyawan mutasi', [
-                                'user_id' => $user->id,
-                                'nama_lengkap' => $user->nama_lengkap,
-                                'mutation_effective_date' => $mutationEffectiveDate->format('Y-m-d'),
-                                'gajian2_start' => $gajian2Start->format('Y-m-d'),
-                                'gajian2_end' => $gajian2End->format('Y-m-d'),
-                                'hari_kalender_outlet_lama' => $hariKalenderOutletLama,
-                                'hari_kalender_outlet_baru' => $hariKalenderOutletBaru,
-                                'service_charge_by_point_outlet_lama' => $serviceChargeByPointOutletLama,
-                                'service_charge_by_point_outlet_baru' => $serviceChargeByPointOutletBaru,
-                                'service_charge_pro_rate_outlet_lama' => $serviceChargeProRateOutletLama,
-                                'service_charge_pro_rate_outlet_baru' => $serviceChargeProRateOutletBaru,
-                                'service_charge_total' => $serviceChargeTotal
-                            ]);
-                        }
-                    } else {
-                        // Service charge by point = rate × (point × hari kerja)
-                        // Untuk karyawan baru, gunakan hariKerjaKaryawanBaru untuk konsistensi dengan gaji pokok
-                        $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                        
-                        // Service charge pro rate = rate × hari kerja
-                        // Untuk karyawan baru, gunakan hariKerjaKaryawanBaru untuk konsistensi dengan gaji pokok
-                        $serviceChargeProRateAmount = $rateProRate * $hariKerjaUntukServiceCharge;
-                        
-                        // Total service charge per user
-                        $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
-                    }
+                    $scAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                        true,
+                        (float) $serviceCharge,
+                        $rateByPoint,
+                        $rateProRate,
+                        (float) $userPoint,
+                        (float) $hariKerjaUntukServiceCharge,
+                        $isMutatedEmployee,
+                        $mutationEffectiveDate,
+                        (int) $year,
+                        (int) $month
+                    );
+                    $serviceChargeByPointAmount = $scAmounts['by_point'];
+                    $serviceChargeProRateAmount = $scAmounts['pro_rate'];
+                    $serviceChargeTotal = $scAmounts['total'];
                 } else {
-                    // Debug logging untuk service charge = 0
                     \Log::info('Service charge = 0 for user', [
                         'user_id' => $user->id,
                         'nama_lengkap' => $user->nama_lengkap,
@@ -1587,8 +1496,9 @@ class PayrollReportController extends Controller
                         'service_charge_input' => $serviceCharge,
                         'hari_kerja' => $hariKerja,
                         'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
-                        'is_new_employee' => $isNewEmployee,
                         'user_point' => $userPoint,
+                        'rate_by_point' => $rateByPoint,
+                        'rate_pro_rate' => $rateProRate,
                         'reason' => $masterData->sc != 1 ? 'sc not enabled' : 'service_charge input is 0'
                     ]);
                 }
@@ -1740,94 +1650,73 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-            // Hitung L & B (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // Untuk karyawan yang mutasi, hitung pro rate berdasarkan effective_date
+            // Hitung L & B (mirror service charge: 50% by point + 50% pro rate)
             $lbByPointAmount = 0;
+            $lbProRateAmount = 0;
             $lbTotal = 0;
-            
+
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                if ($isMutatedEmployee && $mutationEffectiveDate) {
-                    // Hitung hari kalender di outlet lama: dari start sampai (effective_date - 1)
-                    $hariKalenderOutletLama = $startDate->diffInDays($mutationEffectiveDate->copy()->subDay()) + 1;
-                    if ($hariKalenderOutletLama < 0) $hariKalenderOutletLama = 0;
-                    
-                    // Hitung hari kalender di outlet baru: dari effective_date sampai end
-                    $hariKalenderOutletBaru = $mutationEffectiveDate->diffInDays($endDate) + 1;
-                    if ($hariKalenderOutletBaru < 0) $hariKalenderOutletBaru = 0;
-                    
-                    // L&B di outlet lama
-                    $lbOutletLama = $rateLBByPoint * ($userPoint * $hariKalenderOutletLama);
-                    // L&B di outlet baru
-                    $lbOutletBaru = $rateLBByPoint * ($userPoint * $hariKalenderOutletBaru);
-                    $lbByPointAmount = $lbOutletLama + $lbOutletBaru;
-                    $lbTotal = $lbByPointAmount;
-                } else {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                    $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                    $lbTotal = $lbByPointAmount;
-                }
+                $lbAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $lbAmount,
+                    $rateLBByPoint,
+                    $rateLBProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $lbByPointAmount = $lbAmounts['by_point'];
+                $lbProRateAmount = $lbAmounts['pro_rate'];
+                $lbTotal = $lbAmounts['total'];
             }
 
-            // Hitung Deviasi (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // Untuk karyawan yang mutasi, hitung pro rate berdasarkan effective_date
+            // Hitung Deviasi (mirror service charge)
             $deviasiByPointAmount = 0;
+            $deviasiProRateAmount = 0;
             $deviasiTotal = 0;
-            
+
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                if ($isMutatedEmployee && $mutationEffectiveDate) {
-                    // Hitung hari kalender di outlet lama: dari start sampai (effective_date - 1)
-                    $hariKalenderOutletLama = $startDate->diffInDays($mutationEffectiveDate->copy()->subDay()) + 1;
-                    if ($hariKalenderOutletLama < 0) $hariKalenderOutletLama = 0;
-                    
-                    // Hitung hari kalender di outlet baru: dari effective_date sampai end
-                    $hariKalenderOutletBaru = $mutationEffectiveDate->diffInDays($endDate) + 1;
-                    if ($hariKalenderOutletBaru < 0) $hariKalenderOutletBaru = 0;
-                    
-                    // Deviasi di outlet lama
-                    $deviasiOutletLama = $rateDeviasiByPoint * ($userPoint * $hariKalenderOutletLama);
-                    // Deviasi di outlet baru
-                    $deviasiOutletBaru = $rateDeviasiByPoint * ($userPoint * $hariKalenderOutletBaru);
-                    $deviasiByPointAmount = $deviasiOutletLama + $deviasiOutletBaru;
-                    $deviasiTotal = $deviasiByPointAmount;
-                } else {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                    $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                    $deviasiTotal = $deviasiByPointAmount;
-                }
+                $deviasiAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $deviasiAmount,
+                    $rateDeviasiByPoint,
+                    $rateDeviasiProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $deviasiByPointAmount = $deviasiAmounts['by_point'];
+                $deviasiProRateAmount = $deviasiAmounts['pro_rate'];
+                $deviasiTotal = $deviasiAmounts['total'];
             }
 
-            // Hitung City Ledger (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
-            // Untuk karyawan yang mutasi, hitung pro rate berdasarkan effective_date
+            // Hitung City Ledger (mirror service charge)
             $cityLedgerByPointAmount = 0;
+            $cityLedgerProRateAmount = 0;
             $cityLedgerTotal = 0;
-            
+
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                if ($isMutatedEmployee && $mutationEffectiveDate) {
-                    // Hitung hari kalender di outlet lama: dari start sampai (effective_date - 1)
-                    $hariKalenderOutletLama = $startDate->diffInDays($mutationEffectiveDate->copy()->subDay()) + 1;
-                    if ($hariKalenderOutletLama < 0) $hariKalenderOutletLama = 0;
-                    
-                    // Hitung hari kalender di outlet baru: dari effective_date sampai end
-                    $hariKalenderOutletBaru = $mutationEffectiveDate->diffInDays($endDate) + 1;
-                    if ($hariKalenderOutletBaru < 0) $hariKalenderOutletBaru = 0;
-                    
-                    // City Ledger di outlet lama
-                    $cityLedgerOutletLama = $rateCityLedgerByPoint * ($userPoint * $hariKalenderOutletLama);
-                    // City Ledger di outlet baru
-                    $cityLedgerOutletBaru = $rateCityLedgerByPoint * ($userPoint * $hariKalenderOutletBaru);
-                    $cityLedgerByPointAmount = $cityLedgerOutletLama + $cityLedgerOutletBaru;
-                    $cityLedgerTotal = $cityLedgerByPointAmount;
-                } else {
-                    // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                    $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                    $cityLedgerTotal = $cityLedgerByPointAmount;
-                }
+                $cityLedgerAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $cityLedgerAmount,
+                    $rateCityLedgerByPoint,
+                    $rateCityLedgerProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $cityLedgerByPointAmount = $cityLedgerAmounts['by_point'];
+                $cityLedgerProRateAmount = $cityLedgerAmounts['pro_rate'];
+                $cityLedgerTotal = $cityLedgerAmounts['total'];
             }
 
                 // Hitung custom earnings dan deductions - PISAHKAN BERDASARKAN GAJIAN TYPE
@@ -1872,11 +1761,31 @@ class PayrollReportController extends Controller
                     $kasbonTerminTotal = $kasbonEligibleByUser[$user->id]['termin_total'] ?? null;
                 }
 
-                // Hitung total gaji (service charge ditambahkan sebagai earning, L&B, Deviasi, City Ledger, potongan alpha dan unpaid leave sebagai deduction)
-                // PH Bonus akan ditambahkan di gajian2, tidak dihitung di total gaji utama
-                // Custom items gajian2 TIDAK masuk ke total gaji utama, hanya gajian1
-                // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
-                $totalGaji = $gajiPokokFinal + $tunjanganFinal + $gajiLembur + $uangMakan + $serviceChargeTotal + $customEarnings - $potonganTelat - $bpjsJKN - $bpjsTK - $lbTotal - $deviasiTotal - $cityLedgerTotal - $customDeductions - $potonganAlpha - $potonganUnpaidLeave - $potonganKasbon;
+                // Total gaji = Gajian 1 (akhir bulan) + Gajian 2 (tanggal 8)
+                $gajiSplit = $this->calculateGajiSplitTotals([
+                    'gaji_pokok' => $gajiPokokFinal,
+                    'tunjangan' => $tunjanganFinal,
+                    'custom_earnings_gajian1' => $customEarningsGajian1,
+                    'custom_deductions_gajian1' => $customDeductionsGajian1,
+                    'bpjs_jkn' => $bpjsJKN,
+                    'bpjs_tk' => $bpjsTK,
+                    'potongan_telat' => $potonganTelat,
+                    'potongan_alpha' => $potonganAlpha,
+                    'potongan_unpaid_leave' => $potonganUnpaidLeave,
+                    'potongan_kasbon' => $potonganKasbon,
+                    'service_charge' => $serviceChargeTotal,
+                    'uang_makan' => $uangMakan,
+                    'gaji_lembur' => $gajiLembur,
+                    'ph_bonus' => $phBonus,
+                    'custom_earnings_gajian2' => $customEarningsGajian2,
+                    'custom_deductions_gajian2' => $customDeductionsGajian2,
+                    'lb_total' => $lbTotal,
+                    'deviasi_total' => $deviasiTotal,
+                    'city_ledger_total' => $cityLedgerTotal,
+                ]);
+                $totalGajiAkhirBulan = $gajiSplit['total_gaji_akhir_bulan'];
+                $totalGajiTanggal8 = $gajiSplit['total_gaji_tanggal_8'];
+                $totalGaji = $gajiSplit['total_gaji'];
                 
                 // Cek apakah user resign di periode ini SAJA
                 // Hanya set resignation_date jika karyawan benar-benar resign di periode payroll yang dipilih
@@ -1921,10 +1830,13 @@ class PayrollReportController extends Controller
                     'service_charge_pro_rate' => round($serviceChargeProRateAmount),
                     'service_charge' => round($serviceChargeTotal),
                     'lb_by_point' => round($lbByPointAmount),
+                    'lb_pro_rate' => round($lbProRateAmount),
                     'lb_total' => round($lbTotal),
                     'deviasi_by_point' => round($deviasiByPointAmount),
+                    'deviasi_pro_rate' => round($deviasiProRateAmount),
                     'deviasi_total' => round($deviasiTotal),
                     'city_ledger_by_point' => round($cityLedgerByPointAmount),
+                    'city_ledger_pro_rate' => round($cityLedgerProRateAmount),
                     'city_ledger_total' => round($cityLedgerTotal),
                     'bpjs_jkn' => round($bpjsJKN),
                     'bpjs_tk' => round($bpjsTK),
@@ -1947,7 +1859,9 @@ class PayrollReportController extends Controller
                     'kasbon_cicilan_ke' => $kasbonCicilanKe,
                     'kasbon_pr_number' => $kasbonPrNumber,
                     'kasbon_termin_total' => $kasbonTerminTotal,
-                    'total_gaji' => round($totalGaji),
+                    'total_gaji_akhir_bulan' => $totalGajiAkhirBulan,
+                    'total_gaji_tanggal_8' => $totalGajiTanggal8,
+                    'total_gaji' => $totalGaji,
                     'hari_kerja' => $hariKerja,
                     'total_alpha' => $totalAlpha,
                     'total_izin_cuti' => $totalIzinCuti,
@@ -3232,113 +3146,28 @@ class PayrollReportController extends Controller
             (int) $outletId
         );
 
-        // Step 2: Hitung total untuk service charge (hanya untuk user yang sc = 1)
-        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan perhitungan per user
-        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
-        $totalPointHariKerja = 0; // Sum(point × hari kerja) untuk semua user yang sc = 1
-        $totalHariKerja = 0; // Sum(hari kerja) untuk semua user yang sc = 1
-        
-        foreach ($userData as $data) {
-            if ($data['masterData']->sc == 1) {
-                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
-                if ($data['isMutatedEmployee'] ?? false) {
-                    // Mutated employee: Gunakan total hari kerja (outlet lama + baru)
-                    $hariKerjaSC = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                } else {
-                    // Normal employee: Gunakan hariKerjaUntukServiceCharge
-                    $hariKerjaSC = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                }
-                $totalPointHariKerja += $data['userPoint'] * $hariKerjaSC;
-                $totalHariKerja += $hariKerjaSC;
-            }
-        }
+        // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
+        $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc');
+        $totalPointHariKerja = $scPool['totalPointHariKerja'];
+        $totalHariKerja = $scPool['totalHariKerja'];
+        $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
+        $rateByPoint = $scRates['rateByPoint'];
+        $rateProRate = $scRates['rateProRate'];
 
-        // Step 3: Hitung rate service charge (50:50)
-        $serviceChargeByPoint = 0; // 50% untuk by point
-        $serviceChargeProRate = 0; // 50% untuk pro rate
-        $rateByPoint = 0; // Rate per (point × hari kerja)
-        $rateProRate = 0; // Rate per hari kerja
+        $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb');
+        $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
+        $rateLBByPoint = $lbRates['rateByPoint'];
+        $rateLBProRate = $lbRates['rateProRate'];
 
-        if ($serviceCharge > 0) {
-            $serviceChargeByPoint = $serviceCharge / 2; // 50%
-            $serviceChargeProRate = $serviceCharge / 2; // 50%
+        $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi');
+        $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
+        $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
+        $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-            if ($totalPointHariKerja > 0) {
-                $rateByPoint = $serviceChargeByPoint / $totalPointHariKerja;
-            }
-            if ($totalHariKerja > 0) {
-                $rateProRate = $serviceChargeProRate / $totalHariKerja;
-            }
-        }
-
-        // Step 2b: Hitung total untuk L & B (hanya untuk user yang lb = 1)
-        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
-        $totalPointHariKerjaLB = 0;
-        foreach ($userData as $data) {
-            if ($data['masterData']->lb == 1) {
-                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
-                if ($data['isMutatedEmployee'] ?? false) {
-                    $hariKerjaLB = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                } else {
-                    $hariKerjaLB = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                }
-                $totalPointHariKerjaLB += $data['userPoint'] * $hariKerjaLB;
-            }
-        }
-
-        // Step 3b: Hitung rate L & B (100% by point × hari kerja)
-        $rateLBByPoint = 0;
-
-        if ($lbAmount > 0 && $totalPointHariKerjaLB > 0) {
-            $rateLBByPoint = $lbAmount / $totalPointHariKerjaLB;
-        }
-
-        // Step 2c: Hitung total untuk Deviasi (hanya untuk user yang deviasi = 1)
-        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
-        $totalPointHariKerjaDeviasi = 0;
-        foreach ($userData as $data) {
-            if ($data['masterData']->deviasi == 1) {
-                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
-                if ($data['isMutatedEmployee'] ?? false) {
-                    $hariKerjaDeviasi = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                } else {
-                    $hariKerjaDeviasi = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                }
-                $totalPointHariKerjaDeviasi += $data['userPoint'] * $hariKerjaDeviasi;
-            }
-        }
-
-        // Step 3c: Hitung rate Deviasi (100% by point × hari kerja)
-        $rateDeviasiByPoint = 0;
-
-        if ($deviasiAmount > 0 && $totalPointHariKerjaDeviasi > 0) {
-            $rateDeviasiByPoint = $deviasiAmount / $totalPointHariKerjaDeviasi;
-        }
-
-        // Step 2d: Hitung total untuk City Ledger (hanya untuk user yang city_ledger = 1)
-        // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-        // CRITICAL FIX: Untuk mutated employees, gunakan TOTAL hari kerja (lama + baru) untuk pool
-        $totalPointHariKerjaCityLedger = 0;
-        foreach ($userData as $data) {
-            if ($data['masterData']->city_ledger == 1) {
-                // CRITICAL FIX: Untuk mutated employees, use TOTAL working days
-                if ($data['isMutatedEmployee'] ?? false) {
-                    $hariKerjaCityLedger = ($data['hariKerjaOutletLama'] ?? 0) + ($data['hariKerjaOutletBaru'] ?? 0);
-                } else {
-                    $hariKerjaCityLedger = $data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'];
-                }
-                $totalPointHariKerjaCityLedger += $data['userPoint'] * $hariKerjaCityLedger;
-            }
-        }
-
-        // Step 3d: Hitung rate City Ledger (100% by point × hari kerja)
-        $rateCityLedgerByPoint = 0;
-
-        if ($cityLedgerAmount > 0 && $totalPointHariKerjaCityLedger > 0) {
-            $rateCityLedgerByPoint = $cityLedgerAmount / $totalPointHariKerjaCityLedger;
-        }
+        $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger');
+        $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
+        $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
+        $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
 
         // Cek apakah payroll sudah di-generate
         $payrollGenerated = DB::table('payroll_generated')
@@ -3390,6 +3219,8 @@ class PayrollReportController extends Controller
             $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
             $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
             $isResignedEmployee = $data['isResignedEmployee'] ?? false; // Flag apakah karyawan resign
+            $isMutatedEmployee = $data['isMutatedEmployee'] ?? false;
+            $mutationEffectiveDate = $data['mutationEffectiveDate'] ?? null;
             $userPoint = $data['userPoint'];
             $leaveData = $data['leaveData'] ?? []; // Ambil leaveData dari userData
             $totalAlpha = $data['totalAlpha'] ?? 0;
@@ -3409,23 +3240,27 @@ class PayrollReportController extends Controller
                 $uangMakan = $hariKerja * $nominalUangMakan;
             }
 
-            // Hitung service charge (By Point dan Pro Rate) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge yang sudah dihitung di Step 1 untuk konsistensi
+            // Hitung service charge (mirror index())
             $serviceChargeByPointAmount = 0;
             $serviceChargeProRateAmount = 0;
             $serviceChargeTotal = 0;
-            
+
             if ($masterData->sc == 1 && $serviceCharge > 0) {
-                // Service charge by point = rate × (point × hari kerja)
-                // Untuk karyawan baru, gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $serviceChargeByPointAmount = $rateByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                
-                // Service charge pro rate = rate × hari kerja
-                // Untuk karyawan baru, gunakan hariKerjaUntukServiceCharge untuk konsistensi
-                $serviceChargeProRateAmount = $rateProRate * $hariKerjaUntukServiceCharge;
-                
-                // Total service charge per user
-                $serviceChargeTotal = $serviceChargeByPointAmount + $serviceChargeProRateAmount;
+                $scAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $serviceCharge,
+                    $rateByPoint,
+                    $rateProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $serviceChargeByPointAmount = $scAmounts['by_point'];
+                $serviceChargeProRateAmount = $scAmounts['pro_rate'];
+                $serviceChargeTotal = $scAmounts['total'];
             }
 
             // Hitung BPJS JKN & TK (karyawan) + rincian perusahaan (informasi)
@@ -3450,40 +3285,73 @@ class PayrollReportController extends Controller
                 $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
             }
 
-            // Hitung L & B (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
+            // Hitung L & B (mirror service charge)
             $lbByPointAmount = 0;
+            $lbProRateAmount = 0;
             $lbTotal = 0;
-            
+
             if ($masterData->lb == 1 && $lbAmount > 0) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                $lbByPointAmount = $rateLBByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                $lbTotal = $lbByPointAmount;
+                $lbAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $lbAmount,
+                    $rateLBByPoint,
+                    $rateLBProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $lbByPointAmount = $lbAmounts['by_point'];
+                $lbProRateAmount = $lbAmounts['pro_rate'];
+                $lbTotal = $lbAmounts['total'];
             }
 
-            // Hitung Deviasi (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
+            // Hitung Deviasi (mirror service charge)
             $deviasiByPointAmount = 0;
+            $deviasiProRateAmount = 0;
             $deviasiTotal = 0;
-            
+
             if ($masterData->deviasi == 1 && $deviasiAmount > 0) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                $deviasiByPointAmount = $rateDeviasiByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                $deviasiTotal = $deviasiByPointAmount;
+                $deviasiAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $deviasiAmount,
+                    $rateDeviasiByPoint,
+                    $rateDeviasiProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $deviasiByPointAmount = $deviasiAmounts['by_point'];
+                $deviasiProRateAmount = $deviasiAmounts['pro_rate'];
+                $deviasiTotal = $deviasiAmounts['total'];
             }
 
-            // Hitung City Ledger (By Point × Hari Kerja) jika enabled
-            // PENTING: Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-            // Menggunakan (point × hari kerja) seperti service charge by point
+            // Hitung City Ledger (mirror service charge)
             $cityLedgerByPointAmount = 0;
+            $cityLedgerProRateAmount = 0;
             $cityLedgerTotal = 0;
-            
+
             if ($masterData->city_ledger == 1 && $cityLedgerAmount > 0) {
-                // Gunakan hariKerjaUntukServiceCharge untuk konsistensi dengan service charge
-                $cityLedgerByPointAmount = $rateCityLedgerByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-                $cityLedgerTotal = $cityLedgerByPointAmount;
+                $cityLedgerAmounts = PayrollSplitPoolCalculator::calculateUserAmount(
+                    true,
+                    (float) $cityLedgerAmount,
+                    $rateCityLedgerByPoint,
+                    $rateCityLedgerProRate,
+                    (float) $userPoint,
+                    (float) $hariKerjaUntukServiceCharge,
+                    $isMutatedEmployee,
+                    $mutationEffectiveDate,
+                    (int) $year,
+                    (int) $month
+                );
+                $cityLedgerByPointAmount = $cityLedgerAmounts['by_point'];
+                $cityLedgerProRateAmount = $cityLedgerAmounts['pro_rate'];
+                $cityLedgerTotal = $cityLedgerAmounts['total'];
             }
 
             // Hitung potongan telat (flat rate Rp 500 per menit)
@@ -3672,8 +3540,14 @@ class PayrollReportController extends Controller
                 $bpjsJKN = $payrollDetail->bpjs_jkn ?? $bpjsJKN;
                 $bpjsTK = $payrollDetail->bpjs_tk ?? $bpjsTK;
                 $potonganTelat = $payrollDetail->potongan_telat ?? $potonganTelat;
+                $lbByPointAmount = $payrollDetail->lb_by_point ?? $lbByPointAmount;
+                $lbProRateAmount = $payrollDetail->lb_pro_rate ?? $lbProRateAmount;
                 $lbTotal = $payrollDetail->lb_total ?? $lbTotal;
+                $deviasiByPointAmount = $payrollDetail->deviasi_by_point ?? $deviasiByPointAmount;
+                $deviasiProRateAmount = $payrollDetail->deviasi_pro_rate ?? $deviasiProRateAmount;
                 $deviasiTotal = $payrollDetail->deviasi_total ?? $deviasiTotal;
+                $cityLedgerByPointAmount = $payrollDetail->city_ledger_by_point ?? $cityLedgerByPointAmount;
+                $cityLedgerProRateAmount = $payrollDetail->city_ledger_pro_rate ?? $cityLedgerProRateAmount;
                 $cityLedgerTotal = $payrollDetail->city_ledger_total ?? $cityLedgerTotal;
                 $phBonus = $payrollDetail->ph_bonus ?? $phBonus;
                 $hariKerja = $payrollDetail->hari_kerja ?? $hariKerja;
@@ -5069,8 +4943,14 @@ class PayrollReportController extends Controller
                     'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
                         ? json_encode($item['bpjs_perusahaan_detail'])
                         : null,
+                    'lb_by_point' => $item['lb_by_point'] ?? 0,
+                    'lb_pro_rate' => $item['lb_pro_rate'] ?? 0,
                     'lb_total' => $item['lb_total'] ?? 0,
+                    'deviasi_by_point' => $item['deviasi_by_point'] ?? 0,
+                    'deviasi_pro_rate' => $item['deviasi_pro_rate'] ?? 0,
                     'deviasi_total' => $item['deviasi_total'] ?? 0,
+                    'city_ledger_by_point' => $item['city_ledger_by_point'] ?? 0,
+                    'city_ledger_pro_rate' => $item['city_ledger_pro_rate'] ?? 0,
                     'city_ledger_total' => $item['city_ledger_total'] ?? 0,
                     'ph_bonus' => $item['ph_bonus'] ?? 0,
                     'custom_earnings' => $item['custom_earnings'] ?? 0,
@@ -5202,8 +5082,14 @@ class PayrollReportController extends Controller
                     'bpjs_perusahaan_detail' => isset($item['bpjs_perusahaan_detail']) && $item['bpjs_perusahaan_detail'] !== null
                         ? json_encode($item['bpjs_perusahaan_detail'])
                         : null,
+                    'lb_by_point' => $item['lb_by_point'] ?? 0,
+                    'lb_pro_rate' => $item['lb_pro_rate'] ?? 0,
                     'lb_total' => $item['lb_total'] ?? 0,
+                    'deviasi_by_point' => $item['deviasi_by_point'] ?? 0,
+                    'deviasi_pro_rate' => $item['deviasi_pro_rate'] ?? 0,
                     'deviasi_total' => $item['deviasi_total'] ?? 0,
+                    'city_ledger_by_point' => $item['city_ledger_by_point'] ?? 0,
+                    'city_ledger_pro_rate' => $item['city_ledger_pro_rate'] ?? 0,
                     'city_ledger_total' => $item['city_ledger_total'] ?? 0,
                     'ph_bonus' => $item['ph_bonus'] ?? 0,
                     'custom_earnings' => $item['custom_earnings'] ?? 0,
