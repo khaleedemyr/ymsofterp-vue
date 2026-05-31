@@ -165,12 +165,35 @@
               </div>
               <p class="truncate text-[11px] text-slate-500">{{ conv.display_phone }}</p>
               <p class="truncate text-[11px] text-slate-400">{{ conv.last_message_preview || '—' }}</p>
-              <p v-if="conv.assignees?.length" class="truncate text-[10px] text-indigo-600">
-                {{ conv.assignees.map((a) => formatUserOptionLabel(a)).join(', ') }}
-              </p>
-              <p v-if="conv.assigned_teams?.length" class="truncate text-[10px] text-sky-700">
-                <i class="fa-solid fa-people-group mr-0.5" />
-                {{ conv.assigned_teams.map((t) => t.name).join(', ') }}
+              <p v-if="conv.assignees?.length || conv.assigned_teams?.length" class="mt-0.5 flex min-w-0 flex-wrap items-center gap-1">
+                <template v-if="conv.assignees?.length">
+                  <i class="fa-solid fa-user-tag shrink-0 text-[10px] text-indigo-600" />
+                  <span
+                    v-for="a in conv.assignees.slice(0, 2)"
+                    :key="`assignee-${a.id}`"
+                    class="inline-flex max-w-[9rem] truncate rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800"
+                    :title="formatUserOptionLabel(a)"
+                  >{{ a.name }}</span>
+                  <span
+                    v-if="conv.assignees.length > 2"
+                    class="text-[10px] font-medium text-indigo-600"
+                    :title="formatAssigneesTitle(conv.assignees)"
+                  >+{{ conv.assignees.length - 2 }}</span>
+                </template>
+                <template v-if="conv.assigned_teams?.length">
+                  <i class="fa-solid fa-people-group shrink-0 text-[10px] text-sky-700" />
+                  <span
+                    v-for="t in conv.assigned_teams.slice(0, 2)"
+                    :key="`team-${t.id}`"
+                    class="inline-flex max-w-[8rem] truncate rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-800"
+                    :title="t.name"
+                  >{{ t.name }}</span>
+                  <span
+                    v-if="conv.assigned_teams.length > 2"
+                    class="text-[10px] font-medium text-sky-700"
+                    :title="conv.assigned_teams.map((team) => team.name).join(', ')"
+                  >+{{ conv.assigned_teams.length - 2 }}</span>
+                </template>
               </p>
             </div>
           </button>
@@ -186,8 +209,8 @@
         :class="mobilePanel === 'chat' ? 'flex' : 'hidden'"
       >
         <template v-if="selectedConversation">
-          <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-            <div class="flex min-w-0 flex-1 items-center gap-2">
+          <div class="flex min-w-0 items-center gap-2 overflow-hidden border-b border-slate-200 bg-white px-4 py-2">
+            <div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               <button
                 type="button"
                 class="mr-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 lg:hidden"
@@ -207,9 +230,9 @@
                 />
                 <i v-else :class="channelIcon(selectedConversation.channel)" />
               </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <p class="truncate font-semibold text-slate-900">
+              <div class="min-w-0 flex-1 overflow-hidden">
+                <div class="flex min-w-0 items-center gap-2 overflow-hidden">
+                  <p class="min-w-0 truncate font-semibold text-slate-900">
                     {{ selectedConversation.contact_name || selectedConversation.display_phone }}
                   </p>
                   <span
@@ -232,14 +255,39 @@
                   {{ selectedConversation.display_phone }}
                   <span v-if="selectedConversation.member" class="text-emerald-600"> · {{ selectedConversation.member.nama_lengkap }}</span>
                 </p>
-                <p v-if="selectedConversation.assignees?.length" class="mt-0.5 truncate text-[10px] text-indigo-700">
-                  <i class="fa-solid fa-user-tag mr-0.5" />
-                  {{ selectedConversation.assignees.map((a) => formatUserOptionLabel(a)).join(', ') }}
-                </p>
-                <p v-if="selectedConversation.assigned_teams?.length" class="mt-0.5 truncate text-[10px] text-sky-800">
-                  <i class="fa-solid fa-people-group mr-0.5" />
-                  {{ selectedConversation.assigned_teams.map((t) => t.name).join(', ') }}
-                </p>
+                <div
+                  v-if="selectedConversation.assignees?.length || selectedConversation.assigned_teams?.length"
+                  class="mt-0.5 flex min-w-0 flex-wrap items-center gap-1 overflow-hidden"
+                >
+                  <template v-if="selectedConversation.assignees?.length">
+                    <i class="fa-solid fa-user-tag shrink-0 text-[10px] text-indigo-700" />
+                    <span
+                      v-for="a in selectedConversation.assignees.slice(0, 3)"
+                      :key="`header-assignee-${a.id}`"
+                      class="inline-flex max-w-[10rem] truncate rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800"
+                      :title="formatUserOptionLabel(a)"
+                    >{{ a.name }}</span>
+                    <span
+                      v-if="selectedConversation.assignees.length > 3"
+                      class="inline-flex rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800"
+                      :title="formatAssigneesTitle(selectedConversation.assignees)"
+                    >+{{ selectedConversation.assignees.length - 3 }}</span>
+                  </template>
+                  <template v-if="selectedConversation.assigned_teams?.length">
+                    <i class="fa-solid fa-people-group shrink-0 text-[10px] text-sky-800" />
+                    <span
+                      v-for="t in selectedConversation.assigned_teams.slice(0, 2)"
+                      :key="`header-team-${t.id}`"
+                      class="inline-flex max-w-[9rem] truncate rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-800"
+                      :title="t.name"
+                    >{{ t.name }}</span>
+                    <span
+                      v-if="selectedConversation.assigned_teams.length > 2"
+                      class="inline-flex rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800"
+                      :title="selectedConversation.assigned_teams.map((team) => team.name).join(', ')"
+                    >+{{ selectedConversation.assigned_teams.length - 2 }}</span>
+                  </template>
+                </div>
               </div>
             </div>
             <button
@@ -272,7 +320,7 @@
             class="border-b px-4 py-2 text-center text-xs"
             :class="waWindowBanner.expired ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-sky-200 bg-sky-50 text-sky-900'"
           >
-            {{ waWindowBanner.text }}
+            <p class="truncate" :title="waWindowBanner.text">{{ waWindowBanner.text }}</p>
           </div>
 
           <div ref="messagesEl" class="flex-1 space-y-2 overflow-y-auto px-3 py-3" @scroll.passive="onMessagesScroll">
@@ -2676,6 +2724,10 @@ function formatUserOptionLabel(opt) {
   if (!opt) return ''
   const bits = [opt.jabatan, opt.outlet].filter(Boolean)
   return bits.length ? `${opt.name} — ${bits.join(' · ')}` : opt.name
+}
+
+function formatAssigneesTitle(assignees) {
+  return (assignees || []).map((a) => formatUserOptionLabel(a)).join('\n')
 }
 
 function formatMemberTier(level) {
