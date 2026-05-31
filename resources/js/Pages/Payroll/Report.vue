@@ -1351,57 +1351,56 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Table -->
-          <div class="overflow-x-auto table-container">
-            <table class="w-full min-w-[1200px] divide-y divide-blue-200 bg-white rounded-2xl shadow-2xl animate-fade-in-up">
-              <thead class="bg-gradient-to-r from-blue-600 to-green-400 text-white sticky top-0 z-10" style="position: sticky; top: 0;">
+          <div class="table-container">
+            <table class="w-full min-w-[1200px] divide-y divide-blue-200 bg-white rounded-2xl shadow-2xl animate-fade-in-up payroll-sticky-table">
+              <thead class="bg-gradient-to-r from-blue-600 to-green-400 text-white">
                 <tr>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12">No</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12"></th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">NIK</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Nama Karyawan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Jabatan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Divisi</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Point</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Pokok</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Tunjangan</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Menit Telat</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Jam Lembur</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Lembur</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Uang Makan</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Hari Kerja</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Alpha</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12 payroll-sticky-th">No</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider w-12 payroll-sticky-th"></th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider payroll-sticky-th">NIK</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider payroll-sticky-th">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider payroll-sticky-th">Jabatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider payroll-sticky-th">Divisi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Gaji Pokok</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Tunjangan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Menit Telat</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Jam Lembur</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Gaji Lembur</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Uang Makan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Hari Kerja</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total Alpha</th>
                   <!-- Dynamic Leave Type Columns -->
-                  <th v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">
+                  <th v-for="leaveType in props.leaveTypes" :key="leaveType.id" class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">
                     {{ leaveType.name }}
                   </th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC By Point</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">SC Pro Rate</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total SC</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS JKN</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS TK</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">BPJS Perusahaan</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B By Point</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">L & B Pro Rate</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total L & B</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi By Point</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Deviasi Pro Rate</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Deviasi</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger By Point</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">City Ledger Pro Rate</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total City Ledger</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">PH Bonus</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Earnings</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Custom Deductions</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Telat</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Alpha</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Unpaid Leave</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Potongan Kasbon</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Akhir Bulan</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Gaji Tanggal 8</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Gaji</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Payment Method</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">SC By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">SC Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total SC</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">BPJS JKN</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">BPJS TK</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">BPJS Perusahaan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">L & B By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">L & B Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total L & B</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Deviasi By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Deviasi Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total Deviasi</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">City Ledger By Point</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">City Ledger Pro Rate</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total City Ledger</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">PH Bonus</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Custom Earnings</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Custom Deductions</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Potongan Telat</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Potongan Alpha</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Potongan Unpaid Leave</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Potongan Kasbon</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Gaji Akhir Bulan</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Gaji Tanggal 8</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Total Gaji</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Payment Method</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider payroll-sticky-th">Aksi</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-200">
@@ -1413,7 +1412,7 @@ onMounted(() => {
                   >
                     <td class="px-4 py-3 text-center text-sm font-medium text-gray-700">{{ index + 1 }}</td>
                     <td class="px-4 py-3 text-center">
-                      <button @click="toggleExpand(item.user_id)" 
+                      <button @click.stop="toggleExpand(item.user_id)" 
                               :class="[
                                 'w-6 h-6 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-all duration-200 expand-button',
                                 { 'expanded': expandedRows.has(item.user_id) }
@@ -1711,7 +1710,7 @@ onMounted(() => {
                                 class="bg-gradient-to-br from-purple-400 to-purple-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold">
                           <i class="fa fa-plus mr-1"></i> Custom
                         </button>
-                        <button @click="toggleExpand(item.user_id)" 
+                        <button @click.stop="toggleExpand(item.user_id)" 
                                 class="bg-gradient-to-br from-blue-400 to-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:scale-105 transition-all duration-200 font-bold">
                           <i class="fa fa-eye mr-1"></i> Detail
                         </button>
@@ -2211,41 +2210,24 @@ onMounted(() => {
 
 /* Freeze header styles */
 .table-container {
-  max-height: calc(100vh - 400px);
-  overflow-y: auto;
+  max-height: calc(100vh - 360px);
+  overflow: auto;
   border-radius: 1rem;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
-.overflow-x-auto {
-  overflow-x: auto;
+.payroll-sticky-table {
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.table-container thead th {
+.payroll-sticky-th {
   position: sticky;
   top: 0;
   z-index: 20;
   background: linear-gradient(to right, #2563eb, #10b981) !important;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-}
-
-/* Ensure header stays on top when scrolling */
-.table-container thead {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-/* Add shadow effect for better visual separation */
-.table-container thead::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -2px;
-  height: 2px;
-  background: linear-gradient(to right, rgba(37, 99, 235, 0.3), rgba(16, 185, 129, 0.3));
 }
 
 /* Smooth scrolling */

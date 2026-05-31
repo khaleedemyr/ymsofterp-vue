@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
@@ -18,6 +18,7 @@ const activeTab = ref('payment');
 const loading = ref(false);
 const exporting = ref(false);
 const expandedRows = ref(new Set());
+const highlightedRowUserId = ref(null);
 
 const paymentTableColCount = 11;
 
@@ -77,6 +78,21 @@ function isRowExpanded(userId) {
   return expandedRows.value.has(userId);
 }
 
+function handleRowClick(userId, event) {
+  if (event.target.closest('button, select, a, textarea, input, label')) {
+    return;
+  }
+  highlightedRowUserId.value = highlightedRowUserId.value === userId ? null : userId;
+}
+
+function financeRowClasses(userId, index) {
+  const selected = highlightedRowUserId.value === userId;
+  return [
+    'finance-data-row cursor-pointer transition-[background-color,box-shadow] duration-150',
+    selected ? 'finance-row-selected' : (index % 2 === 0 ? 'bg-white' : 'bg-gray-50'),
+  ];
+}
+
 const slipSections = [
   { key: 'gajian_akhir_bulan', accent: 'blue' },
   { key: 'gajian_tanggal_8', accent: 'indigo' },
@@ -89,6 +105,10 @@ const monthName = computed(() => {
 
 const canShowData = computed(() => props.meta?.has_generated && props.paymentRows?.length > 0);
 
+watch(activeTab, () => {
+  highlightedRowUserId.value = null;
+});
+
 function loadReport() {
   if (!outletId.value || !month.value || !year.value) {
     return;
@@ -96,6 +116,7 @@ function loadReport() {
 
   loading.value = true;
   expandedRows.value = new Set();
+  highlightedRowUserId.value = null;
   router.get('/payroll/finance-report', {
     outlet_id: outletId.value,
     month: month.value,
@@ -240,33 +261,41 @@ function exportReport() {
             </button>
           </div>
 
-          <div v-if="activeTab === 'payment'" class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-slate-800 text-white">
+          <p class="px-4 py-2 text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
+            <i class="fa-solid fa-hand-pointer mr-1"></i>
+            Hover baris untuk highlight sementara. Klik baris untuk pin highlight (klik lagi baris yang sama untuk lepas, atau klik baris lain).
+          </p>
+
+          <div v-if="activeTab === 'payment'" class="finance-table-scroll">
+            <table class="min-w-full divide-y divide-gray-200 finance-sticky-table">
+              <thead class="finance-sticky-head bg-slate-800 text-white">
                 <tr>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase w-12">No</th>
-                  <th class="px-2 py-3 text-center text-xs font-bold uppercase w-12"></th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Jabatan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Divisi</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Level</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Join Date</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Rekening</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">No. Rekening</th>
-                  <th class="px-4 py-3 text-center text-xs font-bold uppercase">Metode Bayar</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Gaji</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase w-12 finance-sticky-th">No</th>
+                  <th class="px-2 py-3 text-center text-xs font-bold uppercase w-12 finance-sticky-th"></th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Jabatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Divisi</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Level</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Join Date</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">Nama Rekening</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th">No. Rekening</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase finance-sticky-th">Metode Bayar</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th">Total Gaji</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-100">
                 <template v-for="(row, index) in paymentRows" :key="row.user_id">
-                  <tr class="hover:bg-gray-50">
+                  <tr
+                    :class="financeRowClasses(row.user_id, index)"
+                    @click="handleRowClick(row.user_id, $event)"
+                  >
                     <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
                     <td class="px-2 py-3 text-center">
                       <button
                         type="button"
                         class="w-7 h-7 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-all duration-200 mx-auto"
                         :title="isRowExpanded(row.user_id) ? 'Sembunyikan rincian slip gaji' : 'Lihat rincian slip gaji'"
-                        @click="toggleExpand(row.user_id)"
+                        @click.stop="toggleExpand(row.user_id)"
                       >
                         <i :class="isRowExpanded(row.user_id) ? 'fa fa-chevron-up' : 'fa fa-chevron-down'"></i>
                       </button>
@@ -315,7 +344,10 @@ function exportReport() {
                     </td>
                     <td class="px-4 py-3 text-sm text-right font-bold text-green-700">{{ formatCurrency(row.total_gaji) }}</td>
                   </tr>
-                  <tr v-if="isRowExpanded(row.user_id)" class="bg-slate-50">
+                  <tr
+                    v-if="isRowExpanded(row.user_id)"
+                    :class="highlightedRowUserId === row.user_id ? 'finance-row-selected-detail border-l-4 border-amber-500' : 'bg-slate-50 border-l-4 border-blue-400'"
+                  >
                     <td :colspan="paymentTableColCount" class="px-4 py-4">
                       <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
                         <div
@@ -419,30 +451,35 @@ function exportReport() {
             </table>
           </div>
 
-          <div v-else class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-teal-800 text-white">
+          <div v-else class="finance-table-scroll">
+            <table class="min-w-full divide-y divide-gray-200 finance-sticky-table">
+              <thead class="finance-sticky-head bg-teal-800 text-white">
                 <tr>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">No</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Karyawan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">NIK</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Jabatan</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Divisi</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Level</th>
-                  <th class="px-4 py-3 text-left text-xs font-bold uppercase">Join Date</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">Kesehatan</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">JHT</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">JP</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">JKK</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">JKM</th>
-                  <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Perusahaan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">No</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Nama Karyawan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">NIK</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Jabatan</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Divisi</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Level</th>
+                  <th class="px-4 py-3 text-left text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Join Date</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Kesehatan</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JHT</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JP</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JKK</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">JKM</th>
+                  <th class="px-4 py-3 text-right text-xs font-bold uppercase finance-sticky-th finance-sticky-th-teal">Total Perusahaan</th>
                 </tr>
               </thead>
               <tbody class="bg-white divide-y divide-gray-100">
                 <tr v-if="!bpjsRows?.length">
                   <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data BPJS perusahaan untuk periode ini.</td>
                 </tr>
-                <tr v-for="(row, index) in bpjsRows" :key="row.user_id" class="hover:bg-gray-50">
+                <tr
+                  v-for="(row, index) in bpjsRows"
+                  :key="row.user_id"
+                  :class="financeRowClasses(row.user_id, index)"
+                  @click="handleRowClick(row.user_id, $event)"
+                >
                   <td class="px-4 py-3 text-sm text-gray-600">{{ index + 1 }}</td>
                   <td class="px-4 py-3 text-sm text-gray-900">
                     <div class="flex items-center gap-2 flex-wrap">
@@ -506,3 +543,56 @@ function exportReport() {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.finance-table-scroll {
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+
+.finance-sticky-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.finance-sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: #1e293b;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+
+.finance-sticky-th-teal {
+  background-color: #115e59;
+}
+
+.finance-data-row:hover:not(.finance-row-selected) {
+  background-color: #dbeafe !important;
+  box-shadow: inset 4px 0 0 0 #3b82f6;
+}
+
+.finance-row-selected {
+  background-color: #fef3c7 !important;
+  box-shadow: inset 4px 0 0 0 #f59e0b;
+}
+
+.finance-row-selected:hover {
+  background-color: #fde68a !important;
+}
+
+.finance-row-selected-detail {
+  background-color: #fffbeb !important;
+}
+
+.finance-table-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.finance-table-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+</style>

@@ -345,6 +345,10 @@ class PayrollReportController extends Controller
             
             $payrollGeneratedDetails = collect();
             $payrollGeneratedDetailsFull = collect();
+            $payrollPhaseService = app(PayrollGeneratePhaseService::class);
+            $gajian1Saved = false;
+            $gajian2Saved = false;
+
             if ($payrollGenerated) {
                 // Ambil payment_method untuk backward compatibility
                 $payrollGeneratedDetails = DB::table('payroll_generated_details')
@@ -356,19 +360,24 @@ class PayrollReportController extends Controller
                     ->where('payroll_generated_id', $payrollGenerated->id)
                     ->get()
                     ->keyBy('user_id');
+
+                [$gajian1Saved, $gajian2Saved] = $payrollPhaseService->resolveLegacyPhaseSavedFlags($payrollGenerated);
             }
             
             // Debug: Log status payroll generated
             \Log::info('Payroll - Check generated status', [
                 'payroll_generated_exists' => $payrollGenerated ? true : false,
                 'payroll_generated_details_count' => $payrollGeneratedDetailsFull->count(),
+                'gajian1_saved' => $gajian1Saved,
+                'gajian2_saved' => $gajian2Saved,
                 'outlet_id' => $outletId,
                 'month' => $month,
                 'year' => $year
             ]);
             
-            // Jika payroll sudah di-generate, gunakan data dari payroll_generated_details
-            if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty()) {
+            // Snapshot penuh dari DB hanya jika kedua fase sudah tersimpan.
+            // Jika hanya Gajian 1, lanjut hitung ulang Gajian 2 (SC, lembur, L&B, dll).
+            if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty() && $gajian1Saved && $gajian2Saved) {
                 \Log::info('Payroll - Using generated payroll data');
                 // Ambil data karyawan untuk mapping (include status untuk perhitungan statistik)
                 $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
@@ -1877,6 +1886,25 @@ class PayrollReportController extends Controller
                     'has_ph_bonus' => isset($payrollDataItem['ph_bonus']),
                     'ph_bonus_value' => $payrollDataItem['ph_bonus'] ?? null
                 ]);
+
+                $savedDetail = $payrollGeneratedDetailsFull->get($user->id);
+                if ($payrollGenerated && $savedDetail && ($gajian1Saved || $gajian2Saved)) {
+                    $payrollDataItem = $payrollPhaseService->overlaySavedPhaseFields(
+                        $payrollDataItem,
+                        $savedDetail,
+                        $gajian1Saved,
+                        $gajian2Saved
+                    );
+
+                    if ($gajian1Saved && !empty($payrollDataItem['leave_data']) && is_array($payrollDataItem['leave_data'])) {
+                        foreach ($payrollDataItem['leave_data'] as $key => $value) {
+                            if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                                $payrollDataItem[$key] = $value;
+                            }
+                        }
+                        $payrollDataItem['extra_off_days'] = $payrollDataItem['leave_data']['extra_off_days'] ?? 0;
+                    }
+                }
                 
                 $payrollData->push($payrollDataItem);
             }
@@ -4907,6 +4935,38 @@ class PayrollReportController extends Controller
                     'success' => false,
                     'message' => 'Generate Gajian 1 terlebih dahulu sebelum Generate Gajian 2',
                 ], 422);
+            }
+
+            if ($gajianType === PayrollGeneratePhaseService::GAJIAN2) {
+                $hasGajian2Values = collect($payrollData)->contains(function ($item) use ($amounts) {
+                    $serviceCharge = (float) ($item['service_charge'] ?? 0);
+                    $gajiLembur = (float) ($item['gaji_lembur'] ?? 0);
+                    $uangMakan = (float) ($item['uang_makan'] ?? 0);
+                    $lbTotal = (float) ($item['lb_total'] ?? 0);
+                    $deviasiTotal = (float) ($item['deviasi_total'] ?? 0);
+                    $cityLedgerTotal = (float) ($item['city_ledger_total'] ?? 0);
+                    $phBonus = (float) ($item['ph_bonus'] ?? 0);
+
+                    return $serviceCharge > 0
+                        || $gajiLembur > 0
+                        || $uangMakan > 0
+                        || $lbTotal > 0
+                        || $deviasiTotal > 0
+                        || $cityLedgerTotal > 0
+                        || $phBonus > 0;
+                });
+
+                $headerHasGajian2Input = ($amounts['service_charge'] ?? 0) > 0
+                    || ($amounts['lb_amount'] ?? 0) > 0
+                    || ($amounts['deviasi_amount'] ?? 0) > 0
+                    || ($amounts['city_ledger_amount'] ?? 0) > 0;
+
+                if (!$hasGajian2Values && $headerHasGajian2Input) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Data Gajian 2 belum terhitung. Klik "Lihat Data" terlebih dahulu (pastikan Service Charge / L&B / Deviasi / City Ledger sudah diisi), baru Generate Gajian 2.',
+                    ], 422);
+                }
             }
 
             if ($gajianType === PayrollGeneratePhaseService::GAJIAN1) {

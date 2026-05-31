@@ -9,6 +9,106 @@ class PayrollGeneratePhaseService
     public const GAJIAN1 = 'gajian1';
     public const GAJIAN2 = 'gajian2';
 
+    public function isPhaseSaved(?string $status): bool
+    {
+        return in_array($status ?? 'draft', ['generated', 'locked'], true);
+    }
+
+    public function resolveLegacyPhaseSavedFlags(object $payroll): array
+    {
+        $gajian1Saved = $this->isPhaseSaved($payroll->gajian1_status ?? null);
+        $gajian2Saved = $this->isPhaseSaved($payroll->gajian2_status ?? null);
+
+        if (($payroll->gajian1_status ?? null) === null && ($payroll->status ?? 'draft') === 'generated') {
+            $gajian1Saved = true;
+            $gajian2Saved = true;
+        }
+
+        return [$gajian1Saved, $gajian2Saved];
+    }
+
+    public function overlaySavedPhaseFields(array $item, ?object $detail, bool $overlayGajian1, bool $overlayGajian2): array
+    {
+        if (!$detail) {
+            return $this->recalculateItemTotals($item);
+        }
+
+        $detailArray = (array) $detail;
+
+        if ($overlayGajian1) {
+            foreach ($this->phaseFieldsFromItem(self::GAJIAN1, $detailArray) as $key => $value) {
+                if ($key === 'bpjs_perusahaan_detail') {
+                    if ($value === null || $value === '') {
+                        $item[$key] = null;
+                    } elseif (is_string($value)) {
+                        $item[$key] = json_decode($value, true) ?: null;
+                    } else {
+                        $item[$key] = $value;
+                    }
+                    continue;
+                }
+
+                if ($key === 'leave_data') {
+                    if ($value === null || $value === '') {
+                        continue;
+                    }
+                    $leaveData = is_string($value) ? (json_decode($value, true) ?: []) : (is_array($value) ? $value : []);
+                    $item['leave_data'] = $leaveData;
+                    $item['extra_off_days'] = $leaveData['extra_off_days'] ?? 0;
+                    continue;
+                }
+
+                $item[$key] = is_numeric($value) ? round((float) $value) : $value;
+            }
+
+            $item['custom_earnings_gajian1'] = round((float) ($detail->custom_earnings ?? $item['custom_earnings_gajian1'] ?? 0));
+            $item['custom_deductions_gajian1'] = round((float) ($detail->custom_deductions ?? $item['custom_deductions_gajian1'] ?? 0));
+        }
+
+        if ($overlayGajian2) {
+            foreach ($this->phaseFieldsFromItem(self::GAJIAN2, $detailArray) as $key => $value) {
+                $item[$key] = is_numeric($value) ? round((float) $value) : $value;
+            }
+        }
+
+        if (!empty($detail->payment_method)) {
+            $item['payment_method'] = $detail->payment_method;
+        }
+
+        return $this->recalculateItemTotals($item);
+    }
+
+    public function recalculateItemTotals(array $item): array
+    {
+        $gajiSplit = PayrollGajiSplitCalculator::calculate([
+            'gaji_pokok' => $item['gaji_pokok'] ?? 0,
+            'tunjangan' => $item['tunjangan'] ?? 0,
+            'custom_earnings_gajian1' => $item['custom_earnings_gajian1'] ?? $item['custom_earnings'] ?? 0,
+            'custom_deductions_gajian1' => $item['custom_deductions_gajian1'] ?? $item['custom_deductions'] ?? 0,
+            'bpjs_jkn' => $item['bpjs_jkn'] ?? 0,
+            'bpjs_tk' => $item['bpjs_tk'] ?? 0,
+            'potongan_telat' => $item['potongan_telat'] ?? 0,
+            'potongan_alpha' => $item['potongan_alpha'] ?? 0,
+            'potongan_unpaid_leave' => $item['potongan_unpaid_leave'] ?? 0,
+            'potongan_kasbon' => $item['potongan_kasbon'] ?? 0,
+            'service_charge' => $item['service_charge'] ?? 0,
+            'uang_makan' => $item['uang_makan'] ?? 0,
+            'gaji_lembur' => $item['gaji_lembur'] ?? 0,
+            'ph_bonus' => $item['ph_bonus'] ?? 0,
+            'custom_earnings_gajian2' => $item['custom_earnings_gajian2'] ?? 0,
+            'custom_deductions_gajian2' => $item['custom_deductions_gajian2'] ?? 0,
+            'lb_total' => $item['lb_total'] ?? 0,
+            'deviasi_total' => $item['deviasi_total'] ?? 0,
+            'city_ledger_total' => $item['city_ledger_total'] ?? 0,
+        ]);
+
+        $item['total_gaji_akhir_bulan'] = $gajiSplit['total_gaji_akhir_bulan'];
+        $item['total_gaji_tanggal_8'] = $gajiSplit['total_gaji_tanggal_8'];
+        $item['total_gaji'] = $gajiSplit['total_gaji'];
+
+        return $item;
+    }
+
     public function assertPhaseNotLocked(object $payroll, string $gajianType): ?array
     {
         $column = $gajianType === self::GAJIAN2 ? 'gajian2_status' : 'gajian1_status';
