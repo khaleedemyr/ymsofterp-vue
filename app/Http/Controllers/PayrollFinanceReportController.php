@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CustomPayrollItem;
 use App\Models\EmployeeResignation;
 use App\Services\PayrollGajiSplitCalculator;
+use App\Services\PayrollSlipBreakdownBuilder;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -312,7 +313,9 @@ class PayrollFinanceReportController extends Controller
         $sumBpjsPerusahaan = 0.0;
 
         foreach ($details as $detail) {
-            $customSums = $this->resolveCustomGajianSums($detail, $customItemsByUser->get($detail->user_id, collect()));
+            $userCustomItems = $customItemsByUser->get($detail->user_id, collect());
+            $customItemsCollection = $this->resolveCustomItemsCollection($detail, $userCustomItems);
+            $customSums = $this->resolveCustomGajianSums($customItemsCollection);
 
             $gajiSplit = PayrollGajiSplitCalculator::calculate([
                 'gaji_pokok' => $detail->gaji_pokok ?? 0,
@@ -354,6 +357,7 @@ class PayrollFinanceReportController extends Controller
                 'total_gaji_akhir_bulan' => $gajiSplit['total_gaji_akhir_bulan'],
                 'total_gaji_tanggal_8' => $gajiSplit['total_gaji_tanggal_8'],
                 'total_gaji' => $gajiSplit['total_gaji'],
+                'slip_breakdown' => PayrollSlipBreakdownBuilder::build($detail, $customItemsCollection, $gajiSplit),
             ]);
 
             $sumAkhirBulan += $gajiSplit['total_gaji_akhir_bulan'];
@@ -384,6 +388,18 @@ class PayrollFinanceReportController extends Controller
         ];
     }
 
+    private function resolveCustomItemsCollection(object $detail, Collection $userCustomItems): Collection
+    {
+        $customItemsData = json_decode($detail->custom_items ?? '[]', true) ?? [];
+        $customItemsCollection = collect($customItemsData);
+
+        if ($userCustomItems->isNotEmpty()) {
+            return $userCustomItems;
+        }
+
+        return $customItemsCollection;
+    }
+
     /**
      * @return array{
      *     custom_earnings_gajian1: float,
@@ -392,15 +408,8 @@ class PayrollFinanceReportController extends Controller
      *     custom_deductions_gajian2: float
      * }
      */
-    private function resolveCustomGajianSums(object $detail, Collection $userCustomItems): array
+    private function resolveCustomGajianSums(Collection $customItemsCollection): array
     {
-        $customItemsData = json_decode($detail->custom_items ?? '[]', true) ?? [];
-        $customItemsCollection = collect($customItemsData);
-
-        if ($userCustomItems->isNotEmpty()) {
-            $customItemsCollection = $userCustomItems;
-        }
-
         $gajian1 = $customItemsCollection->filter(function ($item) {
             $gajianType = is_object($item) ? ($item->gajian_type ?? null) : ($item['gajian_type'] ?? null);
 

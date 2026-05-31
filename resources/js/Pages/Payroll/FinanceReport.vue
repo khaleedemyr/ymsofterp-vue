@@ -77,6 +77,11 @@ function isRowExpanded(userId) {
   return expandedRows.value.has(userId);
 }
 
+const slipSections = [
+  { key: 'gajian_akhir_bulan', accent: 'blue' },
+  { key: 'gajian_tanggal_8', accent: 'indigo' },
+];
+
 const monthName = computed(() => {
   const found = props.months?.find((m) => m.id === month.value);
   return found?.name || month.value;
@@ -260,7 +265,7 @@ function exportReport() {
                       <button
                         type="button"
                         class="w-7 h-7 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 flex items-center justify-center transition-all duration-200 mx-auto"
-                        :title="isRowExpanded(row.user_id) ? 'Sembunyikan detail gaji' : 'Lihat detail gaji'"
+                        :title="isRowExpanded(row.user_id) ? 'Sembunyikan rincian slip gaji' : 'Lihat rincian slip gaji'"
                         @click="toggleExpand(row.user_id)"
                       >
                         <i :class="isRowExpanded(row.user_id) ? 'fa fa-chevron-up' : 'fa fa-chevron-down'"></i>
@@ -310,25 +315,80 @@ function exportReport() {
                     </td>
                     <td class="px-4 py-3 text-sm text-right font-bold text-green-700">{{ formatCurrency(row.total_gaji) }}</td>
                   </tr>
-                  <tr v-if="isRowExpanded(row.user_id)" class="bg-slate-50 border-t border-slate-100">
-                    <td colspan="2"></td>
-                    <td :colspan="paymentTableColCount - 3" class="px-4 py-3">
-                      <div class="flex flex-wrap gap-3">
-                        <div class="rounded-xl border border-blue-200 bg-white px-4 py-3 min-w-[180px] shadow-sm">
-                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Gaji Akhir Bulan</div>
-                          <div class="text-lg font-bold text-blue-700 mt-1">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</div>
-                        </div>
-                        <div class="rounded-xl border border-indigo-200 bg-white px-4 py-3 min-w-[180px] shadow-sm">
-                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Gaji Tanggal 8</div>
-                          <div class="text-lg font-bold text-indigo-700 mt-1">{{ formatCurrency(row.total_gaji_tanggal_8) }}</div>
-                        </div>
-                        <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 min-w-[180px] shadow-sm">
-                          <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Total Gaji</div>
-                          <div class="text-lg font-bold text-green-700 mt-1">{{ formatCurrency(row.total_gaji) }}</div>
+                  <tr v-if="isRowExpanded(row.user_id)" class="bg-slate-50">
+                    <td :colspan="paymentTableColCount" class="px-4 py-4">
+                      <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div
+                          v-for="sectionMeta in slipSections"
+                          :key="sectionMeta.key"
+                          class="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm"
+                        >
+                          <div
+                            class="px-4 py-2.5 text-sm font-bold text-white"
+                            :class="sectionMeta.accent === 'blue' ? 'bg-blue-700' : 'bg-indigo-700'"
+                          >
+                            {{ row.slip_breakdown?.[sectionMeta.key]?.title }}
+                          </div>
+
+                          <div class="p-4 space-y-4">
+                            <div>
+                              <div class="text-xs font-bold uppercase tracking-wide text-green-700 bg-green-50 px-2 py-1 rounded mb-2">
+                                Pendapatan
+                              </div>
+                              <table class="min-w-full text-sm">
+                                <tbody>
+                                  <tr
+                                    v-for="(line, lineIndex) in row.slip_breakdown?.[sectionMeta.key]?.earnings || []"
+                                    :key="`${sectionMeta.key}-earn-${lineIndex}`"
+                                    class="border-b border-gray-100 last:border-0"
+                                  >
+                                    <td class="py-2 pr-3 text-gray-800">{{ line.label }}</td>
+                                    <td class="py-2 pr-3 text-gray-500 text-xs whitespace-nowrap">{{ line.qty || '-' }}</td>
+                                    <td class="py-2 text-right font-semibold text-green-700 whitespace-nowrap">{{ formatCurrency(line.amount) }}</td>
+                                  </tr>
+                                  <tr v-if="!(row.slip_breakdown?.[sectionMeta.key]?.earnings || []).length">
+                                    <td colspan="3" class="py-2 text-gray-400 italic">Tidak ada pendapatan</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div>
+                              <div class="text-xs font-bold uppercase tracking-wide text-red-700 bg-red-50 px-2 py-1 rounded mb-2">
+                                Potongan
+                              </div>
+                              <table class="min-w-full text-sm">
+                                <tbody>
+                                  <tr
+                                    v-for="(line, lineIndex) in row.slip_breakdown?.[sectionMeta.key]?.deductions || []"
+                                    :key="`${sectionMeta.key}-ded-${lineIndex}`"
+                                    class="border-b border-gray-100 last:border-0"
+                                  >
+                                    <td class="py-2 pr-3 text-gray-800">
+                                      <div>{{ line.label }}</div>
+                                      <div v-if="line.note" class="text-xs text-gray-500 italic mt-0.5">{{ line.note }}</div>
+                                    </td>
+                                    <td class="py-2 pr-3 text-gray-500 text-xs whitespace-nowrap">{{ line.qty || '-' }}</td>
+                                    <td class="py-2 text-right font-semibold text-red-700 whitespace-nowrap">{{ formatCurrency(line.amount) }}</td>
+                                  </tr>
+                                  <tr v-if="!(row.slip_breakdown?.[sectionMeta.key]?.deductions || []).length">
+                                    <td colspan="3" class="py-2 text-gray-400 italic">Tidak ada potongan</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+
+                            <div
+                              class="flex items-center justify-between rounded-lg px-4 py-3 font-bold"
+                              :class="sectionMeta.accent === 'blue' ? 'bg-blue-50 text-blue-800' : 'bg-indigo-50 text-indigo-800'"
+                            >
+                              <span>Total Gaji Bersih</span>
+                              <span>{{ formatCurrency(row.slip_breakdown?.[sectionMeta.key]?.total) }}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td></td>
                   </tr>
                 </template>
               </tbody>
