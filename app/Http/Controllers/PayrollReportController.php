@@ -4180,6 +4180,7 @@ class PayrollReportController extends Controller
             $totalAlpha = $payrollDetail->total_alpha ?? 0;
             $potonganAlpha = $payrollDetail->potongan_alpha ?? 0;
             $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? 0;
+            $potonganKasbon = $payrollDetail->potongan_kasbon ?? 0;
             
             // Get custom items dari JSON
             $customItems = collect([]);
@@ -4188,6 +4189,16 @@ class PayrollReportController extends Controller
                 $decodedItems = json_decode($payrollDetail->custom_items, false) ?? [];
                 $customItems = collect($decodedItems);
             }
+
+            $customSplit = $this->splitStoredPayrollCustomItems($payrollDetail, $customItems);
+            $customItemsGajian1 = $customSplit['custom_items_gajian1'];
+            $customItemsGajian2 = $customSplit['custom_items_gajian2'];
+            $customEarningsGajian1 = $customSplit['custom_earnings_gajian1'];
+            $customDeductionsGajian1 = $customSplit['custom_deductions_gajian1'];
+            $customEarningsGajian2 = $customSplit['custom_earnings_gajian2'];
+            $customDeductionsGajian2 = $customSplit['custom_deductions_gajian2'];
+            $customEarnings = $customEarningsGajian1;
+            $customDeductions = $customDeductionsGajian1;
             
             // Hitung leave data dari JSON atau hitung ulang jika tidak ada
             $leaveData = [];
@@ -4359,29 +4370,29 @@ class PayrollReportController extends Controller
             $phBonus = $payrollDetail->ph_bonus ?? 0;
         }
         
-        // Hitung total gaji berdasarkan type
-        $totalGajiFinal = 0;
-        if ($type === 'gajian1') {
-            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
-            $totalGajiFinal = ($masterData->gaji ?? 0) 
-                + ($masterData->tunjangan ?? 0) 
-                + ($customEarningsGajian1 ?? $customEarnings ?? 0) 
-                - ($customDeductionsGajian1 ?? $customDeductions ?? 0) 
-                - ($potonganTelat ?? 0) 
-                - ($potonganAlpha ?? 0) 
-                - ($potonganUnpaidLeave ?? 0);
-        } else {
-            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
-            $totalGajiFinal = ($serviceChargeAmount ?? 0) 
-                + ($uangMakan ?? 0) 
-                + ($gajiLembur ?? 0) 
-                + ($phBonus ?? 0) 
-                + ($customEarningsGajian2 ?? 0)
-                - ($lbTotal ?? 0) 
-                - ($deviasiTotal ?? 0) 
-                - ($cityLedgerTotal ?? 0)
-                - ($customDeductionsGajian2 ?? 0);
-        }
+        // Hitung total gaji berdasarkan type (gunakan nilai periode + PayrollGajiSplitCalculator)
+        $potonganKasbon = $potonganKasbon ?? 0;
+        $totalGajiFinal = $this->resolveSlipPhaseTotal($type, [
+            'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
+            'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
+            'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings ?? 0,
+            'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions ?? 0,
+            'bpjs_jkn' => $bpjsJKN ?? 0,
+            'bpjs_tk' => $bpjsTK ?? 0,
+            'potongan_telat' => $potonganTelat ?? 0,
+            'potongan_alpha' => $potonganAlpha ?? 0,
+            'potongan_unpaid_leave' => $potonganUnpaidLeave ?? 0,
+            'potongan_kasbon' => $potonganKasbon,
+            'service_charge' => $serviceChargeAmount ?? 0,
+            'uang_makan' => $uangMakan ?? 0,
+            'gaji_lembur' => $gajiLembur ?? 0,
+            'ph_bonus' => $phBonus ?? 0,
+            'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
+            'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
+            'lb_total' => $lbTotal ?? 0,
+            'deviasi_total' => $deviasiTotal ?? 0,
+            'city_ledger_total' => $cityLedgerTotal ?? 0,
+        ]);
 
         // Check if download PDF is requested
         if ($request->has('download') && $request->download === 'pdf') {
@@ -4392,8 +4403,8 @@ class PayrollReportController extends Controller
                 'divisi' => $divisi,
                 'periode' => $periode,
                 'type' => $type,
-                'gaji_pokok' => $masterData->gaji,
-                'tunjangan' => $masterData->tunjangan,
+                'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
+                'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
                 'total_lembur' => $totalLembur,
                 'gaji_lembur' => $gajiLembur,
                 'nominal_lembur_per_jam' => $nominalLemburPerJam,
@@ -4420,6 +4431,7 @@ class PayrollReportController extends Controller
                 'total_alpha' => $totalAlpha,
                 'potongan_alpha' => round($potonganAlpha),
                 'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+                'potongan_kasbon' => round($potonganKasbon),
                 'lb_total' => round($lbTotal),
                 'deviasi_total' => round($deviasiTotal),
                 'city_ledger_total' => round($cityLedgerTotal),
@@ -4471,6 +4483,7 @@ class PayrollReportController extends Controller
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
             'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+            'potongan_kasbon' => round($potonganKasbon ?? 0),
             'lb_total' => round($lbTotal),
             'deviasi_total' => round($deviasiTotal),
             'city_ledger_total' => round($cityLedgerTotal),
@@ -4576,6 +4589,7 @@ class PayrollReportController extends Controller
             $totalAlpha = $payrollDetail->total_alpha ?? 0;
             $potonganAlpha = $payrollDetail->potongan_alpha ?? 0;
             $potonganUnpaidLeave = $payrollDetail->potongan_unpaid_leave ?? 0;
+            $potonganKasbon = $payrollDetail->potongan_kasbon ?? 0;
             
             // Get custom items dari JSON
             $customItems = collect([]);
@@ -4584,6 +4598,16 @@ class PayrollReportController extends Controller
                 $decodedItems = json_decode($payrollDetail->custom_items, false) ?? [];
                 $customItems = collect($decodedItems);
             }
+
+            $customSplit = $this->splitStoredPayrollCustomItems($payrollDetail, $customItems);
+            $customItemsGajian1 = $customSplit['custom_items_gajian1'];
+            $customItemsGajian2 = $customSplit['custom_items_gajian2'];
+            $customEarningsGajian1 = $customSplit['custom_earnings_gajian1'];
+            $customDeductionsGajian1 = $customSplit['custom_deductions_gajian1'];
+            $customEarningsGajian2 = $customSplit['custom_earnings_gajian2'];
+            $customDeductionsGajian2 = $customSplit['custom_deductions_gajian2'];
+            $customEarnings = $customEarningsGajian1;
+            $customDeductions = $customDeductionsGajian1;
             
             // Hitung leave data dari JSON atau hitung ulang jika tidak ada
             $leaveData = [];
@@ -4758,29 +4782,29 @@ class PayrollReportController extends Controller
             $phBonus = $payrollDetail->ph_bonus ?? 0;
         }
         
-        // Hitung total gaji berdasarkan type
-        $totalGajiFinal = 0;
-        if ($type === 'gajian1') {
-            // Gajian 1: Gaji Pokok + Tunjangan + Custom Earning (gajian1) - Custom Deduction (gajian1) - Telat - Alpha - Unpaid Leave
-            $totalGajiFinal = ($masterData->gaji ?? 0) 
-                + ($masterData->tunjangan ?? 0) 
-                + ($customEarningsGajian1 ?? $customEarnings ?? 0) 
-                - ($customDeductionsGajian1 ?? $customDeductions ?? 0) 
-                - ($potonganTelat ?? 0) 
-                - ($potonganAlpha ?? 0) 
-                - ($potonganUnpaidLeave ?? 0);
-        } else {
-            // Gajian 2: Service Charge + Uang Makan + Lembur + PH Bonus + Custom Earning (gajian2) - L & B - Deviasi - City Ledger - Custom Deduction (gajian2)
-            $totalGajiFinal = ($serviceChargeAmount ?? 0) 
-                + ($uangMakan ?? 0) 
-                + ($gajiLembur ?? 0) 
-                + ($phBonus ?? 0) 
-                + ($customEarningsGajian2 ?? 0)
-                - ($lbTotal ?? 0) 
-                - ($deviasiTotal ?? 0) 
-                - ($cityLedgerTotal ?? 0)
-                - ($customDeductionsGajian2 ?? 0);
-        }
+        // Hitung total gaji berdasarkan type (gunakan nilai periode + PayrollGajiSplitCalculator)
+        $potonganKasbon = $potonganKasbon ?? 0;
+        $totalGajiFinal = $this->resolveSlipPhaseTotal($type, [
+            'gaji_pokok' => isset($gajiPokok) ? $gajiPokok : ($masterData->gaji ?? 0),
+            'tunjangan' => isset($tunjangan) ? $tunjangan : ($masterData->tunjangan ?? 0),
+            'custom_earnings_gajian1' => $customEarningsGajian1 ?? $customEarnings ?? 0,
+            'custom_deductions_gajian1' => $customDeductionsGajian1 ?? $customDeductions ?? 0,
+            'bpjs_jkn' => $bpjsJKN ?? 0,
+            'bpjs_tk' => $bpjsTK ?? 0,
+            'potongan_telat' => $potonganTelat ?? 0,
+            'potongan_alpha' => $potonganAlpha ?? 0,
+            'potongan_unpaid_leave' => $potonganUnpaidLeave ?? 0,
+            'potongan_kasbon' => $potonganKasbon,
+            'service_charge' => $serviceChargeAmount ?? 0,
+            'uang_makan' => $uangMakan ?? 0,
+            'gaji_lembur' => $gajiLembur ?? 0,
+            'ph_bonus' => $phBonus ?? 0,
+            'custom_earnings_gajian2' => $customEarningsGajian2 ?? 0,
+            'custom_deductions_gajian2' => $customDeductionsGajian2 ?? 0,
+            'lb_total' => $lbTotal ?? 0,
+            'deviasi_total' => $deviasiTotal ?? 0,
+            'city_ledger_total' => $cityLedgerTotal ?? 0,
+        ]);
 
         // Generate PDF
         $pdf = \PDF::loadView('payroll.slip', [
@@ -4818,6 +4842,7 @@ class PayrollReportController extends Controller
             'total_alpha' => $totalAlpha,
             'potongan_alpha' => round($potonganAlpha),
             'potongan_unpaid_leave' => round($potonganUnpaidLeave),
+            'potongan_kasbon' => round($potonganKasbon ?? 0),
             'lb_total' => round($lbTotal),
             'deviasi_total' => round($deviasiTotal),
             'city_ledger_total' => round($cityLedgerTotal),
@@ -5300,41 +5325,27 @@ class PayrollReportController extends Controller
             $userId = auth()->id();
             $today = now();
             $currentDate = $today->format('Y-m-d');
-            $currentDay = $today->day;
             
             // Ambil data payroll yang sudah di-generate untuk user ini
             $payrollList = DB::table('payroll_generated_details as pgd')
                 ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
                 ->leftJoin('tbl_data_outlet as o', 'pg.outlet_id', '=', 'o.id_outlet')
                 ->where('pgd.user_id', $userId)
-                ->select(
-                    'pgd.id',
-                    'pgd.user_id',
-                    'pg.outlet_id',
-                    'o.nama_outlet as outlet_name',
-                    'pg.month',
-                    'pg.year',
-                    'pgd.total_gaji',
-                    'pgd.periode',
-                    'pg.status',
-                    'pg.created_at'
-                )
+                ->select('pgd.*', 'pg.outlet_id', 'pg.month', 'pg.year', 'pg.status', 'o.nama_outlet as outlet_name', 'pg.created_at')
                 ->orderBy('pg.year', 'desc')
                 ->orderBy('pg.month', 'desc')
                 ->orderBy('pg.created_at', 'desc')
                 ->get();
 
-            // Generate 2 jenis slip gaji untuk setiap payroll
             $result = [];
             foreach ($payrollList as $payroll) {
-                $month = $payroll->month;
-                $year = $payroll->year;
-                
-                // Hitung tanggal gajian 1 (akhir bulan)
+                $month = (int) $payroll->month;
+                $year = (int) $payroll->year;
+                $gajiSplit = $this->calculateDetailGajiSplit($payroll);
+
                 $lastDayOfMonth = date('t', mktime(0, 0, 0, $month, 1, $year));
                 $gajian1Date = sprintf('%04d-%02d-%02d', $year, $month, $lastDayOfMonth);
-                
-                // Hitung tanggal gajian 2 (tanggal 8 bulan berikutnya)
+
                 $nextMonth = $month + 1;
                 $nextYear = $year;
                 if ($nextMonth > 12) {
@@ -5342,53 +5353,80 @@ class PayrollReportController extends Controller
                     $nextYear++;
                 }
                 $gajian2Date = sprintf('%04d-%02d-%02d', $nextYear, $nextMonth, 8);
-                
-                // Gajian 1: Akhir bulan
-                $gajian1 = (object) [
-                    'id' => $payroll->id . '_gajian1',
+
+                $gajian1Available = $currentDate >= $gajian1Date;
+                $gajian2Available = $currentDate >= $gajian2Date;
+
+                $slips = [];
+                if ($gajian1Available) {
+                    $slips[] = [
+                        'id' => $payroll->id . '_gajian1',
+                        'payroll_detail_id' => $payroll->id,
+                        'user_id' => $payroll->user_id,
+                        'outlet_id' => $payroll->outlet_id,
+                        'outlet_name' => $payroll->outlet_name,
+                        'month' => $month,
+                        'year' => $year,
+                        'type' => 'gajian1',
+                        'type_label' => 'Gajian 1 (Akhir Bulan)',
+                        'gajian_date' => $gajian1Date,
+                        'gajian_date_formatted' => date('d F Y', strtotime($gajian1Date)),
+                        'total_gaji' => $gajiSplit['total_gaji_akhir_bulan'],
+                        'is_available' => true,
+                        'status' => $payroll->status,
+                    ];
+                }
+                if ($gajian2Available) {
+                    $slips[] = [
+                        'id' => $payroll->id . '_gajian2',
+                        'payroll_detail_id' => $payroll->id,
+                        'user_id' => $payroll->user_id,
+                        'outlet_id' => $payroll->outlet_id,
+                        'outlet_name' => $payroll->outlet_name,
+                        'month' => $month,
+                        'year' => $year,
+                        'type' => 'gajian2',
+                        'type_label' => 'Gajian 2 (Tanggal 8)',
+                        'gajian_date' => $gajian2Date,
+                        'gajian_date_formatted' => date('d F Y', strtotime($gajian2Date)),
+                        'total_gaji' => $gajiSplit['total_gaji_tanggal_8'],
+                        'is_available' => true,
+                        'status' => $payroll->status,
+                    ];
+                }
+
+                if (empty($slips)) {
+                    continue;
+                }
+
+                $visibleTotal = 0;
+                foreach ($slips as $slip) {
+                    $visibleTotal += (float) ($slip['total_gaji'] ?? 0);
+                }
+
+                $result[] = [
                     'payroll_detail_id' => $payroll->id,
                     'user_id' => $payroll->user_id,
                     'outlet_id' => $payroll->outlet_id,
                     'outlet_name' => $payroll->outlet_name,
                     'month' => $month,
                     'year' => $year,
-                    'type' => 'gajian1',
-                    'type_label' => 'Gajian 1 (Akhir Bulan)',
-                    'gajian_date' => $gajian1Date,
-                    'gajian_date_formatted' => date('d F Y', strtotime($gajian1Date)),
-                    'is_available' => $currentDate >= $gajian1Date, // Tersedia mulai tanggal gajian
+                    'periode' => $payroll->periode,
+                    'periode_label' => $payroll->periode ?: "Periode {$month}/{$year}",
+                    'total_gaji' => round($visibleTotal),
+                    'total_gajian1' => $gajiSplit['total_gaji_akhir_bulan'],
+                    'total_gajian2' => $gajiSplit['total_gaji_tanggal_8'],
+                    'total_gaji_full' => $gajiSplit['total_gaji'],
+                    'gajian1_available' => $gajian1Available,
+                    'gajian2_available' => $gajian2Available,
                     'status' => $payroll->status,
+                    'slips' => $slips,
                 ];
-                
-                // Gajian 2: Tanggal 8 bulan berikutnya
-                $gajian2 = (object) [
-                    'id' => $payroll->id . '_gajian2',
-                    'payroll_detail_id' => $payroll->id,
-                    'user_id' => $payroll->user_id,
-                    'outlet_id' => $payroll->outlet_id,
-                    'outlet_name' => $payroll->outlet_name,
-                    'month' => $month,
-                    'year' => $year,
-                    'type' => 'gajian2',
-                    'type_label' => 'Gajian 2 (Tanggal 8)',
-                    'gajian_date' => $gajian2Date,
-                    'gajian_date_formatted' => date('d F Y', strtotime($gajian2Date)),
-                    'is_available' => $currentDate >= $gajian2Date, // Tersedia mulai tanggal gajian
-                    'status' => $payroll->status,
-                ];
-                
-                // Hanya tambahkan jika sudah tersedia (tanggal sudah lewat atau sama dengan hari ini)
-                if ($gajian1->is_available) {
-                    $result[] = $gajian1;
-                }
-                if ($gajian2->is_available) {
-                    $result[] = $gajian2;
-                }
             }
 
             return response()->json([
                 'success' => true,
-                'data' => $result
+                'data' => $result,
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting user payroll list: ' . $e->getMessage());
@@ -5600,6 +5638,243 @@ class PayrollReportController extends Controller
                 'message' => 'Terjadi kesalahan saat mengunduh slip gaji',
             ], 500);
         }
+    }
+
+    /**
+     * Download slip gaji gabungan (Gajian 1 + Gajian 2) untuk karyawan.
+     */
+    public function downloadUserPayrollCombinedSlipPdf(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            $payrollDetailId = $request->input('payroll_detail_id');
+
+            if (!$payrollDetailId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parameter tidak lengkap',
+                ], 400);
+            }
+
+            $context = $this->buildUserPayrollCombinedSlipContext((int) $payrollDetailId, $userId);
+            if (!$context) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data payroll tidak ditemukan',
+                ], 404);
+            }
+
+            $pdf = \PDF::loadView('payroll.slip_combined', $context);
+            $filename = "Slip_Gaji_Gabungan_{$context['user']->nama_lengkap}_{$context['month']}_{$context['year']}.pdf";
+
+            return $pdf->download($filename);
+        } catch (\Exception $e) {
+            \Log::error('Error downloading combined payroll slip PDF: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengunduh slip gaji gabungan',
+            ], 500);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildUserPayrollCombinedSlipContext(int $payrollDetailId, int $userId): ?array
+    {
+        $payrollDetail = DB::table('payroll_generated_details as pgd')
+            ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
+            ->where('pgd.id', $payrollDetailId)
+            ->where('pgd.user_id', $userId)
+            ->select('pgd.*', 'pg.month', 'pg.year', 'pg.outlet_id')
+            ->first();
+
+        if (!$payrollDetail) {
+            return null;
+        }
+
+        $user = User::where('id', $userId)->where('status', 'A')->first();
+        if (!$user) {
+            return null;
+        }
+
+        $masterData = DB::table('payroll_master')->where('user_id', $userId)->first();
+        if (!$masterData) {
+            $masterData = (object) [
+                'gaji' => 0,
+                'tunjangan' => 0,
+                'ot' => 0,
+                'um' => 0,
+                'ph' => 0,
+                'sc' => 0,
+                'bpjs_jkn' => 0,
+                'bpjs_tk' => 0,
+                'lb' => 0,
+            ];
+        }
+
+        $customItems = collect([]);
+        if ($payrollDetail->custom_items) {
+            $customItems = collect(json_decode($payrollDetail->custom_items, false) ?? []);
+        }
+        $customSplit = $this->splitStoredPayrollCustomItems($payrollDetail, $customItems);
+
+        $gajiSplit = $this->calculateDetailGajiSplit($payrollDetail);
+
+        $jabatan = $payrollDetail->jabatan
+            ?: DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
+        $divisi = $payrollDetail->divisi
+            ?: DB::table('tbl_data_divisi')->where('id', $user->division_id)->value('nama_divisi');
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $payrollDetail->outlet_id)->value('nama_outlet');
+
+        $imagePath = public_path('images/logojustusgroup.png');
+        $logoBase64 = '';
+        if (file_exists($imagePath) && is_readable($imagePath)) {
+            $imageContent = file_get_contents($imagePath);
+            if ($imageContent !== false) {
+                $logoBase64 = base64_encode($imageContent);
+            }
+        }
+
+        $leaveData = $payrollDetail->leave_data ? json_decode($payrollDetail->leave_data, true) : [];
+
+        return [
+            'user' => $user,
+            'jabatan' => $jabatan,
+            'divisi' => $divisi,
+            'outlet' => $outlet,
+            'periode' => $payrollDetail->periode,
+            'month' => $payrollDetail->month,
+            'year' => $payrollDetail->year,
+            'hari_kerja' => $payrollDetail->hari_kerja ?? 0,
+            'gaji_pokok' => $payrollDetail->gaji_pokok ?? 0,
+            'tunjangan' => $payrollDetail->tunjangan ?? 0,
+            'total_telat' => $payrollDetail->total_telat ?? 0,
+            'potongan_telat' => $payrollDetail->potongan_telat ?? 0,
+            'gaji_per_menit' => $payrollDetail->gaji_per_menit ?? 500,
+            'total_alpha' => $payrollDetail->total_alpha ?? 0,
+            'potongan_alpha' => $payrollDetail->potongan_alpha ?? 0,
+            'potongan_unpaid_leave' => $payrollDetail->potongan_unpaid_leave ?? 0,
+            'potongan_kasbon' => $payrollDetail->potongan_kasbon ?? 0,
+            'bpjs_jkn' => $payrollDetail->bpjs_jkn ?? 0,
+            'bpjs_tk' => $payrollDetail->bpjs_tk ?? 0,
+            'custom_earnings' => $customSplit['custom_earnings_gajian1'],
+            'custom_deductions' => $customSplit['custom_deductions_gajian1'],
+            'custom_items' => $customItems,
+            'custom_earnings_gajian1' => $customSplit['custom_earnings_gajian1'],
+            'custom_deductions_gajian1' => $customSplit['custom_deductions_gajian1'],
+            'custom_items_gajian1' => $customSplit['custom_items_gajian1'],
+            'custom_earnings_gajian2' => $customSplit['custom_earnings_gajian2'],
+            'custom_deductions_gajian2' => $customSplit['custom_deductions_gajian2'],
+            'custom_items_gajian2' => $customSplit['custom_items_gajian2'],
+            'service_charge_by_point' => $payrollDetail->service_charge_by_point ?? 0,
+            'service_charge_pro_rate' => $payrollDetail->service_charge_pro_rate ?? 0,
+            'uang_makan' => $payrollDetail->uang_makan ?? 0,
+            'nominal_uang_makan' => $payrollDetail->nominal_uang_makan ?? 0,
+            'total_lembur' => $payrollDetail->total_lembur ?? 0,
+            'nominal_lembur_per_jam' => $payrollDetail->nominal_lembur_per_jam ?? 0,
+            'gaji_lembur' => $payrollDetail->gaji_lembur ?? 0,
+            'lb_total' => $payrollDetail->lb_total ?? 0,
+            'deviasi_total' => $payrollDetail->deviasi_total ?? 0,
+            'city_ledger_total' => $payrollDetail->city_ledger_total ?? 0,
+            'ph_bonus' => $payrollDetail->ph_bonus ?? 0,
+            'leave_data' => $leaveData,
+            'master_data' => $masterData,
+            'logo_base64' => $logoBase64,
+            'total_gajian1' => $gajiSplit['total_gaji_akhir_bulan'],
+            'total_gajian2' => $gajiSplit['total_gaji_tanggal_8'],
+            'total_gaji_combined' => $gajiSplit['total_gaji'],
+        ];
+    }
+
+    /**
+     * @return array{total_gaji_akhir_bulan: float, total_gaji_tanggal_8: float, total_gaji: float}
+     */
+    private function calculateDetailGajiSplit(object $payrollDetail): array
+    {
+        $customItems = $payrollDetail->custom_items ? json_decode($payrollDetail->custom_items, true) : [];
+        $gajian1Custom = $this->parseSlipCustomItems($customItems, 'gajian1');
+        $gajian2Custom = $this->parseSlipCustomItems($customItems, 'gajian2');
+
+        return PayrollGajiSplitCalculator::calculate([
+            'gaji_pokok' => $payrollDetail->gaji_pokok ?? 0,
+            'tunjangan' => $payrollDetail->tunjangan ?? 0,
+            'custom_earnings_gajian1' => $payrollDetail->custom_earnings ?? $gajian1Custom['custom_earnings'],
+            'custom_deductions_gajian1' => $payrollDetail->custom_deductions ?? $gajian1Custom['custom_deductions'],
+            'bpjs_jkn' => $payrollDetail->bpjs_jkn ?? 0,
+            'bpjs_tk' => $payrollDetail->bpjs_tk ?? 0,
+            'potongan_telat' => $payrollDetail->potongan_telat ?? 0,
+            'potongan_alpha' => $payrollDetail->potongan_alpha ?? 0,
+            'potongan_unpaid_leave' => $payrollDetail->potongan_unpaid_leave ?? 0,
+            'potongan_kasbon' => $payrollDetail->potongan_kasbon ?? 0,
+            'service_charge' => $payrollDetail->service_charge ?? 0,
+            'uang_makan' => $payrollDetail->uang_makan ?? 0,
+            'gaji_lembur' => $payrollDetail->gaji_lembur ?? 0,
+            'ph_bonus' => $payrollDetail->ph_bonus ?? 0,
+            'custom_earnings_gajian2' => $gajian2Custom['custom_earnings'],
+            'custom_deductions_gajian2' => $gajian2Custom['custom_deductions'],
+            'lb_total' => $payrollDetail->lb_total ?? 0,
+            'deviasi_total' => $payrollDetail->deviasi_total ?? 0,
+            'city_ledger_total' => $payrollDetail->city_ledger_total ?? 0,
+        ]);
+    }
+
+    /**
+     * Total slip per fase — selaras dengan PayrollGajiSplitCalculator & tampilan app.
+     *
+     * @param  array<string, float|int>  $components
+     */
+    private function resolveSlipPhaseTotal(string $type, array $components): float
+    {
+        $split = PayrollGajiSplitCalculator::calculate($components);
+
+        return $type === 'gajian2'
+            ? $split['total_gaji_tanggal_8']
+            : $split['total_gaji_akhir_bulan'];
+    }
+
+    /**
+     * Pisahkan custom items tersimpan (JSON payroll_generated_details) per fase gajian.
+     *
+     * @return array{
+     *     custom_earnings_gajian1: float,
+     *     custom_deductions_gajian1: float,
+     *     custom_items_gajian1: \Illuminate\Support\Collection,
+     *     custom_earnings_gajian2: float,
+     *     custom_deductions_gajian2: float,
+     *     custom_items_gajian2: \Illuminate\Support\Collection
+     * }
+     */
+    private function splitStoredPayrollCustomItems(object $payrollDetail, $customItems): array
+    {
+        $decodedArray = $payrollDetail->custom_items
+            ? (json_decode($payrollDetail->custom_items, true) ?? [])
+            : [];
+
+        $gajian1Custom = $this->parseSlipCustomItems($decodedArray, 'gajian1');
+        $gajian2Custom = $this->parseSlipCustomItems($decodedArray, 'gajian2');
+
+        $customItemsGajian1 = $customItems->filter(function ($item) {
+            $gajianType = is_object($item) ? ($item->gajian_type ?? null) : ($item['gajian_type'] ?? null);
+
+            return ! isset($gajianType) || $gajianType === null || $gajianType === 'gajian1';
+        });
+
+        $customItemsGajian2 = $customItems->filter(function ($item) {
+            $gajianType = is_object($item) ? ($item->gajian_type ?? null) : ($item['gajian_type'] ?? null);
+
+            return $gajianType === 'gajian2';
+        });
+
+        return [
+            'custom_earnings_gajian1' => (float) ($payrollDetail->custom_earnings ?? $gajian1Custom['custom_earnings']),
+            'custom_deductions_gajian1' => (float) ($payrollDetail->custom_deductions ?? $gajian1Custom['custom_deductions']),
+            'custom_items_gajian1' => $customItemsGajian1,
+            'custom_earnings_gajian2' => (float) $gajian2Custom['custom_earnings'],
+            'custom_deductions_gajian2' => (float) $gajian2Custom['custom_deductions'],
+            'custom_items_gajian2' => $customItemsGajian2,
+        ];
     }
 
     /**
