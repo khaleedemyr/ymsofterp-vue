@@ -2634,6 +2634,80 @@ class ItemController extends Controller
         }
     }
 
+    /**
+     * Desktop print app: search items for barcode SKU label printing.
+     */
+    public function apiItemBarcodePrintIndex(Request $request)
+    {
+        $query = Item::with(['category:id,name', 'subCategory:id,name'])
+            ->withCount('barcodes');
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('sku', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%")
+                    ->orWhereHas('barcodes', function ($bq) use ($search) {
+                        $bq->where('barcode', 'like', "%{$search}%");
+                    });
+            });
+        }
+
+        $perPage = min((int) $request->get('per_page', 15), 50);
+        $paginator = $query->orderBy('name')->paginate($perPage);
+
+        $data = collect($paginator->items())->map(function (Item $item) {
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'code' => $item->code,
+                'category_name' => $item->category?->name,
+                'barcode_count' => (int) $item->barcodes_count,
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'current_page' => $paginator->currentPage(),
+            'last_page' => $paginator->lastPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+        ]);
+    }
+
+    /**
+     * Desktop print app: item detail + barcodes for label printing.
+     */
+    public function apiItemBarcodePrintShow($id)
+    {
+        $item = Item::with(['category', 'subCategory', 'warehouseDivision', 'barcodes'])
+            ->find($id);
+
+        if (!$item) {
+            return response()->json(['success' => false, 'message' => 'Item not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'item' => [
+                'id' => $item->id,
+                'name' => $item->name,
+                'sku' => $item->sku,
+                'code' => $item->code,
+                'warehouse_division' => $item->warehouseDivision?->name,
+                'category' => $item->category?->name,
+                'sub_category' => $item->subCategory?->name,
+            ],
+            'barcodes' => $item->barcodes->map(fn ($b) => [
+                'id' => $b->id,
+                'barcode' => $b->barcode,
+            ])->values(),
+        ]);
+    }
+
     // ---------- Approval App API ----------
 
     public function apiIndex(Request $request)

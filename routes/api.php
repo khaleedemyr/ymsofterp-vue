@@ -294,6 +294,10 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/repack/{id}/serial-summary', [\App\Http\Controllers\RepackController::class, 'serialSummary']);
         Route::get('/repack/{id}/serials', [\App\Http\Controllers\RepackController::class, 'serialList']);
         Route::delete('/repack/{id}/serials', [\App\Http\Controllers\RepackController::class, 'rollbackSerials']);
+
+        // Item barcode SKU print (desktop print app)
+        Route::get('/item-barcode-print/items', [ItemController::class, 'apiItemBarcodePrintIndex']);
+        Route::get('/item-barcode-print/items/{id}', [ItemController::class, 'apiItemBarcodePrintShow'])->whereNumber('id');
     });
 });
 
