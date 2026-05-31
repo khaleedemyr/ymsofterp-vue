@@ -2689,6 +2689,8 @@ class ItemController extends Controller
             return response()->json(['success' => false, 'message' => 'Item not found'], 404);
         }
 
+        $expDays = (int) ($item->exp ?? 0);
+
         return response()->json([
             'success' => true,
             'item' => [
@@ -2699,7 +2701,8 @@ class ItemController extends Controller
                 'warehouse_division' => $item->warehouseDivision?->name,
                 'category' => $item->category?->name,
                 'sub_category' => $item->subCategory?->name,
-                'exp' => (int) ($item->exp ?? 0),
+                'exp' => $expDays,
+                'exp_date' => $expDays > 0 ? now()->addDays($expDays)->format('d-m-Y') : null,
             ],
             'barcodes' => $item->barcodes->map(fn ($b) => [
                 'id' => $b->id,
