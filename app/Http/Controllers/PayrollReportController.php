@@ -4502,9 +4502,8 @@ class PayrollReportController extends Controller
         $startDate = Carbon::create($year, $month, 26)->subMonth();
         $endDate = Carbon::create($year, $month, 25);
 
-        // Ambil data karyawan
+        // Ambil data karyawan (tanpa filter outlet agar slip historis tetap bisa dicetak)
         $user = User::where('id', $userId)
-            ->where('id_outlet', $outletId)
             ->where('status', 'A')
             ->first();
 
@@ -5544,6 +5543,61 @@ class PayrollReportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Terjadi kesalahan saat mengambil detail slip gaji'
+            ], 500);
+        }
+    }
+
+    /**
+     * Download slip gaji PDF untuk karyawan (ymsoftapp self-service).
+     */
+    public function downloadUserPayrollSlipPdf(Request $request)
+    {
+        try {
+            $userId = auth()->id();
+            $payrollDetailId = $request->input('payroll_detail_id');
+            $type = $request->input('type');
+
+            if (!$payrollDetailId || !in_array($type, ['gajian1', 'gajian2'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Parameter tidak lengkap',
+                ], 400);
+            }
+
+            $row = DB::table('payroll_generated_details as pgd')
+                ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
+                ->where('pgd.id', $payrollDetailId)
+                ->where('pgd.user_id', $userId)
+                ->select(
+                    'pgd.user_id',
+                    'pg.outlet_id',
+                    'pg.month',
+                    'pg.year',
+                    'pg.service_charge'
+                )
+                ->first();
+
+            if (!$row) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Data payroll tidak ditemukan',
+                ], 404);
+            }
+
+            return $this->printPayroll(new Request([
+                'user_id' => $row->user_id,
+                'outlet_id' => $row->outlet_id,
+                'month' => $row->month,
+                'year' => $row->year,
+                'type' => $type,
+                'service_charge' => $row->service_charge ?? 0,
+            ]));
+        } catch (\Exception $e) {
+            \Log::error('Error downloading user payroll slip PDF: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengunduh slip gaji',
             ], 500);
         }
     }

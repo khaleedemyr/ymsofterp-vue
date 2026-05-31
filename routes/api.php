@@ -1193,6 +1193,8 @@ Route::prefix('approval-app')->group(function () {
             ->name('api.approval-app.payroll.user-list');
         Route::get('/payroll/user-slip-detail', [\App\Http\Controllers\PayrollReportController::class, 'getUserPayrollSlipDetail'])
             ->name('api.approval-app.payroll.user-slip-detail');
+        Route::get('/payroll/user-slip-pdf', [\App\Http\Controllers\PayrollReportController::class, 'downloadUserPayrollSlipPdf'])
+            ->name('api.approval-app.payroll.user-slip-pdf');
 
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
