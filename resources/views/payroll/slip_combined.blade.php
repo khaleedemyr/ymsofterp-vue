@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Slip Gaji Gabungan - {{ $user->nama_lengkap }}</title>
+    <title>Slip Gaji - {{ $user->nama_lengkap }}</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 10px; font-size: 11px; line-height: 1.2; }
         .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 5px; margin-bottom: 10px; }
@@ -10,13 +10,12 @@
         .logo-container img { max-height: 120px; max-width: 400px; object-fit: contain; }
         .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
         .header p { margin: 3px 0 0 0; font-size: 11px; }
-        .info-section { display: flex; justify-content: space-between; margin-bottom: 8px; }
-        .info-left, .info-right { width: 48%; }
-        .info-row { margin-bottom: 3px; }
-        .info-label { font-weight: bold; display: inline-block; width: 80px; }
-        .period-box { background: #f0f0f0; padding: 8px; text-align: center; margin-bottom: 10px; border: 1px solid #ccc; }
-        .summary-box { background: #e3f2fd; padding: 10px; margin-bottom: 12px; border: 1px solid #90caf9; }
-        .summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .info-table { width: 100%; margin-bottom: 8px; border-collapse: collapse; }
+        .info-table td { padding: 2px 4px; vertical-align: top; font-size: 11px; }
+        .info-label { font-weight: bold; width: 80px; }
+        .summary-table { width: 100%; margin-bottom: 12px; border-collapse: collapse; border: 1px solid #90caf9; background: #e3f2fd; }
+        .summary-table td { padding: 6px 8px; font-size: 11px; }
+        .summary-total td { border-top: 1px solid #90caf9; font-weight: bold; }
         .section-title { font-weight: bold; color: #1976d2; margin: 14px 0 6px; font-size: 12px; }
         .salary-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
         .salary-table th { background: #f0f0f0; padding: 4px 6px; border: 1px solid #ccc; text-align: left; font-size: 10px; }
@@ -39,32 +38,49 @@
                 <div style="height: 80px; background: #1e3c72; color: white; line-height: 80px; font-size: 24px; font-weight: bold;">JUSTUS GROUP</div>
             @endif
         </div>
-        <h1>SLIP GAJI KARYAWAN (GABUNGAN)</h1>
+        <h1>SLIP GAJI KARYAWAN</h1>
         <p>Periode: {{ $periode }}</p>
     </div>
 
-    <div class="info-section">
-        <div class="info-left">
-            <div class="info-row"><span class="info-label">Nama:</span> {{ $user->nama_lengkap }}</div>
-            <div class="info-row"><span class="info-label">NIK:</span> {{ $user->nik }}</div>
-            <div class="info-row"><span class="info-label">Jabatan:</span> {{ $jabatan ?? '-' }}</div>
-            <div class="info-row"><span class="info-label">Divisi:</span> {{ $divisi ?? '-' }}</div>
-        </div>
-        <div class="info-right">
-            <div class="info-row"><span class="info-label">Outlet:</span> {{ $outlet ?? '-' }}</div>
-            <div class="info-row"><span class="info-label">Periode:</span> {{ $periode }}</div>
-            <div class="info-row"><span class="info-label">Hari Kerja:</span> {{ $hari_kerja }} hari</div>
-        </div>
-    </div>
+    <table class="info-table">
+        <tr>
+            <td class="info-label">Nama:</td>
+            <td>{{ $user->nama_lengkap }}</td>
+            <td class="info-label">Outlet:</td>
+            <td>{{ $outlet ?? '-' }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">NIK:</td>
+            <td>{{ $user->nik }}</td>
+            <td class="info-label">Periode:</td>
+            <td>{{ $periode }}</td>
+        </tr>
+        <tr>
+            <td class="info-label">Jabatan:</td>
+            <td>{{ $jabatan ?? '-' }}</td>
+            <td class="info-label">Hari Kerja:</td>
+            <td>{{ $hari_kerja }} hari</td>
+        </tr>
+        <tr>
+            <td class="info-label">Divisi:</td>
+            <td colspan="3">{{ $divisi ?? '-' }}</td>
+        </tr>
+    </table>
 
-    <div class="summary-box">
-        <div class="summary-row"><span>Gajian 1 (Akhir Bulan)</span><span class="earnings">Rp {{ number_format($total_gajian1, 0, ',', '.') }}</span></div>
-        <div class="summary-row"><span>Gajian 2 (Tanggal 8)</span><span class="earnings">Rp {{ number_format($total_gajian2, 0, ',', '.') }}</span></div>
-        <div class="summary-row" style="border-top: 1px solid #90caf9; padding-top: 6px; margin-top: 6px; font-weight: bold;">
-            <span>TOTAL GAJI PERIODE</span>
-            <span class="earnings">Rp {{ number_format($total_gaji_combined, 0, ',', '.') }}</span>
-        </div>
-    </div>
+    <table class="summary-table">
+        <tr>
+            <td>Gajian 1 (Akhir Bulan)</td>
+            <td class="earnings" style="text-align: right;">Rp {{ number_format($total_gajian1, 0, ',', '.') }}</td>
+        </tr>
+        <tr>
+            <td>Gajian 2 (Tanggal 8)</td>
+            <td class="earnings" style="text-align: right;">Rp {{ number_format($total_gajian2, 0, ',', '.') }}</td>
+        </tr>
+        <tr class="summary-total">
+            <td>TOTAL GAJI PERIODE</td>
+            <td class="earnings" style="text-align: right;">Rp {{ number_format($total_gaji_combined, 0, ',', '.') }}</td>
+        </tr>
+    </table>
 
     <div class="section-title">GAJIAN 1 — AKHIR BULAN</div>
     @php $type = 'gajian1'; $total_gaji = $total_gajian1; @endphp

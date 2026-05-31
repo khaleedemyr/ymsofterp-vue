@@ -5595,7 +5595,7 @@ class PayrollReportController extends Controller
             $payrollDetailId = $request->input('payroll_detail_id');
             $type = $request->input('type');
 
-            if (!$payrollDetailId || !in_array($type, ['gajian1', 'gajian2'], true)) {
+            if (!$payrollDetailId || !in_array($type, ['gajian1', 'gajian2', 'combined'], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Parameter tidak lengkap',
@@ -5620,6 +5620,22 @@ class PayrollReportController extends Controller
                     'success' => false,
                     'message' => 'Data payroll tidak ditemukan',
                 ], 404);
+            }
+
+            if ($type === 'combined') {
+                $context = $this->buildUserPayrollCombinedSlipContext((int) $payrollDetailId, $userId);
+                if (!$context) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Data payroll tidak ditemukan',
+                    ], 404);
+                }
+
+                $pdf = \PDF::loadView('payroll.slip_combined', $context);
+                $safeName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $context['user']->nama_lengkap ?? 'karyawan');
+                $filename = "Slip_Gaji_{$safeName}_{$context['month']}_{$context['year']}.pdf";
+
+                return $pdf->download($filename);
             }
 
             return $this->printPayroll(new Request([
