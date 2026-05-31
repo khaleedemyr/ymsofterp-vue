@@ -1085,7 +1085,7 @@ import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { autoResizeTextarea, insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 import { inferSendMessageMode } from '@/utils/omniFlowGraph'
-import OmniEmojiPickerButton from '@/Components/Omnichannel/OmniEmojiPickerButton.vue'
+import { applyOmniChatSpellfix } from '@/utils/omniChatSpellfix.js'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -2155,16 +2155,36 @@ async function requestGrammarCorrection(text) {
 }
 
 /**
+ * Gabungkan koreksi rule-based (lokal) + AI. AI opsional; rule tetap jalan jika AI gagal.
+ */
+async function resolveGrammarSuggestion(rawBody) {
+  const ruleFixed = applyOmniChatSpellfix(rawBody)
+  let aiErrorMessage = null
+
+  if (showAiWriting.value) {
+    try {
+      const aiResult = await requestGrammarCorrection(rawBody)
+      if (grammarTextsDiffer(rawBody, aiResult)) {
+        return { corrected: aiResult, source: 'ai' }
+      }
+    } catch (e) {
+      aiErrorMessage = e.response?.data?.message || e.message || 'Gagal memeriksa ejaan.'
+    }
+  }
+
+  if (grammarTextsDiffer(rawBody, ruleFixed)) {
+    return { corrected: ruleFixed, source: 'rules', aiErrorMessage }
+  }
+
+  return { corrected: null, aiErrorMessage }
+}
+
+/**
  * Jika opsi aktif & teks berubah setelah AI, tanya user sebelum kirim ke pelanggan.
  * @returns {Promise<string|null>} teks untuk dikirim, atau null jika dibatalkan
  */
 async function resolveOutboundBodyBeforeSend(rawBody) {
-  if (
-    !autoGrammarOnSend.value
-    || !showAiWriting.value
-    || composerMode.value !== 'reply'
-    || !rawBody
-  ) {
+  if (!autoGrammarOnSend.value || composerMode.value !== 'reply' || !rawBody) {
     return rawBody
   }
   const minLen = props.autoGrammarMinChars ?? 4
@@ -2174,9 +2194,13 @@ async function resolveOutboundBodyBeforeSend(rawBody) {
   }
 
   grammarChecking.value = true
+  aiError.value = ''
   try {
-    const corrected = await requestGrammarCorrection(rawBody)
-    if (!grammarTextsDiffer(rawBody, corrected)) {
+    const { corrected, aiErrorMessage } = await resolveGrammarSuggestion(rawBody)
+    if (!corrected) {
+      if (aiErrorMessage) {
+        aiError.value = aiErrorMessage
+      }
       return rawBody
     }
 

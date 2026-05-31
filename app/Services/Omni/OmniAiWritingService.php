@@ -74,6 +74,11 @@ class OmniAiWritingService
                 && ! OmniChatSpellfix::isAcceptableCorrection($ruleFixed, $result)) {
                 return $ruleFixed;
             }
+            $normIn = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $text) ?? $text));
+            $normOut = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $result) ?? $result));
+            if ($normIn === $normOut && $ruleFixed !== $text) {
+                return $ruleFixed;
+            }
         }
 
         return $result;
