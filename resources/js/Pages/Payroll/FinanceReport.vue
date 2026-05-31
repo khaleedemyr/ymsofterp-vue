@@ -52,6 +52,14 @@ function formatDate(dateString) {
   });
 }
 
+function formatPaymentMethod(value) {
+  return (value || 'transfer') === 'cash' ? 'Cash' : 'Transfer';
+}
+
+function isCashPayment(value) {
+  return (value || 'transfer') === 'cash';
+}
+
 const monthName = computed(() => {
   const found = props.months?.find((m) => m.id === month.value);
   return found?.name || month.value;
@@ -221,6 +229,7 @@ function exportReport() {
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Join Date</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">Nama Rekening</th>
                   <th class="px-4 py-3 text-left text-xs font-bold uppercase">No. Rekening</th>
+                  <th class="px-4 py-3 text-center text-xs font-bold uppercase">Metode Bayar</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Akhir Bulan</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gaji Tanggal 8</th>
                   <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Gaji</th>
@@ -261,6 +270,16 @@ function exportReport() {
                   <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.tanggal_masuk) || '-' }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700">{{ row.nama_rekening }}</td>
                   <td class="px-4 py-3 text-sm text-gray-700 font-mono">{{ row.no_rekening }}</td>
+                  <td class="px-4 py-3 text-sm text-center">
+                    <span
+                      class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold border"
+                      :class="isCashPayment(row.payment_method)
+                        ? 'bg-purple-100 text-purple-800 border-purple-300'
+                        : 'bg-blue-100 text-blue-800 border-blue-300'"
+                    >
+                      {{ formatPaymentMethod(row.payment_method) }}
+                    </span>
+                  </td>
                   <td class="px-4 py-3 text-sm text-right font-semibold text-blue-700">{{ formatCurrency(row.total_gaji_akhir_bulan) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatCurrency(row.total_gaji_tanggal_8) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-green-700">{{ formatCurrency(row.total_gaji) }}</td>
@@ -268,7 +287,7 @@ function exportReport() {
               </tbody>
               <tfoot class="bg-slate-900 text-white">
                 <tr>
-                  <td colspan="8" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
+                  <td colspan="9" class="px-4 py-3 text-sm font-bold text-right">TOTAL</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</td>
                   <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.total_gaji) }}</td>

@@ -75,7 +75,7 @@ class PayrollFinanceReportController extends Controller
 
         $paymentHeaders = [
             'No', 'Nama Karyawan', 'Jabatan', 'Divisi', 'Level', 'Join Date', 'Keterangan',
-            'Nama Rekening', 'No. Rekening', 'Gaji Akhir Bulan', 'Gaji Tanggal 8', 'Total Gaji',
+            'Nama Rekening', 'No. Rekening', 'Metode Bayar', 'Gaji Akhir Bulan', 'Gaji Tanggal 8', 'Total Gaji',
         ];
         $paymentRows = [];
         $rowNum = 1;
@@ -90,6 +90,7 @@ class PayrollFinanceReportController extends Controller
                 $this->formatEmployeeStatusLabel($row),
                 $row['nama_rekening'],
                 $row['no_rekening'],
+                $this->formatPaymentMethodLabel($row['payment_method'] ?? 'transfer'),
                 $row['total_gaji_akhir_bulan'],
                 $row['total_gaji_tanggal_8'],
                 $row['total_gaji'],
@@ -97,6 +98,7 @@ class PayrollFinanceReportController extends Controller
         }
         $paymentTotal = [
             'TOTAL',
+            '',
             '',
             '',
             '',
@@ -119,7 +121,7 @@ class PayrollFinanceReportController extends Controller
             $report['periode'],
             $paymentHeaders,
             $paymentRows,
-            [10, 11, 12],
+            [11, 12, 13],
             [9],
             $paymentTotal
         );
@@ -348,6 +350,7 @@ class PayrollFinanceReportController extends Controller
                 'nama_lengkap' => $detail->user_nama_lengkap ?: ($detail->nama_lengkap ?? '-'),
                 'nama_rekening' => $detail->user_nama_rekening ?: '-',
                 'no_rekening' => $detail->user_no_rekening ?: '-',
+                'payment_method' => $detail->payment_method ?? 'transfer',
                 'total_gaji_akhir_bulan' => $gajiSplit['total_gaji_akhir_bulan'],
                 'total_gaji_tanggal_8' => $gajiSplit['total_gaji_tanggal_8'],
                 'total_gaji' => $gajiSplit['total_gaji'],
@@ -590,6 +593,11 @@ class PayrollFinanceReportController extends Controller
         }
 
         return Carbon::parse($date)->format('d/m/Y');
+    }
+
+    private function formatPaymentMethodLabel(?string $paymentMethod): string
+    {
+        return ($paymentMethod ?? 'transfer') === 'cash' ? 'Cash' : 'Transfer';
     }
 
     private function getOutlets(): Collection
