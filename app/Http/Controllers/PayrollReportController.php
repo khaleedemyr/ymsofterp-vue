@@ -5421,9 +5421,10 @@ class PayrollReportController extends Controller
             $payrollDetail = DB::table('payroll_generated_details as pgd')
                 ->join('payroll_generated as pg', 'pgd.payroll_generated_id', '=', 'pg.id')
                 ->leftJoin('tbl_data_outlet as o', 'pg.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('pr_kasbons as pk', 'pgd.pr_kasbon_id', '=', 'pk.id')
                 ->where('pgd.id', $payrollDetailId)
                 ->where('pgd.user_id', $userId)
-                ->select('pgd.*', 'pg.month', 'pg.year', 'pg.outlet_id', 'o.nama_outlet as outlet_name')
+                ->select('pgd.*', 'pg.month', 'pg.year', 'pg.outlet_id', 'o.nama_outlet as outlet_name', 'pk.pr_number as kasbon_pr_number')
                 ->first();
             
             if (!$payrollDetail) {
@@ -5463,98 +5464,77 @@ class PayrollReportController extends Controller
             ];
             
             if ($type === 'gajian1') {
-                // Gajian 1: Akhir bulan
-                // 1. Gaji Pokok
-                // 2. Tunjangan
-                // 3. Custom Deduction
-                // 4. Custom Earning
-                // 5. Telat
-                // 6. Alpha & Unpaid Leave
-                // 7. Leave type breakdown
-                
-                $customDeductions = 0;
-                $customEarnings = 0;
-                $customDeductionItems = [];
-                $customEarningItems = [];
-                
-                // Parse custom items - bisa berupa array of objects atau array of arrays
-                if (is_array($customItems)) {
-                    foreach ($customItems as $item) {
-                        // Handle both array and object format
-                        $itemType = is_array($item) ? ($item['item_type'] ?? $item['type'] ?? null) : ($item->item_type ?? $item->type ?? null);
-                        $itemAmount = is_array($item) ? ($item['item_amount'] ?? $item['amount'] ?? 0) : ($item->item_amount ?? $item->amount ?? 0);
-                        $itemName = is_array($item) ? ($item['item_name'] ?? $item['name'] ?? '') : ($item->item_name ?? $item->name ?? '');
-                        $itemDescription = is_array($item) ? ($item['item_description'] ?? $item['description'] ?? null) : ($item->item_description ?? $item->description ?? null);
-                        
-                        $itemData = [
-                            'name' => $itemName,
-                            'type' => $itemType,
-                            'amount' => $itemAmount,
-                            'description' => $itemDescription,
-                        ];
-                        
-                        if ($itemType === 'deduction') {
-                            $customDeductions += $itemAmount;
-                            $customDeductionItems[] = $itemData;
-                        } else if ($itemType === 'earn') {
-                            $customEarnings += $itemAmount;
-                            $customEarningItems[] = $itemData;
-                        }
-                    }
-                }
-                
+                $gajian1Custom = $this->parseSlipCustomItems($customItems, 'gajian1');
+
+                $gajiSplit = PayrollGajiSplitCalculator::calculate([
+                    'gaji_pokok' => $payrollDetail->gaji_pokok ?? 0,
+                    'tunjangan' => $payrollDetail->tunjangan ?? 0,
+                    'custom_earnings_gajian1' => $payrollDetail->custom_earnings ?? $gajian1Custom['custom_earnings'],
+                    'custom_deductions_gajian1' => $payrollDetail->custom_deductions ?? $gajian1Custom['custom_deductions'],
+                    'bpjs_jkn' => $payrollDetail->bpjs_jkn ?? 0,
+                    'bpjs_tk' => $payrollDetail->bpjs_tk ?? 0,
+                    'potongan_telat' => $payrollDetail->potongan_telat ?? 0,
+                    'potongan_alpha' => $payrollDetail->potongan_alpha ?? 0,
+                    'potongan_unpaid_leave' => $payrollDetail->potongan_unpaid_leave ?? 0,
+                    'potongan_kasbon' => $payrollDetail->potongan_kasbon ?? 0,
+                ]);
+
                 $response['data']['gajian1'] = [
                     'gaji_pokok' => $payrollDetail->gaji_pokok ?? 0,
                     'tunjangan' => $payrollDetail->tunjangan ?? 0,
-                    'custom_deductions' => $payrollDetail->custom_deductions ?? 0,
-                    'custom_deduction_items' => $customDeductionItems,
-                    'custom_earnings' => $payrollDetail->custom_earnings ?? 0,
-                    'custom_earning_items' => $customEarningItems,
+                    'custom_deductions' => $payrollDetail->custom_deductions ?? $gajian1Custom['custom_deductions'],
+                    'custom_deduction_items' => $gajian1Custom['custom_deduction_items'],
+                    'custom_earnings' => $payrollDetail->custom_earnings ?? $gajian1Custom['custom_earnings'],
+                    'custom_earning_items' => $gajian1Custom['custom_earning_items'],
+                    'bpjs_jkn' => $payrollDetail->bpjs_jkn ?? 0,
+                    'bpjs_tk' => $payrollDetail->bpjs_tk ?? 0,
                     'potongan_telat' => $payrollDetail->potongan_telat ?? 0,
+                    'total_telat' => $payrollDetail->total_telat ?? 0,
+                    'gaji_per_menit' => $payrollDetail->gaji_per_menit ?? 500,
                     'total_alpha' => $payrollDetail->total_alpha ?? 0,
                     'potongan_alpha' => $payrollDetail->potongan_alpha ?? 0,
                     'potongan_unpaid_leave' => $payrollDetail->potongan_unpaid_leave ?? 0,
+                    'potongan_kasbon' => $payrollDetail->potongan_kasbon ?? 0,
+                    'kasbon_cicilan_ke' => $payrollDetail->kasbon_cicilan_ke ?? null,
+                    'kasbon_pr_number' => $payrollDetail->kasbon_pr_number ?? null,
                     'leave_data' => $leaveData,
                     'leave_types' => $leaveTypes,
-                    'total_gaji_gajian1' => ($payrollDetail->gaji_pokok ?? 0) 
-                        + ($payrollDetail->tunjangan ?? 0) 
-                        + ($payrollDetail->custom_earnings ?? 0) 
-                        - ($payrollDetail->custom_deductions ?? 0) 
-                        - ($payrollDetail->potongan_telat ?? 0) 
-                        - ($payrollDetail->potongan_alpha ?? 0) 
-                        - ($payrollDetail->potongan_unpaid_leave ?? 0),
+                    'total_gaji_gajian1' => $gajiSplit['total_gaji_akhir_bulan'],
                 ];
             } else {
-                // Gajian 2: Tanggal 8 bulan berikutnya
-                // 1. Service Charge Point
-                // 2. Service Charge Prorate
-                // 3. Uang Makan
-                // 4. Lembur
-                // 5. L & B
-                // 6. Deviasi
-                // 7. City Ledger
-                // 8. PH Bonus
-                
+                $gajian2Custom = $this->parseSlipCustomItems($customItems, 'gajian2');
+
+                $gajiSplit = PayrollGajiSplitCalculator::calculate([
+                    'service_charge' => $payrollDetail->service_charge ?? 0,
+                    'uang_makan' => $payrollDetail->uang_makan ?? 0,
+                    'gaji_lembur' => $payrollDetail->gaji_lembur ?? 0,
+                    'ph_bonus' => $payrollDetail->ph_bonus ?? 0,
+                    'custom_earnings_gajian2' => $gajian2Custom['custom_earnings'],
+                    'custom_deductions_gajian2' => $gajian2Custom['custom_deductions'],
+                    'lb_total' => $payrollDetail->lb_total ?? 0,
+                    'deviasi_total' => $payrollDetail->deviasi_total ?? 0,
+                    'city_ledger_total' => $payrollDetail->city_ledger_total ?? 0,
+                ]);
+
                 $response['data']['gajian2'] = [
                     'service_charge_by_point' => $payrollDetail->service_charge_by_point ?? 0,
                     'service_charge_pro_rate' => $payrollDetail->service_charge_pro_rate ?? 0,
                     'service_charge' => $payrollDetail->service_charge ?? 0,
                     'uang_makan' => $payrollDetail->uang_makan ?? 0,
                     'nominal_uang_makan' => $payrollDetail->nominal_uang_makan ?? 0,
+                    'hari_kerja' => $payrollDetail->hari_kerja ?? 0,
                     'total_lembur' => $payrollDetail->total_lembur ?? 0,
                     'nominal_lembur_per_jam' => $payrollDetail->nominal_lembur_per_jam ?? 0,
                     'gaji_lembur' => $payrollDetail->gaji_lembur ?? 0,
+                    'custom_earnings' => $gajian2Custom['custom_earnings'],
+                    'custom_earning_items' => $gajian2Custom['custom_earning_items'],
+                    'custom_deductions' => $gajian2Custom['custom_deductions'],
+                    'custom_deduction_items' => $gajian2Custom['custom_deduction_items'],
                     'lb_total' => $payrollDetail->lb_total ?? 0,
                     'deviasi_total' => $payrollDetail->deviasi_total ?? 0,
                     'city_ledger_total' => $payrollDetail->city_ledger_total ?? 0,
                     'ph_bonus' => $payrollDetail->ph_bonus ?? 0,
-                    'total_gaji_gajian2' => ($payrollDetail->service_charge ?? 0) 
-                        + ($payrollDetail->uang_makan ?? 0) 
-                        + ($payrollDetail->gaji_lembur ?? 0) 
-                        + ($payrollDetail->ph_bonus ?? 0) // PH Bonus ditambahkan sebagai earning
-                        - ($payrollDetail->lb_total ?? 0) 
-                        - ($payrollDetail->deviasi_total ?? 0) 
-                        - ($payrollDetail->city_ledger_total ?? 0),
+                    'total_gaji_gajian2' => $gajiSplit['total_gaji_tanggal_8'],
                 ];
             }
             
@@ -5566,6 +5546,62 @@ class PayrollReportController extends Controller
                 'message' => 'Terjadi kesalahan saat mengambil detail slip gaji'
             ], 500);
         }
+    }
+
+    /**
+     * @return array{
+     *     custom_earnings: float,
+     *     custom_deductions: float,
+     *     custom_earning_items: array<int, array<string, mixed>>,
+     *     custom_deduction_items: array<int, array<string, mixed>>
+     * }
+     */
+    private function parseSlipCustomItems(array $customItems, string $gajianType): array
+    {
+        $customEarnings = 0.0;
+        $customDeductions = 0.0;
+        $customEarningItems = [];
+        $customDeductionItems = [];
+
+        foreach ($customItems as $item) {
+            $itemGajianType = is_array($item) ? ($item['gajian_type'] ?? null) : ($item->gajian_type ?? null);
+            $isGajian1Item = ! isset($itemGajianType) || $itemGajianType === null || $itemGajianType === 'gajian1';
+            $isGajian2Item = $itemGajianType === 'gajian2';
+
+            if ($gajianType === 'gajian1' && ! $isGajian1Item) {
+                continue;
+            }
+            if ($gajianType === 'gajian2' && ! $isGajian2Item) {
+                continue;
+            }
+
+            $itemType = is_array($item) ? ($item['item_type'] ?? $item['type'] ?? null) : ($item->item_type ?? $item->type ?? null);
+            $itemAmount = (float) (is_array($item) ? ($item['item_amount'] ?? $item['amount'] ?? 0) : ($item->item_amount ?? $item->amount ?? 0));
+            $itemName = is_array($item) ? ($item['item_name'] ?? $item['name'] ?? '') : ($item->item_name ?? $item->name ?? '');
+            $itemDescription = is_array($item) ? ($item['item_description'] ?? $item['description'] ?? null) : ($item->item_description ?? $item->description ?? null);
+
+            $itemData = [
+                'name' => $itemName,
+                'type' => $itemType,
+                'amount' => $itemAmount,
+                'description' => $itemDescription,
+            ];
+
+            if ($itemType === 'deduction') {
+                $customDeductions += $itemAmount;
+                $customDeductionItems[] = $itemData;
+            } elseif ($itemType === 'earn') {
+                $customEarnings += $itemAmount;
+                $customEarningItems[] = $itemData;
+            }
+        }
+
+        return [
+            'custom_earnings' => round($customEarnings),
+            'custom_deductions' => round($customDeductions),
+            'custom_earning_items' => $customEarningItems,
+            'custom_deduction_items' => $customDeductionItems,
+        ];
     }
 
     /**
