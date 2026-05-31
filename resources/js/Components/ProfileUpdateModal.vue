@@ -936,10 +936,11 @@ const submitPassword = () => {
                             <InputLabel for="pin_pos" value="PIN POS" />
                             <TextInput
                                 id="pin_pos"
-                                type="text"
+                                type="password"
                                 class="mt-1 block w-full"
                                 v-model="form.pin_pos"
                                 maxlength="10"
+                                autocomplete="off"
                             />
                             <InputError class="mt-2" :message="form.errors.pin_pos" />
                         </div>
@@ -948,11 +949,12 @@ const submitPassword = () => {
                             <InputLabel for="pin_payroll" value="PIN Payroll *" />
                             <TextInput
                                 id="pin_payroll"
-                                type="text"
+                                type="password"
                                 class="mt-1 block w-full"
                                 v-model="form.pin_payroll"
                                 maxlength="10"
                                 required
+                                autocomplete="off"
                             />
                             <InputError class="mt-2" :message="form.errors.pin_payroll" />
                         </div>
