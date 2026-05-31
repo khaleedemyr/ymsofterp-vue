@@ -385,6 +385,11 @@ class AuthController extends Controller
             ], 401);
         }
 
+        // PATCH + multipart sering tidak terbaca di PHP; fallback ke data user yang ada
+        if (!$request->filled('nama_lengkap') && !empty($user->nama_lengkap)) {
+            $request->merge(['nama_lengkap' => $user->nama_lengkap]);
+        }
+
         $validator = Validator::make($request->all(), [
             'nama_lengkap' => ['required', 'string', 'max:255'],
             'nama_panggilan' => ['nullable', 'string', 'max:255'],
@@ -426,6 +431,11 @@ class AuthController extends Controller
             'foto_ktp' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
             'foto_kk' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
             'upload_latest_color_photo' => ['nullable', 'image', 'mimes:jpeg,png,jpg', 'max:2048'],
+        ], [
+            'nama_lengkap.required' => 'Nama lengkap wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'email.unique' => 'Email sudah digunakan.',
+            'tanggal_lahir.date' => 'Format tanggal lahir tidak valid.',
         ]);
 
         if ($validator->fails()) {

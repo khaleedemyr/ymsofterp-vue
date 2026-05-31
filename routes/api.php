@@ -388,7 +388,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/auth/logout', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'logout']);
         Route::post('/user/upload-banner', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadBanner']);
         Route::post('/user/upload-avatar', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'uploadAvatar']);
-        Route::patch('/user/update-profile', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updateProfile'])
+        Route::match(['patch', 'post'], '/user/update-profile', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updateProfile'])
             ->name('api.approval-app.user.update-profile');
         Route::patch('/user/update-password', [\App\Http\Controllers\Mobile\ApprovalApp\AuthController::class, 'updatePassword'])
             ->name('api.approval-app.user.update-password');
