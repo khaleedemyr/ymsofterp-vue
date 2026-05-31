@@ -1180,6 +1180,14 @@ Route::prefix('approval-app')->group(function () {
             ->whereNumber('id')
             ->name('api.approval-app.report-kasbon.reverse-installment');
 
+        // Payroll slip karyawan (self-service)
+        Route::post('/payroll/verify-pin', [\App\Http\Controllers\PayrollReportController::class, 'verifyPayrollPin'])
+            ->name('api.approval-app.payroll.verify-pin');
+        Route::get('/payroll/user-list', [\App\Http\Controllers\PayrollReportController::class, 'getUserPayrollList'])
+            ->name('api.approval-app.payroll.user-list');
+        Route::get('/payroll/user-slip-detail', [\App\Http\Controllers\PayrollReportController::class, 'getUserPayrollSlipDetail'])
+            ->name('api.approval-app.payroll.user-slip-detail');
+
         Route::get('/employee-resignation/{id}', [\App\Http\Controllers\EmployeeResignationController::class, 'show']);
         Route::post('/employee-resignation/{id}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve']);
         Route::post('/employee-resignation/{id}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject']);

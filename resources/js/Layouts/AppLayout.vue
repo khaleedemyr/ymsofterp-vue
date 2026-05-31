@@ -1190,10 +1190,6 @@ function formatCurrency(amount) {
                                 <i class="fa-solid fa-key w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
                                 <span class="text-sm font-medium">Kelola PIN Outlet</span>
                             </button>
-                            <button @click="openPayroll(); showProfileDropdown = false" class="flex items-center gap-3 w-full text-left px-5 py-2.5 hover:bg-blue-50 text-gray-700 hover:text-blue-700 transition-all duration-150 group">
-                                <i class="fa-solid fa-file-invoice-dollar w-5 text-center text-gray-400 group-hover:text-blue-600"></i>
-                                <span class="text-sm font-medium">Payroll</span>
-                            </button>
                             </template>
                             <div class="px-4 py-3 space-y-2.5 border-t border-gray-200 bg-gray-50/60">
                                 <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
