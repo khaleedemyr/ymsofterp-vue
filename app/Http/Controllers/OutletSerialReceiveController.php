@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Support\FoodGrLastPurchaseForItem;
+use App\Support\InventorySerialEffectiveQty;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -127,6 +128,8 @@ class OutletSerialReceiveController extends Controller
                 's.out_warehouse_outlet_id',
                 's.out_delivery_order_id',
                 's.source_type',
+                's.source_qty',
+                's.generated_qty_unit',
                 's.cost_small',
                 's.repack_unit_id',
                 's.repack_qty',
@@ -166,15 +169,8 @@ class OutletSerialReceiveController extends Controller
             );
         }
 
-        $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
-            ? (float) $serial->repack_qty
-            : 1;
-
-        $repackLabel = '';
-        if ($serial->repack_unit_id && $serial->repack_qty > 0) {
-            $fmtQty = rtrim(rtrim(number_format((float) $serial->repack_qty, 4, '.', ''), '0'), '.');
-            $repackLabel = "1 {$serial->repack_unit_name} = {$fmtQty} {$serial->unit_name}";
-        }
+        $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
+        $repackLabel = $this->serialRepackLabel($serial, $effectiveQty);
 
         [$costSmall, $costSourceDb, $costSourceLabel] = $this->resolveSerialReceiveCost($serial);
 
@@ -285,9 +281,7 @@ class OutletSerialReceiveController extends Controller
                     $doNumber = DB::table('delivery_orders')->where('id', $doId)->value('number') ?? '';
                     $unitId = $serial->unit_id;
 
-                    $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
-                        ? (float) $serial->repack_qty
-                        : 1;
+                    $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
                     [$costSmall, $costSourceDb] = $this->resolveSerialReceiveCost($serial);
 
@@ -639,9 +633,7 @@ class OutletSerialReceiveController extends Controller
                     $doNumber = DB::table('delivery_orders')->where('id', $doId)->value('number') ?? '';
                     $unitId = $serial->unit_id;
 
-                    $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
-                        ? (float) $serial->repack_qty
-                        : 1;
+                    $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
                     [$costSmall, $costSourceDb] = $this->resolveSerialReceiveCost($serial);
 
@@ -1203,5 +1195,22 @@ class OutletSerialReceiveController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function serialRepackLabel(object $serial, float $effectiveQty): string
+    {
+        if ($effectiveQty <= 1 && empty($serial->repack_unit_id)) {
+            return '';
+        }
+
+        $fmtQty = rtrim(rtrim(number_format($effectiveQty, 4, '.', ''), '0'), '.');
+        $pkgUnit = $serial->repack_unit_name ?? $serial->unit_name ?? '';
+        $baseUnit = $serial->unit_name ?? '';
+
+        if ($pkgUnit && $baseUnit && strcasecmp($pkgUnit, $baseUnit) !== 0) {
+            return "1 {$pkgUnit} = {$fmtQty} {$baseUnit}";
+        }
+
+        return "{$fmtQty} {$baseUnit}";
     }
 }
