@@ -261,10 +261,21 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, idx) in availabilityResult.materials || []" :key="`a-${idx}`" class="border-t hover:bg-slate-50/70">
-                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.material_name }}</td>
+                  <tr
+                    v-for="(row, idx) in availabilityResult.materials || []"
+                    :key="`a-${idx}`"
+                    class="border-t"
+                    :class="isMaterialShort(row)
+                      ? 'bg-red-50 hover:bg-red-100/80 text-red-800'
+                      : 'hover:bg-slate-50/70'"
+                  >
+                    <td class="px-3 py-2 font-medium" :class="isMaterialShort(row) ? 'text-red-800' : 'text-gray-800'">
+                      {{ row.material_name }}
+                    </td>
                     <td class="px-3 py-2 font-mono">{{ formatQty(row.need_per_portion) }} {{ row.unit_name || '-' }}</td>
-                    <td class="px-3 py-2 font-mono">{{ formatQty(row.ready_stock) }} {{ row.unit_name || '-' }}</td>
+                    <td class="px-3 py-2 font-mono font-semibold" :class="isMaterialShort(row) ? 'text-red-700' : ''">
+                      {{ formatQty(row.ready_stock) }} {{ row.unit_name || '-' }}
+                    </td>
                     <td class="px-3 py-2 font-semibold">{{ Number(row.possible_portions_by_material || 0).toLocaleString('id-ID') }}</td>
                     <td class="px-3 py-2">
                       <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
@@ -437,6 +448,12 @@ function formatQty(value) {
 function stockCutLabel(value) {
   // Sesuai request: 0 = Ya, 1 = Tidak
   return Number(value) === 0 ? 'Ya' : 'Tidak'
+}
+
+function isMaterialShort(row) {
+  const need = Number(row?.need_per_portion ?? 0)
+  const ready = Number(row?.ready_stock ?? 0)
+  return need > 0 && ready < need
 }
 
 async function loadByMaterial() {
