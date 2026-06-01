@@ -3179,7 +3179,7 @@ class ItemController extends Controller
         $payload = [
             // Untuk import mode-only manual (price <= 0), pertahankan harga lama.
             'price' => ($mode === 'manual' && $price <= 0 && $allowManualModeOnly)
-                ? (float) $existing->price
+                ? (float) ($existing->price ?? 0)
                 : round($price, 2),
             'pricing_mode' => $mode,
             'updated_at' => now(),
