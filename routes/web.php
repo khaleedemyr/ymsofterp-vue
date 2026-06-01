@@ -2200,9 +2200,15 @@ Route::get('/api/stock-cut/recipe-checker/search-materials', [\App\Http\Controll
     ->middleware(['auth', 'verified']);
 Route::get('/api/stock-cut/recipe-checker/search-targets', [\App\Http\Controllers\RecipeCheckerController::class, 'searchTargets'])
     ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/search-outlets', [\App\Http\Controllers\RecipeCheckerController::class, 'searchOutlets'])
+    ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/search-menus', [\App\Http\Controllers\RecipeCheckerController::class, 'searchMenus'])
+    ->middleware(['auth', 'verified']);
 Route::get('/api/stock-cut/recipe-checker/by-material', [\App\Http\Controllers\RecipeCheckerController::class, 'checkByMaterial'])
     ->middleware(['auth', 'verified']);
 Route::get('/api/stock-cut/recipe-checker/by-target', [\App\Http\Controllers\RecipeCheckerController::class, 'checkByTarget'])
+    ->middleware(['auth', 'verified']);
+Route::get('/api/stock-cut/recipe-checker/menu-availability', [\App\Http\Controllers\RecipeCheckerController::class, 'checkMenuAvailability'])
     ->middleware(['auth', 'verified']);
 
 Route::get('/stock-cut/form', function () {

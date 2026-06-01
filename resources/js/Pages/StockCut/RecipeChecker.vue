@@ -11,7 +11,7 @@
         </p>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
           <h2 class="text-lg font-semibold text-gray-800 mb-3">1) Cari dari Bahan Baku</h2>
           <div class="space-y-3">
@@ -174,6 +174,113 @@
             </div>
           </div>
         </section>
+
+        <section class="bg-white rounded-xl shadow p-5 border border-gray-100">
+          <h2 class="text-lg font-semibold text-gray-800 mb-3">3) Cek Ketersediaan Menu (BOM)</h2>
+          <div class="space-y-3">
+            <Multiselect
+              v-model="selectedOutlet"
+              :options="outletOptions"
+              :searchable="true"
+              :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :loading="loadingOutlets"
+              :preselect-first="false"
+              placeholder="Pilih outlet..."
+              label="label"
+              track-by="value"
+              @search-change="onSearchOutlets"
+            />
+
+            <Multiselect
+              v-model="selectedMenu"
+              :options="menuOptions"
+              :searchable="true"
+              :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :loading="loadingMenus"
+              :preselect-first="false"
+              placeholder="Pilih menu..."
+              label="label"
+              track-by="value"
+              @search-change="onSearchMenus"
+            />
+
+            <div>
+              <label class="text-xs text-gray-600 font-medium">Filter Stock Cut</label>
+              <select
+                v-model="availabilityStockCutFilter"
+                class="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="only_yes">Ya (ikut stock cut)</option>
+                <option value="only_no">Tidak (exclude stock cut)</option>
+                <option value="all">Semua baris BOM</option>
+              </select>
+            </div>
+
+            <button
+              class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="!selectedOutletId || !selectedMenuId || loadingAvailability"
+              @click="loadMenuAvailability"
+            >
+              {{ loadingAvailability ? 'Loading...' : 'Cek Ketersediaan Menu' }}
+            </button>
+          </div>
+
+          <div v-if="availabilityResult" class="mt-4 space-y-3">
+            <div class="rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm">
+              <div><span class="font-semibold">Outlet:</span> {{ availabilityResult.outlet?.name || '-' }}</div>
+              <div><span class="font-semibold">Menu:</span> {{ availabilityResult.menu?.name || '-' }}</div>
+              <div class="text-xs text-violet-700 mt-1">
+                Warehouse: {{ availabilityResult.warehouse?.name || 'Tidak terdeteksi' }}
+              </div>
+            </div>
+
+            <div class="rounded-lg border px-3 py-2"
+              :class="availabilityResult.can_sell > 0 ? 'border-emerald-200 bg-emerald-50' : 'border-rose-200 bg-rose-50'">
+              <div class="text-xs text-gray-600">Estimasi bisa jual</div>
+              <div class="text-2xl font-bold" :class="availabilityResult.can_sell > 0 ? 'text-emerald-700' : 'text-rose-700'">
+                {{ Number(availabilityResult.can_sell || 0).toLocaleString('id-ID') }} porsi
+              </div>
+              <div v-if="availabilityResult.message" class="text-xs text-gray-600 mt-1">
+                {{ availabilityResult.message }}
+              </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-gray-200">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Bahan Baku</th>
+                    <th class="px-3 py-2 text-left">Butuh / Porsi</th>
+                    <th class="px-3 py-2 text-left">Ready</th>
+                    <th class="px-3 py-2 text-left">Bisa dari bahan ini</th>
+                    <th class="px-3 py-2 text-left">Stock Cut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, idx) in availabilityResult.materials || []" :key="`a-${idx}`" class="border-t hover:bg-slate-50/70">
+                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.material_name }}</td>
+                    <td class="px-3 py-2 font-mono">{{ formatQty(row.need_per_portion) }} {{ row.unit_name || '-' }}</td>
+                    <td class="px-3 py-2 font-mono">{{ formatQty(row.ready_stock) }} {{ row.unit_name || '-' }}</td>
+                    <td class="px-3 py-2 font-semibold">{{ Number(row.possible_portions_by_material || 0).toLocaleString('id-ID') }}</td>
+                    <td class="px-3 py-2">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
+                        :class="stockCutLabel(row.stock_cut) === 'Ya' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">
+                        {{ stockCutLabel(row.stock_cut) }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr v-if="(availabilityResult.materials || []).length === 0">
+                    <td class="px-3 py-3 text-gray-500" colspan="5">Belum ada data bahan untuk dihitung.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </AppLayout>
@@ -198,12 +305,26 @@ const loadingTargets = ref(false)
 const loadingTargetResult = ref(false)
 const targetResult = ref(null)
 
+const selectedOutlet = ref(null)
+const outletOptions = ref([])
+const loadingOutlets = ref(false)
+const selectedMenu = ref(null)
+const menuOptions = ref([])
+const loadingMenus = ref(false)
+const loadingAvailability = ref(false)
+const availabilityResult = ref(null)
+const availabilityStockCutFilter = ref('only_yes')
+
 const selectedMaterialId = computed(() => Number(selectedMaterial.value?.value || 0))
 const selectedTargetId = computed(() => Number(selectedTarget.value?.target_id || 0))
 const selectedTargetType = computed(() => String(selectedTarget.value?.target_type || ''))
+const selectedOutletId = computed(() => Number(selectedOutlet.value?.value || 0))
+const selectedMenuId = computed(() => Number(selectedMenu.value?.menu_id || selectedMenu.value?.value || 0))
 
 let materialSearchTimer = null
 let targetSearchTimer = null
+let outletSearchTimer = null
+let menuSearchTimer = null
 
 async function loadMaterialOptions() {
   loadingMaterials.value = true
@@ -222,6 +343,26 @@ async function loadTargetOptions() {
     targetOptions.value = res.data?.items || []
   } finally {
     loadingTargets.value = false
+  }
+}
+
+async function loadOutletOptions() {
+  loadingOutlets.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-outlets', { params: { q: '' } })
+    outletOptions.value = res.data?.items || []
+  } finally {
+    loadingOutlets.value = false
+  }
+}
+
+async function loadMenuOptions() {
+  loadingMenus.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/search-menus', { params: { q: '' } })
+    menuOptions.value = res.data?.items || []
+  } finally {
+    loadingMenus.value = false
   }
 }
 
@@ -251,6 +392,36 @@ function onSearchTargets(query) {
       targetOptions.value = res.data?.items || []
     } finally {
       loadingTargets.value = false
+    }
+  }, 180)
+}
+
+function onSearchOutlets(query) {
+  if (outletSearchTimer) clearTimeout(outletSearchTimer)
+  outletSearchTimer = setTimeout(async () => {
+    loadingOutlets.value = true
+    try {
+      const res = await axios.get('/api/stock-cut/recipe-checker/search-outlets', {
+        params: { q: query || '' },
+      })
+      outletOptions.value = res.data?.items || []
+    } finally {
+      loadingOutlets.value = false
+    }
+  }, 180)
+}
+
+function onSearchMenus(query) {
+  if (menuSearchTimer) clearTimeout(menuSearchTimer)
+  menuSearchTimer = setTimeout(async () => {
+    loadingMenus.value = true
+    try {
+      const res = await axios.get('/api/stock-cut/recipe-checker/search-menus', {
+        params: { q: query || '' },
+      })
+      menuOptions.value = res.data?.items || []
+    } finally {
+      loadingMenus.value = false
     }
   }, 180)
 }
@@ -299,8 +470,28 @@ async function loadByTarget() {
   }
 }
 
+async function loadMenuAvailability() {
+  availabilityResult.value = null
+  if (!selectedOutletId.value || !selectedMenuId.value) return
+  loadingAvailability.value = true
+  try {
+    const res = await axios.get('/api/stock-cut/recipe-checker/menu-availability', {
+      params: {
+        outlet_id: selectedOutletId.value,
+        menu_id: selectedMenuId.value,
+        stock_cut_filter: availabilityStockCutFilter.value,
+      },
+    })
+    availabilityResult.value = res.data
+  } finally {
+    loadingAvailability.value = false
+  }
+}
+
 loadMaterialOptions()
 loadTargetOptions()
+loadOutletOptions()
+loadMenuOptions()
 </script>
 
 <style scoped>
