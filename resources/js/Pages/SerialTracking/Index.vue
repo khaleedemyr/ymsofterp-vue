@@ -125,12 +125,42 @@
             <input
               v-model="serialQuery"
               type="text"
-              placeholder="Scan atau ketik nomor seri..."
+              placeholder="Nomor seri barcode (bukan nomor dokumen RP-...)"
               class="flex-1 border border-gray-300 rounded-lg px-4 py-3 font-mono text-lg"
               @keyup.enter="lookupSerial"
             />
             <button type="button" class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50" :disabled="serialQuery.length < 2 || serialLoading" @click="lookupSerial">
               <i class="fa-solid fa-route mr-1"></i> Lacak
+            </button>
+          </div>
+        </div>
+
+        <div v-if="serialRepackMatch" class="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+          <p class="text-sm font-semibold text-indigo-900 mb-2">
+            Dokumen Repack:
+            <a
+              v-if="serialRepackMatch.repack_url"
+              :href="serialRepackMatch.repack_url"
+              target="_blank"
+              class="font-mono text-indigo-700 hover:underline"
+            >{{ serialRepackMatch.repack_number }}</a>
+            <span v-else class="font-mono">{{ serialRepackMatch.repack_number }}</span>
+          </p>
+          <p class="text-sm text-indigo-800 mb-3">
+            Input bukan nomor seri barcode. Nomor seri repack tercetak di label (format contoh: <span class="font-mono">RP2606011601ABCD</span>).
+          </p>
+          <div v-if="!(serialRepackMatch.serials || []).length" class="text-sm text-gray-600">
+            Belum ada serial pada dokumen ini (belum generate/print barcode).
+          </div>
+          <div v-else class="flex flex-wrap gap-2">
+            <button
+              v-for="s in serialRepackMatch.serials"
+              :key="s.id"
+              type="button"
+              class="px-3 py-1 bg-white border border-indigo-300 rounded-lg font-mono text-sm hover:bg-indigo-100"
+              @click="serialQuery = s.serial_number; lookupSerial()"
+            >
+              {{ s.serial_number }} <span class="text-gray-500 text-xs">({{ s.item_name }})</span>
             </button>
           </div>
         </div>
@@ -580,6 +610,7 @@ const serialLoading = ref(false)
 const serialDetail = ref(null)
 const serialTimeline = ref([])
 const serialSuggestions = ref([])
+const serialRepackMatch = ref(null)
 
 const pendingFilters = reactive({
   outlet_id: '',
@@ -691,13 +722,20 @@ const lookupSerial = async () => {
   serialDetail.value = null
   serialTimeline.value = []
   serialSuggestions.value = []
+  serialRepackMatch.value = null
   try {
     const { data } = await axios.get('/api/serial-tracking/lookup', { params: { serial_number: q } })
     serialDetail.value = data.serial
     serialTimeline.value = data.timeline || []
   } catch (err) {
-    if (err?.response?.status === 404 && err?.response?.data?.suggestions?.length) {
-      serialSuggestions.value = err.response.data.suggestions
+    if (err?.response?.status === 404) {
+      const payload = err.response.data || {}
+      if (payload.repack_match) {
+        serialRepackMatch.value = payload.repack_match
+      }
+      if (payload.suggestions?.length) {
+        serialSuggestions.value = payload.suggestions
+      }
     }
   } finally {
     serialLoading.value = false

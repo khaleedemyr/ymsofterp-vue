@@ -607,27 +607,15 @@ class SerialTrackingController extends Controller
 
     $serialNumber = trim($request->serial_number);
 
-    $serial = DB::table('inventory_item_serials as s')
-      ->leftJoin('items as i', 'i.id', '=', 's.item_id')
-      ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
-      ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
-      ->leftJoin('warehouses as w', 'w.id', '=', 's.warehouse_id')
-      ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 's.out_outlet_id')
-      ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 's.out_warehouse_outlet_id')
-      ->leftJoin('delivery_orders as do_tbl', 'do_tbl.id', '=', 's.out_delivery_order_id')
-      ->where('s.serial_number', $serialNumber)
-      ->select(
-        's.*',
-        'i.name as item_name',
-        'i.sku as item_sku',
-        'u.name as unit_name',
-        'ru.name as repack_unit_name',
-        'w.name as warehouse_name',
-        'o.nama_outlet as out_outlet_name',
-        'wo.name as out_warehouse_outlet_name',
-        'do_tbl.number as out_do_number'
-      )
-      ->first();
+    $serial = $this->findSerialForTrackingLookup($serialNumber);
+    $repackMatch = null;
+
+    if (!$serial) {
+      $repackMatch = $this->findRepackSerialsByDocumentNumber($serialNumber);
+      if ($repackMatch && $repackMatch['serials']->count() === 1) {
+        $serial = $this->findSerialForTrackingLookup($repackMatch['serials']->first()->serial_number);
+      }
+    }
 
     if (!$serial) {
       $partial = DB::table('inventory_item_serials as s')
@@ -638,10 +626,23 @@ class SerialTrackingController extends Controller
         ->limit(20)
         ->get();
 
+      $message = 'Nomor seri tidak ditemukan.';
+      if ($repackMatch) {
+        $message = $repackMatch['serials']->isEmpty()
+          ? "Dokumen Repack {$repackMatch['repack_number']} ditemukan, tetapi belum ada nomor seri (belum di-generate/print)."
+          : "Yang Anda masukkan adalah nomor dokumen Repack ({$repackMatch['repack_number']}), bukan nomor seri barcode. Pilih nomor seri di bawah.";
+      }
+
       return response()->json([
         'found' => false,
         'suggestions' => $partial,
-        'message' => 'Nomor seri tidak ditemukan.',
+        'repack_match' => $repackMatch ? [
+          'repack_id' => $repackMatch['repack_id'],
+          'repack_number' => $repackMatch['repack_number'],
+          'repack_url' => '/repack/' . $repackMatch['repack_id'],
+          'serials' => $repackMatch['serials'],
+        ] : null,
+        'message' => $message,
       ], 404);
     }
 
@@ -674,6 +675,78 @@ class SerialTrackingController extends Controller
       ],
       'timeline' => $timeline,
     ]);
+  }
+
+  private function findSerialForTrackingLookup(string $serialNumber): ?object
+  {
+    return DB::table('inventory_item_serials as s')
+      ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+      ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+      ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+      ->leftJoin('warehouses as w', 'w.id', '=', 's.warehouse_id')
+      ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 's.out_outlet_id')
+      ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 's.out_warehouse_outlet_id')
+      ->leftJoin('delivery_orders as do_tbl', 'do_tbl.id', '=', 's.out_delivery_order_id')
+      ->where('s.serial_number', $serialNumber)
+      ->select(
+        's.*',
+        'i.name as item_name',
+        'i.sku as item_sku',
+        'u.name as unit_name',
+        'ru.name as repack_unit_name',
+        'w.name as warehouse_name',
+        'o.nama_outlet as out_outlet_name',
+        'wo.name as out_warehouse_outlet_name',
+        'do_tbl.number as out_do_number'
+      )
+      ->first();
+  }
+
+  /**
+   * Input bisa nomor dokumen repack (RP-YYYYMMDD-XXXX), bukan serial barcode (RP + datetime + random).
+   */
+  private function findRepackSerialsByDocumentNumber(string $input): ?array
+  {
+    $normalized = trim($input);
+    if ($normalized === '') {
+      return null;
+    }
+
+    $repack = DB::table('repacks')
+      ->where('repack_number', $normalized)
+      ->first();
+
+    if (!$repack) {
+      $repack = DB::table('repacks')
+        ->where('repack_number', 'like', $normalized . '%')
+        ->orderByDesc('id')
+        ->first();
+    }
+
+    if (!$repack) {
+      return null;
+    }
+
+    $serials = DB::table('inventory_item_serials as s')
+      ->leftJoin('items as i', 'i.id', '=', 's.item_id')
+      ->where('s.source_type', 'repack')
+      ->where('s.source_id', $repack->id)
+      ->select(
+        's.id',
+        's.serial_number',
+        'i.name as item_name',
+        's.source_type',
+        's.is_out',
+        's.is_received'
+      )
+      ->orderBy('s.serial_number')
+      ->get();
+
+    return [
+      'repack_id' => (int) $repack->id,
+      'repack_number' => $repack->repack_number,
+      'serials' => $serials,
+    ];
   }
 
   private function resolveSourceMeta(?string $sourceType, $sourceId): array
