@@ -433,6 +433,8 @@ class RepackController extends Controller
                         'source_qty' => $qtyHasil,
                         'source_unit_id' => $request->unit_hasil_id,
                         'generated_qty_unit' => $qtyHasil,
+                        'repack_unit_id' => (int) $request->unit_hasil_id,
+                        'repack_qty' => $qtyHasil,
                         'cost_small' => $costSmall,
                         'cost_medium' => $costMedium,
                         'cost_large' => $costLarge,

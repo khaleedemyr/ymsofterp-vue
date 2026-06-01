@@ -1775,19 +1775,13 @@ class OutletFoodGoodReceiveController extends Controller
             $query->where('item_id', $itemId);
         }
 
-        $serials = $query->select('repack_unit_id', 'repack_qty')->get();
+        $serials = $query->select('repack_unit_id', 'repack_qty', 'source_type', 'source_qty', 'generated_qty_unit')->get();
 
         if ($serials->isEmpty()) {
             return (float) count($serialNumbers);
         }
 
-        return (float) $serials->sum(function ($serial) {
-            if ($serial->repack_unit_id && (float) $serial->repack_qty > 0) {
-                return (float) $serial->repack_qty;
-            }
-
-            return 1;
-        });
+        return (float) $serials->sum(fn ($serial) => \App\Support\InventorySerialEffectiveQty::resolve($serial));
     }
 
     /**

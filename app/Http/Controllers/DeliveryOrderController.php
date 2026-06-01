@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Models\Item;
 use Illuminate\Support\Facades\Log;
+use App\Support\InventorySerialEffectiveQty;
 
 class DeliveryOrderController extends Controller
 {
@@ -2315,9 +2316,7 @@ class DeliveryOrderController extends Controller
                         'updated_at' => $now,
                     ]);
 
-                $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
-                    ? (float) $serial->repack_qty
-                    : 1;
+                $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
                 $movements[] = [
                     'serial_id' => $serial->id,
@@ -2371,9 +2370,7 @@ class DeliveryOrderController extends Controller
                     'updated_at' => $now,
                 ]);
 
-            $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
-                ? (float) $serial->repack_qty
-                : 1;
+            $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
             $movements[] = [
                 'serial_id' => $serial->id,
@@ -2510,6 +2507,8 @@ class DeliveryOrderController extends Controller
                 's.is_out',
                 's.inventory_item_id',
                 's.source_type',
+                's.source_qty',
+                's.generated_qty_unit',
                 's.repack_unit_id',
                 's.repack_qty',
                 'i.name as item_name',
@@ -2547,9 +2546,12 @@ class DeliveryOrderController extends Controller
             ];
         }
 
-        $effectiveQty = ($serial->repack_unit_id && $serial->repack_qty > 0)
+        $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
+        $repackQtyForDisplay = (float) ($serial->repack_qty ?? 0) > 0
             ? (float) $serial->repack_qty
-            : 1;
+            : (($serial->source_type ?? '') === 'repack' ? $effectiveQty : null);
+        $repackUnitName = $serial->repack_unit_name
+            ?: ((($serial->source_type ?? '') === 'repack' && $effectiveQty > 1) ? $serial->unit_name : null);
 
         return [
             'valid' => true,
@@ -2564,8 +2566,8 @@ class DeliveryOrderController extends Controller
                 'inventory_item_id' => $serial->inventory_item_id,
                 'source_type' => $serial->source_type,
                 'repack_unit_id' => $serial->repack_unit_id,
-                'repack_qty' => $serial->repack_qty,
-                'repack_unit_name' => $serial->repack_unit_name,
+                'repack_qty' => $repackQtyForDisplay,
+                'repack_unit_name' => $repackUnitName,
                 'effective_qty' => $effectiveQty,
             ],
         ];
