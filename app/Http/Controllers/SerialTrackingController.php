@@ -40,7 +40,7 @@ class SerialTrackingController extends Controller
     ],
     'repack' => [
       'label' => 'Repack',
-      'table' => 'repacks',
+      'table' => 'food_repacks',
       'number_column' => 'repack_number',
       'date_column' => 'created_at',
       'route' => '/repack/{id}',
@@ -712,12 +712,12 @@ class SerialTrackingController extends Controller
       return null;
     }
 
-    $repack = DB::table('repacks')
+    $repack = DB::table('food_repacks')
       ->where('repack_number', $normalized)
       ->first();
 
     if (!$repack) {
-      $repack = DB::table('repacks')
+      $repack = DB::table('food_repacks')
         ->where('repack_number', 'like', $normalized . '%')
         ->orderByDesc('id')
         ->first();

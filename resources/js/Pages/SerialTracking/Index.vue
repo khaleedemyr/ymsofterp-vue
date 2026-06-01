@@ -135,6 +135,13 @@
           </div>
         </div>
 
+        <p
+          v-if="serialLookupMessage && !serialDetail && !serialRepackMatch && !serialSuggestions.length"
+          class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3"
+        >
+          {{ serialLookupMessage }}
+        </p>
+
         <div v-if="serialRepackMatch" class="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
           <p class="text-sm font-semibold text-indigo-900 mb-2">
             Dokumen Repack:
@@ -611,6 +618,7 @@ const serialDetail = ref(null)
 const serialTimeline = ref([])
 const serialSuggestions = ref([])
 const serialRepackMatch = ref(null)
+const serialLookupMessage = ref(null)
 
 const pendingFilters = reactive({
   outlet_id: '',
@@ -723,6 +731,7 @@ const lookupSerial = async () => {
   serialTimeline.value = []
   serialSuggestions.value = []
   serialRepackMatch.value = null
+  serialLookupMessage.value = null
   try {
     const { data } = await axios.get('/api/serial-tracking/lookup', { params: { serial_number: q } })
     serialDetail.value = data.serial
@@ -730,12 +739,15 @@ const lookupSerial = async () => {
   } catch (err) {
     if (err?.response?.status === 404) {
       const payload = err.response.data || {}
+      serialLookupMessage.value = payload.message || 'Nomor seri tidak ditemukan.'
       if (payload.repack_match) {
         serialRepackMatch.value = payload.repack_match
       }
       if (payload.suggestions?.length) {
         serialSuggestions.value = payload.suggestions
       }
+    } else {
+      serialLookupMessage.value = err?.response?.data?.message || err?.message || 'Gagal melacak nomor seri.'
     }
   } finally {
     serialLoading.value = false
