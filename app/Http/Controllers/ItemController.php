@@ -3150,18 +3150,8 @@ class ItemController extends Controller
     /**
      * Simpan satu baris non-POS pricing. Mengembalikan null jika sukses, atau pesan error.
      */
-    private function saveNonPosPricingRow(Item $item, string $mode, float $price): ?string
+    private function saveNonPosPricingRow(Item $item, string $mode, float $price, bool $allowManualModeOnly = false): ?string
     {
-        if ($mode === 'auto') {
-            $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
-            if ($computed === null || $computed <= 0) {
-                return $item->sku.': tidak ada Food Good Receive / harga PO untuk mode otomatis.';
-            }
-            $price = $computed;
-        } elseif ($price <= 0) {
-            return $item->sku.': harga manual harus diisi (> 0).';
-        }
-
         $existing = DB::table('item_prices')
             ->where('item_id', $item->id)
             ->where('availability_price_type', 'all')
@@ -3170,8 +3160,26 @@ class ItemController extends Controller
             ->orderByDesc('id')
             ->first();
 
+        if ($mode === 'auto') {
+            $computed = FoodGrLastPurchaseForItem::suggestedSellingPrice((int) $item->id);
+            if ($computed === null || $computed <= 0) {
+                return $item->sku.': tidak ada Food Good Receive / harga PO untuk mode otomatis.';
+            }
+            $price = $computed;
+        } elseif ($price <= 0) {
+            if (! $allowManualModeOnly) {
+                return $item->sku.': harga manual harus diisi (> 0).';
+            }
+            if (! $existing) {
+                return $item->sku.': tidak bisa ubah mode manual tanpa harga, karena belum ada harga default sebelumnya.';
+            }
+        }
+
         $payload = [
-            'price' => round($price, 2),
+            // Untuk import mode-only manual (price <= 0), pertahankan harga lama.
+            'price' => ($mode === 'manual' && $price <= 0 && $allowManualModeOnly)
+                ? (float) $existing->price
+                : round($price, 2),
             'pricing_mode' => $mode,
             'updated_at' => now(),
         ];
@@ -3199,7 +3207,7 @@ class ItemController extends Controller
      * @param  array<int, array{item_id:mixed, pricing_mode:mixed, price?:mixed, category_id?:mixed, category_name?:mixed}>  $rows
      * @return array{errors: array<int, string>, saved: int}
      */
-    private function processNonPosPricingRows(array $rows): array
+    private function processNonPosPricingRows(array $rows, bool $allowManualModeOnly = false): array
     {
         $errors = [];
         $saved = 0;
@@ -3242,7 +3250,7 @@ class ItemController extends Controller
             $mode = $row['pricing_mode'] === 'auto' ? 'auto' : 'manual';
             $price = isset($row['price']) ? (float) $row['price'] : 0;
 
-            $err = $this->saveNonPosPricingRow($item, $mode, $price);
+            $err = $this->saveNonPosPricingRow($item, $mode, $price, $allowManualModeOnly);
             if ($err !== null) {
                 $errors[] = 'Baris '.((int) $idx + 1).': '.$err;
             } else {
@@ -3386,7 +3394,8 @@ class ItemController extends Controller
             ], 422);
         }
 
-        $result = $this->processNonPosPricingRows($rows);
+        // Saat import: jika mode manual tapi price <= 0, tetap update mode tanpa ubah harga lama.
+        $result = $this->processNonPosPricingRows($rows, true);
 
         return response()->json([
             'success' => $result['saved'] > 0,
