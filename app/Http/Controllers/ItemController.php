@@ -3357,7 +3357,8 @@ class ItemController extends Controller
                 continue;
             }
             $modeRaw = isset($assoc['pricing_mode']) ? strtolower(trim((string) $assoc['pricing_mode'])) : 'manual';
-            $mode = $modeRaw === 'auto' ? 'auto' : 'manual';
+            // Terima varian dari template seperti "Auto (GR+12%)" sebagai mode auto.
+            $mode = Str::startsWith($modeRaw, 'auto') ? 'auto' : 'manual';
             $priceRaw = $assoc['price'] ?? null;
             $price = 0.0;
             if ($priceRaw !== null && $priceRaw !== '') {
