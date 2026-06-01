@@ -3170,8 +3170,9 @@ class ItemController extends Controller
             if (! $allowManualModeOnly) {
                 return $item->sku.': harga manual harus diisi (> 0).';
             }
+            // Import mode-only: jika belum ada row harga default, tetap buat row agar mode tersimpan.
             if (! $existing) {
-                return $item->sku.': tidak bisa ubah mode manual tanpa harga, karena belum ada harga default sebelumnya.';
+                $price = 0;
             }
         }
 
