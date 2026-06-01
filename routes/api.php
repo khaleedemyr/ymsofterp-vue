@@ -282,6 +282,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/butcher-process-items/{id}/generate-serials', [\App\Http\Controllers\ButcherProcessController::class, 'generateSerials']);
         Route::get('/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'serialList']);
         Route::delete('/butcher-process-items/{id}/serials', [\App\Http\Controllers\ButcherProcessController::class, 'rollbackSerials']);
+        Route::get('/butcher-serial/units', [\App\Http\Controllers\ButcherProcessController::class, 'getSerialUnits']);
 
         // Repack API + serial routes
         Route::get('/repack', [\App\Http\Controllers\RepackController::class, 'apiIndex']);
