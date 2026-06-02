@@ -22,7 +22,8 @@ class BudgetManagementController extends Controller
      */
     public function index()
     {
-        $categories = PurchaseRequisitionCategory::with(['outletBudgets.outlet'])
+        $categories = PurchaseRequisitionCategory::active()
+            ->with(['outletBudgets.outlet'])
             ->orderBy('division')
             ->orderBy('name')
             ->get();
@@ -83,6 +84,7 @@ class BudgetManagementController extends Controller
 
             // Create category
             $categoryData = $request->only(['name', 'division', 'subcategory', 'budget_limit', 'budget_type', 'description']);
+            $categoryData['active'] = true;
             $category = PurchaseRequisitionCategory::create($categoryData);
 
             // If PER_OUTLET, create outlet budgets
@@ -407,7 +409,7 @@ class BudgetManagementController extends Controller
         $summary = [];
 
         // Global budgets
-        $globalCategories = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')->get();
+        $globalCategories = PurchaseRequisitionCategory::active()->where('budget_type', 'GLOBAL')->get();
         foreach ($globalCategories as $category) {
             $usedAmount = \App\Models\PurchaseRequisition::where('category_id', $category->id)
                 ->whereYear('created_at', date('Y'))
@@ -426,7 +428,8 @@ class BudgetManagementController extends Controller
         }
 
         // Per-outlet budgets
-        $perOutletCategories = PurchaseRequisitionCategory::where('budget_type', 'PER_OUTLET')
+        $perOutletCategories = PurchaseRequisitionCategory::active()
+            ->where('budget_type', 'PER_OUTLET')
             ->with('outletBudgets.outlet')
             ->get();
 
@@ -473,7 +476,7 @@ class BudgetManagementController extends Controller
 
     public function apiMasterIndex(Request $request)
     {
-        $query = PurchaseRequisitionCategory::query()->with(['outletBudgets.outlet']);
+        $query = PurchaseRequisitionCategory::active()->with(['outletBudgets.outlet']);
 
         if ($request->filled('search')) {
             $search = trim((string) $request->query('search'));
@@ -523,6 +526,7 @@ class BudgetManagementController extends Controller
                 'budget_limit' => $validated['budget_limit'],
                 'budget_type' => $validated['budget_type'],
                 'description' => $validated['description'] ?? null,
+                'active' => true,
             ]);
 
             if ($validated['budget_type'] === 'PER_OUTLET') {

@@ -567,7 +567,7 @@ class PurchaseRequisitionController extends Controller
 
         // Get filter options
         $divisions = Divisi::whereHas('purchaseRequisitions')->active()->orderBy('nama_divisi')->get();
-        $categories = PurchaseRequisitionCategory::whereHas('purchaseRequisitions')->orderBy('name')->get();
+        $categories = PurchaseRequisitionCategory::active()->whereHas('purchaseRequisitions')->orderBy('name')->get();
         
         // Statistics - apply same filter for statistics
         $statsQuery = PurchaseRequisition::query();
@@ -667,7 +667,7 @@ class PurchaseRequisitionController extends Controller
             }
         }
 
-        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        $categories = PurchaseRequisitionCategory::active()->orderBy('name')->get();
         $outlets = Outlet::active()->orderBy('nama_outlet')->get();
         $tickets = Ticket::whereHas('status', function($query) {
                         $query->whereNotIn('slug', ['closed', 'cancelled']);
@@ -1295,7 +1295,7 @@ class PurchaseRequisitionController extends Controller
                            ->with('error', 'Only draft and submitted purchase requisitions can be edited.');
         }
 
-        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        $categories = PurchaseRequisitionCategory::active()->orderBy('name')->get();
         $outlets = Outlet::active()->orderBy('nama_outlet')->get();
         $tickets = Ticket::whereHas('status', function($query) {
                         $query->whereNotIn('slug', ['closed', 'cancelled']);
@@ -2624,7 +2624,7 @@ class PurchaseRequisitionController extends Controller
      */
     public function getCategories()
     {
-        $categories = PurchaseRequisitionCategory::orderBy('name')->get();
+        $categories = PurchaseRequisitionCategory::active()->orderBy('name')->get();
         return response()->json(['success' => true, 'categories' => $categories]);
     }
 

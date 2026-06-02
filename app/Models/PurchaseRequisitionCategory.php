@@ -16,10 +16,12 @@ class PurchaseRequisitionCategory extends Model
         'budget_limit',
         'budget_type',
         'description',
+        'active',
     ];
 
     protected $casts = [
         'budget_limit' => 'decimal:2',
+        'active' => 'boolean',
     ];
 
     // Relationships
@@ -42,6 +44,11 @@ class PurchaseRequisitionCategory extends Model
     public function scopeByBudgetType($query, $budgetType)
     {
         return $query->where('budget_type', $budgetType);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('active', 1);
     }
 
     // Accessors
