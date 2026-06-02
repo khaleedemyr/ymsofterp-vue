@@ -340,6 +340,19 @@ class NonFoodPaymentController extends Controller
         // Filter PO based on payment status
         $availablePOs = $allPOs->filter(function($po) {
             $paymentType = $po->payment_type ?? null;
+            $isSettledByNegotiation = Schema::hasColumn('non_food_payments', 'is_settled_negotiation')
+                ? DB::table('non_food_payments')
+                    ->where('purchase_order_ops_id', $po->id)
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
+                    ->where('is_settled_negotiation', 1)
+                    ->exists()
+                : false;
+
+            // If any payment has been manually settled by negotiation,
+            // do not show this PO again in NFP create list.
+            if ($isSettledByNegotiation) {
+                return false;
+            }
             
             // For 'lunas' payment_type: exclude if has any payment (except cancelled)
             // Once a payment is created, even if pending, it should not appear again
@@ -889,6 +902,18 @@ class NonFoodPaymentController extends Controller
                 ->sum('amount');
             
             $remaining = $grandTotal - $totalPaid;
+            $isSettledByNegotiation = false;
+            if (Schema::hasColumn('non_food_payments', 'is_settled_negotiation')) {
+                $isSettledByNegotiation = DB::table('non_food_payments')
+                    ->where('purchase_order_ops_id', $poId)
+                    ->whereNotIn('status', ['cancelled', 'rejected'])
+                    ->where('is_settled_negotiation', 1)
+                    ->exists();
+            }
+
+            if ($isSettledByNegotiation) {
+                $remaining = 0;
+            }
             
             // Get payment count
             $paymentCount = DB::table('non_food_payments')
@@ -910,6 +935,7 @@ class NonFoodPaymentController extends Controller
                 'remaining' => max(0, (float) $remaining),
                 'payment_count' => $paymentCount,
                 'grand_total' => (float) $po->grand_total,
+                'is_settled_negotiation' => $isSettledByNegotiation,
                 'payment_history' => $paymentHistory
             ]);
         } catch (\Exception $e) {
@@ -1467,6 +1493,17 @@ class NonFoodPaymentController extends Controller
             
             // For termin payment, allow multiple payments
             if ($po && $po->payment_type === 'termin') {
+                if (Schema::hasColumn('non_food_payments', 'is_settled_negotiation')) {
+                    $alreadySettled = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
+                        ->whereNotIn('status', ['cancelled', 'rejected'])
+                        ->where('is_settled_negotiation', true)
+                        ->exists();
+
+                    if ($alreadySettled) {
+                        return back()->with('error', 'Purchase Order ini sudah diset lunas karena negosiasi, tidak bisa dibuat payment baru.');
+                    }
+                }
+
                 // Check total paid amount
                 $totalPaid = NonFoodPayment::where('purchase_order_ops_id', $request->purchase_order_ops_id)
                     ->whereNotIn('status', ['cancelled', 'rejected'])
@@ -1582,6 +1619,7 @@ class NonFoodPaymentController extends Controller
                 'reference_number' => $request->reference_number,
                 'notes' => $request->notes,
                 'is_partial_payment' => $isPartialPayment,
+                'is_settled_negotiation' => false,
                 'payment_sequence' => $paymentSequence,
                 'created_by' => Auth::id(),
             ];
@@ -2277,7 +2315,7 @@ class NonFoodPaymentController extends Controller
         }
     }
 
-    public function markAsPaid(NonFoodPayment $nonFoodPayment, \App\Services\BankBookService $bankBookService, \App\Services\JurnalService $jurnalService)
+    public function markAsPaid(Request $request, NonFoodPayment $nonFoodPayment, \App\Services\BankBookService $bankBookService, \App\Services\JurnalService $jurnalService)
     {
         if (!$nonFoodPayment->canBePaid()) {
             return back()->with('error', 'Payment ini tidak dapat ditandai sebagai dibayar.');
@@ -2285,6 +2323,7 @@ class NonFoodPaymentController extends Controller
 
         try {
             DB::beginTransaction();
+            $forceSettle = $request->boolean('force_settled_negotiation', false);
             
             // Load payment outlets relationship before updating
             $nonFoodPayment->load('paymentOutlets.outlet');
@@ -2299,9 +2338,12 @@ class NonFoodPaymentController extends Controller
                 return response()->json(['success' => false, 'message' => 'COA pembayaran belum dipilih. Silakan edit payment dan pilih COA terlebih dahulu.'], 400);
             }
 
-            $nonFoodPayment->update([
-                'status' => 'paid',
-            ]);
+            $updateData = ['status' => 'paid'];
+            if (Schema::hasColumn('non_food_payments', 'is_settled_negotiation')) {
+                $updateData['is_settled_negotiation'] = $forceSettle;
+            }
+
+            $nonFoodPayment->update($updateData);
 
             // Create bank book entry if payment method is transfer or check
             $bankBookService->createFromNonFoodPayment($nonFoodPayment);
@@ -2320,7 +2362,9 @@ class NonFoodPaymentController extends Controller
 
             DB::commit();
 
-            return back()->with('success', 'Non Food Payment berhasil ditandai sebagai dibayar.');
+            return back()->with('success', $forceSettle
+                ? 'Non Food Payment berhasil ditandai sebagai dibayar dan diset lunas (negosiasi).'
+                : 'Non Food Payment berhasil ditandai sebagai dibayar.');
 
         } catch (\Exception $e) {
             DB::rollBack();

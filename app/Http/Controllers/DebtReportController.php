@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DebtReportController extends Controller
 {
@@ -53,6 +54,18 @@ class DebtReportController extends Controller
         $totalRemaining = 0;
 
         foreach ($pos as $po) {
+            $isSettledByNegotiation = Schema::hasColumn('non_food_payments', 'is_settled_negotiation')
+                ? DB::table('non_food_payments')
+                    ->where('purchase_order_ops_id', $po->id)
+                    ->where('status', '!=', 'cancelled')
+                    ->where('is_settled_negotiation', 1)
+                    ->exists()
+                : false;
+
+            if ($isSettledByNegotiation) {
+                continue;
+            }
+
             // Get total paid from non_food_payments
             $totalPaidForPO = DB::table('non_food_payments')
                 ->where('purchase_order_ops_id', $po->id)

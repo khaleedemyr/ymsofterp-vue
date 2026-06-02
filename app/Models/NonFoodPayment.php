@@ -35,6 +35,7 @@ class NonFoodPayment extends Model
         'approved_gm_finance_at',
         'notes',
         'is_partial_payment',
+        'is_settled_negotiation',
         'payment_sequence',
         'coa_id',
         'asset_service_order_id',
@@ -47,6 +48,7 @@ class NonFoodPayment extends Model
         'approved_at' => 'datetime',
         'approved_finance_manager_at' => 'datetime',
         'approved_gm_finance_at' => 'datetime',
+        'is_settled_negotiation' => 'boolean',
     ];
 
     // Relationships

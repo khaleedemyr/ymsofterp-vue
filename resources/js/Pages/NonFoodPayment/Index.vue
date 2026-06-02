@@ -317,6 +317,9 @@ function getStatusText(status, payment = null) {
   if (status === 'pending' && payment && payment.approved_finance_manager_by) {
     return 'Pending GM Finance';
   }
+  if (status === 'paid' && payment && payment.is_settled_negotiation) {
+    return 'Paid (Lunas Negosiasi)';
+  }
   
   return {
     pending: 'Pending',
@@ -458,17 +461,33 @@ function markAsPaid(payment) {
     import('sweetalert2').then(({ default: Swal }) => {
       Swal.fire({
         title: 'Tandai sebagai Dibayar?',
-        text: 'Apakah Anda yakin payment ini sudah dibayar?',
+        html: `
+          <p>Apakah Anda yakin payment ini sudah dibayar?</p>
+          <div style="margin-top: 12px; text-align: left;">
+            <label style="display:flex;align-items:center;gap:8px;">
+              <input id="settle-negotiation-checkbox" type="checkbox" />
+              <span>Set lunas (hasil negosiasi)</span>
+            </label>
+            <p style="margin-top:6px;color:#6b7280;font-size:12px;">
+              Jika dicentang, payment ini dianggap final walau nominal bayar lebih kecil.
+            </p>
+          </div>
+        `,
         icon: 'question',
         showCancelButton: true,
         confirmButtonColor: '#3085d6',
         cancelButtonColor: '#d33',
         confirmButtonText: 'Ya, Tandai!',
-        cancelButtonText: 'Batal'
+        cancelButtonText: 'Batal',
+        preConfirm: () => ({
+          force_settled_negotiation: !!document.getElementById('settle-negotiation-checkbox')?.checked
+        })
       }).then((result) => {
         if (result.isConfirmed) {
           showLoading('Menandai Payment sebagai Dibayar...', 'Mohon tunggu sebentar');
-          router.post(`/non-food-payments/${payment.id}/mark-as-paid`, {}, {
+          router.post(`/non-food-payments/${payment.id}/mark-as-paid`, {
+            force_settled_negotiation: result.value?.force_settled_negotiation || false
+          }, {
             onSuccess: () => {
               hideLoading();
               Swal.fire('Berhasil', 'Payment berhasil ditandai sebagai dibayar!', 'success');
