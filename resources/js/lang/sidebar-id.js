@@ -188,6 +188,7 @@ export default {
     "report_rekap_fj": "Laporan Rekap FJ",
     "rekap_pb1_outlet": "Rekap PB1 Outlet",
     "payroll_finance_report": "Laporan Payroll",
+    "rekap_payroll": "Rekap Payroll",
     "report_hutang": "Laporan Hutang",
     "purchase_order_foods": "Purchase Order Foods",
     "purchase_order_ops": "Purchase Order Ops",

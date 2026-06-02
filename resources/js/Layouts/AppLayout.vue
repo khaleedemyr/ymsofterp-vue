@@ -354,6 +354,12 @@ const menuGroups = [
                 route: '/payroll/finance-report',
                 code: 'payroll_finance_report',
             },
+            {
+                name: () => t('sidebar.menus.rekap_payroll'),
+                icon: 'fa-solid fa-table-list',
+                route: '/payroll/rekap',
+                code: 'rekap_payroll',
+            },
             { name: () => t('sidebar.menus.report_hutang'), icon: 'fa-solid fa-file-invoice-dollar', route: '/debt-report', code: 'debt_report' },
         ],
     },
