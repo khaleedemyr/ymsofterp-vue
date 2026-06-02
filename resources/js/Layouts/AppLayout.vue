@@ -323,6 +323,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.retail_non_food_payment'), icon: 'fa-solid fa-money-bill-wave', route: route('retail-non-food-payment.index'), code: 'retail_non_food_payment' },
             { name: () => t('sidebar.menus.opex_report'), icon: 'fa-solid fa-chart-line', route: '/opex-report', code: 'opex_report' },
             { name: () => t('sidebar.menus.opex_by_category'), icon: 'fa-solid fa-chart-pie', route: '/opex-by-category', code: 'opex_by_category' },
+            { name: () => t('sidebar.menus.mamp_report'), icon: 'fa-solid fa-table-list', route: '/mamp-report', code: 'mamp_report' },
             //{ name: () => t('sidebar.menus.mt_po_payment'), icon: 'fa-solid fa-money-bill-wave', route: route('mt-po-payment.index'), code: 'mt_po_payment' },
             { name: () => t('sidebar.menus.outlet_payments'), icon: 'fa-solid fa-money-bill', route: route('outlet-payments.index'), code: 'outlet_payments' },
             //{ name: () => t('sidebar.menus.outlet_payment_supplier'), icon: 'fa-solid fa-money-bill', route: route('outlet-payment-suppliers.index'), code: 'outlet_payment_suppliers' },

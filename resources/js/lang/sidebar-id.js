@@ -178,6 +178,7 @@ export default {
     "retail_non_food_payment": "Pembayaran Retail Non Food",
     "opex_report": "Laporan OPEX",
     "opex_by_category": "OPEX per Kategori",
+    "mamp_report": "Report MAMP",
     "mt_po_payment": "MT PO Payment",
     "outlet_payments": "Pembayaran Outlet",
     "outlet_payment_supplier": "Outlet Payment Supplier",

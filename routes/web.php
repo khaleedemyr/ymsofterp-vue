@@ -1741,6 +1741,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // OPEX By Category Report
     Route::get('opex-by-category', [\App\Http\Controllers\OpexByCategoryController::class, 'index'])->name('opex-by-category.index');
     Route::get('opex-by-category/export', [\App\Http\Controllers\OpexByCategoryController::class, 'export'])->name('opex-by-category.export');
+
+    Route::get('mamp-report', [\App\Http\Controllers\MampReportController::class, 'index'])->name('mamp-report.index');
+    Route::get('mamp-report/export', [\App\Http\Controllers\MampReportController::class, 'export'])->name('mamp-report.export');
   
 });
 

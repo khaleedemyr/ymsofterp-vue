@@ -178,6 +178,7 @@ export default {
     "retail_non_food_payment": "Retail Non Food Payment",
     "opex_report": "OPEX Report",
     "opex_by_category": "OPEX By Category",
+    "mamp_report": "MAMP Report",
     "mt_po_payment": "MT PO Payment",
     "outlet_payments": "Outlet Payments",
     "outlet_payment_supplier": "Outlet Payment Supplier",
