@@ -14,6 +14,7 @@ const props = defineProps({
 const month = ref(props.filter?.month || String(new Date().getMonth() + 1).padStart(2, '0'));
 const year = ref(props.filter?.year || new Date().getFullYear());
 const loading = ref(false);
+const exporting = ref(false);
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', {
@@ -36,6 +37,15 @@ function loadData() {
       loading.value = false;
     },
   });
+}
+
+function exportExcel() {
+  if (!month.value || !year.value || exporting.value) return;
+  exporting.value = true;
+  window.location.href = `/payroll/rekap/export?month=${month.value}&year=${year.value}`;
+  setTimeout(() => {
+    exporting.value = false;
+  }, 1200);
 }
 </script>
 
@@ -78,6 +88,16 @@ function loadData() {
             @click="loadData"
           >
             <i class="fa fa-search mr-2"></i> Lihat Data
+          </button>
+
+          <button
+            type="button"
+            class="bg-gradient-to-br from-green-500 to-green-700 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg hover:opacity-90 disabled:opacity-50"
+            :disabled="!rows || !rows.length || exporting"
+            @click="exportExcel"
+          >
+            <i class="fa fa-file-excel mr-2"></i>
+            {{ exporting ? 'Export...' : 'Export Excel' }}
           </button>
         </div>
       </div>

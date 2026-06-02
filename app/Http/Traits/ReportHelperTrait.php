@@ -282,9 +282,27 @@ trait ReportHelperTrait
      */
     protected function rekapFjFetchFoodGrPivotItemRows(?string $from, ?string $to): Collection
     {
+        $nonPosPriceExpr = "(SELECT ipx.price
+            FROM item_prices ipx
+            WHERE ipx.item_id = i.item_id
+              AND ipx.availability_price_type = 'all'
+              AND ipx.region_id IS NULL
+              AND ipx.outlet_id IS NULL
+            ORDER BY ipx.id DESC
+            LIMIT 1)";
+        $effectivePriceExpr = "COALESCE(
+            CASE
+                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
+                ELSE fo.price
+            END,
+            fo.price,
+            0
+        )";
+
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -304,7 +322,7 @@ trait ReportHelperTrait
                 'it.name as item_name',
                 'sc.name as sub_category',
                 'w.name as warehouse',
-                DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as item_subtotal')
+                DB::raw("SUM(i.received_qty * {$effectivePriceExpr}) as item_subtotal")
             );
 
         if ($from) {
@@ -414,6 +432,23 @@ trait ReportHelperTrait
         $subCategoryCondition = null,
         ?array $excludeSubCategories = null
     ): Collection {
+        $nonPosPriceExpr = "(SELECT ipx.price
+            FROM item_prices ipx
+            WHERE ipx.item_id = i.item_id
+              AND ipx.availability_price_type = 'all'
+              AND ipx.region_id IS NULL
+              AND ipx.outlet_id IS NULL
+            ORDER BY ipx.id DESC
+            LIMIT 1)";
+        $effectivePriceExpr = "COALESCE(
+            CASE
+                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
+                ELSE fo.price
+            END,
+            fo.price,
+            0
+        )";
+
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -440,8 +475,8 @@ trait ReportHelperTrait
             'cat.name as category',
             'u.name as unit',
             DB::raw('SUM(i.received_qty) as received_qty'),
-            DB::raw('AVG(COALESCE(fo.price, 0)) as price'),
-            DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as subtotal')
+            DB::raw("AVG({$effectivePriceExpr}) as price"),
+            DB::raw("SUM(i.received_qty * {$effectivePriceExpr}) as subtotal")
         )
             ->groupBy('it.name', 'cat.name', 'u.name')
             ->orderBy('cat.name')
