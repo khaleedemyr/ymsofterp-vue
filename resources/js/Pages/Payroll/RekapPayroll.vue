@@ -115,28 +115,6 @@ function isRowHighlighted(row, idx) {
       </div>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 border-b border-gray-100 bg-gray-50">
-          <div class="bg-white rounded-lg p-3 border">
-            <div class="text-[11px] text-gray-500 uppercase">Gapok</div>
-            <div class="font-bold text-blue-700">{{ formatCurrency(summary?.gapok) }}</div>
-          </div>
-          <div class="bg-white rounded-lg p-3 border">
-            <div class="text-[11px] text-gray-500 uppercase">Tunjangan</div>
-            <div class="font-bold text-indigo-700">{{ formatCurrency(summary?.tunjangan) }}</div>
-          </div>
-          <div class="bg-white rounded-lg p-3 border">
-            <div class="text-[11px] text-gray-500 uppercase">Lembur</div>
-            <div class="font-bold text-emerald-700">{{ formatCurrency(summary?.gaji_lembur) }}</div>
-          </div>
-          <div class="bg-white rounded-lg p-3 border">
-            <div class="text-[11px] text-gray-500 uppercase">Service Charge</div>
-            <div class="font-bold text-cyan-700">{{ formatCurrency(summary?.service_charge) }}</div>
-          </div>
-          <div class="bg-white rounded-lg p-3 border">
-            <div class="text-[11px] text-gray-500 uppercase">Potongan (Telat+Alpha+UL+Kasbon)</div>
-            <div class="font-bold text-red-700">{{ formatCurrency((summary?.potongan_telat || 0) + (summary?.potongan_alpha || 0) + (summary?.potongan_unpaid_leave || 0) + (summary?.potongan_kasbon || 0)) }}</div>
-          </div>
-        </div>
         <div class="px-4 pt-4 pb-2 border-b border-gray-100 bg-white">
           <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
             <button
