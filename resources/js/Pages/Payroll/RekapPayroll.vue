@@ -103,11 +103,50 @@ function exportExcel() {
       </div>
 
       <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3 p-4 border-b border-gray-100 bg-gray-50">
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-[11px] text-gray-500 uppercase">Gapok</div>
+            <div class="font-bold text-blue-700">{{ formatCurrency(summary?.gapok) }}</div>
+          </div>
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-[11px] text-gray-500 uppercase">Tunjangan</div>
+            <div class="font-bold text-indigo-700">{{ formatCurrency(summary?.tunjangan) }}</div>
+          </div>
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-[11px] text-gray-500 uppercase">Lembur</div>
+            <div class="font-bold text-emerald-700">{{ formatCurrency(summary?.gaji_lembur) }}</div>
+          </div>
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-[11px] text-gray-500 uppercase">Service Charge</div>
+            <div class="font-bold text-cyan-700">{{ formatCurrency(summary?.service_charge) }}</div>
+          </div>
+          <div class="bg-white rounded-lg p-3 border">
+            <div class="text-[11px] text-gray-500 uppercase">Potongan (Telat+Alpha+UL+Kasbon)</div>
+            <div class="font-bold text-red-700">{{ formatCurrency((summary?.potongan_telat || 0) + (summary?.potongan_alpha || 0) + (summary?.potongan_unpaid_leave || 0) + (summary?.potongan_kasbon || 0)) }}</div>
+          </div>
+        </div>
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-slate-800 text-white">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-bold uppercase">Outlet</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Gapok</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Tunjangan</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Telat</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Alpha</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Unpaid Leave</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Kasbon</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Lembur</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Service Charge</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Uang Makan</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Bonus PH</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">L&B</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Deviasi</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">City Ledger</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Custom Earn G1</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Custom Ded G1</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Custom Earn G2</th>
+                <th class="px-4 py-3 text-right text-xs font-bold uppercase">Custom Ded G2</th>
                 <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Gaji 1</th>
                 <th class="px-4 py-3 text-right text-xs font-bold uppercase">Total Gaji 2</th>
                 <th class="px-4 py-3 text-right text-xs font-bold uppercase">Grand Total Gaji</th>
@@ -116,12 +155,29 @@ function exportExcel() {
             </thead>
             <tbody class="bg-white divide-y divide-gray-100">
               <tr v-if="!rows || !rows.length">
-                <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                <td colspan="22" class="px-4 py-8 text-center text-gray-500">
                   Tidak ada data payroll untuk periode ini.
                 </td>
               </tr>
               <tr v-for="(row, idx) in rows" :key="`${row.outlet}-${idx}`" class="hover:bg-blue-50">
                 <td class="px-4 py-3 text-sm text-gray-900 font-medium">{{ row.outlet }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.gapok) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.tunjangan) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.potongan_telat) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.potongan_alpha) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.potongan_unpaid_leave) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.potongan_kasbon) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.gaji_lembur) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.service_charge) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.uang_makan) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.ph_bonus) }}</td>
+                <td class="px-4 py-3 text-sm text-right">{{ formatCurrency(row.lb_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.deviasi_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.city_ledger_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-emerald-700">{{ formatCurrency(row.custom_earnings_gajian1) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.custom_deductions_gajian1) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-emerald-700">{{ formatCurrency(row.custom_earnings_gajian2) }}</td>
+                <td class="px-4 py-3 text-sm text-right text-red-600">{{ formatCurrency(row.custom_deductions_gajian2) }}</td>
                 <td class="px-4 py-3 text-sm text-right text-blue-700 font-semibold">{{ formatCurrency(row.total_gaji_1) }}</td>
                 <td class="px-4 py-3 text-sm text-right text-indigo-700 font-semibold">{{ formatCurrency(row.total_gaji_2) }}</td>
                 <td class="px-4 py-3 text-sm text-right text-green-700 font-bold">{{ formatCurrency(row.grand_total_gaji) }}</td>
@@ -131,6 +187,23 @@ function exportExcel() {
             <tfoot class="bg-slate-900 text-white">
               <tr>
                 <td class="px-4 py-3 text-sm font-bold">TOTAL</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.gapok) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.tunjangan) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.potongan_telat) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.potongan_alpha) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.potongan_unpaid_leave) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.potongan_kasbon) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.gaji_lembur) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.service_charge) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.uang_makan) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.ph_bonus) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold">{{ formatCurrency(summary?.lb_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.deviasi_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.city_ledger_total) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-emerald-300">{{ formatCurrency(summary?.custom_earnings_gajian1) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.custom_deductions_gajian1) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-emerald-300">{{ formatCurrency(summary?.custom_earnings_gajian2) }}</td>
+                <td class="px-4 py-3 text-sm text-right font-bold text-red-300">{{ formatCurrency(summary?.custom_deductions_gajian2) }}</td>
                 <td class="px-4 py-3 text-sm text-right font-bold text-blue-300">{{ formatCurrency(summary?.total_gaji_1) }}</td>
                 <td class="px-4 py-3 text-sm text-right font-bold text-indigo-300">{{ formatCurrency(summary?.total_gaji_2) }}</td>
                 <td class="px-4 py-3 text-sm text-right font-bold text-amber-300">{{ formatCurrency(summary?.grand_total_gaji) }}</td>

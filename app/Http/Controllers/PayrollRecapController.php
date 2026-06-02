@@ -45,15 +45,55 @@ class PayrollRecapController extends Controller
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Rekap Payroll');
 
-        $headers = ['Outlet', 'Total Gaji 1', 'Total Gaji 2', 'Grand Total Gaji', 'BPJS Perusahaan'];
+        $headers = [
+            'Outlet',
+            'Gapok',
+            'Tunjangan',
+            'Telat',
+            'Alpha',
+            'Unpaid Leave',
+            'Kasbon',
+            'Lembur',
+            'Service Charge',
+            'Uang Makan',
+            'Bonus PH',
+            'L&B',
+            'Deviasi',
+            'City Ledger',
+            'Custom Earn G1',
+            'Custom Ded G1',
+            'Custom Earn G2',
+            'Custom Ded G2',
+            'Total Gaji 1',
+            'Total Gaji 2',
+            'Grand Total Gaji',
+            'BPJS Perusahaan',
+        ];
         $sheet->setCellValue('A1', 'REKAP PAYROLL');
-        $sheet->mergeCells('A1:E1');
+        $sheet->mergeCells('A1:V1');
         $sheet->setCellValue('A2', 'Periode: '.$this->monthName($recap['month']).' '.$recap['year']);
-        $sheet->mergeCells('A2:E2');
+        $sheet->mergeCells('A2:V2');
         $sheet->fromArray($headers, null, 'A4');
 
         $rows = array_map(static fn (array $row) => [
             $row['outlet'],
+            $row['gapok'] ?? 0,
+            $row['tunjangan'] ?? 0,
+            $row['potongan_telat'] ?? 0,
+            $row['potongan_alpha'] ?? 0,
+            $row['potongan_unpaid_leave'] ?? 0,
+            $row['potongan_kasbon'] ?? 0,
+            $row['gaji_lembur'] ?? 0,
+            $row['service_charge'] ?? 0,
+            $row['uang_makan'] ?? 0,
+            $row['ph_bonus'] ?? 0,
+            $row['lb_total'] ?? 0,
+            $row['deviasi_total'] ?? 0,
+            $row['city_ledger_total'] ?? 0,
+            $row['custom_earnings_gajian1'] ?? 0,
+            $row['custom_deductions_gajian1'] ?? 0,
+            $row['custom_earnings_gajian2'] ?? 0,
+            $row['custom_deductions_gajian2'] ?? 0,
             $row['total_gaji_1'],
             $row['total_gaji_2'],
             $row['grand_total_gaji'],
@@ -66,6 +106,23 @@ class PayrollRecapController extends Controller
         $totalRow = 5 + count($rows);
         $sheet->fromArray([[
             'TOTAL',
+            $recap['summary']['gapok'] ?? 0,
+            $recap['summary']['tunjangan'] ?? 0,
+            $recap['summary']['potongan_telat'] ?? 0,
+            $recap['summary']['potongan_alpha'] ?? 0,
+            $recap['summary']['potongan_unpaid_leave'] ?? 0,
+            $recap['summary']['potongan_kasbon'] ?? 0,
+            $recap['summary']['gaji_lembur'] ?? 0,
+            $recap['summary']['service_charge'] ?? 0,
+            $recap['summary']['uang_makan'] ?? 0,
+            $recap['summary']['ph_bonus'] ?? 0,
+            $recap['summary']['lb_total'] ?? 0,
+            $recap['summary']['deviasi_total'] ?? 0,
+            $recap['summary']['city_ledger_total'] ?? 0,
+            $recap['summary']['custom_earnings_gajian1'] ?? 0,
+            $recap['summary']['custom_deductions_gajian1'] ?? 0,
+            $recap['summary']['custom_earnings_gajian2'] ?? 0,
+            $recap['summary']['custom_deductions_gajian2'] ?? 0,
             $recap['summary']['total_gaji_1'],
             $recap['summary']['total_gaji_2'],
             $recap['summary']['grand_total_gaji'],
@@ -76,30 +133,30 @@ class PayrollRecapController extends Controller
             'font' => ['bold' => true, 'size' => 14],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
-        $sheet->getStyle('A4:E4')->applyFromArray([
+        $sheet->getStyle('A4:V4')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '1E293B']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         $endRow = max($totalRow, 5);
-        $sheet->getStyle("A4:E{$endRow}")
+        $sheet->getStyle("A4:V{$endRow}")
             ->getBorders()
             ->getAllBorders()
             ->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->getStyle("B5:E{$endRow}")
+        $sheet->getStyle("B5:V{$endRow}")
             ->getNumberFormat()
             ->setFormatCode('#,##0');
-        $sheet->getStyle("B5:E{$endRow}")
+        $sheet->getStyle("B5:V{$endRow}")
             ->getAlignment()
             ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle("A{$totalRow}:E{$totalRow}")->applyFromArray([
+        $sheet->getStyle("A{$totalRow}:V{$totalRow}")->applyFromArray([
             'font' => ['bold' => true],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => 'E2E8F0']],
         ]);
 
-        for ($i = 1; $i <= 5; $i++) {
+        for ($i = 1; $i <= 22; $i++) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i))->setAutoSize(true);
         }
 
@@ -131,6 +188,23 @@ class PayrollRecapController extends Controller
         $totalGaji2 = 0.0;
         $totalGrand = 0.0;
         $totalBpjs = 0.0;
+        $totalGapok = 0.0;
+        $totalTunjangan = 0.0;
+        $totalTelat = 0.0;
+        $totalAlpha = 0.0;
+        $totalUnpaidLeave = 0.0;
+        $totalKasbon = 0.0;
+        $totalLembur = 0.0;
+        $totalServiceCharge = 0.0;
+        $totalUangMakan = 0.0;
+        $totalPhBonus = 0.0;
+        $totalLb = 0.0;
+        $totalDeviasi = 0.0;
+        $totalCityLedger = 0.0;
+        $totalCustomEarnG1 = 0.0;
+        $totalCustomDedG1 = 0.0;
+        $totalCustomEarnG2 = 0.0;
+        $totalCustomDedG2 = 0.0;
 
         foreach ($payrolls as $payroll) {
             $details = DB::table('payroll_generated_details')
@@ -159,6 +233,23 @@ class PayrollRecapController extends Controller
             $gaji1 = 0.0;
             $gaji2 = 0.0;
             $bpjs = 0.0;
+            $gapok = 0.0;
+            $tunjangan = 0.0;
+            $telat = 0.0;
+            $alpha = 0.0;
+            $unpaidLeave = 0.0;
+            $kasbon = 0.0;
+            $lembur = 0.0;
+            $serviceCharge = 0.0;
+            $uangMakan = 0.0;
+            $phBonus = 0.0;
+            $lbTotal = 0.0;
+            $deviasiTotal = 0.0;
+            $cityLedgerTotal = 0.0;
+            $customEarnG1 = 0.0;
+            $customDedG1 = 0.0;
+            $customEarnG2 = 0.0;
+            $customDedG2 = 0.0;
 
             foreach ($details as $detail) {
                 $customSums = $this->resolveCustomGajianSums($detail->custom_items);
@@ -184,6 +275,24 @@ class PayrollRecapController extends Controller
                     'city_ledger_total' => $detail->city_ledger_total ?? 0,
                 ]);
 
+                $gapok += (float) ($detail->gaji_pokok ?? 0);
+                $tunjangan += (float) ($detail->tunjangan ?? 0);
+                $telat += (float) ($detail->potongan_telat ?? 0);
+                $alpha += (float) ($detail->potongan_alpha ?? 0);
+                $unpaidLeave += (float) ($detail->potongan_unpaid_leave ?? 0);
+                $kasbon += (float) ($detail->potongan_kasbon ?? 0);
+                $lembur += (float) ($detail->gaji_lembur ?? 0);
+                $serviceCharge += (float) ($detail->service_charge ?? 0);
+                $uangMakan += (float) ($detail->uang_makan ?? 0);
+                $phBonus += (float) ($detail->ph_bonus ?? 0);
+                $lbTotal += (float) ($detail->lb_total ?? 0);
+                $deviasiTotal += (float) ($detail->deviasi_total ?? 0);
+                $cityLedgerTotal += (float) ($detail->city_ledger_total ?? 0);
+                $customEarnG1 += (float) ($customSums['custom_earnings_gajian1'] ?? 0);
+                $customDedG1 += (float) ($customSums['custom_deductions_gajian1'] ?? 0);
+                $customEarnG2 += (float) ($customSums['custom_earnings_gajian2'] ?? 0);
+                $customDedG2 += (float) ($customSums['custom_deductions_gajian2'] ?? 0);
+
                 $gaji1 += (float) ($split['total_gaji_akhir_bulan'] ?? 0);
                 $gaji2 += (float) ($split['total_gaji_tanggal_8'] ?? 0);
 
@@ -199,9 +308,43 @@ class PayrollRecapController extends Controller
             $gaji2 = round($gaji2);
             $bpjs = round($bpjs);
             $grand = $gaji1 + $gaji2;
+            $gapok = round($gapok);
+            $tunjangan = round($tunjangan);
+            $telat = round($telat);
+            $alpha = round($alpha);
+            $unpaidLeave = round($unpaidLeave);
+            $kasbon = round($kasbon);
+            $lembur = round($lembur);
+            $serviceCharge = round($serviceCharge);
+            $uangMakan = round($uangMakan);
+            $phBonus = round($phBonus);
+            $lbTotal = round($lbTotal);
+            $deviasiTotal = round($deviasiTotal);
+            $cityLedgerTotal = round($cityLedgerTotal);
+            $customEarnG1 = round($customEarnG1);
+            $customDedG1 = round($customDedG1);
+            $customEarnG2 = round($customEarnG2);
+            $customDedG2 = round($customDedG2);
 
             $rows[] = [
                 'outlet' => $payroll->outlet_name ?: 'Unknown Outlet',
+                'gapok' => $gapok,
+                'tunjangan' => $tunjangan,
+                'potongan_telat' => $telat,
+                'potongan_alpha' => $alpha,
+                'potongan_unpaid_leave' => $unpaidLeave,
+                'potongan_kasbon' => $kasbon,
+                'gaji_lembur' => $lembur,
+                'service_charge' => $serviceCharge,
+                'uang_makan' => $uangMakan,
+                'ph_bonus' => $phBonus,
+                'lb_total' => $lbTotal,
+                'deviasi_total' => $deviasiTotal,
+                'city_ledger_total' => $cityLedgerTotal,
+                'custom_earnings_gajian1' => $customEarnG1,
+                'custom_deductions_gajian1' => $customDedG1,
+                'custom_earnings_gajian2' => $customEarnG2,
+                'custom_deductions_gajian2' => $customDedG2,
                 'total_gaji_1' => $gaji1,
                 'total_gaji_2' => $gaji2,
                 'grand_total_gaji' => $grand,
@@ -212,6 +355,23 @@ class PayrollRecapController extends Controller
             $totalGaji2 += $gaji2;
             $totalGrand += $grand;
             $totalBpjs += $bpjs;
+            $totalGapok += $gapok;
+            $totalTunjangan += $tunjangan;
+            $totalTelat += $telat;
+            $totalAlpha += $alpha;
+            $totalUnpaidLeave += $unpaidLeave;
+            $totalKasbon += $kasbon;
+            $totalLembur += $lembur;
+            $totalServiceCharge += $serviceCharge;
+            $totalUangMakan += $uangMakan;
+            $totalPhBonus += $phBonus;
+            $totalLb += $lbTotal;
+            $totalDeviasi += $deviasiTotal;
+            $totalCityLedger += $cityLedgerTotal;
+            $totalCustomEarnG1 += $customEarnG1;
+            $totalCustomDedG1 += $customDedG1;
+            $totalCustomEarnG2 += $customEarnG2;
+            $totalCustomDedG2 += $customDedG2;
         }
 
         return [
@@ -219,6 +379,23 @@ class PayrollRecapController extends Controller
             'year' => $year,
             'rows' => $rows,
             'summary' => [
+                'gapok' => round($totalGapok),
+                'tunjangan' => round($totalTunjangan),
+                'potongan_telat' => round($totalTelat),
+                'potongan_alpha' => round($totalAlpha),
+                'potongan_unpaid_leave' => round($totalUnpaidLeave),
+                'potongan_kasbon' => round($totalKasbon),
+                'gaji_lembur' => round($totalLembur),
+                'service_charge' => round($totalServiceCharge),
+                'uang_makan' => round($totalUangMakan),
+                'ph_bonus' => round($totalPhBonus),
+                'lb_total' => round($totalLb),
+                'deviasi_total' => round($totalDeviasi),
+                'city_ledger_total' => round($totalCityLedger),
+                'custom_earnings_gajian1' => round($totalCustomEarnG1),
+                'custom_deductions_gajian1' => round($totalCustomDedG1),
+                'custom_earnings_gajian2' => round($totalCustomEarnG2),
+                'custom_deductions_gajian2' => round($totalCustomDedG2),
                 'total_gaji_1' => round($totalGaji1),
                 'total_gaji_2' => round($totalGaji2),
                 'grand_total_gaji' => round($totalGrand),
