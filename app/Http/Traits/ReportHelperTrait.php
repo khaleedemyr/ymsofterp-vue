@@ -344,9 +344,27 @@ trait ReportHelperTrait
             return collect();
         }
 
+        $nonPosPriceExpr = "(SELECT ipx.price
+            FROM item_prices ipx
+            WHERE ipx.item_id = si.item_id
+              AND ipx.availability_price_type = 'all'
+              AND ipx.region_id IS NULL
+              AND ipx.outlet_id IS NULL
+            ORDER BY ipx.id DESC
+            LIMIT 1)";
+        $effectivePriceExpr = "COALESCE(
+            CASE
+                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
+                ELSE si.cost_small
+            END,
+            si.cost_small,
+            0
+        )";
+
         $query = DB::table('outlet_serial_receive_headers as h')
             ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
             ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
@@ -360,7 +378,7 @@ trait ReportHelperTrait
                 'it.name as item_name',
                 'sc.name as sub_category',
                 'w.name as warehouse',
-                DB::raw('SUM(si.qty * COALESCE(si.cost_small, 0)) as item_subtotal')
+                DB::raw("SUM(si.qty * {$effectivePriceExpr}) as item_subtotal")
             );
 
         if ($from) {
@@ -499,6 +517,23 @@ trait ReportHelperTrait
             return collect();
         }
 
+        $nonPosPriceExpr = "(SELECT ipx.price
+            FROM item_prices ipx
+            WHERE ipx.item_id = si.item_id
+              AND ipx.availability_price_type = 'all'
+              AND ipx.region_id IS NULL
+              AND ipx.outlet_id IS NULL
+            ORDER BY ipx.id DESC
+            LIMIT 1)";
+        $effectivePriceExpr = "COALESCE(
+            CASE
+                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
+                ELSE si.cost_small
+            END,
+            si.cost_small,
+            0
+        )";
+
         $query = DB::table('outlet_serial_receive_headers as h')
             ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
             ->join('items as it', 'si.item_id', '=', 'it.id')
@@ -521,8 +556,8 @@ trait ReportHelperTrait
             'cat.name as category',
             'u.name as unit',
             DB::raw('SUM(si.qty) as received_qty'),
-            DB::raw('AVG(COALESCE(si.cost_small, 0)) as price'),
-            DB::raw('SUM(si.qty * COALESCE(si.cost_small, 0)) as subtotal')
+            DB::raw("AVG({$effectivePriceExpr}) as price"),
+            DB::raw("SUM(si.qty * {$effectivePriceExpr}) as subtotal")
         )
             ->groupBy('it.name', 'cat.name', 'u.name')
             ->orderBy('cat.name')
