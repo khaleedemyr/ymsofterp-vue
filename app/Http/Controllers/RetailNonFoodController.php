@@ -110,7 +110,8 @@ class RetailNonFoodController extends Controller
         
         // Ambil category budgets (hanya yang GLOBAL)
         // Urutkan ascending berdasarkan divisi, kemudian nama category
-        $categoryBudgets = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')
+        $categoryBudgets = PurchaseRequisitionCategory::active()
+            ->where('budget_type', 'GLOBAL')
             ->orderBy('division', 'asc')
             ->orderBy('name', 'asc')
             ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description']);
@@ -676,7 +677,8 @@ class RetailNonFoodController extends Controller
             $outletId = $request->input('outlet_id');
 
             // Ambil category budgets dengan budget_type GLOBAL
-            $globalCategories = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')
+            $globalCategories = PurchaseRequisitionCategory::active()
+                ->where('budget_type', 'GLOBAL')
                 ->orderBy('division', 'asc')
                 ->orderBy('name', 'asc')
                 ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description', 'budget_type']);
@@ -689,7 +691,8 @@ class RetailNonFoodController extends Controller
                     ->toArray();
                 
                 if (!empty($perOutletCategoryIds)) {
-                    $perOutletCategories = PurchaseRequisitionCategory::where('budget_type', 'PER_OUTLET')
+                    $perOutletCategories = PurchaseRequisitionCategory::active()
+                        ->where('budget_type', 'PER_OUTLET')
                         ->whereIn('id', $perOutletCategoryIds)
                         ->orderBy('division', 'asc')
                         ->orderBy('name', 'asc')
@@ -932,7 +935,8 @@ class RetailNonFoodController extends Controller
             $outlets = Outlet::where('id_outlet', $userOutletId)->where('status', 'A')->get(['id_outlet', 'nama_outlet']);
         }
 
-        $categoryBudgets = PurchaseRequisitionCategory::where('budget_type', 'GLOBAL')
+        $categoryBudgets = PurchaseRequisitionCategory::active()
+            ->where('budget_type', 'GLOBAL')
             ->orderBy('division', 'asc')
             ->orderBy('name', 'asc')
             ->get(['id', 'name', 'division', 'subcategory', 'budget_limit', 'description']);
