@@ -34,6 +34,13 @@ class OmniFlowRunner
             return;
         }
 
+        // Jangan trigger flow dari pesan yang dikirim oleh otomasi itu sendiri
+        // (echo WA/IG bisa masuk sebagai inbound dan menyebabkan loop tak berujung)
+        $payload = is_array($message->payload) ? $message->payload : [];
+        if (! empty($payload['omni_flow_automation'])) {
+            return;
+        }
+
         if (OmniFlowRun::query()
             ->where('conversation_id', $conversationId)
             ->where('status', 'running')
@@ -51,6 +58,26 @@ class OmniFlowRunner
         foreach ($flows as $flow) {
             if ($flow->channel && $flow->channel !== $conversation->channel) {
                 continue;
+            }
+
+            // Cooldown: jika flow yang sama sudah selesai (completed) di conversation
+            // ini dalam 1 jam terakhir, skip — mencegah loop karena kata trigger ada
+            // di pesan balasan bot yang di-quote/forward kembali oleh customer.
+            // Default 60 menit; naikkan jika perlu dengan menambah kolom cooldown_minutes di omni_flows.
+            $cooldownMinutes = isset($flow->cooldown_minutes) && (int) $flow->cooldown_minutes > 0
+                ? (int) $flow->cooldown_minutes
+                : 60;
+            if ($cooldownMinutes > 0) {
+                $alreadyRan = OmniFlowRun::query()
+                    ->where('flow_id', $flow->id)
+                    ->where('conversation_id', $conversationId)
+                    ->where('status', 'completed')
+                    ->where('finished_at', '>=', now()->subMinutes($cooldownMinutes))
+                    ->exists();
+
+                if ($alreadyRan) {
+                    continue;
+                }
             }
 
             if ($this->tryStartFlow($flow, $conversation, $message)) {
