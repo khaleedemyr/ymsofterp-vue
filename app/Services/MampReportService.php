@@ -26,7 +26,6 @@ class MampReportService
         $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
 
         $monthlyBudget = (float) ($category->budget_limit ?? 0);
-        $openingCarry = $this->recursiveCarryBeforeMonth($categoryId, $year, $month);
 
         $rows = [];
         $no = 1;
@@ -38,17 +37,6 @@ class MampReportService
             $this->saldoAwalLabel($category, $periodStart),
             $monthlyBudget
         );
-
-        if (abs($openingCarry) > 0.0001) {
-            $prevMonth = $periodStart->copy()->subMonth();
-            $rows[] = $this->debitRow(
-                $no++,
-                $periodStart->format('Y-m-d'),
-                'SALDO AWAL',
-                'SISA SALDO ' . strtoupper($this->monthNameId($prevMonth->month)) . ' ' . $prevMonth->year,
-                $openingCarry
-            );
-        }
 
         $credits = $this->fetchCreditLines($categoryId, $dateFrom, $dateTo);
         foreach ($credits as $line) {
@@ -66,7 +54,7 @@ class MampReportService
 
         $totalDebit = collect($rows)->sum(fn ($r) => (float) ($r['debit'] ?? 0));
         $totalCredit = collect($rows)->sum(fn ($r) => (float) ($r['credit'] ?? 0));
-        $endingBalance = $openingCarry + $monthlyBudget - $totalCredit;
+        $endingBalance = $monthlyBudget - $totalCredit;
 
         return [
             'category' => [
@@ -82,91 +70,15 @@ class MampReportService
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'label' => strtoupper($this->monthNameId($month)) . ' ' . $year,
-                'prev_label' => strtoupper($this->monthNameId($periodStart->copy()->subMonth()->month)) . ' ' . $periodStart->copy()->subMonth()->year,
             ],
             'rows' => $rows,
             'summary' => [
-                'opening_carry' => round($openingCarry, 2),
                 'monthly_budget' => round($monthlyBudget, 2),
                 'total_debit' => round($totalDebit, 2),
                 'total_credit' => round($totalCredit, 2),
                 'ending_balance' => round($endingBalance, 2),
             ],
         ];
-    }
-
-    /**
-     * Saldo akhir bulan terakhir sebelum periode laporan (rekursif dari awal data).
-     */
-    public function recursiveCarryBeforeMonth(int $categoryId, int $year, int $month): float
-    {
-        $category = PurchaseRequisitionCategory::query()->find($categoryId);
-        if (! $category) {
-            return 0.0;
-        }
-
-        $monthlyBudget = (float) ($category->budget_limit ?? 0);
-        $firstActivity = $this->firstActivityMonth($categoryId);
-        if (! $firstActivity) {
-            return 0.0;
-        }
-
-        $cursor = Carbon::create($firstActivity['year'], $firstActivity['month'], 1)->startOfMonth();
-        $target = Carbon::create($year, $month, 1)->startOfMonth();
-
-        $balance = 0.0;
-        while ($cursor->lt($target)) {
-            $from = $cursor->copy()->startOfMonth()->format('Y-m-d');
-            $to = $cursor->copy()->endOfMonth()->format('Y-m-d');
-            $credits = $this->sumCreditsForPeriod($categoryId, $from, $to);
-            $balance = $balance + $monthlyBudget - $credits;
-            $cursor->addMonth();
-        }
-
-        return $balance;
-    }
-
-    private function firstActivityMonth(int $categoryId): ?array
-    {
-        $dates = [];
-
-        $rnf = DB::table('retail_non_food')
-            ->where('category_budget_id', $categoryId)
-            ->where('status', 'approved')
-            ->min('transaction_date');
-
-        if ($rnf) {
-            $dates[] = $rnf;
-        }
-
-        $nfp = DB::table('non_food_payment_outlets as nfpo')
-            ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
-            ->where('nfpo.category_id', $categoryId)
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->min('nfp.payment_date');
-
-        if ($nfp) {
-            $dates[] = $nfp;
-        }
-
-        $category = PurchaseRequisitionCategory::find($categoryId);
-        if ($category?->created_at) {
-            $dates[] = Carbon::parse($category->created_at)->format('Y-m-d');
-        }
-
-        if (empty($dates)) {
-            return null;
-        }
-
-        $min = collect($dates)->filter()->min();
-        $c = Carbon::parse($min);
-
-        return ['year' => (int) $c->year, 'month' => (int) $c->month];
-    }
-
-    private function sumCreditsForPeriod(int $categoryId, string $dateFrom, string $dateTo): float
-    {
-        return (float) $this->fetchCreditLines($categoryId, $dateFrom, $dateTo)->sum('amount');
     }
 
     private function fetchCreditLines(int $categoryId, string $dateFrom, string $dateTo): Collection

@@ -64,14 +64,10 @@
       <div v-else-if="!filters.category_id" class="text-center text-gray-500 py-12">Pilih category untuk menampilkan report.</div>
 
       <template v-else-if="report">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div class="bg-white rounded-xl shadow p-4 border-l-4 border-blue-500">
             <p class="text-xs text-gray-500">Budget bulan ini (Db)</p>
             <p class="text-lg font-bold">{{ formatCurrency(report.summary.monthly_budget) }}</p>
-          </div>
-          <div class="bg-white rounded-xl shadow p-4 border-l-4 border-amber-500">
-            <p class="text-xs text-gray-500">Sisa saldo bulan sebelumnya</p>
-            <p class="text-lg font-bold">{{ formatCurrency(report.summary.opening_carry) }}</p>
           </div>
           <div class="bg-white rounded-xl shadow p-4 border-l-4 border-red-500">
             <p class="text-xs text-gray-500">Total Cr (keluar)</p>
