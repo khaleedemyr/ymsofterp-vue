@@ -298,8 +298,13 @@ class StockCutController extends Controller
             
             $warehouseMap[$oi->item_id] = $warehouse->id;
             
-            // Ambil BOM
-            $boms = DB::table('item_bom')->where('item_id', $oi->item_id)->get();
+            // Ambil BOM (hanya baris yang ikut stock cut: stock_cut=0 / null)
+            $boms = DB::table('item_bom')
+                ->where('item_id', $oi->item_id)
+                ->where(function ($q) {
+                    $q->where('stock_cut', 0)->orWhereNull('stock_cut');
+                })
+                ->get();
             foreach ($boms as $bom) {
                 $key = $bom->material_item_id . '-' . $warehouse->id;
                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
@@ -329,6 +334,9 @@ class StockCutController extends Controller
                                     $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
                                     if (is_array($modifierBom)) {
                                         foreach ($modifierBom as $bomItem) {
+                                            if (! $this->isBomLineCountedForStock($bomItem['stock_cut'] ?? null)) {
+                                                continue;
+                                            }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
                                                 // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
@@ -962,6 +970,9 @@ class StockCutController extends Controller
             $boms = DB::table('item_bom')
                 ->join('units', 'item_bom.unit_id', '=', 'units.id')
                 ->where('item_bom.item_id', $oi->item_id)
+                ->where(function ($q) {
+                    $q->where('item_bom.stock_cut', 0)->orWhereNull('item_bom.stock_cut');
+                })
                 ->select('item_bom.*', 'units.name as unit_name')
                 ->get();
             
@@ -1038,6 +1049,9 @@ class StockCutController extends Controller
                                     $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
                                     if (is_array($modifierBom)) {
                                         foreach ($modifierBom as $bomItem) {
+                                            if (! $this->isBomLineCountedForStock($bomItem['stock_cut'] ?? null)) {
+                                                continue;
+                                            }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id . '-' . $bomItem['unit_id'];
                                                 if (!isset($kebutuhanBahan[$key])) {
@@ -1354,8 +1368,13 @@ class StockCutController extends Controller
             
             $warehouseMap[$oi->item_id] = $warehouse->id;
             
-            // Ambil BOM
-            $boms = DB::table('item_bom')->where('item_id', $oi->item_id)->get();
+            // Ambil BOM (hanya baris yang ikut stock cut: stock_cut=0 / null)
+            $boms = DB::table('item_bom')
+                ->where('item_id', $oi->item_id)
+                ->where(function ($q) {
+                    $q->where('stock_cut', 0)->orWhereNull('stock_cut');
+                })
+                ->get();
             foreach ($boms as $bom) {
                 $key = $bom->material_item_id . '-' . $warehouse->id;
                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
@@ -1385,6 +1404,9 @@ class StockCutController extends Controller
                                     $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
                                     if (is_array($modifierBom)) {
                                         foreach ($modifierBom as $bomItem) {
+                                            if (! $this->isBomLineCountedForStock($bomItem['stock_cut'] ?? null)) {
+                                                continue;
+                                            }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
                                                 // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
@@ -2170,6 +2192,9 @@ class StockCutController extends Controller
                                     $modifierBom = json_decode($modifierOption->modifier_bom_json, true);
                                     if (is_array($modifierBom)) {
                                         foreach ($modifierBom as $bomItem) {
+                                            if (! $this->isBomLineCountedForStock($bomItem['stock_cut'] ?? null)) {
+                                                continue;
+                                            }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
                                                 // Ambil harga bahan baku modifier
                                                 $inventoryItem = DB::table('outlet_food_inventory_items')
@@ -2275,6 +2300,9 @@ class StockCutController extends Controller
             $boms = DB::table('item_bom')
                 ->join('units', 'item_bom.unit_id', '=', 'units.id')
                 ->where('item_bom.item_id', $oi->item_id)
+                ->where(function ($q) {
+                    $q->where('item_bom.stock_cut', 0)->orWhereNull('item_bom.stock_cut');
+                })
                 ->select('item_bom.*', 'units.name as unit_name')
                 ->get();
                 
@@ -2449,6 +2477,22 @@ class StockCutController extends Controller
             'outlet_id' => $id_outlet
         ]);
     }
+    /**
+     * Apakah baris BOM ikut dihitung saat stock cut.
+     * stock_cut=0 / null → Ya (ikut); stock_cut=1 → Tidak (abaikan). Selaras POS & Recipe Checker.
+     */
+    private function isBomLineCountedForStock($stockCut): bool
+    {
+        if ($stockCut === null || $stockCut === false || $stockCut === 0 || $stockCut === '0' || $stockCut === 'false' || $stockCut === '') {
+            return true;
+        }
+        if ($stockCut === true || $stockCut === 1 || $stockCut === '1' || $stockCut === 'true' || $stockCut === 'yes') {
+            return false;
+        }
+
+        return false;
+    }
+
     private function toNumeric($value): float
     {
         if (is_int($value) || is_float($value)) {
