@@ -278,26 +278,27 @@ trait ReportHelperTrait
     }
 
     /**
+     * Harga satuan GR Food di Rekap FJ: selalu dari food_floor_order_items (sama GR outlet & Cost Official).
+     */
+    protected function rekapFjFoodGrEffectivePriceSql(): string
+    {
+        return 'COALESCE(fo.price, 0)';
+    }
+
+    /**
+     * Harga satuan GR Serial di Rekap FJ: cost_small tersimpan saat GR (sumbernya floor order / PO).
+     */
+    protected function rekapFjSerialGrEffectivePriceSql(): string
+    {
+        return 'COALESCE(si.cost_small, 0)';
+    }
+
+    /**
      * Baris pivot Rekap FJ dari GR Food (harga food_floor_order) — logic tidak diubah.
      */
     protected function rekapFjFetchFoodGrPivotItemRows(?string $from, ?string $to): Collection
     {
-        $nonPosPriceExpr = "(SELECT ipx.price
-            FROM item_prices ipx
-            WHERE ipx.item_id = i.item_id
-              AND ipx.availability_price_type = 'all'
-              AND ipx.region_id IS NULL
-              AND ipx.outlet_id IS NULL
-            ORDER BY ipx.id DESC
-            LIMIT 1)";
-        $effectivePriceExpr = "COALESCE(
-            CASE
-                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
-                ELSE fo.price
-            END,
-            fo.price,
-            0
-        )";
+        $effectivePriceExpr = $this->rekapFjFoodGrEffectivePriceSql();
 
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -344,22 +345,7 @@ trait ReportHelperTrait
             return collect();
         }
 
-        $nonPosPriceExpr = "(SELECT ipx.price
-            FROM item_prices ipx
-            WHERE ipx.item_id = si.item_id
-              AND ipx.availability_price_type = 'all'
-              AND ipx.region_id IS NULL
-              AND ipx.outlet_id IS NULL
-            ORDER BY ipx.id DESC
-            LIMIT 1)";
-        $effectivePriceExpr = "COALESCE(
-            CASE
-                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
-                ELSE si.cost_small
-            END,
-            si.cost_small,
-            0
-        )";
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql();
 
         $query = DB::table('outlet_serial_receive_headers as h')
             ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
@@ -450,22 +436,7 @@ trait ReportHelperTrait
         $subCategoryCondition = null,
         ?array $excludeSubCategories = null
     ): Collection {
-        $nonPosPriceExpr = "(SELECT ipx.price
-            FROM item_prices ipx
-            WHERE ipx.item_id = i.item_id
-              AND ipx.availability_price_type = 'all'
-              AND ipx.region_id IS NULL
-              AND ipx.outlet_id IS NULL
-            ORDER BY ipx.id DESC
-            LIMIT 1)";
-        $effectivePriceExpr = "COALESCE(
-            CASE
-                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
-                ELSE fo.price
-            END,
-            fo.price,
-            0
-        )";
+        $effectivePriceExpr = $this->rekapFjFoodGrEffectivePriceSql();
 
         $query = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
@@ -517,22 +488,7 @@ trait ReportHelperTrait
             return collect();
         }
 
-        $nonPosPriceExpr = "(SELECT ipx.price
-            FROM item_prices ipx
-            WHERE ipx.item_id = si.item_id
-              AND ipx.availability_price_type = 'all'
-              AND ipx.region_id IS NULL
-              AND ipx.outlet_id IS NULL
-            ORDER BY ipx.id DESC
-            LIMIT 1)";
-        $effectivePriceExpr = "COALESCE(
-            CASE
-                WHEN cat.show_pos = '0' AND cat.is_asset = '0' THEN {$nonPosPriceExpr}
-                ELSE si.cost_small
-            END,
-            si.cost_small,
-            0
-        )";
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql();
 
         $query = DB::table('outlet_serial_receive_headers as h')
             ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
