@@ -1360,6 +1360,8 @@ class GoogleReviewController extends Controller
             $log = is_array($decoded) ? $decoded : [];
         }
 
+        $queueDiag = $this->aiReportQueueDiagnostics($id, $r);
+
         return response()->json([
             'success' => true,
             'status' => $r->status,
@@ -1371,7 +1373,48 @@ class GoogleReviewController extends Controller
             'progress_done' => (int) ($r->progress_done ?? 0),
             'progress_phase' => $r->progress_phase ?? null,
             'progress_log' => $log,
+            'queue_connection' => $queueDiag['queue_connection'],
+            'process_queue' => $queueDiag['process_queue'],
+            'jobs_pending_in_queue' => $queueDiag['jobs_pending_in_queue'],
+            'stuck_hint' => $queueDiag['stuck_hint'],
         ]);
+    }
+
+    /**
+     * Bantu debug laporan AI stuck di "pending" (biasanya worker antrian tidak jalan).
+     *
+     * @return array{queue_connection: string, process_queue: string, jobs_pending_in_queue: int|null, stuck_hint: string|null}
+     */
+    protected function aiReportQueueDiagnostics(int $reportId, object $report): array
+    {
+        $connection = (string) config('queue.default', 'sync');
+        $queueName = (string) config('google_review.process_queue', 'google-review-ai');
+        $jobsPending = null;
+        $stuckHint = null;
+
+        if ($connection === 'database' && Schema::hasTable('jobs')) {
+            $jobsPending = (int) DB::table('jobs')->where('queue', $queueName)->count();
+        }
+
+        if ($report->status === 'pending') {
+            $logEmpty = empty($report->progress_log) || $report->progress_log === '[]';
+            $ageSec = $report->created_at
+                ? now()->diffInSeconds(\Illuminate\Support\Carbon::parse($report->created_at))
+                : 0;
+            if ($logEmpty && $ageSec >= 20) {
+                $stuckHint = 'Job klasifikasi AI belum dijalankan. Worker antrian '
+                    .'(`php artisan queue:work` / Supervisor) harus memproses antrean «'.$queueName.'». '
+                    .'Di server: `php artisan google-review:process-ai-report '.$reportId.'` '
+                    .'atau set `GOOGLE_REVIEW_AI_DISPATCH_SYNC=true` di .env lalu buat laporan baru.';
+            }
+        }
+
+        return [
+            'queue_connection' => $connection,
+            'process_queue' => $queueName,
+            'jobs_pending_in_queue' => $jobsPending,
+            'stuck_hint' => $stuckHint,
+        ];
     }
 
     public function aiReportShow(Request $request, int $id)
@@ -1583,6 +1626,8 @@ class GoogleReviewController extends Controller
             $initialLog = is_array($decoded) ? $decoded : [];
         }
 
+        $queueDiag = $this->aiReportQueueDiagnostics($id, $report);
+
         return Inertia::render('google-review/AiReportShow', [
             'report' => [
                 'id' => $report->id,
@@ -1608,6 +1653,7 @@ class GoogleReviewController extends Controller
             'filters' => [
                 'severity' => $severity ?? '',
             ],
+            'queueDiagnostics' => $queueDiag,
         ]);
     }
 

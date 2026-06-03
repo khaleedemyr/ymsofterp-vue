@@ -27,6 +27,12 @@
             <span v-if="polling" class="poll">Memperbarui…</span>
           </div>
 
+          <div v-if="queueStuckHint" class="queue-hint">
+            <strong>Antrian belum diproses</strong>
+            <p>{{ queueStuckHint }}</p>
+            <p v-if="queueMeta" class="queue-meta">{{ queueMeta }}</p>
+          </div>
+
           <div v-if="live.status === 'pending' || live.status === 'processing'" class="progress-block">
             <div class="progress-top">
               <span class="phase">{{ phaseLabel(live.progress_phase) }}</span>
@@ -174,6 +180,7 @@ const props = defineProps({
   report: { type: Object, required: true },
   items: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
+  queueDiagnostics: { type: Object, default: null },
 })
 
 const severity = ref(props.filters.severity || '')
@@ -196,6 +203,20 @@ function syncLiveFromReport(r) {
 }
 
 const live = ref(syncLiveFromReport(props.report))
+const queueStuckHint = ref(null)
+const queueMeta = ref(null)
+
+function applyQueueDiagnostics(diag) {
+  if (!diag) return
+  queueStuckHint.value = diag.stuck_hint || null
+  const parts = []
+  if (diag.queue_connection) parts.push(`Koneksi: ${diag.queue_connection}`)
+  if (diag.process_queue) parts.push(`Antrean: ${diag.process_queue}`)
+  if (diag.jobs_pending_in_queue != null) parts.push(`Job menunggu: ${diag.jobs_pending_in_queue}`)
+  queueMeta.value = parts.length ? parts.join(' · ') : null
+}
+
+applyQueueDiagnostics(props.queueDiagnostics)
 
 const progressPercent = computed(() => {
   const t = Number(live.value.progress_total) || 0
@@ -230,6 +251,7 @@ function sourceLabel(s) {
     apify_dataset: 'Apify (dataset)',
     places_api: 'Google Places API',
     scraper_inline: 'File scraper / inline',
+    manual_db: 'Manual Google Review',
     instagram_comments_db: 'Instagram comments (database)',
   }
   return m[s] || s
@@ -340,8 +362,17 @@ function startPoll() {
       live.value.progress_phase = j.progress_phase ?? null
       live.value.progress_log = Array.isArray(j.progress_log) ? j.progress_log : []
       if (j.error_message) live.value.error_message = j.error_message
+      queueStuckHint.value = j.stuck_hint || null
+      if (j.queue_connection || j.process_queue != null) {
+        const parts = []
+        if (j.queue_connection) parts.push(`Koneksi: ${j.queue_connection}`)
+        if (j.process_queue) parts.push(`Antrean: ${j.process_queue}`)
+        if (j.jobs_pending_in_queue != null) parts.push(`Job menunggu: ${j.jobs_pending_in_queue}`)
+        queueMeta.value = parts.length ? parts.join(' · ') : null
+      }
 
       if (j.status === 'completed' || j.status === 'failed') {
+        queueStuckHint.value = null
         if (timer) clearInterval(timer)
         timer = null
         polling.value = false
@@ -455,6 +486,23 @@ onUnmounted(() => {
 .poll {
   font-size: 12px;
   color: #2563eb;
+}
+.queue-hint {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  font-size: 13px;
+  color: #9a3412;
+}
+.queue-hint p {
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+.queue-meta {
+  font-size: 12px;
+  color: #78716c;
 }
 .progress-block {
   margin: 12px 0 14px;
