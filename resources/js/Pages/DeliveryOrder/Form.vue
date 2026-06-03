@@ -250,6 +250,21 @@ const scannedSerials = reactive({});  // { item_id: [{ serial_number, effective_
 
 const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr => arr && arr.length > 0));
 
+/** Qty serial dalam unit packing list (1 SN "1 Pack = 10 Roll" → +1 Pack, bukan +10). */
+function effectiveQtyForPackingList(serial, packingUnit) {
+  const raw = Number(serial.effective_qty) || 1;
+  const repackUnit = String(serial.repack_unit_name || '').trim().toLowerCase();
+  const docUnit = String(packingUnit || '').trim().toLowerCase();
+  if (repackUnit && docUnit && repackUnit === docUnit) {
+    return 1;
+  }
+  const serialUnit = String(serial.unit_name || '').trim().toLowerCase();
+  if (serialUnit && docUnit && serialUnit === docUnit) {
+    return raw;
+  }
+  return raw;
+}
+
 function getSerialQtySum(item) {
   const itemId = item.item_id || item.id;
   const serials = scannedSerials[itemId] || [];
@@ -381,10 +396,10 @@ function applySerialScan(serialNumber, serial) {
     scanFeedbackClass.value = 'text-red-600';
     return;
   }
-  const effectiveQty = Number(serial.effective_qty) || 1;
+  const effectiveQty = effectiveQtyForPackingList(serial, matchedItem.unit);
   const remainingSerial = Number(matchedItem.qty) - (Number(matchedItem.qty_scan_barcode) || 0) - getSerialQtySum(matchedItem);
   if (effectiveQty > remainingSerial + 0.001) {
-    scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit})`;
+    scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit}, scan ini: +${effectiveQty.toFixed(2)})`;
     scanFeedbackClass.value = 'text-red-600';
     return;
   }

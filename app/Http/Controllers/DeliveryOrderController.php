@@ -2424,7 +2424,12 @@ class DeliveryOrderController extends Controller
             ->first();
 
         if ($serial) {
-            $validation = $this->validateSerialForDeliveryOrder($code, $warehouseId, $itemIds);
+            $validation = $this->validateSerialForDeliveryOrder(
+                $code,
+                $warehouseId,
+                $itemIds,
+                (string) $request->packing_list_id
+            );
             if (!$validation['valid']) {
                 return response()->json([
                     'type' => 'serial',
@@ -2484,15 +2489,51 @@ class DeliveryOrderController extends Controller
         $warehouseId = (int) $request->warehouse_id;
         $itemIds = array_map('intval', $request->item_ids);
 
-        $validation = $this->validateSerialForDeliveryOrder($serialNumber, $warehouseId, $itemIds);
+        $validation = $this->validateSerialForDeliveryOrder(
+            $serialNumber,
+            $warehouseId,
+            $itemIds,
+            (string) $request->packing_list_id
+        );
 
         return response()->json($validation, 200);
     }
 
     /**
+     * Unit baris packing list / RO GR untuk item (untuk konversi qty scan serial).
+     */
+    private function resolvePackingListItemUnit(string $packingListId, int $itemId): ?string
+    {
+        if ($packingListId === '') {
+            return null;
+        }
+
+        if (strpos($packingListId, 'gr_') === 0) {
+            $grId = substr($packingListId, 3);
+
+            return DB::table('food_good_receive_items as fgri')
+                ->join('units as u', 'u.id', '=', 'fgri.unit_id')
+                ->where('fgri.good_receive_id', $grId)
+                ->where('fgri.item_id', $itemId)
+                ->value('u.name');
+        }
+
+        return DB::table('food_packing_list_items as fpli')
+            ->join('food_floor_order_items as ffoi', 'ffoi.id', '=', 'fpli.food_floor_order_item_id')
+            ->where('fpli.packing_list_id', $packingListId)
+            ->where('ffoi.item_id', $itemId)
+            ->value('fpli.unit');
+    }
+
+    /**
      * Shared serial validation for DO scan (validate-serial & resolve-scan).
      */
-    private function validateSerialForDeliveryOrder(string $serialNumber, int $warehouseId, array $itemIds): array
+    private function validateSerialForDeliveryOrder(
+        string $serialNumber,
+        int $warehouseId,
+        array $itemIds,
+        ?string $packingListId = null
+    ): array
     {
         $serial = DB::table('inventory_item_serials as s')
             ->leftJoin('items as i', 's.item_id', '=', 'i.id')
@@ -2546,12 +2587,16 @@ class DeliveryOrderController extends Controller
             ];
         }
 
-        $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
+        $packingUnit = $packingListId
+            ? $this->resolvePackingListItemUnit($packingListId, (int) $serial->item_id)
+            : null;
+        $physicalQty = InventorySerialEffectiveQty::resolve($serial);
+        $effectiveQty = InventorySerialEffectiveQty::resolveForDocumentUnit($serial, $packingUnit);
         $repackQtyForDisplay = (float) ($serial->repack_qty ?? 0) > 0
             ? (float) $serial->repack_qty
-            : (($serial->source_type ?? '') === 'repack' ? $effectiveQty : null);
+            : (($serial->source_type ?? '') === 'repack' ? $physicalQty : null);
         $repackUnitName = $serial->repack_unit_name
-            ?: ((($serial->source_type ?? '') === 'repack' && $effectiveQty > 1) ? $serial->unit_name : null);
+            ?: ((($serial->source_type ?? '') === 'repack' && $physicalQty > 1) ? $serial->unit_name : null);
 
         return [
             'valid' => true,
@@ -2569,6 +2614,8 @@ class DeliveryOrderController extends Controller
                 'repack_qty' => $repackQtyForDisplay,
                 'repack_unit_name' => $repackUnitName,
                 'effective_qty' => $effectiveQty,
+                'physical_qty' => $physicalQty,
+                'packing_unit' => $packingUnit,
             ],
         ];
     }
