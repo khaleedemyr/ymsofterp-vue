@@ -250,19 +250,28 @@ const scannedSerials = reactive({});  // { item_id: [{ serial_number, effective_
 
 const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr => arr && arr.length > 0));
 
-/** Qty serial dalam unit packing list (1 SN "1 Pack = 10 Roll" → +1 Pack, bukan +10). */
+/**
+ * Qty serial dalam unit packing list.
+ * - "1 Pack = 10 Roll" → +1 Pack per SN
+ * - "1 SN = 5 Kilogram" (unit serial = Kg) → +5 Kilogram per SN
+ */
 function effectiveQtyForPackingList(serial, packingUnit) {
-  const raw = Number(serial.effective_qty) || 1;
+  const physical = Number(serial.physical_qty ?? serial.repack_qty) || Number(serial.effective_qty) || 1;
   const repackUnit = String(serial.repack_unit_name || '').trim().toLowerCase();
   const docUnit = String(packingUnit || '').trim().toLowerCase();
-  if (repackUnit && docUnit && repackUnit === docUnit) {
+  const serialUnit = String(serial.unit_name || '').trim().toLowerCase();
+  // 1 SN = 1 Pack (repack_qty = faktor Roll per Pack)
+  if (repackUnit && docUnit && repackUnit === docUnit && serialUnit && serialUnit !== repackUnit) {
     return 1;
   }
-  const serialUnit = String(serial.unit_name || '').trim().toLowerCase();
+  // 1 SN = repack_qty dalam unit yang sama (mis. 5 Kilogram per SN)
   if (serialUnit && docUnit && serialUnit === docUnit) {
-    return raw;
+    return physical;
   }
-  return raw;
+  if (repackUnit && docUnit && repackUnit === docUnit) {
+    return physical;
+  }
+  return Number(serial.effective_qty) || physical;
 }
 
 function getSerialQtySum(item) {

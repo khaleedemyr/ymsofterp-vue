@@ -32,7 +32,9 @@ class InventorySerialEffectiveQty
 
     /**
      * Qty untuk dokumen (packing list DO, dll) dalam unit baris dokumen.
-     * Contoh: PL 2 Pack, serial "1 Pack = 10 Roll" → 1 per scan (bukan 10).
+     *
+     * - "1 Pack = 10 Roll" (unit serial Roll, label Pack): 1 SN = +1 Pack (bukan +10).
+     * - "1 SN = 5 Kilogram" (unit serial = Kilogram, repack_qty 5): 1 SN = +5 Kilogram.
      */
     public static function resolveForDocumentUnit(object $serial, ?string $documentUnitName): float
     {
@@ -45,11 +47,19 @@ class InventorySerialEffectiveQty
         $repackUnitName = trim((string) ($serial->repack_unit_name ?? ''));
         $serialUnitName = trim((string) ($serial->unit_name ?? ''));
 
-        if ($repackUnitName !== '' && strcasecmp($repackUnitName, $documentUnitName) === 0) {
+        // Satu SN = satu kemasan repack; repack_qty adalah faktor ke unit isi (Roll/Gram dll)
+        if ($repackUnitName !== ''
+            && strcasecmp($repackUnitName, $documentUnitName) === 0
+            && $serialUnitName !== ''
+            && strcasecmp($serialUnitName, $repackUnitName) !== 0) {
             return 1.0;
         }
 
         if ($serialUnitName !== '' && strcasecmp($serialUnitName, $documentUnitName) === 0) {
+            return $physical;
+        }
+
+        if ($repackUnitName !== '' && strcasecmp($repackUnitName, $documentUnitName) === 0) {
             return $physical;
         }
 
