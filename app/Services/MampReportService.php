@@ -42,6 +42,7 @@ class MampReportService
         foreach ($credits as $line) {
             $rows[] = [
                 'no' => $no++,
+                'row_key' => $line->row_key,
                 'date' => $line->transaction_date,
                 'date_label' => $this->formatDateLabel($line->transaction_date),
                 'outlet' => $line->outlet_name ?? '-',
@@ -49,6 +50,9 @@ class MampReportService
                 'debit' => null,
                 'credit' => (float) $line->amount,
                 'row_type' => 'credit',
+                'source_type' => $line->source_type,
+                'items' => $line->items,
+                'expandable' => count($line->items) > 0,
             ];
         }
 
@@ -83,33 +87,49 @@ class MampReportService
 
     private function fetchCreditLines(int $categoryId, string $dateFrom, string $dateTo): Collection
     {
-        $rnf = DB::table('retail_non_food as rnf')
+        $rnfRows = DB::table('retail_non_food as rnf')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'rnf.outlet_id')
             ->where('rnf.category_budget_id', $categoryId)
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
             ->where('rnf.status', 'approved')
             ->select(
+                'rnf.id',
                 'rnf.transaction_date',
                 'o.nama_outlet as outlet_name',
                 DB::raw('COALESCE(rnf.notes, rnf.retail_number, CONCAT("Retail Non Food ", rnf.retail_number)) as description'),
                 'rnf.total_amount as amount'
             )
-            ->get()
-            ->map(fn ($row) => (object) [
+            ->get();
+
+        $rnfItemsById = $this->fetchRetailNonFoodItems(
+            $rnfRows->pluck('id')->filter()->all()
+        );
+
+        $rnf = $rnfRows->map(function ($row) use ($rnfItemsById) {
+            $items = $rnfItemsById[$row->id] ?? [];
+
+            return (object) [
+                'row_key' => 'rnf_' . $row->id,
+                'source_type' => 'retail_non_food',
                 'transaction_date' => $row->transaction_date,
                 'outlet_name' => $row->outlet_name,
                 'description' => $row->description,
                 'amount' => (float) $row->amount,
+                'items' => $items,
                 'sort_key' => $row->transaction_date . '_1_' . $row->outlet_name,
-            ]);
+            ];
+        });
 
-        $nfp = DB::table('non_food_payment_outlets as nfpo')
+        $nfpRows = DB::table('non_food_payment_outlets as nfpo')
             ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'nfpo.outlet_id')
             ->where('nfpo.category_id', $categoryId)
             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
             ->whereIn('nfp.status', ['paid', 'approved'])
             ->select(
+                'nfpo.id as payment_outlet_id',
+                'nfp.purchase_order_ops_id',
+                'nfpo.outlet_id',
                 'nfp.payment_date as transaction_date',
                 'o.nama_outlet as outlet_name',
                 DB::raw("(
@@ -124,21 +144,36 @@ class MampReportService
                 'nfp.payment_number',
                 'nfpo.amount'
             )
-            ->get()
-            ->map(function ($row) {
-                $description = $row->pr_title ?: $row->notes;
-                if (! $description) {
-                    $description = 'Pembayaran ' . ($row->payment_number ?? 'NFP');
-                }
+            ->get();
 
-                return (object) [
-                    'transaction_date' => $row->transaction_date,
-                    'outlet_name' => $row->outlet_name,
-                    'description' => $description,
-                    'amount' => (float) $row->amount,
-                    'sort_key' => $row->transaction_date . '_2_' . $row->outlet_name,
-                ];
-            });
+        $nfpItemsByKey = $this->fetchNonFoodPaymentItems(
+            $categoryId,
+            $nfpRows->map(fn ($row) => [
+                'purchase_order_ops_id' => $row->purchase_order_ops_id,
+                'outlet_id' => $row->outlet_id,
+            ])->all()
+        );
+
+        $nfp = $nfpRows->map(function ($row) use ($nfpItemsByKey) {
+            $description = $row->pr_title ?: $row->notes;
+            if (! $description) {
+                $description = 'Pembayaran ' . ($row->payment_number ?? 'NFP');
+            }
+
+            $itemKey = $row->purchase_order_ops_id . '_' . ($row->outlet_id ?? 'null');
+            $items = $nfpItemsByKey[$itemKey] ?? [];
+
+            return (object) [
+                'row_key' => 'nfp_' . $row->payment_outlet_id,
+                'source_type' => 'non_food_payment',
+                'transaction_date' => $row->transaction_date,
+                'outlet_name' => $row->outlet_name,
+                'description' => $description,
+                'amount' => (float) $row->amount,
+                'items' => $items,
+                'sort_key' => $row->transaction_date . '_2_' . $row->outlet_name,
+            ];
+        });
 
         return $rnf->concat($nfp)
             ->sortBy([
@@ -148,10 +183,88 @@ class MampReportService
             ->values();
     }
 
+    /**
+     * @param  array<int>  $retailNonFoodIds
+     * @return array<int, array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>>
+     */
+    private function fetchRetailNonFoodItems(array $retailNonFoodIds): array
+    {
+        if ($retailNonFoodIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+
+        DB::table('retail_non_food_items')
+            ->whereIn('retail_non_food_id', $retailNonFoodIds)
+            ->orderBy('id')
+            ->get(['retail_non_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
+            ->each(function ($row) use (&$grouped) {
+                $grouped[(int) $row->retail_non_food_id][] = [
+                    'item' => $row->item_name ?? '-',
+                    'qty' => (float) ($row->qty ?? 0),
+                    'unit' => $row->unit,
+                    'price' => (float) ($row->price ?? 0),
+                    'subtotal' => (float) ($row->subtotal ?? 0),
+                ];
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @param  array<int, array{purchase_order_ops_id: mixed, outlet_id: mixed}>  $paymentRows
+     * @return array<string, array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>>
+     */
+    private function fetchNonFoodPaymentItems(int $categoryId, array $paymentRows): array
+    {
+        $poIds = collect($paymentRows)
+            ->pluck('purchase_order_ops_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($poIds === []) {
+            return [];
+        }
+
+        $items = DB::table('purchase_order_ops_items as poi')
+            ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+            ->whereIn('poi.purchase_order_ops_id', $poIds)
+            ->where('pri.category_id', $categoryId)
+            ->orderBy('poi.id')
+            ->get([
+                'poi.purchase_order_ops_id',
+                DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
+                'poi.item_name',
+                'poi.quantity',
+                'poi.unit',
+                'poi.price',
+                'poi.total',
+            ]);
+
+        $grouped = [];
+
+        foreach ($items as $row) {
+            $key = $row->purchase_order_ops_id . '_' . ($row->outlet_id ?? 'null');
+            $grouped[$key][] = [
+                'item' => $row->item_name ?? '-',
+                'qty' => (float) ($row->quantity ?? 0),
+                'unit' => $row->unit,
+                'price' => (float) ($row->price ?? 0),
+                'subtotal' => (float) ($row->total ?? 0),
+            ];
+        }
+
+        return $grouped;
+    }
+
     private function debitRow(int $no, string $date, string $outlet, string $description, float $amount): array
     {
         return [
             'no' => $no,
+            'row_key' => 'debit_' . $no,
             'date' => $date,
             'date_label' => $this->formatDateLabel($date),
             'outlet' => $outlet,
@@ -159,6 +272,9 @@ class MampReportService
             'debit' => $amount,
             'credit' => null,
             'row_type' => 'debit',
+            'source_type' => null,
+            'items' => [],
+            'expandable' => false,
         ];
     }
 

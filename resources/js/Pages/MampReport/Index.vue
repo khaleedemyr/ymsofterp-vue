@@ -83,6 +83,7 @@
           <table class="min-w-full text-sm border-collapse">
             <thead>
               <tr class="bg-slate-700 text-white">
+                <th class="px-2 py-2 text-center border w-10"></th>
                 <th class="px-3 py-2 text-left border">NO.</th>
                 <th class="px-3 py-2 text-left border">TANGGAL</th>
                 <th class="px-3 py-2 text-left border">OUTLET</th>
@@ -92,27 +93,76 @@
               </tr>
             </thead>
             <tbody>
-              <tr
-                v-for="row in report.rows"
-                :key="row.no"
-                :class="row.row_type === 'debit' ? 'bg-blue-50/40' : ''"
-              >
-                <td class="px-3 py-1.5 border text-center">{{ row.no }}</td>
-                <td class="px-3 py-1.5 border whitespace-nowrap">{{ row.date_label }}</td>
-                <td class="px-3 py-1.5 border">{{ row.outlet }}</td>
-                <td class="px-3 py-1.5 border">{{ row.description }}</td>
-                <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
-                <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
-              </tr>
+              <template v-for="row in report.rows" :key="row.row_key || row.no">
+                <tr
+                  :class="[
+                    row.row_type === 'debit' ? 'bg-blue-50/40' : '',
+                    row.expandable ? 'cursor-pointer hover:bg-slate-50' : '',
+                  ]"
+                  @click="row.expandable ? toggleExpand(row.row_key) : null"
+                >
+                  <td class="px-2 py-1.5 border text-center">
+                    <i
+                      v-if="row.expandable"
+                      :class="[
+                        'fas text-xs transition-transform duration-200',
+                        isExpanded(row.row_key) ? 'fa-chevron-down text-indigo-600' : 'fa-chevron-right text-gray-400',
+                      ]"
+                    ></i>
+                  </td>
+                  <td class="px-3 py-1.5 border text-center">{{ row.no }}</td>
+                  <td class="px-3 py-1.5 border whitespace-nowrap">{{ row.date_label }}</td>
+                  <td class="px-3 py-1.5 border">{{ row.outlet }}</td>
+                  <td class="px-3 py-1.5 border">{{ row.description }}</td>
+                  <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
+                  <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
+                </tr>
+                <tr v-if="row.expandable && isExpanded(row.row_key)" class="bg-gray-50">
+                  <td colspan="7" class="px-4 py-3 border">
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                      <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase">
+                        Detail Item
+                      </div>
+                      <table class="min-w-full text-sm">
+                        <thead>
+                          <tr class="bg-gray-50 text-gray-600">
+                            <th class="px-4 py-2 text-left font-medium">Item</th>
+                            <th class="px-4 py-2 text-right font-medium">Qty</th>
+                            <th class="px-4 py-2 text-left font-medium">Unit</th>
+                            <th class="px-4 py-2 text-right font-medium">Harga</th>
+                            <th class="px-4 py-2 text-right font-medium">Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr
+                            v-for="(item, idx) in row.items"
+                            :key="`${row.row_key}-item-${idx}`"
+                            class="border-t border-gray-100"
+                          >
+                            <td class="px-4 py-2">{{ item.item }}</td>
+                            <td class="px-4 py-2 text-right font-mono">{{ formatQty(item.qty) }}</td>
+                            <td class="px-4 py-2">{{ item.unit || '-' }}</td>
+                            <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.price) }}</td>
+                            <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.subtotal) }}</td>
+                          </tr>
+                          <tr v-if="!row.items?.length" class="border-t border-gray-100">
+                            <td colspan="5" class="px-4 py-3 text-center text-gray-400">Tidak ada detail item.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
             <tfoot>
               <tr class="bg-gray-100 font-semibold">
-                <td colspan="4" class="px-3 py-2 border text-right">TOTAL</td>
+                <td colspan="5" class="px-3 py-2 border text-right">TOTAL</td>
                 <td class="px-3 py-2 border text-right font-mono">{{ formatDebit(report.summary.total_debit) }}</td>
                 <td class="px-3 py-2 border text-right font-mono">{{ formatCredit(report.summary.total_credit) }}</td>
               </tr>
               <tr class="bg-green-50 font-bold">
-                <td colspan="4" class="px-3 py-2 border text-right">SISA SALDO</td>
+                <td colspan="5" class="px-3 py-2 border text-right">SISA SALDO</td>
                 <td class="px-3 py-2 border text-right font-mono" colspan="2">{{ formatCurrency(report.summary.ending_balance) }}</td>
               </tr>
             </tfoot>
@@ -124,7 +174,7 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -143,6 +193,12 @@ const filters = reactive({
   month: props.filters.month ?? new Date().getMonth() + 1,
 })
 
+const expandedRows = ref([])
+
+watch(() => props.report, () => {
+  expandedRows.value = []
+})
+
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
@@ -159,6 +215,18 @@ function applyFilters() {
     year: filters.year,
     month: filters.month,
   }, { preserveState: true, preserveScroll: true })
+}
+
+function toggleExpand(rowKey) {
+  if (expandedRows.value.includes(rowKey)) {
+    expandedRows.value = expandedRows.value.filter((key) => key !== rowKey)
+  } else {
+    expandedRows.value.push(rowKey)
+  }
+}
+
+function isExpanded(rowKey) {
+  return expandedRows.value.includes(rowKey)
 }
 
 function exportExcel() {
@@ -188,5 +256,10 @@ function formatDebit(value) {
 function formatCredit(value) {
   if (value === null || value === undefined || value === '') return ''
   return Number(value).toLocaleString('id-ID', { maximumFractionDigits: 0 })
+}
+
+function formatQty(value) {
+  const n = Number(value || 0)
+  return n.toLocaleString('id-ID', { maximumFractionDigits: 2 })
 }
 </script>
