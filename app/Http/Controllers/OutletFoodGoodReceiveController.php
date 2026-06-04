@@ -1066,8 +1066,11 @@ class OutletFoodGoodReceiveController extends Controller
                 DB::raw('COALESCE(o.nama_outlet, o_ro.nama_outlet) as outlet_name'),
                 DB::raw('COALESCE(wo.name, wo_ro.name) as warehouse_outlet_name')
             )
-            ->limit(20)
-            ->get();
+            ->limit(80)
+            ->get()
+            ->filter(fn ($row) => $this->deliveryOrderStillNeedsOutletReceive((int) $row->id))
+            ->values()
+            ->take(20);
        // // \Log::info('DEBUG DO OUTLET', [
        //     'id_outlet' => $idOutlet,
        //     'result' => $dos,
@@ -1185,10 +1188,16 @@ class OutletFoodGoodReceiveController extends Controller
             }
         }
 
+        $outletReceivePending = $this->deliveryOrderStillNeedsOutletReceive((int) $do_id);
+
         return response()->json([
             'do' => $do,
             'items' => $items,
             'po_info' => $poInfo,
+            'outlet_receive_pending' => $outletReceivePending,
+            'message' => $outletReceivePending
+                ? null
+                : 'DO ini sudah selesai diterima via GR Serial Outlet (tidak perlu GR Food / scan barcode).',
         ]);
     }
 
@@ -1782,6 +1791,55 @@ class OutletFoodGoodReceiveController extends Controller
         }
 
         return (float) $serials->sum(fn ($serial) => \App\Support\InventorySerialEffectiveQty::resolve($serial));
+    }
+
+    /**
+     * DO masih perlu muncul di daftar GR Food Outlet?
+     * - Sudah ada outlet_food_good_receives → tidak (sudah difilter di query).
+     * - Masih ada sisa scan barcode → ya.
+     * - Hanya nomor seri & semua serial sudah GR Serial outlet → tidak (jangan menggantung).
+     */
+    private function deliveryOrderStillNeedsOutletReceive(int $deliveryOrderId): bool
+    {
+        if ($deliveryOrderId <= 0) {
+            return false;
+        }
+
+        if (DB::table('outlet_food_good_receives')
+            ->where('delivery_order_id', $deliveryOrderId)
+            ->whereNull('deleted_at')
+            ->exists()) {
+            return false;
+        }
+
+        $items = DB::table('delivery_order_items')
+            ->where('delivery_order_id', $deliveryOrderId)
+            ->get(['item_id', 'qty_packing_list', 'qty_scan', 'qty_scan_barcode', 'serial_numbers']);
+
+        if ($items->isEmpty()) {
+            return false;
+        }
+
+        foreach ($items as $item) {
+            $serialNumbers = json_decode((string) ($item->serial_numbers ?? ''), true);
+            if (! is_array($serialNumbers)) {
+                $serialNumbers = [];
+            }
+            $hasSerial = count($serialNumbers) > 0;
+            $barcodeTarget = $this->resolveFoodGrBarcodeTarget($item, $hasSerial, $serialNumbers);
+
+            if ($barcodeTarget > 0.001) {
+                return true;
+            }
+        }
+
+        return DB::table('inventory_item_serials')
+            ->where('out_delivery_order_id', $deliveryOrderId)
+            ->where('is_out', 1)
+            ->where(function ($q) {
+                $q->where('is_received', 0)->orWhereNull('is_received');
+            })
+            ->exists();
     }
 
     /**

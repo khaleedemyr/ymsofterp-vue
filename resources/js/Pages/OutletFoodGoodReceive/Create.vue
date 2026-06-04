@@ -317,6 +317,21 @@ function onDOChange() {
   if (!doOpt) return;
   axios.get(`/outlet-food-good-receives/do-detail/${doOpt.id}`)
     .then(res => {
+      if (res.data.outlet_receive_pending === false) {
+        doDetail.value = null;
+        items.splice(0, items.length);
+        selectedDOId.value = '';
+        Swal.fire({
+          icon: 'info',
+          title: 'DO sudah selesai',
+          text: res.data.message || 'DO ini sudah diterima via GR Serial Outlet.',
+          confirmButtonText: 'OK',
+        });
+        axios.get('/outlet-food-good-receives/available-dos').then((r) => {
+          doOptions.value = r.data;
+        });
+        return;
+      }
       doDetail.value = res.data;
       items.splice(0, items.length, ...res.data.items.map(item => ({
         ...item,
