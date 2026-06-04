@@ -79,7 +79,26 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow-lg overflow-x-auto">
+        <div class="flex flex-wrap gap-2 mb-4">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
+            :class="activeTab === 'detail' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+            @click="activeTab = 'detail'"
+          >
+            Detail Transaksi
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
+            :class="activeTab === 'outlet' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+            @click="activeTab = 'outlet'"
+          >
+            Rekap per Outlet
+          </button>
+        </div>
+
+        <div v-show="activeTab === 'detail'" class="bg-white rounded-xl shadow-lg overflow-x-auto">
           <table class="min-w-full text-sm border-collapse">
             <thead>
               <tr class="bg-slate-700 text-white">
@@ -168,6 +187,33 @@
             </tfoot>
           </table>
         </div>
+
+        <div v-show="activeTab === 'outlet'" class="bg-white rounded-xl shadow-lg overflow-x-auto max-w-xl">
+          <table class="min-w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-slate-700 text-white">
+                <th class="px-4 py-2 text-left border">Outlet</th>
+                <th class="px-4 py-2 text-right border">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in report.outlet_summary.rows"
+                :key="row.outlet_id ?? row.outlet"
+                class="hover:bg-gray-50"
+              >
+                <td class="px-4 py-1.5 border">{{ row.outlet }}</td>
+                <td class="px-4 py-1.5 border text-right font-mono">{{ formatCredit(row.total) }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="bg-gray-100 font-bold">
+                <td class="px-4 py-2 border"></td>
+                <td class="px-4 py-2 border text-right font-mono">{{ formatCredit(report.outlet_summary.total) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </template>
     </div>
   </AppLayout>
@@ -194,9 +240,11 @@ const filters = reactive({
 })
 
 const expandedRows = ref([])
+const activeTab = ref('detail')
 
 watch(() => props.report, () => {
   expandedRows.value = []
+  activeTab.value = 'detail'
 })
 
 const monthNames = [
