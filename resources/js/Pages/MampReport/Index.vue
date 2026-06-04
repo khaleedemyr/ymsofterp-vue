@@ -25,7 +25,7 @@
               class="w-full border border-gray-300 rounded-lg px-3 py-2"
               @change="applyFilters"
             >
-              <option :value="null">— Pilih category —</option>
+              <option :value="null">— Semua (hanya rekap outlet) —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">
                 {{ c.name }} ({{ c.division }})
               </option>
@@ -60,11 +60,8 @@
         </div>
       </div>
 
-      <div v-if="!report && filters.category_id" class="text-center text-gray-500 py-12">Memuat...</div>
-      <div v-else-if="!filters.category_id" class="text-center text-gray-500 py-12">Pilih category untuk menampilkan report.</div>
-
-      <template v-else-if="report">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <template v-if="outlet_summary">
+        <div v-if="report && activeTab === 'detail'" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div class="bg-white rounded-xl shadow p-4 border-l-4 border-blue-500">
             <p class="text-xs text-gray-500">Budget bulan ini (Db)</p>
             <p class="text-lg font-bold">{{ formatCurrency(report.summary.monthly_budget) }}</p>
@@ -98,121 +95,131 @@
           </button>
         </div>
 
-        <div v-show="activeTab === 'detail'" class="bg-white rounded-xl shadow-lg overflow-x-auto">
-          <table class="min-w-full text-sm border-collapse">
-            <thead>
-              <tr class="bg-slate-700 text-white">
-                <th class="px-2 py-2 text-center border w-10"></th>
-                <th class="px-3 py-2 text-left border">NO.</th>
-                <th class="px-3 py-2 text-left border">TANGGAL</th>
-                <th class="px-3 py-2 text-left border">OUTLET</th>
-                <th class="px-3 py-2 text-left border">{{ report.category.name }}</th>
-                <th class="px-3 py-2 text-right border">Db</th>
-                <th class="px-3 py-2 text-right border">Cr</th>
-              </tr>
-            </thead>
-            <tbody>
-              <template v-for="row in report.rows" :key="row.row_key || row.no">
-                <tr
-                  :class="[
-                    row.row_type === 'debit' ? 'bg-blue-50/40' : '',
-                    row.expandable ? 'cursor-pointer hover:bg-slate-50' : '',
-                  ]"
-                  @click="row.expandable ? toggleExpand(row.row_key) : null"
-                >
-                  <td class="px-2 py-1.5 border text-center">
-                    <i
-                      v-if="row.expandable"
-                      :class="[
-                        'fas text-xs transition-transform duration-200',
-                        isExpanded(row.row_key) ? 'fa-chevron-down text-indigo-600' : 'fa-chevron-right text-gray-400',
-                      ]"
-                    ></i>
-                  </td>
-                  <td class="px-3 py-1.5 border text-center">{{ row.no }}</td>
-                  <td class="px-3 py-1.5 border whitespace-nowrap">{{ row.date_label }}</td>
-                  <td class="px-3 py-1.5 border">{{ row.outlet }}</td>
-                  <td class="px-3 py-1.5 border">{{ row.description }}</td>
-                  <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
-                  <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
+        <div v-show="activeTab === 'detail'">
+          <div v-if="!report" class="text-center text-gray-500 py-12 bg-white rounded-xl shadow-lg">
+            Pilih category untuk menampilkan detail transaksi per kategori.
+          </div>
+          <div v-else class="bg-white rounded-xl shadow-lg overflow-x-auto">
+            <table class="min-w-full text-sm border-collapse">
+              <thead>
+                <tr class="bg-slate-700 text-white">
+                  <th class="px-2 py-2 text-center border w-10"></th>
+                  <th class="px-3 py-2 text-left border">NO.</th>
+                  <th class="px-3 py-2 text-left border">TANGGAL</th>
+                  <th class="px-3 py-2 text-left border">OUTLET</th>
+                  <th class="px-3 py-2 text-left border">{{ report.category.name }}</th>
+                  <th class="px-3 py-2 text-right border">Db</th>
+                  <th class="px-3 py-2 text-right border">Cr</th>
                 </tr>
-                <tr v-if="row.expandable && isExpanded(row.row_key)" class="bg-gray-50">
-                  <td colspan="7" class="px-4 py-3 border">
-                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                      <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase">
-                        Detail Item
+              </thead>
+              <tbody>
+                <template v-for="row in report.rows" :key="row.row_key || row.no">
+                  <tr
+                    :class="[
+                      row.row_type === 'debit' ? 'bg-blue-50/40' : '',
+                      row.expandable ? 'cursor-pointer hover:bg-slate-50' : '',
+                    ]"
+                    @click="row.expandable ? toggleExpand(row.row_key) : null"
+                  >
+                    <td class="px-2 py-1.5 border text-center">
+                      <i
+                        v-if="row.expandable"
+                        :class="[
+                          'fas text-xs transition-transform duration-200',
+                          isExpanded(row.row_key) ? 'fa-chevron-down text-indigo-600' : 'fa-chevron-right text-gray-400',
+                        ]"
+                      ></i>
+                    </td>
+                    <td class="px-3 py-1.5 border text-center">{{ row.no }}</td>
+                    <td class="px-3 py-1.5 border whitespace-nowrap">{{ row.date_label }}</td>
+                    <td class="px-3 py-1.5 border">{{ row.outlet }}</td>
+                    <td class="px-3 py-1.5 border">{{ row.description }}</td>
+                    <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
+                    <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
+                  </tr>
+                  <tr v-if="row.expandable && isExpanded(row.row_key)" class="bg-gray-50">
+                    <td colspan="7" class="px-4 py-3 border">
+                      <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase">
+                          Detail Item
+                        </div>
+                        <table class="min-w-full text-sm">
+                          <thead>
+                            <tr class="bg-gray-50 text-gray-600">
+                              <th class="px-4 py-2 text-left font-medium">Item</th>
+                              <th class="px-4 py-2 text-right font-medium">Qty</th>
+                              <th class="px-4 py-2 text-left font-medium">Unit</th>
+                              <th class="px-4 py-2 text-right font-medium">Harga</th>
+                              <th class="px-4 py-2 text-right font-medium">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr
+                              v-for="(item, idx) in row.items"
+                              :key="`${row.row_key}-item-${idx}`"
+                              class="border-t border-gray-100"
+                            >
+                              <td class="px-4 py-2">{{ item.item }}</td>
+                              <td class="px-4 py-2 text-right font-mono">{{ formatQty(item.qty) }}</td>
+                              <td class="px-4 py-2">{{ item.unit || '-' }}</td>
+                              <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.price) }}</td>
+                              <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.subtotal) }}</td>
+                            </tr>
+                            <tr v-if="!row.items?.length" class="border-t border-gray-100">
+                              <td colspan="5" class="px-4 py-3 text-center text-gray-400">Tidak ada detail item.</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
-                      <table class="min-w-full text-sm">
-                        <thead>
-                          <tr class="bg-gray-50 text-gray-600">
-                            <th class="px-4 py-2 text-left font-medium">Item</th>
-                            <th class="px-4 py-2 text-right font-medium">Qty</th>
-                            <th class="px-4 py-2 text-left font-medium">Unit</th>
-                            <th class="px-4 py-2 text-right font-medium">Harga</th>
-                            <th class="px-4 py-2 text-right font-medium">Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr
-                            v-for="(item, idx) in row.items"
-                            :key="`${row.row_key}-item-${idx}`"
-                            class="border-t border-gray-100"
-                          >
-                            <td class="px-4 py-2">{{ item.item }}</td>
-                            <td class="px-4 py-2 text-right font-mono">{{ formatQty(item.qty) }}</td>
-                            <td class="px-4 py-2">{{ item.unit || '-' }}</td>
-                            <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.price) }}</td>
-                            <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.subtotal) }}</td>
-                          </tr>
-                          <tr v-if="!row.items?.length" class="border-t border-gray-100">
-                            <td colspan="5" class="px-4 py-3 text-center text-gray-400">Tidak ada detail item.</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </td>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+              <tfoot>
+                <tr class="bg-gray-100 font-semibold">
+                  <td colspan="5" class="px-3 py-2 border text-right">TOTAL</td>
+                  <td class="px-3 py-2 border text-right font-mono">{{ formatDebit(report.summary.total_debit) }}</td>
+                  <td class="px-3 py-2 border text-right font-mono">{{ formatCredit(report.summary.total_credit) }}</td>
                 </tr>
-              </template>
-            </tbody>
-            <tfoot>
-              <tr class="bg-gray-100 font-semibold">
-                <td colspan="5" class="px-3 py-2 border text-right">TOTAL</td>
-                <td class="px-3 py-2 border text-right font-mono">{{ formatDebit(report.summary.total_debit) }}</td>
-                <td class="px-3 py-2 border text-right font-mono">{{ formatCredit(report.summary.total_credit) }}</td>
-              </tr>
-              <tr class="bg-green-50 font-bold">
-                <td colspan="5" class="px-3 py-2 border text-right">SISA SALDO</td>
-                <td class="px-3 py-2 border text-right font-mono" colspan="2">{{ formatCurrency(report.summary.ending_balance) }}</td>
-              </tr>
-            </tfoot>
-          </table>
+                <tr class="bg-green-50 font-bold">
+                  <td colspan="5" class="px-3 py-2 border text-right">SISA SALDO</td>
+                  <td class="px-3 py-2 border text-right font-mono" colspan="2">{{ formatCurrency(report.summary.ending_balance) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
-        <div v-show="activeTab === 'outlet'" class="bg-white rounded-xl shadow-lg overflow-x-auto max-w-xl">
-          <table class="min-w-full text-sm border-collapse">
-            <thead>
-              <tr class="bg-slate-700 text-white">
-                <th class="px-4 py-2 text-left border">Outlet</th>
-                <th class="px-4 py-2 text-right border">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in report.outlet_summary.rows"
-                :key="row.outlet_id ?? row.outlet"
-                class="hover:bg-gray-50"
-              >
-                <td class="px-4 py-1.5 border">{{ row.outlet }}</td>
-                <td class="px-4 py-1.5 border text-right font-mono">{{ formatCredit(row.total) }}</td>
-              </tr>
-            </tbody>
-            <tfoot>
-              <tr class="bg-gray-100 font-bold">
-                <td class="px-4 py-2 border"></td>
-                <td class="px-4 py-2 border text-right font-mono">{{ formatCredit(report.outlet_summary.total) }}</td>
-              </tr>
-            </tfoot>
-          </table>
+        <div v-show="activeTab === 'outlet'">
+          <p class="text-sm text-gray-500 mb-3">
+            Semua kategori — {{ outlet_summary.period?.label }}
+          </p>
+          <div class="bg-white rounded-xl shadow-lg overflow-x-auto max-w-xl">
+            <table class="min-w-full text-sm border-collapse">
+              <thead>
+                <tr class="bg-slate-700 text-white">
+                  <th class="px-4 py-2 text-left border">Outlet</th>
+                  <th class="px-4 py-2 text-right border">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in outlet_summary.rows"
+                  :key="row.outlet_id ?? row.outlet"
+                  class="hover:bg-gray-50"
+                >
+                  <td class="px-4 py-1.5 border">{{ row.outlet }}</td>
+                  <td class="px-4 py-1.5 border text-right font-mono">{{ formatCredit(row.total) }}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="bg-gray-100 font-bold">
+                  <td class="px-4 py-2 border"></td>
+                  <td class="px-4 py-2 border text-right font-mono">{{ formatCredit(outlet_summary.total) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </template>
     </div>
@@ -230,6 +237,7 @@ const props = defineProps({
     type: Object,
     default: () => ({ category_id: null, year: new Date().getFullYear(), month: new Date().getMonth() + 1 }),
   },
+  outlet_summary: { type: Object, default: null },
   report: { type: Object, default: null },
 })
 
@@ -240,11 +248,10 @@ const filters = reactive({
 })
 
 const expandedRows = ref([])
-const activeTab = ref('detail')
+const activeTab = ref('outlet')
 
 watch(() => props.report, () => {
   expandedRows.value = []
-  activeTab.value = 'detail'
 })
 
 const monthNames = [
@@ -257,12 +264,14 @@ function monthLabel(m) {
 }
 
 function applyFilters() {
-  if (!filters.category_id) return
-  router.get('/mamp-report', {
-    category_id: filters.category_id,
+  const params = {
     year: filters.year,
     month: filters.month,
-  }, { preserveState: true, preserveScroll: true })
+  }
+  if (filters.category_id) {
+    params.category_id = filters.category_id
+  }
+  router.get('/mamp-report', params, { preserveState: true, preserveScroll: true })
 }
 
 function toggleExpand(rowKey) {

@@ -59,7 +59,6 @@ class MampReportService
         $totalDebit = collect($rows)->sum(fn ($r) => (float) ($r['debit'] ?? 0));
         $totalCredit = collect($rows)->sum(fn ($r) => (float) ($r['credit'] ?? 0));
         $endingBalance = $monthlyBudget - $totalCredit;
-        $outletSummary = $this->buildOutletSummary($credits);
 
         return [
             'category' => [
@@ -77,13 +76,88 @@ class MampReportService
                 'label' => strtoupper($this->monthNameId($month)) . ' ' . $year,
             ],
             'rows' => $rows,
-            'outlet_summary' => $outletSummary,
             'summary' => [
                 'monthly_budget' => round($monthlyBudget, 2),
                 'total_debit' => round($totalDebit, 2),
                 'total_credit' => round($totalCredit, 2),
                 'ending_balance' => round($endingBalance, 2),
             ],
+        ];
+    }
+
+    /**
+     * @return array{
+     *   period: array{year:int,month:int,date_from:string,date_to:string,label:string},
+     *   rows: array<int, array{outlet_id: int|null, outlet: string, total: float}>,
+     *   total: float
+     * }
+     */
+    public function buildOutletSummary(int $year, int $month): array
+    {
+        $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
+        $dateFrom = $periodStart->format('Y-m-d');
+        $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
+
+        $totalsByOutletId = [];
+
+        DB::table('retail_non_food')
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->where('status', 'approved')
+            ->select('outlet_id', DB::raw('SUM(total_amount) as total'))
+            ->groupBy('outlet_id')
+            ->get()
+            ->each(function ($row) use (&$totalsByOutletId) {
+                $key = $row->outlet_id ? (int) $row->outlet_id : 0;
+                $totalsByOutletId[$key] = ($totalsByOutletId[$key] ?? 0) + (float) $row->total;
+            });
+
+        DB::table('non_food_payment_outlets as nfpo')
+            ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
+            ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->select('nfpo.outlet_id', DB::raw('SUM(nfpo.amount) as total'))
+            ->groupBy('nfpo.outlet_id')
+            ->get()
+            ->each(function ($row) use (&$totalsByOutletId) {
+                $key = $row->outlet_id ? (int) $row->outlet_id : 0;
+                $totalsByOutletId[$key] = ($totalsByOutletId[$key] ?? 0) + (float) $row->total;
+            });
+
+        foreach ($totalsByOutletId as $outletId => $total) {
+            $totalsByOutletId[$outletId] = round($total, 2);
+        }
+
+        $rows = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet'])
+            ->map(fn ($outlet) => [
+                'outlet_id' => (int) $outlet->id_outlet,
+                'outlet' => (string) $outlet->nama_outlet,
+                'total' => (float) ($totalsByOutletId[(int) $outlet->id_outlet] ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $unknownTotal = (float) ($totalsByOutletId[0] ?? 0);
+        if ($unknownTotal > 0) {
+            $rows[] = [
+                'outlet_id' => null,
+                'outlet' => '-',
+                'total' => $unknownTotal,
+            ];
+        }
+
+        return [
+            'period' => [
+                'year' => $year,
+                'month' => $month,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'label' => strtoupper($this->monthNameId($month)) . ' ' . $year,
+            ],
+            'rows' => $rows,
+            'total' => round(collect($rows)->sum('total'), 2),
         ];
     }
 
@@ -263,45 +337,6 @@ class MampReportService
         }
 
         return $grouped;
-    }
-
-    /**
-     * @return array{
-     *   rows: array<int, array{outlet_id: int|null, outlet: string, total: float}>,
-     *   total: float
-     * }
-     */
-    private function buildOutletSummary(Collection $credits): array
-    {
-        $totalsByOutletId = $credits
-            ->groupBy(fn ($line) => $line->outlet_id ?? 0)
-            ->map(fn ($group) => round($group->sum('amount'), 2));
-
-        $rows = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->orderBy('nama_outlet')
-            ->get(['id_outlet', 'nama_outlet'])
-            ->map(fn ($outlet) => [
-                'outlet_id' => (int) $outlet->id_outlet,
-                'outlet' => (string) $outlet->nama_outlet,
-                'total' => (float) ($totalsByOutletId[(int) $outlet->id_outlet] ?? 0),
-            ])
-            ->values()
-            ->all();
-
-        $unknownTotal = (float) ($totalsByOutletId[0] ?? 0);
-        if ($unknownTotal > 0) {
-            $rows[] = [
-                'outlet_id' => null,
-                'outlet' => '-',
-                'total' => $unknownTotal,
-            ];
-        }
-
-        return [
-            'rows' => $rows,
-            'total' => round(collect($rows)->sum('total'), 2),
-        ];
     }
 
     private function debitRow(int $no, string $date, string $outlet, string $description, float $amount): array

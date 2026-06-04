@@ -19,11 +19,10 @@ class OutletSummarySheetExport implements FromArray, WithStyles, WithColumnWidth
 
     public function array(): array
     {
-        $categoryName = strtoupper($this->report['category']['name'] ?? 'CATEGORY');
         $outletSummary = $this->report['outlet_summary'] ?? ['rows' => [], 'total' => 0];
         $rows = [];
 
-        $rows[] = ['REKAP PER OUTLET — ' . $categoryName . ' — ' . ($this->report['period']['label'] ?? '')];
+        $rows[] = ['REKAP PER OUTLET — SEMUA KATEGORI — ' . ($this->report['outlet_summary']['period']['label'] ?? $this->report['period']['label'] ?? '')];
         $rows[] = [];
         $rows[] = ['Outlet', 'Total'];
 

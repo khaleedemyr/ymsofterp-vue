@@ -29,6 +29,8 @@ class MampReportController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'division', 'subcategory', 'budget_limit']);
 
+        $outletSummary = $this->mampReportService->buildOutletSummary($year, $month);
+
         $report = null;
         if ($categoryId > 0) {
             $report = $this->mampReportService->build($categoryId, $year, $month);
@@ -41,6 +43,7 @@ class MampReportController extends Controller
                 'year' => $year,
                 'month' => $month,
             ],
+            'outlet_summary' => $outletSummary,
             'report' => $report,
         ]);
     }
@@ -58,6 +61,7 @@ class MampReportController extends Controller
         $month = (int) $request->month;
 
         $report = $this->mampReportService->build($categoryId, $year, $month);
+        $report['outlet_summary'] = $this->mampReportService->buildOutletSummary($year, $month);
         $categoryName = preg_replace('/[^A-Za-z0-9_-]+/', '_', $report['category']['name'] ?? 'category');
         $fileName = sprintf('MAMP_%s_%d-%02d.xlsx', $categoryName, $year, $month);
 
