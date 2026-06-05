@@ -59,6 +59,7 @@ class RegionalVisitReportController extends Controller
         }
 
         return Inertia::render('Regional/VisitReport', [
+            'resolvedUserIds' => $resolved['user_ids'] ?? [],
             'regionalUsers' => $regionalUsers,
             'outletStats' => $report['outlets'],
             'summary' => $report['summary'],
@@ -74,6 +75,42 @@ class RegionalVisitReportController extends Controller
                 'end_date' => $period['end_date'],
             ],
             'areas' => UserRegional::AREAS,
+        ]);
+    }
+
+    public function outletDetail(Request $request)
+    {
+        $outletId = (int) $request->get('outlet_id');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+        $userId = $request->filled('user_id') ? (int) $request->get('user_id') : null;
+        $area = $request->get('area');
+
+        if (! $outletId || ! $startDate || ! $endDate) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parameter tidak lengkap',
+            ], 422);
+        }
+
+        $resolved = $this->analytics->resolveFilter($userId, $area);
+        if (empty($resolved['user_ids'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak ada karyawan regional pada filter ini',
+            ], 422);
+        }
+
+        $data = $this->analytics->getOutletVisitDetail(
+            $resolved['user_ids'],
+            $outletId,
+            $startDate,
+            $endDate,
+        );
+
+        return response()->json([
+            'success' => true,
+            ...$data,
         ]);
     }
 }

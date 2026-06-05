@@ -1547,6 +1547,7 @@ Route::middleware('auth')->group(function () {
 // Regional Routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/regional/visit-report', [\App\Http\Controllers\RegionalVisitReportController::class, 'index'])->name('regional.visit-report.index');
+    Route::get('/api/regional-visit-report/outlet-detail', [\App\Http\Controllers\RegionalVisitReportController::class, 'outletDetail'])->name('api.regional-visit-report.outlet-detail');
     Route::get('/regional', [\App\Http\Controllers\RegionalController::class, 'index'])->name('regional.index');
     Route::get('/regional/create', [\App\Http\Controllers\RegionalController::class, 'create'])->name('regional.create');
     Route::post('/regional', [\App\Http\Controllers\RegionalController::class, 'store'])->name('regional.store');
