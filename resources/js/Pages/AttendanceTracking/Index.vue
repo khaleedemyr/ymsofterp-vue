@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 import VueEasyLightbox from 'vue-easy-lightbox'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
@@ -24,6 +25,13 @@ const employees = ref([])
 const loadingEmployees = ref(false)
 const isLoading = ref(false)
 const exportingPdf = ref(false)
+const pdfExportMode = ref(false)
+
+const pdfEmployeeRef = ref(null)
+const pdfSummaryRef = ref(null)
+const pdfLeaveRef = ref(null)
+const pdfChartsRef = ref(null)
+const pdfTableRef = ref(null)
 
 const showOutletModal = ref(false)
 const outletModalLoading = ref(false)
@@ -269,133 +277,143 @@ function applyFilter() {
   })
 }
 
-function exportPdf() {
+async function captureSection(element) {
+  return html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#f8fafc',
+    logging: false,
+    onclone: (clonedDoc) => {
+      clonedDoc.querySelectorAll('.at-pdf-hide').forEach((el) => { el.style.display = 'none' })
+      clonedDoc.querySelectorAll('.at-pdf-outlet-name').forEach((el) => {
+        el.style.color = '#0f172a'
+        el.style.textDecoration = 'none'
+      })
+    },
+  })
+}
+
+function drawPdfHeader(doc, margin, pageW) {
+  doc.setFillColor(79, 70, 229)
+  doc.rect(0, 0, pageW, 32, 'F')
+  doc.setFillColor(99, 102, 241)
+  doc.rect(0, 28, pageW, 4, 'F')
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.text('Tracking Absensi Karyawan', margin, 14)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9)
+  doc.text(periodLabel.value || '-', margin, 22)
+  doc.text(
+    `Dicetak: ${new Date().toLocaleString('id-ID')}`,
+    pageW - margin,
+    22,
+    { align: 'right' },
+  )
+
+  return 38
+}
+
+function appendCanvasToPdf(doc, canvas, startY, margin, pageW, pageH) {
+  const contentW = pageW - margin * 2
+  const scale = contentW / canvas.width
+  const totalImgH = canvas.height * scale
+  let offsetY = 0
+  let y = startY
+  const gap = 3
+
+  while (offsetY < totalImgH) {
+    const availableH = pageH - y - margin - 8
+    if (availableH <= 5) {
+      doc.addPage()
+      y = margin
+      continue
+    }
+
+    const sliceH = Math.min(totalImgH - offsetY, availableH)
+    const sliceSrcH = sliceH / scale
+
+    const sliceCanvas = document.createElement('canvas')
+    sliceCanvas.width = canvas.width
+    sliceCanvas.height = Math.ceil(sliceSrcH)
+    const ctx = sliceCanvas.getContext('2d')
+    ctx.drawImage(
+      canvas,
+      0,
+      offsetY / scale,
+      canvas.width,
+      sliceSrcH,
+      0,
+      0,
+      canvas.width,
+      sliceSrcH,
+    )
+
+    const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92)
+    doc.addImage(sliceData, 'JPEG', margin, y, contentW, sliceH)
+
+    offsetY += sliceH
+    y += sliceH + gap
+
+    if (offsetY < totalImgH) {
+      doc.addPage()
+      y = margin
+    }
+  }
+
+  return y
+}
+
+function addPageFooters(doc, pageW, pageH) {
+  const totalPages = doc.internal.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i += 1) {
+    doc.setPage(i)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(148, 163, 184)
+    doc.text(`Halaman ${i} dari ${totalPages}`, pageW / 2, pageH - 6, { align: 'center' })
+    doc.text('YM Soft ERP · Attendance Tracking', pageW - 10, pageH - 6, { align: 'right' })
+  }
+}
+
+async function exportPdf() {
   if (!hasData.value) return
   exportingPdf.value = true
+  pdfExportMode.value = true
 
   try {
+    await nextTick()
+    await new Promise((resolve) => { setTimeout(resolve, 400) })
+
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-    const margin = 14
+    const margin = 10
     const pageW = doc.internal.pageSize.getWidth()
     const pageH = doc.internal.pageSize.getHeight()
-    let y = 18
+    let y = drawPdfHeader(doc, margin, pageW)
 
-    const ensureSpace = (need = 10) => {
-      if (y + need > pageH - 15) {
+    const sections = [
+      pdfEmployeeRef.value,
+      pdfSummaryRef.value,
+      pdfLeaveRef.value,
+      pdfChartsRef.value,
+      pdfTableRef.value,
+    ].filter(Boolean)
+
+    for (const section of sections) {
+      const canvas = await captureSection(section)
+      if (y > pageH - 40) {
         doc.addPage()
-        y = 18
+        y = margin
       }
+      y = appendCanvasToPdf(doc, canvas, y, margin, pageW, pageH)
+      y += 2
     }
 
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(16)
-    doc.setTextColor(30, 41, 59)
-    doc.text('Laporan Tracking Absensi', margin, y)
-    y += 9
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
-    doc.setTextColor(71, 85, 105)
-    doc.text(`Karyawan: ${props.employee.nama_lengkap}`, margin, y)
-    y += 5
-    doc.text(`NIK: ${props.employee.nik || '-'}`, margin, y)
-    y += 5
-    doc.text(`Jabatan: ${props.employee.nama_jabatan || '-'}`, margin, y)
-    y += 5
-    doc.text(`Outlet: ${props.employee.nama_outlet || '-'}`, margin, y)
-    y += 5
-    doc.text(`Periode: ${periodLabel.value}`, margin, y)
-    y += 5
-    doc.text(`Dicetak: ${new Date().toLocaleString('id-ID')}`, margin, y)
-    y += 10
-
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(12)
-    doc.setTextColor(30, 41, 59)
-    doc.text('Ringkasan Kehadiran', margin, y)
-    y += 7
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(10)
-    const summaryLines = [
-      ['Hadir', `${props.summary.present_days} hari`],
-      ['Terlambat', `${props.summary.total_telat} menit`],
-      ['Alpha', `${props.summary.alpa_days} hari`],
-      ['OFF', `${props.summary.off_days} hari`],
-      ['Lembur', `${props.summary.total_lembur} jam`],
-      ['PH Kompensasi', `${props.summary.ph_days} hari`],
-      ['Hari Kerja', `${props.summary.hari_kerja} hari`],
-      ['Kehadiran', `${props.summary.percentage}%`],
-    ]
-
-    summaryLines.forEach(([label, val]) => {
-      ensureSpace(6)
-      doc.setTextColor(71, 85, 105)
-      doc.text(`${label}`, margin, y)
-      doc.setTextColor(30, 41, 59)
-      doc.text(val, margin + 55, y)
-      y += 6
-    })
-
-    if (leaveBreakdown.value.length) {
-      y += 4
-      ensureSpace(10)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(12)
-      doc.setTextColor(30, 41, 59)
-      doc.text('Izin & Cuti (disetujui)', margin, y)
-      y += 7
-      doc.setFont('helvetica', 'normal')
-      doc.setFontSize(10)
-      leaveBreakdown.value.forEach((item) => {
-        ensureSpace(6)
-        doc.setTextColor(71, 85, 105)
-        doc.text(item.name, margin, y)
-        doc.setTextColor(30, 41, 59)
-        doc.text(`${item.days} hari`, margin + 70, y)
-        y += 6
-      })
-    }
-
-    if (props.outletStats.length) {
-      y += 6
-      ensureSpace(14)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(12)
-      doc.setTextColor(30, 41, 59)
-      doc.text('Detail per Outlet', margin, y)
-      y += 8
-
-      const colX = [margin, margin + 52, margin + 68, margin + 84, margin + 100, margin + 118, margin + 136]
-      const headers = ['Outlet', 'IN', 'OUT', '%', 'Jam', 'Sesi', 'No CO']
-
-      doc.setFillColor(241, 245, 249)
-      doc.rect(margin, y - 4, pageW - margin * 2, 7, 'F')
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(8)
-      doc.setTextColor(51, 65, 85)
-      headers.forEach((h, i) => doc.text(h, colX[i], y))
-      y += 7
-
-      doc.setFont('helvetica', 'normal')
-      props.outletStats.forEach((row, idx) => {
-        ensureSpace(7)
-        if (idx % 2 === 0) {
-          doc.setFillColor(248, 250, 252)
-          doc.rect(margin, y - 4, pageW - margin * 2, 6, 'F')
-        }
-        doc.setTextColor(51, 65, 85)
-        const outletName = row.nama_outlet.length > 22 ? `${row.nama_outlet.slice(0, 22)}…` : row.nama_outlet
-        doc.text(outletName, colX[0], y)
-        doc.text(String(row.scan_in), colX[1], y)
-        doc.text(String(row.scan_out), colX[2], y)
-        doc.text(`${row.scan_in_percentage}%`, colX[3], y)
-        doc.text(String(row.total_hours), colX[4], y)
-        doc.text(String(row.sessions), colX[5], y)
-        doc.text(String(row.no_checkout_sessions), colX[6], y)
-        y += 6
-      })
-    }
+    addPageFooters(doc, pageW, pageH)
 
     const safeName = (props.employee.nama_lengkap || 'karyawan').replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')
     doc.save(`tracking-absensi_${safeName}_${bulan.value}-${tahun.value}.pdf`)
@@ -403,6 +421,7 @@ function exportPdf() {
     console.error(e)
     alert('Gagal membuat PDF. Silakan coba lagi.')
   } finally {
+    pdfExportMode.value = false
     exportingPdf.value = false
   }
 }
@@ -510,9 +529,10 @@ onMounted(async () => {
 
         <template v-else>
           <!-- Employee -->
-          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-8">
+          <section ref="pdfEmployeeRef" class="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-8">
             <div class="flex flex-col items-center text-center">
               <button
+                v-if="!pdfExportMode"
                 type="button"
                 class="relative group shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-indigo-200"
                 title="Klik untuk perbesar foto"
@@ -529,6 +549,16 @@ onMounted(async () => {
                   <i class="fas fa-search-plus text-white opacity-0 group-hover:opacity-90 text-xl drop-shadow"></i>
                 </span>
               </button>
+              <div v-else class="relative shrink-0">
+                <img
+                  :src="employeeAvatarUrl"
+                  :alt="employee.nama_lengkap"
+                  class="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg"
+                  crossorigin="anonymous"
+                  @error="($event.target).src = '/images/avatar-default.png'"
+                />
+                <span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-emerald-500 border-[3px] border-white"></span>
+              </div>
 
               <h3 class="mt-4 text-2xl font-bold text-slate-900">{{ employee.nama_lengkap }}</h3>
               <p class="text-sm font-medium text-indigo-600 mt-1">{{ employee.nik || '-' }}</p>
@@ -543,7 +573,7 @@ onMounted(async () => {
           </section>
 
           <!-- Summary -->
-          <section class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <section ref="pdfSummaryRef" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <div
               v-for="card in summaryCards"
               :key="card.key"
@@ -561,7 +591,7 @@ onMounted(async () => {
           </section>
 
           <!-- Izin & Cuti -->
-          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+          <section ref="pdfLeaveRef" class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div class="flex items-center gap-2">
                 <i class="fas fa-calendar-check text-indigo-500"></i>
@@ -597,12 +627,12 @@ onMounted(async () => {
           </section>
 
           <!-- Charts -->
-          <section v-if="outletStats.length" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <section v-if="outletStats.length" ref="pdfChartsRef" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
               <h3 class="text-base font-semibold text-slate-900">Distribusi Scan IN per Outlet</h3>
               <p class="text-xs text-slate-500 mt-1">
                 Persentase kehadiran (scan masuk) di masing-masing outlet
-                <span class="text-indigo-600">· Klik slice untuk detail</span>
+                <span v-if="!pdfExportMode" class="text-indigo-600 at-pdf-hide">· Klik slice untuk detail</span>
               </p>
               <div class="mt-4 bg-slate-50 rounded-xl p-2 at-chart-clickable">
                 <apexchart type="pie" height="340" :options="pieOptions" :series="pieSeries" @dataPointSelection="onPieChartClick" />
@@ -612,7 +642,7 @@ onMounted(async () => {
               <h3 class="text-base font-semibold text-slate-900">Total Jam per Outlet</h3>
               <p class="text-xs text-slate-500 mt-1">
                 Durasi kerja (IN→OUT, termasuk cross-day) per outlet
-                <span class="text-indigo-600">· Klik bar untuk detail</span>
+                <span v-if="!pdfExportMode" class="text-indigo-600 at-pdf-hide">· Klik bar untuk detail</span>
               </p>
               <div class="mt-4 bg-slate-50 rounded-xl p-2 at-chart-clickable">
                 <apexchart type="bar" height="340" :options="hoursBarOptions" :series="hoursBarSeries" @dataPointSelection="onBarChartClick" />
@@ -625,7 +655,7 @@ onMounted(async () => {
           </section>
 
           <!-- Table -->
-          <section v-if="outletStats.length" class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <section v-if="outletStats.length" ref="pdfTableRef" class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
               <h3 class="text-base font-semibold text-slate-900">Detail per Outlet</h3>
             </div>
@@ -651,12 +681,14 @@ onMounted(async () => {
                   >
                     <td class="px-5 py-3.5">
                       <button
+                        v-if="!pdfExportMode"
                         type="button"
                         class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline text-left transition-colors"
                         @click="openOutletDetail(row)"
                       >
                         {{ row.nama_outlet }}
                       </button>
+                      <span v-else class="font-medium text-slate-900 at-pdf-outlet-name">{{ row.nama_outlet }}</span>
                     </td>
                     <td class="px-5 py-3.5 text-right text-slate-700">{{ row.scan_in }}</td>
                     <td class="px-5 py-3.5 text-right text-slate-700">{{ row.scan_out }}</td>
