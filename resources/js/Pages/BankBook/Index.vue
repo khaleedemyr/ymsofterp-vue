@@ -6,11 +6,114 @@
           <i class="fa-solid fa-book"></i> Buku Bank
         </h1>
         <div class="flex gap-3">
+          <button @click="showOpeningPanel = !showOpeningPanel" class="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa fa-scale-balanced mr-2"></i> Saldo Awal
+          </button>
           <button @click="exportReport" class="bg-gradient-to-r from-blue-500 to-blue-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-file-excel mr-2"></i> Export Report
           </button>
           <button @click="goToCreatePage" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             + Tambah Entri
+          </button>
+        </div>
+      </div>
+
+      <!-- Saldo Awal Panel -->
+      <div v-if="showOpeningPanel" class="bg-white rounded-2xl shadow-2xl p-6 mb-6 border border-indigo-100">
+        <h2 class="text-lg font-bold text-gray-800 mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-scale-balanced text-indigo-500"></i> Input Saldo Awal
+        </h2>
+        <p class="text-sm text-gray-600 mb-4">
+          Saldo rekening akan diset ke nominal saldo awal, lalu transaksi setelah tanggal tersebut dihitung ulang dari titik itu.
+        </p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Rekening Bank <span class="text-red-500">*</span></label>
+            <select
+              v-model="openingForm.bank_account_id"
+              @change="loadOpeningPreview"
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Pilih rekening...</option>
+              <option v-for="bank in bankAccounts" :key="bank.id" :value="bank.id">
+                {{ bank.bank_name }} - {{ bank.account_number }} ({{ bank.outlet_name }})
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Tanggal Saldo Awal <span class="text-red-500">*</span></label>
+            <input
+              v-model="openingForm.as_of_date"
+              type="date"
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Saldo Awal (Rp) <span class="text-red-500">*</span></label>
+            <input
+              v-model="openingForm.opening_amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Nominal saldo awal"
+            />
+          </div>
+
+          <div class="lg:col-span-2">
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Saldo Aktual Bank (opsional — hitung otomatis)</label>
+            <input
+              v-model="openingForm.actual_balance"
+              type="number"
+              min="0"
+              step="0.01"
+              @input="applyActualBalance"
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Isi saldo dari rekening koran / m-banking"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Keterangan</label>
+            <input
+              v-model="openingForm.description"
+              type="text"
+              class="w-full border border-blue-200 rounded-lg px-4 py-3 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Saldo awal"
+            />
+          </div>
+        </div>
+
+        <div v-if="openingPreview" class="mt-4 p-4 rounded-xl bg-indigo-50 text-sm text-indigo-900 space-y-1">
+          <p v-if="openingPreview.has_opening_balance" class="font-semibold text-red-600">
+            Rekening ini sudah punya saldo awal — tidak bisa input ulang.
+          </p>
+          <p v-if="openingPreview.first_transaction_date">
+            Transaksi pertama di sistem: <strong>{{ formatDate(openingPreview.first_transaction_date) }}</strong>
+            — tanggal saldo awal harus <strong>sebelum</strong> tanggal ini.
+          </p>
+          <p v-if="openingPreview.suggested_opening_date">
+            Saran tanggal: <strong>{{ formatDate(openingPreview.suggested_opening_date) }}</strong>
+          </p>
+          <p>Net mutasi tercatat: <strong>{{ formatCurrency(openingPreview.net_mutation) }}</strong></p>
+          <p>Saldo sistem saat ini: <strong>{{ formatCurrency(openingPreview.current_system_balance) }}</strong></p>
+          <p v-if="openingForm.actual_balance" class="text-indigo-700">
+            Saldo awal terhitung: <strong>{{ formatCurrency(computedOpeningFromActual) }}</strong>
+            (= saldo aktual − net mutasi)
+          </p>
+        </div>
+
+        <div class="flex justify-end mt-4">
+          <button
+            type="button"
+            @click="submitOpeningBalance"
+            :disabled="openingSubmitting || openingPreview?.has_opening_balance"
+            class="px-6 py-3 bg-indigo-600 text-white rounded-lg font-bold shadow-lg hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {{ openingSubmitting ? 'Menyimpan...' : 'Simpan Saldo Awal' }}
           </button>
         </div>
       </div>
@@ -131,7 +234,14 @@
                 <div class="text-xs text-gray-400">{{ entry.bank_account?.outlet?.nama_outlet || 'Head Office' }}</div>
               </td>
               <td class="px-6 py-3 whitespace-nowrap">
-                <span 
+                <span
+                  v-if="entry.reference_type === 'opening_balance'"
+                  class="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800"
+                >
+                  Saldo Awal
+                </span>
+                <span
+                  v-else
                   :class="entry.transaction_type === 'credit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
                   class="px-2 py-1 rounded-full text-xs font-semibold"
                 >
@@ -218,6 +328,7 @@ import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 const props = defineProps({
   bankBooks: Object,
@@ -237,6 +348,91 @@ const bankSearch = ref('');
 const bankSearchInput = ref('');
 const showBankDropdown = ref(false);
 const keepDropdownOpen = ref(false);
+const showOpeningPanel = ref(false);
+const openingSubmitting = ref(false);
+const openingPreview = ref(null);
+
+const openingForm = ref({
+  bank_account_id: '',
+  as_of_date: '',
+  opening_amount: '',
+  actual_balance: '',
+  description: 'Saldo awal',
+});
+
+const computedOpeningFromActual = computed(() => {
+  if (!openingPreview.value || !openingForm.value.actual_balance) return 0;
+  const actual = Number(openingForm.value.actual_balance) || 0;
+  const net = Number(openingPreview.value.net_mutation) || 0;
+  return Math.max(0, actual - net);
+});
+
+async function loadOpeningPreview() {
+  openingPreview.value = null;
+  if (!openingForm.value.bank_account_id) return;
+
+  try {
+    const { data } = await axios.get('/bank-books/opening-balance/preview', {
+      params: { bank_account_id: openingForm.value.bank_account_id },
+    });
+    openingPreview.value = data;
+    if (data.suggested_opening_date && !openingForm.value.as_of_date) {
+      openingForm.value.as_of_date = data.suggested_opening_date;
+    }
+  } catch (e) {
+    Swal.fire({ icon: 'error', title: 'Gagal', text: 'Gagal memuat info saldo awal' });
+  }
+}
+
+function applyActualBalance() {
+  if (!openingPreview.value) return;
+  const computed = computedOpeningFromActual.value;
+  if (computed > 0) {
+    openingForm.value.opening_amount = computed;
+  }
+}
+
+async function submitOpeningBalance() {
+  if (!openingForm.value.bank_account_id || !openingForm.value.as_of_date || !openingForm.value.opening_amount) {
+    Swal.fire({ icon: 'warning', title: 'Lengkapi data', text: 'Rekening, tanggal, dan saldo awal wajib diisi.' });
+    return;
+  }
+
+  const confirm = await Swal.fire({
+    title: 'Simpan Saldo Awal?',
+    html: `Saldo rekening akan diset ke <strong>${formatCurrency(openingForm.value.opening_amount)}</strong> per tanggal <strong>${formatDate(openingForm.value.as_of_date)}</strong>, lalu transaksi berikutnya dihitung ulang.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Simpan',
+    cancelButtonText: 'Batal',
+  });
+
+  if (!confirm.isConfirmed) return;
+
+  openingSubmitting.value = true;
+  router.post('/bank-books/opening-balance', {
+    bank_account_id: openingForm.value.bank_account_id,
+    as_of_date: openingForm.value.as_of_date,
+    opening_amount: openingForm.value.opening_amount,
+    description: openingForm.value.description,
+  }, {
+    preserveScroll: true,
+    onSuccess: () => {
+      openingSubmitting.value = false;
+      openingForm.value = { bank_account_id: '', as_of_date: '', opening_amount: '', actual_balance: '', description: 'Saldo awal' };
+      openingPreview.value = null;
+      Swal.fire({ icon: 'success', title: 'Berhasil', text: 'Saldo awal tersimpan', timer: 2000, showConfirmButton: false });
+    },
+    onError: (errors) => {
+      openingSubmitting.value = false;
+      const msg = errors?.error || Object.values(errors || {})[0] || 'Gagal menyimpan saldo awal';
+      Swal.fire({ icon: 'error', title: 'Gagal', text: msg });
+    },
+    onFinish: () => {
+      openingSubmitting.value = false;
+    },
+  });
+}
 
 const selectedBankName = computed(() => {
   if (!filters.value.bank_account_id) {

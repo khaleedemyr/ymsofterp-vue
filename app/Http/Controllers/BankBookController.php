@@ -198,6 +198,10 @@ class BankBookController extends Controller
      */
     public function update(Request $request, BankBook $bankBook, BankBookService $bankBookService)
     {
+        if ($bankBook->reference_type === 'opening_balance') {
+            return back()->with('error', 'Entri saldo awal tidak dapat diubah. Hapus lalu input ulang jika perlu koreksi.');
+        }
+
         $validated = $request->validate([
             'bank_account_id' => 'required|exists:bank_accounts,id',
             'transaction_date' => 'required|date',
@@ -230,6 +234,40 @@ class BankBookController extends Controller
                 ->with('success', 'Entri buku bank berhasil dihapus.');
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal menghapus entri buku bank: ' . $e->getMessage());
+        }
+    }
+
+    public function openingBalancePreview(Request $request, BankBookService $bankBookService)
+    {
+        $request->validate([
+            'bank_account_id' => 'required|exists:bank_accounts,id',
+        ]);
+
+        return response()->json(
+            $bankBookService->getOpeningBalancePreview((int) $request->bank_account_id)
+        );
+    }
+
+    public function storeOpeningBalance(Request $request, BankBookService $bankBookService)
+    {
+        $validated = $request->validate([
+            'bank_account_id' => 'required|exists:bank_accounts,id',
+            'as_of_date' => 'required|date',
+            'opening_amount' => 'required|numeric|min:0.01',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $bankBookService->createOpeningBalance(
+                (int) $validated['bank_account_id'],
+                $validated['as_of_date'],
+                (float) $validated['opening_amount'],
+                $validated['description'] ?? null
+            );
+
+            return back()->with('success', 'Saldo awal berhasil disimpan. Saldo rekening mengikuti nominal saldo awal.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal menyimpan saldo awal: '.$e->getMessage());
         }
     }
 

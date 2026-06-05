@@ -506,6 +506,108 @@ class BankBookService
     }
 
     /**
+     * Catat saldo awal rekening. Saldo pada entri ini langsung = nominal saldo awal,
+     * lalu semua transaksi setelah tanggal tersebut dihitung ulang dari titik itu.
+     */
+    public function createOpeningBalance(int $bankAccountId, string $asOfDate, float $amount, ?string $description = null): BankBook
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Saldo awal harus lebih dari 0.');
+        }
+
+        $exists = BankBook::where('bank_account_id', $bankAccountId)
+            ->where('reference_type', 'opening_balance')
+            ->exists();
+
+        if ($exists) {
+            throw new \RuntimeException('Saldo awal untuk rekening ini sudah pernah dicatat.');
+        }
+
+        $firstTxnDate = BankBook::where('bank_account_id', $bankAccountId)->min('transaction_date');
+        if ($firstTxnDate && $asOfDate >= $firstTxnDate) {
+            throw new \RuntimeException(
+                'Tanggal saldo awal harus sebelum transaksi pertama ('.Carbon::parse($firstTxnDate)->format('d-m-Y').').'
+            );
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $entry = BankBook::create([
+                'bank_account_id' => $bankAccountId,
+                'transaction_date' => $asOfDate,
+                'transaction_type' => 'credit',
+                'amount' => $amount,
+                'balance' => $amount,
+                'description' => $description ?? 'Saldo awal',
+                'reference_type' => 'opening_balance',
+                'reference_id' => $bankAccountId,
+            ]);
+
+            BankBook::recalculateBalance($bankAccountId, $asOfDate);
+
+            DB::commit();
+
+            return $entry->fresh();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('BankBookService::createOpeningBalance failed', [
+                'error' => $e->getMessage(),
+                'bank_account_id' => $bankAccountId,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Info bantu untuk form saldo awal (per rekening).
+     */
+    public function getOpeningBalancePreview(int $bankAccountId): array
+    {
+        $hasOpening = BankBook::where('bank_account_id', $bankAccountId)
+            ->where('reference_type', 'opening_balance')
+            ->exists();
+
+        $firstTxnDate = BankBook::where('bank_account_id', $bankAccountId)
+            ->where(function ($q) {
+                $q->whereNull('reference_type')
+                    ->orWhere('reference_type', '!=', 'opening_balance');
+            })
+            ->min('transaction_date');
+
+        $netRow = BankBook::where('bank_account_id', $bankAccountId)
+            ->where(function ($q) {
+                $q->whereNull('reference_type')
+                    ->orWhere('reference_type', '!=', 'opening_balance');
+            })
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN transaction_type = 'credit' THEN amount ELSE 0 END), 0)
+                - COALESCE(SUM(CASE WHEN transaction_type = 'debit' THEN amount ELSE 0 END), 0) as net
+            ")
+            ->first();
+
+        $netMutation = (float) ($netRow->net ?? 0);
+
+        $lastEntry = BankBook::where('bank_account_id', $bankAccountId)
+            ->orderBy('transaction_date', 'desc')
+            ->orderBy('id', 'desc')
+            ->first();
+
+        $suggestedDate = null;
+        if ($firstTxnDate) {
+            $suggestedDate = Carbon::parse($firstTxnDate)->subDay()->format('Y-m-d');
+        }
+
+        return [
+            'has_opening_balance' => $hasOpening,
+            'first_transaction_date' => $firstTxnDate ? Carbon::parse($firstTxnDate)->format('Y-m-d') : null,
+            'suggested_opening_date' => $suggestedDate,
+            'net_mutation' => round($netMutation, 2),
+            'current_system_balance' => round((float) ($lastEntry->balance ?? 0), 2),
+        ];
+    }
+
+    /**
      * Delete bank book entries by reference (when transaction is deleted)
      *
      * @param string $referenceType
