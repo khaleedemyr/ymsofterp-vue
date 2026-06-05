@@ -3519,6 +3519,34 @@ class AttendanceReportController extends Controller
             }
         }
 
+        $summary['leave_breakdown'] = $this->buildLeaveBreakdownList($leaveData);
+
         return $summary;
+    }
+
+    /**
+     * Daftar izin/cuti per jenis (Sick Leave, Annual Leave, Extra Off, Public Holiday, Matrimony, dll.)
+     *
+     * @return array<int, array{leave_type_id: int, name: string, days: int}>
+     */
+    private function buildLeaveBreakdownList(array $leaveData): array
+    {
+        $leaveTypes = DB::table('leave_types')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $breakdown = [];
+        foreach ($leaveTypes as $leaveType) {
+            $key = strtolower(str_replace(' ', '_', $leaveType->name)) . '_days';
+            $days = (int) ($leaveData[$key] ?? 0);
+            $breakdown[] = [
+                'leave_type_id' => $leaveType->id,
+                'name' => $leaveType->name,
+                'days' => $days,
+            ];
+        }
+
+        return $breakdown;
     }
 } 

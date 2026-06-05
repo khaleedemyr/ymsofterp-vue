@@ -47,6 +47,8 @@ class AttendanceTrackingController extends Controller
                     'u.id',
                     'u.nama_lengkap',
                     'u.nik',
+                    'u.avatar',
+                    'u.upload_latest_color_photo',
                     'j.nama_jabatan',
                     'o.nama_outlet',
                     'd.nama_divisi',
@@ -72,6 +74,28 @@ class AttendanceTrackingController extends Controller
                 'start_date' => $startDate,
                 'end_date' => $endDate,
             ],
+        ]);
+    }
+
+    public function outletDetail(Request $request)
+    {
+        $userId = (int) $request->get('user_id');
+        $outletId = (int) $request->get('outlet_id');
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+
+        if (! $userId || ! $outletId || ! $startDate || ! $endDate) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Parameter tidak lengkap',
+            ], 422);
+        }
+
+        $data = $this->outletAnalytics->getOutletSessionDetails($userId, $outletId, $startDate, $endDate);
+
+        return response()->json([
+            'success' => true,
+            ...$data,
         ]);
     }
 }

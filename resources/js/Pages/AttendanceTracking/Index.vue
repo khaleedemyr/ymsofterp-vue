@@ -24,6 +24,12 @@ const loadingEmployees = ref(false)
 const isLoading = ref(false)
 const exportingPdf = ref(false)
 
+const showOutletModal = ref(false)
+const outletModalLoading = ref(false)
+const outletModalError = ref(null)
+const outletModalData = ref(null)
+const expandedSessions = ref(new Set())
+
 const bulan = ref(props.filters?.bulan || new Date().getMonth() + 1)
 const tahun = ref(props.filters?.tahun || new Date().getFullYear())
 
@@ -41,6 +47,24 @@ const periodLabel = computed(() => {
 
 const hasData = computed(() => props.employee && props.summary)
 
+const employeeAvatarUrl = computed(() => {
+  if (!props.employee) return '/images/avatar-default.png'
+  if (props.employee.avatar) return `/storage/${props.employee.avatar}`
+  if (props.employee.upload_latest_color_photo) return `/storage/${props.employee.upload_latest_color_photo}`
+  return '/images/avatar-default.png'
+})
+
+function getLeaveStyle(name) {
+  const n = (name || '').toLowerCase()
+  if (n.includes('sick') || n.includes('sakit')) return { icon: 'fa-briefcase-medical', tone: 'rose' }
+  if (n.includes('matrimony') || n.includes('nikah') || n.includes('pernikahan')) return { icon: 'fa-heart', tone: 'pink' }
+  if (n.includes('public holiday') || n.includes('hari libur')) return { icon: 'fa-star', tone: 'sky' }
+  if (n.includes('extra off')) return { icon: 'fa-calendar-plus', tone: 'violet' }
+  if (n.includes('annual') || n.includes('cuti tahunan') || n.includes('cuti')) return { icon: 'fa-umbrella-beach', tone: 'emerald' }
+  if (n.includes('unpaid')) return { icon: 'fa-ban', tone: 'amber' }
+  return { icon: 'fa-file-medical', tone: 'slate' }
+}
+
 const summaryCards = computed(() => {
   if (!props.summary) return []
   const s = props.summary
@@ -50,27 +74,22 @@ const summaryCards = computed(() => {
     { key: 'alpha', label: 'Alpha', value: s.alpa_days, unit: 'hari', icon: 'fa-times-circle', tone: 'rose' },
     { key: 'off', label: 'OFF', value: s.off_days, unit: 'hari', icon: 'fa-calendar-minus', tone: 'slate' },
     { key: 'lembur', label: 'Lembur', value: s.total_lembur, unit: 'jam', icon: 'fa-hourglass-half', tone: 'orange' },
-    { key: 'ph', label: 'PH', value: s.ph_days, unit: 'hari', icon: 'fa-star', tone: 'sky' },
-    { key: 'extra', label: 'Extra Off', value: s.extra_off_days, unit: 'hari', icon: 'fa-calendar-plus', tone: 'violet' },
+    { key: 'ph_komp', label: 'PH Kompensasi', value: s.ph_days, unit: 'hari', icon: 'fa-award', tone: 'sky' },
     { key: 'kerja', label: 'Hari Kerja', value: s.hari_kerja, unit: 'hari', icon: 'fa-briefcase', tone: 'indigo' },
     { key: 'pct', label: 'Kehadiran', value: s.percentage, unit: '%', icon: 'fa-percentage', tone: 'teal' },
   ]
 })
 
-const leaveSummaryItems = computed(() => {
-  if (!props.summary) return []
-  const skip = new Set([
-    'hari_kerja', 'present_days', 'off_days', 'alpa_days', 'ph_days', 'ph_bonus',
-    'extra_off_days', 'total_telat', 'total_lembur', 'total_lembur_regular',
-    'extra_off_overtime_hours', 'percentage', 'total_shift_days',
-  ])
-  return Object.entries(props.summary)
-    .filter(([key, val]) => key.endsWith('_days') && !skip.has(key) && val > 0)
-    .map(([key, val]) => ({
-      label: key.replace(/_days$/, '').replace(/_/g, ' '),
-      value: val,
-    }))
+const leaveBreakdown = computed(() => {
+  if (!props.summary?.leave_breakdown) return []
+  return props.summary.leave_breakdown.map((item) => ({
+    ...item,
+    ...getLeaveStyle(item.name),
+  }))
 })
+
+const leaveBreakdownWithDays = computed(() => leaveBreakdown.value.filter((item) => item.days > 0))
+const leaveBreakdownTotal = computed(() => leaveBreakdown.value.reduce((sum, item) => sum + item.days, 0))
 
 const chartBase = {
   theme: { mode: 'light' },
@@ -86,7 +105,11 @@ const pieLabels = computed(() => props.outletStats.map((o) => o.nama_outlet))
 
 const pieOptions = computed(() => ({
   ...chartBase,
-  chart: { ...chartBase.chart, type: 'pie' },
+  chart: {
+    ...chartBase.chart,
+    type: 'pie',
+    selection: { enabled: true },
+  },
   labels: pieLabels.value,
   legend: { position: 'bottom', fontSize: '13px', labels: { colors: '#334155' } },
   dataLabels: {
@@ -113,7 +136,11 @@ const hoursBarSeries = computed(() => [{
 
 const hoursBarOptions = computed(() => ({
   ...chartBase,
-  chart: { ...chartBase.chart, type: 'bar' },
+  chart: {
+    ...chartBase.chart,
+    type: 'bar',
+    selection: { enabled: true },
+  },
   plotOptions: { bar: { borderRadius: 6, horizontal: true, barHeight: '65%' } },
   xaxis: {
     categories: props.outletStats.map((o) => o.nama_outlet),
@@ -140,6 +167,63 @@ const toneClasses = {
   violet: 'bg-violet-50 border-violet-200 text-violet-700',
   indigo: 'bg-indigo-50 border-indigo-200 text-indigo-700',
   teal: 'bg-teal-50 border-teal-200 text-teal-700',
+  pink: 'bg-pink-50 border-pink-200 text-pink-700',
+}
+
+async function openOutletDetail(outlet) {
+  if (!props.filters?.user_id || !outlet?.id_outlet) return
+
+  showOutletModal.value = true
+  outletModalLoading.value = true
+  outletModalError.value = null
+  outletModalData.value = null
+  expandedSessions.value = new Set()
+
+  try {
+    const res = await axios.get(route('api.attendance-tracking.outlet-detail'), {
+      params: {
+        user_id: props.filters.user_id,
+        outlet_id: outlet.id_outlet,
+        start_date: props.filters.start_date,
+        end_date: props.filters.end_date,
+      },
+    })
+    if (res.data.success) {
+      outletModalData.value = res.data
+    } else {
+      outletModalError.value = res.data.message || 'Gagal memuat detail'
+    }
+  } catch (e) {
+    outletModalError.value = e.response?.data?.message || 'Terjadi kesalahan saat memuat detail'
+  } finally {
+    outletModalLoading.value = false
+  }
+}
+
+function closeOutletModal() {
+  showOutletModal.value = false
+  outletModalData.value = null
+  outletModalError.value = null
+}
+
+function onPieChartClick(_event, _chartContext, config) {
+  const idx = config.dataPointIndex ?? config.seriesIndex
+  if (idx !== undefined && props.outletStats[idx]) {
+    openOutletDetail(props.outletStats[idx])
+  }
+}
+
+function onBarChartClick(_event, _chartContext, config) {
+  if (config.dataPointIndex !== undefined && props.outletStats[config.dataPointIndex]) {
+    openOutletDetail(props.outletStats[config.dataPointIndex])
+  }
+}
+
+function toggleSessionScans(tanggal) {
+  const next = new Set(expandedSessions.value)
+  if (next.has(tanggal)) next.delete(tanggal)
+  else next.add(tanggal)
+  expandedSessions.value = next
 }
 
 async function fetchEmployees() {
@@ -230,11 +314,9 @@ function exportPdf() {
       ['Alpha', `${props.summary.alpa_days} hari`],
       ['OFF', `${props.summary.off_days} hari`],
       ['Lembur', `${props.summary.total_lembur} jam`],
-      ['PH', `${props.summary.ph_days} hari`],
-      ['Extra Off', `${props.summary.extra_off_days} hari`],
+      ['PH Kompensasi', `${props.summary.ph_days} hari`],
       ['Hari Kerja', `${props.summary.hari_kerja} hari`],
       ['Kehadiran', `${props.summary.percentage}%`],
-      ...leaveSummaryItems.value.map((i) => [i.label, `${i.value} hari`]),
     ]
 
     summaryLines.forEach(([label, val]) => {
@@ -245,6 +327,26 @@ function exportPdf() {
       doc.text(val, margin + 55, y)
       y += 6
     })
+
+    if (leaveBreakdown.value.length) {
+      y += 4
+      ensureSpace(10)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(12)
+      doc.setTextColor(30, 41, 59)
+      doc.text('Izin & Cuti (disetujui)', margin, y)
+      y += 7
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
+      leaveBreakdown.value.forEach((item) => {
+        ensureSpace(6)
+        doc.setTextColor(71, 85, 105)
+        doc.text(item.name, margin, y)
+        doc.setTextColor(30, 41, 59)
+        doc.text(`${item.days} hari`, margin + 70, y)
+        y += 6
+      })
+    }
 
     if (props.outletStats.length) {
       y += 6
@@ -408,8 +510,14 @@ onMounted(async () => {
           <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
             <div class="flex flex-wrap items-center justify-between gap-4">
               <div class="flex items-center gap-4">
-                <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-md">
-                  <i class="fas fa-user text-white text-xl"></i>
+                <div class="relative shrink-0">
+                  <img
+                    :src="employeeAvatarUrl"
+                    :alt="employee.nama_lengkap"
+                    class="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-200 shadow-md"
+                    @error="($event.target).src = '/images/avatar-default.png'"
+                  />
+                  <span class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white"></span>
                 </div>
                 <div>
                   <h3 class="text-xl font-bold text-slate-900">{{ employee.nama_lengkap }}</h3>
@@ -439,7 +547,7 @@ onMounted(async () => {
           </section>
 
           <!-- Summary -->
-          <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
+          <section class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <div
               v-for="card in summaryCards"
               :key="card.key"
@@ -454,30 +562,64 @@ onMounted(async () => {
                 {{ card.value }}<span class="text-sm font-medium ml-1 opacity-70">{{ card.unit }}</span>
               </p>
             </div>
-            <div
-              v-for="item in leaveSummaryItems"
-              :key="item.label"
-              class="rounded-xl border p-4 bg-slate-50 border-slate-200 text-slate-700"
-            >
-              <p class="text-xs font-semibold uppercase tracking-wide opacity-80 capitalize mb-2">{{ item.label }}</p>
-              <p class="text-2xl font-bold">{{ item.value }}<span class="text-sm font-medium ml-1 opacity-70">hari</span></p>
+          </section>
+
+          <!-- Izin & Cuti -->
+          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex items-center gap-2">
+                <i class="fas fa-calendar-check text-indigo-500"></i>
+                <h3 class="text-base font-semibold text-slate-900">Izin & Cuti (Disetujui)</h3>
+              </div>
+              <span class="text-xs font-medium text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full">
+                Total: <strong class="text-slate-900">{{ leaveBreakdownTotal }}</strong> hari
+                <span v-if="leaveBreakdownWithDays.length" class="text-slate-400 mx-1">·</span>
+                <span v-if="leaveBreakdownWithDays.length">{{ leaveBreakdownWithDays.length }} jenis digunakan</span>
+              </span>
             </div>
+
+            <div v-if="leaveBreakdown.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              <div
+                v-for="item in leaveBreakdown"
+                :key="item.leave_type_id"
+                class="rounded-xl border p-4 transition-all"
+                :class="[
+                  toneClasses[item.tone],
+                  item.days > 0 ? 'shadow-sm' : 'opacity-50',
+                ]"
+              >
+                <div class="flex items-center gap-2 mb-2">
+                  <i :class="['fas', item.icon, 'text-sm']"></i>
+                  <p class="text-xs font-semibold leading-tight">{{ item.name }}</p>
+                </div>
+                <p class="text-2xl font-bold leading-none">
+                  {{ item.days }}<span class="text-sm font-medium ml-1 opacity-70">hari</span>
+                </p>
+              </div>
+            </div>
+            <p v-else class="text-sm text-slate-500 text-center py-6">Tidak ada data jenis izin/cuti aktif.</p>
           </section>
 
           <!-- Charts -->
           <section v-if="outletStats.length" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
               <h3 class="text-base font-semibold text-slate-900">Distribusi Scan IN per Outlet</h3>
-              <p class="text-xs text-slate-500 mt-1">Persentase kehadiran (scan masuk) di masing-masing outlet</p>
-              <div class="mt-4 bg-slate-50 rounded-xl p-2">
-                <apexchart type="pie" height="340" :options="pieOptions" :series="pieSeries" />
+              <p class="text-xs text-slate-500 mt-1">
+                Persentase kehadiran (scan masuk) di masing-masing outlet
+                <span class="text-indigo-600">· Klik slice untuk detail</span>
+              </p>
+              <div class="mt-4 bg-slate-50 rounded-xl p-2 at-chart-clickable">
+                <apexchart type="pie" height="340" :options="pieOptions" :series="pieSeries" @dataPointSelection="onPieChartClick" />
               </div>
             </div>
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
               <h3 class="text-base font-semibold text-slate-900">Total Jam per Outlet</h3>
-              <p class="text-xs text-slate-500 mt-1">Durasi kerja (IN→OUT, termasuk cross-day) per outlet</p>
-              <div class="mt-4 bg-slate-50 rounded-xl p-2">
-                <apexchart type="bar" height="340" :options="hoursBarOptions" :series="hoursBarSeries" />
+              <p class="text-xs text-slate-500 mt-1">
+                Durasi kerja (IN→OUT, termasuk cross-day) per outlet
+                <span class="text-indigo-600">· Klik bar untuk detail</span>
+              </p>
+              <div class="mt-4 bg-slate-50 rounded-xl p-2 at-chart-clickable">
+                <apexchart type="bar" height="340" :options="hoursBarOptions" :series="hoursBarSeries" @dataPointSelection="onBarChartClick" />
               </div>
             </div>
           </section>
@@ -511,7 +653,15 @@ onMounted(async () => {
                     class="hover:bg-indigo-50/40 transition-colors"
                     :class="idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'"
                   >
-                    <td class="px-5 py-3.5 font-medium text-slate-900">{{ row.nama_outlet }}</td>
+                    <td class="px-5 py-3.5">
+                      <button
+                        type="button"
+                        class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline text-left transition-colors"
+                        @click="openOutletDetail(row)"
+                      >
+                        {{ row.nama_outlet }}
+                      </button>
+                    </td>
                     <td class="px-5 py-3.5 text-right text-slate-700">{{ row.scan_in }}</td>
                     <td class="px-5 py-3.5 text-right text-slate-700">{{ row.scan_out }}</td>
                     <td class="px-5 py-3.5 text-right font-semibold text-indigo-600">{{ row.scan_in_percentage }}%</td>
@@ -528,6 +678,147 @@ onMounted(async () => {
         </template>
       </div>
     </div>
+
+    <!-- Modal Detail Outlet -->
+    <Teleport to="body">
+      <div v-if="showOutletModal" class="fixed inset-0 z-[100] overflow-y-auto">
+        <div class="flex min-h-screen items-center justify-center p-4">
+          <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]" @click="closeOutletModal"></div>
+
+          <div class="relative z-10 w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-slate-200 max-h-[90vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">
+                  Detail Absensi — {{ outletModalData?.outlet?.nama_outlet || '...' }}
+                </h3>
+                <p v-if="periodLabel" class="text-sm text-slate-500 mt-1">{{ periodLabel }}</p>
+                <p v-if="employee" class="text-xs text-slate-400 mt-0.5">{{ employee.nama_lengkap }} · {{ employee.nik }}</p>
+              </div>
+              <button
+                type="button"
+                class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                @click="closeOutletModal"
+              >
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+
+            <div class="px-6 py-4 flex-1 overflow-y-auto">
+              <div v-if="outletModalLoading" class="text-center py-12 text-slate-500">
+                <i class="fas fa-spinner fa-spin text-2xl text-indigo-500 mb-3"></i>
+                <p class="text-sm">Memuat detail absensi...</p>
+              </div>
+
+              <div v-else-if="outletModalError" class="text-center py-12">
+                <i class="fas fa-exclamation-circle text-2xl text-rose-500 mb-3"></i>
+                <p class="text-sm text-rose-600">{{ outletModalError }}</p>
+              </div>
+
+              <template v-else-if="outletModalData">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                  <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                    <p class="text-xs text-indigo-600 font-medium">Scan IN</p>
+                    <p class="text-xl font-bold text-indigo-800">{{ outletModalData.summary.total_scan_in }}</p>
+                  </div>
+                  <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p class="text-xs text-emerald-600 font-medium">Scan OUT</p>
+                    <p class="text-xl font-bold text-emerald-800">{{ outletModalData.summary.total_scan_out }}</p>
+                  </div>
+                  <div class="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                    <p class="text-xs text-violet-600 font-medium">Total Jam</p>
+                    <p class="text-xl font-bold text-violet-800">{{ outletModalData.summary.total_hours }} jam</p>
+                  </div>
+                  <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <p class="text-xs text-rose-600 font-medium">Tanpa Checkout</p>
+                    <p class="text-xl font-bold text-rose-800">{{ outletModalData.summary.no_checkout_sessions }}</p>
+                  </div>
+                </div>
+
+                <div v-if="outletModalData.sessions.length" class="overflow-x-auto rounded-xl border border-slate-200">
+                  <table class="min-w-full text-sm">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                        <th class="px-4 py-2.5 text-left font-semibold w-8"></th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Hari</th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Tanggal</th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Jam Masuk</th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Jam Keluar</th>
+                        <th class="px-4 py-2.5 text-right font-semibold">Durasi</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      <template v-for="session in outletModalData.sessions" :key="session.tanggal">
+                        <tr class="hover:bg-indigo-50/30 transition-colors">
+                          <td class="px-4 py-3">
+                            <button
+                              v-if="session.scans?.length"
+                              type="button"
+                              class="text-slate-400 hover:text-indigo-600"
+                              @click="toggleSessionScans(session.tanggal)"
+                            >
+                              <i :class="['fas', expandedSessions.has(session.tanggal) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
+                            </button>
+                          </td>
+                          <td class="px-4 py-3 font-medium text-slate-800">{{ session.hari }}</td>
+                          <td class="px-4 py-3 text-slate-700">{{ session.tanggal_label }}</td>
+                          <td class="px-4 py-3 text-emerald-700 font-medium">
+                            {{ session.jam_masuk_display || '—' }}
+                            <span v-if="session.is_cross_day && session.jam_masuk_display" class="text-xs text-amber-600 ml-1">*</span>
+                          </td>
+                          <td class="px-4 py-3 text-rose-700 font-medium">
+                            <span v-if="session.has_no_checkout" class="text-amber-600 text-xs font-semibold">Belum checkout</span>
+                            <template v-else>{{ session.jam_keluar_display || '—' }}</template>
+                            <span v-if="session.is_cross_day && session.jam_keluar_display" class="text-xs text-amber-600 ml-1">+1 hari</span>
+                          </td>
+                          <td class="px-4 py-3 text-right text-slate-700">{{ session.durasi_label || '—' }}</td>
+                        </tr>
+                        <tr v-if="expandedSessions.has(session.tanggal) && session.scans?.length" class="bg-slate-50">
+                          <td colspan="6" class="px-4 py-3">
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Riwayat Scan</p>
+                            <div class="space-y-1.5">
+                              <div
+                                v-for="(scan, scanIdx) in session.scans"
+                                :key="scanIdx"
+                                class="flex flex-wrap items-center gap-2 text-xs"
+                              >
+                                <span
+                                  class="inline-flex items-center px-2 py-0.5 rounded font-semibold"
+                                  :class="scan.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                                >
+                                  {{ scan.type }}
+                                </span>
+                                <span class="text-slate-600">{{ scan.hari }}, {{ scan.tanggal }}</span>
+                                <span class="font-mono font-medium text-slate-800">{{ scan.jam }}</span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+                <p v-else class="text-center py-10 text-sm text-slate-500">Tidak ada sesi absensi di outlet ini pada periode terpilih.</p>
+
+                <p v-if="outletModalData.sessions.some(s => s.is_cross_day)" class="text-xs text-amber-600 mt-3">
+                  <i class="fas fa-info-circle mr-1"></i>
+                  * Sesi cross-day: checkout tercatat di hari berikutnya.
+                </p>
+              </template>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors"
+                @click="closeOutletModal"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -556,5 +847,10 @@ onMounted(async () => {
 
 :deep(.at-multiselect .multiselect__option) {
   @apply text-sm text-slate-700;
+}
+
+:deep(.at-chart-clickable .apexcharts-pie-area),
+:deep(.at-chart-clickable .apexcharts-bar-area) {
+  cursor: pointer;
 }
 </style>
