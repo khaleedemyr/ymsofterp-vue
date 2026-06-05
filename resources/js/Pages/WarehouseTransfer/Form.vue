@@ -15,6 +15,7 @@ const props = defineProps({
 const isEdit = computed(() => !!props.editData);
 
 const serialMode = ref(false);
+const showQtyTable = ref(false);
 const serialInput = ref('');
 const serialInputRef = ref(null);
 const serialScanning = ref(false);
@@ -411,6 +412,15 @@ const canInputItem = computed(() => {
   return form.warehouse_from_id && form.warehouse_to_id && form.warehouse_from_id !== form.warehouse_to_id;
 });
 
+const itemInputRequired = (item, idx) => !serialMode.value && (idx === 0 || !!item.item_id);
+const qtyRowRequired = (item) => !serialMode.value && !!item.item_id;
+
+watch(serialMode, (on) => {
+  if (on) {
+    nextTick(() => serialInputRef.value?.focus());
+  }
+});
+
 onMounted(() => {
   window.addEventListener('keydown', handleF1Focus);
   // Set tanggal otomatis ke hari ini jika belum diset
@@ -530,8 +540,11 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Detail Item (Mode Qty)</label>
+        <div v-if="!serialMode || showQtyTable">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Detail Item (Mode Qty)
+            <span v-if="serialMode" class="text-xs font-normal text-gray-500">(opsional — item dari scan serial sudah tercatat di atas)</span>
+          </label>
           <div v-if="!canInputItem" class="text-red-600 text-sm mb-2">
             Pilih gudang asal dan tujuan terlebih dahulu, dan pastikan tidak sama.
           </div>
@@ -562,7 +575,7 @@ onUnmounted(() => {
                         @keydown.enter="onItemKeydown(idx, $event)"
                         @keydown.esc="onItemKeydown(idx, $event)"
                         class="w-full rounded border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                        :required="!serialMode"
+                        :required="itemInputRequired(item, idx)"
                         autocomplete="off" 
                         placeholder="Cari nama item..." 
                       />
@@ -600,7 +613,7 @@ onUnmounted(() => {
                     </div>
                   </td>
                   <td class="px-3 py-2 min-w-[100px]">
-                    <input type="number" min="0.01" step="0.01" v-model="item.qty" class="w-full rounded border-gray-300" :required="!serialMode && !!item.item_id" />
+                    <input type="number" min="0.01" step="0.01" v-model="item.qty" class="w-full rounded border-gray-300" :required="qtyRowRequired(item)" />
                     <div v-if="form.errors[`items.${idx}.qty`]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${idx}.qty`] }}</div>
                   </td>
                   <td class="px-3 py-2 min-w-[100px]">
@@ -610,7 +623,7 @@ onUnmounted(() => {
                       </select>
                     </template>
                     <template v-else>
-                      <input type="text" v-model="item.unit" class="w-full rounded border-gray-300" required />
+                      <input type="text" v-model="item.unit" class="w-full rounded border-gray-300" :required="qtyRowRequired(item)" />
                     </template>
                     <div v-if="form.errors[`items.${idx}.unit`]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${idx}.unit`] }}</div>
                   </td>
@@ -625,6 +638,11 @@ onUnmounted(() => {
             </table>
           </div>
           <button type="button" @click="addItem" class="mt-2 px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200" :disabled="!canInputItem"><i class="fa fa-plus"></i> Tambah Item</button>
+        </div>
+        <div v-else-if="serialMode && scannedSerials.length > 0" class="text-sm">
+          <button type="button" @click="showQtyTable = true" class="text-blue-600 hover:underline">
+            <i class="fa fa-plus mr-1"></i>Tambah item manual (mode qty, opsional)
+          </button>
         </div>
         <div class="flex justify-end gap-2">
           <button type="button" @click="goBack" class="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold hover:bg-gray-300">Batal</button>
