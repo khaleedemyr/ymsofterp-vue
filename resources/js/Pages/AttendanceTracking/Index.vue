@@ -27,6 +27,7 @@ const isLoading = ref(false)
 const exportingPdf = ref(false)
 const pdfExportMode = ref(false)
 
+const pdfAvatarDataUrl = ref(null)
 const pdfEmployeeRef = ref(null)
 const pdfSummaryRef = ref(null)
 const pdfLeaveRef = ref(null)
@@ -277,19 +278,57 @@ function applyFilter() {
   })
 }
 
-async function captureSection(element) {
+async function loadImageAsDataUrl(url) {
+  try {
+    const response = await fetch(url, { credentials: 'same-origin' })
+    if (!response.ok) throw new Error('fetch failed')
+    const blob = await response.blob()
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const size = Math.max(img.naturalWidth || 256, img.naturalHeight || 256, 256)
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        const min = Math.min(img.naturalWidth, img.naturalHeight)
+        const sx = (img.naturalWidth - min) / 2
+        const sy = (img.naturalHeight - min) / 2
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size)
+        resolve(canvas.toDataURL('image/png'))
+      }
+      img.onerror = () => resolve(null)
+      img.src = url.includes('?') ? url : `${url}?pdf=${Date.now()}`
+    })
+  }
+}
+
+async function captureSection(element, scale = 2) {
   return html2canvas(element, {
-    scale: 2,
+    scale,
     useCORS: true,
     allowTaint: true,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
     logging: false,
+    imageTimeout: 15000,
     onclone: (clonedDoc) => {
       clonedDoc.querySelectorAll('.at-pdf-hide').forEach((el) => { el.style.display = 'none' })
       clonedDoc.querySelectorAll('.at-pdf-outlet-name').forEach((el) => {
         el.style.color = '#0f172a'
         el.style.textDecoration = 'none'
       })
+      const pdfAvatar = clonedDoc.querySelector('.at-pdf-avatar-img')
+      if (pdfAvatar && pdfAvatarDataUrl.value) {
+        pdfAvatar.src = pdfAvatarDataUrl.value
+      }
     },
   })
 }
@@ -318,7 +357,7 @@ function drawPdfHeader(doc, margin, pageW) {
   return 38
 }
 
-function appendCanvasToPdf(doc, canvas, startY, margin, pageW, pageH) {
+function appendCanvasToPdf(doc, canvas, startY, margin, pageW, pageH, imageFormat = 'JPEG', jpegQuality = 0.92) {
   const contentW = pageW - margin * 2
   const scale = contentW / canvas.width
   const totalImgH = canvas.height * scale
@@ -353,8 +392,10 @@ function appendCanvasToPdf(doc, canvas, startY, margin, pageW, pageH) {
       sliceSrcH,
     )
 
-    const sliceData = sliceCanvas.toDataURL('image/jpeg', 0.92)
-    doc.addImage(sliceData, 'JPEG', margin, y, contentW, sliceH)
+    const sliceData = imageFormat === 'PNG'
+      ? sliceCanvas.toDataURL('image/png')
+      : sliceCanvas.toDataURL('image/jpeg', jpegQuality)
+    doc.addImage(sliceData, imageFormat, margin, y, contentW, sliceH)
 
     offsetY += sliceH
     y += sliceH + gap
@@ -386,8 +427,9 @@ async function exportPdf() {
   pdfExportMode.value = true
 
   try {
+    pdfAvatarDataUrl.value = await loadImageAsDataUrl(employeeAvatarUrl.value)
     await nextTick()
-    await new Promise((resolve) => { setTimeout(resolve, 400) })
+    await new Promise((resolve) => { setTimeout(resolve, 500) })
 
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const margin = 10
@@ -396,20 +438,20 @@ async function exportPdf() {
     let y = drawPdfHeader(doc, margin, pageW)
 
     const sections = [
-      pdfEmployeeRef.value,
-      pdfSummaryRef.value,
-      pdfLeaveRef.value,
-      pdfChartsRef.value,
-      pdfTableRef.value,
-    ].filter(Boolean)
+      { el: pdfEmployeeRef.value, scale: 3, format: 'PNG' },
+      { el: pdfSummaryRef.value, scale: 2, format: 'JPEG' },
+      { el: pdfLeaveRef.value, scale: 2, format: 'JPEG' },
+      { el: pdfChartsRef.value, scale: 2, format: 'PNG' },
+      { el: pdfTableRef.value, scale: 2, format: 'JPEG' },
+    ].filter((s) => s.el)
 
     for (const section of sections) {
-      const canvas = await captureSection(section)
+      const canvas = await captureSection(section.el, section.scale)
       if (y > pageH - 40) {
         doc.addPage()
         y = margin
       }
-      y = appendCanvasToPdf(doc, canvas, y, margin, pageW, pageH)
+      y = appendCanvasToPdf(doc, canvas, y, margin, pageW, pageH, section.format)
       y += 2
     }
 
@@ -422,6 +464,7 @@ async function exportPdf() {
     alert('Gagal membuat PDF. Silakan coba lagi.')
   } finally {
     pdfExportMode.value = false
+    pdfAvatarDataUrl.value = null
     exportingPdf.value = false
   }
 }
@@ -551,10 +594,9 @@ onMounted(async () => {
               </button>
               <div v-else class="relative shrink-0">
                 <img
-                  :src="employeeAvatarUrl"
+                  :src="pdfAvatarDataUrl || employeeAvatarUrl"
                   :alt="employee.nama_lengkap"
-                  class="w-32 h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg"
-                  crossorigin="anonymous"
+                  class="at-pdf-avatar-img w-36 h-36 rounded-full object-cover border-4 border-indigo-200 shadow-lg"
                   @error="($event.target).src = '/images/avatar-default.png'"
                 />
                 <span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-emerald-500 border-[3px] border-white"></span>
@@ -876,12 +918,22 @@ onMounted(async () => {
   @apply border-slate-200 shadow-lg rounded-lg;
 }
 
-:deep(.at-multiselect .multiselect__option--highlight) {
-  @apply bg-indigo-600;
-}
-
 :deep(.at-multiselect .multiselect__option) {
   @apply text-sm text-slate-700;
+}
+
+:deep(.at-multiselect .multiselect__option--highlight) {
+  background: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+:deep(.at-multiselect .multiselect__option--selected.multiselect__option--highlight) {
+  background: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+:deep(.at-multiselect .multiselect__option--highlight::after) {
+  color: #ffffff !important;
 }
 
 :deep(.at-chart-clickable .apexcharts-pie-area),
