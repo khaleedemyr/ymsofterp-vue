@@ -286,11 +286,20 @@ trait ReportHelperTrait
     }
 
     /**
-     * Harga satuan GR Serial di Rekap FJ: cost_small tersimpan saat GR (sumbernya floor order / PO).
+     * Harga satuan GR Serial di Rekap FJ per unit baris (si.unit_id).
+     * cost_small disimpan saat GR; qty si juga dalam unit tersebut — konversi ke harga/unit tampilan.
      */
-    protected function rekapFjSerialGrEffectivePriceSql(): string
+    protected function rekapFjSerialGrEffectivePriceSql(string $itemAlias = 'it'): string
     {
-        return 'COALESCE(si.cost_small, 0)';
+        $costSmall = 'COALESCE(si.cost_small, 0)';
+        $smallConv = "COALESCE({$itemAlias}.small_conversion_qty, 1)";
+        $mediumConv = "COALESCE({$itemAlias}.medium_conversion_qty, 1)";
+
+        return "(CASE
+            WHEN si.unit_id = {$itemAlias}.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
+            WHEN si.unit_id = {$itemAlias}.medium_unit_id THEN {$costSmall} * {$smallConv}
+            ELSE {$costSmall}
+        END)";
     }
 
     /**
@@ -337,7 +346,7 @@ trait ReportHelperTrait
     }
 
     /**
-     * Baris pivot Rekap FJ dari GR Nomor Seri (harga cost_small tersimpan saat GR).
+     * Baris pivot Rekap FJ dari GR Nomor Seri (cost_small dikonversi ke unit baris GR).
      */
     protected function rekapFjFetchSerialGrPivotItemRows(?string $from, ?string $to): Collection
     {
@@ -474,7 +483,7 @@ trait ReportHelperTrait
     }
 
     /**
-     * Detail FJ per outlet — GR Nomor Seri (cost_small).
+     * Detail FJ per outlet — GR Nomor Seri (harga per unit tampilan, bukan cost_small mentah).
      */
     protected function rekapFjFetchSerialGrDetailRows(
         string $customer,

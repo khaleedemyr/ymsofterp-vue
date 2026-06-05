@@ -99,7 +99,7 @@
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.do_number }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.outlet_name }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_name }}</td>
-                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.cost_small) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.unit_price) }}</td>
                 <td class="px-4 py-3 text-center">
                   <button @click="removeSerial(idx)" :disabled="saving"
                     class="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-7 h-7 text-xs text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-all duration-150 disabled:opacity-30">

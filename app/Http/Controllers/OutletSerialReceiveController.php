@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Support\FoodGrLastPurchaseForItem;
 use App\Support\InventorySerialEffectiveQty;
+use App\Support\ItemUnitCost;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -134,6 +135,11 @@ class OutletSerialReceiveController extends Controller
                 's.repack_unit_id',
                 's.repack_qty',
                 'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
                 'u.name as unit_name',
                 'ru.name as repack_unit_name',
                 'do_tbl.number as do_number',
@@ -173,6 +179,7 @@ class OutletSerialReceiveController extends Controller
         $repackLabel = $this->serialRepackLabel($serial, $effectiveQty);
 
         [$costSmall, $costSourceDb, $costSourceLabel] = $this->resolveSerialReceiveCost($serial);
+        $unitPrice = ItemUnitCost::priceForUnit($costSmall, $serial, $serial->unit_id);
 
         return response()->json([
             'valid' => true,
@@ -192,6 +199,8 @@ class OutletSerialReceiveController extends Controller
                 'warehouse_outlet_id' => $serial->out_warehouse_outlet_id,
                 'warehouse_name' => $serial->warehouse_name ?? '',
                 'cost_small' => round($costSmall, 4),
+                'unit_price' => $unitPrice,
+                'line_subtotal' => ItemUnitCost::lineSubtotal($costSmall, $serial, $serial->unit_id, $effectiveQty),
                 'cost_source' => $costSourceLabel,
                 'cost_source_key' => $costSourceDb,
                 'source_type' => $serial->source_type,
@@ -347,6 +356,11 @@ class OutletSerialReceiveController extends Controller
             ->select(
                 'si.*',
                 'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
                 'u.name as unit_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_name'
@@ -354,7 +368,8 @@ class OutletSerialReceiveController extends Controller
             ->where('si.header_id', $id)
             ->orderBy('si.delivery_order_number')
             ->orderBy('si.id')
-            ->get();
+            ->get()
+            ->map(fn ($row) => $this->mapSerialReceiveItemForDisplay($row));
 
         return Inertia::render('OutletSerialReceive/Show', [
             'header' => $header,
@@ -849,6 +864,24 @@ class OutletSerialReceiveController extends Controller
      *
      * @return array{0: float, 1: string, 2: string} [cost_small, cost_source_db, cost_source_label]
      */
+    private function mapSerialReceiveItemForDisplay(object $row): object
+    {
+        $itemMaster = (object) [
+            'small_unit_id' => $row->small_unit_id ?? null,
+            'medium_unit_id' => $row->medium_unit_id ?? null,
+            'large_unit_id' => $row->large_unit_id ?? null,
+            'small_conversion_qty' => $row->small_conversion_qty ?? null,
+            'medium_conversion_qty' => $row->medium_conversion_qty ?? null,
+        ];
+
+        $costSmall = (float) ($row->cost_small ?? 0);
+        $qty = (float) ($row->qty ?? 0);
+        $row->unit_price = ItemUnitCost::priceForUnit($costSmall, $itemMaster, $row->unit_id);
+        $row->line_subtotal = ItemUnitCost::lineSubtotal($costSmall, $itemMaster, $row->unit_id, $qty);
+
+        return $row;
+    }
+
     private function resolveSerialReceiveCost(object $serial): array
     {
         $itemId = (int) $serial->item_id;

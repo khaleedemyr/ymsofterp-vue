@@ -85,7 +85,7 @@
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.delivery_order_number }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.outlet_name || row.outlet_id }}</td>
                 <td class="px-4 py-3 text-xs text-gray-600">{{ row.warehouse_name || '-' }}</td>
-                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.cost_small) }}</td>
+                <td class="px-4 py-3 text-right text-gray-700">{{ formatRupiah(row.unit_price) }}</td>
               </tr>
             </tbody>
             <tfoot>
@@ -116,7 +116,7 @@ const props = defineProps({
 })
 
 const totalQty = computed(() => props.items.reduce((sum, i) => sum + Number(i.qty || 0), 0))
-const totalCost = computed(() => props.items.reduce((sum, i) => sum + Number(i.cost_small || 0) * Number(i.qty || 0), 0))
+const totalCost = computed(() => props.items.reduce((sum, i) => sum + Number(i.line_subtotal || 0), 0))
 
 function formatDate(d) {
   if (!d) return '-'
