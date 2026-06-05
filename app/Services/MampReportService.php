@@ -103,6 +103,7 @@ class MampReportService
         DB::table('retail_non_food')
             ->whereBetween('transaction_date', [$dateFrom, $dateTo])
             ->where('status', 'approved')
+            ->whereNull('deleted_at')
             ->select('outlet_id', DB::raw('SUM(total_amount) as total'))
             ->groupBy('outlet_id')
             ->get()
@@ -168,6 +169,7 @@ class MampReportService
             ->where('rnf.category_budget_id', $categoryId)
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
             ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
             ->select(
                 'rnf.id',
                 'rnf.outlet_id',
