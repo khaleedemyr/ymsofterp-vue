@@ -3336,4 +3336,189 @@ class AttendanceReportController extends Controller
         
         return $scanOutTime > $shiftEndTime ? floor(($scanOutTime - $shiftEndTime) / 3600) : 0;
     }
+
+    /**
+     * Ringkasan periode untuk satu karyawan (Attendance Tracking) — logika selaras employeeSummary.
+     */
+    public function buildEmployeePeriodSummary(int $userId, string $startDate, string $endDate): array
+    {
+        $rawData = DB::table('att_log as a')
+            ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
+            ->join('user_pins as up', function ($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
+            })
+            ->join('users as u', 'up.user_id', '=', 'u.id')
+            ->select(
+                'a.scan_date',
+                'a.inoutmode',
+                'u.id as user_id',
+                'u.nama_lengkap',
+                'u.division_id'
+            )
+            ->where('u.id', $userId)
+            ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
+            ->orderBy('a.scan_date')
+            ->get();
+
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id . '_' . $date;
+
+            if (! isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap,
+                    'division_id' => $scan->division_id,
+                    'scans' => [],
+                ];
+            }
+
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode,
+            ];
+        }
+
+        $employeeRows = collect();
+        $dates = collect($processedData)->pluck('tanggal')->unique()->values();
+
+        $allShiftData = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->whereBetween('us.tanggal', [$startDate, $endDate])
+            ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+            ->get()
+            ->groupBy(fn ($item) => $item->user_id . '_' . $item->tanggal);
+
+        $holidays = DB::table('tbl_kalender_perusahaan')
+            ->whereBetween('tgl_libur', [$startDate, $endDate])
+            ->pluck('keterangan', 'tgl_libur');
+
+        foreach ($processedData as $data) {
+            $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            $row = (object) [
+                'tanggal' => $result['tanggal'],
+                'user_id' => $result['user_id'],
+                'nama_lengkap' => $result['nama_lengkap'],
+                'division_id' => $data['division_id'],
+                'jam_masuk' => $result['jam_masuk'],
+                'jam_keluar' => $result['jam_keluar'],
+                'total_masuk' => $result['total_masuk'],
+                'total_keluar' => $result['total_keluar'],
+                'is_cross_day' => $result['is_cross_day'],
+                'has_no_checkout' => $result['jam_masuk'] && ! $result['jam_keluar'],
+            ];
+
+            $shiftKey = $row->user_id . '_' . $row->tanggal;
+            $shift = $allShiftData->get($shiftKey, collect())->first();
+            $isOffDay = $this->isShiftOff($shift);
+            $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+            $row->telat = $telatLembur['telat'];
+            $row->lembur = $telatLembur['lembur'];
+            $row->shift_start = $shift->time_start ?? null;
+            $row->shift_end = $shift->time_end ?? null;
+
+            $this->enrichAttendanceDayRow($row, $shift, $holidays);
+
+            if ($this->shouldIncludeAttendanceSummaryRow($row)) {
+                $employeeRows->push($row);
+            }
+        }
+
+        // Hari dengan shift tapi tanpa scan (untuk off/alpa di ringkasan)
+        $shiftDates = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->where('us.user_id', $userId)
+            ->whereBetween('us.tanggal', [$startDate, $endDate])
+            ->select('us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+            ->get();
+
+        foreach ($shiftDates as $shiftRow) {
+            if ($dates->contains($shiftRow->tanggal)) {
+                continue;
+            }
+
+            $row = (object) [
+                'tanggal' => $shiftRow->tanggal,
+                'user_id' => $userId,
+                'jam_masuk' => null,
+                'jam_keluar' => null,
+                'telat' => 0,
+                'lembur' => 0,
+                'has_no_checkout' => false,
+                'shift_start' => $shiftRow->time_start,
+                'shift_end' => $shiftRow->time_end,
+            ];
+
+            $this->enrichAttendanceDayRow($row, $shiftRow, $holidays);
+
+            if ($this->shouldIncludeAttendanceSummaryRow($row)) {
+                $employeeRows->push($row);
+            }
+        }
+
+        $employeeRows = $employeeRows->sortBy('tanggal')->values();
+
+        $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $startDate, $endDate));
+        $totalLemburRegular = floor($employeeRows->sum('lembur'));
+        $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
+
+        $offDays = $this->calculateOffDays($userId, null, $startDate, $endDate);
+        $phData = $this->calculatePHData($userId, $startDate, $endDate);
+        $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
+        $alpaDays = $this->calculateAlpaDays($userId, null, $startDate, $endDate);
+
+        $hariKerja = $this->countHariKerjaFromRows($employeeRows);
+        $totalTelat = $this->sumTelatFromAttendanceRows($employeeRows);
+
+        $today = date('Y-m-d');
+        $shiftCount = DB::table('user_shifts')
+            ->where('user_id', $userId)
+            ->whereBetween('tanggal', [$startDate, $endDate])
+            ->where('tanggal', '<=', $today)
+            ->whereNotNull('shift_id')
+            ->count();
+
+        $presentDays = 0;
+        foreach ($employeeRows as $row) {
+            if (! empty($row->is_off)) {
+                continue;
+            }
+            if ($row->tanggal > $today) {
+                continue;
+            }
+            if (! empty($row->jam_masuk)) {
+                $presentDays++;
+            }
+        }
+
+        $percentage = $shiftCount > 0 ? round(($presentDays / $shiftCount) * 100, 1) : 0;
+
+        $summary = [
+            'hari_kerja' => $hariKerja,
+            'present_days' => $presentDays,
+            'off_days' => $offDays,
+            'alpa_days' => $alpaDays,
+            'ph_days' => $phData['days'],
+            'ph_bonus' => $phData['bonus'],
+            'extra_off_days' => $leaveData['extra_off_days'] ?? 0,
+            'total_telat' => $totalTelat,
+            'total_lembur' => $totalLembur,
+            'total_lembur_regular' => $totalLemburRegular,
+            'extra_off_overtime_hours' => $extraOffOvertimeTotal,
+            'percentage' => $percentage,
+            'total_shift_days' => $shiftCount,
+        ];
+
+        foreach ($leaveData as $key => $value) {
+            if (str_ends_with($key, '_days') && $key !== 'extra_off_days') {
+                $summary[$key] = $value;
+            }
+        }
+
+        return $summary;
+    }
 } 

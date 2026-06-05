@@ -3138,6 +3138,7 @@ Route::middleware(['auth', 'verified'])->prefix('jabatan-training')->name('jabat
 
   // Attendance Routes
   Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/attendance-tracking', [\App\Http\Controllers\AttendanceTrackingController::class, 'index'])->name('attendance-tracking.index');
     Route::get('/attendance', [\App\Http\Controllers\AttendanceController::class, 'index'])->name('attendance.index');
     Route::get('/api/attendance/data', [\App\Http\Controllers\AttendanceController::class, 'getAttendanceDataApi'])->name('api.attendance.data');
     Route::get('/api/attendance/calendar-data', [\App\Http\Controllers\AttendanceController::class, 'getCalendarData'])->name('api.attendance.calendar-data');

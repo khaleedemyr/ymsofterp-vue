@@ -118,6 +118,7 @@ export default {
     "report_absent": "Report Absent",
     "libur_nasional": "Libur Nasional",
     "report_attendance": "Report Attendance",
+    "attendance_tracking": "Attendance Tracking",
     "attendance_per_outlet": "Attendance per Outlet",
     "holiday_attendance": "Holiday Attendance",
     "extra_off_ph_report": "Extra Off & PH Report",
