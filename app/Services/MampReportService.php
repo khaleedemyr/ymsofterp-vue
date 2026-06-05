@@ -208,17 +208,26 @@ class MampReportService
                 'nfpo.id as payment_outlet_id',
                 'nfp.id as non_food_payment_id',
                 'nfp.purchase_order_ops_id',
+                'nfp.purchase_requisition_id',
                 'nfpo.outlet_id',
                 'nfpo.category_id as payment_category_id',
                 'nfp.payment_date as transaction_date',
                 'o.nama_outlet as outlet_name',
-                DB::raw("(
-                    SELECT pr.title
-                    FROM purchase_order_ops_items poi
-                    INNER JOIN purchase_requisitions pr ON pr.id = poi.source_id
-                        AND poi.source_type = 'purchase_requisition_ops'
-                    WHERE poi.purchase_order_ops_id = nfp.purchase_order_ops_id
-                    LIMIT 1
+                DB::raw("COALESCE(
+                    (
+                        SELECT pr.title
+                        FROM purchase_order_ops_items poi
+                        INNER JOIN purchase_requisitions pr ON pr.id = poi.source_id
+                            AND poi.source_type = 'purchase_requisition_ops'
+                        WHERE poi.purchase_order_ops_id = nfp.purchase_order_ops_id
+                        LIMIT 1
+                    ),
+                    (
+                        SELECT pr.title
+                        FROM purchase_requisitions pr
+                        WHERE pr.id = nfp.purchase_requisition_id
+                        LIMIT 1
+                    )
                 ) as pr_title"),
                 'nfp.notes',
                 'nfp.payment_number',
@@ -226,27 +235,37 @@ class MampReportService
             )
             ->get();
 
-        $nfpItemsByKey = $this->fetchNonFoodPaymentItems(
-            $categoryId,
-            $nfpRows->map(fn ($row) => [
-                'payment_outlet_id' => $row->payment_outlet_id,
-                'purchase_order_ops_id' => $row->purchase_order_ops_id,
-                'outlet_id' => $row->outlet_id,
-                'category_id' => $row->payment_category_id ?? $categoryId,
-            ])->all()
-        );
+        $paymentRowsPayload = $nfpRows->map(fn ($row) => [
+            'payment_outlet_id' => $row->payment_outlet_id,
+            'purchase_order_ops_id' => $row->purchase_order_ops_id,
+            'purchase_requisition_id' => $row->purchase_requisition_id,
+            'outlet_id' => $row->outlet_id,
+            'category_id' => $row->payment_category_id ?? $categoryId,
+        ])->all();
 
-        $nfp = $nfpRows->map(function ($row) use ($nfpItemsByKey) {
+        $nfpItemsByKey = $this->fetchNonFoodPaymentItems($categoryId, $paymentRowsPayload);
+        $prItemsByKey = $this->fetchPrPaymentItemsBatch($categoryId, $paymentRowsPayload);
+
+        $nfp = $nfpRows->map(function ($row) use ($nfpItemsByKey, $prItemsByKey) {
             $description = $row->pr_title ?: $row->notes;
             if (! $description) {
                 $description = 'Pembayaran ' . ($row->payment_number ?? 'NFP');
             }
 
-            $itemKey = $this->paymentItemKey(
-                $row->purchase_order_ops_id,
-                $row->outlet_id
-            );
-            $items = $nfpItemsByKey[$itemKey] ?? [];
+            $items = [];
+            if ($row->purchase_order_ops_id) {
+                $itemKey = $this->paymentItemKey(
+                    $row->purchase_order_ops_id,
+                    $row->outlet_id
+                );
+                $items = $nfpItemsByKey[$itemKey] ?? [];
+            } elseif ($row->purchase_requisition_id) {
+                $itemKey = $this->prPaymentItemKey(
+                    $row->purchase_requisition_id,
+                    $row->outlet_id
+                );
+                $items = $prItemsByKey[$itemKey] ?? [];
+            }
 
             return (object) [
                 'row_key' => 'nfp_' . $row->payment_outlet_id,
@@ -299,14 +318,105 @@ class MampReportService
     }
 
     /**
-     * @param  array<int, array{payment_outlet_id: mixed, purchase_order_ops_id: mixed, outlet_id: mixed, category_id: mixed}>  $paymentRows
+     * @param  array<int, array{payment_outlet_id: mixed, purchase_order_ops_id: mixed, purchase_requisition_id?: mixed, outlet_id: mixed, category_id: mixed}>  $paymentRows
+     * @return array<string, array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>>
+     */
+    private function fetchPrPaymentItemsBatch(int $categoryId, array $paymentRows): array
+    {
+        $prIds = collect($paymentRows)
+            ->filter(fn ($row) => empty($row['purchase_order_ops_id']) && ! empty($row['purchase_requisition_id']))
+            ->pluck('purchase_requisition_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($prIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+
+        DB::table('purchase_requisition_items')
+            ->whereIn('purchase_requisition_id', $prIds)
+            ->where('category_id', $categoryId)
+            ->orderBy('id')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $key = $this->prPaymentItemKey($row->purchase_requisition_id, $row->outlet_id);
+                $grouped[$key][] = $this->mapPrItemRow($row);
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @return array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>
+     */
+    private function fetchPrPaymentItemsForOutlet(int $purchaseRequisitionId, $outletId, int $categoryId): array
+    {
+        $query = DB::table('purchase_requisition_items')
+            ->where('purchase_requisition_id', $purchaseRequisitionId)
+            ->where('category_id', $categoryId)
+            ->orderBy('id');
+
+        $normalizedOutlet = $this->normalizeOutletId($outletId);
+        if ($normalizedOutlet !== null) {
+            $query->where('outlet_id', $normalizedOutlet);
+        } else {
+            $query->where(function ($builder) {
+                $builder->whereNull('outlet_id')
+                    ->orWhere('outlet_id', 0);
+            });
+        }
+
+        return $query->get()
+            ->map(fn ($row) => $this->mapPrItemRow($row))
+            ->values()
+            ->all();
+    }
+
+    private function prPaymentItemKey($purchaseRequisitionId, $outletId): string
+    {
+        $prId = (int) ($purchaseRequisitionId ?? 0);
+        $normalizedOutlet = $this->normalizeOutletId($outletId);
+
+        return 'pr_' . $prId . '_' . ($normalizedOutlet ?? 'null');
+    }
+
+    /**
+     * @return array{item: string, qty: float, unit: string|null, price: float, subtotal: float}
+     */
+    private function mapPrItemRow(object $row): array
+    {
+        $qty = (float) ($row->qty ?? 0);
+        if ($qty <= 0) {
+            $qty = 1;
+        }
+
+        $subtotal = (float) ($row->subtotal ?? 0);
+        $price = (float) ($row->unit_price ?? 0);
+        if ($price <= 0 && $subtotal > 0) {
+            $price = $subtotal / $qty;
+        }
+
+        return [
+            'item' => $row->item_name ?? '-',
+            'qty' => $qty,
+            'unit' => $row->unit ?? '-',
+            'price' => $price,
+            'subtotal' => $subtotal,
+        ];
+    }
+
+    /**
+     * @param  array<int, array{payment_outlet_id: mixed, purchase_order_ops_id: mixed, purchase_requisition_id?: mixed, outlet_id: mixed, category_id: mixed}>  $paymentRows
      * @return array<string, array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>>
      */
     private function fetchNonFoodPaymentItems(int $categoryId, array $paymentRows): array
     {
         $poIds = collect($paymentRows)
+            ->filter(fn ($row) => ! empty($row['purchase_order_ops_id']))
             ->pluck('purchase_order_ops_id')
-            ->filter()
             ->unique()
             ->values()
             ->all();
@@ -467,28 +577,43 @@ class MampReportService
                 ->select(
                     'nfpo.id as payment_outlet_id',
                     'nfp.purchase_order_ops_id',
+                    'nfp.purchase_requisition_id',
                     'nfpo.outlet_id',
                     'nfpo.category_id'
                 )
                 ->first();
 
-            if (! $paymentOutlet || ! $paymentOutlet->purchase_order_ops_id) {
+            if (! $paymentOutlet) {
                 return [];
             }
 
-            $itemsByKey = $this->fetchNonFoodPaymentItems($categoryId, [[
-                'payment_outlet_id' => $paymentOutlet->payment_outlet_id,
-                'purchase_order_ops_id' => $paymentOutlet->purchase_order_ops_id,
-                'outlet_id' => $paymentOutlet->outlet_id,
-                'category_id' => $paymentOutlet->category_id ?? $categoryId,
-            ]]);
+            $rowCategoryId = (int) ($paymentOutlet->category_id ?? $categoryId);
 
-            $key = $this->paymentItemKey(
-                $paymentOutlet->purchase_order_ops_id,
-                $paymentOutlet->outlet_id
-            );
+            if ($paymentOutlet->purchase_order_ops_id) {
+                $itemsByKey = $this->fetchNonFoodPaymentItems($categoryId, [[
+                    'payment_outlet_id' => $paymentOutlet->payment_outlet_id,
+                    'purchase_order_ops_id' => $paymentOutlet->purchase_order_ops_id,
+                    'outlet_id' => $paymentOutlet->outlet_id,
+                    'category_id' => $rowCategoryId,
+                ]]);
 
-            return $itemsByKey[$key] ?? [];
+                $key = $this->paymentItemKey(
+                    $paymentOutlet->purchase_order_ops_id,
+                    $paymentOutlet->outlet_id
+                );
+
+                return $itemsByKey[$key] ?? [];
+            }
+
+            if ($paymentOutlet->purchase_requisition_id) {
+                return $this->fetchPrPaymentItemsForOutlet(
+                    (int) $paymentOutlet->purchase_requisition_id,
+                    $paymentOutlet->outlet_id,
+                    $rowCategoryId
+                );
+            }
+
+            return [];
         }
 
         return [];
