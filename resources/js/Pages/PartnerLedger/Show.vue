@@ -26,7 +26,7 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-for="entry in entries.data" :key="entry.id">
-                <td class="px-6 py-4 text-sm text-gray-700">{{ entry.entry_date }}</td>
+                <td class="px-6 py-4 text-sm text-gray-700">{{ formatDate(entry.entry_date) }}</td>
                 <td class="px-6 py-4 text-sm">
                   <span class="px-2 py-1 rounded text-xs font-medium" :class="entryTypeClass(entry.entry_type)">
                     {{ entry.entry_type }}
@@ -71,6 +71,19 @@ defineProps({
   ledger: Object,
   entries: Object,
 });
+
+function formatDate(value) {
+  if (!value) return '-';
+  const str = String(value);
+  const datePart = str.slice(0, 10);
+  const [year, month, day] = datePart.split('-').map(Number);
+  if (!year || !month || !day) return str;
+  return new Date(year, month - 1, day).toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', {
