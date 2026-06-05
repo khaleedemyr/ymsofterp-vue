@@ -287,6 +287,36 @@ class PartnerLedgerService
         });
     }
 
+    public function canDeleteOpeningBalance(PartnerLedgerEntry $entry, ?PartnerSubLedger $subLedger = null): bool
+    {
+        if ($entry->entry_type !== 'opening_balance' || $entry->source_type !== 'manual') {
+            return false;
+        }
+
+        $ledger = $subLedger ?? PartnerSubLedger::find($entry->sub_ledger_id);
+        if (! $ledger) {
+            return false;
+        }
+
+        return round((float) $ledger->balance, 2) >= round((float) $entry->amount, 2);
+    }
+
+    public function deleteOpeningBalance(PartnerLedgerEntry $entry): void
+    {
+        if (! $this->canDeleteOpeningBalance($entry)) {
+            throw new \RuntimeException(
+                'Saldo awal tidak bisa dihapus karena sudah ada pelunasan atau mutasi lain yang mengurangi saldo.'
+            );
+        }
+
+        DB::transaction(function () use ($entry) {
+            $locked = PartnerSubLedger::lockForUpdate()->findOrFail($entry->sub_ledger_id);
+            $locked->balance = round((float) $locked->balance - (float) $entry->amount, 2);
+            $locked->save();
+            $entry->delete();
+        });
+    }
+
     public function recordOpeningBalance(string $ledgerType, string $partnerType, int $partnerId, float $amount, string $entryDate, ?string $description = null): PartnerLedgerEntry
     {
         if ($amount <= 0) {

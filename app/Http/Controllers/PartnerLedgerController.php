@@ -53,12 +53,17 @@ class PartnerLedgerController extends Controller
         ]);
     }
 
-    public function show(PartnerSubLedger $partnerSubLedger)
+    public function show(PartnerSubLedger $partnerSubLedger, PartnerLedgerService $partnerLedger)
     {
         $entries = PartnerLedgerEntry::where('sub_ledger_id', $partnerSubLedger->id)
             ->orderByDesc('entry_date')
             ->orderByDesc('id')
-            ->paginate(30);
+            ->paginate(30)
+            ->through(function ($entry) use ($partnerSubLedger, $partnerLedger) {
+                $entry->can_delete = $partnerLedger->canDeleteOpeningBalance($entry, $partnerSubLedger);
+
+                return $entry;
+            });
 
         $partnerNames = $this->resolvePartnerNames(collect([$partnerSubLedger]), $partnerSubLedger->ledger_type);
         $key = $partnerSubLedger->partner_type.'_'.$partnerSubLedger->partner_id;
@@ -129,6 +134,17 @@ class PartnerLedgerController extends Controller
         }
 
         return back()->with('success', 'Saldo awal berhasil disimpan.');
+    }
+
+    public function destroyOpeningBalance(PartnerLedgerEntry $partnerLedgerEntry, PartnerLedgerService $partnerLedger)
+    {
+        try {
+            $partnerLedger->deleteOpeningBalance($partnerLedgerEntry);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal menghapus saldo awal: '.$e->getMessage());
+        }
+
+        return back()->with('success', 'Saldo awal manual berhasil dihapus.');
     }
 
     protected function resolvePartnerNames($ledgers, string $ledgerType): array

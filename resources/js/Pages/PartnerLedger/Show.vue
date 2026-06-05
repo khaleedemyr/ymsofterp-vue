@@ -86,6 +86,7 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Keterangan</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sumber</th>
                 <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Jumlah</th>
+                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Aksi</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
@@ -104,9 +105,20 @@
                 <td class="px-6 py-4 text-sm text-right font-semibold" :class="entry.amount >= 0 ? 'text-red-600' : 'text-green-600'">
                   {{ formatCurrency(entry.amount) }}
                 </td>
+                <td class="px-6 py-4 text-center">
+                  <button
+                    v-if="entry.can_delete"
+                    type="button"
+                    @click="deleteOpeningBalance(entry)"
+                    class="text-red-600 hover:text-red-800 text-sm"
+                  >
+                    <i class="fa fa-trash mr-1"></i>Hapus
+                  </button>
+                  <span v-else-if="entry.entry_type === 'opening_balance'" class="text-xs text-gray-400">—</span>
+                </td>
               </tr>
               <tr v-if="!entries.data.length">
-                <td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada mutasi.</td>
+                <td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada mutasi.</td>
               </tr>
             </tbody>
           </table>
@@ -128,8 +140,9 @@
 </template>
 
 <script setup>
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   ledger: Object,
@@ -146,6 +159,24 @@ const settlementForm = useForm({
   bank_account_id: '',
   description: '',
 });
+
+async function deleteOpeningBalance(entry) {
+  const result = await Swal.fire({
+    title: 'Hapus saldo awal manual?',
+    html: `Saldo <strong>${formatCurrency(entry.amount)}</strong> akan dihapus dari partner ini.<br><small class="text-gray-500">Hanya bisa dihapus jika belum ada pelunasan yang mengurangi saldo.</small>`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  });
+
+  if (!result.isConfirmed) return;
+
+  router.delete(route('partner-ledger.opening-balance.destroy', entry.id), {
+    preserveScroll: true,
+  });
+}
 
 function submitSettlement() {
   settlementForm.post(route('partner-ledger.settlement', props.ledger.id), {
@@ -191,6 +222,10 @@ function entryTypeClass(type) {
 }
 
 function entryTypeLabel(entry) {
+  if (entry.entry_type === 'opening_balance') {
+    return 'saldo awal manual';
+  }
+
   if (entry.entry_type === 'settlement' && entry.source_type === 'manual_settlement') {
     return 'pelunasan manual';
   }

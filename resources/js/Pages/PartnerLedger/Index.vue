@@ -105,7 +105,10 @@
         </div>
 
         <div class="bg-white rounded-xl shadow-lg p-6 mt-6">
-          <h2 class="text-lg font-semibold text-gray-800 mb-4">Input Saldo Awal Manual</h2>
+          <h2 class="text-lg font-semibold text-gray-800 mb-1">Input Saldo Awal Manual</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Salah input? Buka <strong>Detail</strong> partner lalu hapus baris <em>saldo awal manual</em> (selama belum ada pelunasan).
+          </p>
           <form @submit.prevent="submitOpeningBalance" class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Jenis</label>
