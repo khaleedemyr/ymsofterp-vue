@@ -7,6 +7,9 @@
           Regional Management
         </h1>
         <div class="flex gap-2 items-center">
+          <Link :href="route('regional.visit-report.index')" class="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
+            <i class="fa-solid fa-chart-bar mr-1"></i> Rekap Kunjungan
+          </Link>
           <Link :href="route('regional.create')" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold">
             <i class="fa fa-plus mr-1"></i> Assign Regional
           </Link>

@@ -227,6 +227,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.report_transaksi_cuti'), icon: 'fa-solid fa-calendar-check', route: '/users/leave-transaction-report', code: 'data_karyawan' },
            // { name: () => t('sidebar.menus.struktur_organisasi'), icon: 'fa-solid fa-sitemap', route: '/organization-chart', code: 'organization_chart' },
             { name: () => t('sidebar.menus.regional_management'), icon: 'fa-solid fa-globe', route: '/regional', code: 'regional_management' },
+            { name: () => t('sidebar.menus.regional_visit_report'), icon: 'fa-solid fa-map-location-dot', route: '/regional/visit-report', code: 'regional_visit_report' },
             { name: () => t('sidebar.menus.report_man_power_outlet'), icon: 'fa-solid fa-users-gear', route: '/man-power-outlet', code: 'man_power_outlet_report' },
             { name: () => t('sidebar.menus.job_vacancy'), icon: 'fa-solid fa-briefcase', route: '/admin/job-vacancy', code: 'job_vacancy' },
             { name: () => t('sidebar.menus.master_data_outlet'), icon: 'fa-solid fa-store', route: '/outlets', code: 'master-data-outlet' },

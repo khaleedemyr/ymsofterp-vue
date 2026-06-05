@@ -107,6 +107,7 @@ export default {
     "report_transaksi_cuti": "Report Transaksi Cuti",
     "struktur_organisasi": "Struktur Organisasi",
     "regional_management": "Regional Management",
+    "regional_visit_report": "Regional Visit Report",
     "report_man_power_outlet": "Report Man Power Outlet",
     "job_vacancy": "Job Vacancy",
     "master_data_outlet": "Master Data Outlet",
