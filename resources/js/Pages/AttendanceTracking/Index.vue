@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import jsPDF from 'jspdf'
+import VueEasyLightbox from 'vue-easy-lightbox'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
@@ -30,6 +31,9 @@ const outletModalError = ref(null)
 const outletModalData = ref(null)
 const expandedSessions = ref(new Set())
 
+const avatarLightboxVisible = ref(false)
+const avatarLightboxImages = ref([])
+
 const bulan = ref(props.filters?.bulan || new Date().getMonth() + 1)
 const tahun = ref(props.filters?.tahun || new Date().getFullYear())
 
@@ -53,6 +57,11 @@ const employeeAvatarUrl = computed(() => {
   if (props.employee.upload_latest_color_photo) return `/storage/${props.employee.upload_latest_color_photo}`
   return '/images/avatar-default.png'
 })
+
+function openAvatarLightbox() {
+  avatarLightboxImages.value = [employeeAvatarUrl.value]
+  avatarLightboxVisible.value = true
+}
 
 function getLeaveStyle(name) {
   const n = (name || '').toLowerCase()
@@ -412,24 +421,6 @@ onMounted(async () => {
 
 <template>
   <AppLayout title="Attendance Tracking">
-    <template #header>
-      <div class="flex items-center justify-between w-full">
-        <h2 class="font-semibold text-xl text-slate-800 leading-tight">
-          Tracking Absensi Karyawan
-        </h2>
-        <button
-          v-if="hasData"
-          type="button"
-          :disabled="exportingPdf"
-          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-rose-600 rounded-lg shadow-sm hover:bg-rose-700 transition-colors disabled:opacity-60"
-          @click="exportPdf"
-        >
-          <i :class="exportingPdf ? 'fas fa-spinner fa-spin' : 'fas fa-file-pdf'"></i>
-          Export PDF
-        </button>
-      </div>
-    </template>
-
     <div class="py-5 bg-slate-50 min-h-screen">
       <div class="w-full px-4 sm:px-6 lg:px-8 space-y-5">
         <!-- Filter -->
@@ -479,20 +470,32 @@ onMounted(async () => {
               </select>
             </div>
           </div>
-          <div class="mt-4 flex flex-wrap items-center gap-3">
+          <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                :disabled="!selectedEmployee || isLoading"
+                class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition-all disabled:opacity-50"
+                @click="applyFilter"
+              >
+                <i :class="isLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
+                Tampilkan
+              </button>
+              <span v-if="periodLabel" class="inline-flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full">
+                <i class="fas fa-calendar-alt text-indigo-500"></i>
+                Periode payroll: <strong class="text-slate-800">{{ periodLabel }}</strong>
+              </span>
+            </div>
             <button
+              v-if="hasData"
               type="button"
-              :disabled="!selectedEmployee || isLoading"
-              class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 shadow-sm transition-all disabled:opacity-50"
-              @click="applyFilter"
+              :disabled="exportingPdf"
+              class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-rose-600 rounded-lg shadow-sm hover:bg-rose-700 transition-colors disabled:opacity-60"
+              @click="exportPdf"
             >
-              <i :class="isLoading ? 'fas fa-spinner fa-spin' : 'fas fa-search'"></i>
-              Tampilkan
+              <i :class="exportingPdf ? 'fas fa-spinner fa-spin' : 'fas fa-file-pdf'"></i>
+              Export PDF
             </button>
-            <span v-if="periodLabel" class="inline-flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full">
-              <i class="fas fa-calendar-alt text-indigo-500"></i>
-              Periode payroll: <strong class="text-slate-800">{{ periodLabel }}</strong>
-            </span>
           </div>
         </section>
 
@@ -507,42 +510,35 @@ onMounted(async () => {
 
         <template v-else>
           <!-- Employee -->
-          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-            <div class="flex flex-wrap items-center justify-between gap-4">
-              <div class="flex items-center gap-4">
-                <div class="relative shrink-0">
-                  <img
-                    :src="employeeAvatarUrl"
-                    :alt="employee.nama_lengkap"
-                    class="w-16 h-16 rounded-2xl object-cover border-2 border-indigo-200 shadow-md"
-                    @error="($event.target).src = '/images/avatar-default.png'"
-                  />
-                  <span class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white"></span>
-                </div>
-                <div>
-                  <h3 class="text-xl font-bold text-slate-900">{{ employee.nama_lengkap }}</h3>
-                  <p class="text-sm text-slate-600 mt-0.5">
-                    <span class="font-medium">{{ employee.nik || '-' }}</span>
-                    <span class="mx-2 text-slate-300">|</span>
-                    {{ employee.nama_jabatan || '-' }}
-                    <span class="mx-2 text-slate-300">|</span>
-                    {{ employee.nama_outlet || '-' }}
-                    <span v-if="employee.nama_divisi">
-                      <span class="mx-2 text-slate-300">|</span>
-                      {{ employee.nama_divisi }}
-                    </span>
-                  </p>
-                </div>
-              </div>
+          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm px-5 py-8">
+            <div class="flex flex-col items-center text-center">
               <button
                 type="button"
-                :disabled="exportingPdf"
-                class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition-colors disabled:opacity-60 xl:hidden"
-                @click="exportPdf"
+                class="relative group shrink-0 rounded-full focus:outline-none focus:ring-4 focus:ring-indigo-200"
+                title="Klik untuk perbesar foto"
+                @click="openAvatarLightbox"
               >
-                <i :class="exportingPdf ? 'fas fa-spinner fa-spin' : 'fas fa-file-pdf'"></i>
-                Export PDF
+                <img
+                  :src="employeeAvatarUrl"
+                  :alt="employee.nama_lengkap"
+                  class="w-28 h-28 sm:w-32 sm:h-32 rounded-full object-cover border-4 border-indigo-200 shadow-lg group-hover:shadow-xl group-hover:scale-[1.02] transition-all duration-200"
+                  @error="($event.target).src = '/images/avatar-default.png'"
+                />
+                <span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-emerald-500 border-[3px] border-white"></span>
+                <span class="absolute inset-0 rounded-full bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                  <i class="fas fa-search-plus text-white opacity-0 group-hover:opacity-90 text-xl drop-shadow"></i>
+                </span>
               </button>
+
+              <h3 class="mt-4 text-2xl font-bold text-slate-900">{{ employee.nama_lengkap }}</h3>
+              <p class="text-sm font-medium text-indigo-600 mt-1">{{ employee.nik || '-' }}</p>
+              <p class="text-sm text-slate-600 mt-2 max-w-2xl">
+                {{ employee.nama_jabatan || '-' }}
+              </p>
+              <p class="text-sm text-slate-500 mt-1 max-w-2xl">
+                {{ employee.nama_outlet || '-' }}
+                <span v-if="employee.nama_divisi"> · {{ employee.nama_divisi }}</span>
+              </p>
             </div>
           </section>
 
@@ -819,6 +815,13 @@ onMounted(async () => {
         </div>
       </div>
     </Teleport>
+
+    <VueEasyLightbox
+      :visible="avatarLightboxVisible"
+      :imgs="avatarLightboxImages"
+      :index="0"
+      @hide="avatarLightboxVisible = false"
+    />
   </AppLayout>
 </template>
 
