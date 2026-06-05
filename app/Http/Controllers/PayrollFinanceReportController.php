@@ -264,6 +264,80 @@ class PayrollFinanceReportController extends Controller
         }
     }
 
+    public function rollbackPayment(Request $request)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer|min:2020|max:2100',
+            'phase' => 'required|in:gajian1,gajian2',
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        $month = (int) $validated['month'];
+        $year = (int) $validated['year'];
+        $phase = (string) $validated['phase'];
+
+        $payrollGenerated = DB::table('payroll_generated')
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+
+        if (! $payrollGenerated) {
+            return back()->with('error', 'Payroll belum di-generate untuk periode ini.');
+        }
+
+        $paidAtCol = $phase.'_paid_at';
+        $noJurnalCol = $phase.'_paid_no_jurnal';
+        $transferBankCol = $phase.'_paid_transfer_bank_account_id';
+        $cashBankCol = $phase.'_paid_cash_bank_account_id';
+
+        if (empty($payrollGenerated->{$paidAtCol})) {
+            return back()->with('error', ucfirst($phase).' belum dibayar.');
+        }
+
+        $noJurnal = (string) ($payrollGenerated->{$noJurnalCol} ?? '');
+        $phaseLabel = "Pembayaran Payroll {$phase}";
+
+        DB::beginTransaction();
+        try {
+            if ($noJurnal !== '') {
+                Jurnal::where('no_jurnal', $noJurnal)
+                    ->where('reference_type', 'payroll_payment')
+                    ->where('reference_id', (int) $payrollGenerated->id)
+                    ->delete();
+
+                JurnalGlobal::where('no_jurnal', $noJurnal)
+                    ->where('reference_type', 'payroll_payment')
+                    ->where('reference_id', (int) $payrollGenerated->id)
+                    ->delete();
+            }
+
+            DB::table('bank_books')
+                ->where('reference_type', 'payroll_payment')
+                ->where('reference_id', (int) $payrollGenerated->id)
+                ->where('description', 'like', '%'.$phaseLabel.'%')
+                ->delete();
+
+            $update = [
+                $paidAtCol => null,
+                str_replace('_at', '_by', $paidAtCol) => null,
+                $transferBankCol => null,
+                $cashBankCol => null,
+                $noJurnalCol => null,
+                'updated_at' => now(),
+            ];
+            DB::table('payroll_generated')->where('id', $payrollGenerated->id)->update($update);
+
+            DB::commit();
+            return back()->with('success', "Rollback pembayaran {$phase} berhasil.");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal rollback pembayaran payroll: '.$e->getMessage());
+        }
+    }
+
     public function export(Request $request): StreamedResponse
     {
         $outletId = (int) $request->input('outlet_id');

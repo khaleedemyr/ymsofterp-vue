@@ -222,6 +222,29 @@ async function openPayDialog(phase) {
     notes: value.notes || null,
   }, { preserveScroll: true });
 }
+
+async function rollbackPay(phase) {
+  if (phase === 'gajian1' && !gajian1Paid.value) return;
+  if (phase === 'gajian2' && !gajian2Paid.value) return;
+
+  const result = await Swal.fire({
+    title: `Rollback pembayaran ${phase === 'gajian1' ? 'Gajian 1' : 'Gajian 2'}?`,
+    text: 'Jurnal dan mutasi bank/kas payroll fase ini akan dihapus.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, rollback',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  });
+  if (!result.isConfirmed) return;
+
+  router.post(route('payroll.finance-report.rollback-payment'), {
+    outlet_id: outletId.value,
+    month: Number(month.value),
+    year: Number(year.value),
+    phase,
+  }, { preserveScroll: true });
+}
 </script>
 
 <template>
@@ -326,12 +349,28 @@ async function openPayDialog(phase) {
               <i class="fa fa-credit-card mr-2"></i>Bayar Gajian 1
             </button>
             <button
+              v-if="gajian1Paid"
+              type="button"
+              class="px-4 py-2 rounded-xl font-semibold shadow-sm border border-red-200 bg-red-600 text-white hover:opacity-95"
+              @click="rollbackPay('gajian1')"
+            >
+              <i class="fa fa-rotate-left mr-2"></i>Rollback Gajian 1
+            </button>
+            <button
               type="button"
               class="px-4 py-2 rounded-xl font-semibold shadow-sm border border-emerald-200 bg-emerald-600 text-white hover:opacity-95 disabled:opacity-50"
               :disabled="!canPay || gajian2Paid"
               @click="openPayDialog('gajian2')"
             >
               <i class="fa fa-credit-card mr-2"></i>Bayar Gajian 2
+            </button>
+            <button
+              v-if="gajian2Paid"
+              type="button"
+              class="px-4 py-2 rounded-xl font-semibold shadow-sm border border-red-200 bg-red-600 text-white hover:opacity-95"
+              @click="rollbackPay('gajian2')"
+            >
+              <i class="fa fa-rotate-left mr-2"></i>Rollback Gajian 2
             </button>
           </div>
         </div>
