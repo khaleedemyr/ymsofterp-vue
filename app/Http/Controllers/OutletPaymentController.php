@@ -503,6 +503,18 @@ class OutletPaymentController extends Controller
             }
             
             DB::commit();
+
+            $partnerLedger = app(\App\Services\PartnerLedgerService::class);
+            foreach ($createdPayments as $createdPayment) {
+                try {
+                    $partnerLedger->accrueReceivableFromOutletPayment($createdPayment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::error('PartnerLedger accrual outlet payment gagal', [
+                        'outlet_payment_id' => $createdPayment->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             
         } catch (\Exception $e) {
             DB::rollback();
@@ -624,6 +636,17 @@ class OutletPaymentController extends Controller
             }
             
             DB::commit();
+
+            if ($request->status === 'paid') {
+                try {
+                    app(\App\Services\PartnerLedgerService::class)->settleReceivableFromOutletPayment($outletPayment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::error('PartnerLedger settlement outlet payment gagal', [
+                        'outlet_payment_id' => $outletPayment->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
             
         } catch (\Exception $e) {
             DB::rollback();
@@ -646,6 +669,15 @@ class OutletPaymentController extends Controller
 
             // Delete bank book entries if exists
             $bankBookService->deleteByReference('outlet_payment', $outletPayment->id);
+
+            try {
+                app(\App\Services\PartnerLedgerService::class)->reverseAccrual('outlet_payment', $outletPayment->id);
+            } catch (\Throwable $e) {
+                \Log::error('PartnerLedger reversal outlet payment gagal', [
+                    'outlet_payment_id' => $outletPayment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
         $outletPayment->delete();
 
@@ -692,6 +724,18 @@ class OutletPaymentController extends Controller
             }
 
             DB::commit();
+
+            $partnerLedger = app(\App\Services\PartnerLedgerService::class);
+            foreach ($payments as $payment) {
+                try {
+                    $partnerLedger->settleReceivableFromOutletPayment($payment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::error('PartnerLedger settlement outlet payment gagal', [
+                        'outlet_payment_id' => $payment->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             $message = $confirmedCount > 1 
                 ? "Berhasil mengkonfirmasi {$confirmedCount} payments." 

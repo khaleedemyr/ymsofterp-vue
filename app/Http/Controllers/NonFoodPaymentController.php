@@ -2192,6 +2192,17 @@ class NonFoodPaymentController extends Controller
 
             DB::commit();
 
+            if ($nonFoodPayment->status === 'approved') {
+                try {
+                    app(\App\Services\PartnerLedgerService::class)->accruePayableFromNonFoodPayment($nonFoodPayment->fresh());
+                } catch (\Throwable $e) {
+                    \Log::error('PartnerLedger accrual NFP gagal', [
+                        'payment_id' => $nonFoodPayment->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             $successMessage = $isSuperadmin 
                 ? 'Non Food Payment berhasil disetujui (semua level).'
                 : ($user->id_jabatan == 160 
@@ -2361,6 +2372,15 @@ class NonFoodPaymentController extends Controller
             $this->updatePRStatusIfAllPaid($nonFoodPayment);
 
             DB::commit();
+
+            try {
+                app(\App\Services\PartnerLedgerService::class)->settlePayableFromNonFoodPayment($nonFoodPayment->fresh());
+            } catch (\Throwable $e) {
+                \Log::error('PartnerLedger settlement NFP gagal', [
+                    'payment_id' => $nonFoodPayment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return back()->with('success', $forceSettle
                 ? 'Non Food Payment berhasil ditandai sebagai dibayar dan diset lunas (negosiasi).'

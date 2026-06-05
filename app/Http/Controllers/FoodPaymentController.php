@@ -653,6 +653,18 @@ class FoodPaymentController extends Controller
                 }
 
                 DB::commit();
+
+                if ($request->approved) {
+                    try {
+                        app(\App\Services\PartnerLedgerService::class)->accruePayableFromFoodPayment($foodPayment->fresh());
+                    } catch (\Throwable $e) {
+                        \Log::error('PartnerLedger accrual FP gagal', [
+                            'food_payment_id' => $foodPayment->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
                 $msg = 'Food Payment berhasil ' . ($request->approved ? 'diapprove' : 'direject');
                 return response()->json(['success' => true, 'message' => $msg]);
             } catch (\Exception $e) {
@@ -712,6 +724,15 @@ class FoodPaymentController extends Controller
             ]);
             
             DB::commit();
+
+            try {
+                app(\App\Services\PartnerLedgerService::class)->settlePayableFromFoodPayment($foodPayment->fresh());
+            } catch (\Throwable $e) {
+                \Log::error('PartnerLedger settlement FP gagal', [
+                    'food_payment_id' => $foodPayment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
             
             return response()->json([
                 'success' => true,

@@ -863,6 +863,11 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // Debt Report
     Route::get('/debt-report', [\App\Http\Controllers\DebtReportController::class, 'index'])->name('debt-report.index');
     Route::get('/debt-report/export', [\App\Http\Controllers\DebtReportController::class, 'export'])->name('debt-report.export');
+
+    // Partner Ledger (Hutang & Piutang)
+    Route::get('/partner-ledger', [\App\Http\Controllers\PartnerLedgerController::class, 'index'])->name('partner-ledger.index');
+    Route::get('/partner-ledger/{partnerSubLedger}', [\App\Http\Controllers\PartnerLedgerController::class, 'show'])->name('partner-ledger.show');
+    Route::post('/partner-ledger/opening-balance', [\App\Http\Controllers\PartnerLedgerController::class, 'storeOpeningBalance'])->name('partner-ledger.opening-balance');
     
     // Travel & Kasbon Report
     Route::get('/travel-kasbon-report', [\App\Http\Controllers\TravelKasbonReportController::class, 'index'])->name('travel-kasbon-report.index');
