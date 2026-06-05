@@ -15,8 +15,10 @@ class RegionalVisitReportController extends Controller
 
     public function index(Request $request)
     {
-        $startDate = $request->get('start_date', date('Y-m-01'));
-        $endDate = $request->get('end_date', date('Y-m-d'));
+        $bulan = (int) $request->get('bulan', date('m'));
+        $tahun = (int) $request->get('tahun', date('Y'));
+        $period = $this->analytics->payrollPeriod($bulan, $tahun);
+
         $userId = $request->filled('user_id') ? (int) $request->get('user_id') : null;
         $area = $request->get('area');
 
@@ -24,6 +26,7 @@ class RegionalVisitReportController extends Controller
 
         $resolved = $this->analytics->resolveFilter($userId, $area);
         $report = ['outlets' => [], 'summary' => [
+            'regional_user_count' => 0,
             'total_outlets' => 0,
             'visited_outlets' => 0,
             'never_visited_outlets' => 0,
@@ -33,13 +36,22 @@ class RegionalVisitReportController extends Controller
         ]];
 
         $selectedRegional = null;
-        if (! empty($resolved['user_ids']) && $resolved['area']) {
+        $includedRegionalUsers = collect();
+        $reportAttempted = (bool) ($userId || $area);
+        $noRegionalUsers = false;
+
+        if ($reportAttempted && empty($resolved['user_ids'])) {
+            $noRegionalUsers = true;
+        } elseif ($reportAttempted && ! empty($resolved['user_ids'])) {
             $report = $this->analytics->getVisitStats(
                 $resolved['user_ids'],
-                $resolved['area'],
-                $startDate,
-                $endDate,
+                $period['start_date'],
+                $period['end_date'],
             );
+
+            $includedRegionalUsers = $regionalUsers
+                ->whereIn('id', $resolved['user_ids'])
+                ->values();
 
             if ($userId) {
                 $selectedRegional = $regionalUsers->firstWhere('id', $userId);
@@ -51,11 +63,15 @@ class RegionalVisitReportController extends Controller
             'outletStats' => $report['outlets'],
             'summary' => $report['summary'],
             'selectedRegional' => $selectedRegional,
+            'includedRegionalUsers' => $includedRegionalUsers,
+            'noRegionalUsers' => $noRegionalUsers,
             'filters' => [
                 'user_id' => $userId,
                 'area' => $resolved['area'] ?? $area,
-                'start_date' => $startDate,
-                'end_date' => $endDate,
+                'bulan' => $period['bulan'],
+                'tahun' => $period['tahun'],
+                'start_date' => $period['start_date'],
+                'end_date' => $period['end_date'],
             ],
             'areas' => UserRegional::AREAS,
         ]);

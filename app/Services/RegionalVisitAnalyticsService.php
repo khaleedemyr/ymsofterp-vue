@@ -8,11 +8,17 @@ use Illuminate\Support\Facades\DB;
 
 class RegionalVisitAnalyticsService
 {
-    public function outletMatchesArea(string $namaOutlet, string $area): bool
+    public function payrollPeriod(int $bulan, int $tahun): array
     {
-        $pattern = '/(^|[\s\-])' . preg_quote($area, '/') . '$/i';
+        $startDate = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
+        $endDate = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
-        return (bool) preg_match($pattern, trim($namaOutlet));
+        return [
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+        ];
     }
 
     public function getRegionalUsers(): Collection
@@ -32,7 +38,8 @@ class RegionalVisitAnalyticsService
 
     /**
      * Kunjungan = hari unik dengan scan IN di outlet (att_log).
-     * Outlet scope mengikuti area regional (suffix Bar/Kitchen/Service).
+     * $userIds berasal dari user_regional (per karyawan atau semua user pada area yang sama).
+     * Area hanya menentukan user mana yang dihitung — bukan filter outlet.
      *
      * @param  array<int>  $userIds
      * @return array{
@@ -40,10 +47,10 @@ class RegionalVisitAnalyticsService
      *   summary: array<string, int|float|null>
      * }
      */
-    public function getVisitStats(array $userIds, string $area, string $startDate, string $endDate): array
+    public function getVisitStats(array $userIds, string $startDate, string $endDate): array
     {
         $userIds = array_values(array_unique(array_filter($userIds)));
-        if (empty($userIds) || ! in_array($area, UserRegional::AREAS, true)) {
+        if (empty($userIds)) {
             return [
                 'outlets' => [],
                 'summary' => $this->emptySummary(),
@@ -54,9 +61,7 @@ class RegionalVisitAnalyticsService
             ->where('status', 'A')
             ->select('id_outlet', 'nama_outlet')
             ->orderBy('nama_outlet')
-            ->get()
-            ->filter(fn ($o) => $this->outletMatchesArea($o->nama_outlet, $area))
-            ->values();
+            ->get();
 
         if ($scopeOutlets->isEmpty()) {
             return [
@@ -65,15 +70,11 @@ class RegionalVisitAnalyticsService
             ];
         }
 
-        $scopeOutletIds = $scopeOutlets->pluck('id_outlet')->all();
-
         $visitRows = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
-            ->join('user_pins as up', function ($q) {
-                $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
-            })
+            ->join('user_pins as up', 'a.pin', '=', 'up.pin')
             ->whereIn('up.user_id', $userIds)
-            ->whereIn('o.id_outlet', $scopeOutletIds)
+            ->where('o.status', 'A')
             ->where('a.inoutmode', 1)
             ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
             ->where('a.scan_date', '<=', $endDate . ' 23:59:59')
@@ -114,6 +115,7 @@ class RegionalVisitAnalyticsService
         return [
             'outlets' => $outlets,
             'summary' => [
+                'regional_user_count' => count($userIds),
                 'total_outlets' => count($outlets),
                 'visited_outlets' => $visited,
                 'never_visited_outlets' => count($outlets) - $visited,
@@ -162,6 +164,7 @@ class RegionalVisitAnalyticsService
     private function emptySummary(): array
     {
         return [
+            'regional_user_count' => 0,
             'total_outlets' => 0,
             'visited_outlets' => 0,
             'never_visited_outlets' => 0,
