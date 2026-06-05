@@ -52,7 +52,7 @@ class MampReportService
                 'row_type' => 'credit',
                 'source_type' => $line->source_type,
                 'items' => $line->items,
-                'expandable' => $line->source_type === 'credit' && count($line->items) > 0,
+                'expandable' => true,
             ];
         }
 
@@ -439,6 +439,59 @@ class MampReportService
             'price' => (float) ($row->price ?? 0),
             'subtotal' => (float) ($row->total ?? 0),
         ];
+    }
+
+    /**
+     * @return array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>
+     */
+    public function fetchRowItems(string $rowKey, int $categoryId): array
+    {
+        if (str_starts_with($rowKey, 'rnf_')) {
+            $retailNonFoodId = (int) substr($rowKey, 4);
+            if ($retailNonFoodId <= 0) {
+                return [];
+            }
+
+            return $this->fetchRetailNonFoodItems([$retailNonFoodId])[$retailNonFoodId] ?? [];
+        }
+
+        if (str_starts_with($rowKey, 'nfp_')) {
+            $paymentOutletId = (int) substr($rowKey, 4);
+            if ($paymentOutletId <= 0) {
+                return [];
+            }
+
+            $paymentOutlet = DB::table('non_food_payment_outlets as nfpo')
+                ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
+                ->where('nfpo.id', $paymentOutletId)
+                ->select(
+                    'nfpo.id as payment_outlet_id',
+                    'nfp.purchase_order_ops_id',
+                    'nfpo.outlet_id',
+                    'nfpo.category_id'
+                )
+                ->first();
+
+            if (! $paymentOutlet || ! $paymentOutlet->purchase_order_ops_id) {
+                return [];
+            }
+
+            $itemsByKey = $this->fetchNonFoodPaymentItems($categoryId, [[
+                'payment_outlet_id' => $paymentOutlet->payment_outlet_id,
+                'purchase_order_ops_id' => $paymentOutlet->purchase_order_ops_id,
+                'outlet_id' => $paymentOutlet->outlet_id,
+                'category_id' => $paymentOutlet->category_id ?? $categoryId,
+            ]]);
+
+            $key = $this->paymentItemKey(
+                $paymentOutlet->purchase_order_ops_id,
+                $paymentOutlet->outlet_id
+            );
+
+            return $itemsByKey[$key] ?? [];
+        }
+
+        return [];
     }
 
     private function debitRow(int $no, string $date, string $outlet, string $description, float $amount): array

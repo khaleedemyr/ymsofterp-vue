@@ -48,6 +48,21 @@ class MampReportController extends Controller
         ]);
     }
 
+    public function rowItems(Request $request)
+    {
+        $validated = $request->validate([
+            'row_key' => 'required|string|max:100',
+            'category_id' => 'required|integer|exists:purchase_requisition_categories,id',
+        ]);
+
+        return response()->json([
+            'items' => $this->mampReportService->fetchRowItems(
+                $validated['row_key'],
+                (int) $validated['category_id']
+            ),
+        ]);
+    }
+
     public function export(Request $request)
     {
         $request->validate([

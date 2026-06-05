@@ -1743,6 +1743,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('opex-by-category/export', [\App\Http\Controllers\OpexByCategoryController::class, 'export'])->name('opex-by-category.export');
 
     Route::get('mamp-report', [\App\Http\Controllers\MampReportController::class, 'index'])->name('mamp-report.index');
+    Route::get('mamp-report/row-items', [\App\Http\Controllers\MampReportController::class, 'rowItems'])->name('mamp-report.row-items');
     Route::get('mamp-report/export', [\App\Http\Controllers\MampReportController::class, 'export'])->name('mamp-report.export');
   
 });

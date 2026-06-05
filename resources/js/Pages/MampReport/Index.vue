@@ -117,13 +117,13 @@
                   <tr
                     :class="[
                       row.row_type === 'debit' ? 'bg-blue-50/40' : '',
-                      row.expandable ? 'cursor-pointer hover:bg-slate-50' : '',
+                      isExpandableRow(row) ? 'cursor-pointer hover:bg-slate-50' : '',
                     ]"
-                    @click="row.expandable ? toggleExpand(row.row_key) : null"
+                    @click="isExpandableRow(row) ? toggleExpand(row) : null"
                   >
                     <td class="px-2 py-1.5 border text-center">
                       <i
-                        v-if="row.expandable"
+                        v-if="isExpandableRow(row)"
                         :class="[
                           'fas text-xs transition-transform duration-200',
                           isExpanded(row.row_key) ? 'fa-chevron-down text-indigo-600' : 'fa-chevron-right text-gray-400',
@@ -137,13 +137,16 @@
                     <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
                     <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
                   </tr>
-                  <tr v-if="row.expandable && isExpanded(row.row_key)" class="bg-gray-50">
+                  <tr v-if="isExpandableRow(row) && isExpanded(row.row_key)" class="bg-gray-50">
                     <td colspan="7" class="px-4 py-3 border">
                       <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase">
                           Detail Item
                         </div>
-                        <table class="min-w-full text-sm">
+                        <div v-if="isRowItemsLoading(row.row_key)" class="px-4 py-6 text-center text-gray-500 text-sm">
+                          Memuat detail item...
+                        </div>
+                        <table v-else class="min-w-full text-sm">
                           <thead>
                             <tr class="bg-gray-50 text-gray-600">
                               <th class="px-4 py-2 text-left font-medium">Item</th>
@@ -155,7 +158,7 @@
                           </thead>
                           <tbody>
                             <tr
-                              v-for="(item, idx) in row.items"
+                              v-for="(item, idx) in getRowItems(row)"
                               :key="`${row.row_key}-item-${idx}`"
                               class="border-t border-gray-100"
                             >
@@ -165,7 +168,7 @@
                               <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.price) }}</td>
                               <td class="px-4 py-2 text-right font-mono">{{ formatCurrency(item.subtotal) }}</td>
                             </tr>
-                            <tr v-if="!row.items?.length" class="border-t border-gray-100">
+                            <tr v-if="!getRowItems(row).length" class="border-t border-gray-100">
                               <td colspan="5" class="px-4 py-3 text-center text-gray-400">Tidak ada detail item.</td>
                             </tr>
                           </tbody>
@@ -229,6 +232,7 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
+import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
@@ -248,10 +252,14 @@ const filters = reactive({
 })
 
 const expandedRows = ref([])
+const rowItemsByKey = ref({})
+const rowItemsLoading = ref({})
 const activeTab = ref('outlet')
 
 watch(() => props.report, () => {
   expandedRows.value = []
+  rowItemsByKey.value = {}
+  rowItemsLoading.value = {}
 })
 
 const monthNames = [
@@ -274,12 +282,64 @@ function applyFilters() {
   router.get('/mamp-report', params, { preserveState: true, preserveScroll: true })
 }
 
-function toggleExpand(rowKey) {
+function isExpandableRow(row) {
+  return row?.row_type === 'credit'
+}
+
+function getRowItems(row) {
+  if (rowItemsByKey.value[row.row_key]) {
+    return rowItemsByKey.value[row.row_key]
+  }
+
+  return row.items || []
+}
+
+function isRowItemsLoading(rowKey) {
+  return !!rowItemsLoading.value[rowKey]
+}
+
+async function loadRowItems(row) {
+  if (!row?.row_key || !filters.category_id) {
+    return
+  }
+
+  if (rowItemsByKey.value[row.row_key] || rowItemsLoading.value[row.row_key]) {
+    return
+  }
+
+  if ((row.items || []).length > 0) {
+    rowItemsByKey.value[row.row_key] = row.items
+    return
+  }
+
+  rowItemsLoading.value[row.row_key] = true
+
+  try {
+    const { data } = await axios.get('/mamp-report/row-items', {
+      params: {
+        row_key: row.row_key,
+        category_id: filters.category_id,
+      },
+    })
+    rowItemsByKey.value[row.row_key] = data.items || []
+  } catch (error) {
+    console.error('Failed to load MAMP row items', error)
+    rowItemsByKey.value[row.row_key] = []
+  } finally {
+    rowItemsLoading.value[row.row_key] = false
+  }
+}
+
+async function toggleExpand(row) {
+  const rowKey = row.row_key
+
   if (expandedRows.value.includes(rowKey)) {
     expandedRows.value = expandedRows.value.filter((key) => key !== rowKey)
-  } else {
-    expandedRows.value.push(rowKey)
+    return
   }
+
+  expandedRows.value.push(rowKey)
+  await loadRowItems(row)
 }
 
 function isExpanded(rowKey) {
