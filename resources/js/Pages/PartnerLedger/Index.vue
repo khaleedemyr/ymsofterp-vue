@@ -38,16 +38,20 @@
               <label class="block text-sm font-medium text-gray-700 mb-1">
                 {{ filters.ledger_type === 'payable' ? 'Supplier' : 'Outlet' }}
               </label>
-              <select v-model="filters.partner_id" class="w-full border border-gray-300 rounded-md px-3 py-2">
-                <option value="">Semua</option>
-                <option
-                  v-for="partner in partnerOptions"
-                  :key="partner.id"
-                  :value="partner.id"
-                >
-                  {{ partner.name }}
-                </option>
-              </select>
+              <Multiselect
+                v-model="selectedFilterPartner"
+                :options="partnerOptions"
+                :searchable="true"
+                :allow-empty="true"
+                :close-on-select="true"
+                :clear-on-select="false"
+                :preserve-search="true"
+                :preselect-first="false"
+                :placeholder="filters.ledger_type === 'payable' ? 'Semua supplier...' : 'Semua outlet...'"
+                track-by="id"
+                label="name"
+                class="partner-multiselect"
+              />
             </div>
             <div class="md:col-span-2 flex items-end gap-2">
               <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700">
@@ -112,12 +116,20 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Partner</label>
-              <select v-model="openingForm.partner_id" class="w-full border border-gray-300 rounded-md px-3 py-2" required>
-                <option value="">Pilih...</option>
-                <option v-for="partner in openingPartnerOptions" :key="partner.id" :value="partner.id">
-                  {{ partner.name }}
-                </option>
-              </select>
+              <Multiselect
+                v-model="selectedOpeningPartner"
+                :options="openingPartnerOptions"
+                :searchable="true"
+                :allow-empty="false"
+                :close-on-select="true"
+                :clear-on-select="false"
+                :preserve-search="true"
+                :preselect-first="false"
+                :placeholder="openingForm.ledger_type === 'payable' ? 'Cari supplier...' : 'Cari outlet...'"
+                track-by="id"
+                label="name"
+                class="partner-multiselect"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
@@ -144,9 +156,11 @@
 </template>
 
 <script setup>
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   ledgers: Object,
@@ -158,8 +172,10 @@ const props = defineProps({
 
 const filters = reactive({
   ledger_type: props.filters.ledger_type || 'payable',
-  partner_id: props.filters.partner_id || '',
 });
+
+const selectedFilterPartner = ref(null);
+const selectedOpeningPartner = ref(null);
 
 const openingForm = reactive({
   ledger_type: 'payable',
@@ -178,6 +194,27 @@ const openingPartnerOptions = computed(() => {
   return openingForm.ledger_type === 'payable' ? props.suppliers : props.outlets;
 });
 
+function resolvePartner(id, list) {
+  if (!id) return null;
+  return list.find((partner) => String(partner.id) === String(id)) || null;
+}
+
+watch(
+  () => [props.filters.partner_id, filters.ledger_type],
+  () => {
+    selectedFilterPartner.value = resolvePartner(props.filters.partner_id, partnerOptions.value);
+  },
+  { immediate: true }
+);
+
+watch(() => filters.ledger_type, () => {
+  selectedFilterPartner.value = null;
+});
+
+watch(() => openingForm.ledger_type, () => {
+  selectedOpeningPartner.value = null;
+});
+
 function formatCurrency(value) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -189,25 +226,50 @@ function formatCurrency(value) {
 function applyFilters() {
   router.get(route('partner-ledger.index'), {
     ledger_type: filters.ledger_type,
-    partner_id: filters.partner_id || undefined,
+    partner_id: selectedFilterPartner.value?.id || undefined,
   }, { preserveState: true });
 }
 
 function resetFilters() {
   filters.ledger_type = 'payable';
-  filters.partner_id = '';
+  selectedFilterPartner.value = null;
   applyFilters();
 }
 
 function submitOpeningBalance() {
+  if (!selectedOpeningPartner.value?.id) {
+    return;
+  }
+
   openingForm.partner_type = openingForm.ledger_type === 'payable' ? 'supplier' : 'outlet';
+  openingForm.partner_id = selectedOpeningPartner.value.id;
 
   router.post(route('partner-ledger.opening-balance'), { ...openingForm }, {
     preserveScroll: true,
     onSuccess: () => {
       openingForm.amount = '';
       openingForm.description = '';
+      selectedOpeningPartner.value = null;
+      openingForm.partner_id = '';
     },
   });
 }
 </script>
+
+<style scoped>
+.partner-multiselect :deep(.multiselect) {
+  min-height: 42px;
+}
+
+.partner-multiselect :deep(.multiselect__tags) {
+  min-height: 42px;
+  padding-top: 8px;
+  border-radius: 0.375rem;
+  border-color: #d1d5db;
+}
+
+.partner-multiselect :deep(.multiselect__input),
+.partner-multiselect :deep(.multiselect__single) {
+  font-size: 0.875rem;
+}
+</style>

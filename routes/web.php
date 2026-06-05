@@ -868,6 +868,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/partner-ledger', [\App\Http\Controllers\PartnerLedgerController::class, 'index'])->name('partner-ledger.index');
     Route::get('/partner-ledger/{partnerSubLedger}', [\App\Http\Controllers\PartnerLedgerController::class, 'show'])->name('partner-ledger.show');
     Route::post('/partner-ledger/opening-balance', [\App\Http\Controllers\PartnerLedgerController::class, 'storeOpeningBalance'])->name('partner-ledger.opening-balance');
+    Route::post('/partner-ledger/{partnerSubLedger}/settlement', [\App\Http\Controllers\PartnerLedgerController::class, 'storeManualSettlement'])->name('partner-ledger.settlement');
     
     // Travel & Kasbon Report
     Route::get('/travel-kasbon-report', [\App\Http\Controllers\TravelKasbonReportController::class, 'index'])->name('travel-kasbon-report.index');

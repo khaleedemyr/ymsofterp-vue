@@ -9,8 +9,72 @@
           <h1 class="text-3xl font-bold text-gray-800 mt-3">{{ ledger.partner_name }}</h1>
           <p class="text-gray-600 mt-1">
             {{ ledger.ledger_type === 'payable' ? 'Hutang Usaha' : 'Piutang Usaha' }}
-            — Saldo: <span class="font-semibold">{{ formatCurrency(ledger.balance) }}</span>
+            — Saldo: <span class="font-semibold" :class="ledger.balance > 0 ? 'text-red-600' : 'text-green-600'">{{ formatCurrency(ledger.balance) }}</span>
           </p>
+        </div>
+
+        <div v-if="$page.props.flash?.success" class="mb-4 p-4 rounded-lg bg-green-100 text-green-800 text-sm">
+          {{ $page.props.flash.success }}
+        </div>
+        <div v-if="$page.props.flash?.error" class="mb-4 p-4 rounded-lg bg-red-100 text-red-800 text-sm">
+          {{ $page.props.flash.error }}
+        </div>
+
+        <div v-if="ledger.balance > 0" class="bg-white rounded-xl shadow-lg p-6 mb-6 border border-indigo-100">
+          <h2 class="text-lg font-semibold text-gray-800 mb-1">
+            {{ ledger.ledger_type === 'payable' ? 'Pelunasan Hutang' : 'Penerimaan Piutang' }}
+          </h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Bisa bayar/terima <strong>sebagian</strong> atau <strong>lunas sekaligus</strong>. Sisa saldo: {{ formatCurrency(ledger.balance) }}
+          </p>
+          <form @submit.prevent="submitSettlement" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
+              <input v-model="settlementForm.entry_date" type="date" class="w-full border border-gray-300 rounded-md px-3 py-2" required />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Jumlah</label>
+              <div class="flex gap-2">
+                <input
+                  v-model="settlementForm.amount"
+                  type="number"
+                  min="0.01"
+                  :max="ledger.balance"
+                  step="0.01"
+                  class="w-full border border-gray-300 rounded-md px-3 py-2"
+                  required
+                />
+                <button
+                  type="button"
+                  @click="settlementForm.amount = ledger.balance"
+                  class="whitespace-nowrap px-3 py-2 text-xs font-semibold rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  Lunas
+                </button>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Maks: {{ formatCurrency(ledger.balance) }}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Rekening Bank</label>
+              <select v-model="settlementForm.bank_account_id" class="w-full border border-gray-300 rounded-md px-3 py-2" required>
+                <option value="">Pilih rekening...</option>
+                <option v-for="bank in bankAccounts" :key="bank.id" :value="bank.id">{{ bank.label }}</option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Keterangan</label>
+              <input v-model="settlementForm.description" type="text" class="w-full border border-gray-300 rounded-md px-3 py-2" placeholder="Opsional" />
+            </div>
+            <div class="flex items-end">
+              <button
+                type="submit"
+                :disabled="settlementForm.processing"
+                class="bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700 disabled:opacity-50 w-full md:w-auto"
+              >
+                {{ settlementForm.processing ? 'Menyimpan...' : (ledger.ledger_type === 'payable' ? 'Simpan Pelunasan' : 'Simpan Penerimaan') }}
+              </button>
+            </div>
+          </form>
         </div>
 
         <div class="bg-white rounded-xl shadow-lg overflow-hidden">
@@ -29,12 +93,12 @@
                 <td class="px-6 py-4 text-sm text-gray-700">{{ formatDate(entry.entry_date) }}</td>
                 <td class="px-6 py-4 text-sm">
                   <span class="px-2 py-1 rounded text-xs font-medium" :class="entryTypeClass(entry.entry_type)">
-                    {{ entry.entry_type }}
+                    {{ entryTypeLabel(entry) }}
                   </span>
                 </td>
                 <td class="px-6 py-4 text-sm text-gray-700">{{ entry.description || '-' }}</td>
                 <td class="px-6 py-4 text-sm text-gray-500">
-                  <span v-if="entry.source_type">{{ entry.source_type }} #{{ entry.source_id }}</span>
+                  <span v-if="entry.source_type">{{ sourceLabel(entry) }}</span>
                   <span v-else>-</span>
                 </td>
                 <td class="px-6 py-4 text-sm text-right font-semibold" :class="entry.amount >= 0 ? 'text-red-600' : 'text-green-600'">
@@ -64,13 +128,34 @@
 </template>
 
 <script setup>
-import { Link } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
-defineProps({
+const props = defineProps({
   ledger: Object,
   entries: Object,
+  bankAccounts: {
+    type: Array,
+    default: () => [],
+  },
 });
+
+const settlementForm = useForm({
+  amount: '',
+  entry_date: new Date().toISOString().slice(0, 10),
+  bank_account_id: '',
+  description: '',
+});
+
+function submitSettlement() {
+  settlementForm.post(route('partner-ledger.settlement', props.ledger.id), {
+    preserveScroll: true,
+    onSuccess: () => {
+      settlementForm.reset('amount', 'description');
+      settlementForm.entry_date = new Date().toISOString().slice(0, 10);
+    },
+  });
+}
 
 function formatDate(value) {
   if (!value) return '-';
@@ -103,5 +188,21 @@ function entryTypeClass(type) {
   };
 
   return map[type] || 'bg-gray-100 text-gray-700';
+}
+
+function entryTypeLabel(entry) {
+  if (entry.entry_type === 'settlement' && entry.source_type === 'manual_settlement') {
+    return 'pelunasan manual';
+  }
+
+  return entry.entry_type;
+}
+
+function sourceLabel(entry) {
+  if (entry.source_type === 'manual_settlement') {
+    return `Pelunasan manual #${entry.source_id}`;
+  }
+
+  return `${entry.source_type} #${entry.source_id}`;
 }
 </script>

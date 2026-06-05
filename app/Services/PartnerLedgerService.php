@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\BankBook;
+use App\Models\BankAccount;
 use App\Models\ChartOfAccount;
 use App\Models\FoodPayment;
 use App\Models\Jurnal;
@@ -185,6 +187,103 @@ class PartnerLedgerService
                 'source_id' => $sourceId,
                 'created_by' => auth()->id(),
             ]);
+        });
+    }
+
+    public function recordManualSettlement(
+        PartnerSubLedger $subLedger,
+        float $amount,
+        string $entryDate,
+        int $bankAccountId,
+        ?string $description = null
+    ): PartnerLedgerEntry {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Jumlah pelunasan harus lebih dari 0.');
+        }
+
+        $bankAccount = BankAccount::find($bankAccountId);
+        if (! $bankAccount || ! $bankAccount->coa_id) {
+            throw new \InvalidArgumentException('Rekening bank tidak valid atau belum memiliki COA.');
+        }
+
+        return DB::transaction(function () use ($subLedger, $amount, $entryDate, $bankAccount, $description) {
+            $locked = PartnerSubLedger::lockForUpdate()->findOrFail($subLedger->id);
+            $balance = round((float) $locked->balance, 2);
+
+            if ($balance <= 0) {
+                throw new \RuntimeException('Saldo partner sudah lunas.');
+            }
+
+            if ($amount > $balance + 0.009) {
+                throw new \RuntimeException(
+                    'Jumlah pelunasan melebihi sisa saldo ('.number_format($balance, 0, ',', '.').').'
+                );
+            }
+
+            $partnerLabel = $this->resolvePartnerLabel($locked);
+            $defaultDesc = $locked->ledger_type === 'payable'
+                ? "Pelunasan hutang manual: {$partnerLabel}"
+                : "Penerimaan piutang manual: {$partnerLabel}";
+            $keterangan = $description ?: $defaultDesc;
+            $bankCoaId = (int) $bankAccount->coa_id;
+            $outletId = (int) ($bankAccount->outlet_id ?: 1);
+
+            if ($locked->ledger_type === 'payable') {
+                $hutangCoaId = $this->getCoaHutangUsaha();
+                if (! $hutangCoaId) {
+                    throw new \RuntimeException('COA Hutang Usaha tidak ditemukan.');
+                }
+                $jurnalMeta = $this->postJurnalPair(
+                    $hutangCoaId,
+                    $bankCoaId,
+                    $amount,
+                    $entryDate,
+                    $keterangan,
+                    'partner_ledger_settlement',
+                    $locked->id,
+                    $outletId,
+                    'partner_ledger_settlement'
+                );
+                $bankTxnType = 'debit';
+            } else {
+                $piutangCoaId = $this->getCoaPiutangUsaha();
+                if (! $piutangCoaId) {
+                    throw new \RuntimeException('COA Piutang Usaha tidak ditemukan.');
+                }
+                $jurnalMeta = $this->postJurnalPair(
+                    $bankCoaId,
+                    $piutangCoaId,
+                    $amount,
+                    $entryDate,
+                    $keterangan,
+                    'partner_ledger_settlement',
+                    $locked->id,
+                    $outletId,
+                    'partner_ledger_settlement'
+                );
+                $bankTxnType = 'credit';
+            }
+
+            $bankBook = $this->createBankBookEntry(
+                (int) $bankAccount->id,
+                $entryDate,
+                $bankTxnType,
+                $amount,
+                $keterangan,
+                'partner_ledger_settlement',
+                $locked->id
+            );
+
+            return $this->createEntry(
+                $locked,
+                'settlement',
+                -1 * $amount,
+                $entryDate,
+                $keterangan,
+                'manual_settlement',
+                $bankBook->id,
+                $jurnalMeta
+            );
         });
     }
 
@@ -596,6 +695,51 @@ class PartnerLedgerService
         }
 
         return date('Y-m-d', strtotime((string) $value));
+    }
+
+    protected function createBankBookEntry(
+        int $bankAccountId,
+        string $transactionDate,
+        string $transactionType,
+        float $amount,
+        string $description,
+        string $referenceType,
+        int $referenceId
+    ): BankBook {
+        $lastEntry = BankBook::where('bank_account_id', $bankAccountId)
+            ->orderByDesc('transaction_date')
+            ->orderByDesc('id')
+            ->first();
+
+        $currentBalance = $lastEntry ? (float) $lastEntry->balance : 0;
+        $newBalance = $transactionType === 'credit'
+            ? $currentBalance + $amount
+            : $currentBalance - $amount;
+
+        $bankBook = BankBook::create([
+            'bank_account_id' => $bankAccountId,
+            'transaction_date' => $transactionDate,
+            'transaction_type' => $transactionType,
+            'amount' => $amount,
+            'description' => $description,
+            'reference_type' => $referenceType,
+            'reference_id' => $referenceId,
+            'balance' => $newBalance,
+            'created_by' => auth()->id(),
+        ]);
+
+        BankBook::recalculateBalance($bankAccountId, $transactionDate);
+
+        return $bankBook;
+    }
+
+    protected function resolvePartnerLabel(PartnerSubLedger $ledger): string
+    {
+        if ($ledger->partner_type === 'supplier') {
+            return (string) (DB::table('suppliers')->where('id', $ledger->partner_id)->value('name') ?? '#'.$ledger->partner_id);
+        }
+
+        return (string) (DB::table('tbl_data_outlet')->where('id_outlet', $ledger->partner_id)->value('nama_outlet') ?? '#'.$ledger->partner_id);
     }
 
     protected function resolveNonFoodPaymentOutletId(NonFoodPayment $payment): ?int

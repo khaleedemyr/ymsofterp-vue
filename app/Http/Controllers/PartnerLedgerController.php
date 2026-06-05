@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BankAccount;
 use App\Models\PartnerLedgerEntry;
 use App\Models\PartnerSubLedger;
 use App\Services\PartnerLedgerService;
@@ -63,10 +64,44 @@ class PartnerLedgerController extends Controller
         $key = $partnerSubLedger->partner_type.'_'.$partnerSubLedger->partner_id;
         $partnerSubLedger->partner_name = $partnerNames[$key] ?? ('#'.$partnerSubLedger->partner_id);
 
+        $bankAccounts = BankAccount::where('is_active', 1)
+            ->with('outlet')
+            ->orderBy('bank_name')
+            ->get()
+            ->map(fn ($bank) => [
+                'id' => $bank->id,
+                'label' => trim($bank->bank_name.' — '.$bank->account_number.' ('.($bank->outlet?->nama_outlet ?? 'Head Office').')'),
+            ]);
+
         return Inertia::render('PartnerLedger/Show', [
             'ledger' => $partnerSubLedger,
             'entries' => $entries,
+            'bankAccounts' => $bankAccounts,
         ]);
+    }
+
+    public function storeManualSettlement(Request $request, PartnerSubLedger $partnerSubLedger, PartnerLedgerService $partnerLedger)
+    {
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'entry_date' => 'required|date',
+            'bank_account_id' => 'required|exists:bank_accounts,id',
+            'description' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            $partnerLedger->recordManualSettlement(
+                $partnerSubLedger,
+                (float) $validated['amount'],
+                $validated['entry_date'],
+                (int) $validated['bank_account_id'],
+                $validated['description'] ?? null
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal menyimpan pelunasan: '.$e->getMessage());
+        }
+
+        return back()->with('success', 'Pelunasan berhasil dicatat.');
     }
 
     public function storeOpeningBalance(Request $request, PartnerLedgerService $partnerLedger)
