@@ -158,7 +158,13 @@
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                   <tr v-for="(item, idx) in form.items" :key="idx" class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm text-gray-800">{{ item.item_name }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-800">
+                      {{ item.item_name }}
+                      <p v-if="!item.resolve_ok" class="text-xs text-red-600 mt-1">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                        Item/unit master tidak ditemukan — periksa nama item asset di master data.
+                      </p>
+                    </td>
                     <td class="px-4 py-3 text-sm text-gray-600 text-center">{{ item.unit }}</td>
                     <td class="px-4 py-3 text-sm text-gray-600 text-right">{{ item.qty_ordered }}</td>
                     <td class="px-4 py-3 text-sm text-gray-600 text-right">{{ item.qty_already_received }}</td>
@@ -339,10 +345,11 @@ async function fetchPO() {
     }
     form.items = res.data.items.map(item => ({
       po_item_id: item.id,
-      item_id: item.resolved_item_id,
-      item_name: item.item_name,
+      item_id: item.item_id,
+      item_name: item.resolved_item_name || item.item_name,
       unit: item.unit,
-      unit_id: item.resolved_unit_id,
+      unit_id: item.unit_id,
+      resolve_ok: !!(item.item_id && item.unit_id),
       qty_ordered: item.quantity,
       qty_already_received: item.qty_already_received || 0,
       qty_remaining: item.qty_remaining,
@@ -373,13 +380,26 @@ function submitForm() {
     return;
   }
 
-  const hasQty = form.items.some(item => item.qty_received > 0);
-  if (!hasQty) {
+  const itemsToReceive = form.items.filter(item => item.qty_received > 0);
+  if (itemsToReceive.length === 0) {
     Swal.fire({ icon: 'error', title: 'Validation Error', text: 'At least one item must have quantity to receive.' });
     return;
   }
 
-  form.post('/asset-good-receives', {
+  const unresolved = itemsToReceive.filter(item => !item.item_id || !item.unit_id);
+  if (unresolved.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Item Master Tidak Ditemukan',
+      text: `Barang "${unresolved[0].item_name}" belum terhubung ke master item asset. Hubungi admin untuk sinkronkan nama item & unit.`,
+    });
+    return;
+  }
+
+  form.transform(data => ({
+    ...data,
+    items: itemsToReceive,
+  })).post('/asset-good-receives', {
     onSuccess: () => {
       Swal.fire({
         icon: 'success',

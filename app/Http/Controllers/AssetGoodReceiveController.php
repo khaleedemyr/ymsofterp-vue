@@ -144,32 +144,7 @@ class AssetGoodReceiveController extends Controller
             )
             ->get();
 
-        $poItems = $poItems->map(function ($poItem) {
-            $qtyAlreadyReceived = DB::table('asset_good_receive_items')
-                ->where('po_item_id', $poItem->id)
-                ->sum('qty_received');
-
-            $poItem->qty_already_received = (float) $qtyAlreadyReceived;
-            $poItem->qty_remaining = (float) $poItem->quantity - $qtyAlreadyReceived;
-
-            $itemRecord = DB::table('items')
-                ->join('categories', 'items.category_id', '=', 'categories.id')
-                ->where('items.name', $poItem->item_name)
-                ->where('categories.is_asset', 1)
-                ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 'items.large_unit_id')
-                ->first();
-
-            $poItem->item_id = $itemRecord ? $itemRecord->id : null;
-            $poItem->resolved_item_name = $itemRecord ? $itemRecord->name : $poItem->item_name;
-            $poItem->small_unit_id = $itemRecord ? $itemRecord->small_unit_id : null;
-            $poItem->medium_unit_id = $itemRecord ? $itemRecord->medium_unit_id : null;
-            $poItem->large_unit_id = $itemRecord ? $itemRecord->large_unit_id : null;
-
-            $unitRecord = DB::table('units')->where('name', $poItem->unit)->first();
-            $poItem->unit_id = $unitRecord ? $unitRecord->id : null;
-
-            return $poItem;
-        });
+        $poItems = $poItems->map(fn ($poItem) => $this->enrichPoItemForAssetReceive($poItem));
 
         $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
 
@@ -1045,32 +1020,7 @@ class AssetGoodReceiveController extends Controller
             )
             ->get();
 
-        $poItems = $poItems->map(function ($poItem) {
-            $qtyAlreadyReceived = DB::table('asset_good_receive_items')
-                ->where('po_item_id', $poItem->id)
-                ->sum('qty_received');
-
-            $poItem->qty_already_received = (float) $qtyAlreadyReceived;
-            $poItem->qty_remaining = (float) $poItem->quantity - $qtyAlreadyReceived;
-
-            $itemRecord = DB::table('items')
-                ->join('categories', 'items.category_id', '=', 'categories.id')
-                ->where('items.name', $poItem->item_name)
-                ->where('categories.is_asset', 1)
-                ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 'items.large_unit_id')
-                ->first();
-
-            $poItem->item_id = $itemRecord ? $itemRecord->id : null;
-            $poItem->resolved_item_name = $itemRecord ? $itemRecord->name : $poItem->item_name;
-            $poItem->small_unit_id = $itemRecord ? $itemRecord->small_unit_id : null;
-            $poItem->medium_unit_id = $itemRecord ? $itemRecord->medium_unit_id : null;
-            $poItem->large_unit_id = $itemRecord ? $itemRecord->large_unit_id : null;
-
-            $unitRecord = DB::table('units')->where('name', $poItem->unit)->first();
-            $poItem->unit_id = $unitRecord ? $unitRecord->id : null;
-
-            return $poItem;
-        });
+        $poItems = $poItems->map(fn ($poItem) => $this->enrichPoItemForAssetReceive($poItem));
 
         $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
 
@@ -1256,5 +1206,77 @@ class AssetGoodReceiveController extends Controller
                 'message' => 'Gagal menghapus: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function enrichPoItemForAssetReceive(object $poItem): object
+    {
+        $qtyAlreadyReceived = DB::table('asset_good_receive_items')
+            ->where('po_item_id', $poItem->id)
+            ->sum('qty_received');
+
+        $poItem->qty_already_received = (float) $qtyAlreadyReceived;
+        $poItem->qty_remaining = (float) $poItem->quantity - $qtyAlreadyReceived;
+
+        $itemName = trim((string) ($poItem->item_name ?? ''));
+        $itemRecord = DB::table('items')
+            ->join('categories', 'items.category_id', '=', 'categories.id')
+            ->where('categories.is_asset', 1)
+            ->where(function ($q) use ($itemName) {
+                $q->where('items.name', $itemName)
+                    ->orWhereRaw('TRIM(items.name) = ?', [$itemName])
+                    ->orWhereRaw('LOWER(TRIM(items.name)) = ?', [strtolower($itemName)]);
+            })
+            ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 'items.large_unit_id')
+            ->first();
+
+        $poItem->item_id = $itemRecord ? $itemRecord->id : null;
+        $poItem->resolved_item_name = $itemRecord ? $itemRecord->name : $poItem->item_name;
+        $poItem->small_unit_id = $itemRecord ? $itemRecord->small_unit_id : null;
+        $poItem->medium_unit_id = $itemRecord ? $itemRecord->medium_unit_id : null;
+        $poItem->large_unit_id = $itemRecord ? $itemRecord->large_unit_id : null;
+
+        $poItem->unit_id = $this->resolveUnitIdForAssetPoItem($poItem->unit ?? '', $itemRecord);
+        $poItem->resolve_ok = (bool) ($poItem->item_id && $poItem->unit_id);
+
+        return $poItem;
+    }
+
+    private function resolveUnitIdForAssetPoItem(string $poUnit, ?object $itemRecord): ?int
+    {
+        $unitName = strtolower(trim($poUnit));
+        if ($unitName === '') {
+            return null;
+        }
+
+        $unitRecord = DB::table('units')
+            ->whereRaw('LOWER(TRIM(name)) = ?', [$unitName])
+            ->first();
+
+        if ($unitRecord) {
+            return (int) $unitRecord->id;
+        }
+
+        if (! $itemRecord) {
+            return null;
+        }
+
+        $candidateUnitIds = array_values(array_filter([
+            $itemRecord->small_unit_id ?? null,
+            $itemRecord->medium_unit_id ?? null,
+            $itemRecord->large_unit_id ?? null,
+        ]));
+
+        if (empty($candidateUnitIds)) {
+            return null;
+        }
+
+        $itemUnits = DB::table('units')->whereIn('id', $candidateUnitIds)->get();
+        foreach ($itemUnits as $itemUnit) {
+            if (strtolower(trim((string) $itemUnit->name)) === $unitName) {
+                return (int) $itemUnit->id;
+            }
+        }
+
+        return $itemRecord->small_unit_id ? (int) $itemRecord->small_unit_id : null;
     }
 }
