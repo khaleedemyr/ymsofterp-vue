@@ -151,12 +151,21 @@
                     <!-- Tambahan field di atas list PCS -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
-                        <label class="block text-xs font-medium text-gray-700">Slaughter Date</label>
+                        <label class="block text-xs font-medium text-gray-700">Slaughter Date (Supplier)</label>
                         <input v-model="item.slaughter_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
                       </div>
                       <div>
-                        <label class="block text-xs font-medium text-gray-700">Packing Date</label>
+                        <label class="block text-xs font-medium text-gray-700">Packing Date (Supplier)</label>
                         <input v-model="item.packing_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700">Butcher Slaughter Date</label>
+                        <input v-model="item.butcher_slaughter_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium text-gray-700">Butcher Packaging Date</label>
+                        <input v-model="item.butcher_packaging_date" type="date" class="mt-1 block w-full rounded-md border-gray-300" />
+                        <p class="text-[11px] text-gray-500 mt-1">Dipakai di barcode label & hitung EXP</p>
                       </div>
                       <div>
                         <label class="block text-xs font-medium text-gray-700">Batch/EST</label>
@@ -471,12 +480,15 @@ const addSelectedToButcher = () => {
 
   items.forEach(item => {
     const qtyToButcher = Number(selectedWhole.value[item.id].qty);
+    const today = new Date().toISOString().split('T')[0];
     form.items.push({
       whole_item_id: Number(item.item_id),
       whole_item_name: item.name,
       whole_qty: qtyToButcher,
       whole_unit: item.unit,
       qty_purchase: item.qty_received ?? qtyToButcher,
+      butcher_slaughter_date: today,
+      butcher_packaging_date: today,
       pcs: [],
       susut_air: { qty: '', unit: item.unit },
       small_conversion_qty: item.small_conversion_qty,
@@ -668,6 +680,8 @@ const submit = async () => {
         whole_unit: whole.whole_unit,
         slaughter_date: whole.slaughter_date,
         packing_date: whole.packing_date,
+        butcher_slaughter_date: whole.butcher_slaughter_date,
+        butcher_packaging_date: whole.butcher_packaging_date,
         batch_est: whole.batch_est,
         qty_purchase: whole.qty_purchase,
         susut_air: whole.susut_air,

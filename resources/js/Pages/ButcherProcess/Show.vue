@@ -132,8 +132,10 @@
               <div class="max-w-3xl w-full mx-auto">
                 <div v-if="butcherProcess.items.length && butcherProcess.items[0].details && butcherProcess.items[0].details.length" class="bg-white rounded-2xl shadow p-6 mb-6">
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div><b>Slaughter Date:</b> {{ formatDate(butcherProcess.items[0].details[0].slaughter_date) }}</div>
-                    <div><b>Packing Date:</b> {{ formatDate(butcherProcess.items[0].details[0].packing_date) }}</div>
+                    <div><b>Slaughter Date (Supplier):</b> {{ formatDate(butcherProcess.items[0].details[0].slaughter_date) }}</div>
+                    <div><b>Packing Date (Supplier):</b> {{ formatDate(butcherProcess.items[0].details[0].packing_date) }}</div>
+                    <div><b>Butcher Slaughter Date:</b> {{ formatDate(butcherProcess.items[0].details[0].butcher_slaughter_date) }}</div>
+                    <div><b>Butcher Packaging Date:</b> {{ formatDate(butcherProcess.items[0].details[0].butcher_packaging_date) }}</div>
                     <div><b>Batch Est:</b> {{ butcherProcess.items[0].details[0].batch_est }}</div>
                     <div><b>Qty Purchase:</b> {{ butcherProcess.items[0].details[0].qty_purchase }}</div>
                     <div><b>Susut Air Qty:</b> {{ butcherProcess.items[0].details[0].susut_air_qty }}</div>
@@ -365,11 +367,24 @@ onMounted(async () => {
 })
 
 const formatDate = (date) => {
+  if (!date) return '-'
   return new Date(date).toLocaleDateString('id-ID')
 }
 
 const formatDateTime = (date) => {
   return new Date(date).toLocaleString('id-ID')
+}
+
+const labelDetail = (item) => item?.details?.[0] || {}
+
+const labelSlaughterDate = (item) => {
+  const d = labelDetail(item)
+  return d.butcher_slaughter_date || d.slaughter_date || null
+}
+
+const labelPackagingDate = (item) => {
+  const d = labelDetail(item)
+  return d.butcher_packaging_date || d.packing_date || null
 }
 
 function groupByWholeItem(items) {
@@ -595,8 +610,8 @@ const showSerials = async (item) => {
               {
                 itemName: item.pcsItem?.name || item.pcs_item_name || '',
                 batch: item.details?.[0]?.batch_est || props.butcherProcess?.number || '-',
-                slaughterDate: item.details?.[0]?.slaughter_date || null,
-                packingDate: item.details?.[0]?.packing_date || null,
+                slaughterDate: labelSlaughterDate(item),
+                packingDate: labelPackagingDate(item),
                 expDays: Number(item.pcs_item_exp || 0),
                 repackUnitName: data[0]?.repack_unit_name || null,
                 repackQty: data[0]?.repack_qty || null,
@@ -617,8 +632,8 @@ const showSerials = async (item) => {
               downloadSerialPDF([serial], {
                 itemName: item.pcsItem?.name || item.pcs_item_name || '',
                 batch: item.details?.[0]?.batch_est || props.butcherProcess?.number || '-',
-                slaughterDate: item.details?.[0]?.slaughter_date || null,
-                packingDate: item.details?.[0]?.packing_date || null,
+                slaughterDate: labelSlaughterDate(item),
+                packingDate: labelPackagingDate(item),
                 expDays: Number(item.pcs_item_exp || 0),
                 repackUnitName: repackUnitName || null,
                 repackQty: repackQty ? parseFloat(repackQty) : null,
