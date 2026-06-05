@@ -9,11 +9,13 @@ class UserRegional extends Model
 {
     use HasFactory;
 
+    public const AREAS = ['Bar', 'Kitchen', 'Service'];
+
     protected $table = 'user_regional';
-    
+
     protected $fillable = [
         'user_id',
-        'outlet_id',
+        'area',
     ];
 
     protected $casts = [
@@ -21,27 +23,18 @@ class UserRegional extends Model
         'updated_at' => 'datetime',
     ];
 
-    // Relationship to User
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    // Relationship to Outlet
-    public function outlet()
-    {
-        return $this->belongsTo(Outlet::class, 'outlet_id', 'id_outlet');
-    }
-
-    // Scope to get outlets for a specific user
     public function scopeForUser($query, $userId)
     {
         return $query->where('user_id', $userId);
     }
 
-    // Scope to get users for a specific outlet
-    public function scopeForOutlet($query, $outletId)
+    public function scopeForArea($query, string $area)
     {
-        return $query->where('outlet_id', $outletId);
+        return $query->where('area', $area);
     }
 }

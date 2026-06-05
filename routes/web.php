@@ -1552,7 +1552,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/regional/{id}/edit', [\App\Http\Controllers\RegionalController::class, 'edit'])->name('regional.edit');
     Route::put('/regional/{id}', [\App\Http\Controllers\RegionalController::class, 'update'])->name('regional.update');
     Route::delete('/regional/{id}', [\App\Http\Controllers\RegionalController::class, 'destroy'])->name('regional.destroy');
-        Route::get('/api/regional/user-outlets/{userId}', [\App\Http\Controllers\RegionalController::class, 'getUserOutlets'])->name('regional.user-outlets');
+        Route::get('/api/regional/user-regional/{userId}', [\App\Http\Controllers\RegionalController::class, 'getUserRegional'])->name('regional.user-regional');
         Route::get('/api/regional/search-users', [\App\Http\Controllers\RegionalController::class, 'searchUsers'])->name('regional.search-users');
 });
 

@@ -278,36 +278,78 @@ function applyFilter() {
   })
 }
 
-async function loadImageAsDataUrl(url) {
+function drawImageCoverSquare(img, size = 512) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const srcW = img.naturalWidth || size
+  const srcH = img.naturalHeight || size
+  const min = Math.min(srcW, srcH)
+  const sx = (srcW - min) / 2
+  const sy = (srcH - min) / 2
+  ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size)
+  return canvas
+}
+
+function drawImageCoverCircle(img, size = 512) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  ctx.beginPath()
+  ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2)
+  ctx.closePath()
+  ctx.clip()
+  const srcW = img.naturalWidth || size
+  const srcH = img.naturalHeight || size
+  const min = Math.min(srcW, srcH)
+  const sx = (srcW - min) / 2
+  const sy = (srcH - min) / 2
+  ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size)
+  return canvas
+}
+
+async function loadImageElement(url) {
   try {
     const response = await fetch(url, { credentials: 'same-origin' })
     if (!response.ok) throw new Error('fetch failed')
     const blob = await response.blob()
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = reject
-      reader.readAsDataURL(blob)
-    })
+    const blobUrl = URL.createObjectURL(blob)
+    try {
+      return await new Promise((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => {
+          URL.revokeObjectURL(blobUrl)
+          resolve(img)
+        }
+        img.onerror = () => {
+          URL.revokeObjectURL(blobUrl)
+          reject(new Error('img load failed'))
+        }
+        img.src = blobUrl
+      })
+    } catch (e) {
+      URL.revokeObjectURL(blobUrl)
+      throw e
+    }
   } catch {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image()
       img.crossOrigin = 'anonymous'
-      img.onload = () => {
-        const size = Math.max(img.naturalWidth || 256, img.naturalHeight || 256, 256)
-        const canvas = document.createElement('canvas')
-        canvas.width = size
-        canvas.height = size
-        const ctx = canvas.getContext('2d')
-        const min = Math.min(img.naturalWidth, img.naturalHeight)
-        const sx = (img.naturalWidth - min) / 2
-        const sy = (img.naturalHeight - min) / 2
-        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size)
-        resolve(canvas.toDataURL('image/png'))
-      }
-      img.onerror = () => resolve(null)
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error('img load failed'))
       img.src = url.includes('?') ? url : `${url}?pdf=${Date.now()}`
     })
+  }
+}
+
+async function loadAvatarForPdf(url) {
+  try {
+    const img = await loadImageElement(url)
+    return drawImageCoverCircle(img, 512).toDataURL('image/png')
+  } catch {
+    return null
   }
 }
 
@@ -427,7 +469,7 @@ async function exportPdf() {
   pdfExportMode.value = true
 
   try {
-    pdfAvatarDataUrl.value = await loadImageAsDataUrl(employeeAvatarUrl.value)
+    pdfAvatarDataUrl.value = await loadAvatarForPdf(employeeAvatarUrl.value)
     await nextTick()
     await new Promise((resolve) => { setTimeout(resolve, 500) })
 
@@ -592,13 +634,14 @@ onMounted(async () => {
                   <i class="fas fa-search-plus text-white opacity-0 group-hover:opacity-90 text-xl drop-shadow"></i>
                 </span>
               </button>
-              <div v-else class="relative shrink-0">
+              <div v-else class="relative shrink-0 w-36 h-36">
                 <img
-                  :src="pdfAvatarDataUrl || employeeAvatarUrl"
+                  v-if="pdfAvatarDataUrl"
+                  :src="pdfAvatarDataUrl"
                   :alt="employee.nama_lengkap"
-                  class="at-pdf-avatar-img w-36 h-36 rounded-full object-cover border-4 border-indigo-200 shadow-lg"
-                  @error="($event.target).src = '/images/avatar-default.png'"
+                  class="at-pdf-avatar-img w-36 h-36 block shadow-lg"
                 />
+                <div v-else class="w-36 h-36 rounded-full bg-slate-100 border-4 border-indigo-200"></div>
                 <span class="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-emerald-500 border-[3px] border-white"></span>
               </div>
 

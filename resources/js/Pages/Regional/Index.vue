@@ -64,18 +64,17 @@
               </div>
             </div>
 
-            <!-- Outlets Info -->
-            <div class="bg-blue-50 rounded-lg p-3 mb-4">
-              <div class="flex items-center justify-between mb-2">
-                <span class="text-sm font-semibold text-blue-800">Assigned Outlets</span>
-                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs font-semibold">
-                  {{ user.outlet_count || 0 }}
-                </span>
-              </div>
-              <div class="text-xs text-blue-700 max-h-20 overflow-y-auto">
-                <span v-if="user.outlets">{{ user.outlets }}</span>
-                <span v-else class="text-gray-400 italic">Tidak ada outlet</span>
-              </div>
+            <!-- Area Info -->
+            <div class="bg-indigo-50 rounded-lg p-4 mb-4">
+              <span class="text-sm font-semibold text-indigo-800 block mb-2">Regional Area</span>
+              <span
+                v-if="user.area"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-indigo-200 text-indigo-800 font-semibold text-sm"
+              >
+                <i :class="['fas', getAreaIcon(user.area)]"></i>
+                {{ getAreaLabel(user.area) }}
+              </span>
+              <span v-else class="text-gray-400 italic text-sm">Belum ada area</span>
             </div>
           </div>
 
@@ -126,6 +125,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import { REGIONAL_DEPARTMENTS, getAreaLabel } from './regionalOutletUtils';
 
 const props = defineProps({
   users: Array,
@@ -136,6 +136,10 @@ const filters = ref({
   status: props.filters?.status || '',
   search: props.filters?.search || ''
 });
+
+function getAreaIcon(area) {
+  return REGIONAL_DEPARTMENTS.find((d) => d.key === area)?.icon || 'fa-layer-group'
+}
 
 function getStatusClass(status) {
   return status === 'A' 
