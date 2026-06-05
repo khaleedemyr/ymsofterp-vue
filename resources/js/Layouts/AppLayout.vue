@@ -361,6 +361,7 @@ const menuGroups = [
                 code: 'rekap_payroll',
             },
             { name: () => t('sidebar.menus.report_hutang'), icon: 'fa-solid fa-file-invoice-dollar', route: '/debt-report', code: 'debt_report' },
+            { name: () => t('sidebar.menus.partner_ledger'), icon: 'fa-solid fa-scale-balanced', route: '/partner-ledger', code: 'partner_ledger' },
         ],
     },
     {

@@ -190,6 +190,7 @@ export default {
     "payroll_finance_report": "Laporan Payroll",
     "rekap_payroll": "Rekap Payroll",
     "report_hutang": "Laporan Hutang",
+    "partner_ledger": "Hutang & Piutang",
     "purchase_order_foods": "Purchase Order Foods",
     "purchase_order_ops": "Purchase Order Ops",
     "report_po_gr": "Laporan PO GR",
