@@ -52,7 +52,7 @@ class MampReportService
                 'row_type' => 'credit',
                 'source_type' => $line->source_type,
                 'items' => $line->items,
-                'expandable' => count($line->items) > 0,
+                'expandable' => $line->source_type === 'credit' && count($line->items) > 0,
             ];
         }
 
@@ -206,8 +206,10 @@ class MampReportService
             ->whereIn('nfp.status', ['paid', 'approved'])
             ->select(
                 'nfpo.id as payment_outlet_id',
+                'nfp.id as non_food_payment_id',
                 'nfp.purchase_order_ops_id',
                 'nfpo.outlet_id',
+                'nfpo.category_id as payment_category_id',
                 'nfp.payment_date as transaction_date',
                 'o.nama_outlet as outlet_name',
                 DB::raw("(
@@ -227,8 +229,10 @@ class MampReportService
         $nfpItemsByKey = $this->fetchNonFoodPaymentItems(
             $categoryId,
             $nfpRows->map(fn ($row) => [
+                'payment_outlet_id' => $row->payment_outlet_id,
                 'purchase_order_ops_id' => $row->purchase_order_ops_id,
                 'outlet_id' => $row->outlet_id,
+                'category_id' => $row->payment_category_id ?? $categoryId,
             ])->all()
         );
 
@@ -238,7 +242,10 @@ class MampReportService
                 $description = 'Pembayaran ' . ($row->payment_number ?? 'NFP');
             }
 
-            $itemKey = $row->purchase_order_ops_id . '_' . ($row->outlet_id ?? 'null');
+            $itemKey = $this->paymentItemKey(
+                $row->purchase_order_ops_id,
+                $row->outlet_id
+            );
             $items = $nfpItemsByKey[$itemKey] ?? [];
 
             return (object) [
@@ -292,7 +299,7 @@ class MampReportService
     }
 
     /**
-     * @param  array<int, array{purchase_order_ops_id: mixed, outlet_id: mixed}>  $paymentRows
+     * @param  array<int, array{payment_outlet_id: mixed, purchase_order_ops_id: mixed, outlet_id: mixed, category_id: mixed}>  $paymentRows
      * @return array<string, array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>>
      */
     private function fetchNonFoodPaymentItems(int $categoryId, array $paymentRows): array
@@ -311,11 +318,11 @@ class MampReportService
         $items = DB::table('purchase_order_ops_items as poi')
             ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
             ->whereIn('poi.purchase_order_ops_id', $poIds)
-            ->where('pri.category_id', $categoryId)
             ->orderBy('poi.id')
             ->get([
                 'poi.purchase_order_ops_id',
                 DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
+                'pri.category_id',
                 'poi.item_name',
                 'poi.quantity',
                 'poi.unit',
@@ -326,17 +333,112 @@ class MampReportService
         $grouped = [];
 
         foreach ($items as $row) {
-            $key = $row->purchase_order_ops_id . '_' . ($row->outlet_id ?? 'null');
-            $grouped[$key][] = [
-                'item' => $row->item_name ?? '-',
-                'qty' => (float) ($row->quantity ?? 0),
-                'unit' => $row->unit,
-                'price' => (float) ($row->price ?? 0),
-                'subtotal' => (float) ($row->total ?? 0),
-            ];
+            if (! $this->poItemMatchesCategory($row->category_id, $categoryId)) {
+                continue;
+            }
+
+            $key = $this->paymentItemKey($row->purchase_order_ops_id, $row->outlet_id);
+            $grouped[$key][] = $this->mapPoItemRow($row);
+        }
+
+        foreach ($paymentRows as $paymentRow) {
+            $key = $this->paymentItemKey(
+                $paymentRow['purchase_order_ops_id'] ?? null,
+                $paymentRow['outlet_id'] ?? null
+            );
+
+            if (($grouped[$key] ?? []) !== []) {
+                continue;
+            }
+
+            $fallbackItems = $items
+                ->filter(function ($row) use ($paymentRow, $categoryId) {
+                    if ((int) $row->purchase_order_ops_id !== (int) ($paymentRow['purchase_order_ops_id'] ?? 0)) {
+                        return false;
+                    }
+
+                    if (! $this->poItemMatchesCategory($row->category_id, $categoryId)) {
+                        return false;
+                    }
+
+                    return $this->normalizeOutletId($row->outlet_id) === $this->normalizeOutletId($paymentRow['outlet_id'] ?? null);
+                })
+                ->map(fn ($row) => $this->mapPoItemRow($row))
+                ->values()
+                ->all();
+
+            if ($fallbackItems !== []) {
+                $grouped[$key] = $fallbackItems;
+            }
+        }
+
+        $categoryItemsByPo = [];
+        foreach ($items as $row) {
+            if (! $this->poItemMatchesCategory($row->category_id, $categoryId)) {
+                continue;
+            }
+
+            $poId = (int) $row->purchase_order_ops_id;
+            $categoryItemsByPo[$poId][] = $this->mapPoItemRow($row);
+        }
+
+        foreach ($paymentRows as $paymentRow) {
+            $key = $this->paymentItemKey(
+                $paymentRow['purchase_order_ops_id'] ?? null,
+                $paymentRow['outlet_id'] ?? null
+            );
+
+            if (($grouped[$key] ?? []) !== []) {
+                continue;
+            }
+
+            $poId = (int) ($paymentRow['purchase_order_ops_id'] ?? 0);
+            if ($poId > 0 && ($categoryItemsByPo[$poId] ?? []) !== []) {
+                $grouped[$key] = $categoryItemsByPo[$poId];
+            }
         }
 
         return $grouped;
+    }
+
+    private function paymentItemKey($purchaseOrderOpsId, $outletId): string
+    {
+        $poId = (int) ($purchaseOrderOpsId ?? 0);
+        $normalizedOutlet = $this->normalizeOutletId($outletId);
+
+        return $poId . '_' . ($normalizedOutlet ?? 'null');
+    }
+
+    private function normalizeOutletId($outletId): ?int
+    {
+        if ($outletId === null || $outletId === '' || $outletId === 0 || $outletId === '0') {
+            return null;
+        }
+
+        return (int) $outletId;
+    }
+
+    private function poItemMatchesCategory($itemCategoryId, int $reportCategoryId): bool
+    {
+        if ($itemCategoryId === null || $itemCategoryId === '') {
+            return true;
+        }
+
+        return (int) $itemCategoryId === $reportCategoryId;
+    }
+
+    /**
+     * @return array{item: string, qty: float, unit: string|null, price: float, subtotal: float}
+     */
+    private function mapPoItemRow(object $row): array
+    {
+        return [
+            'item' => $row->item_name ?? '-',
+            'qty' => (float) ($row->quantity ?? 0),
+            'unit' => $row->unit,
+            'price' => (float) ($row->price ?? 0),
+            'subtotal' => (float) ($row->total ?? 0),
+        ];
     }
 
     private function debitRow(int $no, string $date, string $outlet, string $description, float $amount): array
