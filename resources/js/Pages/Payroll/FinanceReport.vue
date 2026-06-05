@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   outlets: Array,
@@ -12,6 +13,8 @@ const props = defineProps({
   summary: Object,
   filter: Object,
   meta: Object,
+  bankAccounts: Array,
+  payrollCoa: Object,
 });
 
 const activeTab = ref('payment');
@@ -104,6 +107,9 @@ const monthName = computed(() => {
 });
 
 const canShowData = computed(() => props.meta?.has_generated && props.paymentRows?.length > 0);
+const canPay = computed(() => canShowData.value && props.payrollCoa?.id);
+const gajian1Paid = computed(() => !!props.meta?.gajian1_paid_at);
+const gajian2Paid = computed(() => !!props.meta?.gajian2_paid_at);
 
 watch(activeTab, () => {
   highlightedRowUserId.value = null;
@@ -140,6 +146,81 @@ function exportReport() {
   setTimeout(() => {
     exporting.value = false;
   }, 1500);
+}
+
+async function openPayDialog(phase) {
+  if (!canPay.value) {
+    await Swal.fire('Tidak bisa', 'Payroll belum digenerate atau COA PAYROLL tidak ditemukan.', 'error');
+    return;
+  }
+  if (phase === 'gajian1' && gajian1Paid.value) {
+    await Swal.fire('Info', 'Gajian 1 sudah dibayar.', 'info');
+    return;
+  }
+  if (phase === 'gajian2' && gajian2Paid.value) {
+    await Swal.fire('Info', 'Gajian 2 sudah dibayar.', 'info');
+    return;
+  }
+
+  const bankOptions = (props.bankAccounts || [])
+    .filter((b) => !!b?.id)
+    .map((b) => `<option value="${b.id}">${String(b.label || b.id)}</option>`)
+    .join('');
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { isConfirmed, value } = await Swal.fire({
+    title: `Bayar Payroll (${phase === 'gajian1' ? 'Akhir Bulan' : 'Tanggal 8'})`,
+    html: `
+      <div style="text-align:left">
+        <div style="font-size:12px;color:#6b7280;margin-bottom:10px">
+          Jurnal: <b>Dr ${props.payrollCoa?.code || ''} ${props.payrollCoa?.name || 'PAYROLL'}</b> / <b>Cr Bank/Kas</b>
+        </div>
+
+        <label style="font-weight:600;display:block;margin-bottom:4px">Tanggal bayar</label>
+        <input id="swal-paid-at" type="date" class="swal2-input" style="width:100%;margin:0 0 10px" value="${today}">
+
+        <label style="font-weight:600;display:block;margin-bottom:4px">Rekening Transfer (dipakai untuk karyawan metode Transfer)</label>
+        <select id="swal-transfer-bank" class="swal2-select" style="width:100%;margin:0 0 10px">
+          <option value="">Pilih rekening...</option>
+          ${bankOptions}
+        </select>
+
+        <label style="font-weight:600;display:block;margin-bottom:4px">Rekening Cash/Kas (dipakai untuk karyawan metode Cash)</label>
+        <select id="swal-cash-bank" class="swal2-select" style="width:100%;margin:0 0 10px">
+          <option value="">Pilih rekening...</option>
+          ${bankOptions}
+        </select>
+
+        <label style="font-weight:600;display:block;margin-bottom:4px">Catatan (opsional)</label>
+        <input id="swal-notes" type="text" class="swal2-input" style="width:100%;margin:0" placeholder="Opsional">
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Posting Pembayaran',
+    cancelButtonText: 'Batal',
+    focusConfirm: false,
+    preConfirm: () => {
+      const paidAt = document.getElementById('swal-paid-at')?.value;
+      const transferBank = document.getElementById('swal-transfer-bank')?.value;
+      const cashBank = document.getElementById('swal-cash-bank')?.value;
+      const notes = document.getElementById('swal-notes')?.value || '';
+      if (!paidAt) return Swal.showValidationMessage('Tanggal bayar wajib diisi');
+      return { paidAt, transferBank, cashBank, notes };
+    },
+  });
+
+  if (!isConfirmed) return;
+
+  router.post(route('payroll.finance-report.pay'), {
+    outlet_id: outletId.value,
+    month: Number(month.value),
+    year: Number(year.value),
+    phase,
+    paid_at: value.paidAt,
+    transfer_bank_account_id: value.transferBank || null,
+    cash_bank_account_id: value.cashBank || null,
+    notes: value.notes || null,
+  }, { preserveScroll: true });
 }
 </script>
 
@@ -212,6 +293,50 @@ function exportReport() {
           <span>Periode {{ meta.periode }}</span>
           <span class="mx-2">•</span>
           <span>{{ monthName }} {{ year }}</span>
+        </div>
+      </div>
+
+      <div v-if="canShowData" class="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-emerald-100">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div class="text-sm text-gray-500">Pembayaran Payroll</div>
+            <div class="text-lg font-semibold text-gray-800">
+              Akhir Bulan: <span class="font-bold">{{ formatCurrency(summary?.total_gaji_akhir_bulan) }}</span>
+              <span class="mx-2 text-gray-300">|</span>
+              Tanggal 8: <span class="font-bold">{{ formatCurrency(summary?.total_gaji_tanggal_8) }}</span>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+              Status: 
+              <span :class="gajian1Paid ? 'text-green-700 font-semibold' : 'text-amber-700 font-semibold'">
+                Gajian 1 {{ gajian1Paid ? 'PAID' : 'UNPAID' }}
+              </span>
+              <span class="mx-2">•</span>
+              <span :class="gajian2Paid ? 'text-green-700 font-semibold' : 'text-amber-700 font-semibold'">
+                Gajian 2 {{ gajian2Paid ? 'PAID' : 'UNPAID' }}
+              </span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 rounded-xl font-semibold shadow-sm border border-emerald-200 bg-emerald-600 text-white hover:opacity-95 disabled:opacity-50"
+              :disabled="!canPay || gajian1Paid"
+              @click="openPayDialog('gajian1')"
+            >
+              <i class="fa fa-credit-card mr-2"></i>Bayar Gajian 1
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 rounded-xl font-semibold shadow-sm border border-emerald-200 bg-emerald-600 text-white hover:opacity-95 disabled:opacity-50"
+              :disabled="!canPay || gajian2Paid"
+              @click="openPayDialog('gajian2')"
+            >
+              <i class="fa fa-credit-card mr-2"></i>Bayar Gajian 2
+            </button>
+          </div>
+        </div>
+        <div v-if="!payrollCoa?.id" class="mt-3 text-sm text-red-700">
+          COA PAYROLL (code 6009) tidak ditemukan — pembayaran tidak bisa diposting.
         </div>
       </div>
 

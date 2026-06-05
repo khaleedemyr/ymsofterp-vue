@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BankAccount;
 use App\Models\CustomPayrollItem;
 use App\Models\EmployeeResignation;
+use App\Models\Jurnal;
+use App\Models\JurnalGlobal;
 use App\Services\PayrollGajiSplitCalculator;
 use App\Services\PayrollSlipBreakdownBuilder;
+use App\Services\BankBookService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -52,8 +56,212 @@ class PayrollFinanceReportController extends Controller
                 'outlet_name' => $report['outlet_name'],
                 'periode' => $report['periode'],
                 'has_generated' => $report['has_generated'],
+                'payroll_generated_id' => $report['payroll_generated_id'] ?? null,
+                'gajian1_paid_at' => $report['gajian1_paid_at'] ?? null,
+                'gajian2_paid_at' => $report['gajian2_paid_at'] ?? null,
             ],
+            'bankAccounts' => BankAccount::where('is_active', 1)
+                ->with('outlet')
+                ->orderBy('bank_name')
+                ->get()
+                ->map(fn ($bank) => [
+                    'id' => $bank->id,
+                    'label' => trim($bank->bank_name.' — '.$bank->account_number.' ('.($bank->outlet?->nama_outlet ?? 'Head Office').')'),
+                    'coa_id' => $bank->coa_id,
+                ]),
+            'payrollCoa' => DB::table('chart_of_accounts')
+                ->where('code', '6009')
+                ->orWhere('name', 'PAYROLL')
+                ->orderBy('id')
+                ->first(['id', 'code', 'name']),
         ]);
+    }
+
+    public function pay(Request $request, BankBookService $bankBookService)
+    {
+        $validated = $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'month' => 'required|integer|min:1|max:12',
+            'year' => 'required|integer|min:2020|max:2100',
+            'phase' => 'required|in:gajian1,gajian2',
+            'paid_at' => 'required|date',
+            'transfer_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'cash_bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        $outletId = (int) $validated['outlet_id'];
+        $month = (int) $validated['month'];
+        $year = (int) $validated['year'];
+        $phase = (string) $validated['phase'];
+        $paidAt = (string) $validated['paid_at'];
+        $notes = $validated['notes'] ?? null;
+
+        $payrollGenerated = DB::table('payroll_generated')
+            ->where('outlet_id', $outletId)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->first();
+
+        if (! $payrollGenerated) {
+            return back()->with('error', 'Payroll belum di-generate untuk periode ini.');
+        }
+
+        if ($phase === 'gajian1' && ! empty($payrollGenerated->gajian1_paid_at)) {
+            return back()->with('error', 'Gajian 1 sudah dibayar.');
+        }
+        if ($phase === 'gajian2' && ! empty($payrollGenerated->gajian2_paid_at)) {
+            return back()->with('error', 'Gajian 2 sudah dibayar.');
+        }
+
+        $report = $this->buildReportData($outletId, $month, $year);
+        if (! ($report['has_generated'] ?? false)) {
+            return back()->with('error', 'Payroll belum di-generate untuk periode ini.');
+        }
+
+        $amountKey = $phase === 'gajian1' ? 'total_gaji_akhir_bulan' : 'total_gaji_tanggal_8';
+        $transferTotal = 0.0;
+        $cashTotal = 0.0;
+
+        foreach (($report['payment_rows'] ?? []) as $row) {
+            $method = ($row['payment_method'] ?? 'transfer') === 'cash' ? 'cash' : 'transfer';
+            $amt = (float) ($row[$amountKey] ?? 0);
+            if ($amt <= 0) {
+                continue;
+            }
+            if ($method === 'cash') {
+                $cashTotal += $amt;
+            } else {
+                $transferTotal += $amt;
+            }
+        }
+
+        if ($transferTotal <= 0 && $cashTotal <= 0) {
+            return back()->with('error', 'Tidak ada nominal payroll untuk dibayar pada fase ini.');
+        }
+
+        $transferBankId = $validated['transfer_bank_account_id'] ? (int) $validated['transfer_bank_account_id'] : null;
+        $cashBankId = $validated['cash_bank_account_id'] ? (int) $validated['cash_bank_account_id'] : null;
+
+        if ($transferTotal > 0 && ! $transferBankId) {
+            return back()->with('error', 'Pilih rekening untuk pembayaran Transfer.');
+        }
+        if ($cashTotal > 0 && ! $cashBankId) {
+            return back()->with('error', 'Pilih rekening untuk pembayaran Cash/Kas.');
+        }
+
+        $payrollCoa = DB::table('chart_of_accounts')
+            ->where('code', '6009')
+            ->orWhere('name', 'PAYROLL')
+            ->orderBy('id')
+            ->first();
+        if (! $payrollCoa) {
+            return back()->with('error', 'COA PAYROLL (code 6009) tidak ditemukan.');
+        }
+
+        $outletName = (string) (DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet') ?? 'Outlet');
+        $periodLabel = str_pad((string) $month, 2, '0', STR_PAD_LEFT).'/'.$year;
+        $baseDesc = "Pembayaran Payroll {$phase} {$outletName} {$periodLabel}";
+        if ($notes) {
+            $baseDesc .= " — {$notes}";
+        }
+
+        DB::beginTransaction();
+        try {
+            $noJurnal = Jurnal::generateNoJurnal();
+
+            $createLines = function (int $bankAccountId, float $amount, string $methodLabel) use ($payrollCoa, $paidAt, $outletId, $noJurnal, $baseDesc, $payrollGenerated) {
+                $bankAccount = BankAccount::find($bankAccountId);
+                if (! $bankAccount || ! $bankAccount->coa_id) {
+                    throw new \RuntimeException("Rekening {$methodLabel} tidak valid atau belum punya COA.");
+                }
+
+                $keterangan = $baseDesc." ({$methodLabel})";
+
+                Jurnal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $paidAt,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => (int) $payrollCoa->id,
+                    'coa_kredit_id' => (int) $bankAccount->coa_id,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $outletId,
+                    'reference_type' => 'payroll_payment',
+                    'reference_id' => (int) $payrollGenerated->id,
+                    'status' => 'posted',
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                JurnalGlobal::create([
+                    'no_jurnal' => $noJurnal,
+                    'tanggal' => $paidAt,
+                    'keterangan' => $keterangan,
+                    'coa_debit_id' => (int) $payrollCoa->id,
+                    'coa_kredit_id' => (int) $bankAccount->coa_id,
+                    'jumlah_debit' => $amount,
+                    'jumlah_kredit' => $amount,
+                    'outlet_id' => $outletId,
+                    'source_module' => 'payroll_payment',
+                    'source_id' => (int) $payrollGenerated->id,
+                    'reference_type' => 'payroll_payment',
+                    'reference_id' => (int) $payrollGenerated->id,
+                    'status' => 'posted',
+                    'posted_at' => now(),
+                    'posted_by' => auth()->id() ?? 1,
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+
+                $bankBookService = app(BankBookService::class);
+                $bankBookService->createEntry([
+                    'bank_account_id' => $bankAccountId,
+                    'transaction_date' => $paidAt,
+                    'transaction_type' => 'debit',
+                    'amount' => $amount,
+                    'description' => $keterangan,
+                    'reference_type' => 'payroll_payment',
+                    'reference_id' => (int) $payrollGenerated->id,
+                    'created_by' => auth()->id() ?? 1,
+                ]);
+            };
+
+            if ($transferTotal > 0) {
+                $createLines($transferBankId, round($transferTotal, 2), 'Transfer');
+            }
+            if ($cashTotal > 0) {
+                $createLines($cashBankId, round($cashTotal, 2), 'Cash');
+            }
+
+            $update = [];
+            if ($phase === 'gajian1') {
+                $update = [
+                    'gajian1_paid_at' => now(),
+                    'gajian1_paid_by' => auth()->id(),
+                    'gajian1_paid_transfer_bank_account_id' => $transferBankId,
+                    'gajian1_paid_cash_bank_account_id' => $cashBankId,
+                    'gajian1_paid_no_jurnal' => $noJurnal,
+                    'updated_at' => now(),
+                ];
+            } else {
+                $update = [
+                    'gajian2_paid_at' => now(),
+                    'gajian2_paid_by' => auth()->id(),
+                    'gajian2_paid_transfer_bank_account_id' => $transferBankId,
+                    'gajian2_paid_cash_bank_account_id' => $cashBankId,
+                    'gajian2_paid_no_jurnal' => $noJurnal,
+                    'updated_at' => now(),
+                ];
+            }
+
+            DB::table('payroll_generated')->where('id', $payrollGenerated->id)->update($update);
+
+            DB::commit();
+
+            return back()->with('success', "Pembayaran {$phase} berhasil diposting. No Jurnal: {$noJurnal}");
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal posting pembayaran payroll: '.$e->getMessage());
+        }
     }
 
     public function export(Request $request): StreamedResponse
@@ -393,6 +601,9 @@ class PayrollFinanceReportController extends Controller
             'outlet_name' => $outletName,
             'periode' => $periode,
             'has_generated' => true,
+            'payroll_generated_id' => (int) $payrollGenerated->id,
+            'gajian1_paid_at' => $payrollGenerated->gajian1_paid_at ?? null,
+            'gajian2_paid_at' => $payrollGenerated->gajian2_paid_at ?? null,
         ];
     }
 

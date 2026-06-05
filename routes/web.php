@@ -2902,6 +2902,7 @@ Route::post('/payroll/master/import', [PayrollController::class, 'importExcel'])
 // Payroll Report Routes
 Route::get('/payroll/finance-report', [App\Http\Controllers\PayrollFinanceReportController::class, 'index'])->name('payroll.finance-report');
 Route::get('/payroll/finance-report/export', [App\Http\Controllers\PayrollFinanceReportController::class, 'export'])->name('payroll.finance-report.export');
+Route::post('/payroll/finance-report/pay', [App\Http\Controllers\PayrollFinanceReportController::class, 'pay'])->name('payroll.finance-report.pay');
 Route::get('/payroll/rekap', [App\Http\Controllers\PayrollRecapController::class, 'index'])->name('payroll.rekap');
 Route::get('/payroll/rekap/export', [App\Http\Controllers\PayrollRecapController::class, 'export'])->name('payroll.rekap.export');
 Route::get('/payroll/report', [App\Http\Controllers\PayrollReportController::class, 'index'])->name('payroll.report');
