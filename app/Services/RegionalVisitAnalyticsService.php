@@ -43,7 +43,6 @@ class RegionalVisitAnalyticsService
      * @return array{
      *   outlets: array<int, array<string, mixed>>,
      *   summary: array<string, int|float|null>,
-     *   hourly_frequency: array{labels: array<int, string>, data: array<int, int>}
      * }
      */
     public function getVisitStats(array $userIds, string $startDate, string $endDate): array
@@ -53,7 +52,6 @@ class RegionalVisitAnalyticsService
             return [
                 'outlets' => [],
                 'summary' => $this->emptySummary(),
-                'hourly_frequency' => $this->emptyHourlyFrequency(),
             ];
         }
 
@@ -62,7 +60,6 @@ class RegionalVisitAnalyticsService
             return [
                 'outlets' => [],
                 'summary' => $this->emptySummary(),
-                'hourly_frequency' => $this->emptyHourlyFrequency(),
             ];
         }
 
@@ -83,12 +80,20 @@ class RegionalVisitAnalyticsService
         foreach ($scopeOutlets as $outlet) {
             $visit = $visitRows->get($outlet->id_outlet);
             $visitDays = (int) ($visit->visit_days ?? 0);
+            $totalMinutes = $this->calculateOutletTotalMinutes(
+                $userIds,
+                (int) $outlet->id_outlet,
+                $startDate,
+                $endDate,
+            );
 
             $outlets[] = [
                 'id_outlet' => (int) $outlet->id_outlet,
                 'nama_outlet' => $outlet->nama_outlet,
                 'visit_days' => $visitDays,
                 'scan_in_count' => (int) ($visit->scan_in_count ?? 0),
+                'total_minutes' => $totalMinutes,
+                'total_hours' => round($totalMinutes / 60, 2),
                 'last_visit' => $visit->last_visit ?? null,
                 'last_visit_label' => $visit?->last_visit
                     ? date('d/m/Y H:i', strtotime($visit->last_visit))
@@ -103,6 +108,7 @@ class RegionalVisitAnalyticsService
         $visited = collect($outlets)->where('visit_days', '>', 0)->count();
         $totalVisitDays = collect($outlets)->sum('visit_days');
         $maxVisit = collect($outlets)->max('visit_days') ?? 0;
+        $totalMinutes = collect($outlets)->sum('total_minutes');
 
         return [
             'outlets' => $outlets,
@@ -113,15 +119,11 @@ class RegionalVisitAnalyticsService
                 'never_visited_outlets' => count($outlets) - $visited,
                 'total_visit_days' => $totalVisitDays,
                 'max_visit_days' => $maxVisit,
+                'total_hours' => round($totalMinutes / 60, 2),
                 'visit_coverage_pct' => count($outlets) > 0
                     ? round(($visited / count($outlets)) * 100, 1)
                     : 0,
             ],
-            'hourly_frequency' => $this->buildHourlyFrequency(
-                $this->attendanceQuery($userIds, $startDate, $endDate)
-                    ->select('a.scan_date')
-                    ->get()
-            ),
         ];
     }
 
@@ -239,11 +241,6 @@ class RegionalVisitAnalyticsService
 
         krsort($byDate);
 
-        $inScans = $this->attendanceQuery($userIds, $startDate, $endDate)
-            ->where('o.id_outlet', $outletId)
-            ->select('a.scan_date')
-            ->get();
-
         return [
             'outlet' => [
                 'id_outlet' => (int) $outlet->id_outlet,
@@ -258,7 +255,7 @@ class RegionalVisitAnalyticsService
                 'total_hours' => round($totalMinutes / 60, 2),
             ],
             'daily_visits' => array_values($byDate),
-            'hourly_frequency' => $this->buildHourlyFrequency($inScans),
+            'hourly_frequency' => $this->buildHourlyFrequencyWithVisitors($userIds, $outletId, $startDate, $endDate),
         ];
     }
 
@@ -377,18 +374,55 @@ class RegionalVisitAnalyticsService
     /**
      * @return array{labels: array<int, string>, data: array<int, int>}
      */
-    private function buildHourlyFrequency(Collection $rows): array
+    /**
+     * @param  array<int>  $userIds
+     * @return array{labels: array<int, string>, data: array<int, int>, visitors_by_hour: array<int, array<int, array<string, mixed>>>}
+     */
+    private function buildHourlyFrequencyWithVisitors(array $userIds, int $outletId, string $startDate, string $endDate): array
     {
+        $rows = $this->attendanceQuery($userIds, $startDate, $endDate)
+            ->where('o.id_outlet', $outletId)
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->select(
+                'a.scan_date',
+                'u.id as user_id',
+                'u.nama_lengkap as name',
+                'u.avatar',
+                'u.upload_latest_color_photo',
+                'j.nama_jabatan',
+            )
+            ->orderBy('a.scan_date')
+            ->get();
+
         $hourly = array_fill(0, 24, 0);
+        $visitorsByHour = array_fill(0, 24, []);
 
         foreach ($rows as $row) {
             $hour = (int) date('G', strtotime($row->scan_date));
             $hourly[$hour]++;
+            $uid = (int) $row->user_id;
+
+            if (! isset($visitorsByHour[$hour][$uid])) {
+                $visitorsByHour[$hour][$uid] = [
+                    'id' => $uid,
+                    'name' => $row->name,
+                    'nama_jabatan' => $row->nama_jabatan ?: '-',
+                    'avatar' => $row->avatar,
+                    'photo' => $row->upload_latest_color_photo,
+                    'initials' => $this->userInitials($row->name),
+                ];
+            }
+        }
+
+        $visitorsPerHour = [];
+        for ($h = 0; $h < 24; $h++) {
+            $visitorsPerHour[$h] = array_values($visitorsByHour[$h]);
         }
 
         return [
             'labels' => collect(range(0, 23))->map(fn ($h) => sprintf('%02d:00', $h))->all(),
             'data' => $hourly,
+            'visitors_by_hour' => $visitorsPerHour,
         ];
     }
 
@@ -462,6 +496,47 @@ class RegionalVisitAnalyticsService
         }
 
         return "{$mins}m";
+    }
+
+    /**
+     * Total durasi kunjungan (IN→OUT) per outlet, semua karyawan regional.
+     *
+     * @param  array<int>  $userIds
+     */
+    private function calculateOutletTotalMinutes(array $userIds, int $outletId, string $startDate, string $endDate): int
+    {
+        $processedData = $this->buildOutletProcessedData($userIds, $outletId, $startDate, $endDate);
+        if (empty($processedData)) {
+            return 0;
+        }
+
+        $period = [];
+        $dt = new \DateTime($startDate);
+        $dtEnd = new \DateTime($endDate);
+        while ($dt <= $dtEnd) {
+            $period[] = $dt->format('Y-m-d');
+            $dt->modify('+1 day');
+        }
+
+        $totalMinutes = 0;
+
+        foreach ($period as $tanggal) {
+            $nextDay = date('Y-m-d', strtotime($tanggal . ' +1 day'));
+
+            foreach ($processedData as $data) {
+                if ($data['tanggal'] !== $tanggal) {
+                    continue;
+                }
+
+                $paired = $this->pairOutletDayAttendance($processedData, $data, $tanggal, $nextDay);
+
+                if ($paired['jam_in'] && $paired['jam_out']) {
+                    $totalMinutes += max(0, (int) round((strtotime($paired['jam_out']) - strtotime($paired['jam_in'])) / 60));
+                }
+            }
+        }
+
+        return $totalMinutes;
     }
 
     /**
@@ -555,6 +630,7 @@ class RegionalVisitAnalyticsService
         return [
             'labels' => collect(range(0, 23))->map(fn ($h) => sprintf('%02d:00', $h))->all(),
             'data' => array_fill(0, 24, 0),
+            'visitors_by_hour' => array_fill(0, 24, []),
         ];
     }
 
@@ -567,6 +643,7 @@ class RegionalVisitAnalyticsService
             'never_visited_outlets' => 0,
             'total_visit_days' => 0,
             'max_visit_days' => 0,
+            'total_hours' => 0,
             'visit_coverage_pct' => 0,
         ];
     }

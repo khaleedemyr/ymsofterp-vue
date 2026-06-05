@@ -11,7 +11,6 @@ const props = defineProps({
   selectedRegional: Object,
   includedRegionalUsers: { type: Array, default: () => [] },
   resolvedUserIds: { type: Array, default: () => [] },
-  hourlyFrequency: { type: Object, default: () => ({ labels: [], data: [] }) },
   filters: Object,
   areas: { type: Array, default: () => [] },
   noRegionalUsers: { type: Boolean, default: false },
@@ -38,7 +37,16 @@ const tahunOptions = Array.from({ length: 5 }, (_, i) => new Date().getFullYear(
 
 const filterApplied = computed(() => !!(props.filters?.user_id || props.filters?.area))
 const hasData = computed(() => props.outletStats.length > 0 && filterApplied.value)
-const visitChartHeight = computed(() => Math.max(320, props.outletStats.length * 40))
+const outletsByHours = computed(() =>
+  [...props.outletStats].sort((a, b) => (b.total_hours || 0) - (a.total_hours || 0))
+)
+const maxVisitDays = computed(() => Math.max(...props.outletStats.map((o) => o.visit_days || 0), 1))
+const maxTotalHours = computed(() => Math.max(...outletsByHours.value.map((o) => o.total_hours || 0), 1))
+const hourSlots = computed(() => Array.from({ length: 24 }, (_, i) => i))
+const modalHourlyMax = computed(() => {
+  const data = outletModalData.value?.hourly_frequency?.data || []
+  return Math.max(...data, 1)
+})
 
 const avatarTones = [
   'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
@@ -55,52 +63,6 @@ const chartBase = {
   theme: { mode: 'light' },
   chart: { toolbar: { show: false }, fontFamily: 'inherit', foreColor: '#475569' },
 }
-
-const visitBarSeries = computed(() => [{
-  name: 'Hari Kunjungan',
-  data: props.outletStats.map((o) => o.visit_days),
-}])
-
-const visitBarOptions = computed(() => ({
-  ...chartBase,
-  chart: { ...chartBase.chart, type: 'bar', selection: { enabled: true } },
-  plotOptions: { bar: { borderRadius: 6, horizontal: true, barHeight: '70%', distributed: true } },
-  colors: props.outletStats.map((o) => {
-    if (o.visit_days === 0) return '#cbd5e1'
-    if (o.visit_days <= 2) return '#f59e0b'
-    if (o.visit_days <= 5) return '#3b82f6'
-    return '#059669'
-  }),
-  xaxis: {
-    categories: props.outletStats.map((o) => o.nama_outlet),
-    labels: { show: false },
-    axisBorder: { show: false },
-    axisTicks: { show: false },
-    title: { text: 'Jumlah hari kunjungan', style: { fontSize: '12px', color: '#64748b' } },
-  },
-  yaxis: {
-    labels: { show: false },
-    axisBorder: { show: false },
-    axisTicks: { show: false },
-  },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4, padding: { left: 8, right: 16 } },
-  dataLabels: {
-    enabled: true,
-    style: { fontSize: '11px', fontWeight: 600, colors: ['#fff'] },
-    formatter: (v) => (v > 0 ? `${v} hari` : '0'),
-  },
-  legend: { show: false },
-  tooltip: {
-    theme: 'light',
-    y: {
-      formatter: (val, opts) => {
-        const item = props.outletStats[opts.dataPointIndex]
-        if (!item) return `${val} hari`
-        return `${val} hari kunjungan · ${item.scan_in_count} scan IN`
-      },
-    },
-  },
-}))
 
 const pieSeries = computed(() => {
   const visited = props.summary.visited_outlets || 0
@@ -130,67 +92,6 @@ const pieOptions = computed(() => ({
       },
     },
   },
-}))
-
-const mainHourlySeries = computed(() => [{
-  name: 'Kunjungan (Scan IN)',
-  data: props.hourlyFrequency?.data || [],
-}])
-
-const mainHourlyOptions = computed(() => ({
-  ...chartBase,
-  chart: { ...chartBase.chart, type: 'bar' },
-  plotOptions: { bar: { borderRadius: 4, columnWidth: '70%' } },
-  xaxis: {
-    categories: props.hourlyFrequency?.labels || [],
-    labels: {
-      rotate: -45,
-      style: { fontSize: '10px', colors: '#64748b' },
-    },
-    title: { text: 'Jam', style: { fontSize: '11px', color: '#64748b' } },
-  },
-  yaxis: {
-    labels: { style: { colors: '#64748b' } },
-    title: { text: 'Jumlah kunjungan', style: { fontSize: '11px', color: '#64748b' } },
-    forceNiceScale: true,
-    min: 0,
-  },
-  colors: ['#4f46e5'],
-  dataLabels: { enabled: false },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
-  tooltip: { theme: 'light' },
-}))
-
-const modalHourlySeries = computed(() => {
-  if (!outletModalData.value?.hourly_frequency) return [{ name: 'Scan IN', data: [] }]
-  return [{
-    name: 'Scan IN',
-    data: outletModalData.value.hourly_frequency.data,
-  }]
-})
-
-const modalHourlyOptions = computed(() => ({
-  ...chartBase,
-  chart: { ...chartBase.chart, type: 'bar' },
-  plotOptions: { bar: { borderRadius: 4, columnWidth: '75%' } },
-  xaxis: {
-    categories: outletModalData.value?.hourly_frequency?.labels || [],
-    labels: {
-      rotate: -45,
-      style: { fontSize: '10px', colors: '#64748b' },
-    },
-    title: { text: 'Jam', style: { fontSize: '11px', color: '#64748b' } },
-  },
-  yaxis: {
-    labels: { style: { colors: '#64748b' } },
-    title: { text: 'Jumlah scan IN', style: { fontSize: '11px', color: '#64748b' } },
-    forceNiceScale: true,
-    min: 0,
-  },
-  colors: ['#4f46e5'],
-  dataLabels: { enabled: false },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
-  tooltip: { theme: 'light' },
 }))
 
 function onUserChange() {
@@ -248,12 +149,6 @@ function closeOutletModal() {
   outletModalError.value = null
 }
 
-function onBarChartClick(_event, _chartContext, config) {
-  if (config.dataPointIndex !== undefined && props.outletStats[config.dataPointIndex]) {
-    openOutletDetail(props.outletStats[config.dataPointIndex])
-  }
-}
-
 function toggleDayScans(tanggal) {
   const next = new Set(expandedDays.value)
   if (next.has(tanggal)) next.delete(tanggal)
@@ -285,13 +180,39 @@ function avatarTone(userId) {
   return avatarTones[Math.abs(Number(userId) || 0) % avatarTones.length]
 }
 
-function visibleVisitors(outlet) {
-  return (outlet?.visitors || []).slice(0, 5)
+function barPct(value, max) {
+  if (!value || !max) return 0
+  return Math.max(12, Math.round((value / max) * 100))
 }
 
-function overflowVisitorCount(outlet) {
-  const total = outlet?.visitors?.length || 0
-  return total > 5 ? total - 5 : 0
+function visitBarStyle(outlet) {
+  const days = outlet.visit_days || 0
+  if (days === 0) return { backgroundColor: '#cbd5e1' }
+  if (days <= 2) return { backgroundColor: '#f59e0b' }
+  if (days <= 5) return { backgroundColor: '#3b82f6' }
+  return { backgroundColor: '#059669' }
+}
+
+function hourBarPct(count) {
+  if (!count) return 0
+  return Math.max(18, Math.round((count / modalHourlyMax.value) * 100))
+}
+
+function modalHourVisitors(hour) {
+  return outletModalData.value?.hourly_frequency?.visitors_by_hour?.[hour] || []
+}
+
+function modalHourCount(hour) {
+  return outletModalData.value?.hourly_frequency?.data?.[hour] || 0
+}
+
+function visibleVisitorsInBar(visitors, max = 4) {
+  return (visitors || []).slice(0, max)
+}
+
+function overflowInBar(visitors, max = 4) {
+  const total = visitors?.length || 0
+  return total > max ? total - max : 0
 }
 
 function showVisitorInitials(visitor) {
@@ -433,10 +354,57 @@ function onAvatarError(userId) {
           <!-- Charts -->
           <section class="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-              <h3 class="text-base font-semibold text-slate-900">Frekuensi Kunjungan per Jam</h3>
-              <p class="text-xs text-slate-500 mt-1">Distribusi scan IN karyawan regional berdasarkan jam</p>
-              <div class="mt-4">
-                <apexchart type="bar" height="280" :options="mainHourlyOptions" :series="mainHourlySeries" />
+              <h3 class="text-base font-semibold text-slate-900">Total Jam per Outlet</h3>
+              <p class="text-xs text-slate-500 mt-1">
+                Durasi kunjungan (IN→OUT) karyawan regional per outlet
+                <span class="text-indigo-600">· Klik bar untuk detail</span>
+              </p>
+              <div class="mt-4 space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                <div
+                  v-for="outlet in outletsByHours"
+                  :key="'hours-' + outlet.id_outlet"
+                  class="flex items-center gap-2"
+                >
+                  <div
+                    class="w-[130px] shrink-0 text-[11px] text-slate-700 truncate text-right"
+                    :title="outlet.nama_outlet"
+                  >{{ outlet.nama_outlet }}</div>
+                  <div
+                    class="flex-1 h-9 bg-slate-100 rounded-lg overflow-hidden cursor-pointer"
+                    @click="openOutletDetail(outlet)"
+                  >
+                    <div
+                      v-if="outlet.total_hours > 0"
+                      class="h-full rounded-lg flex items-center gap-1.5 px-2 bg-indigo-500 hover:bg-indigo-600 transition-colors"
+                      :style="{ width: barPct(outlet.total_hours, maxTotalHours) + '%', minWidth: outlet.visitors?.length ? '80px' : '52px' }"
+                    >
+                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1 shrink-0">
+                        <div
+                          v-for="visitor in visibleVisitorsInBar(outlet.visitors)"
+                          :key="visitor.id"
+                          class="rv-avatar-wrap group relative"
+                        >
+                          <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
+                            <img
+                              v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
+                              :src="visitorAvatarUrl(visitor)"
+                              :alt="visitor.name"
+                              class="w-full h-full object-cover"
+                              @error="onAvatarError(visitor.id)"
+                            />
+                            <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
+                          </div>
+                          <div class="rv-avatar-tooltip">
+                            <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
+                            <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
+                          </div>
+                        </div>
+                        <span v-if="overflowInBar(outlet.visitors)" class="rv-avatar-more-in-bar">+{{ overflowInBar(outlet.visitors) }}</span>
+                      </div>
+                      <span class="text-[10px] font-bold text-white ml-auto whitespace-nowrap">{{ outlet.total_hours }} jam</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
@@ -459,64 +427,51 @@ function onAvatarError(userId) {
                 <span class="text-indigo-600">· Klik bar untuk detail</span>
                 <span class="text-slate-400">· Hover avatar untuk nama & jabatan</span>
               </p>
-              <div class="mt-4 flex gap-2 rv-chart-clickable">
+              <div class="mt-4 space-y-2 max-h-[520px] overflow-y-auto pr-1">
                 <div
-                  class="shrink-0 flex flex-col border-r border-slate-100 pr-3"
-                  :style="{ width: '220px', height: visitChartHeight + 'px' }"
+                  v-for="outlet in outletStats"
+                  :key="outlet.id_outlet"
+                  class="flex items-center gap-2"
                 >
-                  <div class="flex-1 flex flex-col justify-center py-6 gap-0">
+                  <div
+                    class="w-[130px] shrink-0 text-[11px] text-slate-700 truncate text-right"
+                    :title="outlet.nama_outlet"
+                  >{{ outlet.nama_outlet }}</div>
+                  <div
+                    class="flex-1 h-9 bg-slate-100 rounded-lg overflow-hidden cursor-pointer"
+                    @click="openOutletDetail(outlet)"
+                  >
                     <div
-                      v-for="outlet in outletStats"
-                      :key="'label-' + outlet.id_outlet"
-                      class="flex-1 flex items-center gap-2 min-h-[28px]"
+                      v-if="outlet.visit_days > 0"
+                      class="h-full rounded-lg flex items-center gap-1.5 px-2 transition-colors hover:brightness-95"
+                      :style="{ ...visitBarStyle(outlet), width: barPct(outlet.visit_days, maxVisitDays) + '%', minWidth: outlet.visitors?.length ? '80px' : '52px' }"
                     >
-                      <div v-if="outlet.visitors?.length" class="flex items-center shrink-0">
-                        <div class="flex -space-x-1.5">
-                          <div
-                            v-for="visitor in visibleVisitors(outlet)"
-                            :key="visitor.id"
-                            class="rv-avatar-wrap group relative"
-                          >
-                            <div
-                              class="rv-avatar"
-                              :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''"
-                            >
-                              <img
-                                v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
-                                :src="visitorAvatarUrl(visitor)"
-                                :alt="visitor.name"
-                                class="w-full h-full object-cover"
-                                @error="onAvatarError(visitor.id)"
-                              />
-                              <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
-                            </div>
-                            <div class="rv-avatar-tooltip">
-                              <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
-                              <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
-                            </div>
+                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1 shrink-0">
+                        <div
+                          v-for="visitor in visibleVisitorsInBar(outlet.visitors)"
+                          :key="visitor.id"
+                          class="rv-avatar-wrap group relative"
+                        >
+                          <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
+                            <img
+                              v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
+                              :src="visitorAvatarUrl(visitor)"
+                              :alt="visitor.name"
+                              class="w-full h-full object-cover"
+                              @error="onAvatarError(visitor.id)"
+                            />
+                            <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
+                          </div>
+                          <div class="rv-avatar-tooltip">
+                            <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
+                            <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
                           </div>
                         </div>
-                        <span
-                          v-if="overflowVisitorCount(outlet)"
-                          class="rv-avatar-more"
-                          :title="'+' + overflowVisitorCount(outlet) + ' karyawan lainnya'"
-                        >+{{ overflowVisitorCount(outlet) }}</span>
+                        <span v-if="overflowInBar(outlet.visitors)" class="rv-avatar-more-in-bar">+{{ overflowInBar(outlet.visitors) }}</span>
                       </div>
-                      <span
-                        class="text-[11px] text-slate-700 leading-tight truncate"
-                        :title="outlet.nama_outlet"
-                      >{{ outlet.nama_outlet }}</span>
+                      <span class="text-[10px] font-bold text-white ml-auto whitespace-nowrap">{{ outlet.visit_days }} hari</span>
                     </div>
                   </div>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <apexchart
-                    type="bar"
-                    :height="visitChartHeight"
-                    :options="visitBarOptions"
-                    :series="visitBarSeries"
-                    @dataPointSelection="onBarChartClick"
-                  />
                 </div>
               </div>
             </div>
@@ -633,9 +588,44 @@ function onAvatarError(userId) {
 
                 <div class="bg-white border border-slate-200 rounded-xl p-4 mb-5">
                   <h4 class="text-sm font-semibold text-slate-900">Frekuensi Kunjungan per Jam</h4>
-                  <p class="text-xs text-slate-500 mt-0.5">Distribusi scan IN berdasarkan jam dalam sehari</p>
-                  <div class="mt-3">
-                    <apexchart type="bar" height="260" :options="modalHourlyOptions" :series="modalHourlySeries" />
+                  <p class="text-xs text-slate-500 mt-0.5">Distribusi scan IN · hover avatar untuk nama & jabatan</p>
+                  <div class="mt-4 flex items-end gap-0.5 h-[200px] border-b border-slate-200 pb-1 overflow-x-auto">
+                    <div
+                      v-for="hour in hourSlots"
+                      :key="'hour-' + hour"
+                      class="flex flex-col items-center justify-end flex-1 min-w-[22px] h-full"
+                    >
+                      <div
+                        v-if="modalHourCount(hour) > 0"
+                        class="w-full bg-indigo-500 rounded-t-md flex flex-col items-center justify-end gap-0.5 px-0.5 pb-1 pt-1"
+                        :style="{ height: hourBarPct(modalHourCount(hour)) + '%', minHeight: '36px' }"
+                      >
+                        <div v-if="modalHourVisitors(hour).length" class="flex flex-col-reverse items-center -space-y-0.5 mb-0.5">
+                          <div
+                            v-for="visitor in visibleVisitorsInBar(modalHourVisitors(hour), 3)"
+                            :key="visitor.id"
+                            class="rv-avatar-wrap group relative"
+                          >
+                            <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
+                              <img
+                                v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
+                                :src="visitorAvatarUrl(visitor)"
+                                :alt="visitor.name"
+                                class="w-full h-full object-cover"
+                                @error="onAvatarError(visitor.id)"
+                              />
+                              <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
+                            </div>
+                            <div class="rv-avatar-tooltip">
+                              <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
+                              <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <span class="text-[8px] font-bold text-white leading-none">{{ modalHourCount(hour) }}</span>
+                      </div>
+                      <span class="text-[8px] text-slate-500 mt-1 leading-none">{{ String(hour).padStart(2, '0') }}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -726,9 +716,6 @@ function onAvatarError(userId) {
     focus:border-indigo-500 focus:ring-indigo-500 transition-colors px-3 py-2.5;
 }
 
-:deep(.rv-chart-clickable .apexcharts-bar-area) {
-  cursor: pointer;
-}
 
 .rv-avatar-wrap {
   @apply relative z-10 hover:z-30;
@@ -739,13 +726,17 @@ function onAvatarError(userId) {
     flex items-center justify-center text-[9px] font-bold text-white;
 }
 
+.rv-avatar-in-bar {
+  @apply w-5 h-5 text-[8px] border border-white/90 shadow;
+}
+
 .rv-avatar-initials {
   @apply leading-none select-none;
 }
 
-.rv-avatar-more {
-  @apply ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1
-    rounded-full bg-slate-200 text-[9px] font-bold text-slate-600 border border-white;
+.rv-avatar-more-in-bar {
+  @apply inline-flex items-center justify-center min-w-[1.1rem] h-4 px-0.5
+    rounded-full bg-white/25 text-[8px] font-bold text-white border border-white/60;
 }
 
 .rv-avatar-tooltip {
