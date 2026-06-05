@@ -33,6 +33,9 @@ class RegionalVisitReportController extends Controller
             'total_visit_days' => 0,
             'max_visit_days' => 0,
             'visit_coverage_pct' => 0,
+        ], 'hourly_frequency' => [
+            'labels' => collect(range(0, 23))->map(fn ($h) => sprintf('%02d:00', $h))->all(),
+            'data' => array_fill(0, 24, 0),
         ]];
 
         $selectedRegional = null;
@@ -63,6 +66,7 @@ class RegionalVisitReportController extends Controller
             'regionalUsers' => $regionalUsers,
             'outletStats' => $report['outlets'],
             'summary' => $report['summary'],
+            'hourlyFrequency' => $report['hourly_frequency'],
             'selectedRegional' => $selectedRegional,
             'includedRegionalUsers' => $includedRegionalUsers,
             'noRegionalUsers' => $noRegionalUsers,

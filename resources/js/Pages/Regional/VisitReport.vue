@@ -11,6 +11,7 @@ const props = defineProps({
   selectedRegional: Object,
   includedRegionalUsers: { type: Array, default: () => [] },
   resolvedUserIds: { type: Array, default: () => [] },
+  hourlyFrequency: { type: Object, default: () => ({ labels: [], data: [] }) },
   filters: Object,
   areas: { type: Array, default: () => [] },
   noRegionalUsers: { type: Boolean, default: false },
@@ -27,6 +28,7 @@ const outletModalLoading = ref(false)
 const outletModalError = ref(null)
 const outletModalData = ref(null)
 const expandedDays = ref(new Set())
+const avatarLoadFailed = ref(new Set())
 
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -36,6 +38,12 @@ const tahunOptions = Array.from({ length: 5 }, (_, i) => new Date().getFullYear(
 
 const filterApplied = computed(() => !!(props.filters?.user_id || props.filters?.area))
 const hasData = computed(() => props.outletStats.length > 0 && filterApplied.value)
+const visitChartHeight = computed(() => Math.max(320, props.outletStats.length * 40))
+
+const avatarTones = [
+  'bg-indigo-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500',
+  'bg-violet-500', 'bg-sky-500', 'bg-teal-500', 'bg-orange-500',
+]
 
 const periodLabel = computed(() => {
   if (!props.filters?.start_date || !props.filters?.end_date) return ''
@@ -65,17 +73,23 @@ const visitBarOptions = computed(() => ({
   }),
   xaxis: {
     categories: props.outletStats.map((o) => o.nama_outlet),
-    labels: { style: { fontSize: '11px', colors: '#475569' } },
+    labels: { show: false },
+    axisBorder: { show: false },
+    axisTicks: { show: false },
     title: { text: 'Jumlah hari kunjungan', style: { fontSize: '12px', color: '#64748b' } },
   },
-  yaxis: { labels: { style: { fontSize: '11px', colors: '#64748b' }, maxWidth: 180 } },
+  yaxis: {
+    labels: { show: false },
+    axisBorder: { show: false },
+    axisTicks: { show: false },
+  },
+  grid: { borderColor: '#e2e8f0', strokeDashArray: 4, padding: { left: 8, right: 16 } },
   dataLabels: {
     enabled: true,
     style: { fontSize: '11px', fontWeight: 600, colors: ['#fff'] },
     formatter: (v) => (v > 0 ? `${v} hari` : '0'),
   },
   legend: { show: false },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
   tooltip: {
     theme: 'light',
     y: {
@@ -116,6 +130,35 @@ const pieOptions = computed(() => ({
       },
     },
   },
+}))
+
+const mainHourlySeries = computed(() => [{
+  name: 'Kunjungan (Scan IN)',
+  data: props.hourlyFrequency?.data || [],
+}])
+
+const mainHourlyOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'bar' },
+  plotOptions: { bar: { borderRadius: 4, columnWidth: '70%' } },
+  xaxis: {
+    categories: props.hourlyFrequency?.labels || [],
+    labels: {
+      rotate: -45,
+      style: { fontSize: '10px', colors: '#64748b' },
+    },
+    title: { text: 'Jam', style: { fontSize: '11px', color: '#64748b' } },
+  },
+  yaxis: {
+    labels: { style: { colors: '#64748b' } },
+    title: { text: 'Jumlah kunjungan', style: { fontSize: '11px', color: '#64748b' } },
+    forceNiceScale: true,
+    min: 0,
+  },
+  colors: ['#4f46e5'],
+  dataLabels: { enabled: false },
+  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
+  tooltip: { theme: 'light' },
 }))
 
 const modalHourlySeries = computed(() => {
@@ -231,6 +274,33 @@ function frequencyClass(freq) {
   if (freq === 'rare') return 'bg-amber-100 text-amber-700'
   return 'bg-slate-100 text-slate-600'
 }
+
+function visitorAvatarUrl(visitor) {
+  if (visitor?.avatar) return `/storage/${visitor.avatar}`
+  if (visitor?.photo) return `/storage/${visitor.photo}`
+  return null
+}
+
+function avatarTone(userId) {
+  return avatarTones[Math.abs(Number(userId) || 0) % avatarTones.length]
+}
+
+function visibleVisitors(outlet) {
+  return (outlet?.visitors || []).slice(0, 5)
+}
+
+function overflowVisitorCount(outlet) {
+  const total = outlet?.visitors?.length || 0
+  return total > 5 ? total - 5 : 0
+}
+
+function showVisitorInitials(visitor) {
+  return !visitorAvatarUrl(visitor) || avatarLoadFailed.value.has(visitor.id)
+}
+
+function onAvatarError(userId) {
+  avatarLoadFailed.value.add(userId)
+}
 </script>
 
 <template>
@@ -244,7 +314,7 @@ function frequencyClass(freq) {
               Rekap Kunjungan Outlet — Regional
             </h1>
             <p class="text-sm text-slate-500 mt-1">
-              Area menentukan karyawan regional (Regional Management). Rekap dihitung dari scan IN mereka ke outlet aktif (is_outlet=1).
+              Area menentukan karyawan regional (Regional Management). Hanya outlet aktif (is_outlet=1) yang punya SN mesin absensi.
             </p>
           </div>
           <a
@@ -361,8 +431,25 @@ function frequencyClass(freq) {
           </section>
 
           <!-- Charts -->
-          <section class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-            <div class="xl:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+          <section class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+              <h3 class="text-base font-semibold text-slate-900">Frekuensi Kunjungan per Jam</h3>
+              <p class="text-xs text-slate-500 mt-1">Distribusi scan IN karyawan regional berdasarkan jam</p>
+              <div class="mt-4">
+                <apexchart type="bar" height="280" :options="mainHourlyOptions" :series="mainHourlySeries" />
+              </div>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+              <h3 class="text-base font-semibold text-slate-900">Coverage Kunjungan</h3>
+              <p class="text-xs text-slate-500 mt-1">Proporsi outlet yang sudah pernah dikunjungi</p>
+              <div class="mt-6">
+                <apexchart type="donut" height="280" :options="pieOptions" :series="pieSeries" />
+              </div>
+            </div>
+          </section>
+
+          <section class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
+            <div class="xl:col-span-2">
               <h3 class="text-base font-semibold text-slate-900">Frekuensi Kunjungan per Outlet</h3>
               <p class="text-xs text-slate-500 mt-1">
                 <span class="inline-block w-3 h-3 rounded bg-emerald-500 mr-1"></span>Sering
@@ -370,22 +457,67 @@ function frequencyClass(freq) {
                 <span class="inline-block w-3 h-3 rounded bg-amber-500 mx-1"></span>Jarang
                 <span class="inline-block w-3 h-3 rounded bg-slate-300 mx-1"></span>Belum pernah
                 <span class="text-indigo-600">· Klik bar untuk detail</span>
+                <span class="text-slate-400">· Hover avatar untuk nama & jabatan</span>
               </p>
-              <div class="mt-4 rv-chart-clickable" :style="{ minHeight: Math.max(320, outletStats.length * 36) + 'px' }">
-                <apexchart
-                  type="bar"
-                  :height="Math.max(320, outletStats.length * 36)"
-                  :options="visitBarOptions"
-                  :series="visitBarSeries"
-                  @dataPointSelection="onBarChartClick"
-                />
-              </div>
-            </div>
-            <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-              <h3 class="text-base font-semibold text-slate-900">Coverage Kunjungan</h3>
-              <p class="text-xs text-slate-500 mt-1">Proporsi outlet yang sudah pernah dikunjungi</p>
-              <div class="mt-6">
-                <apexchart type="donut" height="300" :options="pieOptions" :series="pieSeries" />
+              <div class="mt-4 flex gap-2 rv-chart-clickable">
+                <div
+                  class="shrink-0 flex flex-col border-r border-slate-100 pr-3"
+                  :style="{ width: '220px', height: visitChartHeight + 'px' }"
+                >
+                  <div class="flex-1 flex flex-col justify-center py-6 gap-0">
+                    <div
+                      v-for="outlet in outletStats"
+                      :key="'label-' + outlet.id_outlet"
+                      class="flex-1 flex items-center gap-2 min-h-[28px]"
+                    >
+                      <div v-if="outlet.visitors?.length" class="flex items-center shrink-0">
+                        <div class="flex -space-x-1.5">
+                          <div
+                            v-for="visitor in visibleVisitors(outlet)"
+                            :key="visitor.id"
+                            class="rv-avatar-wrap group relative"
+                          >
+                            <div
+                              class="rv-avatar"
+                              :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''"
+                            >
+                              <img
+                                v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
+                                :src="visitorAvatarUrl(visitor)"
+                                :alt="visitor.name"
+                                class="w-full h-full object-cover"
+                                @error="onAvatarError(visitor.id)"
+                              />
+                              <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
+                            </div>
+                            <div class="rv-avatar-tooltip">
+                              <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
+                              <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <span
+                          v-if="overflowVisitorCount(outlet)"
+                          class="rv-avatar-more"
+                          :title="'+' + overflowVisitorCount(outlet) + ' karyawan lainnya'"
+                        >+{{ overflowVisitorCount(outlet) }}</span>
+                      </div>
+                      <span
+                        class="text-[11px] text-slate-700 leading-tight truncate"
+                        :title="outlet.nama_outlet"
+                      >{{ outlet.nama_outlet }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <apexchart
+                    type="bar"
+                    :height="visitChartHeight"
+                    :options="visitBarOptions"
+                    :series="visitBarSeries"
+                    @dataPointSelection="onBarChartClick"
+                  />
+                </div>
               </div>
             </div>
           </section>
@@ -480,7 +612,7 @@ function frequencyClass(freq) {
               </div>
 
               <template v-else-if="outletModalData">
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                   <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
                     <p class="text-xs text-indigo-600 font-medium">Hari Kunjungan</p>
                     <p class="text-xl font-bold text-indigo-800">{{ outletModalData.summary.visit_days }}</p>
@@ -489,9 +621,13 @@ function frequencyClass(freq) {
                     <p class="text-xs text-emerald-600 font-medium">Total Scan IN</p>
                     <p class="text-xl font-bold text-emerald-800">{{ outletModalData.summary.scan_in_count }}</p>
                   </div>
+                  <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                    <p class="text-xs text-rose-600 font-medium">Total Scan OUT</p>
+                    <p class="text-xl font-bold text-rose-800">{{ outletModalData.summary.scan_out_count }}</p>
+                  </div>
                   <div class="rounded-xl border border-violet-200 bg-violet-50 p-3">
-                    <p class="text-xs text-violet-600 font-medium">Karyawan Unik</p>
-                    <p class="text-xl font-bold text-violet-800">{{ outletModalData.summary.unique_visitors }}</p>
+                    <p class="text-xs text-violet-600 font-medium">Total Jam</p>
+                    <p class="text-xl font-bold text-violet-800">{{ outletModalData.summary.total_hours }} jam</p>
                   </div>
                 </div>
 
@@ -510,52 +646,56 @@ function frequencyClass(freq) {
                         <th class="px-4 py-2.5 text-left font-semibold w-8"></th>
                         <th class="px-4 py-2.5 text-left font-semibold">Hari</th>
                         <th class="px-4 py-2.5 text-left font-semibold">Tanggal</th>
-                        <th class="px-4 py-2.5 text-right font-semibold">Scan IN</th>
                         <th class="px-4 py-2.5 text-left font-semibold">Karyawan</th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Jam Masuk</th>
+                        <th class="px-4 py-2.5 text-left font-semibold">Jam Keluar</th>
+                        <th class="px-4 py-2.5 text-right font-semibold">Durasi</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                       <template v-for="day in outletModalData.daily_visits" :key="day.tanggal">
-                        <tr class="hover:bg-indigo-50/30 transition-colors">
-                          <td class="px-4 py-3">
-                            <button
-                              v-if="day.scans?.length"
-                              type="button"
-                              class="text-slate-400 hover:text-indigo-600"
-                              @click="toggleDayScans(day.tanggal)"
-                            >
-                              <i :class="['fas', expandedDays.has(day.tanggal) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
-                            </button>
-                          </td>
-                          <td class="px-4 py-3 font-medium text-slate-800">{{ day.hari }}</td>
-                          <td class="px-4 py-3 text-slate-700">{{ day.tanggal_label }}</td>
-                          <td class="px-4 py-3 text-right font-semibold text-indigo-600">{{ day.scan_in_count }}</td>
-                          <td class="px-4 py-3 text-slate-700">
-                            <span
-                              v-for="(user, uIdx) in day.users"
-                              :key="user.id"
-                              class="inline-flex items-center text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full mr-1 mb-1"
-                            >
-                              {{ user.name }}<span v-if="uIdx < day.users.length - 1"></span>
-                            </span>
-                          </td>
-                        </tr>
-                        <tr v-if="expandedDays.has(day.tanggal) && day.scans?.length" class="bg-slate-50">
-                          <td colspan="5" class="px-4 py-3">
-                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Detail Scan IN</p>
-                            <div class="space-y-1.5">
-                              <div
-                                v-for="(scan, scanIdx) in day.scans"
-                                :key="scanIdx"
-                                class="flex flex-wrap items-center gap-2 text-xs"
+                        <template v-for="(session, sIdx) in day.sessions" :key="day.tanggal + '-' + session.user_id">
+                          <tr class="hover:bg-indigo-50/30 transition-colors">
+                            <td class="px-4 py-3">
+                              <button
+                                v-if="session.scans?.length"
+                                type="button"
+                                class="text-slate-400 hover:text-indigo-600"
+                                @click="toggleDayScans(day.tanggal + '-' + session.user_id)"
                               >
-                                <span class="inline-flex items-center px-2 py-0.5 rounded font-semibold bg-emerald-100 text-emerald-700">IN</span>
-                                <span class="text-slate-600">{{ scan.user_name }}</span>
-                                <span class="font-mono font-medium text-slate-800">{{ scan.jam_label }}</span>
+                                <i :class="['fas', expandedDays.has(day.tanggal + '-' + session.user_id) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
+                              </button>
+                            </td>
+                            <td class="px-4 py-3 font-medium text-slate-800">{{ sIdx === 0 ? day.hari : '' }}</td>
+                            <td class="px-4 py-3 text-slate-700">{{ sIdx === 0 ? day.tanggal_label : '' }}</td>
+                            <td class="px-4 py-3 text-slate-800 font-medium">{{ session.user_name }}</td>
+                            <td class="px-4 py-3 text-emerald-700 font-medium">{{ session.jam_masuk_display || '—' }}</td>
+                            <td class="px-4 py-3 text-rose-700 font-medium">
+                              <span v-if="session.has_no_checkout" class="text-amber-600 text-xs font-semibold">Belum checkout</span>
+                              <template v-else>{{ session.jam_keluar_display || '—' }}</template>
+                              <span v-if="session.is_cross_day && session.jam_keluar_display" class="text-xs text-amber-600 ml-1">+1 hari</span>
+                            </td>
+                            <td class="px-4 py-3 text-right text-slate-700">{{ session.durasi_label }}</td>
+                          </tr>
+                          <tr v-if="expandedDays.has(day.tanggal + '-' + session.user_id) && session.scans?.length" class="bg-slate-50">
+                            <td colspan="7" class="px-4 py-3">
+                              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Riwayat Scan</p>
+                              <div class="space-y-1.5">
+                                <div
+                                  v-for="(scan, scanIdx) in session.scans"
+                                  :key="scanIdx"
+                                  class="flex flex-wrap items-center gap-2 text-xs"
+                                >
+                                  <span
+                                    class="inline-flex items-center px-2 py-0.5 rounded font-semibold"
+                                    :class="scan.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                                  >{{ scan.type }}</span>
+                                  <span class="font-mono font-medium text-slate-800">{{ scan.jam_label }}</span>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                        </tr>
+                            </td>
+                          </tr>
+                        </template>
                       </template>
                     </tbody>
                   </table>
@@ -588,5 +728,35 @@ function frequencyClass(freq) {
 
 :deep(.rv-chart-clickable .apexcharts-bar-area) {
   cursor: pointer;
+}
+
+.rv-avatar-wrap {
+  @apply relative z-10 hover:z-30;
+}
+
+.rv-avatar {
+  @apply w-6 h-6 rounded-full border-2 border-white shadow-sm overflow-hidden
+    flex items-center justify-center text-[9px] font-bold text-white;
+}
+
+.rv-avatar-initials {
+  @apply leading-none select-none;
+}
+
+.rv-avatar-more {
+  @apply ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1
+    rounded-full bg-slate-200 text-[9px] font-bold text-slate-600 border border-white;
+}
+
+.rv-avatar-tooltip {
+  @apply absolute left-1/2 bottom-full -translate-x-1/2 mb-2 w-max max-w-[180px]
+    px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 shadow-lg text-[11px]
+    opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all
+    pointer-events-none z-50;
+}
+
+.rv-avatar-tooltip::after {
+  content: '';
+  @apply absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-white;
 }
 </style>
