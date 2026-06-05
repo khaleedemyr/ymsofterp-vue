@@ -28,6 +28,7 @@ const outletModalError = ref(null)
 const outletModalData = ref(null)
 const expandedDays = ref(new Set())
 const avatarLoadFailed = ref(new Set())
+const avatarTooltip = ref(null)
 
 const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -222,6 +223,32 @@ function showVisitorInitials(visitor) {
 function onAvatarError(userId) {
   avatarLoadFailed.value.add(userId)
 }
+
+function showAvatarTooltip(visitor, e) {
+  e.stopPropagation()
+  const rect = e.currentTarget.getBoundingClientRect()
+  avatarTooltip.value = {
+    name: visitor.name,
+    jabatan: visitor.nama_jabatan || '-',
+    top: rect.top,
+    left: rect.left + rect.width / 2,
+  }
+}
+
+function hideAvatarTooltip() {
+  avatarTooltip.value = null
+}
+
+function sessionAsVisitor(session) {
+  return {
+    id: session.user_id,
+    name: session.user_name,
+    nama_jabatan: session.nama_jabatan,
+    avatar: session.avatar,
+    photo: session.photo,
+    initials: session.initials,
+  }
+}
 </script>
 
 <template>
@@ -359,30 +386,33 @@ function onAvatarError(userId) {
                 Durasi kunjungan (IN→OUT) karyawan regional per outlet
                 <span class="text-indigo-600">· Klik bar untuk detail</span>
               </p>
-              <div class="mt-4 space-y-2 max-h-[360px] overflow-y-auto pr-1">
+              <div class="mt-4 space-y-2.5">
                 <div
                   v-for="outlet in outletsByHours"
                   :key="'hours-' + outlet.id_outlet"
-                  class="flex items-center gap-2"
+                  class="flex items-center gap-2 overflow-visible"
                 >
                   <div
-                    class="w-[130px] shrink-0 text-[11px] text-slate-700 truncate text-right"
+                    class="w-[140px] shrink-0 text-xs text-slate-700 truncate text-right"
                     :title="outlet.nama_outlet"
                   >{{ outlet.nama_outlet }}</div>
                   <div
-                    class="flex-1 h-9 bg-slate-100 rounded-lg overflow-hidden cursor-pointer"
+                    class="flex-1 h-14 bg-slate-100 rounded-xl relative overflow-visible cursor-pointer"
                     @click="openOutletDetail(outlet)"
                   >
                     <div
                       v-if="outlet.total_hours > 0"
-                      class="h-full rounded-lg flex items-center gap-1.5 px-2 bg-indigo-500 hover:bg-indigo-600 transition-colors"
-                      :style="{ width: barPct(outlet.total_hours, maxTotalHours) + '%', minWidth: outlet.visitors?.length ? '80px' : '52px' }"
+                      class="h-full rounded-xl flex items-center gap-2 px-3 bg-indigo-500 hover:bg-indigo-600 transition-colors overflow-visible"
+                      :style="{ width: barPct(outlet.total_hours, maxTotalHours) + '%', minWidth: outlet.visitors?.length ? '120px' : '64px' }"
                     >
-                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1 shrink-0">
+                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1.5 shrink-0">
                         <div
                           v-for="visitor in visibleVisitorsInBar(outlet.visitors)"
                           :key="visitor.id"
-                          class="rv-avatar-wrap group relative"
+                          class="rv-avatar-wrap"
+                          @mouseenter="showAvatarTooltip(visitor, $event)"
+                          @mouseleave="hideAvatarTooltip"
+                          @click.stop
                         >
                           <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
                             <img
@@ -394,14 +424,10 @@ function onAvatarError(userId) {
                             />
                             <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
                           </div>
-                          <div class="rv-avatar-tooltip">
-                            <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
-                            <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
-                          </div>
                         </div>
                         <span v-if="overflowInBar(outlet.visitors)" class="rv-avatar-more-in-bar">+{{ overflowInBar(outlet.visitors) }}</span>
                       </div>
-                      <span class="text-[10px] font-bold text-white ml-auto whitespace-nowrap">{{ outlet.total_hours }} jam</span>
+                      <span class="text-xs font-bold text-white ml-auto whitespace-nowrap">{{ outlet.total_hours }} jam</span>
                     </div>
                   </div>
                 </div>
@@ -427,30 +453,33 @@ function onAvatarError(userId) {
                 <span class="text-indigo-600">· Klik bar untuk detail</span>
                 <span class="text-slate-400">· Hover avatar untuk nama & jabatan</span>
               </p>
-              <div class="mt-4 space-y-2 max-h-[520px] overflow-y-auto pr-1">
+              <div class="mt-4 space-y-2.5">
                 <div
                   v-for="outlet in outletStats"
                   :key="outlet.id_outlet"
-                  class="flex items-center gap-2"
+                  class="flex items-center gap-2 overflow-visible"
                 >
                   <div
-                    class="w-[130px] shrink-0 text-[11px] text-slate-700 truncate text-right"
+                    class="w-[140px] shrink-0 text-xs text-slate-700 truncate text-right"
                     :title="outlet.nama_outlet"
                   >{{ outlet.nama_outlet }}</div>
                   <div
-                    class="flex-1 h-9 bg-slate-100 rounded-lg overflow-hidden cursor-pointer"
+                    class="flex-1 h-14 bg-slate-100 rounded-xl relative overflow-visible cursor-pointer"
                     @click="openOutletDetail(outlet)"
                   >
                     <div
                       v-if="outlet.visit_days > 0"
-                      class="h-full rounded-lg flex items-center gap-1.5 px-2 transition-colors hover:brightness-95"
-                      :style="{ ...visitBarStyle(outlet), width: barPct(outlet.visit_days, maxVisitDays) + '%', minWidth: outlet.visitors?.length ? '80px' : '52px' }"
+                      class="h-full rounded-xl flex items-center gap-2 px-3 transition-colors hover:brightness-95 overflow-visible"
+                      :style="{ ...visitBarStyle(outlet), width: barPct(outlet.visit_days, maxVisitDays) + '%', minWidth: outlet.visitors?.length ? '120px' : '64px' }"
                     >
-                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1 shrink-0">
+                      <div v-if="outlet.visitors?.length" class="flex items-center -space-x-1.5 shrink-0">
                         <div
                           v-for="visitor in visibleVisitorsInBar(outlet.visitors)"
                           :key="visitor.id"
-                          class="rv-avatar-wrap group relative"
+                          class="rv-avatar-wrap"
+                          @mouseenter="showAvatarTooltip(visitor, $event)"
+                          @mouseleave="hideAvatarTooltip"
+                          @click.stop
                         >
                           <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
                             <img
@@ -462,14 +491,10 @@ function onAvatarError(userId) {
                             />
                             <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
                           </div>
-                          <div class="rv-avatar-tooltip">
-                            <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
-                            <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
-                          </div>
                         </div>
                         <span v-if="overflowInBar(outlet.visitors)" class="rv-avatar-more-in-bar">+{{ overflowInBar(outlet.visitors) }}</span>
                       </div>
-                      <span class="text-[10px] font-bold text-white ml-auto whitespace-nowrap">{{ outlet.visit_days }} hari</span>
+                      <span class="text-xs font-bold text-white ml-auto whitespace-nowrap">{{ outlet.visit_days }} hari</span>
                     </div>
                   </div>
                 </div>
@@ -481,16 +506,21 @@ function onAvatarError(userId) {
           <section class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
             <div class="px-5 py-4 border-b border-slate-200 bg-slate-50">
               <h3 class="text-base font-semibold text-slate-900">Detail Kunjungan per Outlet</h3>
-              <p class="text-xs text-slate-500 mt-0.5">Klik baris untuk melihat detail per hari dan frekuensi jam</p>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Klik baris untuk melihat detail per hari dan frekuensi jam
+                <span class="text-slate-400">· Hover avatar untuk nama & jabatan</span>
+              </p>
             </div>
             <div class="overflow-x-auto">
               <table class="min-w-full text-sm">
                 <thead>
                   <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
                     <th class="px-5 py-3 text-left font-semibold">Outlet</th>
+                    <th class="px-5 py-3 text-left font-semibold">Karyawan</th>
                     <th class="px-5 py-3 text-center font-semibold">Frekuensi</th>
                     <th class="px-5 py-3 text-right font-semibold">Hari Kunjungan</th>
                     <th class="px-5 py-3 text-right font-semibold">Scan IN</th>
+                    <th class="px-5 py-3 text-right font-semibold">Total Jam</th>
                     <th class="px-5 py-3 text-left font-semibold">Kunjungan Terakhir</th>
                   </tr>
                 </thead>
@@ -505,6 +535,34 @@ function onAvatarError(userId) {
                     <td class="px-5 py-3.5 font-medium text-slate-900">
                       <span class="text-indigo-600 hover:underline">{{ row.nama_outlet }}</span>
                     </td>
+                    <td class="px-5 py-3.5" @click.stop>
+                      <div v-if="row.visitors?.length" class="flex items-center -space-x-2">
+                        <div
+                          v-for="visitor in visibleVisitorsInBar(row.visitors, 6)"
+                          :key="visitor.id"
+                          class="rv-avatar-wrap"
+                          @mouseenter="showAvatarTooltip(visitor, $event)"
+                          @mouseleave="hideAvatarTooltip"
+                        >
+                          <div class="rv-avatar rv-avatar-table" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
+                            <img
+                              v-if="visitorAvatarUrl(visitor) && !avatarLoadFailed.has(visitor.id)"
+                              :src="visitorAvatarUrl(visitor)"
+                              :alt="visitor.name"
+                              class="w-full h-full object-cover"
+                              @error="onAvatarError(visitor.id)"
+                            />
+                            <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
+                          </div>
+                        </div>
+                        <span
+                          v-if="overflowInBar(row.visitors, 6)"
+                          class="inline-flex items-center justify-center min-w-[1.75rem] h-8 px-1 rounded-full bg-slate-200 text-[10px] font-bold text-slate-600 border-2 border-white"
+                          :title="overflowInBar(row.visitors, 6) + ' karyawan lainnya'"
+                        >+{{ overflowInBar(row.visitors, 6) }}</span>
+                      </div>
+                      <span v-else class="text-slate-400 text-xs">—</span>
+                    </td>
                     <td class="px-5 py-3.5 text-center">
                       <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" :class="frequencyClass(row.frequency)">
                         {{ frequencyLabel(row.frequency) }}
@@ -514,9 +572,19 @@ function onAvatarError(userId) {
                       {{ row.visit_days }}
                     </td>
                     <td class="px-5 py-3.5 text-right text-slate-700">{{ row.scan_in_count }}</td>
+                    <td class="px-5 py-3.5 text-right font-medium" :class="row.total_hours > 0 ? 'text-violet-700' : 'text-slate-400'">
+                      {{ row.total_hours > 0 ? row.total_hours + ' jam' : '—' }}
+                    </td>
                     <td class="px-5 py-3.5 text-slate-600">{{ row.last_visit_label || '—' }}</td>
                   </tr>
                 </tbody>
+                <tfoot>
+                  <tr class="bg-slate-100 border-t-2 border-slate-200 font-semibold text-slate-800">
+                    <td class="px-5 py-3.5" colspan="5">Total</td>
+                    <td class="px-5 py-3.5 text-right text-violet-800">{{ summary.total_hours || 0 }} jam</td>
+                    <td class="px-5 py-3.5"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </section>
@@ -589,22 +657,24 @@ function onAvatarError(userId) {
                 <div class="bg-white border border-slate-200 rounded-xl p-4 mb-5">
                   <h4 class="text-sm font-semibold text-slate-900">Frekuensi Kunjungan per Jam</h4>
                   <p class="text-xs text-slate-500 mt-0.5">Distribusi scan IN · hover avatar untuk nama & jabatan</p>
-                  <div class="mt-4 flex items-end gap-0.5 h-[200px] border-b border-slate-200 pb-1 overflow-x-auto">
+                  <div class="mt-4 flex items-end gap-1 h-[220px] border-b border-slate-200 pb-1 overflow-visible">
                     <div
                       v-for="hour in hourSlots"
                       :key="'hour-' + hour"
-                      class="flex flex-col items-center justify-end flex-1 min-w-[22px] h-full"
+                      class="flex flex-col items-center justify-end flex-1 min-w-[28px] h-full overflow-visible"
                     >
                       <div
                         v-if="modalHourCount(hour) > 0"
-                        class="w-full bg-indigo-500 rounded-t-md flex flex-col items-center justify-end gap-0.5 px-0.5 pb-1 pt-1"
-                        :style="{ height: hourBarPct(modalHourCount(hour)) + '%', minHeight: '36px' }"
+                        class="w-full bg-indigo-500 rounded-t-lg flex flex-col items-center justify-end gap-1 px-1 pb-1.5 pt-2 overflow-visible"
+                        :style="{ height: hourBarPct(modalHourCount(hour)) + '%', minHeight: '52px' }"
                       >
-                        <div v-if="modalHourVisitors(hour).length" class="flex flex-col-reverse items-center -space-y-0.5 mb-0.5">
+                        <div v-if="modalHourVisitors(hour).length" class="flex flex-col-reverse items-center gap-0.5 mb-0.5">
                           <div
                             v-for="visitor in visibleVisitorsInBar(modalHourVisitors(hour), 3)"
                             :key="visitor.id"
-                            class="rv-avatar-wrap group relative"
+                            class="rv-avatar-wrap"
+                            @mouseenter="showAvatarTooltip(visitor, $event)"
+                            @mouseleave="hideAvatarTooltip"
                           >
                             <div class="rv-avatar rv-avatar-in-bar" :class="showVisitorInitials(visitor) ? avatarTone(visitor.id) : ''">
                               <img
@@ -616,15 +686,11 @@ function onAvatarError(userId) {
                               />
                               <span v-if="showVisitorInitials(visitor)" class="rv-avatar-initials">{{ visitor.initials }}</span>
                             </div>
-                            <div class="rv-avatar-tooltip">
-                              <p class="font-semibold text-slate-900">{{ visitor.name }}</p>
-                              <p class="text-slate-500 mt-0.5">{{ visitor.nama_jabatan }}</p>
-                            </div>
                           </div>
                         </div>
-                        <span class="text-[8px] font-bold text-white leading-none">{{ modalHourCount(hour) }}</span>
+                        <span class="text-[9px] font-bold text-white leading-none">{{ modalHourCount(hour) }}</span>
                       </div>
-                      <span class="text-[8px] text-slate-500 mt-1 leading-none">{{ String(hour).padStart(2, '0') }}</span>
+                      <span class="text-[9px] text-slate-500 mt-1.5 leading-none">{{ String(hour).padStart(2, '0') }}</span>
                     </div>
                   </div>
                 </div>
@@ -656,9 +722,29 @@ function onAvatarError(userId) {
                                 <i :class="['fas', expandedDays.has(day.tanggal + '-' + session.user_id) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
                               </button>
                             </td>
-                            <td class="px-4 py-3 font-medium text-slate-800">{{ sIdx === 0 ? day.hari : '' }}</td>
-                            <td class="px-4 py-3 text-slate-700">{{ sIdx === 0 ? day.tanggal_label : '' }}</td>
-                            <td class="px-4 py-3 text-slate-800 font-medium">{{ session.user_name }}</td>
+                            <td class="px-4 py-3 font-medium text-slate-800">{{ day.hari }}</td>
+                            <td class="px-4 py-3 text-slate-700">{{ day.tanggal_label }}</td>
+                            <td class="px-4 py-3 text-slate-800 font-medium">
+                              <div class="flex items-center gap-2">
+                                <div
+                                  class="rv-avatar-wrap shrink-0"
+                                  @mouseenter="showAvatarTooltip(sessionAsVisitor(session), $event)"
+                                  @mouseleave="hideAvatarTooltip"
+                                >
+                                  <div class="rv-avatar rv-avatar-table" :class="showVisitorInitials(sessionAsVisitor(session)) ? avatarTone(session.user_id) : ''">
+                                    <img
+                                      v-if="visitorAvatarUrl(sessionAsVisitor(session)) && !avatarLoadFailed.has(session.user_id)"
+                                      :src="visitorAvatarUrl(sessionAsVisitor(session))"
+                                      :alt="session.user_name"
+                                      class="w-full h-full object-cover"
+                                      @error="onAvatarError(session.user_id)"
+                                    />
+                                    <span v-if="showVisitorInitials(sessionAsVisitor(session))" class="rv-avatar-initials">{{ session.initials }}</span>
+                                  </div>
+                                </div>
+                                <span>{{ session.user_name }}</span>
+                              </div>
+                            </td>
                             <td class="px-4 py-3 text-emerald-700 font-medium">{{ session.jam_masuk_display || '—' }}</td>
                             <td class="px-4 py-3 text-rose-700 font-medium">
                               <span v-if="session.has_no_checkout" class="text-amber-600 text-xs font-semibold">Belum checkout</span>
@@ -688,6 +774,12 @@ function onAvatarError(userId) {
                         </template>
                       </template>
                     </tbody>
+                    <tfoot v-if="outletModalData.summary?.total_hours">
+                      <tr class="bg-violet-50 border-t-2 border-violet-200 font-semibold text-violet-900">
+                        <td class="px-4 py-3" colspan="6">Total Jam Kunjungan</td>
+                        <td class="px-4 py-3 text-right">{{ outletModalData.summary.total_hours }} jam</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
                 <p v-else class="text-center py-10 text-sm text-slate-500">Tidak ada kunjungan di outlet ini pada periode terpilih.</p>
@@ -707,6 +799,17 @@ function onAvatarError(userId) {
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="avatarTooltip"
+        class="fixed z-[300] pointer-events-none px-3 py-2 rounded-lg bg-slate-900 text-white text-xs shadow-xl max-w-[220px]"
+        :style="{ top: (avatarTooltip.top - 10) + 'px', left: avatarTooltip.left + 'px', transform: 'translate(-50%, -100%)' }"
+      >
+        <p class="font-semibold leading-snug">{{ avatarTooltip.name }}</p>
+        <p class="text-slate-300 mt-0.5 leading-snug">{{ avatarTooltip.jabatan }}</p>
+      </div>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -718,16 +821,20 @@ function onAvatarError(userId) {
 
 
 .rv-avatar-wrap {
-  @apply relative z-10 hover:z-30;
+  @apply relative shrink-0 cursor-default;
 }
 
 .rv-avatar {
-  @apply w-6 h-6 rounded-full border-2 border-white shadow-sm overflow-hidden
-    flex items-center justify-center text-[9px] font-bold text-white;
+  @apply w-7 h-7 rounded-full border-2 border-white shadow-sm overflow-hidden
+    flex items-center justify-center text-[10px] font-bold text-white;
 }
 
 .rv-avatar-in-bar {
-  @apply w-5 h-5 text-[8px] border border-white/90 shadow;
+  @apply w-8 h-8 text-[10px] border-2 border-white/90 shadow-md;
+}
+
+.rv-avatar-table {
+  @apply w-8 h-8 text-[10px] border-2 border-slate-200 shadow-sm;
 }
 
 .rv-avatar-initials {
@@ -735,19 +842,7 @@ function onAvatarError(userId) {
 }
 
 .rv-avatar-more-in-bar {
-  @apply inline-flex items-center justify-center min-w-[1.1rem] h-4 px-0.5
-    rounded-full bg-white/25 text-[8px] font-bold text-white border border-white/60;
-}
-
-.rv-avatar-tooltip {
-  @apply absolute left-1/2 bottom-full -translate-x-1/2 mb-2 w-max max-w-[180px]
-    px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 shadow-lg text-[11px]
-    opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all
-    pointer-events-none z-50;
-}
-
-.rv-avatar-tooltip::after {
-  content: '';
-  @apply absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-white;
+  @apply inline-flex items-center justify-center min-w-[1.4rem] h-6 px-1
+    rounded-full bg-white/25 text-[10px] font-bold text-white border border-white/60;
 }
 </style>

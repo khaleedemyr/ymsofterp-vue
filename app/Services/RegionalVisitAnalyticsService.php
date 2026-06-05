@@ -208,6 +208,10 @@ class RegionalVisitAnalyticsService
                 $daySessions[] = [
                     'user_id' => (int) $data['user_id'],
                     'user_name' => $data['user_name'],
+                    'avatar' => $data['avatar'] ?? null,
+                    'photo' => $data['photo'] ?? null,
+                    'initials' => $data['initials'] ?? $this->userInitials($data['user_name']),
+                    'nama_jabatan' => $data['nama_jabatan'] ?? '-',
                     'jam_masuk_display' => $paired['jam_in'] ? date('H:i', strtotime($paired['jam_in'])) : null,
                     'jam_keluar_display' => $paired['jam_out'] ? date('H:i', strtotime($paired['jam_out'])) : null,
                     'durasi_menit' => $durasiMenit,
@@ -329,6 +333,7 @@ class RegionalVisitAnalyticsService
                     ->on('o.id_outlet', '=', 'up.outlet_id');
             })
             ->join('users as u', 'up.user_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
             ->whereIn('up.user_id', $userIds)
             ->where('o.id_outlet', $outletId)
             ->where('o.is_outlet', 1)
@@ -340,6 +345,9 @@ class RegionalVisitAnalyticsService
             ->select(
                 'u.id as user_id',
                 'u.nama_lengkap as user_name',
+                'u.avatar',
+                'u.upload_latest_color_photo',
+                'j.nama_jabatan',
                 'a.scan_date',
                 'a.inoutmode',
             )
@@ -355,6 +363,10 @@ class RegionalVisitAnalyticsService
                 $processedData[$key] = [
                     'user_id' => (int) $row->user_id,
                     'user_name' => $row->user_name,
+                    'avatar' => $row->avatar,
+                    'photo' => $row->upload_latest_color_photo,
+                    'nama_jabatan' => $row->nama_jabatan ?: '-',
+                    'initials' => $this->userInitials($row->user_name),
                     'tanggal' => $date,
                     'id_outlet' => $outletId,
                     'scans' => [],
