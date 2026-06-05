@@ -6,6 +6,7 @@ use App\Models\OutletFoodGoodReceive;
 use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Support\OutletFoodInventorySaldo;
 use Illuminate\Support\Facades\DB;
 
 class OutletFoodGoodReceiveController extends Controller
@@ -381,23 +382,7 @@ class OutletFoodGoodReceiveController extends Controller
                 }
             }
             
-            // 5. Load last inventory cards for all items
-            $lastCards = [];
-            foreach ($inventoryItems as $itemId => $invItem) {
-                $lastCard = DB::table('outlet_food_inventory_cards')
-                    ->where('inventory_item_id', $invItem->id)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->limit(1)
-                    ->first();
-                if ($lastCard) {
-                    $lastCards[$invItem->id] = $lastCard;
-                }
-            }
-            
-            // 6. Load last cost histories
+            // 5. Load last cost histories
             $lastCostHistories = [];
             foreach ($inventoryItems as $itemId => $invItem) {
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
@@ -566,18 +551,14 @@ class OutletFoodGoodReceiveController extends Controller
                         'qty_large' => $qty_large,
                     ];
                 }
-                // Insert kartu stok using pre-loaded data
-                $lastCardKey = $inventoryItemId;
-                $lastCard = $lastCards[$lastCardKey] ?? null;
-                if ($lastCard) {
-                    $saldo_qty_small = $lastCard->saldo_qty_small + $qty_small;
-                    $saldo_qty_medium = $lastCard->saldo_qty_medium + $qty_medium;
-                    $saldo_qty_large = $lastCard->saldo_qty_large + $qty_large;
-                } else {
-                    $saldo_qty_small = $qty_small;
-                    $saldo_qty_medium = $qty_medium;
-                    $saldo_qty_large = $qty_large;
-                }
+                // Saldo kartu mengikuti stok riil setelah GR (bukan chain lastCard)
+                $updatedStock = $stocks[$stockKey] ?? null;
+                $saldo = OutletFoodInventorySaldo::fromStockQty(
+                    (float) ($updatedStock->qty_small ?? $qty_small),
+                    (float) ($updatedStock->qty_medium ?? $qty_medium),
+                    (float) ($updatedStock->qty_large ?? $qty_large),
+                    (float) $total_nilai
+                );
                 $cardInserts[] = [
                     'inventory_item_id' => $inventoryItemId,
                     'id_outlet' => $outletId,
@@ -596,19 +577,13 @@ class OutletFoodGoodReceiveController extends Controller
                     'cost_per_large' => $cost_large,
                     'value_in' => $qty_small_for_value * $cost_small,
                     'value_out' => 0,
-                    'saldo_qty_small' => $saldo_qty_small,
-                    'saldo_qty_medium' => $saldo_qty_medium,
-                    'saldo_qty_large' => $saldo_qty_large,
-                    'saldo_value' => $saldo_qty_small * $mac,
+                    'saldo_qty_small' => $saldo['saldo_qty_small'],
+                    'saldo_qty_medium' => $saldo['saldo_qty_medium'],
+                    'saldo_qty_large' => $saldo['saldo_qty_large'],
+                    'saldo_value' => $saldo['saldo_value'],
                     'description' => 'Good Receive Outlet',
                     'created_at' => now(),
                     'updated_at' => now(),
-                ];
-                // Update cache for subsequent items
-                $lastCards[$lastCardKey] = (object)[
-                    'saldo_qty_small' => $saldo_qty_small,
-                    'saldo_qty_medium' => $saldo_qty_medium,
-                    'saldo_qty_large' => $saldo_qty_large,
                 ];
                 // Insert cost history using pre-loaded data
                 $lastCostHistoryKey = $inventoryItemId;
@@ -1318,14 +1293,19 @@ class OutletFoodGoodReceiveController extends Controller
                     ->where('id_outlet', $gr->outlet_id)
                     ->where('warehouse_outlet_id', $gr->warehouse_outlet_id)
                     ->first();
+                $newQtySmall = $stock ? (float) $stock->qty_small + $qty_small : $qty_small;
+                $newQtyMedium = $stock ? (float) $stock->qty_medium + $qty_medium : $qty_medium;
+                $newQtyLarge = $stock ? (float) $stock->qty_large + $qty_large : $qty_large;
+                $newValue = $stock ? $newQtySmall * (float) $stock->last_cost_small : 0;
+
                 if ($stock) {
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $stock->id)
                         ->update([
-                            'qty_small' => $stock->qty_small + $qty_small,
-                            'qty_medium' => $stock->qty_medium + $qty_medium,
-                            'qty_large' => $stock->qty_large + $qty_large,
-                            'value' => ($stock->qty_small + $qty_small) * $stock->last_cost_small,
+                            'qty_small' => $newQtySmall,
+                            'qty_medium' => $newQtyMedium,
+                            'qty_large' => $newQtyLarge,
+                            'value' => $newValue,
                             'updated_at' => now(),
                         ]);
                 } else {
@@ -1344,6 +1324,8 @@ class OutletFoodGoodReceiveController extends Controller
                         'updated_at' => now(),
                     ]);
                 }
+
+                $saldo = OutletFoodInventorySaldo::fromStockQty($newQtySmall, $newQtyMedium, $newQtyLarge, $newValue);
 
                 // Insert kartu stok (stock in)
                 DB::table('outlet_food_inventory_cards')->insert([
@@ -1364,10 +1346,10 @@ class OutletFoodGoodReceiveController extends Controller
                     'cost_per_large' => 0,
                     'value_in' => 0,
                     'value_out' => 0,
-                    'saldo_qty_small' => $stock ? $stock->qty_small + $qty_small : $qty_small,
-                    'saldo_qty_medium' => $stock ? $stock->qty_medium + $qty_medium : $qty_medium,
-                    'saldo_qty_large' => $stock ? $stock->qty_large + $qty_large : $qty_large,
-                    'saldo_value' => 0,
+                    'saldo_qty_small' => $saldo['saldo_qty_small'],
+                    'saldo_qty_medium' => $saldo['saldo_qty_medium'],
+                    'saldo_qty_large' => $saldo['saldo_qty_large'],
+                    'saldo_value' => $saldo['saldo_value'],
                     'description' => 'Good Receive Outlet',
                     'created_at' => now(),
                     'updated_at' => now(),

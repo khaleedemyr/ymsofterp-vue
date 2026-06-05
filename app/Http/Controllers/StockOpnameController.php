@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Support\OutletFoodInventorySaldo;
 use App\Support\OutletInventoryCostResolver;
 
 class StockOpnameController extends Controller
@@ -1141,137 +1142,7 @@ class StockOpnameController extends Controller
             DB::beginTransaction();
 
             foreach ($stockOpname->items as $item) {
-                if (!$item->hasDifference()) {
-                    continue; // Skip items without difference
-                }
-
-                $inventoryItemId = $item->inventory_item_id;
-                $outletId = $stockOpname->outlet_id;
-                $warehouseOutletId = $stockOpname->warehouse_outlet_id;
-
-                // Get current stock
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->first();
-
-                if (!$stock) {
-                    continue;
-                }
-
-                $mac = $item->mac_before;
-                $qtyDiffSmall = $item->qty_diff_small;
-                $qtyDiffMedium = $item->qty_diff_medium;
-                $qtyDiffLarge = $item->qty_diff_large;
-
-                // Calculate new quantities
-                $newQtySmall = $stock->qty_small + $qtyDiffSmall;
-                $newQtyMedium = $stock->qty_medium + $qtyDiffMedium;
-                $newQtyLarge = $stock->qty_large + $qtyDiffLarge;
-
-                // Calculate new value
-                // For positive diff: add value using MAC
-                // For negative diff: subtract value using MAC
-                $valueAdjustment = $item->value_adjustment;
-                $newValue = $stock->value + $valueAdjustment;
-
-                // Update stock
-                DB::table('outlet_food_inventory_stocks')
-                    ->where('id', $stock->id)
-                    ->update([
-                        'qty_small' => $newQtySmall,
-                        'qty_medium' => $newQtyMedium,
-                        'qty_large' => $newQtyLarge,
-                        'value' => $newValue,
-                        // MAC tidak berubah (sesuai rekomendasi)
-                        'updated_at' => now(),
-                    ]);
-
-                // Get last card for saldo calculation
-                $lastCard = DB::table('outlet_food_inventory_cards')
-                    ->where('inventory_item_id', $inventoryItemId)
-                    ->where('id_outlet', $outletId)
-                    ->where('warehouse_outlet_id', $warehouseOutletId)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->first();
-
-                // Calculate new saldo
-                if ($lastCard) {
-                    $saldoQtySmall = $lastCard->saldo_qty_small + $qtyDiffSmall;
-                    $saldoQtyMedium = $lastCard->saldo_qty_medium + $qtyDiffMedium;
-                    $saldoQtyLarge = $lastCard->saldo_qty_large + $qtyDiffLarge;
-                    $saldoValue = $lastCard->saldo_value + $valueAdjustment;
-                } else {
-                    $saldoQtySmall = $newQtySmall;
-                    $saldoQtyMedium = $newQtyMedium;
-                    $saldoQtyLarge = $newQtyLarge;
-                    $saldoValue = $newValue;
-                }
-
-                // Insert stock card
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'id_outlet' => $outletId,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'stock_opname',
-                    'reference_id' => $stockOpname->id,
-                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
-                    'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
-                    'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
-                    'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
-                    'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                    'cost_per_small' => $mac,
-                    'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                    'cost_per_large' => $stock->last_cost_large ?? 0,
-                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
-                    'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                    'saldo_qty_small' => $saldoQtySmall,
-                    'saldo_qty_medium' => $saldoQtyMedium,
-                    'saldo_qty_large' => $saldoQtyLarge,
-                    'saldo_value' => $saldoValue,
-                    'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                // Update cost history if MAC changed (though in our case MAC doesn't change)
-                // But we still record it for audit trail
-                DB::table('outlet_food_inventory_cost_histories')->insert([
-                    'inventory_item_id' => $inventoryItemId,
-                    'id_outlet' => $outletId,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => now()->toDateString(),
-                    'old_cost' => $mac,
-                    'new_cost' => $mac, // MAC tidak berubah
-                    'mac' => $mac,
-                    'type' => 'stock_opname',
-                    'reference_type' => 'stock_opname',
-                    'reference_id' => $stockOpname->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                // Insert adjustment record to new table
-                StockOpnameAdjustment::create([
-                    'stock_opname_id' => $stockOpname->id,
-                    'stock_opname_item_id' => $item->id,
-                    'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $outletId,
-                    'warehouse_outlet_id' => $warehouseOutletId,
-                    'qty_diff_small' => $qtyDiffSmall,
-                    'qty_diff_medium' => $qtyDiffMedium,
-                    'qty_diff_large' => $qtyDiffLarge,
-                    'reason' => $item->reason,
-                    'mac_before' => $item->mac_before,
-                    'mac_after' => $item->mac_after,
-                    'value_adjustment' => $valueAdjustment,
-                    'processed_at' => now(),
-                    'processed_by' => $user->id,
-                ]);
+                $this->processOutletStockOpnameItem($item, $stockOpname, (int) $user->id);
             }
 
             // Update status to completed
@@ -1860,53 +1731,7 @@ class StockOpnameController extends Controller
         try {
             DB::beginTransaction();
             foreach ($stockOpname->items as $item) {
-                if (!$item->hasDifference()) continue;
-                $inventoryItemId = $item->inventory_item_id;
-                $outletId = $stockOpname->outlet_id;
-                $warehouseOutletId = $stockOpname->warehouse_outlet_id;
-                $stock = DB::table('outlet_food_inventory_stocks')->where('inventory_item_id', $inventoryItemId)->where('id_outlet', $outletId)->where('warehouse_outlet_id', $warehouseOutletId)->first();
-                if (!$stock) continue;
-                $mac = $item->mac_before;
-                $qtyDiffSmall = $item->qty_diff_small;
-                $qtyDiffMedium = $item->qty_diff_medium;
-                $qtyDiffLarge = $item->qty_diff_large;
-                $newQtySmall = $stock->qty_small + $qtyDiffSmall;
-                $newQtyMedium = $stock->qty_medium + $qtyDiffMedium;
-                $newQtyLarge = $stock->qty_large + $qtyDiffLarge;
-                $valueAdjustment = $item->value_adjustment;
-                $newValue = $stock->value + $valueAdjustment;
-                DB::table('outlet_food_inventory_stocks')->where('id', $stock->id)->update([
-                    'qty_small' => $newQtySmall, 'qty_medium' => $newQtyMedium, 'qty_large' => $newQtyLarge,
-                    'value' => $newValue, 'updated_at' => now(),
-                ]);
-                $lastCard = DB::table('outlet_food_inventory_cards')->where('inventory_item_id', $inventoryItemId)->where('id_outlet', $outletId)->where('warehouse_outlet_id', $warehouseOutletId)->orderByDesc('date')->orderByDesc('id')->first();
-                $saldoQtySmall = $lastCard ? $lastCard->saldo_qty_small + $qtyDiffSmall : $newQtySmall;
-                $saldoQtyMedium = $lastCard ? $lastCard->saldo_qty_medium + $qtyDiffMedium : $newQtyMedium;
-                $saldoQtyLarge = $lastCard ? $lastCard->saldo_qty_large + $qtyDiffLarge : $newQtyLarge;
-                $saldoValue = $lastCard ? $lastCard->saldo_value + $valueAdjustment : $newValue;
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => now()->toDateString(), 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
-                    'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0, 'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0, 'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
-                    'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0, 'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0, 'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
-                    'cost_per_small' => $mac, 'cost_per_medium' => $stock->last_cost_medium ?? 0, 'cost_per_large' => $stock->last_cost_large ?? 0,
-                    'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0, 'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
-                    'saldo_qty_small' => $saldoQtySmall, 'saldo_qty_medium' => $saldoQtyMedium, 'saldo_qty_large' => $saldoQtyLarge, 'saldo_value' => $saldoValue,
-                    'description' => 'Stock Opname: ' . ($item->reason ?? 'Koreksi fisik'), 'created_at' => now(), 'updated_at' => now(),
-                ]);
-                DB::table('outlet_food_inventory_cost_histories')->insert([
-                    'inventory_item_id' => $inventoryItemId, 'id_outlet' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'date' => now()->toDateString(), 'old_cost' => $mac, 'new_cost' => $mac, 'mac' => $mac,
-                    'type' => 'stock_opname', 'reference_type' => 'stock_opname', 'reference_id' => $stockOpname->id,
-                    'created_at' => now(), 'updated_at' => now(),
-                ]);
-                StockOpnameAdjustment::create([
-                    'stock_opname_id' => $stockOpname->id, 'stock_opname_item_id' => $item->id, 'inventory_item_id' => $inventoryItemId,
-                    'outlet_id' => $outletId, 'warehouse_outlet_id' => $warehouseOutletId,
-                    'qty_diff_small' => $qtyDiffSmall, 'qty_diff_medium' => $qtyDiffMedium, 'qty_diff_large' => $qtyDiffLarge,
-                    'reason' => $item->reason, 'mac_before' => $item->mac_before, 'mac_after' => $item->mac_after, 'value_adjustment' => $valueAdjustment,
-                    'processed_at' => now(), 'processed_by' => $user->id,
-                ]);
+                $this->processOutletStockOpnameItem($item, $stockOpname, (int) $user->id);
             }
             $stockOpname->update(['status' => 'COMPLETED']);
             DB::commit();
@@ -2560,6 +2385,121 @@ class StockOpnameController extends Controller
                 'error' => 'Failed to get pending approvals'
             ], 500);
         }
+    }
+
+    /**
+     * Terapkan koreksi stock opname outlet: diff dihitung dari stok riil + qty fisik,
+     * saldo kartu mengikuti stok setelah update (bukan chain lastCard).
+     */
+    private function processOutletStockOpnameItem(StockOpnameItem $item, StockOpname $stockOpname, int $userId): void
+    {
+        $inventoryItemId = (int) $item->inventory_item_id;
+        $outletId = (int) $stockOpname->outlet_id;
+        $warehouseOutletId = (int) $stockOpname->warehouse_outlet_id;
+
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->first();
+
+        if (! $stock) {
+            return;
+        }
+
+        $mac = (float) $item->mac_before;
+        $liveQtySmall = (float) $stock->qty_small;
+        $liveQtyMedium = (float) $stock->qty_medium;
+        $liveQtyLarge = (float) $stock->qty_large;
+
+        $physicalSmall = (float) ($item->qty_physical_small ?? $liveQtySmall);
+        $physicalMedium = (float) ($item->qty_physical_medium ?? $liveQtyMedium);
+        $physicalLarge = (float) ($item->qty_physical_large ?? $liveQtyLarge);
+
+        $qtyDiffSmall = $physicalSmall - $liveQtySmall;
+        $qtyDiffMedium = $physicalMedium - $liveQtyMedium;
+        $qtyDiffLarge = $physicalLarge - $liveQtyLarge;
+
+        if (abs($qtyDiffSmall) < 0.0001 && abs($qtyDiffMedium) < 0.0001 && abs($qtyDiffLarge) < 0.0001) {
+            return;
+        }
+
+        $valueAdjustment = $qtyDiffSmall * $mac;
+        $newQtySmall = $physicalSmall;
+        $newQtyMedium = $physicalMedium;
+        $newQtyLarge = $physicalLarge;
+        $newValue = max(0, (float) $stock->value + $valueAdjustment);
+
+        DB::table('outlet_food_inventory_stocks')
+            ->where('id', $stock->id)
+            ->update([
+                'qty_small' => $newQtySmall,
+                'qty_medium' => $newQtyMedium,
+                'qty_large' => $newQtyLarge,
+                'value' => $newValue,
+                'updated_at' => now(),
+            ]);
+
+        $saldo = OutletFoodInventorySaldo::fromStockQty($newQtySmall, $newQtyMedium, $newQtyLarge, $newValue);
+
+        DB::table('outlet_food_inventory_cards')->insert([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'date' => now()->toDateString(),
+            'reference_type' => 'stock_opname',
+            'reference_id' => $stockOpname->id,
+            'in_qty_small' => $qtyDiffSmall > 0 ? $qtyDiffSmall : 0,
+            'in_qty_medium' => $qtyDiffMedium > 0 ? $qtyDiffMedium : 0,
+            'in_qty_large' => $qtyDiffLarge > 0 ? $qtyDiffLarge : 0,
+            'out_qty_small' => $qtyDiffSmall < 0 ? abs($qtyDiffSmall) : 0,
+            'out_qty_medium' => $qtyDiffMedium < 0 ? abs($qtyDiffMedium) : 0,
+            'out_qty_large' => $qtyDiffLarge < 0 ? abs($qtyDiffLarge) : 0,
+            'cost_per_small' => $mac,
+            'cost_per_medium' => $stock->last_cost_medium ?? 0,
+            'cost_per_large' => $stock->last_cost_large ?? 0,
+            'value_in' => $valueAdjustment > 0 ? $valueAdjustment : 0,
+            'value_out' => $valueAdjustment < 0 ? abs($valueAdjustment) : 0,
+            'saldo_qty_small' => $saldo['saldo_qty_small'],
+            'saldo_qty_medium' => $saldo['saldo_qty_medium'],
+            'saldo_qty_large' => $saldo['saldo_qty_large'],
+            'saldo_value' => $saldo['saldo_value'],
+            'description' => 'Stock Opname: '.($item->reason ?? 'Koreksi fisik'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('outlet_food_inventory_cost_histories')->insert([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'date' => now()->toDateString(),
+            'old_cost' => $mac,
+            'new_cost' => $mac,
+            'mac' => $mac,
+            'type' => 'stock_opname',
+            'reference_type' => 'stock_opname',
+            'reference_id' => $stockOpname->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        StockOpnameAdjustment::create([
+            'stock_opname_id' => $stockOpname->id,
+            'stock_opname_item_id' => $item->id,
+            'inventory_item_id' => $inventoryItemId,
+            'outlet_id' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'qty_diff_small' => $qtyDiffSmall,
+            'qty_diff_medium' => $qtyDiffMedium,
+            'qty_diff_large' => $qtyDiffLarge,
+            'reason' => $item->reason,
+            'mac_before' => $item->mac_before,
+            'mac_after' => $item->mac_after,
+            'value_adjustment' => $valueAdjustment,
+            'processed_at' => now(),
+            'processed_by' => $userId,
+        ]);
     }
 }
 
