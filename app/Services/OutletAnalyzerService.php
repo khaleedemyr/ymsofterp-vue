@@ -70,6 +70,9 @@ class OutletAnalyzerService
 
         $revenue = $this->getRevenue($outlet, $start, $end);
         $fj = $this->getFjInventory((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end);
+        $pettyCash = $this->getPettyCash((int) $outlet->id_outlet, $start, $end);
+        $prOps = $this->getPrOpsExpenditure((int) $outlet->id_outlet, $start, $end);
+        $categoryCost = $this->getCategoryCostOutlet((int) $outlet->id_outlet, $start, $end);
 
         return [
             'outlet' => [
@@ -78,16 +81,72 @@ class OutletAnalyzerService
             ],
             'period' => $period,
             'revenue' => $revenue,
+            'cashflow_summary' => $this->buildCashflowSummary($revenue, $fj, $pettyCash, $prOps, $categoryCost),
             'top_menu_items' => $this->getTopMenuItems($outlet, $start, $end),
             'waiter_upsell_ranking' => $this->getWaiterUpsellRanking($outlet, $start, $end),
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
             'google_review_gsi' => $this->getGoogleReviewGsi((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
             'regional_visits' => $this->getRegionalVisits((int) $outlet->id_outlet, $start, $end),
             'fj_inventory' => $fj,
-            'petty_cash' => $this->getPettyCash((int) $outlet->id_outlet, $start, $end),
-            'pr_ops_expenditure' => $this->getPrOpsExpenditure((int) $outlet->id_outlet, $start, $end),
-            'category_cost_outlet' => $this->getCategoryCostOutlet((int) $outlet->id_outlet, $start, $end),
+            'petty_cash' => $pettyCash,
+            'pr_ops_expenditure' => $prOps,
+            'category_cost_outlet' => $categoryCost,
             'employee_attendance' => $this->getEmployeeAttendance((int) $outlet->id_outlet, $start, $end),
+        ];
+    }
+
+    /**
+     * Ringkasan arus kas outlet — revenue vs total pengeluaran operasional periode.
+     *
+     * @return array{
+     *     cash_in: float,
+     *     cash_out: float,
+     *     net_cashflow: float,
+     *     cash_out_percentage: float,
+     *     outflows: list<array{key: string, label: string, amount: float}>
+     * }
+     */
+    private function buildCashflowSummary(
+        array $revenue,
+        array $fj,
+        array $pettyCash,
+        array $prOps,
+        array $categoryCost,
+    ): array {
+        $cashIn = round((float) ($revenue['total'] ?? 0), 2);
+
+        $outflows = [
+            [
+                'key' => 'fj_inventory',
+                'label' => 'Inventaris FJ',
+                'amount' => round((float) ($fj['line_total'] ?? 0), 2),
+            ],
+            [
+                'key' => 'petty_cash',
+                'label' => 'Petty Cash',
+                'amount' => round((float) ($pettyCash['total'] ?? 0), 2),
+            ],
+            [
+                'key' => 'pr_ops',
+                'label' => 'PR Ops',
+                'amount' => round((float) ($prOps['total'] ?? 0), 2),
+            ],
+            [
+                'key' => 'category_cost',
+                'label' => 'Category Cost',
+                'amount' => round((float) ($categoryCost['total'] ?? 0), 2),
+            ],
+        ];
+
+        $cashOut = round(array_sum(array_column($outflows, 'amount')), 2);
+        $netCashflow = round($cashIn - $cashOut, 2);
+
+        return [
+            'cash_in' => $cashIn,
+            'cash_out' => $cashOut,
+            'net_cashflow' => $netCashflow,
+            'cash_out_percentage' => $cashIn > 0 ? round(($cashOut / $cashIn) * 100, 2) : 0.0,
+            'outflows' => $outflows,
         ];
     }
 

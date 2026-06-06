@@ -2,6 +2,7 @@
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   filters: Object,
@@ -78,6 +79,12 @@ const modalMeta = computed(() => ({
     subtitle: 'Internal use, spoil, waste, usage, marketing, dan tipe lainnya',
     icon: 'fa-solid fa-layer-group',
     accent: 'from-emerald-600 to-teal-700',
+  },
+  cashflow: {
+    title: 'Detail Summary Cashflow',
+    subtitle: 'Pemasukan revenue vs pengeluaran operasional outlet',
+    icon: 'fa-solid fa-money-bill-transfer',
+    accent: 'from-teal-600 to-emerald-700',
   },
 }));
 
@@ -215,6 +222,18 @@ function waiterInitial(name) {
   return String(name || '?').trim().charAt(0).toUpperCase() || '?';
 }
 
+const waiterLightboxVisible = ref(false);
+const waiterLightboxIndex = ref(0);
+
+function openWaiterLightbox(waiter) {
+  const url = waiterAvatarUrl(waiter?.avatar);
+  if (!url) return;
+
+  const idx = waiterLightboxImages.value.findIndex((img) => img.src === url);
+  waiterLightboxIndex.value = idx >= 0 ? idx : 0;
+  waiterLightboxVisible.value = true;
+}
+
 const chartBase = {
   chart: { toolbar: { show: false }, fontFamily: 'inherit' },
   legend: { position: 'bottom', fontSize: '13px' },
@@ -292,6 +311,15 @@ const waiterUpsellRank1 = computed(() => waiterUpsellTop.value[0] || null);
 const waiterUpsellRank2 = computed(() => waiterUpsellTop.value[1] || null);
 const waiterUpsellRank3 = computed(() => waiterUpsellTop.value[2] || null);
 const waiterUpsellMaxRevenue = computed(() => Number(waiterUpsellTop.value[0]?.total_revenue || 0));
+const allWaiterRanking = computed(() => [...waiterUpsellTop.value, ...waiterUpsellRest.value]);
+const waiterLightboxImages = computed(() =>
+  allWaiterRanking.value.reduce((acc, waiter) => {
+    const src = waiterAvatarUrl(waiter.avatar);
+    if (!src) return acc;
+    acc.push({ src, title: waiter.waiter_name });
+    return acc;
+  }, []),
+);
 
 const topFoodBarSeries = computed(() => [{
   name: 'Qty',
@@ -504,6 +532,21 @@ const overtimeBarOptions = computed(() => ({
 
 const attendanceSummary = computed(() => props.analysis?.employee_attendance?.summary || {});
 
+const cashflowSummary = computed(() => props.analysis?.cashflow_summary || {});
+const cashflowOutflows = computed(() =>
+  (cashflowSummary.value.outflows || []).filter((item) => Number(item.amount) > 0),
+);
+const cashflowOutPieSeries = computed(() => cashflowOutflows.value.map((item) => Number(item.amount)));
+const cashflowOutPieLabels = computed(() => cashflowOutflows.value.map((item) => item.label));
+const cashflowOutPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: cashflowOutPieLabels.value,
+  colors: ['#F97316', '#F43F5E', '#06B6D4', '#10B981'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
+
 const summaryCards = computed(() => {
   const s = attendanceSummary.value;
   return [
@@ -652,6 +695,132 @@ function visitorArea(userId) {
           </button>
         </section>
 
+        <!-- Cashflow Summary -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Summary Cashflow</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Revenue vs pengeluaran operasional (FJ, petty cash, PR Ops, category cost)
+                <span class="text-teal-600">· Klik untuk detail</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-xs font-semibold text-teal-700 hover:text-teal-900"
+              @click="openModal('cashflow')"
+            >
+              Lihat detail →
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
+            <button
+              type="button"
+              class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:border-emerald-300 hover:shadow-sm transition-all"
+              @click="openModal('cashflow')"
+            >
+              <p class="text-xs font-semibold uppercase text-emerald-700">Cash In</p>
+              <p class="text-xl font-bold text-emerald-900 mt-1">{{ formatRupiah(cashflowSummary.cash_in) }}</p>
+              <p class="text-xs text-emerald-600 mt-1">Total revenue POS</p>
+            </button>
+
+            <button
+              type="button"
+              class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left hover:border-rose-300 hover:shadow-sm transition-all"
+              @click="openModal('cashflow')"
+            >
+              <p class="text-xs font-semibold uppercase text-rose-700">Cash Out</p>
+              <p class="text-xl font-bold text-rose-900 mt-1">{{ formatRupiah(cashflowSummary.cash_out) }}</p>
+              <p class="text-xs text-rose-600 mt-1">
+                {{ cashflowSummary.cash_out_percentage ?? 0 }}% dari cash in
+              </p>
+            </button>
+
+            <button
+              type="button"
+              class="rounded-xl border px-4 py-3 text-left hover:shadow-sm transition-all"
+              :class="Number(cashflowSummary.net_cashflow) >= 0
+                ? 'border-teal-200 bg-teal-50 hover:border-teal-300'
+                : 'border-red-200 bg-red-50 hover:border-red-300'"
+              @click="openModal('cashflow')"
+            >
+              <p
+                class="text-xs font-semibold uppercase"
+                :class="Number(cashflowSummary.net_cashflow) >= 0 ? 'text-teal-700' : 'text-red-700'"
+              >
+                Net Cashflow
+              </p>
+              <p
+                class="text-xl font-bold mt-1"
+                :class="Number(cashflowSummary.net_cashflow) >= 0 ? 'text-teal-900' : 'text-red-900'"
+              >
+                {{ formatRupiah(cashflowSummary.net_cashflow) }}
+              </p>
+              <p
+                class="text-xs mt-1"
+                :class="Number(cashflowSummary.net_cashflow) >= 0 ? 'text-teal-600' : 'text-red-600'"
+              >
+                Cash in − cash out
+              </p>
+            </button>
+
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p class="text-xs font-semibold uppercase text-slate-500">Komposisi Cash Out</p>
+              <div v-if="cashflowOutflows.length" class="mt-2 space-y-1.5">
+                <div
+                  v-for="item in cashflowSummary.outflows || []"
+                  :key="item.key"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-600 truncate">{{ item.label }}</span>
+                  <span class="font-semibold text-slate-800 shrink-0">{{ formatRupiah(item.amount) }}</span>
+                </div>
+              </div>
+              <p v-else class="text-sm text-slate-400 mt-2">Tidak ada pengeluaran.</p>
+            </div>
+          </div>
+
+          <div v-if="cashflowOutflows.length" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <apexchart type="pie" height="280" :options="cashflowOutPieOptions" :series="cashflowOutPieSeries" />
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="text-left text-slate-500 border-b border-slate-200">
+                    <th class="py-2 pr-4">Komponen</th>
+                    <th class="py-2 text-right">Nominal</th>
+                    <th class="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in cashflowSummary.outflows || []"
+                    :key="item.key"
+                    class="border-b border-slate-100"
+                  >
+                    <td class="py-2 pr-4">{{ item.label }}</td>
+                    <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
+                    <td class="py-2 text-right text-slate-500">
+                      {{
+                        cashflowSummary.cash_out > 0
+                          ? `${((item.amount / cashflowSummary.cash_out) * 100).toFixed(1)}%`
+                          : '-'
+                      }}
+                    </td>
+                  </tr>
+                  <tr class="font-bold bg-slate-50">
+                    <td class="py-2 pr-4">Total Cash Out</td>
+                    <td class="py-2 text-right">{{ formatRupiah(cashflowSummary.cash_out) }}</td>
+                    <td class="py-2 text-right">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- Top Menu Items -->
         <section class="bg-white rounded-xl border border-slate-200 p-5">
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -765,14 +934,23 @@ function visitorArea(userId) {
                 class="flex flex-col items-center flex-1 max-w-[150px]"
               >
                 <div class="flex flex-col items-center text-center mb-3 px-1">
-                  <div class="w-16 h-16 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2">
+                  <button
+                    v-if="waiterAvatarUrl(waiterUpsellRank2.avatar)"
+                    type="button"
+                    class="w-16 h-16 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                    @click="openWaiterLightbox(waiterUpsellRank2)"
+                  >
                     <img
-                      v-if="waiterAvatarUrl(waiterUpsellRank2.avatar)"
                       :src="waiterAvatarUrl(waiterUpsellRank2.avatar)"
                       :alt="waiterUpsellRank2.waiter_name"
-                      class="w-full h-full object-cover"
+                      class="w-full h-full object-cover hover:scale-105 transition-transform"
                     />
-                    <span v-else class="text-2xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank2.waiter_name) }}</span>
+                  </button>
+                  <div
+                    v-else
+                    class="w-16 h-16 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2"
+                  >
+                    <span class="text-2xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank2.waiter_name) }}</span>
                   </div>
                   <p class="text-sm font-bold text-slate-800 leading-tight">{{ waiterUpsellRank2.waiter_name }}</p>
                   <p class="text-base font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank2.total_revenue) }}</p>
@@ -799,14 +977,23 @@ function visitorArea(userId) {
                   </span>
                 </div>
                 <div class="flex flex-col items-center text-center mb-3 px-1">
-                  <div class="w-20 h-20 rounded-full bg-white border-4 border-yellow-300 shadow-lg overflow-hidden flex items-center justify-center mb-2 ring-4 ring-yellow-200/50">
+                  <button
+                    v-if="waiterAvatarUrl(waiterUpsellRank1.avatar)"
+                    type="button"
+                    class="w-20 h-20 rounded-full bg-white border-4 border-yellow-300 shadow-lg overflow-hidden flex items-center justify-center mb-2 ring-4 ring-yellow-200/50 cursor-pointer hover:ring-yellow-400 transition-all"
+                    @click="openWaiterLightbox(waiterUpsellRank1)"
+                  >
                     <img
-                      v-if="waiterAvatarUrl(waiterUpsellRank1.avatar)"
                       :src="waiterAvatarUrl(waiterUpsellRank1.avatar)"
                       :alt="waiterUpsellRank1.waiter_name"
-                      class="w-full h-full object-cover"
+                      class="w-full h-full object-cover hover:scale-105 transition-transform"
                     />
-                    <span v-else class="text-3xl font-bold text-yellow-600">{{ waiterInitial(waiterUpsellRank1.waiter_name) }}</span>
+                  </button>
+                  <div
+                    v-else
+                    class="w-20 h-20 rounded-full bg-white border-4 border-yellow-300 shadow-lg overflow-hidden flex items-center justify-center mb-2 ring-4 ring-yellow-200/50"
+                  >
+                    <span class="text-3xl font-bold text-yellow-600">{{ waiterInitial(waiterUpsellRank1.waiter_name) }}</span>
                   </div>
                   <p class="text-sm font-bold text-slate-900 leading-tight">{{ waiterUpsellRank1.waiter_name }}</p>
                   <p class="text-lg font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank1.total_revenue) }}</p>
@@ -828,14 +1015,23 @@ function visitorArea(userId) {
                 class="flex flex-col items-center flex-1 max-w-[140px]"
               >
                 <div class="flex flex-col items-center text-center mb-3 px-1">
-                  <div class="w-14 h-14 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2">
+                  <button
+                    v-if="waiterAvatarUrl(waiterUpsellRank3.avatar)"
+                    type="button"
+                    class="w-14 h-14 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                    @click="openWaiterLightbox(waiterUpsellRank3)"
+                  >
                     <img
-                      v-if="waiterAvatarUrl(waiterUpsellRank3.avatar)"
                       :src="waiterAvatarUrl(waiterUpsellRank3.avatar)"
                       :alt="waiterUpsellRank3.waiter_name"
-                      class="w-full h-full object-cover"
+                      class="w-full h-full object-cover hover:scale-105 transition-transform"
                     />
-                    <span v-else class="text-xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank3.waiter_name) }}</span>
+                  </button>
+                  <div
+                    v-else
+                    class="w-14 h-14 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2"
+                  >
+                    <span class="text-xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank3.waiter_name) }}</span>
                   </div>
                   <p class="text-sm font-bold text-slate-800 leading-tight">{{ waiterUpsellRank3.waiter_name }}</p>
                   <p class="text-sm font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank3.total_revenue) }}</p>
@@ -868,14 +1064,23 @@ function visitorArea(userId) {
                   <span class="w-6 text-center text-xs font-bold text-slate-400 shrink-0">
                     {{ waiter.rank }}
                   </span>
-                  <div class="w-10 h-10 rounded-full bg-white border-2 border-amber-200 overflow-hidden flex items-center justify-center shrink-0">
+                  <button
+                    v-if="waiterAvatarUrl(waiter.avatar)"
+                    type="button"
+                    class="w-10 h-10 rounded-full bg-white border-2 border-amber-200 overflow-hidden flex items-center justify-center shrink-0 cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                    @click="openWaiterLightbox(waiter)"
+                  >
                     <img
-                      v-if="waiterAvatarUrl(waiter.avatar)"
                       :src="waiterAvatarUrl(waiter.avatar)"
                       :alt="waiter.waiter_name"
-                      class="w-full h-full object-cover"
+                      class="w-full h-full object-cover hover:scale-105 transition-transform"
                     />
-                    <span v-else class="text-sm font-bold text-amber-600">{{ waiterInitial(waiter.waiter_name) }}</span>
+                  </button>
+                  <div
+                    v-else
+                    class="w-10 h-10 rounded-full bg-white border-2 border-amber-200 overflow-hidden flex items-center justify-center shrink-0"
+                  >
+                    <span class="text-sm font-bold text-amber-600">{{ waiterInitial(waiter.waiter_name) }}</span>
                   </div>
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-semibold text-slate-800 truncate">{{ waiter.waiter_name }}</p>
@@ -1696,6 +1901,94 @@ function visitorArea(userId) {
                   </div>
                 </template>
 
+                <!-- Cashflow -->
+                <template v-else-if="activeModal === 'cashflow'">
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+                      <p class="text-xs text-emerald-700 font-semibold uppercase">Cash In</p>
+                      <p class="text-2xl font-bold text-emerald-900 mt-1">{{ formatRupiah(cashflowSummary.cash_in) }}</p>
+                      <p class="text-xs text-emerald-600 mt-1">Total revenue dari order POS</p>
+                    </div>
+                    <div class="rounded-xl bg-rose-50 border border-rose-100 p-4">
+                      <p class="text-xs text-rose-700 font-semibold uppercase">Cash Out</p>
+                      <p class="text-2xl font-bold text-rose-900 mt-1">{{ formatRupiah(cashflowSummary.cash_out) }}</p>
+                      <p class="text-xs text-rose-600 mt-1">{{ cashflowSummary.cash_out_percentage ?? 0 }}% dari cash in</p>
+                    </div>
+                    <div
+                      class="rounded-xl border p-4"
+                      :class="Number(cashflowSummary.net_cashflow) >= 0
+                        ? 'bg-teal-50 border-teal-100'
+                        : 'bg-red-50 border-red-100'"
+                    >
+                      <p
+                        class="text-xs font-semibold uppercase"
+                        :class="Number(cashflowSummary.net_cashflow) >= 0 ? 'text-teal-700' : 'text-red-700'"
+                      >
+                        Net Cashflow
+                      </p>
+                      <p
+                        class="text-2xl font-bold mt-1"
+                        :class="Number(cashflowSummary.net_cashflow) >= 0 ? 'text-teal-900' : 'text-red-900'"
+                      >
+                        {{ formatRupiah(cashflowSummary.net_cashflow) }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div v-if="cashflowOutflows.length">
+                      <h3 class="text-sm font-semibold text-slate-900 mb-3">Breakdown Cash Out</h3>
+                      <apexchart type="pie" height="300" :options="cashflowOutPieOptions" :series="cashflowOutPieSeries" />
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-sm">
+                        <thead>
+                          <tr class="text-left text-slate-500 border-b border-slate-200">
+                            <th class="py-2 pr-4">Komponen</th>
+                            <th class="py-2 text-right">Nominal</th>
+                            <th class="py-2 text-right">% Cash Out</th>
+                            <th class="py-2 text-right">% Revenue</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr
+                            v-for="item in cashflowSummary.outflows || []"
+                            :key="item.key"
+                            class="border-b border-slate-100"
+                          >
+                            <td class="py-2 pr-4">{{ item.label }}</td>
+                            <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
+                            <td class="py-2 text-right text-slate-500">
+                              {{
+                                cashflowSummary.cash_out > 0
+                                  ? `${((item.amount / cashflowSummary.cash_out) * 100).toFixed(1)}%`
+                                  : '-'
+                              }}
+                            </td>
+                            <td class="py-2 text-right text-slate-500">
+                              {{
+                                cashflowSummary.cash_in > 0
+                                  ? `${((item.amount / cashflowSummary.cash_in) * 100).toFixed(1)}%`
+                                  : '-'
+                              }}
+                            </td>
+                          </tr>
+                          <tr class="font-bold bg-slate-50">
+                            <td class="py-2 pr-4">Total</td>
+                            <td class="py-2 text-right">{{ formatRupiah(cashflowSummary.cash_out) }}</td>
+                            <td class="py-2 text-right">100%</td>
+                            <td class="py-2 text-right">{{ cashflowSummary.cash_out_percentage ?? 0 }}%</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <p class="text-xs text-slate-500">
+                    Cash in = total revenue POS. Cash out = inventaris FJ + petty cash + PR Ops + category cost pada periode yang sama.
+                  </p>
+                </template>
+
                 <!-- Petty Cash -->
                 <template v-else-if="activeModal === 'petty_cash'">
                   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2097,6 +2390,13 @@ function visitorArea(userId) {
         </div>
       </Transition>
     </Teleport>
+
+    <VueEasyLightbox
+      :visible="waiterLightboxVisible"
+      :imgs="waiterLightboxImages"
+      :index="waiterLightboxIndex"
+      @hide="waiterLightboxVisible = false"
+    />
   </AppLayout>
 </template>
 
