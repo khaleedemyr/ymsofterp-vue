@@ -14,6 +14,13 @@
           >
             <i class="fa-solid fa-print mr-2"></i> Print
           </button>
+          <button
+            v-if="goodReceive.status === 'draft'"
+            @click="handleComplete"
+            class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition"
+          >
+            <i class="fa-solid fa-check mr-2"></i> Complete
+          </button>
           <a
             v-if="goodReceive.status === 'draft'"
             :href="`/asset-good-receives/${goodReceive.id}/edit`"
@@ -63,15 +70,15 @@
               <div>
                 <label class="text-sm font-medium text-gray-500">PO Number</label>
                 <p class="text-base text-gray-900">
-                  <a v-if="goodReceive.po" :href="`/po-ops/${goodReceive.po.id}`" class="text-blue-600 hover:underline font-medium">
-                    {{ goodReceive.po?.number || '-' }}
+                  <a v-if="goodReceive.po_id" :href="`/po-ops/${goodReceive.po_id}`" class="text-blue-600 hover:underline font-medium">
+                    {{ goodReceive.po_number || '-' }}
                   </a>
-                  <span v-else>-</span>
+                  <span v-else>{{ goodReceive.po_number || '-' }}</span>
                 </p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Supplier</label>
-                <p class="text-base text-gray-900">{{ goodReceive.po?.supplier?.name || '-' }}</p>
+                <p class="text-base text-gray-900">{{ goodReceive.supplier_name || '-' }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Outlet Pemilik</label>
@@ -83,11 +90,11 @@
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Warehouse</label>
-                <p class="text-base text-gray-900">{{ goodReceive.warehouse_outlet?.name || '-' }}</p>
+                <p class="text-base text-gray-900">{{ goodReceive.warehouse_outlet_name || '-' }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Received By</label>
-                <p class="text-base text-gray-900">{{ goodReceive.receiver?.nama_lengkap || '-' }}</p>
+                <p class="text-base text-gray-900">{{ goodReceive.received_by_name || '-' }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-500">Created At</label>
@@ -227,6 +234,36 @@ const totalQtyReceived = computed(() => {
 
 function handlePrint() {
   window.print();
+}
+
+async function handleComplete() {
+  const result = await Swal.fire({
+    title: 'Complete Good Receive?',
+    text: `Konfirmasi ${props.goodReceive.gr_number}? Setelah complete, GR tidak bisa diedit atau dihapus.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Complete',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+  });
+
+  if (!result.isConfirmed) return;
+
+  router.post(`/asset-good-receives/${props.goodReceive.id}/complete`, {}, {
+    onSuccess: () => {
+      Swal.fire({
+        icon: 'success',
+        title: 'Completed!',
+        text: 'Good Receive berhasil di-complete.',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    },
+    onError: (errors) => {
+      const msg = Object.values(errors).flat().join('\n') || 'Gagal complete Good Receive.';
+      Swal.fire({ icon: 'error', title: 'Error', text: msg });
+    },
+  });
 }
 
 async function handleDelete() {

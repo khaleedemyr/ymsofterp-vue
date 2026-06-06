@@ -44,7 +44,7 @@
                 <label class="block text-sm font-medium text-gray-700 mb-1">Warehouse</label>
                 <input
                   type="text"
-                  :value="goodReceive.warehouse_outlet?.name || '-'"
+                  :value="goodReceive.warehouse_outlet_name || '-'"
                   readonly
                   class="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-700"
                 />
@@ -61,15 +61,15 @@
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-blue-50 rounded-lg">
               <div>
                 <span class="text-xs font-medium text-gray-500 uppercase">PO Number</span>
-                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.po?.number || '-' }}</p>
+                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.po_number || '-' }}</p>
               </div>
               <div>
                 <span class="text-xs font-medium text-gray-500 uppercase">Supplier</span>
-                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.po?.supplier?.name || '-' }}</p>
+                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.supplier_name || '-' }}</p>
               </div>
               <div>
                 <span class="text-xs font-medium text-gray-500 uppercase">PO Date</span>
-                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.po?.date || '-' }}</p>
+                <p class="text-sm font-semibold text-gray-900">{{ goodReceive.po_date || '-' }}</p>
               </div>
               <div>
                 <span class="text-xs font-medium text-gray-500 uppercase">GR Number</span>

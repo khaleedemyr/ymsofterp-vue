@@ -638,6 +638,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'show'])->name('asset-good-receives.show')->middleware('auth');
     Route::get('/asset-good-receives/{id}/edit', [\App\Http\Controllers\AssetGoodReceiveController::class, 'edit'])->name('asset-good-receives.edit')->middleware('auth');
     Route::put('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'update'])->name('asset-good-receives.update')->middleware('auth');
+    Route::post('/asset-good-receives/{id}/complete', [\App\Http\Controllers\AssetGoodReceiveController::class, 'complete'])->name('asset-good-receives.complete')->middleware('auth');
     Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'destroy'])->name('asset-good-receives.destroy')->middleware('auth');
 
     // Asset Inventory Transfer

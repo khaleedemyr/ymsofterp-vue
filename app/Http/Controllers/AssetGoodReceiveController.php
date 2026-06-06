@@ -387,6 +387,32 @@ class AssetGoodReceiveController extends Controller
         ]);
     }
 
+    public function complete($id)
+    {
+        $gr = AssetGoodReceive::findOrFail($id);
+
+        if ($gr->status !== 'draft') {
+            return back()->withErrors(['error' => 'Hanya GR draft yang dapat di-complete.']);
+        }
+
+        $gr->update(['status' => 'completed']);
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'asset_good_receive',
+            'description' => 'Complete Asset Good Receive: ' . $gr->gr_number,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'old_data' => json_encode(['status' => 'draft']),
+            'new_data' => json_encode(['status' => 'completed']),
+            'created_at' => now(),
+        ]);
+
+        return redirect()->route('asset-good-receives.show', $id)
+            ->with('success', 'Asset Good Receive berhasil di-complete.');
+    }
+
     public function update(Request $request, $id)
     {
         $request->validate([
