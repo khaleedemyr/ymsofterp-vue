@@ -268,7 +268,7 @@ class OutletAnalyzerService
             ->whereIn('i.type', $itemTypes)
             ->selectRaw('
                 oi.item_id,
-                MAX(COALESCE(i.name, oi.item_name)) as item_name,
+                MAX(oi.item_name) as item_name,
                 SUM(oi.qty) as total_qty,
                 SUM(oi.subtotal) as total_revenue,
                 COUNT(DISTINCT oi.order_id) as order_count
