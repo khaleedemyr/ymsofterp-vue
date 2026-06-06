@@ -197,6 +197,11 @@ function formatApprovers(approvers) {
   return approvers.map((a) => `${a.role}: ${a.name}`).join(' · ');
 }
 
+function truncateLabel(value, max = 28) {
+  const text = String(value || '');
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 const chartBase = {
   chart: { toolbar: { show: false }, fontFamily: 'inherit' },
   legend: { position: 'bottom', fontSize: '13px' },
@@ -263,6 +268,57 @@ const revenueDailyOptions = computed(() => ({
   dataLabels: { enabled: false },
   grid: { borderColor: '#E5E7EB' },
   tooltip: { y: { formatter: (v) => formatRupiah(v) } },
+}));
+
+const topFoodItems = computed(() => props.analysis?.top_menu_items?.top_food || []);
+const topBeverageItems = computed(() => props.analysis?.top_menu_items?.top_beverages || []);
+
+const topFoodBarSeries = computed(() => [{
+  name: 'Qty',
+  data: topFoodItems.value.map((item) => Number(item.total_qty)),
+}]);
+const topFoodBarOptions = computed(() => ({
+  chart: { type: 'bar', toolbar: { show: false } },
+  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '65%' } },
+  xaxis: {
+    categories: topFoodItems.value.map((item) => truncateLabel(item.item_name)),
+    labels: { style: { fontSize: '11px' } },
+  },
+  dataLabels: { enabled: true, formatter: (v) => `${v}` },
+  colors: ['#F97316'],
+  grid: { borderColor: '#E5E7EB' },
+  tooltip: {
+    y: {
+      formatter: (val, opts) => {
+        const item = topFoodItems.value[opts.dataPointIndex];
+        return item ? `${val} qty · ${formatRupiah(item.total_revenue)}` : `${val}`;
+      },
+    },
+  },
+}));
+
+const topBeverageBarSeries = computed(() => [{
+  name: 'Qty',
+  data: topBeverageItems.value.map((item) => Number(item.total_qty)),
+}]);
+const topBeverageBarOptions = computed(() => ({
+  chart: { type: 'bar', toolbar: { show: false } },
+  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '65%' } },
+  xaxis: {
+    categories: topBeverageItems.value.map((item) => truncateLabel(item.item_name)),
+    labels: { style: { fontSize: '11px' } },
+  },
+  dataLabels: { enabled: true, formatter: (v) => `${v}` },
+  colors: ['#0EA5E9'],
+  grid: { borderColor: '#E5E7EB' },
+  tooltip: {
+    y: {
+      formatter: (val, opts) => {
+        const item = topBeverageItems.value[opts.dataPointIndex];
+        return item ? `${val} qty · ${formatRupiah(item.total_revenue)}` : `${val}`;
+      },
+    },
+  },
 }));
 
 const guestSubjectSeries = computed(() => [
@@ -574,6 +630,102 @@ function visitorArea(userId) {
               <i class="fas fa-arrow-up-right-from-square text-xs"></i>
             </span>
           </button>
+        </section>
+
+        <!-- Top Menu Items -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Top 10 Menu Terjual</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Berdasarkan qty penjualan POS · Food &amp; Beverages
+                <span class="text-blue-600">· Klik Revenue untuk detail lengkap</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-xs font-semibold text-blue-700 hover:text-blue-900"
+              @click="openModal('revenue')"
+            >
+              Lihat detail revenue →
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            <div class="rounded-xl border border-orange-100 bg-orange-50/30 p-4">
+              <h3 class="text-sm font-semibold text-orange-900 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-utensils text-orange-500"></i>
+                Top 10 Food
+              </h3>
+              <div v-if="topFoodItems.length" class="bg-white rounded-lg p-2 border border-orange-100">
+                <apexchart type="bar" height="320" :options="topFoodBarOptions" :series="topFoodBarSeries" />
+              </div>
+              <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada penjualan food pada periode ini.</p>
+              <div v-if="topFoodItems.length" class="mt-3 overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-orange-100">
+                      <th class="py-2 pr-3">#</th>
+                      <th class="py-2 pr-3">Menu</th>
+                      <th class="py-2 text-right">Qty</th>
+                      <th class="py-2 text-right">Revenue</th>
+                      <th class="py-2 text-right">Order</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(item, idx) in topFoodItems"
+                      :key="item.item_id"
+                      class="border-b border-orange-50 last:border-0"
+                    >
+                      <td class="py-2 pr-3 text-slate-400">{{ idx + 1 }}</td>
+                      <td class="py-2 pr-3 font-medium text-slate-800">{{ item.item_name }}</td>
+                      <td class="py-2 text-right">{{ item.total_qty }}</td>
+                      <td class="py-2 text-right">{{ formatRupiah(item.total_revenue) }}</td>
+                      <td class="py-2 text-right text-slate-600">{{ item.order_count }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="rounded-xl border border-sky-100 bg-sky-50/30 p-4">
+              <h3 class="text-sm font-semibold text-sky-900 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-mug-hot text-sky-500"></i>
+                Top 10 Beverages
+              </h3>
+              <div v-if="topBeverageItems.length" class="bg-white rounded-lg p-2 border border-sky-100">
+                <apexchart type="bar" height="320" :options="topBeverageBarOptions" :series="topBeverageBarSeries" />
+              </div>
+              <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada penjualan beverages pada periode ini.</p>
+              <div v-if="topBeverageItems.length" class="mt-3 overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-xs uppercase text-slate-500 border-b border-sky-100">
+                      <th class="py-2 pr-3">#</th>
+                      <th class="py-2 pr-3">Menu</th>
+                      <th class="py-2 text-right">Qty</th>
+                      <th class="py-2 text-right">Revenue</th>
+                      <th class="py-2 text-right">Order</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(item, idx) in topBeverageItems"
+                      :key="item.item_id"
+                      class="border-b border-sky-50 last:border-0"
+                    >
+                      <td class="py-2 pr-3 text-slate-400">{{ idx + 1 }}</td>
+                      <td class="py-2 pr-3 font-medium text-slate-800">{{ item.item_name }}</td>
+                      <td class="py-2 text-right">{{ item.total_qty }}</td>
+                      <td class="py-2 text-right">{{ formatRupiah(item.total_revenue) }}</td>
+                      <td class="py-2 text-right text-slate-600">{{ item.order_count }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- Regional by Area -->
@@ -1111,6 +1263,17 @@ function visitorArea(userId) {
                     </div>
                   </div>
 
+                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    <div v-if="topFoodItems.length" class="rounded-xl border border-orange-100 bg-orange-50/40 p-4">
+                      <h3 class="text-sm font-semibold text-orange-900 mb-2">Top 10 Food (Qty)</h3>
+                      <apexchart type="bar" height="300" :options="topFoodBarOptions" :series="topFoodBarSeries" />
+                    </div>
+                    <div v-if="topBeverageItems.length" class="rounded-xl border border-sky-100 bg-sky-50/40 p-4">
+                      <h3 class="text-sm font-semibold text-sky-900 mb-2">Top 10 Beverages (Qty)</h3>
+                      <apexchart type="bar" height="300" :options="topBeverageBarOptions" :series="topBeverageBarSeries" />
+                    </div>
+                  </div>
+
                   <div v-if="analysis.revenue?.daily?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
                     <h3 class="text-sm font-semibold text-slate-800 mb-3">Trend Harian</h3>
                     <apexchart type="area" height="280" :options="revenueDailyOptions" :series="revenueDailySeries" />
@@ -1312,7 +1475,7 @@ function visitorArea(userId) {
                             :key="member.id"
                             class="text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700"
                           >
-                            {{ member.name }} · {{ member.visit_days }}x
+                            {{ member.name }} · {{ member.visit_days }} hari
                           </span>
                         </div>
                       </div>

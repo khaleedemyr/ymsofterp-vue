@@ -21,6 +21,9 @@ class OutletAnalyzerService
         'rating_value' => 'Value for Money',
     ];
 
+    /** @var list<string> */
+    private const FOOD_ITEM_TYPES = ['Food Asian', 'Food Western', 'Food'];
+
     public function __construct(
         private RegionalVisitAnalyticsService $regionalVisits,
         private AttendanceReportController $attendanceReport,
@@ -75,6 +78,7 @@ class OutletAnalyzerService
             ],
             'period' => $period,
             'revenue' => $revenue,
+            'top_menu_items' => $this->getTopMenuItems($outlet, $start, $end),
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
             'google_review_gsi' => $this->getGoogleReviewGsi((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
             'regional_visits' => $this->getRegionalVisits((int) $outlet->id_outlet, $start, $end),
@@ -220,6 +224,69 @@ class OutletAnalyzerService
                 return $row;
             }, $daily)),
         ];
+    }
+
+    /**
+     * @return array{top_food: list<array<string, mixed>>, top_beverages: list<array<string, mixed>>}
+     */
+    private function getTopMenuItems(object $outlet, string $start, string $end): array
+    {
+        $empty = [
+            'top_food' => [],
+            'top_beverages' => [],
+        ];
+
+        $qrCode = trim((string) ($outlet->qr_code ?? ''));
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        return [
+            'top_food' => $this->fetchTopOrderItems($qrCode, $start, $end, self::FOOD_ITEM_TYPES),
+            'top_beverages' => $this->fetchTopOrderItems($qrCode, $start, $end, ['Beverages']),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $itemTypes
+     * @return list<array<string, mixed>>
+     */
+    private function fetchTopOrderItems(string $qrCode, string $start, string $end, array $itemTypes, int $limit = 10): array
+    {
+        if ($itemTypes === []) {
+            return [];
+        }
+
+        return DB::table('order_items as oi')
+            ->join('orders as o', 'oi.order_id', '=', 'o.id')
+            ->join('items as i', 'oi.item_id', '=', 'i.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $start)
+            ->whereDate('o.created_at', '<=', $end)
+            ->where('o.status', '!=', 'cancelled')
+            ->where('o.grand_total', '>', 0)
+            ->whereIn('i.type', $itemTypes)
+            ->selectRaw('
+                oi.item_id,
+                MAX(COALESCE(i.name, oi.item_name)) as item_name,
+                SUM(oi.qty) as total_qty,
+                SUM(oi.subtotal) as total_revenue,
+                COUNT(DISTINCT oi.order_id) as order_count
+            ')
+            ->groupBy('oi.item_id')
+            ->orderByDesc('total_qty')
+            ->orderByDesc('total_revenue')
+            ->limit($limit)
+            ->get()
+            ->map(fn ($row) => [
+                'item_id' => (int) $row->item_id,
+                'item_name' => (string) ($row->item_name ?: '-'),
+                'total_qty' => round((float) ($row->total_qty ?? 0), 2),
+                'total_revenue' => round((float) ($row->total_revenue ?? 0), 2),
+                'order_count' => (int) ($row->order_count ?? 0),
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -401,6 +468,9 @@ class OutletAnalyzerService
         $detail = $this->regionalVisits->getOutletVisitDetail($regionalUserIds, $outletId, $start, $end);
         $visitorMap = [];
         $areaMap = [];
+        $visitorVisitDates = [];
+        $areaVisitDates = [];
+        $memberVisitDates = [];
 
         foreach (UserRegional::AREAS as $areaName) {
             $areaMap[$areaName] = [
@@ -413,6 +483,11 @@ class OutletAnalyzerService
         }
 
         foreach ($detail['daily_visits'] ?? [] as $day) {
+            $tanggal = (string) ($day['tanggal'] ?? '');
+            if ($tanggal === '') {
+                continue;
+            }
+
             foreach ($day['sessions'] ?? [] as $session) {
                 $uid = (int) ($session['user_id'] ?? 0);
                 if ($uid <= 0) {
@@ -446,13 +521,21 @@ class OutletAnalyzerService
                     ];
                 }
 
-                $visitorMap[$uid]['visit_days']++;
                 $visitorMap[$uid]['total_hours'] = round($visitorMap[$uid]['total_hours'] + $hours, 2);
                 $visitorMap[$uid]['scan_in_count'] += $scanIn;
 
-                $areaMap[$area]['visit_days']++;
+                if (! isset($visitorVisitDates[$uid][$tanggal])) {
+                    $visitorVisitDates[$uid][$tanggal] = true;
+                    $visitorMap[$uid]['visit_days']++;
+                }
+
                 $areaMap[$area]['total_hours'] = round($areaMap[$area]['total_hours'] + $hours, 2);
                 $areaMap[$area]['scan_in_count'] += $scanIn;
+
+                if (! isset($areaVisitDates[$area][$tanggal])) {
+                    $areaVisitDates[$area][$tanggal] = true;
+                    $areaMap[$area]['visit_days']++;
+                }
 
                 if (! isset($areaMap[$area]['members'][$uid])) {
                     $areaMap[$area]['members'][$uid] = [
@@ -462,11 +545,17 @@ class OutletAnalyzerService
                         'total_hours' => 0.0,
                     ];
                 }
-                $areaMap[$area]['members'][$uid]['visit_days']++;
+
                 $areaMap[$area]['members'][$uid]['total_hours'] = round(
                     $areaMap[$area]['members'][$uid]['total_hours'] + $hours,
                     2,
                 );
+
+                $memberKey = $area.'_'.$uid;
+                if (! isset($memberVisitDates[$memberKey][$tanggal])) {
+                    $memberVisitDates[$memberKey][$tanggal] = true;
+                    $areaMap[$area]['members'][$uid]['visit_days']++;
+                }
             }
         }
 
@@ -1508,6 +1597,7 @@ class OutletAnalyzerService
             ->where('h.outlet_id', $outletId)
             ->whereDate('h.date', '>=', $start)
             ->whereDate('h.date', '<=', $end)
+            ->where('h.status', '!=', 'DRAFT')
             ->where(function ($q) use ($typesRequiringApproval) {
                 $q->whereNotIn('h.type', $typesRequiringApproval)
                     ->orWhere(function ($subQ) use ($typesRequiringApproval) {
