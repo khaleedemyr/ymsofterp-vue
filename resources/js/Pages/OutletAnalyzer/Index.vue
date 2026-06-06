@@ -1215,7 +1215,7 @@ function visitorArea(userId) {
                 <span v-if="(analysis.fj_inventory?.retail_food_contra_bon_total ?? 0) > 0">
                   · termasuk retail food contra bon {{ formatRupiah(analysis.fj_inventory.retail_food_contra_bon_total) }}
                 </span>
-                <span class="text-orange-600">· Klik baris transaksi untuk detail item</span>
+                <span class="text-orange-600">· Klik chart untuk detail transaksi</span>
               </p>
             </div>
             <button
@@ -1232,7 +1232,11 @@ function visitorArea(userId) {
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div v-if="fjCategories.length" class="bg-slate-50 rounded-xl p-3">
+            <div
+              v-if="fjCategories.length"
+              class="bg-slate-50 rounded-xl p-3 cursor-pointer hover:ring-2 hover:ring-orange-200 transition-all"
+              @click="openModal('fj_inventory')"
+            >
               <apexchart type="pie" height="320" :options="fjPieOptions" :series="fjPieSeries" />
             </div>
             <div v-else class="bg-slate-50 rounded-xl p-8 text-center text-slate-400 text-sm">
@@ -1252,7 +1256,8 @@ function visitorArea(userId) {
                   <tr
                     v-for="cat in analysis.fj_inventory?.categories || []"
                     :key="cat.key"
-                    class="border-b border-slate-100"
+                    class="border-b border-slate-100 hover:bg-orange-50/50 cursor-pointer"
+                    @click="openModal('fj_inventory')"
                   >
                     <td class="py-2 pr-4">{{ cat.label }}</td>
                     <td class="py-2 text-right font-medium">{{ formatRupiah(cat.amount) }}</td>
@@ -1264,7 +1269,10 @@ function visitorArea(userId) {
                       }}
                     </td>
                   </tr>
-                  <tr class="font-bold bg-slate-50">
+                  <tr
+                    class="font-bold bg-slate-50 hover:bg-orange-50/50 cursor-pointer"
+                    @click="openModal('fj_inventory')"
+                  >
                     <td class="py-2 pr-4">Line Total</td>
                     <td class="py-2 text-right">{{ formatRupiah(analysis.fj_inventory?.line_total) }}</td>
                     <td class="py-2 text-right">100%</td>
@@ -1272,69 +1280,6 @@ function visitorArea(userId) {
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div v-if="fjAllTransactions.length" class="mt-5 overflow-x-auto rounded-xl border border-slate-200">
-            <table class="min-w-full text-sm">
-              <thead class="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th class="px-3 py-3 w-8"></th>
-                  <th class="px-4 py-3 text-left">Tanggal</th>
-                  <th class="px-4 py-3 text-left">No. Dokumen</th>
-                  <th class="px-4 py-3 text-left">Sumber</th>
-                  <th class="px-4 py-3 text-left">Referensi</th>
-                  <th class="px-4 py-3 text-left">Creator</th>
-                  <th class="px-4 py-3 text-right">Nominal</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <template v-for="row in fjAllTransactions" :key="fjRowKey(row)">
-                  <tr class="hover:bg-orange-50/30 cursor-pointer" @click="toggleFjRow(row)">
-                    <td class="px-3 py-2.5 text-slate-400">
-                      <i
-                        class="fas text-xs transition-transform"
-                        :class="isFjExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
-                      ></i>
-                    </td>
-                    <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
-                    <td class="px-4 py-2.5 font-medium">{{ row.document_number }}</td>
-                    <td class="px-4 py-2.5">{{ row.source_label }}</td>
-                    <td class="px-4 py-2.5 text-slate-600">{{ row.reference || '-' }}</td>
-                    <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
-                    <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
-                  </tr>
-                  <tr v-if="isFjExpanded(row)">
-                    <td colspan="7" class="px-4 py-3 bg-slate-50">
-                      <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-                        <table class="min-w-full text-xs">
-                          <thead class="bg-slate-100 text-slate-500 uppercase">
-                            <tr>
-                              <th class="px-3 py-2 text-left">Item</th>
-                              <th class="px-3 py-2 text-left">Gudang</th>
-                              <th class="px-3 py-2 text-right">Qty</th>
-                              <th class="px-3 py-2 text-left">Satuan</th>
-                              <th class="px-3 py-2 text-right">Harga</th>
-                              <th class="px-3 py-2 text-right">Subtotal</th>
-                            </tr>
-                          </thead>
-                          <tbody class="divide-y divide-slate-100">
-                            <tr v-for="(item, idx) in row.items" :key="idx">
-                              <td class="px-3 py-2">{{ item.item_name }}</td>
-                              <td class="px-3 py-2 text-slate-600">{{ item.warehouse || '-' }}</td>
-                              <td class="px-3 py-2 text-right">{{ item.qty }}</td>
-                              <td class="px-3 py-2">{{ item.unit || '-' }}</td>
-                              <td class="px-3 py-2 text-right">{{ formatRupiah(item.price) }}</td>
-                              <td class="px-3 py-2 text-right font-medium">{{ formatRupiah(item.subtotal) }}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                      <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
           </div>
         </section>
 
