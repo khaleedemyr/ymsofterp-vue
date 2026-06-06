@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Traits\ReportHelperTrait;
+use App\Models\UserRegional;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -12,12 +13,12 @@ class OutletAnalyzerService
     use ReportHelperTrait;
 
     private const GSI_SUBJECT_COLUMNS = [
-        'rating_service',
-        'rating_food',
-        'rating_beverage',
-        'rating_cleanliness',
-        'rating_staff',
-        'rating_value',
+        'rating_service' => 'Quality of Service',
+        'rating_food' => 'Quality of Food',
+        'rating_beverage' => 'Quality of Beverage',
+        'rating_cleanliness' => 'Quality of Cleanliness',
+        'rating_staff' => 'Attentiveness of Staff',
+        'rating_value' => 'Value for Money',
     ];
 
     public function __construct(
@@ -66,9 +67,6 @@ class OutletAnalyzerService
 
         $revenue = $this->getRevenue($outlet, $start, $end);
         $fj = $this->getFjInventory((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end);
-        $foodCostPct = $revenue['total'] > 0
-            ? round(($fj['line_total'] / $revenue['total']) * 100, 2)
-            : null;
 
         return [
             'outlet' => [
@@ -80,7 +78,7 @@ class OutletAnalyzerService
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
             'google_review_gsi' => $this->getGoogleReviewGsi((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
             'regional_visits' => $this->getRegionalVisits((int) $outlet->id_outlet, $start, $end),
-            'fj_inventory' => array_merge($fj, ['food_cost_pct' => $foodCostPct]),
+            'fj_inventory' => $fj,
             'employee_attendance' => $this->getEmployeeAttendance((int) $outlet->id_outlet, $start, $end),
         ];
     }
@@ -92,7 +90,15 @@ class OutletAnalyzerService
     {
         $qrCode = trim((string) ($outlet->qr_code ?? ''));
         if ($qrCode === '') {
-            return ['total' => 0.0, 'cover' => 0, 'lunch' => 0.0, 'dinner' => 0.0];
+            return [
+                'total' => 0.0,
+                'cover' => 0,
+                'lunch' => 0.0,
+                'dinner' => 0.0,
+                'avg_check' => 0.0,
+                'order_count' => 0,
+                'daily' => [],
+            ];
         }
 
         $orders = DB::table('orders')
@@ -108,27 +114,58 @@ class OutletAnalyzerService
         $cover = 0;
         $lunch = 0.0;
         $dinner = 0.0;
+        $daily = [];
 
         foreach ($orders as $order) {
             $amount = (float) $order->grand_total;
             $pax = (int) ($order->pax ?? 0);
+            $date = date('Y-m-d', strtotime((string) $order->created_at));
             $hour = (int) date('G', strtotime((string) $order->created_at));
             $period = $hour <= 17 ? 'lunch' : 'dinner';
 
+            if (! isset($daily[$date])) {
+                $daily[$date] = [
+                    'date' => $date,
+                    'label' => date('d/m', strtotime($date)),
+                    'revenue' => 0.0,
+                    'cover' => 0,
+                    'lunch' => 0.0,
+                    'dinner' => 0.0,
+                    'orders' => 0,
+                ];
+            }
+
             $total += $amount;
             $cover += $pax;
+            $daily[$date]['revenue'] += $amount;
+            $daily[$date]['cover'] += $pax;
+            $daily[$date]['orders']++;
+
             if ($period === 'lunch') {
                 $lunch += $amount;
+                $daily[$date]['lunch'] += $amount;
             } else {
                 $dinner += $amount;
+                $daily[$date]['dinner'] += $amount;
             }
         }
+
+        ksort($daily);
 
         return [
             'total' => round($total, 2),
             'cover' => $cover,
             'lunch' => round($lunch, 2),
             'dinner' => round($dinner, 2),
+            'avg_check' => $cover > 0 ? round($total / $cover, 0) : 0.0,
+            'order_count' => $orders->count(),
+            'daily' => array_values(array_map(function ($row) {
+                $row['revenue'] = round($row['revenue'], 2);
+                $row['lunch'] = round($row['lunch'], 2);
+                $row['dinner'] = round($row['dinner'], 2);
+
+                return $row;
+            }, $daily)),
         ];
     }
 
@@ -146,7 +183,8 @@ class OutletAnalyzerService
         $overallPositive = 0;
         $overallResponses = 0;
 
-        foreach (self::GSI_SUBJECT_COLUMNS as $column) {
+        $subjects = [];
+        foreach (self::GSI_SUBJECT_COLUMNS as $column => $label) {
             $r = (clone $base)
                 ->selectRaw("
                     SUM(CASE WHEN {$column} = 'excellent' THEN 1 ELSE 0 END) AS excellent,
@@ -156,10 +194,24 @@ class OutletAnalyzerService
                 ")
                 ->first();
 
-            $responses = (int) ($r->excellent ?? 0) + (int) ($r->good ?? 0)
-                + (int) ($r->average ?? 0) + (int) ($r->poor ?? 0);
-            $overallPositive += (int) ($r->excellent ?? 0) + (int) ($r->good ?? 0);
+            $excellent = (int) ($r->excellent ?? 0);
+            $good = (int) ($r->good ?? 0);
+            $average = (int) ($r->average ?? 0);
+            $poor = (int) ($r->poor ?? 0);
+            $responses = $excellent + $good + $average + $poor;
+            $positive = $excellent + $good;
+            $overallPositive += $positive;
             $overallResponses += $responses;
+
+            $subjects[] = [
+                'subject' => $label,
+                'excellent' => $excellent,
+                'good' => $good,
+                'average' => $average,
+                'poor' => $poor,
+                'responses' => $responses,
+                'gsi_pct' => $responses > 0 ? round(($positive / $responses) * 100, 2) : null,
+            ];
         }
 
         return [
@@ -168,6 +220,7 @@ class OutletAnalyzerService
                 : null,
             'total_forms' => $totalForms,
             'total_responses' => $overallResponses,
+            'subjects' => $subjects,
         ];
     }
 
@@ -179,6 +232,7 @@ class OutletAnalyzerService
         $positive = 0;
         $total = 0;
         $sources = ['manual' => 0, 'ai_classified' => 0];
+        $items = [];
 
         $manualRows = DB::table('google_review_manual_reviews')
             ->where('id_outlet', $outletId)
@@ -187,19 +241,29 @@ class OutletAnalyzerService
             })
             ->whereDate('review_date', '>=', $start)
             ->whereDate('review_date', '<=', $end)
-            ->whereNotNull('rating')
-            ->pluck('rating');
+            ->select('author', 'rating', 'review_date', 'text')
+            ->orderByDesc('review_date')
+            ->get();
 
-        foreach ($manualRows as $rating) {
-            $score = (float) $rating;
+        foreach ($manualRows as $row) {
+            $score = (float) $row->rating;
             if ($score <= 0) {
                 continue;
             }
             $total++;
             $sources['manual']++;
-            if ($score >= 4) {
+            $isPositive = $score >= 4;
+            if ($isPositive) {
                 $positive++;
             }
+            $items[] = [
+                'source' => 'Manual',
+                'author' => (string) ($row->author ?? '-'),
+                'rating' => $score,
+                'review_date' => $row->review_date,
+                'text' => mb_substr((string) ($row->text ?? ''), 0, 200),
+                'is_positive' => $isPositive,
+            ];
         }
 
         $aiRows = DB::table('google_review_ai_items as i')
@@ -212,29 +276,43 @@ class OutletAnalyzerService
             })
             ->whereDate('i.created_at', '>=', $start)
             ->whereDate('i.created_at', '<=', $end)
-            ->select('i.rating', 'i.severity')
+            ->select('i.author', 'i.rating', 'i.review_date', 'i.text', 'i.severity', 'r.source as report_source')
+            ->orderByDesc('i.created_at')
             ->get();
 
         foreach ($aiRows as $row) {
             $total++;
             $sources['ai_classified']++;
             $severity = strtolower(trim((string) ($row->severity ?? '')));
-            if ($severity === 'positive') {
-                $positive++;
-
-                continue;
-            }
             $score = (float) $row->rating;
-            if ($score >= 4) {
+            $isPositive = $severity === 'positive' || $score >= 4;
+            if ($isPositive) {
                 $positive++;
             }
+            $items[] = [
+                'source' => match ((string) ($row->report_source ?? '')) {
+                    'apify_dataset' => 'Apify',
+                    'places_api' => 'Places API',
+                    'scraper_inline' => 'Scraper',
+                    default => 'AI Report',
+                },
+                'author' => (string) ($row->author ?? '-'),
+                'rating' => $score > 0 ? $score : null,
+                'review_date' => $row->review_date,
+                'text' => mb_substr((string) ($row->text ?? ''), 0, 200),
+                'severity' => $severity ?: null,
+                'is_positive' => $isPositive,
+            ];
         }
+
+        usort($items, fn ($a, $b) => strcmp((string) ($b['review_date'] ?? ''), (string) ($a['review_date'] ?? '')));
 
         return [
             'overall_pct' => $total > 0 ? round(($positive / $total) * 100, 2) : null,
             'total_reviews' => $total,
             'positive_reviews' => $positive,
             'sources' => $sources,
+            'items' => $items,
         ];
     }
 
@@ -243,26 +321,43 @@ class OutletAnalyzerService
      */
     private function getRegionalVisits(int $outletId, string $start, string $end): array
     {
-        $regionalUserIds = DB::table('user_regional as ur')
+        $regionalUsers = DB::table('user_regional as ur')
             ->join('users as u', 'u.id', '=', 'ur.user_id')
             ->where('u.status', 'A')
-            ->pluck('ur.user_id')
-            ->map(fn ($id) => (int) $id)
-            ->values()
-            ->all();
+            ->select('ur.user_id', 'ur.area', 'u.nama_lengkap')
+            ->get();
+
+        $regionalUserIds = $regionalUsers->pluck('user_id')->map(fn ($id) => (int) $id)->values()->all();
+        $userAreaMap = $regionalUsers->keyBy('user_id');
+
+        $empty = [
+            'visit_days' => 0,
+            'scan_in_count' => 0,
+            'total_hours' => 0.0,
+            'unique_visitors' => 0,
+            'visitors' => [],
+            'areas' => [],
+            'daily_visits' => [],
+            'hourly_frequency' => null,
+        ];
 
         if (empty($regionalUserIds)) {
-            return [
-                'visit_days' => 0,
-                'scan_in_count' => 0,
-                'total_hours' => 0.0,
-                'unique_visitors' => 0,
-                'visitors' => [],
-            ];
+            return $empty;
         }
 
         $detail = $this->regionalVisits->getOutletVisitDetail($regionalUserIds, $outletId, $start, $end);
         $visitorMap = [];
+        $areaMap = [];
+
+        foreach (UserRegional::AREAS as $areaName) {
+            $areaMap[$areaName] = [
+                'area' => $areaName,
+                'visit_days' => 0,
+                'total_hours' => 0.0,
+                'scan_in_count' => 0,
+                'members' => [],
+            ];
+        }
 
         foreach ($detail['daily_visits'] ?? [] as $day) {
             foreach ($day['sessions'] ?? [] as $session) {
@@ -270,18 +365,71 @@ class OutletAnalyzerService
                 if ($uid <= 0) {
                     continue;
                 }
+
+                $regionalUser = $userAreaMap->get($uid);
+                $area = (string) ($regionalUser->area ?? 'Lainnya');
+                if (! isset($areaMap[$area])) {
+                    $areaMap[$area] = [
+                        'area' => $area,
+                        'visit_days' => 0,
+                        'total_hours' => 0.0,
+                        'scan_in_count' => 0,
+                        'members' => [],
+                    ];
+                }
+
+                $hours = round(((int) ($session['durasi_menit'] ?? 0)) / 60, 2);
+                $scanIn = (int) ($session['scan_in_count'] ?? 0);
+
                 if (! isset($visitorMap[$uid])) {
                     $visitorMap[$uid] = [
                         'id' => $uid,
-                        'name' => (string) ($session['user_name'] ?? '-'),
+                        'name' => (string) ($session['user_name'] ?? ($regionalUser->nama_lengkap ?? '-')),
+                        'area' => $area,
+                        'nama_jabatan' => (string) ($session['nama_jabatan'] ?? '-'),
                         'visit_days' => 0,
+                        'total_hours' => 0.0,
+                        'scan_in_count' => 0,
                     ];
                 }
+
                 $visitorMap[$uid]['visit_days']++;
+                $visitorMap[$uid]['total_hours'] = round($visitorMap[$uid]['total_hours'] + $hours, 2);
+                $visitorMap[$uid]['scan_in_count'] += $scanIn;
+
+                $areaMap[$area]['visit_days']++;
+                $areaMap[$area]['total_hours'] = round($areaMap[$area]['total_hours'] + $hours, 2);
+                $areaMap[$area]['scan_in_count'] += $scanIn;
+
+                if (! isset($areaMap[$area]['members'][$uid])) {
+                    $areaMap[$area]['members'][$uid] = [
+                        'id' => $uid,
+                        'name' => $visitorMap[$uid]['name'],
+                        'visit_days' => 0,
+                        'total_hours' => 0.0,
+                    ];
+                }
+                $areaMap[$area]['members'][$uid]['visit_days']++;
+                $areaMap[$area]['members'][$uid]['total_hours'] = round(
+                    $areaMap[$area]['members'][$uid]['total_hours'] + $hours,
+                    2,
+                );
             }
         }
 
-        $visitors = collect($visitorMap)
+        $visitors = collect($visitorMap)->sortByDesc('visit_days')->values()->all();
+
+        $areas = collect($areaMap)
+            ->map(function ($row) {
+                $row['members'] = collect($row['members'] ?? [])
+                    ->sortByDesc('visit_days')
+                    ->values()
+                    ->all();
+                $row['total_hours'] = round((float) $row['total_hours'], 2);
+
+                return $row;
+            })
+            ->filter(fn ($row) => $row['visit_days'] > 0)
             ->sortByDesc('visit_days')
             ->values()
             ->all();
@@ -292,6 +440,9 @@ class OutletAnalyzerService
             'total_hours' => (float) ($detail['summary']['total_hours'] ?? 0),
             'unique_visitors' => (int) ($detail['summary']['unique_visitors'] ?? 0),
             'visitors' => $visitors,
+            'areas' => $areas,
+            'daily_visits' => $detail['daily_visits'] ?? [],
+            'hourly_frequency' => $detail['hourly_frequency'] ?? null,
         ];
     }
 
