@@ -203,7 +203,12 @@ function truncateLabel(value, max = 28) {
 }
 
 function waiterAvatarUrl(avatar) {
-  return avatar ? `/storage/${avatar}` : null;
+  if (!avatar) return null;
+  const value = String(avatar);
+  if (value.startsWith('http://') || value.startsWith('https://')) return value;
+  if (value.startsWith('/storage/')) return value;
+  if (value.startsWith('/')) return value;
+  return `/storage/${value}`;
 }
 
 function waiterInitial(name) {
@@ -284,6 +289,7 @@ const topBeverageItems = computed(() => props.analysis?.top_menu_items?.top_beve
 const waiterUpsellTop = computed(() => props.analysis?.waiter_upsell_ranking?.top || []);
 const waiterUpsellRank1 = computed(() => waiterUpsellTop.value[0] || null);
 const waiterUpsellRank2 = computed(() => waiterUpsellTop.value[1] || null);
+const waiterUpsellRank3 = computed(() => waiterUpsellTop.value[2] || null);
 
 const topFoodBarSeries = computed(() => [{
   name: 'Qty',
@@ -745,16 +751,16 @@ function visitorArea(userId) {
           <div class="mb-2">
             <h2 class="text-base font-semibold text-slate-900">Ranking Penjualan Waiters</h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              Top 2 waiter · total revenue dari order POS
+              Top 3 waiter · total revenue dari order POS
             </p>
           </div>
 
           <div v-if="waiterUpsellTop.length" class="relative rounded-2xl bg-gradient-to-b from-amber-50 via-yellow-50 to-white border border-amber-100 px-4 sm:px-8 pt-8 pb-6">
-            <div class="flex items-end justify-center gap-3 sm:gap-8 max-w-xl mx-auto min-h-[280px]">
+            <div class="flex items-end justify-center gap-2 sm:gap-6 max-w-2xl mx-auto min-h-[300px]">
               <!-- Rank 2 -->
               <div
                 v-if="waiterUpsellRank2"
-                class="flex flex-col items-center flex-1 max-w-[160px]"
+                class="flex flex-col items-center flex-1 max-w-[150px]"
               >
                 <div class="flex flex-col items-center text-center mb-3 px-1">
                   <div class="w-16 h-16 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2">
@@ -783,7 +789,7 @@ function visitorArea(userId) {
               <!-- Rank 1 -->
               <div
                 v-if="waiterUpsellRank1"
-                class="flex flex-col items-center flex-1 max-w-[180px] -mt-2 sm:-mt-4 z-10"
+                class="flex flex-col items-center flex-1 max-w-[170px] -mt-2 sm:-mt-4 z-10"
               >
                 <div class="mb-1">
                   <span class="inline-flex items-center rounded-full bg-yellow-300 text-yellow-900 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm">
@@ -810,6 +816,35 @@ function visitorArea(userId) {
                   <div class="absolute -top-1 left-0 right-0 h-2.5 bg-yellow-300 rounded-t-md"></div>
                   <div class="w-full h-32 sm:h-36 bg-amber-400 rounded-t-lg flex items-center justify-center shadow-inner">
                     <span class="text-5xl sm:text-6xl font-black text-amber-900/80">1</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Rank 3 -->
+              <div
+                v-if="waiterUpsellRank3"
+                class="flex flex-col items-center flex-1 max-w-[140px]"
+              >
+                <div class="flex flex-col items-center text-center mb-3 px-1">
+                  <div class="w-14 h-14 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2">
+                    <img
+                      v-if="waiterAvatarUrl(waiterUpsellRank3.avatar)"
+                      :src="waiterAvatarUrl(waiterUpsellRank3.avatar)"
+                      :alt="waiterUpsellRank3.waiter_name"
+                      class="w-full h-full object-cover"
+                    />
+                    <span v-else class="text-xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank3.waiter_name) }}</span>
+                  </div>
+                  <p class="text-sm font-bold text-slate-800 leading-tight">{{ waiterUpsellRank3.waiter_name }}</p>
+                  <p class="text-sm font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank3.total_revenue) }}</p>
+                  <p class="text-[11px] text-slate-500 mt-0.5">
+                    {{ waiterUpsellRank3.order_count }} order · {{ waiterUpsellRank3.cover }} cover
+                  </p>
+                </div>
+                <div class="w-full relative">
+                  <div class="absolute -top-1 left-0 right-0 h-2 bg-amber-300 rounded-t-md"></div>
+                  <div class="w-full h-20 sm:h-24 bg-amber-400 rounded-t-lg flex items-center justify-center shadow-inner">
+                    <span class="text-3xl sm:text-4xl font-black text-amber-900/80">3</span>
                   </div>
                 </div>
               </div>

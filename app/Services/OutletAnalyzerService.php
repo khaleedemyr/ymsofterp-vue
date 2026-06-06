@@ -322,28 +322,24 @@ class OutletAnalyzerService
             ->groupBy('o.waiters')
             ->orderByDesc('total_revenue')
             ->orderByDesc('order_count')
-            ->limit(2)
+            ->limit(3)
             ->get();
 
         $waiterNames = $rows->pluck('waiter_name')->filter()->values()->all();
-        $usersByName = [];
+        $usersByWaiterName = $this->resolveUsersForWaiterNames(
+            $waiterNames,
+            (int) $outlet->id_outlet,
+        );
 
-        if ($waiterNames !== []) {
-            $usersByName = DB::table('users')
-                ->whereIn('nama_lengkap', $waiterNames)
-                ->select('id', 'nama_lengkap', 'avatar')
-                ->get()
-                ->keyBy('nama_lengkap');
-        }
-
-        $top = $rows->values()->map(function ($row, $index) use ($usersByName) {
-            $user = $usersByName->get($row->waiter_name);
+        $top = $rows->values()->map(function ($row, $index) use ($usersByWaiterName) {
+            $waiterName = (string) ($row->waiter_name ?? '-');
+            $user = $usersByWaiterName[$waiterName] ?? null;
 
             return [
                 'rank' => $index + 1,
-                'waiter_name' => (string) ($row->waiter_name ?? '-'),
+                'waiter_name' => $waiterName,
                 'user_id' => $user ? (int) $user->id : null,
-                'avatar' => $user && $user->avatar ? (string) $user->avatar : null,
+                'avatar' => $this->resolveUserAvatarPath($user),
                 'total_revenue' => round((float) ($row->total_revenue ?? 0), 2),
                 'order_count' => (int) ($row->order_count ?? 0),
                 'cover' => (int) ($row->cover ?? 0),
@@ -351,6 +347,77 @@ class OutletAnalyzerService
         })->all();
 
         return ['top' => $top];
+    }
+
+    /**
+     * @param  list<string>  $waiterNames
+     * @return array<string, object>
+     */
+    private function resolveUsersForWaiterNames(array $waiterNames, int $outletId): array
+    {
+        if ($waiterNames === []) {
+            return [];
+        }
+
+        $targetKeys = [];
+        foreach ($waiterNames as $name) {
+            $targetKeys[$this->normalizeWaiterName($name)] = $name;
+        }
+
+        $users = DB::table('users')
+            ->where('status', 'A')
+            ->where(function ($q) use ($outletId) {
+                $q->where('id_outlet', $outletId)
+                    ->orWhere('id_outlet', 1);
+            })
+            ->whereNotNull('nama_lengkap')
+            ->where('nama_lengkap', '!=', '')
+            ->select('id', 'nama_lengkap', 'nama_panggilan', 'avatar', 'upload_latest_color_photo')
+            ->get();
+
+        $usersByNormalized = [];
+        foreach ($users as $user) {
+            foreach ([(string) $user->nama_lengkap, (string) ($user->nama_panggilan ?? '')] as $label) {
+                $key = $this->normalizeWaiterName($label);
+                if ($key === '' || isset($usersByNormalized[$key])) {
+                    continue;
+                }
+                $usersByNormalized[$key] = $user;
+            }
+        }
+
+        $resolved = [];
+        foreach ($waiterNames as $waiterName) {
+            $user = $usersByNormalized[$this->normalizeWaiterName($waiterName)] ?? null;
+            if ($user) {
+                $resolved[$waiterName] = $user;
+            }
+        }
+
+        return $resolved;
+    }
+
+    private function resolveUserAvatarPath(?object $user): ?string
+    {
+        if (! $user) {
+            return null;
+        }
+
+        foreach (['avatar', 'upload_latest_color_photo'] as $field) {
+            $path = trim((string) ($user->{$field} ?? ''));
+            if ($path !== '') {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeWaiterName(string $name): string
+    {
+        $normalized = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $name) ?? $name));
+
+        return $normalized;
     }
 
     /**
