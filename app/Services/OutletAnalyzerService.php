@@ -117,7 +117,7 @@ class OutletAnalyzerService
         $outflows = [
             [
                 'key' => 'fj_inventory',
-                'label' => 'Inventaris FJ',
+                'label' => 'Food Purchased',
                 'amount' => round((float) ($fj['line_total'] ?? 0), 2),
             ],
             [
@@ -2409,11 +2409,22 @@ class OutletAnalyzerService
      */
     private function getEmployeeAttendance(int $outletId, string $start, string $end): array
     {
-        $employees = DB::table('users')
-            ->where('id_outlet', $outletId)
-            ->where('status', 'A')
-            ->select('id', 'nama_lengkap')
-            ->orderBy('nama_lengkap')
+        $employees = DB::table('users as u')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->where('u.id_outlet', $outletId)
+            ->where('u.status', 'A')
+            ->select(
+                'u.id',
+                'u.nama_lengkap',
+                'u.avatar',
+                'u.upload_latest_color_photo',
+                'u.division_id',
+                'j.nama_jabatan',
+                'd.nama_divisi',
+            )
+            ->orderBy('d.nama_divisi')
+            ->orderBy('u.nama_lengkap')
             ->get();
 
         $summary = [
@@ -2464,6 +2475,10 @@ class OutletAnalyzerService
             $employeeRows[] = [
                 'id' => (int) $employee->id,
                 'name' => (string) $employee->nama_lengkap,
+                'jabatan' => (string) ($employee->nama_jabatan ?: '-'),
+                'divisi' => (string) ($employee->nama_divisi ?: 'Tanpa Divisi'),
+                'division_id' => (int) ($employee->division_id ?? 0),
+                'avatar' => $this->resolveUserAvatarPath($employee),
                 'present_days' => $present,
                 'total_telat' => (int) ($empSummary['total_telat'] ?? 0),
                 'total_lembur' => (int) ($empSummary['total_lembur'] ?? 0),
@@ -2495,7 +2510,13 @@ class OutletAnalyzerService
                 ['key' => 'off', 'label' => 'OFF', 'days' => $summary['off_days']],
                 ['key' => 'izin', 'label' => 'Izin & Cuti', 'days' => $summary['leave_days']],
             ],
-            'employees' => collect($employeeRows)->sortBy('name')->values()->all(),
+            'employees' => collect($employeeRows)
+                ->sortBy([
+                    ['divisi', 'asc'],
+                    ['name', 'asc'],
+                ])
+                ->values()
+                ->all(),
             'top_late' => array_slice($employeeRows, 0, 10),
             'top_overtime' => collect($employeeRows)->sortByDesc('total_lembur')->take(10)->values()->all(),
         ];

@@ -269,6 +269,18 @@ function openWaiterLightbox(waiter) {
   waiterLightboxVisible.value = true;
 }
 
+const employeeLightboxVisible = ref(false);
+const employeeLightboxIndex = ref(0);
+
+function openEmployeeLightbox(employee) {
+  const url = waiterAvatarUrl(employee?.avatar);
+  if (!url) return;
+
+  const idx = employeeLightboxImages.value.findIndex((img) => img.src === url);
+  employeeLightboxIndex.value = idx >= 0 ? idx : 0;
+  employeeLightboxVisible.value = true;
+}
+
 const chartBase = {
   chart: { toolbar: { show: false }, fontFamily: 'inherit' },
   legend: { position: 'bottom', fontSize: '13px' },
@@ -543,32 +555,52 @@ const lateBarSeries = computed(() => [{
   name: 'Telat (menit)',
   data: (props.analysis?.employee_attendance?.top_late || []).map((e) => e.total_telat),
 }]);
+const lateBarHeight = computed(() => {
+  const count = (props.analysis?.employee_attendance?.top_late || []).length;
+  return Math.max(260, count * 40 + 56);
+});
 const lateBarOptions = computed(() => ({
-  chart: { type: 'bar', toolbar: { show: false } },
-  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '65%' } },
+  chart: { type: 'bar', toolbar: { show: false }, width: '100%' },
+  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '70%' } },
   xaxis: {
     categories: (props.analysis?.employee_attendance?.top_late || []).map((e) => e.name),
     labels: { style: { fontSize: '11px' } },
   },
+  yaxis: {
+    labels: {
+      style: { fontSize: '11px' },
+      maxWidth: 260,
+    },
+  },
   dataLabels: { enabled: true, formatter: (v) => `${v} mnt` },
   colors: ['#F59E0B'],
-  grid: { borderColor: '#E5E7EB' },
+  grid: { borderColor: '#E5E7EB', padding: { left: 8, right: 16 } },
 }));
 
 const overtimeBarSeries = computed(() => [{
   name: 'Lembur (jam)',
   data: (props.analysis?.employee_attendance?.top_overtime || []).map((e) => e.total_lembur),
 }]);
+const overtimeBarHeight = computed(() => {
+  const count = (props.analysis?.employee_attendance?.top_overtime || []).length;
+  return Math.max(260, count * 40 + 56);
+});
 const overtimeBarOptions = computed(() => ({
-  chart: { type: 'bar', toolbar: { show: false } },
-  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '65%' } },
+  chart: { type: 'bar', toolbar: { show: false }, width: '100%' },
+  plotOptions: { bar: { borderRadius: 4, horizontal: true, barHeight: '70%' } },
   xaxis: {
     categories: (props.analysis?.employee_attendance?.top_overtime || []).map((e) => e.name),
     labels: { style: { fontSize: '11px' } },
   },
+  yaxis: {
+    labels: {
+      style: { fontSize: '11px' },
+      maxWidth: 260,
+    },
+  },
   dataLabels: { enabled: true, formatter: (v) => `${v} jam` },
   colors: ['#F97316'],
-  grid: { borderColor: '#E5E7EB' },
+  grid: { borderColor: '#E5E7EB', padding: { left: 8, right: 16 } },
 }));
 
 const attendanceSummary = computed(() => props.analysis?.employee_attendance?.summary || {});
@@ -603,6 +635,32 @@ const summaryCards = computed(() => {
 });
 
 const attendanceEmployees = computed(() => props.analysis?.employee_attendance?.employees || []);
+const attendanceEmployeesByDivision = computed(() => {
+  const groups = new Map();
+
+  for (const emp of attendanceEmployees.value) {
+    const division = emp.divisi || 'Tanpa Divisi';
+    if (!groups.has(division)) {
+      groups.set(division, []);
+    }
+    groups.get(division).push(emp);
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b, 'id'))
+    .map(([division, employees]) => ({
+      division,
+      employees: [...employees].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id')),
+    }));
+});
+const employeeLightboxImages = computed(() =>
+  attendanceEmployees.value.reduce((acc, employee) => {
+    const src = waiterAvatarUrl(employee.avatar);
+    if (!src) return acc;
+    acc.push({ src, title: employee.name });
+    return acc;
+  }, []),
+);
 
 const attendanceDetailCards = computed(() => {
   const s = attendanceSummary.value;
@@ -1607,29 +1665,37 @@ function visitorArea(userId) {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
-            <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="space-y-5">
+            <div
+              v-if="analysis.employee_attendance?.top_late?.length"
+              class="bg-white rounded-xl border border-slate-200 p-5 w-full"
+            >
               <h3 class="text-sm font-semibold text-slate-900">Top Terlambat</h3>
               <div
-                v-if="analysis.employee_attendance?.top_late?.length"
                 class="mt-3 cursor-pointer hover:ring-2 hover:ring-amber-200 rounded-xl transition-all"
                 @click="openModal('employee_attendance')"
               >
-                <apexchart type="bar" height="320" :options="lateBarOptions" :series="lateBarSeries" />
+                <apexchart type="bar" :height="lateBarHeight" :options="lateBarOptions" :series="lateBarSeries" />
               </div>
-              <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada data keterlambatan.</p>
             </div>
-            <div class="bg-white rounded-xl border border-slate-200 p-5">
+            <div
+              v-if="analysis.employee_attendance?.top_overtime?.length"
+              class="bg-white rounded-xl border border-slate-200 p-5 w-full"
+            >
               <h3 class="text-sm font-semibold text-slate-900">Top Lembur</h3>
               <div
-                v-if="analysis.employee_attendance?.top_overtime?.length"
                 class="mt-3 cursor-pointer hover:ring-2 hover:ring-orange-200 rounded-xl transition-all"
                 @click="openModal('employee_attendance')"
               >
-                <apexchart type="bar" height="320" :options="overtimeBarOptions" :series="overtimeBarSeries" />
+                <apexchart type="bar" :height="overtimeBarHeight" :options="overtimeBarOptions" :series="overtimeBarSeries" />
               </div>
-              <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada data lembur.</p>
             </div>
+            <p
+              v-if="!analysis.employee_attendance?.top_late?.length && !analysis.employee_attendance?.top_overtime?.length"
+              class="text-sm text-slate-400 text-center py-6 bg-white rounded-xl border border-slate-200"
+            >
+              Tidak ada data keterlambatan atau lembur.
+            </p>
           </div>
         </section>
       </template>
@@ -2082,7 +2148,7 @@ function visitorArea(userId) {
                   </div>
 
                   <p class="text-xs text-slate-500">
-                    Cash in = total revenue POS. Cash out = inventaris FJ + petty cash + PR Ops pada periode yang sama.
+                    Cash in = total revenue POS. Cash out = Food Purchased + petty cash + PR Ops pada periode yang sama.
                   </p>
                 </template>
 
@@ -2487,13 +2553,16 @@ function visitorArea(userId) {
                       <h3 class="text-sm font-semibold text-slate-800 mb-2">Izin & Cuti</h3>
                       <apexchart type="pie" height="280" :options="leavePieOptions" :series="leavePieSeries" />
                     </div>
-                    <div v-if="analysis.employee_attendance?.top_late?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  </div>
+
+                  <div class="space-y-5">
+                    <div v-if="analysis.employee_attendance?.top_late?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200 w-full">
                       <h3 class="text-sm font-semibold text-slate-800 mb-2">Top Terlambat</h3>
-                      <apexchart type="bar" height="280" :options="lateBarOptions" :series="lateBarSeries" />
+                      <apexchart type="bar" :height="lateBarHeight" :options="lateBarOptions" :series="lateBarSeries" />
                     </div>
-                    <div v-if="analysis.employee_attendance?.top_overtime?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <div v-if="analysis.employee_attendance?.top_overtime?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200 w-full">
                       <h3 class="text-sm font-semibold text-slate-800 mb-2">Top Lembur</h3>
-                      <apexchart type="bar" height="280" :options="overtimeBarOptions" :series="overtimeBarSeries" />
+                      <apexchart type="bar" :height="overtimeBarHeight" :options="overtimeBarOptions" :series="overtimeBarSeries" />
                     </div>
                   </div>
 
@@ -2502,6 +2571,7 @@ function visitorArea(userId) {
                       <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                         <tr>
                           <th class="px-4 py-3 text-left">Karyawan</th>
+                          <th class="px-4 py-3 text-left">Jabatan</th>
                           <th class="px-4 py-3 text-right">Hadir</th>
                           <th class="px-4 py-3 text-right">Telat</th>
                           <th class="px-4 py-3 text-right">Lembur</th>
@@ -2512,18 +2582,48 @@ function visitorArea(userId) {
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
-                        <tr v-for="emp in attendanceEmployees" :key="emp.id" class="hover:bg-indigo-50/30">
-                          <td class="px-4 py-2.5 font-medium">{{ emp.name }}</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.present_days ?? 0 }}</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.total_telat ?? 0 }} mnt</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.total_lembur ?? 0 }} jam</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.alpa_days ?? 0 }}</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.off_days ?? 0 }}</td>
-                          <td class="px-4 py-2.5 text-right">{{ emp.leave_days ?? 0 }}</td>
-                          <td class="px-4 py-2.5 text-right font-semibold">{{ emp.percentage ?? 0 }}%</td>
-                        </tr>
+                        <template v-for="group in attendanceEmployeesByDivision" :key="group.division">
+                          <tr class="bg-indigo-50/70">
+                            <td colspan="9" class="px-4 py-2 text-xs font-bold uppercase tracking-wide text-indigo-800">
+                              {{ group.division }}
+                            </td>
+                          </tr>
+                          <tr v-for="emp in group.employees" :key="emp.id" class="hover:bg-indigo-50/30">
+                            <td class="px-4 py-2.5">
+                              <div class="flex items-center gap-2.5 min-w-0">
+                                <button
+                                  v-if="waiterAvatarUrl(emp.avatar)"
+                                  type="button"
+                                  class="w-8 h-8 rounded-full overflow-hidden border-2 border-indigo-200 shrink-0 cursor-pointer hover:ring-2 hover:ring-indigo-400 transition-all"
+                                  @click.stop="openEmployeeLightbox(emp)"
+                                >
+                                  <img
+                                    :src="waiterAvatarUrl(emp.avatar)"
+                                    :alt="emp.name"
+                                    class="w-full h-full object-cover hover:scale-105 transition-transform"
+                                  />
+                                </button>
+                                <div
+                                  v-else
+                                  class="w-8 h-8 rounded-full bg-indigo-100 border-2 border-indigo-200 shrink-0 flex items-center justify-center text-xs font-bold text-indigo-700"
+                                >
+                                  {{ waiterInitial(emp.name) }}
+                                </div>
+                                <span class="font-medium truncate">{{ emp.name }}</span>
+                              </div>
+                            </td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ emp.jabatan || '-' }}</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.present_days ?? 0 }}</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.total_telat ?? 0 }} mnt</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.total_lembur ?? 0 }} jam</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.alpa_days ?? 0 }}</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.off_days ?? 0 }}</td>
+                            <td class="px-4 py-2.5 text-right">{{ emp.leave_days ?? 0 }}</td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ emp.percentage ?? 0 }}%</td>
+                          </tr>
+                        </template>
                         <tr v-if="!attendanceEmployees.length">
-                          <td colspan="8" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
+                          <td colspan="9" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
                         </tr>
                       </tbody>
                     </table>
@@ -2665,6 +2765,13 @@ function visitorArea(userId) {
       :imgs="waiterLightboxImages"
       :index="waiterLightboxIndex"
       @hide="waiterLightboxVisible = false"
+    />
+
+    <VueEasyLightbox
+      :visible="employeeLightboxVisible"
+      :imgs="employeeLightboxImages"
+      :index="employeeLightboxIndex"
+      @hide="employeeLightboxVisible = false"
     />
   </AppLayout>
 </template>
