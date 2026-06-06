@@ -64,6 +64,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-wallet',
     accent: 'from-rose-600 to-orange-700',
   },
+  pr_ops: {
+    title: 'Detail Pengeluaran PR Ops',
+    subtitle: 'Pembayaran Purchase Requisition Ops per kategori',
+    icon: 'fa-solid fa-file-invoice-dollar',
+    accent: 'from-cyan-600 to-blue-700',
+  },
 }));
 
 function applyFilters() {
@@ -250,6 +256,23 @@ const pettyCashAllTransactions = computed(() => {
     (a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')),
   );
 });
+
+const prOpsCategories = computed(() =>
+  (props.analysis?.pr_ops_expenditure?.categories || []).filter((c) => Number(c.amount) > 0),
+);
+const prOpsPieSeries = computed(() => prOpsCategories.value.map((c) => Number(c.amount)));
+const prOpsPieLabels = computed(() => prOpsCategories.value.map((c) => {
+  const division = c.division ? `[${c.division}] ` : '';
+  return `${division}${c.label}`;
+}));
+const prOpsPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: prOpsPieLabels.value,
+  colors: ['#0EA5E9', '#6366F1', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#EF4444', '#64748B'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
 
 const attendanceComposition = computed(() =>
   (props.analysis?.employee_attendance?.composition || []).filter((c) => Number(c.days) > 0),
@@ -668,6 +691,90 @@ function visitorArea(userId) {
           </div>
         </section>
 
+        <!-- PR Ops Expenditure -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Pengeluaran Purchase Requisition Ops</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Pembayaran non food dari PR Ops · per kategori budget
+                <span class="text-cyan-600">· Klik untuk detail</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-left rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-3 hover:border-cyan-300 hover:shadow-sm transition-all"
+              @click="openModal('pr_ops')"
+            >
+              <p class="text-xs font-semibold uppercase text-cyan-700">Total PR Ops</p>
+              <p class="text-xl font-bold text-cyan-900 mt-0.5">{{ formatRupiah(analysis.pr_ops_expenditure?.total) }}</p>
+              <p class="text-xs text-cyan-600 mt-1">
+                {{ analysis.pr_ops_expenditure?.payment_count ?? 0 }} pembayaran
+              </p>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div
+              v-if="prOpsCategories.length"
+              class="bg-slate-50 rounded-xl p-3 cursor-pointer hover:ring-2 hover:ring-cyan-200 transition-all"
+              @click="openModal('pr_ops')"
+            >
+              <apexchart type="pie" height="320" :options="prOpsPieOptions" :series="prOpsPieSeries" />
+            </div>
+            <div
+              v-else
+              class="bg-slate-50 rounded-xl p-8 text-center text-slate-400 text-sm flex items-center justify-center"
+            >
+              Tidak ada pengeluaran PR Ops pada periode ini.
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="text-left text-xs uppercase text-slate-500 border-b">
+                    <th class="py-2 pr-4">Kategori</th>
+                    <th class="py-2 text-right">Nominal</th>
+                    <th class="py-2 text-right">Pembayaran</th>
+                    <th class="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="cat in analysis.pr_ops_expenditure?.categories || []"
+                    :key="cat.category_id"
+                    class="border-b border-slate-100 hover:bg-cyan-50/50 cursor-pointer"
+                    @click="openModal('pr_ops')"
+                  >
+                    <td class="py-2.5 pr-4">
+                      <span v-if="cat.division" class="text-xs text-slate-400 block">{{ cat.division }}</span>
+                      {{ cat.label }}
+                    </td>
+                    <td class="py-2.5 text-right font-medium">{{ formatRupiah(cat.amount) }}</td>
+                    <td class="py-2.5 text-right text-slate-600">{{ cat.payment_count ?? 0 }}</td>
+                    <td class="py-2.5 text-right text-slate-500">
+                      {{
+                        analysis.pr_ops_expenditure?.total > 0
+                          ? `${((cat.amount / analysis.pr_ops_expenditure.total) * 100).toFixed(1)}%`
+                          : '-'
+                      }}
+                    </td>
+                  </tr>
+                  <tr class="font-bold bg-slate-50">
+                    <td class="py-2 pr-4">Total</td>
+                    <td class="py-2 text-right">{{ formatRupiah(analysis.pr_ops_expenditure?.total) }}</td>
+                    <td class="py-2 text-right">{{ analysis.pr_ops_expenditure?.payment_count ?? 0 }}</td>
+                    <td class="py-2 text-right">100%</td>
+                  </tr>
+                  <tr v-if="!(analysis.pr_ops_expenditure?.categories?.length)">
+                    <td colspan="4" class="py-6 text-center text-slate-400">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- Employee Attendance -->
         <section class="space-y-4">
           <div>
@@ -805,6 +912,30 @@ function visitorArea(userId) {
                       <p class="text-xl font-bold text-indigo-900 mt-1">{{ formatRupiah(analysis.revenue?.dinner) }}</p>
                     </div>
                   </div>
+
+                  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div class="rounded-xl bg-red-50 border border-red-100 p-3">
+                      <p class="text-[10px] text-red-700 font-semibold uppercase">Discount Promo</p>
+                      <p class="text-lg font-bold text-red-900 mt-1">{{ formatRupiah(analysis.revenue?.discount) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-rose-50 border border-rose-100 p-3">
+                      <p class="text-[10px] text-rose-700 font-semibold uppercase">Manual Discount</p>
+                      <p class="text-lg font-bold text-rose-900 mt-1">{{ formatRupiah(analysis.revenue?.manual_discount) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-yellow-50 border border-yellow-100 p-3">
+                      <p class="text-[10px] text-yellow-700 font-semibold uppercase">Service Charge</p>
+                      <p class="text-lg font-bold text-yellow-900 mt-1">{{ formatRupiah(analysis.revenue?.service_charge) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-violet-50 border border-violet-100 p-3">
+                      <p class="text-[10px] text-violet-700 font-semibold uppercase">Commission Fee</p>
+                      <p class="text-lg font-bold text-violet-900 mt-1">{{ formatRupiah(analysis.revenue?.commission_fee) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-3 sm:col-span-3 lg:col-span-1">
+                      <p class="text-[10px] text-emerald-700 font-semibold uppercase">Net Sales</p>
+                      <p class="text-lg font-bold text-emerald-900 mt-1">{{ formatRupiah(analysis.revenue?.net_sales) }}</p>
+                    </div>
+                  </div>
+
                   <div v-if="analysis.revenue?.daily?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
                     <h3 class="text-sm font-semibold text-slate-800 mb-3">Trend Harian</h3>
                     <apexchart type="area" height="280" :options="revenueDailyOptions" :series="revenueDailySeries" />
@@ -815,6 +946,11 @@ function visitorArea(userId) {
                         <tr>
                           <th class="px-4 py-3 text-left">Tanggal</th>
                           <th class="px-4 py-3 text-right">Revenue</th>
+                          <th class="px-4 py-3 text-right">Discount</th>
+                          <th class="px-4 py-3 text-right">Manual</th>
+                          <th class="px-4 py-3 text-right">Service</th>
+                          <th class="px-4 py-3 text-right">Comm Fee</th>
+                          <th class="px-4 py-3 text-right">Net Sales</th>
                           <th class="px-4 py-3 text-right">Cover</th>
                           <th class="px-4 py-3 text-right">Lunch</th>
                           <th class="px-4 py-3 text-right">Dinner</th>
@@ -823,14 +959,34 @@ function visitorArea(userId) {
                       </thead>
                       <tbody class="divide-y divide-slate-100">
                         <tr v-for="row in analysis.revenue?.daily || []" :key="row.date" class="hover:bg-slate-50">
-                          <td class="px-4 py-2.5">{{ row.date }}</td>
+                          <td class="px-4 py-2.5 whitespace-nowrap">{{ row.date }}</td>
                           <td class="px-4 py-2.5 text-right font-medium">{{ formatRupiah(row.revenue) }}</td>
+                          <td class="px-4 py-2.5 text-right text-red-600">{{ formatRupiah(row.discount) }}</td>
+                          <td class="px-4 py-2.5 text-right text-rose-600">{{ formatRupiah(row.manual_discount) }}</td>
+                          <td class="px-4 py-2.5 text-right text-yellow-700">{{ formatRupiah(row.service_charge) }}</td>
+                          <td class="px-4 py-2.5 text-right text-violet-700">{{ formatRupiah(row.commission_fee) }}</td>
+                          <td class="px-4 py-2.5 text-right font-semibold text-emerald-700">{{ formatRupiah(row.net_sales) }}</td>
                           <td class="px-4 py-2.5 text-right">{{ row.cover }}</td>
                           <td class="px-4 py-2.5 text-right text-slate-600">{{ formatRupiah(row.lunch) }}</td>
                           <td class="px-4 py-2.5 text-right text-slate-600">{{ formatRupiah(row.dinner) }}</td>
                           <td class="px-4 py-2.5 text-right">{{ row.orders }}</td>
                         </tr>
                       </tbody>
+                      <tfoot v-if="analysis.revenue?.daily?.length" class="bg-slate-50 font-semibold text-sm">
+                        <tr>
+                          <td class="px-4 py-3">Total</td>
+                          <td class="px-4 py-3 text-right">{{ formatRupiah(analysis.revenue?.total) }}</td>
+                          <td class="px-4 py-3 text-right text-red-600">{{ formatRupiah(analysis.revenue?.discount) }}</td>
+                          <td class="px-4 py-3 text-right text-rose-600">{{ formatRupiah(analysis.revenue?.manual_discount) }}</td>
+                          <td class="px-4 py-3 text-right text-yellow-700">{{ formatRupiah(analysis.revenue?.service_charge) }}</td>
+                          <td class="px-4 py-3 text-right text-violet-700">{{ formatRupiah(analysis.revenue?.commission_fee) }}</td>
+                          <td class="px-4 py-3 text-right text-emerald-700">{{ formatRupiah(analysis.revenue?.net_sales) }}</td>
+                          <td class="px-4 py-3 text-right">{{ analysis.revenue?.cover ?? 0 }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatRupiah(analysis.revenue?.lunch) }}</td>
+                          <td class="px-4 py-3 text-right">{{ formatRupiah(analysis.revenue?.dinner) }}</td>
+                          <td class="px-4 py-3 text-right">{{ analysis.revenue?.order_count ?? 0 }}</td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </template>
@@ -1110,6 +1266,91 @@ function visitorArea(userId) {
                         </tr>
                         <tr v-if="!pettyCashAllTransactions.length">
                           <td colspan="7" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi petty cash pada periode ini.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+
+                <!-- PR Ops -->
+                <template v-else-if="activeModal === 'pr_ops'">
+                  <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-100 p-4 lg:col-span-2">
+                      <p class="text-xs text-cyan-700 font-semibold uppercase">Total Pengeluaran PR Ops</p>
+                      <p class="text-2xl font-bold text-cyan-900 mt-1">{{ formatRupiah(analysis.pr_ops_expenditure?.total) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                      <p class="text-xs text-slate-500 font-semibold uppercase">Jumlah Pembayaran</p>
+                      <p class="text-2xl font-bold text-slate-900 mt-1">{{ analysis.pr_ops_expenditure?.payment_count ?? 0 }}</p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    <div v-if="prOpsCategories.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Distribusi per Kategori</h3>
+                      <apexchart type="pie" height="300" :options="prOpsPieOptions" :series="prOpsPieSeries" />
+                    </div>
+                    <div class="rounded-xl border border-slate-200 p-4">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-3">Ringkasan Kategori</h3>
+                      <div class="space-y-2 max-h-[320px] overflow-y-auto">
+                        <div
+                          v-for="cat in analysis.pr_ops_expenditure?.categories || []"
+                          :key="cat.category_id"
+                          class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0"
+                        >
+                          <div>
+                            <span v-if="cat.division" class="text-xs text-slate-400 block">{{ cat.division }}</span>
+                            <span class="text-slate-800 font-medium">{{ cat.label }}</span>
+                          </div>
+                          <div class="text-right shrink-0">
+                            <p class="font-semibold">{{ formatRupiah(cat.amount) }}</p>
+                            <p class="text-xs text-slate-500">
+                              {{
+                                analysis.pr_ops_expenditure?.total > 0
+                                  ? `${((cat.amount / analysis.pr_ops_expenditure.total) * 100).toFixed(1)}%`
+                                  : '-'
+                              }}
+                            </p>
+                          </div>
+                        </div>
+                        <p v-if="!(analysis.pr_ops_expenditure?.categories?.length)" class="text-sm text-slate-400 text-center py-6">
+                          Tidak ada data kategori.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th class="px-4 py-3 text-left">Tanggal</th>
+                          <th class="px-4 py-3 text-left">No. Payment</th>
+                          <th class="px-4 py-3 text-left">PR</th>
+                          <th class="px-4 py-3 text-left">Kategori</th>
+                          <th class="px-4 py-3 text-left">PO</th>
+                          <th class="px-4 py-3 text-left">Metode</th>
+                          <th class="px-4 py-3 text-right">Nominal</th>
+                          <th class="px-4 py-3 text-left">Judul</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <tr
+                          v-for="row in analysis.pr_ops_expenditure?.transactions || []"
+                          :key="row.id"
+                          class="hover:bg-cyan-50/30"
+                        >
+                          <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.payment_date || '-' }}</td>
+                          <td class="px-4 py-2.5 font-medium">{{ row.payment_number }}</td>
+                          <td class="px-4 py-2.5">{{ row.pr_number }}</td>
+                          <td class="px-4 py-2.5">{{ row.category_name }}</td>
+                          <td class="px-4 py-2.5 text-slate-600">{{ row.po_number || '-' }}</td>
+                          <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
+                          <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.amount) }}</td>
+                          <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.title || '-' }}</td>
+                        </tr>
+                        <tr v-if="!(analysis.pr_ops_expenditure?.transactions?.length)">
+                          <td colspan="8" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
                         </tr>
                       </tbody>
                     </table>
