@@ -293,11 +293,11 @@ class OutletAnalyzerService
     /**
      * Ranking waiter — total revenue (grand_total) per waiter dari orders.
      *
-     * @return array{top: list<array<string, mixed>>}
+     * @return array{top: list<array<string, mixed>>, rest: list<array<string, mixed>>}
      */
     private function getWaiterUpsellRanking(object $outlet, string $start, string $end): array
     {
-        $empty = ['top' => []];
+        $empty = ['top' => [], 'rest' => []];
 
         $qrCode = trim((string) ($outlet->qr_code ?? ''));
         if ($qrCode === '') {
@@ -322,8 +322,11 @@ class OutletAnalyzerService
             ->groupBy('o.waiters')
             ->orderByDesc('total_revenue')
             ->orderByDesc('order_count')
-            ->limit(3)
             ->get();
+
+        if ($rows->isEmpty()) {
+            return $empty;
+        }
 
         $waiterNames = $rows->pluck('waiter_name')->filter()->values()->all();
         $usersByWaiterName = $this->resolveUsersForWaiterNames(
@@ -331,7 +334,22 @@ class OutletAnalyzerService
             (int) $outlet->id_outlet,
         );
 
-        $top = $rows->values()->map(function ($row, $index) use ($usersByWaiterName) {
+        $ranked = $this->mapWaiterRankingRows($rows, $usersByWaiterName);
+
+        return [
+            'top' => array_slice($ranked, 0, 3),
+            'rest' => array_slice($ranked, 3),
+        ];
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @param  array<string, object>  $usersByWaiterName
+     * @return list<array<string, mixed>>
+     */
+    private function mapWaiterRankingRows($rows, array $usersByWaiterName): array
+    {
+        return $rows->values()->map(function ($row, $index) use ($usersByWaiterName) {
             $waiterName = (string) ($row->waiter_name ?? '-');
             $user = $usersByWaiterName[$waiterName] ?? null;
 
@@ -345,8 +363,6 @@ class OutletAnalyzerService
                 'cover' => (int) ($row->cover ?? 0),
             ];
         })->all();
-
-        return ['top' => $top];
     }
 
     /**

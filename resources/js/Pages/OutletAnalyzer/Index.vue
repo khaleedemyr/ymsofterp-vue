@@ -287,9 +287,11 @@ const topFoodItems = computed(() => props.analysis?.top_menu_items?.top_food || 
 const topBeverageItems = computed(() => props.analysis?.top_menu_items?.top_beverages || []);
 
 const waiterUpsellTop = computed(() => props.analysis?.waiter_upsell_ranking?.top || []);
+const waiterUpsellRest = computed(() => props.analysis?.waiter_upsell_ranking?.rest || []);
 const waiterUpsellRank1 = computed(() => waiterUpsellTop.value[0] || null);
 const waiterUpsellRank2 = computed(() => waiterUpsellTop.value[1] || null);
 const waiterUpsellRank3 = computed(() => waiterUpsellTop.value[2] || null);
+const waiterUpsellMaxRevenue = computed(() => Number(waiterUpsellTop.value[0]?.total_revenue || 0));
 
 const topFoodBarSeries = computed(() => [{
   name: 'Qty',
@@ -846,6 +848,47 @@ function visitorArea(userId) {
                   <div class="w-full h-20 sm:h-24 bg-amber-400 rounded-t-lg flex items-center justify-center shadow-inner">
                     <span class="text-3xl sm:text-4xl font-black text-amber-900/80">3</span>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="waiterUpsellRest.length"
+              class="mt-6 pt-5 border-t border-amber-200/80 max-w-2xl mx-auto"
+            >
+              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                Waiter lainnya
+              </p>
+              <div class="space-y-2.5">
+                <div
+                  v-for="waiter in waiterUpsellRest"
+                  :key="`${waiter.rank}-${waiter.waiter_name}`"
+                  class="flex items-center gap-3 rounded-xl bg-white/80 border border-amber-100 px-3 py-2.5 shadow-sm"
+                >
+                  <span class="w-6 text-center text-xs font-bold text-slate-400 shrink-0">
+                    {{ waiter.rank }}
+                  </span>
+                  <div class="w-10 h-10 rounded-full bg-white border-2 border-amber-200 overflow-hidden flex items-center justify-center shrink-0">
+                    <img
+                      v-if="waiterAvatarUrl(waiter.avatar)"
+                      :src="waiterAvatarUrl(waiter.avatar)"
+                      :alt="waiter.waiter_name"
+                      class="w-full h-full object-cover"
+                    />
+                    <span v-else class="text-sm font-bold text-amber-600">{{ waiterInitial(waiter.waiter_name) }}</span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-semibold text-slate-800 truncate">{{ waiter.waiter_name }}</p>
+                    <div class="mt-1.5 h-1.5 rounded-full bg-amber-100 overflow-hidden">
+                      <div
+                        class="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-500"
+                        :style="{ width: `${waiterUpsellMaxRevenue ? Math.max(4, (Number(waiter.total_revenue) / waiterUpsellMaxRevenue) * 100) : 0}%` }"
+                      />
+                    </div>
+                  </div>
+                  <p class="text-sm font-bold text-amber-700 shrink-0 tabular-nums">
+                    {{ formatRupiah(waiter.total_revenue) }}
+                  </p>
                 </div>
               </div>
             </div>
