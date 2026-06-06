@@ -110,8 +110,9 @@ class InvoiceOutletReportExport
         
         foreach ($this->data as $index => $rowData) {
             $firstItemRow = $currentRow;
-            $hasItems = isset($this->details[$rowData->gr_id]) && count($this->details[$rowData->gr_id]) > 0;
-            $itemCount = $hasItems ? count($this->details[$rowData->gr_id]) : 1;
+            $detailKey = ($rowData->transaction_type ?? 'GR') . '-' . $rowData->gr_id;
+            $hasItems = isset($this->details[$detailKey]) && count($this->details[$detailKey]) > 0;
+            $itemCount = $hasItems ? count($this->details[$detailKey]) : 1;
             
             // Main data row
             $sheet->setCellValueByColumnAndRow(1, $currentRow, $no);
@@ -127,7 +128,7 @@ class InvoiceOutletReportExport
             
             // Item details
             if ($hasItems) {
-                foreach ($this->details[$rowData->gr_id] as $item) {
+                foreach ($this->details[$detailKey] as $item) {
                     if ($currentRow > $firstItemRow) {
                         // Repeat header data for merged rows
                         $sheet->setCellValueByColumnAndRow(1, $currentRow, '');

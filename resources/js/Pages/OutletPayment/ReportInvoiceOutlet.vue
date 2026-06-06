@@ -76,6 +76,7 @@
           <select v-model="filterTransactionType" class="border border-gray-300 rounded-lg px-2 py-1 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua</option>
             <option value="GR">GR</option>
+            <option value="GSR">GSR (GR Nomor Seri)</option>
             <option value="RWS">RWS</option>
           </select>
         </div>
@@ -123,11 +124,11 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <template v-for="row in props.data" :key="row.gr_id">
+            <template v-for="row in props.data" :key="row.transaction_type + '-' + row.gr_id">
               <tr class="hover:bg-blue-50 transition-colors duration-200 group">
                 <td class="px-2 py-2 align-top">
-                  <button @click="toggleExpand(row.gr_id)" class="focus:outline-none transition-transform duration-200 group-hover:scale-110">
-                    <span v-if="expanded[row.gr_id]">▼</span>
+                  <button @click="toggleExpand(row.transaction_type + '-' + row.gr_id)" class="focus:outline-none transition-transform duration-200 group-hover:scale-110">
+                    <span v-if="expanded[row.transaction_type + '-' + row.gr_id]">▼</span>
                     <span v-else>▶</span>
                   </button>
                 </td>
@@ -135,12 +136,12 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.outlet_name }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ formatWarehouse(row) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <span :class="row.transaction_type === 'GR' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'" class="px-2 py-1 rounded-full text-xs font-semibold">
+                  <span :class="getTransactionTypeBadgeClass(row.transaction_type)" class="px-2 py-1 rounded-full text-xs font-semibold">
                     {{ row.transaction_type }}
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">
-                  <div v-if="row.transaction_type === 'GR'">
+                  <div v-if="row.transaction_type === 'GR' || row.transaction_type === 'GSR'">
                     <div v-if="row.fo_mode" :class="getFOModeBadgeClass(row.fo_mode)" class="px-2 py-1 rounded-full text-xs font-semibold mb-1 inline-block">
                       {{ row.fo_mode }}
                     </div>
@@ -156,11 +157,11 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatRupiah(row.payment_total) }}</td>
               </tr>
               <transition name="fade-expand">
-                <tr v-if="expanded[row.gr_id]" :key="'detail-'+row.gr_id">
+                <tr v-if="expanded[row.transaction_type + '-' + row.gr_id]" :key="'detail-'+row.transaction_type+'-'+row.gr_id">
                   <td></td>
                   <td colspan="7" class="bg-gray-50 px-0 py-0">
                     <div class="rounded-lg border border-blue-100 bg-blue-50/60 shadow-inner mx-4 my-2 overflow-x-auto">
-                      <div v-if="!props.details[row.gr_id] || !props.details[row.gr_id].length" class="text-gray-400 py-6 text-center">Tidak ada detail.</div>
+                      <div v-if="!props.details[row.transaction_type + '-' + row.gr_id] || !props.details[row.transaction_type + '-' + row.gr_id].length" class="text-gray-400 py-6 text-center">Tidak ada detail.</div>
                       <div v-else>
                         <table class="w-full text-xs">
                           <thead class="sticky top-0 z-10 bg-blue-100/80">
@@ -173,7 +174,7 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="item in props.details[row.gr_id]" :key="item.item_name">
+                            <tr v-for="item in props.details[row.transaction_type + '-' + row.gr_id]" :key="item.item_name">
                               <td class="px-4 py-2 border-b">{{ item.item_name }}</td>
                               <td class="px-4 py-2 border-b text-right">{{ item.qty }}</td>
                               <td class="px-4 py-2 border-b">{{ item.unit_name }}</td>
@@ -221,7 +222,7 @@
         </div>
         
         <!-- Breakdown Section -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <!-- GR Breakdown -->
           <div class="bg-white rounded-lg p-4 border-l-4 border-green-500">
             <div class="flex items-center justify-between mb-2">
@@ -233,6 +234,19 @@
               </div>
             </div>
             <div class="text-2xl font-bold text-green-700">{{ formatRupiah(grTotal) }}</div>
+          </div>
+
+          <!-- GSR Breakdown -->
+          <div class="bg-white rounded-lg p-4 border-l-4 border-purple-500">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <span class="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-semibold">
+                  GSR (GR Nomor Seri)
+                </span>
+                <span class="text-sm text-gray-600">{{ gsrCount }} transaksi</span>
+              </div>
+            </div>
+            <div class="text-2xl font-bold text-purple-700">{{ formatRupiah(gsrTotal) }}</div>
           </div>
           
           <!-- RWS Breakdown -->
@@ -253,9 +267,12 @@
         <div class="mt-4 pt-4 border-t border-gray-200">
           <div class="flex items-center justify-between text-sm">
             <span class="text-gray-600">Persentase:</span>
-            <div class="flex items-center gap-4">
+            <div class="flex items-center gap-4 flex-wrap">
               <span class="text-green-700 font-semibold">
                 GR: {{ grPercentage }}%
+              </span>
+              <span class="text-purple-700 font-semibold">
+                GSR: {{ gsrPercentage }}%
               </span>
               <span class="text-blue-700 font-semibold">
                 RWS: {{ rwsPercentage }}%
@@ -377,6 +394,11 @@ const grCount = computed(() => {
   return props.data.filter(row => row.transaction_type === 'GR').length;
 });
 
+// Computed property untuk menghitung jumlah GSR
+const gsrCount = computed(() => {
+  return props.data.filter(row => row.transaction_type === 'GSR').length;
+});
+
 // Computed property untuk menghitung jumlah RWS
 const rwsCount = computed(() => {
   return props.data.filter(row => row.transaction_type === 'RWS').length;
@@ -386,6 +408,13 @@ const rwsCount = computed(() => {
 const grTotal = computed(() => {
   return props.data
     .filter(row => row.transaction_type === 'GR')
+    .reduce((total, row) => total + (parseFloat(row.payment_total) || 0), 0);
+});
+
+// Computed property untuk total GSR
+const gsrTotal = computed(() => {
+  return props.data
+    .filter(row => row.transaction_type === 'GSR')
     .reduce((total, row) => total + (parseFloat(row.payment_total) || 0), 0);
 });
 
@@ -400,6 +429,11 @@ const rwsTotal = computed(() => {
 // Computed property untuk persentase GR
 const grPercentage = computed(() => {
   return grandTotal.value > 0 ? Math.round((grTotal.value / grandTotal.value) * 100) : 0;
+});
+
+// Computed property untuk persentase GSR
+const gsrPercentage = computed(() => {
+  return grandTotal.value > 0 ? Math.round((gsrTotal.value / grandTotal.value) * 100) : 0;
 });
 
 // Computed property untuk persentase RWS
@@ -492,6 +526,13 @@ function formatWarehouse(row) {
   if (row.warehouse_name) return row.warehouse_name;
   if (row.warehouse_division_name) return row.warehouse_division_name;
   return '-';
+}
+
+function getTransactionTypeBadgeClass(transactionType) {
+  if (transactionType === 'GR') return 'bg-green-100 text-green-800';
+  if (transactionType === 'GSR') return 'bg-purple-100 text-purple-800';
+  if (transactionType === 'RWS') return 'bg-blue-100 text-blue-800';
+  return 'bg-gray-100 text-gray-800';
 }
 
 function getFOModeBadgeClass(foMode) {

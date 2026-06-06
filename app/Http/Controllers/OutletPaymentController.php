@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\OutletPayment;
 use App\Models\Outlet;
 use App\Models\OutletFoodGoodReceive;
+use App\Http\Traits\ReportHelperTrait;
 use App\Services\BankBookService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 class OutletPaymentController extends Controller
 {
+    use ReportHelperTrait;
     public function index(Request $request)
     {
         // Get filter parameters
@@ -1571,14 +1573,13 @@ class OutletPaymentController extends Controller
         if ($request->filled('fo_mode')) {
             $grQuery->where('ffo.fo_mode', $request->fo_mode);
         }
-        $transactionType = $request->input('transaction_type');
-        if ($transactionType === 'GR') {
-            $data = $grQuery->get()->sortByDesc('invoice_date')->values();
-        } elseif ($transactionType === 'RWS') {
-            $data = $rwsQuery->get()->sortByDesc('invoice_date')->values();
-        } else {
-            $data = $grQuery->union($rwsQuery)->get()->sortByDesc('invoice_date')->values();
+        $gsrQuery = $this->buildInvoiceReportGsrQuery();
+        if ($gsrQuery) {
+            $this->applyInvoiceReportGsrFilters($gsrQuery, $request, $user);
         }
+
+        $transactionType = $request->input('transaction_type');
+        $data = $this->mergeInvoiceReportTransactions($grQuery, $rwsQuery, $gsrQuery, $transactionType);
 
         $perPage = is_array($request->input('per_page')) ? (int) ($request->input('per_page')[0] ?? 15) : (int) $request->input('per_page', 15);
         $currentPage = is_array($request->input('page')) ? (int) ($request->input('page')[0] ?? 1) : (int) $request->input('page', 1);
@@ -1604,7 +1605,7 @@ class OutletPaymentController extends Controller
                 ->select('gri.outlet_food_good_receive_id as gr_id', 'i.name as item_name', 'gri.received_qty as qty', 'u.name as unit_name', DB::raw('COALESCE(ffoi.price, 0) as price'), DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'))
                 ->get();
             foreach ($grItemRows as $row) {
-                $details[$row->gr_id][] = $row;
+                $details[$this->invoiceReportDetailKey('GR', $row->gr_id)][] = $row;
             }
         }
         $rwsIds = collect($paginatedData->items())->where('transaction_type', 'RWS')->pluck('gr_id')->unique()->values();
@@ -1615,17 +1616,20 @@ class OutletPaymentController extends Controller
                 ->select('rwsi.retail_warehouse_sale_id as gr_id', 'i.name as item_name', 'rwsi.qty as qty', 'rwsi.unit as unit_name', 'rwsi.price as price', 'rwsi.subtotal as subtotal')
                 ->get();
             foreach ($rwsItemRows as $row) {
-                $details[$row->gr_id][] = $row;
+                $details[$this->invoiceReportDetailKey('RWS', $row->gr_id)][] = $row;
             }
         }
+        $gsrIds = collect($paginatedData->items())->where('transaction_type', 'GSR')->pluck('gr_id')->unique()->values();
+        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrIds));
 
         $paginatedItems = collect($paginatedData->items());
         $dataArray = [];
         foreach ($paginatedItems as $row) {
             $rowData = (array) $row;
+            $detailKey = $this->invoiceReportDetailKey($rowData['transaction_type'], $rowData['gr_id']);
             if ($rowData['transaction_type'] === 'GR') {
-                if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
-                    $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
+                if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
+                    $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
                 } else {
                     $grTotal = DB::table('outlet_food_good_receive_items as gri')
                         ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
@@ -1641,12 +1645,19 @@ class OutletPaymentController extends Controller
             }
             if ($rowData['transaction_type'] === 'RWS') {
                 if (!isset($rowData['payment_total']) || $rowData['payment_total'] === null) {
-                    if (isset($details[$rowData['gr_id']]) && count($details[$rowData['gr_id']]) > 0) {
-                        $rowData['payment_total'] = collect($details[$rowData['gr_id']])->sum('subtotal');
+                    if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
+                        $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
                     } else {
                         $rwsTotal = DB::table('retail_warehouse_sale_items')->where('retail_warehouse_sale_id', $rowData['gr_id'])->sum('subtotal');
                         $rowData['payment_total'] = $rwsTotal ?: 0;
                     }
+                }
+            }
+            if ($rowData['transaction_type'] === 'GSR') {
+                if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
+                    $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
+                } else {
+                    $rowData['payment_total'] = $this->sumInvoiceReportGsrTotal($rowData['gr_id']);
                 }
             }
             $dataArray[] = $rowData;
@@ -1794,17 +1805,13 @@ class OutletPaymentController extends Controller
             $grQuery->where('ffo.fo_mode', $request->fo_mode);
         }
         
-        // Filter transaction type
-        $transactionType = $request->input('transaction_type');
-        
-        // Gabungkan kedua query dan order by
-        if ($transactionType === 'GR') {
-            $data = $grQuery->get()->sortByDesc('invoice_date')->values();
-        } elseif ($transactionType === 'RWS') {
-            $data = $rwsQuery->get()->sortByDesc('invoice_date')->values();
-        } else {
-            $data = $grQuery->union($rwsQuery)->get()->sortByDesc('invoice_date')->values();
+        $gsrQuery = $this->buildInvoiceReportGsrQuery();
+        if ($gsrQuery) {
+            $this->applyInvoiceReportGsrFilters($gsrQuery, $request, $user);
         }
+
+        $transactionType = $request->input('transaction_type');
+        $data = $this->mergeInvoiceReportTransactions($grQuery, $rwsQuery, $gsrQuery, $transactionType);
         
         // Ambil detail item per GR dan RWS
         $details = [];
@@ -1832,7 +1839,7 @@ class OutletPaymentController extends Controller
                 )
                 ->get();
             foreach ($grItemRows as $row) {
-                $details[$row->gr_id][] = $row;
+                $details[$this->invoiceReportDetailKey('GR', $row->gr_id)][] = $row;
             }
         }
         
@@ -1852,14 +1859,24 @@ class OutletPaymentController extends Controller
                 )
                 ->get();
             foreach ($rwsItemRows as $row) {
-                $details[$row->gr_id][] = $row;
+                $details[$this->invoiceReportDetailKey('RWS', $row->gr_id)][] = $row;
             }
         }
-        
-        // Update payment_total untuk GR berdasarkan total items
+
+        $gsrIds = $data->where('transaction_type', 'GSR')->pluck('gr_id')->unique()->values();
+        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrIds));
+
         foreach ($data as $row) {
-            if ($row->transaction_type === 'GR' && isset($details[$row->gr_id])) {
-                $row->payment_total = collect($details[$row->gr_id])->sum('subtotal');
+            $detailKey = $this->invoiceReportDetailKey($row->transaction_type, $row->gr_id);
+            if ($row->transaction_type === 'GR' && isset($details[$detailKey])) {
+                $row->payment_total = collect($details[$detailKey])->sum('subtotal');
+            }
+            if ($row->transaction_type === 'GSR') {
+                if (isset($details[$detailKey])) {
+                    $row->payment_total = collect($details[$detailKey])->sum('subtotal');
+                } else {
+                    $row->payment_total = $this->sumInvoiceReportGsrTotal($row->gr_id);
+                }
             }
         }
         
@@ -2046,6 +2063,162 @@ class OutletPaymentController extends Controller
                 'created_by' => auth()->id() ?? 1,
             ]);
         }
+    }
+
+    protected function invoiceReportDetailKey(string $transactionType, $id): string
+    {
+        return "{$transactionType}-{$id}";
+    }
+
+    protected function buildInvoiceReportGsrQuery()
+    {
+        if (!$this->rekapFjHasSerialGrTables()) {
+            return null;
+        }
+
+        $warehouseSub = '(SELECT w.name FROM outlet_serial_receive_items si
+            INNER JOIN items it ON si.item_id = it.id
+            LEFT JOIN warehouse_division wd ON it.warehouse_division_id = wd.id
+            LEFT JOIN warehouses w ON wd.warehouse_id = w.id
+            WHERE si.header_id = h.id LIMIT 1)';
+        $wdSub = '(SELECT wd.name FROM outlet_serial_receive_items si
+            INNER JOIN items it ON si.item_id = it.id
+            LEFT JOIN warehouse_division wd ON it.warehouse_division_id = wd.id
+            WHERE si.header_id = h.id LIMIT 1)';
+        $woSub = '(SELECT wo.name FROM outlet_serial_receive_items si
+            LEFT JOIN warehouse_outlets wo ON si.warehouse_outlet_id = wo.id
+            WHERE si.header_id = h.id LIMIT 1)';
+        $foModeSub = '(SELECT ffo.fo_mode FROM outlet_serial_receive_items si
+            INNER JOIN delivery_orders do ON si.delivery_order_id = do.id
+            INNER JOIN food_floor_orders ffo ON do.floor_order_id = ffo.id
+            WHERE si.header_id = h.id LIMIT 1)';
+        $roSub = '(SELECT ffo.order_number FROM outlet_serial_receive_items si
+            INNER JOIN delivery_orders do ON si.delivery_order_id = do.id
+            INNER JOIN food_floor_orders ffo ON do.floor_order_id = ffo.id
+            WHERE si.header_id = h.id LIMIT 1)';
+
+        return DB::table('outlet_serial_receive_headers as h')
+            ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->select(
+                'h.id as gr_id',
+                'h.number as gr_number',
+                'h.created_at as invoice_date',
+                'h.receive_date as gr_receive_date',
+                'h.notes as gr_notes',
+                'o.id_outlet',
+                'o.nama_outlet as outlet_name',
+                'u.nama_lengkap as created_by_name',
+                DB::raw("{$warehouseSub} as warehouse_name"),
+                DB::raw("{$wdSub} as warehouse_division_name"),
+                DB::raw("{$woSub} as warehouse_outlet_name"),
+                DB::raw("{$foModeSub} as fo_mode"),
+                DB::raw("{$roSub} as ro_number"),
+                DB::raw("'GSR' as transaction_type"),
+                DB::raw('NULL as payment_number'),
+                DB::raw('NULL as payment_total')
+            );
+    }
+
+    protected function applyInvoiceReportGsrFilters($gsrQuery, Request $request, $user): void
+    {
+        if ($user->id_outlet != 1) {
+            $gsrQuery->where('h.outlet_id', $user->id_outlet);
+        } elseif ($request->filled('outlet_id')) {
+            $gsrQuery->where('h.outlet_id', $request->outlet_id);
+        }
+
+        if ($request->from) {
+            $gsrQuery->whereDate('h.created_at', '>=', $request->from);
+        }
+        if ($request->to) {
+            $gsrQuery->whereDate('h.created_at', '<=', $request->to);
+        }
+
+        if ($request->search) {
+            $search = $request->search;
+            $gsrQuery->where(function ($q) use ($search) {
+                $q->where('h.number', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('fo_mode')) {
+            $gsrQuery->whereExists(function ($q) use ($request) {
+                $q->select(DB::raw(1))
+                    ->from('outlet_serial_receive_items as si')
+                    ->join('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
+                    ->join('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+                    ->whereColumn('si.header_id', 'h.id')
+                    ->where('ffo.fo_mode', $request->fo_mode);
+            });
+        }
+    }
+
+    protected function mergeInvoiceReportTransactions($grQuery, $rwsQuery, $gsrQuery, ?string $transactionType)
+    {
+        if ($transactionType === 'GR') {
+            return $grQuery->get()->sortByDesc('invoice_date')->values();
+        }
+        if ($transactionType === 'RWS') {
+            return $rwsQuery->get()->sortByDesc('invoice_date')->values();
+        }
+        if ($transactionType === 'GSR') {
+            return $gsrQuery ? $gsrQuery->get()->sortByDesc('invoice_date')->values() : collect();
+        }
+
+        $union = $grQuery->union($rwsQuery);
+        if ($gsrQuery) {
+            $union = $union->union($gsrQuery);
+        }
+
+        return $union->get()->sortByDesc('invoice_date')->values();
+    }
+
+    protected function fetchInvoiceReportGsrDetails($gsrIds): array
+    {
+        $details = [];
+        if (!$gsrIds || !count($gsrIds) || !$this->rekapFjHasSerialGrTables()) {
+            return $details;
+        }
+
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+        $gsrItemRows = DB::table('outlet_serial_receive_items as si')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->whereIn('si.header_id', $gsrIds)
+            ->select(
+                'si.header_id as gr_id',
+                'it.name as item_name',
+                'si.qty as qty',
+                DB::raw('COALESCE(u.name, "-") as unit_name'),
+                DB::raw("({$effectivePriceExpr}) as price"),
+                DB::raw("(si.qty * ({$effectivePriceExpr})) as subtotal")
+            )
+            ->get();
+
+        foreach ($gsrItemRows as $row) {
+            $details[$this->invoiceReportDetailKey('GSR', $row->gr_id)][] = $row;
+        }
+
+        return $details;
+    }
+
+    protected function sumInvoiceReportGsrTotal($headerId): float
+    {
+        if (!$this->rekapFjHasSerialGrTables()) {
+            return 0;
+        }
+
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+
+        return (float) DB::table('outlet_serial_receive_items as si')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->where('si.header_id', $headerId)
+            ->sum(DB::raw("si.qty * ({$effectivePriceExpr})"));
     }
 
 } 
