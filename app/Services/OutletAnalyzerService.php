@@ -206,6 +206,7 @@ class OutletAnalyzerService
             'service_charge' => 0.0,
             'commission_fee' => 0.0,
             'manual_discount' => 0.0,
+            'pb1' => 0.0,
             'net_sales' => 0.0,
             'daily' => [],
         ];
@@ -229,6 +230,7 @@ class OutletAnalyzerService
                 'service',
                 'commfee',
                 'manual_discount_amount',
+                'pb1',
             )
             ->get();
 
@@ -240,6 +242,7 @@ class OutletAnalyzerService
         $serviceCharge = 0.0;
         $commissionFee = 0.0;
         $manualDiscount = 0.0;
+        $pb1Total = 0.0;
         $netSales = 0.0;
         $daily = [];
 
@@ -249,6 +252,7 @@ class OutletAnalyzerService
             $orderService = (float) ($order->service ?? 0);
             $orderCommfee = (float) ($order->commfee ?? 0);
             $orderManualDiscount = (float) ($order->manual_discount_amount ?? 0);
+            $orderPb1 = (float) ($order->pb1 ?? 0);
             $orderNetSales = $amount - $orderDiscount - $orderService - $orderCommfee - $orderManualDiscount;
             $pax = (int) ($order->pax ?? 0);
             $date = date('Y-m-d', strtotime((string) $order->created_at));
@@ -268,6 +272,7 @@ class OutletAnalyzerService
                     'service_charge' => 0.0,
                     'commission_fee' => 0.0,
                     'manual_discount' => 0.0,
+                    'pb1' => 0.0,
                     'net_sales' => 0.0,
                 ];
             }
@@ -277,6 +282,7 @@ class OutletAnalyzerService
             $serviceCharge += $orderService;
             $commissionFee += $orderCommfee;
             $manualDiscount += $orderManualDiscount;
+            $pb1Total += $orderPb1;
             $netSales += $orderNetSales;
             $cover += $pax;
             $daily[$date]['revenue'] += $amount;
@@ -284,6 +290,7 @@ class OutletAnalyzerService
             $daily[$date]['service_charge'] += $orderService;
             $daily[$date]['commission_fee'] += $orderCommfee;
             $daily[$date]['manual_discount'] += $orderManualDiscount;
+            $daily[$date]['pb1'] += $orderPb1;
             $daily[$date]['net_sales'] += $orderNetSales;
             $daily[$date]['cover'] += $pax;
             $daily[$date]['orders']++;
@@ -310,6 +317,7 @@ class OutletAnalyzerService
             'service_charge' => round($serviceCharge, 2),
             'commission_fee' => round($commissionFee, 2),
             'manual_discount' => round($manualDiscount, 2),
+            'pb1' => round($pb1Total, 2),
             'net_sales' => round($netSales, 2),
             'daily' => array_values(array_map(function ($row) {
                 $row['revenue'] = round($row['revenue'], 2);
@@ -319,6 +327,7 @@ class OutletAnalyzerService
                 $row['service_charge'] = round($row['service_charge'], 2);
                 $row['commission_fee'] = round($row['commission_fee'], 2);
                 $row['manual_discount'] = round($row['manual_discount'], 2);
+                $row['pb1'] = round($row['pb1'], 2);
                 $row['net_sales'] = round($row['net_sales'], 2);
 
                 return $row;

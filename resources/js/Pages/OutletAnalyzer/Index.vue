@@ -1914,7 +1914,7 @@ function visitorArea(userId) {
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     <div class="rounded-xl bg-red-50 border border-red-100 p-3">
                       <p class="text-[10px] text-red-700 font-semibold uppercase">Discount Promo</p>
                       <p class="text-lg font-bold text-red-900 mt-1">{{ formatRupiah(analysis.revenue?.discount) }}</p>
@@ -1931,7 +1931,11 @@ function visitorArea(userId) {
                       <p class="text-[10px] text-violet-700 font-semibold uppercase">Commission Fee</p>
                       <p class="text-lg font-bold text-violet-900 mt-1">{{ formatRupiah(analysis.revenue?.commission_fee) }}</p>
                     </div>
-                    <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-3 sm:col-span-3 lg:col-span-1">
+                    <div class="rounded-xl bg-cyan-50 border border-cyan-100 p-3">
+                      <p class="text-[10px] text-cyan-700 font-semibold uppercase">PB1</p>
+                      <p class="text-lg font-bold text-cyan-900 mt-1">{{ formatRupiah(analysis.revenue?.pb1) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
                       <p class="text-[10px] text-emerald-700 font-semibold uppercase">Net Sales</p>
                       <p class="text-lg font-bold text-emerald-900 mt-1">{{ formatRupiah(analysis.revenue?.net_sales) }}</p>
                     </div>
@@ -1962,6 +1966,7 @@ function visitorArea(userId) {
                           <th class="px-4 py-3 text-right">Manual</th>
                           <th class="px-4 py-3 text-right">Service</th>
                           <th class="px-4 py-3 text-right">Comm Fee</th>
+                          <th class="px-4 py-3 text-right">PB1</th>
                           <th class="px-4 py-3 text-right">Net Sales</th>
                           <th class="px-4 py-3 text-right">Cover</th>
                           <th class="px-4 py-3 text-right">Lunch</th>
@@ -1977,6 +1982,7 @@ function visitorArea(userId) {
                           <td class="px-4 py-2.5 text-right text-rose-600">{{ formatRupiah(row.manual_discount) }}</td>
                           <td class="px-4 py-2.5 text-right text-yellow-700">{{ formatRupiah(row.service_charge) }}</td>
                           <td class="px-4 py-2.5 text-right text-violet-700">{{ formatRupiah(row.commission_fee) }}</td>
+                          <td class="px-4 py-2.5 text-right text-cyan-700">{{ formatRupiah(row.pb1) }}</td>
                           <td class="px-4 py-2.5 text-right font-semibold text-emerald-700">{{ formatRupiah(row.net_sales) }}</td>
                           <td class="px-4 py-2.5 text-right">{{ row.cover }}</td>
                           <td class="px-4 py-2.5 text-right text-slate-600">{{ formatRupiah(row.lunch) }}</td>
@@ -1992,6 +1998,7 @@ function visitorArea(userId) {
                           <td class="px-4 py-3 text-right text-rose-600">{{ formatRupiah(analysis.revenue?.manual_discount) }}</td>
                           <td class="px-4 py-3 text-right text-yellow-700">{{ formatRupiah(analysis.revenue?.service_charge) }}</td>
                           <td class="px-4 py-3 text-right text-violet-700">{{ formatRupiah(analysis.revenue?.commission_fee) }}</td>
+                          <td class="px-4 py-3 text-right text-cyan-700">{{ formatRupiah(analysis.revenue?.pb1) }}</td>
                           <td class="px-4 py-3 text-right text-emerald-700">{{ formatRupiah(analysis.revenue?.net_sales) }}</td>
                           <td class="px-4 py-3 text-right">{{ analysis.revenue?.cover ?? 0 }}</td>
                           <td class="px-4 py-3 text-right">{{ formatRupiah(analysis.revenue?.lunch) }}</td>

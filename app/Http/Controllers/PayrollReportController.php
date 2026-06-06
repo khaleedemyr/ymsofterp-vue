@@ -24,6 +24,56 @@ class PayrollReportController extends Controller
         return app(AttendanceReportController::class);
     }
 
+    private function defaultPayrollMasterData(): object
+    {
+        return (object) [
+            'gaji' => 0,
+            'tunjangan' => 0,
+            'ot' => 0,
+            'um' => 0,
+            'ph' => 0,
+            'sc' => 0,
+            'bpjs_jkn' => 0,
+            'bpjs_tk' => 0,
+            'lb' => 0,
+            'deviasi' => 0,
+            'city_ledger' => 0,
+        ];
+    }
+
+    private function resolvePayrollScopeForUser(User $user, $outletId): array
+    {
+        $effectiveOutletId = !empty($outletId) ? (int) $outletId : (int) $user->id_outlet;
+        $effectiveDivisionId = (int) $user->division_id;
+
+        return [$effectiveOutletId, $effectiveDivisionId];
+    }
+
+    private function buildPayrollMasterLookup($outletId = null)
+    {
+        return DB::table('payroll_master')
+            ->when($outletId, function ($query) use ($outletId) {
+                $query->where('outlet_id', $outletId);
+            })
+            ->orderByDesc('updated_at')
+            ->get()
+            ->groupBy('user_id');
+    }
+
+    private function resolvePayrollMasterForUser($user, $payrollMasterRows, $outletId, ?object $default = null): object
+    {
+        $default ??= $this->defaultPayrollMasterData();
+
+        [$effectiveOutletId, $effectiveDivisionId] = $this->resolvePayrollScopeForUser($user, $outletId);
+
+        $payroll = collect($payrollMasterRows->get($user->id, []))->first(function ($row) use ($effectiveOutletId, $effectiveDivisionId) {
+            return (int) $row->outlet_id === $effectiveOutletId
+                && (int) $row->division_id === $effectiveDivisionId;
+        });
+
+        return $payroll ?? $default;
+    }
+
     public function index(Request $request)
     {
         $outletId = $request->input('outlet_id');
@@ -331,10 +381,8 @@ class PayrollReportController extends Controller
                 ->get()
                 ->keyBy('id');
 
-            // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
-            $payrollMaster = DB::table('payroll_master')
-                ->get()
-                ->keyBy('user_id');
+            // Ambil data master payroll per outlet + divisi (sama seperti Master Payroll)
+            $payrollMaster = $this->buildPayrollMasterLookup($outletId);
 
             // Cek apakah payroll sudah di-generate
             $payrollGenerated = DB::table('payroll_generated')
@@ -614,19 +662,7 @@ class PayrollReportController extends Controller
                     }
                     
                     // Ambil data master payroll untuk user ini (untuk setting enabled/disabled)
-                    $masterData = $payrollMaster->get($user->id, (object)[
-                        'gaji' => 0,
-                        'tunjangan' => 0,
-                        'ot' => 0,
-                        'um' => 0,
-                        'ph' => 0,
-                        'sc' => 0,
-                        'bpjs_jkn' => 0,
-                        'bpjs_tk' => 0,
-                        'lb' => 0,
-                        'deviasi' => 0,
-                        'city_ledger' => 0,
-                    ]);
+                    $masterData = $this->resolvePayrollMasterForUser($user, $payrollMaster, $outletId);
                     
                     // Hitung total gaji dari komponen (gajian 1 + gajian 2)
                     $gajiSplit = PayrollGajiSplitCalculator::calculate([
@@ -988,19 +1024,7 @@ class PayrollReportController extends Controller
                 }
 
                 // Ambil data master payroll untuk user ini
-                $masterData = $payrollMaster->get($user->id, (object)[
-                    'gaji' => 0,
-                    'tunjangan' => 0,
-                    'ot' => 0,
-                    'um' => 0,
-                    'ph' => 0,
-                    'sc' => 0,
-                    'bpjs_jkn' => 0,
-                    'bpjs_tk' => 0,
-                    'lb' => 0,
-                    'deviasi' => 0,
-                    'city_ledger' => 0,
-                ]);
+                $masterData = $this->resolvePayrollMasterForUser($user, $payrollMaster, $outletId);
 
                 // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
                 $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
@@ -2782,10 +2806,8 @@ class PayrollReportController extends Controller
         }
         // ========== END MUTATION HANDLING ==========
 
-        // Ambil data master payroll (tanpa filter outlet_id, hanya berdasarkan user_id)
-        $payrollMaster = DB::table('payroll_master')
-            ->get()
-            ->keyBy('user_id');
+        // Ambil data master payroll per outlet + divisi (sama seperti Master Payroll)
+        $payrollMaster = $this->buildPayrollMasterLookup($outletId);
 
         // Ambil data level dari jabatan dan point
         $jabatanLevels = DB::table('tbl_data_jabatan')->pluck('id_level', 'id_jabatan');
@@ -2936,19 +2958,7 @@ class PayrollReportController extends Controller
             }
 
             // Ambil data master payroll untuk user ini
-            $masterData = $payrollMaster->get($user->id, (object)[
-                'gaji' => 0,
-                'tunjangan' => 0,
-                'ot' => 0,
-                'um' => 0,
-                'ph' => 0,
-                'sc' => 0,
-                'bpjs_jkn' => 0,
-                'bpjs_tk' => 0,
-                'lb' => 0,
-                'deviasi' => 0,
-                'city_ledger' => 0,
-            ]);
+            $masterData = $this->resolvePayrollMasterForUser($user, $payrollMaster, $outletId);
 
             // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
             // PERBAIKAN: Handle kasus ketika user tidak punya data attendance
@@ -4124,24 +4134,8 @@ class PayrollReportController extends Controller
         }
 
         // Get master data (untuk konfigurasi payroll, bukan data per periode)
-        // Ambil berdasarkan user_id saja, tanpa filter outlet_id
-        $masterData = DB::table('payroll_master')
-            ->where('user_id', $userId)
-            ->first();
-
-        if (!$masterData) {
-            $masterData = (object)[
-                'gaji' => 0,
-                'tunjangan' => 0,
-                'ot' => 0,
-                'um' => 0,
-                'ph' => 0,
-                'sc' => 0,
-                'bpjs_jkn' => 0,
-                'bpjs_tk' => 0,
-                'lb' => 0,
-            ];
-        }
+        $payrollMasterRows = $this->buildPayrollMasterLookup($outletId);
+        $masterData = $this->resolvePayrollMasterForUser($user, $payrollMasterRows, $outletId);
 
         // Get position, division data
         $jabatan = DB::table('tbl_data_jabatan')->where('id_jabatan', $user->id_jabatan)->value('nama_jabatan');
@@ -4544,24 +4538,8 @@ class PayrollReportController extends Controller
         }
 
         // Get master data (untuk konfigurasi payroll, bukan data per periode)
-        // Ambil berdasarkan user_id saja, tanpa filter outlet_id
-        $masterData = DB::table('payroll_master')
-            ->where('user_id', $userId)
-            ->first();
-
-        if (!$masterData) {
-            $masterData = (object)[
-                'gaji' => 0,
-                'tunjangan' => 0,
-                'ot' => 0,
-                'um' => 0,
-                'ph' => 0,
-                'sc' => 0,
-                'bpjs_jkn' => 0,
-                'bpjs_tk' => 0,
-                'lb' => 0,
-            ];
-        }
+        $payrollMasterRows = $this->buildPayrollMasterLookup($outletId);
+        $masterData = $this->resolvePayrollMasterForUser($user, $payrollMasterRows, $outletId);
 
         $bpjsPerusahaanDetail = null;
 
@@ -5738,20 +5716,8 @@ class PayrollReportController extends Controller
             return null;
         }
 
-        $masterData = DB::table('payroll_master')->where('user_id', $userId)->first();
-        if (!$masterData) {
-            $masterData = (object) [
-                'gaji' => 0,
-                'tunjangan' => 0,
-                'ot' => 0,
-                'um' => 0,
-                'ph' => 0,
-                'sc' => 0,
-                'bpjs_jkn' => 0,
-                'bpjs_tk' => 0,
-                'lb' => 0,
-            ];
-        }
+        $payrollMasterRows = $this->buildPayrollMasterLookup($payrollDetail->outlet_id);
+        $masterData = $this->resolvePayrollMasterForUser($user, $payrollMasterRows, $payrollDetail->outlet_id);
 
         $customItems = collect([]);
         if ($payrollDetail->custom_items) {
