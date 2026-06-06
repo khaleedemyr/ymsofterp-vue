@@ -79,6 +79,7 @@ class OutletAnalyzerService
             'google_review_gsi' => $this->getGoogleReviewGsi((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
             'regional_visits' => $this->getRegionalVisits((int) $outlet->id_outlet, $start, $end),
             'fj_inventory' => $fj,
+            'petty_cash' => $this->getPettyCash((int) $outlet->id_outlet, $start, $end),
             'employee_attendance' => $this->getEmployeeAttendance((int) $outlet->id_outlet, $start, $end),
         ];
     }
@@ -451,14 +452,13 @@ class OutletAnalyzerService
      */
     private function getFjInventory(int $outletId, string $outletName, string $start, string $end): array
     {
-        $defaults = [
+        $totals = [
             'main_kitchen' => 0.0,
             'main_store' => 0.0,
             'chemical' => 0.0,
             'stationary' => 0.0,
             'marketing' => 0.0,
             'line_total' => 0.0,
-            'categories' => [],
         ];
 
         $foodRows = $this->rekapFjFetchFoodGrPivotItemRows($start, $end)
@@ -469,27 +469,312 @@ class OutletAnalyzerService
         $aggregated = $this->rekapFjAggregatePivotItemRowsByOutlet($foodRows->concat($serialRows));
         $row = $aggregated[$outletName] ?? null;
 
-        if (! $row) {
-            return $defaults;
+        if ($row) {
+            $totals['main_kitchen'] = (float) $row->main_kitchen;
+            $totals['main_store'] = (float) $row->main_store;
+            $totals['chemical'] = (float) $row->chemical;
+            $totals['stationary'] = (float) $row->stationary;
+            $totals['marketing'] = (float) $row->marketing;
+            $totals['line_total'] = (float) $row->line_total;
+        }
+
+        $retailContraBon = $this->fetchRetailFoodContraBonFjBuckets($outletId, $start, $end);
+        foreach (array_keys($totals) as $key) {
+            $totals[$key] += (float) ($retailContraBon[$key] ?? 0);
         }
 
         $categories = [
-            ['key' => 'main_kitchen', 'label' => 'Main Kitchen', 'amount' => round((float) $row->main_kitchen, 2)],
-            ['key' => 'main_store', 'label' => 'Main Store', 'amount' => round((float) $row->main_store, 2)],
-            ['key' => 'chemical', 'label' => 'Chemical', 'amount' => round((float) $row->chemical, 2)],
-            ['key' => 'stationary', 'label' => 'Stationary', 'amount' => round((float) $row->stationary, 2)],
-            ['key' => 'marketing', 'label' => 'Marketing', 'amount' => round((float) $row->marketing, 2)],
+            ['key' => 'main_kitchen', 'label' => 'Main Kitchen', 'amount' => round($totals['main_kitchen'], 2)],
+            ['key' => 'main_store', 'label' => 'Main Store', 'amount' => round($totals['main_store'], 2)],
+            ['key' => 'chemical', 'label' => 'Chemical', 'amount' => round($totals['chemical'], 2)],
+            ['key' => 'stationary', 'label' => 'Stationary', 'amount' => round($totals['stationary'], 2)],
+            ['key' => 'marketing', 'label' => 'Marketing', 'amount' => round($totals['marketing'], 2)],
         ];
 
         return [
-            'main_kitchen' => round((float) $row->main_kitchen, 2),
-            'main_store' => round((float) $row->main_store, 2),
-            'chemical' => round((float) $row->chemical, 2),
-            'stationary' => round((float) $row->stationary, 2),
-            'marketing' => round((float) $row->marketing, 2),
-            'line_total' => round((float) $row->line_total, 2),
+            'main_kitchen' => round($totals['main_kitchen'], 2),
+            'main_store' => round($totals['main_store'], 2),
+            'chemical' => round($totals['chemical'], 2),
+            'stationary' => round($totals['stationary'], 2),
+            'marketing' => round($totals['marketing'], 2),
+            'line_total' => round($totals['line_total'], 2),
             'categories' => $categories,
+            'retail_food_contra_bon_total' => round((float) ($retailContraBon['line_total'] ?? 0), 2),
         ];
+    }
+
+    /**
+     * Retail Food payment_method=contra_bon — hanya untuk Outlet Analyzer (bukan Report Rekap FJ).
+     *
+     * @return array<string, float>
+     */
+    private function fetchRetailFoodContraBonFjBuckets(int $outletId, string $start, string $end): array
+    {
+        $totals = [
+            'main_kitchen' => 0.0,
+            'main_store' => 0.0,
+            'chemical' => 0.0,
+            'stationary' => 0.0,
+            'marketing' => 0.0,
+            'line_total' => 0.0,
+        ];
+
+        $rows = DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->leftJoin('items as it', 'rfi.item_name', '=', 'it.name')
+            ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.payment_method', 'contra_bon')
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $start)
+            ->whereDate('rf.transaction_date', '<=', $end)
+            ->select('rfi.subtotal', 'w.name as warehouse', 'sc.name as sub_category')
+            ->get();
+
+        foreach ($rows as $row) {
+            $amount = (float) ($row->subtotal ?? 0);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $totals['line_total'] += $amount;
+            $bucket = $this->classifyFjWarehouseBucket(
+                $row->warehouse !== null ? (string) $row->warehouse : null,
+                $row->sub_category !== null ? (string) $row->sub_category : null,
+            );
+            if ($bucket !== null) {
+                $totals[$bucket] += $amount;
+            }
+        }
+
+        return array_map(fn ($v) => round((float) $v, 2), $totals);
+    }
+
+    /**
+     * Pengeluaran petty cash: retail food + retail non food, payment_method selain contra_bon.
+     *
+     * @return array<string, mixed>
+     */
+    private function getPettyCash(int $outletId, string $start, string $end): array
+    {
+        $retailFoodBuckets = $this->fetchRetailFoodPettyCashFjBuckets($outletId, $start, $end);
+        $retailFoodTotal = (float) ($retailFoodBuckets['line_total'] ?? 0);
+
+        $retailNonFoodTotal = (float) DB::table('retail_non_food as rnf')
+            ->where('rnf.outlet_id', $outletId)
+            ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
+            ->whereDate('rnf.transaction_date', '>=', $start)
+            ->whereDate('rnf.transaction_date', '<=', $end)
+            ->where(function ($q) {
+                $this->applyNonContraBonPaymentFilter($q, 'rnf.payment_method');
+            })
+            ->sum('rnf.total_amount');
+
+        $retailNonFoodCategories = DB::table('retail_non_food as rnf')
+            ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
+            ->where('rnf.outlet_id', $outletId)
+            ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
+            ->whereDate('rnf.transaction_date', '>=', $start)
+            ->whereDate('rnf.transaction_date', '<=', $end)
+            ->where(function ($q) {
+                $this->applyNonContraBonPaymentFilter($q, 'rnf.payment_method');
+            })
+            ->selectRaw("COALESCE(prc.name, 'Tanpa Kategori') as label, COALESCE(SUM(rnf.total_amount), 0) as amount")
+            ->groupBy('prc.id', 'prc.name')
+            ->orderByDesc('amount')
+            ->get()
+            ->map(fn ($row) => [
+                'label' => (string) $row->label,
+                'amount' => round((float) $row->amount, 2),
+            ])
+            ->filter(fn ($row) => $row['amount'] > 0)
+            ->values()
+            ->all();
+
+        $retailFoodTransactions = DB::table('retail_food as rf')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $start)
+            ->whereDate('rf.transaction_date', '<=', $end)
+            ->where(function ($q) {
+                $this->applyNonContraBonPaymentFilter($q, 'rf.payment_method');
+            })
+            ->select('rf.id', 'rf.retail_number', 'rf.transaction_date', 'rf.total_amount', 'rf.payment_method', 'rf.notes')
+            ->orderByDesc('rf.transaction_date')
+            ->orderByDesc('rf.id')
+            ->get()
+            ->map(fn ($row) => $this->mapPettyCashTransaction($row, 'retail_food'))
+            ->all();
+
+        $retailNonFoodTransactions = DB::table('retail_non_food as rnf')
+            ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
+            ->where('rnf.outlet_id', $outletId)
+            ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
+            ->whereDate('rnf.transaction_date', '>=', $start)
+            ->whereDate('rnf.transaction_date', '<=', $end)
+            ->where(function ($q) {
+                $this->applyNonContraBonPaymentFilter($q, 'rnf.payment_method');
+            })
+            ->select(
+                'rnf.id',
+                'rnf.retail_number',
+                'rnf.transaction_date',
+                'rnf.total_amount',
+                'rnf.payment_method',
+                'rnf.notes',
+                'prc.name as category_name',
+            )
+            ->orderByDesc('rnf.transaction_date')
+            ->orderByDesc('rnf.id')
+            ->get()
+            ->map(fn ($row) => $this->mapPettyCashTransaction($row, 'retail_non_food'))
+            ->all();
+
+        $retailFoodCategories = [
+            ['key' => 'main_kitchen', 'label' => 'Main Kitchen', 'amount' => round((float) ($retailFoodBuckets['main_kitchen'] ?? 0), 2)],
+            ['key' => 'main_store', 'label' => 'Main Store', 'amount' => round((float) ($retailFoodBuckets['main_store'] ?? 0), 2)],
+            ['key' => 'chemical', 'label' => 'Chemical', 'amount' => round((float) ($retailFoodBuckets['chemical'] ?? 0), 2)],
+            ['key' => 'stationary', 'label' => 'Stationary', 'amount' => round((float) ($retailFoodBuckets['stationary'] ?? 0), 2)],
+            ['key' => 'marketing', 'label' => 'Marketing', 'amount' => round((float) ($retailFoodBuckets['marketing'] ?? 0), 2)],
+        ];
+
+        $sources = [
+            ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => round($retailFoodTotal, 2)],
+            ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => round($retailNonFoodTotal, 2)],
+        ];
+
+        return [
+            'total' => round($retailFoodTotal + $retailNonFoodTotal, 2),
+            'retail_food_total' => round($retailFoodTotal, 2),
+            'retail_non_food_total' => round($retailNonFoodTotal, 2),
+            'retail_food_count' => count($retailFoodTransactions),
+            'retail_non_food_count' => count($retailNonFoodTransactions),
+            'transaction_count' => count($retailFoodTransactions) + count($retailNonFoodTransactions),
+            'sources' => $sources,
+            'retail_food_categories' => array_values(array_filter($retailFoodCategories, fn ($row) => $row['amount'] > 0)),
+            'retail_non_food_categories' => $retailNonFoodCategories,
+            'transactions' => [
+                'retail_food' => $retailFoodTransactions,
+                'retail_non_food' => $retailNonFoodTransactions,
+            ],
+        ];
+    }
+
+    /**
+     * Retail Food petty cash — payment_method selain contra_bon, per kategori gudang.
+     *
+     * @return array<string, float>
+     */
+    private function fetchRetailFoodPettyCashFjBuckets(int $outletId, string $start, string $end): array
+    {
+        $totals = [
+            'main_kitchen' => 0.0,
+            'main_store' => 0.0,
+            'chemical' => 0.0,
+            'stationary' => 0.0,
+            'marketing' => 0.0,
+            'line_total' => 0.0,
+        ];
+
+        $rows = DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->leftJoin('items as it', 'rfi.item_name', '=', 'it.name')
+            ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $start)
+            ->whereDate('rf.transaction_date', '<=', $end)
+            ->where(function ($q) {
+                $this->applyNonContraBonPaymentFilter($q, 'rf.payment_method');
+            })
+            ->select('rfi.subtotal', 'w.name as warehouse', 'sc.name as sub_category')
+            ->get();
+
+        foreach ($rows as $row) {
+            $amount = (float) ($row->subtotal ?? 0);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $totals['line_total'] += $amount;
+            $bucket = $this->classifyFjWarehouseBucket(
+                $row->warehouse !== null ? (string) $row->warehouse : null,
+                $row->sub_category !== null ? (string) $row->sub_category : null,
+            );
+            if ($bucket !== null) {
+                $totals[$bucket] += $amount;
+            }
+        }
+
+        return array_map(fn ($v) => round((float) $v, 2), $totals);
+    }
+
+    private function applyNonContraBonPaymentFilter($query, string $column): void
+    {
+        $query->where(function ($q) use ($column) {
+            $q->where($column, '!=', 'contra_bon')
+                ->orWhereNull($column);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapPettyCashTransaction(object $row, string $source): array
+    {
+        $paymentMethod = (string) ($row->payment_method ?? 'cash');
+
+        return [
+            'id' => (int) $row->id,
+            'source' => $source,
+            'source_label' => $source === 'retail_food' ? 'Retail Food' : 'Retail Non Food',
+            'retail_number' => (string) ($row->retail_number ?? '-'),
+            'transaction_date' => $row->transaction_date,
+            'total_amount' => round((float) ($row->total_amount ?? 0), 2),
+            'payment_method' => $paymentMethod,
+            'payment_method_label' => $paymentMethod === 'cash' ? 'Cash' : ucfirst(str_replace('_', ' ', $paymentMethod)),
+            'category_name' => isset($row->category_name) ? (string) ($row->category_name ?: 'Tanpa Kategori') : null,
+            'notes' => mb_substr((string) ($row->notes ?? ''), 0, 120),
+        ];
+    }
+
+    /**
+     * Kategorisasi gudang — selaras rekapFjAggregatePivotItemRowsByOutlet().
+     */
+    private function classifyFjWarehouseBucket(?string $warehouse, ?string $subCategory): ?string
+    {
+        $warehouse = $warehouse !== null ? trim($warehouse) : null;
+        $subCategory = $subCategory !== null ? trim($subCategory) : null;
+
+        if ($warehouse && in_array($warehouse, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'], true)) {
+            return 'main_kitchen';
+        }
+
+        if ($warehouse && strtoupper($warehouse) === 'MAIN STORE') {
+            if ($subCategory && strtoupper($subCategory) === 'CHEMICAL') {
+                return 'chemical';
+            }
+            if ($subCategory && strtoupper($subCategory) === 'STATIONARY') {
+                return 'stationary';
+            }
+            if ($subCategory && strtoupper($subCategory) === 'MARKETING') {
+                return 'marketing';
+            }
+
+            return 'main_store';
+        }
+
+        return null;
     }
 
     /**

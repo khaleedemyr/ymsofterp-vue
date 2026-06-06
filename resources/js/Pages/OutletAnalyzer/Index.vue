@@ -58,6 +58,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-map-location-dot',
     accent: 'from-violet-600 to-indigo-700',
   },
+  petty_cash: {
+    title: 'Detail Pengeluaran Petty Cash',
+    subtitle: 'Retail food & retail non food (selain contra bon)',
+    icon: 'fa-solid fa-wallet',
+    accent: 'from-rose-600 to-orange-700',
+  },
 }));
 
 function applyFilters() {
@@ -223,6 +229,27 @@ const fjPieOptions = computed(() => ({
   tooltip: { y: { formatter: (val) => formatRupiah(val) } },
   dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
 }));
+
+const pettyCashSources = computed(() =>
+  (props.analysis?.petty_cash?.sources || []).filter((s) => Number(s.amount) > 0),
+);
+const pettyCashPieSeries = computed(() => pettyCashSources.value.map((s) => Number(s.amount)));
+const pettyCashPieLabels = computed(() => pettyCashSources.value.map((s) => s.label));
+const pettyCashPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: pettyCashPieLabels.value,
+  colors: ['#F97316', '#6366F1'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
+
+const pettyCashAllTransactions = computed(() => {
+  const pc = props.analysis?.petty_cash?.transactions || {};
+  return [...(pc.retail_food || []), ...(pc.retail_non_food || [])].sort(
+    (a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')),
+  );
+});
 
 const attendanceComposition = computed(() =>
   (props.analysis?.employee_attendance?.composition || []).filter((c) => Number(c.days) > 0),
@@ -502,7 +529,12 @@ function visitorArea(userId) {
         <section class="bg-white rounded-xl border border-slate-200 p-5">
           <div class="mb-4">
             <h2 class="text-base font-semibold text-slate-900">Belanja Inventory (Rekap FJ)</h2>
-            <p class="text-xs text-slate-500 mt-0.5">Good Receive per kategori gudang</p>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Good Receive per kategori gudang
+              <span v-if="(analysis.fj_inventory?.retail_food_contra_bon_total ?? 0) > 0">
+                · termasuk retail food contra bon {{ formatRupiah(analysis.fj_inventory.retail_food_contra_bon_total) }}
+              </span>
+            </p>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -542,6 +574,93 @@ function visitorArea(userId) {
                     <td class="py-2 pr-4">Line Total</td>
                     <td class="py-2 text-right">{{ formatRupiah(analysis.fj_inventory?.line_total) }}</td>
                     <td class="py-2 text-right">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Petty Cash -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Pengeluaran Petty Cash</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Retail food & retail non food · metode pembayaran selain contra bon
+                <span class="text-rose-600">· Klik untuk detail</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-left rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 hover:border-rose-300 hover:shadow-sm transition-all"
+              @click="openModal('petty_cash')"
+            >
+              <p class="text-xs font-semibold uppercase text-rose-700">Total Petty Cash</p>
+              <p class="text-xl font-bold text-rose-900 mt-0.5">{{ formatRupiah(analysis.petty_cash?.total) }}</p>
+              <p class="text-xs text-rose-600 mt-1">
+                {{ analysis.petty_cash?.transaction_count ?? 0 }} transaksi
+              </p>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div
+              v-if="pettyCashSources.length"
+              class="bg-slate-50 rounded-xl p-3 cursor-pointer hover:ring-2 hover:ring-rose-200 transition-all"
+              @click="openModal('petty_cash')"
+            >
+              <apexchart type="pie" height="320" :options="pettyCashPieOptions" :series="pettyCashPieSeries" />
+            </div>
+            <div
+              v-else
+              class="bg-slate-50 rounded-xl p-8 text-center text-slate-400 text-sm flex items-center justify-center"
+            >
+              Tidak ada pengeluaran petty cash pada periode ini.
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="text-left text-xs uppercase text-slate-500 border-b">
+                    <th class="py-2 pr-4">Sumber</th>
+                    <th class="py-2 text-right">Nominal</th>
+                    <th class="py-2 text-right">Transaksi</th>
+                    <th class="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="src in analysis.petty_cash?.sources || []"
+                    :key="src.key"
+                    class="border-b border-slate-100 hover:bg-rose-50/50 cursor-pointer"
+                    @click="openModal('petty_cash')"
+                  >
+                    <td class="py-2.5 pr-4">{{ src.label }}</td>
+                    <td class="py-2.5 text-right font-medium">{{ formatRupiah(src.amount) }}</td>
+                    <td class="py-2.5 text-right text-slate-600">
+                      {{
+                        src.key === 'retail_food'
+                          ? (analysis.petty_cash?.retail_food_count ?? 0)
+                          : (analysis.petty_cash?.retail_non_food_count ?? 0)
+                      }}
+                    </td>
+                    <td class="py-2.5 text-right text-slate-500">
+                      {{
+                        analysis.petty_cash?.total > 0
+                          ? `${((src.amount / analysis.petty_cash.total) * 100).toFixed(1)}%`
+                          : '-'
+                      }}
+                    </td>
+                  </tr>
+                  <tr class="font-bold bg-slate-50">
+                    <td class="py-2 pr-4">Total</td>
+                    <td class="py-2 text-right">{{ formatRupiah(analysis.petty_cash?.total) }}</td>
+                    <td class="py-2 text-right">{{ analysis.petty_cash?.transaction_count ?? 0 }}</td>
+                    <td class="py-2 text-right">100%</td>
+                  </tr>
+                  <tr v-if="!(analysis.petty_cash?.sources?.length)">
+                    <td colspan="4" class="py-6 text-center text-slate-400">—</td>
                   </tr>
                 </tbody>
               </table>
@@ -907,6 +1026,91 @@ function visitorArea(userId) {
                             <td class="px-4 py-2.5 text-right">{{ session.durasi_label || '-' }}</td>
                           </tr>
                         </template>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+
+                <!-- Petty Cash -->
+                <template v-else-if="activeModal === 'petty_cash'">
+                  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="rounded-xl bg-rose-50 border border-rose-100 p-4 lg:col-span-2">
+                      <p class="text-xs text-rose-700 font-semibold uppercase">Total Petty Cash</p>
+                      <p class="text-2xl font-bold text-rose-900 mt-1">{{ formatRupiah(analysis.petty_cash?.total) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-orange-50 border border-orange-100 p-4">
+                      <p class="text-xs text-orange-700 font-semibold uppercase">Retail Food</p>
+                      <p class="text-xl font-bold text-orange-900 mt-1">{{ formatRupiah(analysis.petty_cash?.retail_food_total) }}</p>
+                      <p class="text-xs text-orange-600 mt-1">{{ analysis.petty_cash?.retail_food_count ?? 0 }} transaksi</p>
+                    </div>
+                    <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-4">
+                      <p class="text-xs text-indigo-700 font-semibold uppercase">Retail Non Food</p>
+                      <p class="text-xl font-bold text-indigo-900 mt-1">{{ formatRupiah(analysis.petty_cash?.retail_non_food_total) }}</p>
+                      <p class="text-xs text-indigo-600 mt-1">{{ analysis.petty_cash?.retail_non_food_count ?? 0 }} transaksi</p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    <div v-if="pettyCashSources.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi Sumber</h3>
+                      <apexchart type="pie" height="280" :options="pettyCashPieOptions" :series="pettyCashPieSeries" />
+                    </div>
+                    <div class="space-y-4">
+                      <div v-if="analysis.petty_cash?.retail_food_categories?.length" class="rounded-xl border border-slate-200 p-4">
+                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Retail Food per Kategori Gudang</h3>
+                        <div class="space-y-2">
+                          <div
+                            v-for="cat in analysis.petty_cash.retail_food_categories"
+                            :key="cat.key"
+                            class="flex items-center justify-between text-sm"
+                          >
+                            <span class="text-slate-700">{{ cat.label }}</span>
+                            <span class="font-semibold">{{ formatRupiah(cat.amount) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-if="analysis.petty_cash?.retail_non_food_categories?.length" class="rounded-xl border border-slate-200 p-4">
+                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Retail Non Food per Kategori Budget</h3>
+                        <div class="space-y-2">
+                          <div
+                            v-for="cat in analysis.petty_cash.retail_non_food_categories"
+                            :key="cat.label"
+                            class="flex items-center justify-between text-sm"
+                          >
+                            <span class="text-slate-700">{{ cat.label }}</span>
+                            <span class="font-semibold">{{ formatRupiah(cat.amount) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th class="px-4 py-3 text-left">Tanggal</th>
+                          <th class="px-4 py-3 text-left">No. Retail</th>
+                          <th class="px-4 py-3 text-left">Sumber</th>
+                          <th class="px-4 py-3 text-left">Kategori</th>
+                          <th class="px-4 py-3 text-left">Metode</th>
+                          <th class="px-4 py-3 text-right">Nominal</th>
+                          <th class="px-4 py-3 text-left">Catatan</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <tr v-for="row in pettyCashAllTransactions" :key="`${row.source}-${row.id}`" class="hover:bg-rose-50/30">
+                          <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
+                          <td class="px-4 py-2.5 font-medium">{{ row.retail_number }}</td>
+                          <td class="px-4 py-2.5">{{ row.source_label }}</td>
+                          <td class="px-4 py-2.5 text-slate-600">{{ row.category_name || '-' }}</td>
+                          <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
+                          <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
+                          <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.notes || '-' }}</td>
+                        </tr>
+                        <tr v-if="!pettyCashAllTransactions.length">
+                          <td colspan="7" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi petty cash pada periode ini.</td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
