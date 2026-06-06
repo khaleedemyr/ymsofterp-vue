@@ -75,6 +75,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-file-invoice-dollar',
     accent: 'from-cyan-600 to-blue-700',
   },
+  payroll: {
+    title: 'Detail Payroll',
+    subtitle: 'Gajian 1, Gajian 2, dan BPJS perusahaan per karyawan',
+    icon: 'fa-solid fa-money-check-dollar',
+    accent: 'from-purple-600 to-fuchsia-700',
+  },
   catcost: {
     title: 'Detail Category Cost Outlet',
     subtitle: 'Internal use, spoil, waste, usage, marketing, dan tipe lainnya',
@@ -604,6 +610,7 @@ const overtimeBarOptions = computed(() => ({
 }));
 
 const attendanceSummary = computed(() => props.analysis?.employee_attendance?.summary || {});
+const attendancePeriodLabel = computed(() => props.analysis?.employee_attendance?.period?.label || '');
 
 const cashflowSummary = computed(() => props.analysis?.cashflow_summary || {});
 const cashflowOutflows = computed(() =>
@@ -615,10 +622,43 @@ const cashflowOutPieOptions = computed(() => ({
   ...chartBase,
   chart: { ...chartBase.chart, type: 'pie' },
   labels: cashflowOutPieLabels.value,
-  colors: ['#F97316', '#F43F5E', '#06B6D4'],
+  colors: ['#F97316', '#F43F5E', '#06B6D4', '#A855F7'],
   tooltip: { y: { formatter: (val) => formatRupiah(val) } },
   dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
 }));
+
+const payrollSummary = computed(() => props.analysis?.payroll || {});
+const payrollSplits = computed(() =>
+  (payrollSummary.value.splits || []).filter((item) => Number(item.amount) > 0),
+);
+const payrollPieSeries = computed(() => payrollSplits.value.map((item) => Number(item.amount)));
+const payrollPieLabels = computed(() => payrollSplits.value.map((item) => item.label));
+const payrollPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: payrollPieLabels.value,
+  colors: ['#7C3AED', '#EC4899'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
+const payrollEmployeesByDivision = computed(() => {
+  const groups = new Map();
+
+  for (const emp of payrollSummary.value.employees || []) {
+    const division = emp.divisi || 'Tanpa Divisi';
+    if (!groups.has(division)) {
+      groups.set(division, []);
+    }
+    groups.get(division).push(emp);
+  }
+
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b, 'id'))
+    .map(([division, employees]) => ({
+      division,
+      employees: [...employees].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'id')),
+    }));
+});
 
 const summaryCards = computed(() => {
   const s = attendanceSummary.value;
@@ -816,7 +856,7 @@ function visitorArea(userId) {
             <div>
               <h2 class="text-base font-semibold text-slate-900">Summary Cashflow</h2>
               <p class="text-xs text-slate-500 mt-0.5">
-                Revenue vs pengeluaran operasional (FJ, petty cash, PR Ops)
+                Revenue vs pengeluaran operasional (Food Purchased, petty cash, PR Ops, payroll)
                 <span class="text-teal-600">· Klik untuk detail</span>
               </p>
             </div>
@@ -1534,6 +1574,101 @@ function visitorArea(userId) {
           </div>
         </section>
 
+        <!-- Payroll -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Payroll</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Periode payroll {{ analysis.payroll?.period_label || '-' }}
+                <span class="text-purple-600">· Klik untuk detail</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-left rounded-xl border border-purple-200 bg-purple-50 px-4 py-3 hover:border-purple-300 hover:shadow-sm transition-all"
+              @click="openModal('payroll')"
+            >
+              <p class="text-xs font-semibold uppercase text-purple-700">Total Gaji</p>
+              <p class="text-xl font-bold text-purple-900 mt-0.5">{{ formatRupiah(analysis.payroll?.total_gaji) }}</p>
+              <p class="text-xs text-purple-600 mt-1">
+                {{ analysis.payroll?.employee_count ?? 0 }} karyawan
+                <span v-if="!analysis.payroll?.has_generated"> · belum digenerate</span>
+              </p>
+            </button>
+          </div>
+
+          <div v-if="analysis.payroll?.has_generated" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+            <div class="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+              <p class="text-xs font-semibold uppercase text-violet-700">Gajian 1</p>
+              <p class="text-lg font-bold text-violet-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_akhir_bulan) }}</p>
+            </div>
+            <div class="rounded-xl border border-fuchsia-200 bg-fuchsia-50 px-4 py-3">
+              <p class="text-xs font-semibold uppercase text-fuchsia-700">Gajian 2</p>
+              <p class="text-lg font-bold text-fuchsia-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_tanggal_8) }}</p>
+            </div>
+            <div class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+              <p class="text-xs font-semibold uppercase text-indigo-700">BPJS Perusahaan</p>
+              <p class="text-lg font-bold text-indigo-900 mt-1">{{ formatRupiah(analysis.payroll?.total_bpjs_perusahaan) }}</p>
+            </div>
+          </div>
+
+          <div v-if="analysis.payroll?.has_generated" class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div
+              v-if="payrollSplits.length"
+              class="bg-slate-50 rounded-xl p-3 cursor-pointer hover:ring-2 hover:ring-purple-200 transition-all"
+              @click="openModal('payroll')"
+            >
+              <apexchart type="pie" height="320" :options="payrollPieOptions" :series="payrollPieSeries" />
+            </div>
+            <div
+              v-else
+              class="bg-slate-50 rounded-xl p-8 text-center text-slate-400 text-sm flex items-center justify-center"
+            >
+              Tidak ada komponen gaji.
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="text-left text-xs uppercase text-slate-500 border-b">
+                    <th class="py-2 pr-4">Komponen</th>
+                    <th class="py-2 text-right">Nominal</th>
+                    <th class="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="split in payrollSplits"
+                    :key="split.key"
+                    class="border-b border-slate-100 hover:bg-purple-50/50 cursor-pointer"
+                    @click="openModal('payroll')"
+                  >
+                    <td class="py-2.5 pr-4">{{ split.label }}</td>
+                    <td class="py-2.5 text-right font-medium">{{ formatRupiah(split.amount) }}</td>
+                    <td class="py-2.5 text-right text-slate-500">
+                      {{
+                        analysis.payroll?.total_gaji > 0
+                          ? `${((split.amount / analysis.payroll.total_gaji) * 100).toFixed(1)}%`
+                          : '-'
+                      }}
+                    </td>
+                  </tr>
+                  <tr class="font-bold bg-slate-50">
+                    <td class="py-2 pr-4">Total Gaji</td>
+                    <td class="py-2 text-right">{{ formatRupiah(analysis.payroll?.total_gaji) }}</td>
+                    <td class="py-2 text-right">100%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p v-else class="text-sm text-slate-400 text-center py-8 bg-slate-50 rounded-xl">
+            Payroll bulan ini belum digenerate untuk outlet ini.
+          </p>
+        </section>
+
         <!-- Category Cost Outlet -->
         <section class="bg-white rounded-xl border border-slate-200 p-5">
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
@@ -1620,7 +1755,7 @@ function visitorArea(userId) {
           <div>
             <h2 class="text-base font-semibold text-slate-900">Kehadiran Karyawan</h2>
             <p class="text-xs text-slate-500 mt-0.5">
-              {{ attendanceSummary.employee_count ?? 0 }} karyawan aktif di outlet
+              {{ attendanceSummary.employee_count ?? 0 }} karyawan aktif · periode absensi {{ attendancePeriodLabel || '-' }}
               <span class="text-indigo-600">· Klik chart untuk detail</span>
             </p>
           </div>
@@ -2148,7 +2283,7 @@ function visitorArea(userId) {
                   </div>
 
                   <p class="text-xs text-slate-500">
-                    Cash in = total revenue POS. Cash out = Food Purchased + petty cash + PR Ops pada periode yang sama.
+                    Cash in = total revenue POS. Cash out = Food Purchased + petty cash + PR Ops + payroll (total gaji) pada periode analisa.
                   </p>
                 </template>
 
@@ -2528,8 +2663,106 @@ function visitorArea(userId) {
                   </div>
                 </template>
 
+                <!-- Payroll -->
+                <template v-else-if="activeModal === 'payroll'">
+                  <div v-if="analysis.payroll?.has_generated" class="space-y-5">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div class="rounded-xl bg-purple-50 border border-purple-100 p-4 lg:col-span-2">
+                        <p class="text-xs text-purple-700 font-semibold uppercase">Total Gaji</p>
+                        <p class="text-2xl font-bold text-purple-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji) }}</p>
+                        <p class="text-xs text-purple-600 mt-1">{{ analysis.payroll?.employee_count ?? 0 }} karyawan</p>
+                      </div>
+                      <div class="rounded-xl bg-violet-50 border border-violet-100 p-4">
+                        <p class="text-xs text-violet-700 font-semibold uppercase">Gajian 1</p>
+                        <p class="text-xl font-bold text-violet-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_akhir_bulan) }}</p>
+                        <p class="text-xs text-violet-600 mt-1">
+                          {{ analysis.payroll?.gajian1_paid_at ? `Dibayar ${analysis.payroll.gajian1_paid_at}` : 'Belum dibayar' }}
+                        </p>
+                      </div>
+                      <div class="rounded-xl bg-fuchsia-50 border border-fuchsia-100 p-4">
+                        <p class="text-xs text-fuchsia-700 font-semibold uppercase">Gajian 2</p>
+                        <p class="text-xl font-bold text-fuchsia-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_tanggal_8) }}</p>
+                        <p class="text-xs text-fuchsia-600 mt-1">
+                          {{ analysis.payroll?.gajian2_paid_at ? `Dibayar ${analysis.payroll.gajian2_paid_at}` : 'Belum dibayar' }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p class="text-xs font-semibold uppercase text-indigo-700">BPJS Perusahaan</p>
+                        <p class="text-lg font-bold text-indigo-900">{{ formatRupiah(analysis.payroll?.total_bpjs_perusahaan) }}</p>
+                      </div>
+                      <p class="text-xs text-indigo-600">Periode payroll: {{ analysis.payroll?.period_label }}</p>
+                    </div>
+
+                    <div v-if="payrollSplits.length" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                      <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                        <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi Gaji</h3>
+                        <apexchart type="pie" height="280" :options="payrollPieOptions" :series="payrollPieSeries" />
+                      </div>
+                      <div class="rounded-xl border border-slate-200 p-4">
+                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Ringkasan Gajian</h3>
+                        <div class="space-y-2">
+                          <div
+                            v-for="split in payrollSplits"
+                            :key="split.key"
+                            class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0"
+                          >
+                            <span class="text-slate-800 font-medium">{{ split.label }}</span>
+                            <span class="font-semibold">{{ formatRupiah(split.amount) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                      <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                          <tr>
+                            <th class="px-4 py-3 text-left">Karyawan</th>
+                            <th class="px-4 py-3 text-left">Jabatan</th>
+                            <th class="px-4 py-3 text-right">Gajian 1</th>
+                            <th class="px-4 py-3 text-right">Gajian 2</th>
+                            <th class="px-4 py-3 text-right">Total Gaji</th>
+                            <th class="px-4 py-3 text-right">BPJS Perusahaan</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                          <template v-for="group in payrollEmployeesByDivision" :key="group.division">
+                            <tr class="bg-purple-50/70">
+                              <td colspan="6" class="px-4 py-2 text-xs font-bold uppercase tracking-wide text-purple-800">
+                                {{ group.division }}
+                              </td>
+                            </tr>
+                            <tr v-for="emp in group.employees" :key="emp.user_id" class="hover:bg-purple-50/30">
+                              <td class="px-4 py-2.5 font-medium">{{ emp.name }}</td>
+                              <td class="px-4 py-2.5 text-slate-600">{{ emp.jabatan || '-' }}</td>
+                              <td class="px-4 py-2.5 text-right">{{ formatRupiah(emp.total_gaji_akhir_bulan) }}</td>
+                              <td class="px-4 py-2.5 text-right">{{ formatRupiah(emp.total_gaji_tanggal_8) }}</td>
+                              <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(emp.total_gaji) }}</td>
+                              <td class="px-4 py-2.5 text-right text-slate-600">{{ formatRupiah(emp.bpjs_perusahaan) }}</td>
+                            </tr>
+                          </template>
+                          <tr v-if="!(analysis.payroll?.employees?.length)">
+                            <td colspan="6" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <p v-else class="text-sm text-slate-500 text-center py-10 bg-slate-50 rounded-xl">
+                    Payroll untuk bulan analisa ini belum digenerate. Generate terlebih dahulu di menu Payroll Report.
+                  </p>
+                </template>
+
                 <!-- Employee Attendance -->
                 <template v-else-if="activeModal === 'employee_attendance'">
+                  <p v-if="attendancePeriodLabel" class="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                    Periode absensi (26–25): <strong>{{ attendancePeriodLabel }}</strong>
+                  </p>
+
                   <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div
                       v-for="card in attendanceDetailCards"

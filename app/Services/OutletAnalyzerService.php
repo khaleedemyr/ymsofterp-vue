@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Traits\ReportHelperTrait;
 use App\Models\UserRegional;
+use App\Services\PayrollGajiSplitCalculator;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -50,6 +51,37 @@ class OutletAnalyzerService
     }
 
     /**
+     * Periode payroll/absensi: tanggal 26 bulan sebelumnya s/d 25 bulan terpilih.
+     *
+     * @return array{
+     *     month: int,
+     *     year: int,
+     *     start_date: string,
+     *     end_date: string,
+     *     label: string
+     * }
+     */
+    public function payrollPeriod(string $month): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = now()->format('Y-m');
+        }
+
+        $year = (int) substr($month, 0, 4);
+        $payrollMonth = (int) substr($month, 5, 2);
+        $startDate = date('Y-m-d', strtotime("$year-$payrollMonth-26 -1 month"));
+        $endDate = date('Y-m-d', strtotime("$year-$payrollMonth-25"));
+
+        return [
+            'month' => $payrollMonth,
+            'year' => $year,
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'label' => Carbon::parse($startDate)->format('d/m/Y').' - '.Carbon::parse($endDate)->format('d/m/Y'),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function analyze(int $outletId, string $month): ?array
@@ -67,11 +99,13 @@ class OutletAnalyzerService
         $period = $this->calendarPeriod($month);
         $start = $period['start_date'];
         $end = $period['end_date'];
+        $payrollPeriod = $this->payrollPeriod($month);
 
         $revenue = $this->getRevenue($outlet, $start, $end);
         $fj = $this->getFjInventory((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end);
         $pettyCash = $this->getPettyCash((int) $outlet->id_outlet, $start, $end);
         $prOps = $this->getPrOpsExpenditure((int) $outlet->id_outlet, $start, $end);
+        $payroll = $this->getPayroll((int) $outlet->id_outlet, $month);
         $categoryCost = $this->getCategoryCostOutlet((int) $outlet->id_outlet, $start, $end);
 
         return [
@@ -81,7 +115,7 @@ class OutletAnalyzerService
             ],
             'period' => $period,
             'revenue' => $revenue,
-            'cashflow_summary' => $this->buildCashflowSummary($revenue, $fj, $pettyCash, $prOps),
+            'cashflow_summary' => $this->buildCashflowSummary($revenue, $fj, $pettyCash, $prOps, $payroll),
             'top_menu_items' => $this->getTopMenuItems($outlet, $start, $end),
             'waiter_upsell_ranking' => $this->getWaiterUpsellRanking($outlet, $start, $end),
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
@@ -90,8 +124,14 @@ class OutletAnalyzerService
             'fj_inventory' => $fj,
             'petty_cash' => $pettyCash,
             'pr_ops_expenditure' => $prOps,
+            'payroll' => $payroll,
             'category_cost_outlet' => $categoryCost,
-            'employee_attendance' => $this->getEmployeeAttendance((int) $outlet->id_outlet, $start, $end),
+            'employee_attendance' => $this->getEmployeeAttendance(
+                (int) $outlet->id_outlet,
+                $payrollPeriod['start_date'],
+                $payrollPeriod['end_date'],
+                $payrollPeriod,
+            ),
         ];
     }
 
@@ -111,6 +151,7 @@ class OutletAnalyzerService
         array $fj,
         array $pettyCash,
         array $prOps,
+        array $payroll,
     ): array {
         $cashIn = round((float) ($revenue['total'] ?? 0), 2);
 
@@ -129,6 +170,11 @@ class OutletAnalyzerService
                 'key' => 'pr_ops',
                 'label' => 'PR Ops',
                 'amount' => round((float) ($prOps['total'] ?? 0), 2),
+            ],
+            [
+                'key' => 'payroll',
+                'label' => 'Payroll',
+                'amount' => round((float) ($payroll['total_gaji'] ?? 0), 2),
             ],
         ];
 
@@ -2407,7 +2453,7 @@ class OutletAnalyzerService
     /**
      * @return array<string, mixed>
      */
-    private function getEmployeeAttendance(int $outletId, string $start, string $end): array
+    private function getEmployeeAttendance(int $outletId, string $start, string $end, array $period = []): array
     {
         $employees = DB::table('users as u')
             ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
@@ -2502,6 +2548,13 @@ class OutletAnalyzerService
         usort($employeeRows, fn ($a, $b) => $b['total_telat'] <=> $a['total_telat'] ?: strcmp($a['name'], $b['name']));
 
         return [
+            'period' => [
+                'start_date' => $start,
+                'end_date' => $end,
+                'label' => (string) ($period['label'] ?? ''),
+                'month' => $period['month'] ?? null,
+                'year' => $period['year'] ?? null,
+            ],
             'summary' => $summary,
             'leave_breakdown' => $leaveBreakdown,
             'composition' => [
@@ -2520,5 +2573,223 @@ class OutletAnalyzerService
             'top_late' => array_slice($employeeRows, 0, 10),
             'top_overtime' => collect($employeeRows)->sortByDesc('total_lembur')->take(10)->values()->all(),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getPayroll(int $outletId, string $month): array
+    {
+        $empty = [
+            'has_generated' => false,
+            'payroll_month' => null,
+            'payroll_year' => null,
+            'period_label' => null,
+            'period_start' => null,
+            'period_end' => null,
+            'total_gaji' => 0.0,
+            'total_gaji_akhir_bulan' => 0.0,
+            'total_gaji_tanggal_8' => 0.0,
+            'total_bpjs_perusahaan' => 0.0,
+            'employee_count' => 0,
+            'gajian1_paid_at' => null,
+            'gajian2_paid_at' => null,
+            'splits' => [],
+            'employees' => [],
+        ];
+
+        if (! preg_match('/^\d{4}-\d{2}$/', $month)) {
+            return $empty;
+        }
+
+        $payrollPeriod = $this->payrollPeriod($month);
+        $year = $payrollPeriod['year'];
+        $payrollMonth = $payrollPeriod['month'];
+        $periodStart = $payrollPeriod['start_date'];
+        $periodEnd = $payrollPeriod['end_date'];
+        $periodLabel = $payrollPeriod['label'];
+
+        $base = array_merge($empty, [
+            'payroll_month' => $payrollMonth,
+            'payroll_year' => $year,
+            'period_label' => $periodLabel,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]);
+
+        $payrollGenerated = DB::table('payroll_generated')
+            ->where('outlet_id', $outletId)
+            ->where('month', $payrollMonth)
+            ->where('year', $year)
+            ->first();
+
+        if (! $payrollGenerated) {
+            return $base;
+        }
+
+        $details = DB::table('payroll_generated_details as pgd')
+            ->join('users as u', 'u.id', '=', 'pgd.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
+            ->where('pgd.payroll_generated_id', $payrollGenerated->id)
+            ->orderBy('d.nama_divisi')
+            ->orderBy('u.nama_lengkap')
+            ->select(
+                'pgd.user_id',
+                'pgd.gaji_pokok',
+                'pgd.tunjangan',
+                'pgd.bpjs_jkn',
+                'pgd.bpjs_tk',
+                'pgd.potongan_telat',
+                'pgd.potongan_alpha',
+                'pgd.potongan_unpaid_leave',
+                'pgd.potongan_kasbon',
+                'pgd.service_charge',
+                'pgd.uang_makan',
+                'pgd.gaji_lembur',
+                'pgd.ph_bonus',
+                'pgd.lb_total',
+                'pgd.deviasi_total',
+                'pgd.city_ledger_total',
+                'pgd.custom_items',
+                'pgd.bpjs_perusahaan_detail',
+                'pgd.payment_method',
+                'u.nama_lengkap as user_name',
+                'j.nama_jabatan',
+                'd.nama_divisi',
+            )
+            ->get();
+
+        $sumAkhirBulan = 0.0;
+        $sumTanggal8 = 0.0;
+        $sumTotalGaji = 0.0;
+        $sumBpjsPerusahaan = 0.0;
+        $employees = [];
+
+        foreach ($details as $detail) {
+            $customSums = $this->resolvePayrollCustomGajianSums($detail->custom_items);
+            $split = PayrollGajiSplitCalculator::calculate([
+                'gaji_pokok' => $detail->gaji_pokok ?? 0,
+                'tunjangan' => $detail->tunjangan ?? 0,
+                'custom_earnings_gajian1' => $customSums['custom_earnings_gajian1'],
+                'custom_deductions_gajian1' => $customSums['custom_deductions_gajian1'],
+                'bpjs_jkn' => $detail->bpjs_jkn ?? 0,
+                'bpjs_tk' => $detail->bpjs_tk ?? 0,
+                'potongan_telat' => $detail->potongan_telat ?? 0,
+                'potongan_alpha' => $detail->potongan_alpha ?? 0,
+                'potongan_unpaid_leave' => $detail->potongan_unpaid_leave ?? 0,
+                'potongan_kasbon' => $detail->potongan_kasbon ?? 0,
+                'service_charge' => $detail->service_charge ?? 0,
+                'uang_makan' => $detail->uang_makan ?? 0,
+                'gaji_lembur' => $detail->gaji_lembur ?? 0,
+                'ph_bonus' => $detail->ph_bonus ?? 0,
+                'custom_earnings_gajian2' => $customSums['custom_earnings_gajian2'],
+                'custom_deductions_gajian2' => $customSums['custom_deductions_gajian2'],
+                'lb_total' => $detail->lb_total ?? 0,
+                'deviasi_total' => $detail->deviasi_total ?? 0,
+                'city_ledger_total' => $detail->city_ledger_total ?? 0,
+            ]);
+
+            $bpjsDetail = is_string($detail->bpjs_perusahaan_detail)
+                ? json_decode($detail->bpjs_perusahaan_detail, true)
+                : null;
+            $bpjsPerusahaan = is_array($bpjsDetail) ? (float) ($bpjsDetail['total_perusahaan'] ?? 0) : 0.0;
+
+            $sumAkhirBulan += (float) $split['total_gaji_akhir_bulan'];
+            $sumTanggal8 += (float) $split['total_gaji_tanggal_8'];
+            $sumTotalGaji += (float) $split['total_gaji'];
+            $sumBpjsPerusahaan += $bpjsPerusahaan;
+
+            $employees[] = [
+                'user_id' => (int) $detail->user_id,
+                'name' => (string) ($detail->user_name ?: '-'),
+                'jabatan' => (string) ($detail->nama_jabatan ?: '-'),
+                'divisi' => (string) ($detail->nama_divisi ?: 'Tanpa Divisi'),
+                'payment_method' => (string) ($detail->payment_method ?: 'transfer'),
+                'total_gaji_akhir_bulan' => (float) $split['total_gaji_akhir_bulan'],
+                'total_gaji_tanggal_8' => (float) $split['total_gaji_tanggal_8'],
+                'total_gaji' => (float) $split['total_gaji'],
+                'bpjs_perusahaan' => round($bpjsPerusahaan, 2),
+            ];
+        }
+
+        $totalGaji1 = round($sumAkhirBulan, 2);
+        $totalGaji2 = round($sumTanggal8, 2);
+        $totalGaji = round($sumTotalGaji, 2);
+
+        return [
+            'has_generated' => true,
+            'payroll_month' => $payrollMonth,
+            'payroll_year' => $year,
+            'period_label' => $periodLabel,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'total_gaji' => $totalGaji,
+            'total_gaji_akhir_bulan' => $totalGaji1,
+            'total_gaji_tanggal_8' => $totalGaji2,
+            'total_bpjs_perusahaan' => round($sumBpjsPerusahaan, 2),
+            'employee_count' => count($employees),
+            'gajian1_paid_at' => $payrollGenerated->gajian1_paid_at ?? null,
+            'gajian2_paid_at' => $payrollGenerated->gajian2_paid_at ?? null,
+            'splits' => collect([
+                ['key' => 'gajian1', 'label' => 'Gajian 1 (Akhir Bulan)', 'amount' => $totalGaji1],
+                ['key' => 'gajian2', 'label' => 'Gajian 2 (Tanggal 8)', 'amount' => $totalGaji2],
+            ])->filter(fn ($item) => $item['amount'] > 0)->values()->all(),
+            'employees' => $employees,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     custom_earnings_gajian1: float,
+     *     custom_deductions_gajian1: float,
+     *     custom_earnings_gajian2: float,
+     *     custom_deductions_gajian2: float
+     * }
+     */
+    private function resolvePayrollCustomGajianSums(mixed $customItemsJson): array
+    {
+        $items = is_string($customItemsJson)
+            ? json_decode($customItemsJson, true)
+            : (is_array($customItemsJson) ? $customItemsJson : []);
+
+        if (! is_array($items)) {
+            $items = [];
+        }
+
+        $sum = [
+            'custom_earnings_gajian1' => 0.0,
+            'custom_deductions_gajian1' => 0.0,
+            'custom_earnings_gajian2' => 0.0,
+            'custom_deductions_gajian2' => 0.0,
+        ];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $itemType = (string) ($item['item_type'] ?? '');
+            $gajianType = (string) ($item['gajian_type'] ?? 'gajian1');
+            $amount = (float) ($item['item_amount'] ?? 0);
+
+            if ($itemType === 'earn') {
+                if ($gajianType === 'gajian2') {
+                    $sum['custom_earnings_gajian2'] += $amount;
+                } else {
+                    $sum['custom_earnings_gajian1'] += $amount;
+                }
+            }
+
+            if ($itemType === 'deduction') {
+                if ($gajianType === 'gajian2') {
+                    $sum['custom_deductions_gajian2'] += $amount;
+                } else {
+                    $sum['custom_deductions_gajian1'] += $amount;
+                }
+            }
+        }
+
+        return $sum;
     }
 }
