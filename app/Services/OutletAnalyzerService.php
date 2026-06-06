@@ -2468,6 +2468,7 @@ class OutletAnalyzerService
                 'total_telat' => (int) ($empSummary['total_telat'] ?? 0),
                 'total_lembur' => (int) ($empSummary['total_lembur'] ?? 0),
                 'alpa_days' => (int) ($empSummary['alpa_days'] ?? 0),
+                'off_days' => (int) ($empSummary['off_days'] ?? 0),
                 'leave_days' => $empLeaveDays,
                 'percentage' => $shiftCount > 0 ? round(($present / $shiftCount) * 100, 1) : 0.0,
             ];
@@ -2494,6 +2495,7 @@ class OutletAnalyzerService
                 ['key' => 'off', 'label' => 'OFF', 'days' => $summary['off_days']],
                 ['key' => 'izin', 'label' => 'Izin & Cuti', 'days' => $summary['leave_days']],
             ],
+            'employees' => collect($employeeRows)->sortBy('name')->values()->all(),
             'top_late' => array_slice($employeeRows, 0, 10),
             'top_overtime' => collect($employeeRows)->sortByDesc('total_lembur')->take(10)->values()->all(),
         ];

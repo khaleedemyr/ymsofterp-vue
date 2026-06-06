@@ -93,6 +93,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-boxes-stacked',
     accent: 'from-orange-600 to-amber-700',
   },
+  employee_attendance: {
+    title: 'Detail Kehadiran Karyawan',
+    subtitle: 'Komposisi kehadiran, izin/cuti, dan performa per karyawan',
+    icon: 'fa-solid fa-user-clock',
+    accent: 'from-indigo-600 to-violet-700',
+  },
 }));
 
 function applyFilters() {
@@ -593,6 +599,22 @@ const summaryCards = computed(() => {
     { key: 'ph', label: 'PH Kompensasi', value: s.ph_days ?? 0, unit: 'hari', tone: 'sky' },
     { key: 'izin', label: 'Izin & Cuti', value: s.leave_days ?? 0, unit: 'hari', tone: 'indigo' },
     { key: 'pct', label: 'Kehadiran', value: s.percentage ?? 0, unit: '%', tone: 'teal' },
+  ].filter((card) => card.unit !== 'hari');
+});
+
+const attendanceEmployees = computed(() => props.analysis?.employee_attendance?.employees || []);
+
+const attendanceDetailCards = computed(() => {
+  const s = attendanceSummary.value;
+  return [
+    { label: 'Hadir', value: s.present_days ?? 0, unit: 'hari', tone: 'emerald' },
+    { label: 'Terlambat', value: s.total_telat ?? 0, unit: 'menit', tone: 'amber' },
+    { label: 'Alpha', value: s.alpa_days ?? 0, unit: 'hari', tone: 'rose' },
+    { label: 'OFF', value: s.off_days ?? 0, unit: 'hari', tone: 'slate' },
+    { label: 'Lembur', value: s.total_lembur ?? 0, unit: 'jam', tone: 'orange' },
+    { label: 'PH Kompensasi', value: s.ph_days ?? 0, unit: 'hari', tone: 'sky' },
+    { label: 'Izin & Cuti', value: s.leave_days ?? 0, unit: 'hari', tone: 'indigo' },
+    { label: 'Kehadiran', value: s.percentage ?? 0, unit: '%', tone: 'teal' },
   ];
 });
 
@@ -1541,15 +1563,17 @@ function visitorArea(userId) {
             <h2 class="text-base font-semibold text-slate-900">Kehadiran Karyawan</h2>
             <p class="text-xs text-slate-500 mt-0.5">
               {{ attendanceSummary.employee_count ?? 0 }} karyawan aktif di outlet
+              <span class="text-indigo-600">· Klik chart untuk detail</span>
             </p>
           </div>
 
-          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div
               v-for="card in summaryCards"
               :key="card.key"
-              class="rounded-xl border p-3"
+              class="rounded-xl border p-3 cursor-pointer hover:shadow-sm transition-all"
               :class="toneClasses[card.tone]"
+              @click="openModal('employee_attendance')"
             >
               <p class="text-[10px] font-semibold uppercase tracking-wide opacity-90">{{ card.label }}</p>
               <p class="text-xl font-bold leading-none mt-2">
@@ -1561,14 +1585,22 @@ function visitorArea(userId) {
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div class="bg-white rounded-xl border border-slate-200 p-5">
               <h3 class="text-sm font-semibold text-slate-900">Komposisi Kehadiran</h3>
-              <div v-if="attendanceComposition.length" class="mt-3 bg-slate-50 rounded-xl p-2">
+              <div
+                v-if="attendanceComposition.length"
+                class="mt-3 bg-slate-50 rounded-xl p-2 cursor-pointer hover:ring-2 hover:ring-indigo-200 transition-all"
+                @click="openModal('employee_attendance')"
+              >
                 <apexchart type="pie" height="300" :options="attendancePieOptions" :series="attendancePieSeries" />
               </div>
               <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada data komposisi.</p>
             </div>
             <div class="bg-white rounded-xl border border-slate-200 p-5">
               <h3 class="text-sm font-semibold text-slate-900">Izin & Cuti</h3>
-              <div v-if="leaveBreakdown.length" class="mt-3 bg-slate-50 rounded-xl p-2">
+              <div
+                v-if="leaveBreakdown.length"
+                class="mt-3 bg-slate-50 rounded-xl p-2 cursor-pointer hover:ring-2 hover:ring-indigo-200 transition-all"
+                @click="openModal('employee_attendance')"
+              >
                 <apexchart type="pie" height="300" :options="leavePieOptions" :series="leavePieSeries" />
               </div>
               <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada izin/cuti pada periode ini.</p>
@@ -1578,14 +1610,22 @@ function visitorArea(userId) {
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
             <div class="bg-white rounded-xl border border-slate-200 p-5">
               <h3 class="text-sm font-semibold text-slate-900">Top Terlambat</h3>
-              <div v-if="analysis.employee_attendance?.top_late?.length" class="mt-3">
+              <div
+                v-if="analysis.employee_attendance?.top_late?.length"
+                class="mt-3 cursor-pointer hover:ring-2 hover:ring-amber-200 rounded-xl transition-all"
+                @click="openModal('employee_attendance')"
+              >
                 <apexchart type="bar" height="320" :options="lateBarOptions" :series="lateBarSeries" />
               </div>
               <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada data keterlambatan.</p>
             </div>
             <div class="bg-white rounded-xl border border-slate-200 p-5">
               <h3 class="text-sm font-semibold text-slate-900">Top Lembur</h3>
-              <div v-if="analysis.employee_attendance?.top_overtime?.length" class="mt-3">
+              <div
+                v-if="analysis.employee_attendance?.top_overtime?.length"
+                class="mt-3 cursor-pointer hover:ring-2 hover:ring-orange-200 rounded-xl transition-all"
+                @click="openModal('employee_attendance')"
+              >
                 <apexchart type="bar" height="320" :options="overtimeBarOptions" :series="overtimeBarSeries" />
               </div>
               <p v-else class="text-sm text-slate-400 text-center py-10">Tidak ada data lembur.</p>
@@ -2416,6 +2456,74 @@ function visitorArea(userId) {
                         </template>
                         <tr v-if="!(analysis.pr_ops_expenditure?.transactions?.length)">
                           <td colspan="10" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+
+                <!-- Employee Attendance -->
+                <template v-else-if="activeModal === 'employee_attendance'">
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div
+                      v-for="card in attendanceDetailCards"
+                      :key="card.label"
+                      class="rounded-xl border p-3"
+                      :class="toneClasses[card.tone]"
+                    >
+                      <p class="text-[10px] font-semibold uppercase tracking-wide opacity-90">{{ card.label }}</p>
+                      <p class="text-lg font-bold leading-none mt-2">
+                        {{ card.value }}<span class="text-xs font-medium ml-1 opacity-70">{{ card.unit }}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    <div v-if="attendanceComposition.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi Kehadiran</h3>
+                      <apexchart type="pie" height="280" :options="attendancePieOptions" :series="attendancePieSeries" />
+                    </div>
+                    <div v-if="leaveBreakdown.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Izin & Cuti</h3>
+                      <apexchart type="pie" height="280" :options="leavePieOptions" :series="leavePieSeries" />
+                    </div>
+                    <div v-if="analysis.employee_attendance?.top_late?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Top Terlambat</h3>
+                      <apexchart type="bar" height="280" :options="lateBarOptions" :series="lateBarSeries" />
+                    </div>
+                    <div v-if="analysis.employee_attendance?.top_overtime?.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Top Lembur</h3>
+                      <apexchart type="bar" height="280" :options="overtimeBarOptions" :series="overtimeBarSeries" />
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th class="px-4 py-3 text-left">Karyawan</th>
+                          <th class="px-4 py-3 text-right">Hadir</th>
+                          <th class="px-4 py-3 text-right">Telat</th>
+                          <th class="px-4 py-3 text-right">Lembur</th>
+                          <th class="px-4 py-3 text-right">Alpha</th>
+                          <th class="px-4 py-3 text-right">OFF</th>
+                          <th class="px-4 py-3 text-right">Izin</th>
+                          <th class="px-4 py-3 text-right">Kehadiran</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <tr v-for="emp in attendanceEmployees" :key="emp.id" class="hover:bg-indigo-50/30">
+                          <td class="px-4 py-2.5 font-medium">{{ emp.name }}</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.present_days ?? 0 }}</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.total_telat ?? 0 }} mnt</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.total_lembur ?? 0 }} jam</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.alpa_days ?? 0 }}</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.off_days ?? 0 }}</td>
+                          <td class="px-4 py-2.5 text-right">{{ emp.leave_days ?? 0 }}</td>
+                          <td class="px-4 py-2.5 text-right font-semibold">{{ emp.percentage ?? 0 }}%</td>
+                        </tr>
+                        <tr v-if="!attendanceEmployees.length">
+                          <td colspan="8" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
                         </tr>
                       </tbody>
                     </table>
