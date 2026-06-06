@@ -593,12 +593,12 @@ onMounted(() => {
                   </div>
 
                   <div class="form-group">
-                    <label class="form-label">Trip Advisor Target</label>
+                    <label class="form-label">Google Review Target</label>
                     <input 
                       type="text" 
                       v-model="briefingForm.trip_advisor_target"
                       class="form-input"
-                      placeholder="Enter trip advisor target"
+                      placeholder="Enter google review target"
                     />
                   </div>
 
@@ -626,12 +626,12 @@ onMounted(() => {
                   </div>
 
                   <div class="form-group">
-                    <label class="form-label">Trip Advisor Target</label>
+                    <label class="form-label">Google Review Target</label>
                     <input 
                       type="text" 
                       v-model="briefingForm.trip_advisor_target"
                       class="form-input"
-                      placeholder="Enter trip advisor target"
+                      placeholder="Enter google review target"
                     />
                   </div>
 
