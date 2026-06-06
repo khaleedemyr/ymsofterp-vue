@@ -432,6 +432,7 @@ class DailyReportController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Inspection selesai. Silakan isi form post-inspection.',
+                'report_id' => (int) $dailyReport->id,
                 'redirect_to' => route('daily-report.post-inspection', $id)
             ]);
 
@@ -1202,5 +1203,183 @@ class DailyReportController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Approval App (ymsoftapp) JSON API — mirror web /daily-report
+    // -------------------------------------------------------------------------
+
+    private function dailyReportPermissions(): array
+    {
+        $currentUser = auth()->user();
+        $canEdit = $currentUser && (
+            $currentUser->id_role === '5af56935b011a' && $currentUser->status === 'A'
+        );
+
+        return [
+            'can_edit' => $canEdit,
+            'current_user_id' => $currentUser->id ?? null,
+        ];
+    }
+
+    private function canAccessDailyReport(DailyReport $dailyReport): bool
+    {
+        $permissions = $this->dailyReportPermissions();
+
+        return $permissions['can_edit'] || $dailyReport->user_id === $permissions['current_user_id'];
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $search = $request->get('search', '');
+        $creator = $request->get('creator', '');
+        $status = $request->get('status', 'all');
+        $dateFrom = $request->get('date_from', '');
+        $dateTo = $request->get('date_to', '');
+        $perPage = (int) $request->get('per_page', 15);
+
+        $query = DailyReport::with(['outlet', 'department', 'user.jabatan', 'reportAreas', 'comments.user.jabatan']);
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->whereHas('outlet', fn ($oq) => $oq->where('nama_outlet', 'like', "%{$search}%"))
+                    ->orWhereHas('department', fn ($dq) => $dq->where('nama_departemen', 'like', "%{$search}%"));
+            });
+        }
+
+        if ($creator) {
+            $query->whereHas('user', fn ($q) => $q->where('nama_lengkap', 'like', "%{$creator}%"));
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+
+        if ($dateTo) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        $reports = $query->orderByDesc('created_at')->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'reports' => $reports->items(),
+            'pagination' => [
+                'current_page' => $reports->currentPage(),
+                'last_page' => $reports->lastPage(),
+                'per_page' => $reports->perPage(),
+                'total' => $reports->total(),
+            ],
+            'filters' => [
+                'search' => $search,
+                'creator' => $creator,
+                'status' => $status,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'per_page' => $perPage,
+            ],
+            'statistics' => [
+                'total' => DailyReport::count(),
+                'draft' => DailyReport::draft()->count(),
+                'completed' => DailyReport::completed()->count(),
+            ],
+            'permissions' => $this->dailyReportPermissions(),
+        ]);
+    }
+
+    public function apiCreateFormOptions()
+    {
+        return response()->json([
+            'success' => true,
+            'outlets' => Outlet::active()->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'departments' => Departemen::active()->orderBy('nama_departemen')->get(['id', 'nama_departemen']),
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $dailyReport = DailyReport::with([
+            'outlet',
+            'department',
+            'user.jabatan',
+            'progress.area',
+            'reportAreas.area',
+            'reportAreas.deptConcern',
+            'briefing',
+            'productivity',
+            'visitTables',
+            'summaries',
+        ])->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'report' => $dailyReport,
+            'inspection_stats' => $dailyReport->getInspectionStats(),
+            'permissions' => $this->dailyReportPermissions(),
+        ]);
+    }
+
+    public function apiInspect($id)
+    {
+        $dailyReport = DailyReport::with([
+            'outlet',
+            'department',
+            'progress.area',
+            'reportAreas.area',
+            'reportAreas.deptConcern',
+        ])->findOrFail($id);
+
+        if (! $this->canAccessDailyReport($dailyReport)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized access to this report.'], 403);
+        }
+
+        $areas = Area::where('departemen_id', $dailyReport->department_id)
+            ->where('status', 'A')
+            ->orderBy('nama_area')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'daily_report' => $dailyReport,
+            'areas' => $areas,
+            'divisions' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
+            'categories' => TicketCategory::active()->orderBy('name')->get(['id', 'name']),
+            'priorities' => TicketPriority::active()->orderBy('level', 'desc')->get(['id', 'name', 'level', 'max_days']),
+            'permissions' => $this->dailyReportPermissions(),
+        ]);
+    }
+
+    public function apiPostInspection($id)
+    {
+        $dailyReport = DailyReport::with([
+            'outlet',
+            'department',
+            'briefing',
+            'productivity',
+            'visitTables',
+            'summaries',
+        ])->findOrFail($id);
+
+        if (! $this->canAccessDailyReport($dailyReport)) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized access to this report.'], 403);
+        }
+
+        $users = \App\Models\User::where('id_outlet', $dailyReport->outlet_id)
+            ->where('status', 'A')
+            ->with('jabatan:id_jabatan,nama_jabatan')
+            ->select('id', 'nama_lengkap', 'id_outlet', 'id_jabatan')
+            ->orderBy('nama_lengkap')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'daily_report' => $dailyReport,
+            'users' => $users,
+            'permissions' => $this->dailyReportPermissions(),
+        ]);
     }
 }

@@ -512,6 +512,35 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'getComments'])->where('id', '[0-9]+');
         Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->where('id', '[0-9]+');
 
+        // Daily Report (Approval App — selaras web /daily-report)
+        Route::get('/daily-report/create-data', [\App\Http\Controllers\DailyReportController::class, 'apiCreateFormOptions']);
+        Route::get('/daily-report/summary-rating', [\App\Http\Controllers\DailyReportController::class, 'getSummaryRating']);
+        Route::get('/daily-report/regions', [\App\Http\Controllers\DailyReportController::class, 'getRegions']);
+        Route::get('/daily-report/department-ratings', [\App\Http\Controllers\DailyReportController::class, 'getDepartmentRatings']);
+        Route::get('/daily-report/ticket-options', [\App\Http\Controllers\DailyReportController::class, 'getTicketOptions']);
+        Route::get('/daily-report/areas', [\App\Http\Controllers\DailyReportController::class, 'getAreas']);
+        Route::post('/daily-report/upload-documentation', [\App\Http\Controllers\DailyReportController::class, 'uploadDocumentation']);
+        Route::get('/daily-report', [\App\Http\Controllers\DailyReportController::class, 'apiIndex']);
+        Route::post('/daily-report', [\App\Http\Controllers\DailyReportController::class, 'store']);
+        Route::get('/daily-report/{id}', [\App\Http\Controllers\DailyReportController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::delete('/daily-report/{id}', [\App\Http\Controllers\DailyReportController::class, 'destroy'])->where('id', '[0-9]+');
+        Route::get('/daily-report/{id}/inspect', [\App\Http\Controllers\DailyReportController::class, 'apiInspect'])->where('id', '[0-9]+');
+        Route::get('/daily-report/{id}/post-inspection', [\App\Http\Controllers\DailyReportController::class, 'apiPostInspection'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/auto-save', [\App\Http\Controllers\DailyReportController::class, 'autoSave'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/save-area', [\App\Http\Controllers\DailyReportController::class, 'saveArea'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/skip-area', [\App\Http\Controllers\DailyReportController::class, 'skipArea'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/complete', [\App\Http\Controllers\DailyReportController::class, 'completeReport'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/force-complete', [\App\Http\Controllers\DailyReportController::class, 'forceCompleteReport'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/save-briefing', [\App\Http\Controllers\DailyReportController::class, 'saveBriefing'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/save-productivity', [\App\Http\Controllers\DailyReportController::class, 'saveProductivity'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/save-visit-table', [\App\Http\Controllers\DailyReportController::class, 'saveVisitTable'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/save-summary', [\App\Http\Controllers\DailyReportController::class, 'saveSummary'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/create-ticket', [\App\Http\Controllers\DailyReportController::class, 'createTicketFromConcern'])->where('id', '[0-9]+');
+        Route::get('/daily-report/{id}/comments', [\App\Http\Controllers\DailyReportCommentController::class, 'index'])->where('id', '[0-9]+');
+        Route::post('/daily-report/{id}/comments', [\App\Http\Controllers\DailyReportCommentController::class, 'store'])->where('id', '[0-9]+');
+        Route::put('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'update'])->where('id', '[0-9]+');
+        Route::delete('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'destroy'])->where('id', '[0-9]+');
+
         // Members (Approval App — selaras web /members)
         Route::get('/members', [\App\Http\Controllers\MemberController::class, 'apiIndex']);
         Route::get('/members/create-data', [\App\Http\Controllers\MemberController::class, 'apiCreateData']);
