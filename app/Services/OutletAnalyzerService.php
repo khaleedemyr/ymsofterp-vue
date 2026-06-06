@@ -305,13 +305,6 @@ class OutletAnalyzerService
         }
 
         $rows = DB::table('orders as o')
-            ->leftJoin('users as u', function ($join) {
-                $join->on(
-                    DB::raw('o.waiters COLLATE utf8mb4_unicode_ci'),
-                    '=',
-                    DB::raw('u.nama_lengkap COLLATE utf8mb4_unicode_ci'),
-                );
-            })
             ->where('o.kode_outlet', $qrCode)
             ->whereDate('o.created_at', '>=', $start)
             ->whereDate('o.created_at', '<=', $end)
@@ -322,8 +315,6 @@ class OutletAnalyzerService
             ->where('o.waiters', '!=', '-')
             ->selectRaw('
                 o.waiters AS waiter_name,
-                MAX(u.id) AS user_id,
-                MAX(u.avatar) AS avatar,
                 SUM(o.grand_total) AS total_revenue,
                 COUNT(o.id) AS order_count,
                 SUM(COALESCE(o.pax, 0)) AS cover
@@ -334,12 +325,25 @@ class OutletAnalyzerService
             ->limit(2)
             ->get();
 
-        $top = $rows->values()->map(function ($row, $index) {
+        $waiterNames = $rows->pluck('waiter_name')->filter()->values()->all();
+        $usersByName = [];
+
+        if ($waiterNames !== []) {
+            $usersByName = DB::table('users')
+                ->whereIn('nama_lengkap', $waiterNames)
+                ->select('id', 'nama_lengkap', 'avatar')
+                ->get()
+                ->keyBy('nama_lengkap');
+        }
+
+        $top = $rows->values()->map(function ($row, $index) use ($usersByName) {
+            $user = $usersByName->get($row->waiter_name);
+
             return [
                 'rank' => $index + 1,
                 'waiter_name' => (string) ($row->waiter_name ?? '-'),
-                'user_id' => $row->user_id ? (int) $row->user_id : null,
-                'avatar' => $row->avatar ? (string) $row->avatar : null,
+                'user_id' => $user ? (int) $user->id : null,
+                'avatar' => $user && $user->avatar ? (string) $user->avatar : null,
                 'total_revenue' => round((float) ($row->total_revenue ?? 0), 2),
                 'order_count' => (int) ($row->order_count ?? 0),
                 'cover' => (int) ($row->cover ?? 0),
