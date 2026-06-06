@@ -252,26 +252,57 @@ const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr 
 
 /**
  * Qty serial dalam unit packing list.
- * - "1 Pack = 10 Roll" → +1 Pack per SN
- * - "1 SN = 5 Kilogram" (unit serial = Kg) → +5 Kilogram per SN
+ * Prioritas: effective_qty dari API (sudah dikonversi via master item).
  */
-function effectiveQtyForPackingList(serial, packingUnit) {
-  const physical = Number(serial.physical_qty ?? serial.repack_qty) || Number(serial.effective_qty) || 1;
+function convertQtyBetweenItemUnits(qty, fromUnitName, toUnitName, item) {
+  const from = String(fromUnitName || '').trim().toLowerCase();
+  const to = String(toUnitName || '').trim().toLowerCase();
+  if (!from || !to || from === to) return qty;
+
+  const units = item?.units || {};
+  const smallConv = Number(item?.small_conversion_qty) || 1;
+  const mediumConv = Number(item?.medium_conversion_qty) || 1;
+
+  const toSmall = (amount, unitName) => {
+    if (unitName === String(units.small_unit || '').trim().toLowerCase()) return amount;
+    if (unitName === String(units.medium_unit || '').trim().toLowerCase()) return amount * smallConv;
+    if (unitName === String(units.large_unit || '').trim().toLowerCase()) return amount * smallConv * mediumConv;
+    return amount;
+  };
+  const fromSmall = (amountSmall, unitName) => {
+    if (unitName === String(units.small_unit || '').trim().toLowerCase()) return amountSmall;
+    if (unitName === String(units.medium_unit || '').trim().toLowerCase()) return smallConv > 0 ? amountSmall / smallConv : 0;
+    if (unitName === String(units.large_unit || '').trim().toLowerCase()) {
+      const divider = smallConv * mediumConv;
+      return divider > 0 ? amountSmall / divider : 0;
+    }
+    return amountSmall;
+  };
+
+  return fromSmall(toSmall(qty, from), to);
+}
+
+function effectiveQtyForPackingList(serial, packingUnit, item = null) {
+  if (Number(serial.effective_qty) > 0) {
+    return Number(serial.effective_qty);
+  }
+
+  const physical = Number(serial.physical_qty ?? serial.repack_qty) || 1;
   const repackUnit = String(serial.repack_unit_name || '').trim().toLowerCase();
   const docUnit = String(packingUnit || '').trim().toLowerCase();
   const serialUnit = String(serial.unit_name || '').trim().toLowerCase();
-  // 1 SN = 1 Pack (repack_qty = faktor Roll per Pack)
-  if (repackUnit && docUnit && repackUnit === docUnit && serialUnit && serialUnit !== repackUnit) {
-    return 1;
+
+  if (item && serialUnit && docUnit && serialUnit !== docUnit) {
+    return convertQtyBetweenItemUnits(physical, serialUnit, docUnit, item);
   }
-  // 1 SN = repack_qty dalam unit yang sama (mis. 5 Kilogram per SN)
+
   if (serialUnit && docUnit && serialUnit === docUnit) {
     return physical;
   }
   if (repackUnit && docUnit && repackUnit === docUnit) {
     return physical;
   }
-  return Number(serial.effective_qty) || physical;
+  return physical;
 }
 
 function getSerialQtySum(item) {
@@ -405,7 +436,7 @@ function applySerialScan(serialNumber, serial) {
     scanFeedbackClass.value = 'text-red-600';
     return;
   }
-  const effectiveQty = effectiveQtyForPackingList(serial, matchedItem.unit);
+  const effectiveQty = effectiveQtyForPackingList(serial, matchedItem.unit, matchedItem);
   const remainingSerial = Number(matchedItem.qty) - (Number(matchedItem.qty_scan_barcode) || 0) - getSerialQtySum(matchedItem);
   if (effectiveQty > remainingSerial + 0.001) {
     scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit}, scan ini: +${effectiveQty.toFixed(2)})`;

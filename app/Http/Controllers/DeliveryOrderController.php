@@ -2539,6 +2539,9 @@ class DeliveryOrderController extends Controller
             ->leftJoin('items as i', 's.item_id', '=', 'i.id')
             ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
             ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
+            ->leftJoin('units as su', 'su.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as mu', 'mu.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as lu', 'lu.id', '=', 'i.large_unit_id')
             ->select(
                 's.id',
                 's.serial_number',
@@ -2553,6 +2556,14 @@ class DeliveryOrderController extends Controller
                 's.repack_unit_id',
                 's.repack_qty',
                 'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'su.name as small_unit_name',
+                'mu.name as medium_unit_name',
+                'lu.name as large_unit_name',
                 'u.name as unit_name',
                 'ru.name as repack_unit_name'
             )
@@ -2590,8 +2601,9 @@ class DeliveryOrderController extends Controller
         $packingUnit = $packingListId
             ? $this->resolvePackingListItemUnit($packingListId, (int) $serial->item_id)
             : null;
+        $itemUom = InventorySerialEffectiveQty::itemUomFromRow($serial);
         $physicalQty = InventorySerialEffectiveQty::resolve($serial);
-        $effectiveQty = InventorySerialEffectiveQty::resolveForDocumentUnit($serial, $packingUnit);
+        $effectiveQty = InventorySerialEffectiveQty::resolveForDocumentUnit($serial, $packingUnit, $itemUom);
         $repackQtyForDisplay = (float) ($serial->repack_qty ?? 0) > 0
             ? (float) $serial->repack_qty
             : (($serial->source_type ?? '') === 'repack' ? $physicalQty : null);
