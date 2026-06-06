@@ -320,6 +320,55 @@ class PosOrderController extends Controller
                     ]);
                 }
 
+                // 4b. Insert/Update kitchen_tickets (kitchen display analytics)
+                if (isset($orderData['kitchen_tickets']) && is_array($orderData['kitchen_tickets'])) {
+                    try {
+                        DB::table('kitchen_tickets')
+                            ->where('order_id', $orderData['id'])
+                            ->where('kode_outlet', $kodeOutlet)
+                            ->delete();
+
+                        foreach ($orderData['kitchen_tickets'] as $ticket) {
+                            DB::table('kitchen_tickets')->insert([
+                                'id' => $ticket['id'] ?? null,
+                                'order_item_id' => $ticket['order_item_id'] ?? '',
+                                'order_id' => $orderData['id'],
+                                'station' => $ticket['station'] ?? 'kitchen_asian',
+                                'status' => $ticket['status'] ?? 'pending',
+                                'is_add' => !empty($ticket['is_add']) ? 1 : 0,
+                                'print_seq' => $ticket['print_seq'] ?? null,
+                                'item_name' => $ticket['item_name'] ?? null,
+                                'qty' => $ticket['qty'] ?? null,
+                                'tally' => $ticket['tally'] ?? null,
+                                'modifiers' => $ticket['modifiers'] ?? null,
+                                'notes' => $ticket['notes'] ?? null,
+                                'item_type' => $ticket['item_type'] ?? null,
+                                'table_name' => $ticket['table_name'] ?? null,
+                                'order_no' => $ticket['order_no'] ?? null,
+                                'order_time' => $ticket['order_time'] ?? null,
+                                'waiter_name' => $ticket['waiter_name'] ?? null,
+                                'order_mode' => $ticket['order_mode'] ?? null,
+                                'created_at' => $convertDateTime($ticket['created_at'] ?? null),
+                                'started_at' => !empty($ticket['started_at']) ? $convertDateTime($ticket['started_at']) : null,
+                                'done_at' => !empty($ticket['done_at']) ? $convertDateTime($ticket['done_at']) : null,
+                                'wait_seconds' => $ticket['wait_seconds'] ?? null,
+                                'work_seconds' => $ticket['work_seconds'] ?? null,
+                                'kode_outlet' => $kodeOutlet,
+                            ]);
+                        }
+
+                        Log::info('Kitchen tickets synced', [
+                            'order_id' => $orderData['id'],
+                            'kitchen_tickets_count' => count($orderData['kitchen_tickets']),
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::warning('Kitchen tickets sync skipped', [
+                            'order_id' => $orderData['id'],
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
                 // 5. Create jurnal entries (jika order status = paid)
                 if (($orderData['status'] ?? '') === 'paid') {
                     try {
@@ -554,7 +603,8 @@ class PosOrderController extends Controller
                     'message' => 'Order synced successfully',
                     'data' => [
                         'order_id' => $orderData['id'],
-                        'kode_outlet' => $kodeOutlet
+                        'kode_outlet' => $kodeOutlet,
+                        'kitchen_tickets_count' => count($orderData['kitchen_tickets'] ?? []),
                     ]
                 ]);
 
@@ -1390,6 +1440,19 @@ class PosOrderController extends Controller
                     ->where('order_id', $orderId)
                     ->delete();
 
+                $deletedKitchenTickets = 0;
+                try {
+                    $deletedKitchenTickets = DB::table('kitchen_tickets')
+                        ->where('order_id', $orderId)
+                        ->where('kode_outlet', $kodeOutlet)
+                        ->delete();
+                } catch (\Exception $e) {
+                    Log::warning('kitchen_tickets delete skipped on void', [
+                        'order_id' => $orderId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
                 // Delete order
                 $deletedOrder = DB::table('orders')
                     ->where('id', $orderId)
@@ -1400,7 +1463,8 @@ class PosOrderController extends Controller
                     'deleted_order' => $deletedOrder,
                     'deleted_items' => $deletedItems,
                     'deleted_promos' => $deletedPromos,
-                    'deleted_payments' => $deletedPayments
+                    'deleted_payments' => $deletedPayments,
+                    'deleted_kitchen_tickets' => $deletedKitchenTickets,
                 ]);
 
                 DB::commit();
@@ -1416,7 +1480,8 @@ class PosOrderController extends Controller
                             'order' => $deletedOrder,
                             'items' => $deletedItems,
                             'promos' => $deletedPromos,
-                            'payments' => $deletedPayments
+                            'payments' => $deletedPayments,
+                            'kitchen_tickets' => $deletedKitchenTickets,
                         ]
                     ]
                 ]);

@@ -133,6 +133,50 @@ class PosDummySyncController extends Controller
                 ]);
             }
 
+            // Kitchen display tickets → tabel pusat (sama dengan sync POS utama)
+            if (isset($orderData['kitchen_tickets']) && is_array($orderData['kitchen_tickets'])) {
+                try {
+                    DB::table('kitchen_tickets')
+                        ->where('order_id', $orderData['id'])
+                        ->where('kode_outlet', $kodeOutlet)
+                        ->delete();
+
+                    foreach ($orderData['kitchen_tickets'] as $ticket) {
+                        DB::table('kitchen_tickets')->insert([
+                            'id' => $ticket['id'] ?? null,
+                            'order_item_id' => $ticket['order_item_id'] ?? '',
+                            'order_id' => $orderData['id'],
+                            'station' => $ticket['station'] ?? 'kitchen_asian',
+                            'status' => $ticket['status'] ?? 'pending',
+                            'is_add' => !empty($ticket['is_add']) ? 1 : 0,
+                            'print_seq' => $ticket['print_seq'] ?? null,
+                            'item_name' => $ticket['item_name'] ?? null,
+                            'qty' => $ticket['qty'] ?? null,
+                            'tally' => $ticket['tally'] ?? null,
+                            'modifiers' => $ticket['modifiers'] ?? null,
+                            'notes' => $ticket['notes'] ?? null,
+                            'item_type' => $ticket['item_type'] ?? null,
+                            'table_name' => $ticket['table_name'] ?? null,
+                            'order_no' => $ticket['order_no'] ?? null,
+                            'order_time' => $ticket['order_time'] ?? null,
+                            'waiter_name' => $ticket['waiter_name'] ?? null,
+                            'order_mode' => $ticket['order_mode'] ?? null,
+                            'created_at' => $this->convertDateTime($ticket['created_at'] ?? null),
+                            'started_at' => !empty($ticket['started_at']) ? $this->convertDateTime($ticket['started_at']) : null,
+                            'done_at' => !empty($ticket['done_at']) ? $this->convertDateTime($ticket['done_at']) : null,
+                            'wait_seconds' => $ticket['wait_seconds'] ?? null,
+                            'work_seconds' => $ticket['work_seconds'] ?? null,
+                            'kode_outlet' => $kodeOutlet,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Kitchen tickets sync skipped (dummy)', [
+                        'order_id' => $orderData['id'],
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             DB::table('order_payment_dummy')->where('order_id', $orderData['id'])->delete();
             foreach (($orderData['payments'] ?? []) as $payment) {
                 DB::table('order_payment_dummy')->insert([
@@ -165,6 +209,7 @@ class PosDummySyncController extends Controller
                     'items_count' => count($orderData['items'] ?? []),
                     'promos_count' => count($orderData['promos'] ?? []),
                     'payments_count' => count($orderData['payments'] ?? []),
+                    'kitchen_tickets_count' => count($orderData['kitchen_tickets'] ?? []),
                 ],
             ]);
         } catch (\Exception $e) {
