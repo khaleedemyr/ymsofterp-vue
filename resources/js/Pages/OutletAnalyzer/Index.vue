@@ -202,6 +202,14 @@ function truncateLabel(value, max = 28) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+function waiterAvatarUrl(avatar) {
+  return avatar ? `/storage/${avatar}` : null;
+}
+
+function waiterInitial(name) {
+  return String(name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
 const chartBase = {
   chart: { toolbar: { show: false }, fontFamily: 'inherit' },
   legend: { position: 'bottom', fontSize: '13px' },
@@ -272,6 +280,10 @@ const revenueDailyOptions = computed(() => ({
 
 const topFoodItems = computed(() => props.analysis?.top_menu_items?.top_food || []);
 const topBeverageItems = computed(() => props.analysis?.top_menu_items?.top_beverages || []);
+
+const waiterUpsellTop = computed(() => props.analysis?.waiter_upsell_ranking?.top || []);
+const waiterUpsellRank1 = computed(() => waiterUpsellTop.value[0] || null);
+const waiterUpsellRank2 = computed(() => waiterUpsellTop.value[1] || null);
 
 const topFoodBarSeries = computed(() => [{
   name: 'Qty',
@@ -726,6 +738,87 @@ function visitorArea(userId) {
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- Waiter Upsell Ranking -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5 overflow-hidden">
+          <div class="mb-2">
+            <h2 class="text-base font-semibold text-slate-900">Ranking Penjualan Waiters</h2>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Top 2 waiter · total revenue dari order POS
+            </p>
+          </div>
+
+          <div v-if="waiterUpsellTop.length" class="relative rounded-2xl bg-gradient-to-b from-amber-50 via-yellow-50 to-white border border-amber-100 px-4 sm:px-8 pt-8 pb-6">
+            <div class="flex items-end justify-center gap-3 sm:gap-8 max-w-xl mx-auto min-h-[280px]">
+              <!-- Rank 2 -->
+              <div
+                v-if="waiterUpsellRank2"
+                class="flex flex-col items-center flex-1 max-w-[160px]"
+              >
+                <div class="flex flex-col items-center text-center mb-3 px-1">
+                  <div class="w-16 h-16 rounded-full bg-white border-4 border-amber-200 shadow-md overflow-hidden flex items-center justify-center mb-2">
+                    <img
+                      v-if="waiterAvatarUrl(waiterUpsellRank2.avatar)"
+                      :src="waiterAvatarUrl(waiterUpsellRank2.avatar)"
+                      :alt="waiterUpsellRank2.waiter_name"
+                      class="w-full h-full object-cover"
+                    />
+                    <span v-else class="text-2xl font-bold text-amber-600">{{ waiterInitial(waiterUpsellRank2.waiter_name) }}</span>
+                  </div>
+                  <p class="text-sm font-bold text-slate-800 leading-tight">{{ waiterUpsellRank2.waiter_name }}</p>
+                  <p class="text-base font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank2.total_revenue) }}</p>
+                  <p class="text-[11px] text-slate-500 mt-0.5">
+                    {{ waiterUpsellRank2.order_count }} order · {{ waiterUpsellRank2.cover }} cover
+                  </p>
+                </div>
+                <div class="w-full relative">
+                  <div class="absolute -top-1 left-0 right-0 h-2 bg-amber-300 rounded-t-md"></div>
+                  <div class="w-full h-24 sm:h-28 bg-amber-400 rounded-t-lg flex items-center justify-center shadow-inner">
+                    <span class="text-4xl sm:text-5xl font-black text-amber-900/80">2</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Rank 1 -->
+              <div
+                v-if="waiterUpsellRank1"
+                class="flex flex-col items-center flex-1 max-w-[180px] -mt-2 sm:-mt-4 z-10"
+              >
+                <div class="mb-1">
+                  <span class="inline-flex items-center rounded-full bg-yellow-300 text-yellow-900 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-sm">
+                    Top 1
+                  </span>
+                </div>
+                <div class="flex flex-col items-center text-center mb-3 px-1">
+                  <div class="w-20 h-20 rounded-full bg-white border-4 border-yellow-300 shadow-lg overflow-hidden flex items-center justify-center mb-2 ring-4 ring-yellow-200/50">
+                    <img
+                      v-if="waiterAvatarUrl(waiterUpsellRank1.avatar)"
+                      :src="waiterAvatarUrl(waiterUpsellRank1.avatar)"
+                      :alt="waiterUpsellRank1.waiter_name"
+                      class="w-full h-full object-cover"
+                    />
+                    <span v-else class="text-3xl font-bold text-yellow-600">{{ waiterInitial(waiterUpsellRank1.waiter_name) }}</span>
+                  </div>
+                  <p class="text-sm font-bold text-slate-900 leading-tight">{{ waiterUpsellRank1.waiter_name }}</p>
+                  <p class="text-lg font-bold text-amber-700 mt-1">{{ formatRupiah(waiterUpsellRank1.total_revenue) }}</p>
+                  <p class="text-[11px] text-slate-500 mt-0.5">
+                    {{ waiterUpsellRank1.order_count }} order · {{ waiterUpsellRank1.cover }} cover
+                  </p>
+                </div>
+                <div class="w-full relative">
+                  <div class="absolute -top-1 left-0 right-0 h-2.5 bg-yellow-300 rounded-t-md"></div>
+                  <div class="w-full h-32 sm:h-36 bg-amber-400 rounded-t-lg flex items-center justify-center shadow-inner">
+                    <span class="text-5xl sm:text-6xl font-black text-amber-900/80">1</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p v-else class="text-sm text-slate-400 text-center py-12 rounded-xl bg-slate-50 border border-dashed border-slate-200">
+            Tidak ada data penjualan waiter pada periode ini.
+          </p>
         </section>
 
         <!-- Regional by Area -->

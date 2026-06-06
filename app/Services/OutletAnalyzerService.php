@@ -79,6 +79,7 @@ class OutletAnalyzerService
             'period' => $period,
             'revenue' => $revenue,
             'top_menu_items' => $this->getTopMenuItems($outlet, $start, $end),
+            'waiter_upsell_ranking' => $this->getWaiterUpsellRanking($outlet, $start, $end),
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
             'google_review_gsi' => $this->getGoogleReviewGsi((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
             'regional_visits' => $this->getRegionalVisits((int) $outlet->id_outlet, $start, $end),
@@ -287,6 +288,65 @@ class OutletAnalyzerService
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * Ranking waiter — total revenue (grand_total) per waiter dari orders.
+     *
+     * @return array{top: list<array<string, mixed>>}
+     */
+    private function getWaiterUpsellRanking(object $outlet, string $start, string $end): array
+    {
+        $empty = ['top' => []];
+
+        $qrCode = trim((string) ($outlet->qr_code ?? ''));
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        $rows = DB::table('orders as o')
+            ->leftJoin('users as u', function ($join) {
+                $join->on(
+                    DB::raw('o.waiters COLLATE utf8mb4_unicode_ci'),
+                    '=',
+                    DB::raw('u.nama_lengkap COLLATE utf8mb4_unicode_ci'),
+                );
+            })
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $start)
+            ->whereDate('o.created_at', '<=', $end)
+            ->where('o.status', '!=', 'cancelled')
+            ->where('o.grand_total', '>', 0)
+            ->whereNotNull('o.waiters')
+            ->where('o.waiters', '!=', '')
+            ->where('o.waiters', '!=', '-')
+            ->selectRaw('
+                o.waiters AS waiter_name,
+                MAX(u.id) AS user_id,
+                MAX(u.avatar) AS avatar,
+                SUM(o.grand_total) AS total_revenue,
+                COUNT(o.id) AS order_count,
+                SUM(COALESCE(o.pax, 0)) AS cover
+            ')
+            ->groupBy('o.waiters')
+            ->orderByDesc('total_revenue')
+            ->orderByDesc('order_count')
+            ->limit(2)
+            ->get();
+
+        $top = $rows->values()->map(function ($row, $index) {
+            return [
+                'rank' => $index + 1,
+                'waiter_name' => (string) ($row->waiter_name ?? '-'),
+                'user_id' => $row->user_id ? (int) $row->user_id : null,
+                'avatar' => $row->avatar ? (string) $row->avatar : null,
+                'total_revenue' => round((float) ($row->total_revenue ?? 0), 2),
+                'order_count' => (int) ($row->order_count ?? 0),
+                'cover' => (int) ($row->cover ?? 0),
+            ];
+        })->all();
+
+        return ['top' => $top];
     }
 
     /**
