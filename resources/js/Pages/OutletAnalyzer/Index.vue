@@ -20,6 +20,7 @@ const idOutlet = ref(
 );
 
 const activeModal = ref(null);
+const expandedPettyCashKeys = ref(new Set());
 
 const hasAnalysis = computed(() => !!props.analysis?.outlet);
 
@@ -94,6 +95,9 @@ function onKeydown(e) {
 
 watch(activeModal, (val) => {
   document.body.style.overflow = val ? 'hidden' : '';
+  if (val !== 'petty_cash') {
+    expandedPettyCashKeys.value = new Set();
+  }
 });
 
 onMounted(() => window.addEventListener('keydown', onKeydown));
@@ -115,6 +119,25 @@ function formatRupiah(value) {
 function pct(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
   return `${Number(value).toFixed(2)}%`;
+}
+
+function pettyCashRowKey(row) {
+  return `${row.source}-${row.id}`;
+}
+
+function isPettyCashExpanded(row) {
+  return expandedPettyCashKeys.value.has(pettyCashRowKey(row));
+}
+
+function togglePettyCashRow(row) {
+  const key = pettyCashRowKey(row);
+  const next = new Set(expandedPettyCashKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedPettyCashKeys.value = next;
 }
 
 const chartBase = {
@@ -1245,27 +1268,68 @@ function visitorArea(userId) {
                     <table class="min-w-full text-sm">
                       <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                         <tr>
+                          <th class="px-3 py-3 w-8"></th>
                           <th class="px-4 py-3 text-left">Tanggal</th>
                           <th class="px-4 py-3 text-left">No. Retail</th>
                           <th class="px-4 py-3 text-left">Sumber</th>
                           <th class="px-4 py-3 text-left">Kategori</th>
+                          <th class="px-4 py-3 text-left">Creator</th>
                           <th class="px-4 py-3 text-left">Metode</th>
                           <th class="px-4 py-3 text-right">Nominal</th>
                           <th class="px-4 py-3 text-left">Catatan</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
-                        <tr v-for="row in pettyCashAllTransactions" :key="`${row.source}-${row.id}`" class="hover:bg-rose-50/30">
-                          <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
-                          <td class="px-4 py-2.5 font-medium">{{ row.retail_number }}</td>
-                          <td class="px-4 py-2.5">{{ row.source_label }}</td>
-                          <td class="px-4 py-2.5 text-slate-600">{{ row.category_name || '-' }}</td>
-                          <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
-                          <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
-                          <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.notes || '-' }}</td>
-                        </tr>
+                        <template v-for="row in pettyCashAllTransactions" :key="pettyCashRowKey(row)">
+                          <tr
+                            class="hover:bg-rose-50/30 cursor-pointer"
+                            @click="togglePettyCashRow(row)"
+                          >
+                            <td class="px-3 py-2.5 text-slate-400">
+                              <i
+                                class="fas text-xs transition-transform"
+                                :class="isPettyCashExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                              ></i>
+                            </td>
+                            <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
+                            <td class="px-4 py-2.5 font-medium">{{ row.retail_number }}</td>
+                            <td class="px-4 py-2.5">{{ row.source_label }}</td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ row.category_name || '-' }}</td>
+                            <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
+                            <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
+                            <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.notes || '-' }}</td>
+                          </tr>
+                          <tr v-if="isPettyCashExpanded(row)">
+                            <td colspan="9" class="px-4 py-3 bg-slate-50">
+                              <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table class="min-w-full text-xs">
+                                  <thead class="bg-slate-100 text-slate-500 uppercase">
+                                    <tr>
+                                      <th class="px-3 py-2 text-left">Item</th>
+                                      <th class="px-3 py-2 text-right">Qty</th>
+                                      <th class="px-3 py-2 text-left">Satuan</th>
+                                      <th class="px-3 py-2 text-right">Harga</th>
+                                      <th class="px-3 py-2 text-right">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-slate-100">
+                                    <tr v-for="(item, idx) in row.items" :key="idx">
+                                      <td class="px-3 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                                      <td class="px-3 py-2 text-right">{{ item.qty }}</td>
+                                      <td class="px-3 py-2">{{ item.unit || '-' }}</td>
+                                      <td class="px-3 py-2 text-right">{{ formatRupiah(item.price) }}</td>
+                                      <td class="px-3 py-2 text-right font-semibold">{{ formatRupiah(item.subtotal) }}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
+                            </td>
+                          </tr>
+                        </template>
                         <tr v-if="!pettyCashAllTransactions.length">
-                          <td colspan="7" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi petty cash pada periode ini.</td>
+                          <td colspan="9" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi petty cash pada periode ini.</td>
                         </tr>
                       </tbody>
                     </table>

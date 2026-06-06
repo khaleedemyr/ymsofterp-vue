@@ -647,7 +647,8 @@ class OutletAnalyzerService
             ->values()
             ->all();
 
-        $retailFoodTransactions = DB::table('retail_food as rf')
+        $retailFoodRows = DB::table('retail_food as rf')
+            ->leftJoin('users as u', 'rf.created_by', '=', 'u.id')
             ->where('rf.outlet_id', $outletId)
             ->where('rf.status', 'approved')
             ->whereNull('rf.deleted_at')
@@ -656,15 +657,22 @@ class OutletAnalyzerService
             ->where(function ($q) {
                 $this->applyNonContraBonPaymentFilter($q, 'rf.payment_method');
             })
-            ->select('rf.id', 'rf.retail_number', 'rf.transaction_date', 'rf.total_amount', 'rf.payment_method', 'rf.notes')
+            ->select(
+                'rf.id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount',
+                'rf.payment_method',
+                'rf.notes',
+                'u.nama_lengkap as creator_name',
+            )
             ->orderByDesc('rf.transaction_date')
             ->orderByDesc('rf.id')
-            ->get()
-            ->map(fn ($row) => $this->mapPettyCashTransaction($row, 'retail_food'))
-            ->all();
+            ->get();
 
-        $retailNonFoodTransactions = DB::table('retail_non_food as rnf')
+        $retailNonFoodRows = DB::table('retail_non_food as rnf')
             ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
+            ->leftJoin('users as u', 'rnf.created_by', '=', 'u.id')
             ->where('rnf.outlet_id', $outletId)
             ->where('rnf.status', 'approved')
             ->whereNull('rnf.deleted_at')
@@ -681,11 +689,33 @@ class OutletAnalyzerService
                 'rnf.payment_method',
                 'rnf.notes',
                 'prc.name as category_name',
+                'u.nama_lengkap as creator_name',
             )
             ->orderByDesc('rnf.transaction_date')
             ->orderByDesc('rnf.id')
-            ->get()
-            ->map(fn ($row) => $this->mapPettyCashTransaction($row, 'retail_non_food'))
+            ->get();
+
+        $retailFoodItems = $this->fetchPettyCashRetailFoodItems(
+            $retailFoodRows->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+        $retailNonFoodItems = $this->fetchPettyCashRetailNonFoodItems(
+            $retailNonFoodRows->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        $retailFoodTransactions = $retailFoodRows
+            ->map(fn ($row) => $this->mapPettyCashTransaction(
+                $row,
+                'retail_food',
+                $retailFoodItems[(int) $row->id] ?? [],
+            ))
+            ->all();
+
+        $retailNonFoodTransactions = $retailNonFoodRows
+            ->map(fn ($row) => $this->mapPettyCashTransaction(
+                $row,
+                'retail_non_food',
+                $retailNonFoodItems[(int) $row->id] ?? [],
+            ))
             ->all();
 
         $retailFoodCategories = [
@@ -779,9 +809,10 @@ class OutletAnalyzerService
     }
 
     /**
+     * @param  list<array<string, mixed>>  $items
      * @return array<string, mixed>
      */
-    private function mapPettyCashTransaction(object $row, string $source): array
+    private function mapPettyCashTransaction(object $row, string $source, array $items = []): array
     {
         $paymentMethod = (string) ($row->payment_method ?? 'cash');
 
@@ -795,8 +826,70 @@ class OutletAnalyzerService
             'payment_method' => $paymentMethod,
             'payment_method_label' => $paymentMethod === 'cash' ? 'Cash' : ucfirst(str_replace('_', ' ', $paymentMethod)),
             'category_name' => isset($row->category_name) ? (string) ($row->category_name ?: 'Tanpa Kategori') : null,
+            'creator_name' => (string) ($row->creator_name ?? '-'),
             'notes' => mb_substr((string) ($row->notes ?? ''), 0, 120),
+            'items' => $items,
         ];
+    }
+
+    /**
+     * @param  list<int>  $retailFoodIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchPettyCashRetailFoodItems(array $retailFoodIds): array
+    {
+        if ($retailFoodIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+        DB::table('retail_food_items')
+            ->whereIn('retail_food_id', $retailFoodIds)
+            ->select('retail_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal')
+            ->orderBy('id')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $parentId = (int) $row->retail_food_id;
+                $grouped[$parentId][] = [
+                    'item_name' => (string) ($row->item_name ?? '-'),
+                    'qty' => round((float) ($row->qty ?? 0), 3),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'price' => round((float) ($row->price ?? 0), 2),
+                    'subtotal' => round((float) ($row->subtotal ?? 0), 2),
+                ];
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @param  list<int>  $retailNonFoodIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchPettyCashRetailNonFoodItems(array $retailNonFoodIds): array
+    {
+        if ($retailNonFoodIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+        DB::table('retail_non_food_items')
+            ->whereIn('retail_non_food_id', $retailNonFoodIds)
+            ->select('retail_non_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal')
+            ->orderBy('id')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $parentId = (int) $row->retail_non_food_id;
+                $grouped[$parentId][] = [
+                    'item_name' => (string) ($row->item_name ?? '-'),
+                    'qty' => round((float) ($row->qty ?? 0), 2),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'price' => round((float) ($row->price ?? 0), 2),
+                    'subtotal' => round((float) ($row->subtotal ?? 0), 2),
+                ];
+            });
+
+        return $grouped;
     }
 
     /**
@@ -806,103 +899,107 @@ class OutletAnalyzerService
      */
     private function getPrOpsExpenditure(int $outletId, string $start, string $end): array
     {
-        $paidByCategory = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-            ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
-            ->whereBetween('nfp.payment_date', [$start, $end])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_order_ops_id')
-            ->where('poi.source_type', 'purchase_requisition_ops')
-            ->where('pr.outlet_id', $outletId)
-            ->select(
-                'prc.id as category_id',
-                'prc.name as category_name',
-                'prc.division',
-                DB::raw('COALESCE(SUM(nfp.amount), 0) as amount'),
-                DB::raw('COUNT(DISTINCT nfp.id) as payment_count'),
-            )
-            ->groupBy('prc.id', 'prc.name', 'prc.division')
-            ->get();
-
-        $directPaidByCategory = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-            ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
-            ->whereBetween('nfp.payment_date', [$start, $end])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_requisition_id')
-            ->whereNull('nfp.purchase_order_ops_id')
-            ->where('pr.outlet_id', $outletId)
-            ->select(
-                'prc.id as category_id',
-                'prc.name as category_name',
-                'prc.division',
-                DB::raw('COALESCE(SUM(nfp.amount), 0) as amount'),
-                DB::raw('COUNT(DISTINCT nfp.id) as payment_count'),
-            )
-            ->groupBy('prc.id', 'prc.name', 'prc.division')
-            ->get();
-
-        $uncategorizedPaid = (float) DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-            ->whereBetween('nfp.payment_date', [$start, $end])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_order_ops_id')
-            ->where('poi.source_type', 'purchase_requisition_ops')
-            ->whereNull('pr.category_id')
-            ->where('pr.outlet_id', $outletId)
-            ->sum('nfp.amount');
-
-        $uncategorizedDirectPaid = (float) DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-            ->whereBetween('nfp.payment_date', [$start, $end])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_requisition_id')
-            ->whereNull('nfp.purchase_order_ops_id')
-            ->whereNull('pr.category_id')
-            ->where('pr.outlet_id', $outletId)
-            ->sum('nfp.amount');
-
         $combined = [];
-        $uncategorizedKey = 'uncategorized';
 
-        foreach ([$paidByCategory, $directPaidByCategory] as $rows) {
+        $appendCategoryRows = function ($rows) use (&$combined): void {
             foreach ($rows as $item) {
-                $key = $item->category_id ? (string) $item->category_id : $uncategorizedKey;
+                $categoryId = $item->category_id ?? null;
+                $key = $categoryId ? (string) $categoryId : 'uncategorized';
+
                 if (! isset($combined[$key])) {
                     $combined[$key] = [
-                        'category_id' => $item->category_id ?: $uncategorizedKey,
+                        'category_id' => $categoryId ?: 'uncategorized',
                         'label' => (string) ($item->category_name ?: 'Tanpa Kategori'),
                         'division' => (string) ($item->division ?? ''),
                         'amount' => 0.0,
                         'payment_count' => 0,
                     ];
                 }
-                $combined[$key]['amount'] += (float) $item->amount;
-                $combined[$key]['payment_count'] += (int) $item->payment_count;
-            }
-        }
 
-        $uncategorizedTotal = $uncategorizedPaid + $uncategorizedDirectPaid;
-        if ($uncategorizedTotal > 0) {
-            if (! isset($combined[$uncategorizedKey])) {
-                $combined[$uncategorizedKey] = [
-                    'category_id' => $uncategorizedKey,
-                    'label' => 'Tanpa Kategori',
-                    'division' => '',
-                    'amount' => 0.0,
-                    'payment_count' => 0,
-                ];
+                $combined[$key]['amount'] += (float) ($item->amount ?? 0);
+                $combined[$key]['payment_count'] += (int) ($item->payment_count ?? 0);
             }
-            $combined[$uncategorizedKey]['amount'] += $uncategorizedTotal;
-        }
+        };
+
+        $nfpoRows = DB::table('non_food_payment_outlets as nfpo')
+            ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
+            ->leftJoin('purchase_requisition_categories as prc', 'nfpo.category_id', '=', 'prc.id')
+            ->where('nfpo.outlet_id', $outletId)
+            ->whereBetween('nfp.payment_date', [$start, $end])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->where('nfp.status', '!=', 'cancelled')
+            ->whereNull('nfp.retail_non_food_id')
+            ->where(function ($q) {
+                $this->applyPrOpsPaymentScope($q, 'nfp');
+            })
+            ->select(
+                'prc.id as category_id',
+                'prc.name as category_name',
+                'prc.division',
+                DB::raw('COALESCE(SUM(nfpo.amount), 0) as amount'),
+                DB::raw('COUNT(DISTINCT nfp.id) as payment_count'),
+            )
+            ->groupBy('prc.id', 'prc.name', 'prc.division')
+            ->get();
+
+        $appendCategoryRows($nfpoRows);
+
+        $legacyViaPo = DB::table('non_food_payments as nfp')
+            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
+            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
+            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+            ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+            ->whereBetween('nfp.payment_date', [$start, $end])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->where('nfp.status', '!=', 'cancelled')
+            ->whereNotNull('nfp.purchase_order_ops_id')
+            ->where('poi.source_type', 'purchase_requisition_ops')
+            ->whereNull('nfp.retail_non_food_id')
+            ->whereNotExists(function ($sub) {
+                $sub->from('non_food_payment_outlets as nfpo')
+                    ->whereColumn('nfpo.non_food_payment_id', 'nfp.id');
+            })
+            ->where(function ($q) use ($outletId) {
+                $this->applyOutletPrOpsScope($q, $outletId, 'pr');
+            })
+            ->select(
+                'prc.id as category_id',
+                'prc.name as category_name',
+                'prc.division',
+                DB::raw('COALESCE(SUM(nfp.amount), 0) as amount'),
+                DB::raw('COUNT(DISTINCT nfp.id) as payment_count'),
+            )
+            ->groupBy('prc.id', 'prc.name', 'prc.division')
+            ->get();
+
+        $legacyDirect = DB::table('non_food_payments as nfp')
+            ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
+            ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
+            ->whereBetween('nfp.payment_date', [$start, $end])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->where('nfp.status', '!=', 'cancelled')
+            ->whereNotNull('nfp.purchase_requisition_id')
+            ->whereNull('nfp.purchase_order_ops_id')
+            ->whereNull('nfp.retail_non_food_id')
+            ->whereNotExists(function ($sub) {
+                $sub->from('non_food_payment_outlets as nfpo')
+                    ->whereColumn('nfpo.non_food_payment_id', 'nfp.id');
+            })
+            ->where(function ($q) use ($outletId) {
+                $this->applyOutletPrOpsScope($q, $outletId, 'pr');
+            })
+            ->select(
+                'prc.id as category_id',
+                'prc.name as category_name',
+                'prc.division',
+                DB::raw('COALESCE(SUM(nfp.amount), 0) as amount'),
+                DB::raw('COUNT(DISTINCT nfp.id) as payment_count'),
+            )
+            ->groupBy('prc.id', 'prc.name', 'prc.division')
+            ->get();
+
+        $appendCategoryRows($legacyViaPo);
+        $appendCategoryRows($legacyDirect);
 
         $categories = collect($combined)
             ->filter(fn ($row) => $row['amount'] > 0)
@@ -915,38 +1012,49 @@ class OutletAnalyzerService
             })
             ->all();
 
-        $total = round(array_sum(array_column($categories, 'amount')), 2);
-        $paymentCount = (int) DB::table('non_food_payments as nfp')
-            ->whereBetween('nfp.payment_date', [$start, $end])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->where(function ($q) use ($outletId) {
-                $q->whereExists(function ($subQ) use ($outletId) {
-                    $subQ->select(DB::raw(1))
-                        ->from('purchase_order_ops as poo')
-                        ->join('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                        ->join('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->whereColumn('poo.id', 'nfp.purchase_order_ops_id')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->where('pr.outlet_id', $outletId);
-                })
-                    ->orWhereExists(function ($subQ) use ($outletId) {
-                        $subQ->select(DB::raw(1))
-                            ->from('purchase_requisitions as pr')
-                            ->whereColumn('pr.id', 'nfp.purchase_requisition_id')
-                            ->where('pr.outlet_id', $outletId);
-                    });
-            })
-            ->count('nfp.id');
-
         $transactions = $this->fetchPrOpsPaymentTransactions($outletId, $start, $end);
+        $paymentCount = count(array_unique(array_column($transactions, 'id')));
 
         return [
-            'total' => $total,
+            'total' => round(array_sum(array_column($categories, 'amount')), 2),
             'payment_count' => $paymentCount,
             'categories' => $categories,
             'transactions' => $transactions,
         ];
+    }
+
+    private function applyPrOpsPaymentScope($query, string $alias = 'nfp'): void
+    {
+        $query->where(function ($q) use ($alias) {
+            $q->whereNotNull("{$alias}.purchase_requisition_id")
+                ->orWhere(function ($poQ) use ($alias) {
+                    $poQ->whereNotNull("{$alias}.purchase_order_ops_id")
+                        ->whereExists(function ($sub) use ($alias) {
+                            $sub->from('purchase_order_ops as poo')
+                                ->whereColumn('poo.id', "{$alias}.purchase_order_ops_id")
+                                ->where(function ($sourceQ) {
+                                    $sourceQ->where('poo.source_type', 'purchase_requisition_ops')
+                                        ->orWhereExists(function ($poiSub) {
+                                            $poiSub->from('purchase_order_ops_items as poi')
+                                                ->whereColumn('poi.purchase_order_ops_id', 'poo.id')
+                                                ->where('poi.source_type', 'purchase_requisition_ops');
+                                        });
+                                });
+                        });
+                });
+        });
+    }
+
+    private function applyOutletPrOpsScope($query, int $outletId, string $prAlias = 'pr'): void
+    {
+        $query->where(function ($q) use ($outletId, $prAlias) {
+            $q->where("{$prAlias}.outlet_id", $outletId)
+                ->orWhereExists(function ($sub) use ($outletId, $prAlias) {
+                    $sub->from('purchase_requisition_items as pri')
+                        ->whereColumn('pri.purchase_requisition_id', "{$prAlias}.id")
+                        ->where('pri.outlet_id', $outletId);
+                });
+        });
     }
 
     /**
@@ -954,7 +1062,37 @@ class OutletAnalyzerService
      */
     private function fetchPrOpsPaymentTransactions(int $outletId, string $start, string $end): array
     {
-        $viaPo = DB::table('non_food_payments as nfp')
+        $viaOutletSplit = DB::table('non_food_payment_outlets as nfpo')
+            ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
+            ->leftJoin('purchase_requisition_categories as prc', 'nfpo.category_id', '=', 'prc.id')
+            ->leftJoin('purchase_order_ops as poo', 'poo.id', '=', 'nfp.purchase_order_ops_id')
+            ->leftJoin('purchase_requisitions as pr_direct', 'pr_direct.id', '=', 'nfp.purchase_requisition_id')
+            ->leftJoin('purchase_requisitions as pr_po', function ($join) {
+                $join->on('pr_po.id', '=', 'poo.source_id')
+                    ->where('poo.source_type', '=', 'purchase_requisition_ops');
+            })
+            ->where('nfpo.outlet_id', $outletId)
+            ->whereBetween('nfp.payment_date', [$start, $end])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->where('nfp.status', '!=', 'cancelled')
+            ->whereNull('nfp.retail_non_food_id')
+            ->where(function ($q) {
+                $this->applyPrOpsPaymentScope($q, 'nfp');
+            })
+            ->select(
+                'nfp.id',
+                'nfp.payment_number',
+                'nfp.payment_date',
+                'nfpo.amount',
+                'nfp.payment_method',
+                DB::raw('COALESCE(pr_direct.pr_number, pr_po.pr_number) as pr_number'),
+                DB::raw('COALESCE(pr_direct.title, pr_po.title) as title'),
+                DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
+                'poo.number as po_number',
+            )
+            ->get();
+
+        $legacyViaPo = DB::table('non_food_payments as nfp')
             ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
             ->leftJoin('purchase_order_ops_items as poi', function ($join) {
                 $join->on('poo.id', '=', 'poi.purchase_order_ops_id')
@@ -966,7 +1104,14 @@ class OutletAnalyzerService
             ->whereIn('nfp.status', ['paid', 'approved'])
             ->where('nfp.status', '!=', 'cancelled')
             ->whereNotNull('nfp.purchase_order_ops_id')
-            ->where('pr.outlet_id', $outletId)
+            ->whereNull('nfp.retail_non_food_id')
+            ->whereNotExists(function ($sub) {
+                $sub->from('non_food_payment_outlets as nfpo')
+                    ->whereColumn('nfpo.non_food_payment_id', 'nfp.id');
+            })
+            ->where(function ($q) use ($outletId) {
+                $this->applyOutletPrOpsScope($q, $outletId, 'pr');
+            })
             ->select(
                 'nfp.id',
                 'nfp.payment_number',
@@ -975,13 +1120,13 @@ class OutletAnalyzerService
                 'nfp.payment_method',
                 'pr.pr_number',
                 'pr.title',
-                'prc.name as category_name',
+                DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
                 'poo.number as po_number',
             )
             ->distinct()
             ->get();
 
-        $direct = DB::table('non_food_payments as nfp')
+        $legacyDirect = DB::table('non_food_payments as nfp')
             ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
             ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
             ->whereBetween('nfp.payment_date', [$start, $end])
@@ -989,7 +1134,14 @@ class OutletAnalyzerService
             ->where('nfp.status', '!=', 'cancelled')
             ->whereNotNull('nfp.purchase_requisition_id')
             ->whereNull('nfp.purchase_order_ops_id')
-            ->where('pr.outlet_id', $outletId)
+            ->whereNull('nfp.retail_non_food_id')
+            ->whereNotExists(function ($sub) {
+                $sub->from('non_food_payment_outlets as nfpo')
+                    ->whereColumn('nfpo.non_food_payment_id', 'nfp.id');
+            })
+            ->where(function ($q) use ($outletId) {
+                $this->applyOutletPrOpsScope($q, $outletId, 'pr');
+            })
             ->select(
                 'nfp.id',
                 'nfp.payment_number',
@@ -998,37 +1150,36 @@ class OutletAnalyzerService
                 'nfp.payment_method',
                 'pr.pr_number',
                 'pr.title',
-                'prc.name as category_name',
+                DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
                 DB::raw('NULL as po_number'),
             )
             ->get();
 
-        $rows = $viaPo->concat($direct)
-            ->unique('id')
+        return $viaOutletSplit->concat($legacyViaPo)->concat($legacyDirect)
             ->sortByDesc('payment_date')
-            ->values();
+            ->values()
+            ->map(function ($row) {
+                $paymentMethod = (string) ($row->payment_method ?? 'transfer');
 
-        return $rows->map(function ($row) {
-            $paymentMethod = (string) ($row->payment_method ?? 'transfer');
-
-            return [
-                'id' => (int) $row->id,
-                'payment_number' => (string) ($row->payment_number ?? '-'),
-                'payment_date' => $row->payment_date,
-                'amount' => round((float) ($row->amount ?? 0), 2),
-                'payment_method' => $paymentMethod,
-                'payment_method_label' => match ($paymentMethod) {
-                    'cash' => 'Cash',
-                    'transfer' => 'Transfer',
-                    'check' => 'Check',
-                    default => ucfirst(str_replace('_', ' ', $paymentMethod)),
-                },
-                'pr_number' => (string) ($row->pr_number ?? '-'),
-                'title' => mb_substr((string) ($row->title ?? ''), 0, 120),
-                'category_name' => (string) ($row->category_name ?: 'Tanpa Kategori'),
-                'po_number' => $row->po_number ? (string) $row->po_number : null,
-            ];
-        })->all();
+                return [
+                    'id' => (int) $row->id,
+                    'payment_number' => (string) ($row->payment_number ?? '-'),
+                    'payment_date' => $row->payment_date,
+                    'amount' => round((float) ($row->amount ?? 0), 2),
+                    'payment_method' => $paymentMethod,
+                    'payment_method_label' => match ($paymentMethod) {
+                        'cash' => 'Cash',
+                        'transfer' => 'Transfer',
+                        'check' => 'Check',
+                        default => ucfirst(str_replace('_', ' ', $paymentMethod)),
+                    },
+                    'pr_number' => (string) ($row->pr_number ?? '-'),
+                    'title' => mb_substr((string) ($row->title ?? ''), 0, 120),
+                    'category_name' => (string) ($row->category_name ?: 'Tanpa Kategori'),
+                    'po_number' => $row->po_number ? (string) $row->po_number : null,
+                ];
+            })
+            ->all();
     }
 
     /**
