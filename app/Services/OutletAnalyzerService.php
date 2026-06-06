@@ -81,6 +81,7 @@ class OutletAnalyzerService
             'fj_inventory' => $fj,
             'petty_cash' => $this->getPettyCash((int) $outlet->id_outlet, $start, $end),
             'pr_ops_expenditure' => $this->getPrOpsExpenditure((int) $outlet->id_outlet, $start, $end),
+            'category_cost_outlet' => $this->getCategoryCostOutlet((int) $outlet->id_outlet, $start, $end),
             'employee_attendance' => $this->getEmployeeAttendance((int) $outlet->id_outlet, $start, $end),
         ];
     }
@@ -1097,6 +1098,7 @@ class OutletAnalyzerService
                 DB::raw('COALESCE(pr_direct.created_by, pr_po.created_by) as pr_created_by'),
                 DB::raw('COALESCE(pr_direct.approved_ssd_by, pr_po.approved_ssd_by) as pr_approved_ssd_by'),
                 DB::raw('COALESCE(pr_direct.approved_cc_by, pr_po.approved_cc_by) as pr_approved_cc_by'),
+                'poo.created_by as po_created_by',
                 DB::raw('COALESCE(pr_direct.pr_number, pr_po.pr_number) as pr_number'),
                 DB::raw('COALESCE(pr_direct.title, pr_po.title) as title'),
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1142,6 +1144,7 @@ class OutletAnalyzerService
                 'pr.created_by as pr_created_by',
                 'pr.approved_ssd_by as pr_approved_ssd_by',
                 'pr.approved_cc_by as pr_approved_cc_by',
+                'poo.created_by as po_created_by',
                 'pr.pr_number',
                 'pr.title',
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1184,6 +1187,7 @@ class OutletAnalyzerService
                 'pr.created_by as pr_created_by',
                 'pr.approved_ssd_by as pr_approved_ssd_by',
                 'pr.approved_cc_by as pr_approved_cc_by',
+                DB::raw('NULL as po_created_by'),
                 'pr.pr_number',
                 'pr.title',
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1214,6 +1218,7 @@ class OutletAnalyzerService
             foreach ([
                 'payment_created_by',
                 'pr_created_by',
+                'po_created_by',
                 'approved_by',
                 'approved_finance_manager_by',
                 'approved_gm_finance_by',
@@ -1241,6 +1246,7 @@ class OutletAnalyzerService
 
             $paymentCreator = $users[(int) ($row->payment_created_by ?? 0)] ?? null;
             $prCreator = $users[(int) ($row->pr_created_by ?? 0)] ?? null;
+            $poCreator = $users[(int) ($row->po_created_by ?? 0)] ?? null;
 
             return [
                 'row_key' => $rowKey,
@@ -1259,8 +1265,9 @@ class OutletAnalyzerService
                 'title' => mb_substr((string) ($row->title ?? ''), 0, 120),
                 'category_name' => (string) ($row->category_name ?: 'Tanpa Kategori'),
                 'po_number' => $row->po_number ? (string) $row->po_number : null,
-                'creator_name' => (string) ($paymentCreator ?: $prCreator ?: '-'),
-                'pr_creator_name' => $prCreator,
+                'payment_creator_name' => $paymentCreator ? (string) $paymentCreator : null,
+                'pr_creator_name' => $prCreator ? (string) $prCreator : null,
+                'po_creator_name' => $poCreator ? (string) $poCreator : null,
                 'approvers' => $this->buildPrOpsApproversList($row, $users),
                 'items' => $this->resolvePrOpsItemsForRow($row, $itemsMap, $outletId),
             ];
@@ -1484,6 +1491,251 @@ class OutletAnalyzerService
         }
 
         return null;
+    }
+
+    /**
+     * Category Cost Outlet — internal use / spoil / waste / usage / marketing, dll.
+     *
+     * @return array<string, mixed>
+     */
+    private function getCategoryCostOutlet(int $outletId, string $start, string $end): array
+    {
+        $typesRequiringApproval = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
+
+        $headers = DB::table('outlet_internal_use_waste_headers as h')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->where('h.outlet_id', $outletId)
+            ->whereDate('h.date', '>=', $start)
+            ->whereDate('h.date', '<=', $end)
+            ->where(function ($q) use ($typesRequiringApproval) {
+                $q->whereNotIn('h.type', $typesRequiringApproval)
+                    ->orWhere(function ($subQ) use ($typesRequiringApproval) {
+                        $subQ->whereIn('h.type', $typesRequiringApproval)
+                            ->where('h.status', 'APPROVED');
+                    });
+            })
+            ->select(
+                'h.id',
+                'h.number',
+                'h.date',
+                'h.type',
+                'h.status',
+                'h.notes',
+                'h.outlet_id',
+                'h.warehouse_outlet_id',
+                DB::raw('COALESCE(h.subtotal_mac, 0) as subtotal_mac'),
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+            )
+            ->orderByDesc('h.date')
+            ->orderByDesc('h.id')
+            ->get();
+
+        if ($headers->isEmpty()) {
+            return [
+                'total' => 0.0,
+                'document_count' => 0,
+                'modes' => [],
+                'transactions' => [],
+            ];
+        }
+
+        $headersById = $headers->keyBy('id');
+        $headerIds = $headers->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $itemsByHeader = $this->fetchCategoryCostOutletItems($headerIds, $headersById);
+
+        $modeBuckets = [];
+        $total = 0.0;
+        $transactions = [];
+
+        foreach ($headers as $header) {
+            $type = (string) ($header->type ?? '');
+            $amount = round((float) ($header->subtotal_mac ?? 0), 2);
+            $headerItems = $itemsByHeader[(int) $header->id] ?? [];
+
+            if ($amount <= 0 && $headerItems !== []) {
+                $amount = round(array_sum(array_column($headerItems, 'subtotal_mac')), 2);
+            }
+
+            $total += $amount;
+
+            if (! isset($modeBuckets[$type])) {
+                $modeBuckets[$type] = [
+                    'key' => $type,
+                    'label' => $this->categoryCostOutletTypeLabel($type),
+                    'amount' => 0.0,
+                    'document_count' => 0,
+                ];
+            }
+
+            $modeBuckets[$type]['amount'] = round($modeBuckets[$type]['amount'] + $amount, 2);
+            $modeBuckets[$type]['document_count']++;
+
+            $transactions[] = [
+                'id' => (int) $header->id,
+                'row_key' => 'cc_'.(int) $header->id,
+                'document_number' => (string) ($header->number ?? '-'),
+                'date' => $header->date,
+                'type' => $type,
+                'type_label' => $this->categoryCostOutletTypeLabel($type),
+                'status' => (string) ($header->status ?? '-'),
+                'subtotal_mac' => $amount,
+                'warehouse_outlet_name' => (string) ($header->warehouse_outlet_name ?? '-'),
+                'creator_name' => (string) ($header->creator_name ?? '-'),
+                'notes' => mb_substr((string) ($header->notes ?? ''), 0, 120),
+                'items' => $headerItems,
+            ];
+        }
+
+        $modes = collect($modeBuckets)
+            ->values()
+            ->map(fn ($row) => [
+                'key' => $row['key'],
+                'label' => $row['label'],
+                'amount' => round((float) $row['amount'], 2),
+                'document_count' => (int) $row['document_count'],
+            ])
+            ->filter(fn ($row) => $row['amount'] > 0)
+            ->sortByDesc('amount')
+            ->values()
+            ->all();
+
+        return [
+            'total' => round($total, 2),
+            'document_count' => count($transactions),
+            'modes' => $modes,
+            'transactions' => $transactions,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $headerIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchCategoryCostOutletItems(array $headerIds, $headersById): array
+    {
+        if ($headerIds === []) {
+            return [];
+        }
+
+        $details = DB::table('outlet_internal_use_waste_details as d')
+            ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
+            ->select(
+                'd.header_id',
+                'd.item_id',
+                'd.qty',
+                'd.unit_id',
+                'd.note',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'u.name as unit_name',
+            )
+            ->whereIn('d.header_id', $headerIds)
+            ->orderBy('d.id')
+            ->get();
+
+        $itemIds = $details->pluck('item_id')->unique()->filter()->all();
+        $inventoryItems = [];
+        if ($itemIds !== []) {
+            $inventoryItems = DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $itemIds)
+                ->get()
+                ->keyBy('item_id')
+                ->all();
+        }
+
+        $macHistories = [];
+        foreach ($details as $detail) {
+            $header = $headersById->get($detail->header_id);
+            if (! $header || ! isset($inventoryItems[$detail->item_id])) {
+                continue;
+            }
+
+            $inventoryItem = $inventoryItems[$detail->item_id];
+            $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+
+            if (! array_key_exists($macKey, $macHistories)) {
+                $macRow = DB::table('outlet_food_inventory_cost_histories')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $header->outlet_id)
+                    ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                    ->where('date', '<=', $header->date)
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->first();
+                $macHistories[$macKey] = $macRow ? (float) $macRow->new_cost : null;
+            }
+        }
+
+        $grouped = [];
+        foreach ($details as $detail) {
+            $header = $headersById->get($detail->header_id);
+            $mac = null;
+
+            if ($header && isset($inventoryItems[$detail->item_id])) {
+                $inventoryItem = $inventoryItems[$detail->item_id];
+                $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                $mac = $macHistories[$macKey] ?? null;
+            }
+
+            $macConverted = $this->convertCategoryCostMac($mac, $detail);
+            $subtotalMac = $macConverted !== null ? round($macConverted * (float) ($detail->qty ?? 0), 2) : 0.0;
+
+            $grouped[(int) $detail->header_id][] = [
+                'item_name' => (string) ($detail->item_name ?? '-'),
+                'qty' => round((float) ($detail->qty ?? 0), 3),
+                'unit' => (string) ($detail->unit_name ?? ''),
+                'mac' => $macConverted !== null ? round($macConverted, 2) : null,
+                'subtotal_mac' => $subtotalMac,
+                'note' => mb_substr((string) ($detail->note ?? ''), 0, 80),
+            ];
+        }
+
+        return $grouped;
+    }
+
+    private function convertCategoryCostMac(?float $mac, object $detail): ?float
+    {
+        if ($mac === null) {
+            return null;
+        }
+
+        $converted = $mac;
+
+        if ($detail->unit_id == $detail->medium_unit_id && (float) ($detail->small_conversion_qty ?? 0) > 0) {
+            $converted = $mac * (float) $detail->small_conversion_qty;
+        } elseif ($detail->unit_id == $detail->large_unit_id
+            && (float) ($detail->small_conversion_qty ?? 0) > 0
+            && (float) ($detail->medium_conversion_qty ?? 0) > 0) {
+            $converted = $mac * (float) $detail->small_conversion_qty * (float) $detail->medium_conversion_qty;
+        }
+
+        return $converted;
+    }
+
+    private function categoryCostOutletTypeLabel(string $type): string
+    {
+        $labels = [
+            'internal_use' => 'Internal Use',
+            'spoil' => 'Spoil',
+            'waste' => 'Waste',
+            'stock_cut' => 'Usage',
+            'usage' => 'Usage',
+            'r_and_d' => 'R & D',
+            'marketing' => 'Marketing',
+            'non_commodity' => 'Non Commodity',
+            'guest_supplies' => 'Guest Supplies',
+            'wrong_maker' => 'Wrong Maker',
+            'training' => 'Training',
+        ];
+
+        return $labels[$type] ?? ucwords(str_replace('_', ' ', $type));
     }
 
     /**

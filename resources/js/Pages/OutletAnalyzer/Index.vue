@@ -22,6 +22,7 @@ const idOutlet = ref(
 const activeModal = ref(null);
 const expandedPettyCashKeys = ref(new Set());
 const expandedPrOpsKeys = ref(new Set());
+const expandedCatCostKeys = ref(new Set());
 
 const hasAnalysis = computed(() => !!props.analysis?.outlet);
 
@@ -72,6 +73,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-file-invoice-dollar',
     accent: 'from-cyan-600 to-blue-700',
   },
+  catcost: {
+    title: 'Detail Category Cost Outlet',
+    subtitle: 'Internal use, spoil, waste, usage, marketing, dan tipe lainnya',
+    icon: 'fa-solid fa-layer-group',
+    accent: 'from-emerald-600 to-teal-700',
+  },
 }));
 
 function applyFilters() {
@@ -101,6 +108,9 @@ watch(activeModal, (val) => {
   }
   if (val !== 'pr_ops') {
     expandedPrOpsKeys.value = new Set();
+  }
+  if (val !== 'catcost') {
+    expandedCatCostKeys.value = new Set();
   }
 });
 
@@ -161,6 +171,25 @@ function togglePrOpsRow(row) {
     next.add(key);
   }
   expandedPrOpsKeys.value = next;
+}
+
+function catCostRowKey(row) {
+  return row.row_key || `cc_${row.id}`;
+}
+
+function isCatCostExpanded(row) {
+  return expandedCatCostKeys.value.has(catCostRowKey(row));
+}
+
+function toggleCatCostRow(row) {
+  const key = catCostRowKey(row);
+  const next = new Set(expandedCatCostKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedCatCostKeys.value = next;
 }
 
 function formatApprovers(approvers) {
@@ -321,6 +350,20 @@ const prOpsPieOptions = computed(() => ({
   chart: { ...chartBase.chart, type: 'pie' },
   labels: prOpsPieLabels.value,
   colors: ['#0EA5E9', '#6366F1', '#14B8A6', '#F59E0B', '#EC4899', '#8B5CF6', '#EF4444', '#64748B'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
+
+const catCostModes = computed(() =>
+  (props.analysis?.category_cost_outlet?.modes || []).filter((m) => Number(m.amount) > 0),
+);
+const catCostPieSeries = computed(() => catCostModes.value.map((m) => Number(m.amount)));
+const catCostPieLabels = computed(() => catCostModes.value.map((m) => m.label));
+const catCostPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: catCostPieLabels.value,
+  colors: ['#10B981', '#6366F1', '#F59E0B', '#EF4444', '#8B5CF6', '#0EA5E9', '#EC4899', '#14B8A6', '#64748B', '#F97316'],
   tooltip: { y: { formatter: (val) => formatRupiah(val) } },
   dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
 }));
@@ -818,6 +861,87 @@ function visitorArea(userId) {
                     <td class="py-2 text-right">100%</td>
                   </tr>
                   <tr v-if="!(analysis.pr_ops_expenditure?.categories?.length)">
+                    <td colspan="4" class="py-6 text-center text-slate-400">—</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Category Cost Outlet -->
+        <section class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Category Cost Outlet</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Internal use, spoil, waste, usage, marketing, dan tipe catcost lainnya
+                <span class="text-emerald-600">· Klik untuk detail</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-left rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 hover:border-emerald-300 hover:shadow-sm transition-all"
+              @click="openModal('catcost')"
+            >
+              <p class="text-xs font-semibold uppercase text-emerald-700">Total Category Cost</p>
+              <p class="text-xl font-bold text-emerald-900 mt-0.5">{{ formatRupiah(analysis.category_cost_outlet?.total) }}</p>
+              <p class="text-xs text-emerald-600 mt-1">
+                {{ analysis.category_cost_outlet?.document_count ?? 0 }} dokumen
+              </p>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div
+              v-if="catCostModes.length"
+              class="bg-slate-50 rounded-xl p-3 cursor-pointer hover:ring-2 hover:ring-emerald-200 transition-all"
+              @click="openModal('catcost')"
+            >
+              <apexchart type="pie" height="320" :options="catCostPieOptions" :series="catCostPieSeries" />
+            </div>
+            <div
+              v-else
+              class="bg-slate-50 rounded-xl p-8 text-center text-slate-400 text-sm flex items-center justify-center"
+            >
+              Tidak ada category cost outlet pada periode ini.
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="text-left text-xs uppercase text-slate-500 border-b">
+                    <th class="py-2 pr-4">Mode Catcost</th>
+                    <th class="py-2 text-right">Subtotal MAC</th>
+                    <th class="py-2 text-right">Dokumen</th>
+                    <th class="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="mode in analysis.category_cost_outlet?.modes || []"
+                    :key="mode.key"
+                    class="border-b border-slate-100 hover:bg-emerald-50/50 cursor-pointer"
+                    @click="openModal('catcost')"
+                  >
+                    <td class="py-2.5 pr-4">{{ mode.label }}</td>
+                    <td class="py-2.5 text-right font-medium">{{ formatRupiah(mode.amount) }}</td>
+                    <td class="py-2.5 text-right text-slate-600">{{ mode.document_count ?? 0 }}</td>
+                    <td class="py-2.5 text-right text-slate-500">
+                      {{
+                        analysis.category_cost_outlet?.total > 0
+                          ? `${((mode.amount / analysis.category_cost_outlet.total) * 100).toFixed(1)}%`
+                          : '-'
+                      }}
+                    </td>
+                  </tr>
+                  <tr class="font-bold bg-slate-50">
+                    <td class="py-2 pr-4">Total</td>
+                    <td class="py-2 text-right">{{ formatRupiah(analysis.category_cost_outlet?.total) }}</td>
+                    <td class="py-2 text-right">{{ analysis.category_cost_outlet?.document_count ?? 0 }}</td>
+                    <td class="py-2 text-right">100%</td>
+                  </tr>
+                  <tr v-if="!(analysis.category_cost_outlet?.modes?.length)">
                     <td colspan="4" class="py-6 text-center text-slate-400">—</td>
                   </tr>
                 </tbody>
@@ -1420,10 +1544,9 @@ function visitorArea(userId) {
                           <th class="px-4 py-3 text-left">Tanggal</th>
                           <th class="px-4 py-3 text-left">No. Payment</th>
                           <th class="px-4 py-3 text-left">PR</th>
-                          <th class="px-4 py-3 text-left">Kategori</th>
-                          <th class="px-4 py-3 text-left">Creator</th>
-                          <th class="px-4 py-3 text-left">Approver</th>
                           <th class="px-4 py-3 text-left">PO</th>
+                          <th class="px-4 py-3 text-left">Kategori</th>
+                          <th class="px-4 py-3 text-left">Approver</th>
                           <th class="px-4 py-3 text-left">Metode</th>
                           <th class="px-4 py-3 text-right">Nominal</th>
                           <th class="px-4 py-3 text-left">Judul</th>
@@ -1442,18 +1565,32 @@ function visitorArea(userId) {
                               ></i>
                             </td>
                             <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.payment_date || '-' }}</td>
-                            <td class="px-4 py-2.5 font-medium">{{ row.payment_number }}</td>
-                            <td class="px-4 py-2.5">{{ row.pr_number }}</td>
+                            <td class="px-4 py-2.5">
+                              <div class="font-medium">{{ row.payment_number }}</div>
+                              <div v-if="row.payment_creator_name" class="text-xs text-slate-500 mt-0.5">
+                                {{ row.payment_creator_name }}
+                              </div>
+                            </td>
+                            <td class="px-4 py-2.5">
+                              <div>{{ row.pr_number }}</div>
+                              <div v-if="row.pr_creator_name" class="text-xs text-slate-500 mt-0.5">
+                                {{ row.pr_creator_name }}
+                              </div>
+                            </td>
+                            <td class="px-4 py-2.5">
+                              <div>{{ row.po_number || '-' }}</div>
+                              <div v-if="row.po_creator_name" class="text-xs text-slate-500 mt-0.5">
+                                {{ row.po_creator_name }}
+                              </div>
+                            </td>
                             <td class="px-4 py-2.5">{{ row.category_name }}</td>
-                            <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
                             <td class="px-4 py-2.5 text-xs text-slate-600 max-w-[180px]">{{ formatApprovers(row.approvers) }}</td>
-                            <td class="px-4 py-2.5 text-slate-600">{{ row.po_number || '-' }}</td>
                             <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
                             <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.amount) }}</td>
                             <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.title || '-' }}</td>
                           </tr>
                           <tr v-if="isPrOpsExpanded(row)">
-                            <td colspan="11" class="px-4 py-3 bg-slate-50">
+                            <td colspan="10" class="px-4 py-3 bg-slate-50">
                               <div v-if="row.approvers?.length" class="mb-3 flex flex-wrap gap-2">
                                 <span
                                   v-for="(approver, idx) in row.approvers"
@@ -1490,7 +1627,131 @@ function visitorArea(userId) {
                           </tr>
                         </template>
                         <tr v-if="!(analysis.pr_ops_expenditure?.transactions?.length)">
-                          <td colspan="11" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
+                          <td colspan="10" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+
+                <!-- Category Cost Outlet -->
+                <template v-else-if="activeModal === 'catcost'">
+                  <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-4 lg:col-span-2">
+                      <p class="text-xs text-emerald-700 font-semibold uppercase">Total Category Cost Outlet</p>
+                      <p class="text-2xl font-bold text-emerald-900 mt-1">{{ formatRupiah(analysis.category_cost_outlet?.total) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                      <p class="text-xs text-slate-500 font-semibold uppercase">Jumlah Dokumen</p>
+                      <p class="text-2xl font-bold text-slate-900 mt-1">{{ analysis.category_cost_outlet?.document_count ?? 0 }}</p>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    <div v-if="catCostModes.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Distribusi per Mode Catcost</h3>
+                      <apexchart type="pie" height="300" :options="catCostPieOptions" :series="catCostPieSeries" />
+                    </div>
+                    <div class="rounded-xl border border-slate-200 p-4">
+                      <h3 class="text-sm font-semibold text-slate-800 mb-3">Ringkasan Mode</h3>
+                      <div class="space-y-2 max-h-[320px] overflow-y-auto">
+                        <div
+                          v-for="mode in analysis.category_cost_outlet?.modes || []"
+                          :key="mode.key"
+                          class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0"
+                        >
+                          <span class="text-slate-800 font-medium">{{ mode.label }}</span>
+                          <div class="text-right shrink-0">
+                            <p class="font-semibold">{{ formatRupiah(mode.amount) }}</p>
+                            <p class="text-xs text-slate-500">
+                              {{ mode.document_count ?? 0 }} dokumen ·
+                              {{
+                                analysis.category_cost_outlet?.total > 0
+                                  ? `${((mode.amount / analysis.category_cost_outlet.total) * 100).toFixed(1)}%`
+                                  : '-'
+                              }}
+                            </p>
+                          </div>
+                        </div>
+                        <p v-if="!(analysis.category_cost_outlet?.modes?.length)" class="text-sm text-slate-400 text-center py-6">
+                          Tidak ada data mode catcost.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th class="px-3 py-3 w-8"></th>
+                          <th class="px-4 py-3 text-left">Tanggal</th>
+                          <th class="px-4 py-3 text-left">No. Dokumen</th>
+                          <th class="px-4 py-3 text-left">Mode</th>
+                          <th class="px-4 py-3 text-left">Gudang</th>
+                          <th class="px-4 py-3 text-left">Creator</th>
+                          <th class="px-4 py-3 text-left">Status</th>
+                          <th class="px-4 py-3 text-right">Subtotal MAC</th>
+                          <th class="px-4 py-3 text-left">Catatan</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <template v-for="row in analysis.category_cost_outlet?.transactions || []" :key="catCostRowKey(row)">
+                          <tr
+                            class="hover:bg-emerald-50/30 cursor-pointer"
+                            @click="toggleCatCostRow(row)"
+                          >
+                            <td class="px-3 py-2.5 text-slate-400">
+                              <i
+                                class="fas text-xs transition-transform"
+                                :class="isCatCostExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                              ></i>
+                            </td>
+                            <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.date || '-' }}</td>
+                            <td class="px-4 py-2.5 font-medium">{{ row.document_number }}</td>
+                            <td class="px-4 py-2.5">{{ row.type_label }}</td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ row.warehouse_outlet_name || '-' }}</td>
+                            <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
+                            <td class="px-4 py-2.5">
+                              <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700">
+                                {{ row.status || '-' }}
+                              </span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.subtotal_mac) }}</td>
+                            <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.notes || '-' }}</td>
+                          </tr>
+                          <tr v-if="isCatCostExpanded(row)">
+                            <td colspan="9" class="px-4 py-3 bg-slate-50">
+                              <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table class="min-w-full text-xs">
+                                  <thead class="bg-slate-100 text-slate-500 uppercase">
+                                    <tr>
+                                      <th class="px-3 py-2 text-left">Item</th>
+                                      <th class="px-3 py-2 text-right">Qty</th>
+                                      <th class="px-3 py-2 text-left">Satuan</th>
+                                      <th class="px-3 py-2 text-right">MAC</th>
+                                      <th class="px-3 py-2 text-right">Subtotal MAC</th>
+                                      <th class="px-3 py-2 text-left">Catatan</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-slate-100">
+                                    <tr v-for="(item, idx) in row.items" :key="idx">
+                                      <td class="px-3 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                                      <td class="px-3 py-2 text-right">{{ item.qty }}</td>
+                                      <td class="px-3 py-2">{{ item.unit || '-' }}</td>
+                                      <td class="px-3 py-2 text-right">{{ item.mac != null ? formatRupiah(item.mac) : '-' }}</td>
+                                      <td class="px-3 py-2 text-right font-semibold">{{ formatRupiah(item.subtotal_mac) }}</td>
+                                      <td class="px-3 py-2 text-slate-600">{{ item.note || '-' }}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
+                            </td>
+                          </tr>
+                        </template>
+                        <tr v-if="!(analysis.category_cost_outlet?.transactions?.length)">
+                          <td colspan="9" class="px-4 py-8 text-center text-slate-400">Tidak ada dokumen category cost pada periode ini.</td>
                         </tr>
                       </tbody>
                     </table>
