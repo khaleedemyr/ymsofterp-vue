@@ -1220,7 +1220,7 @@ class AssetGoodReceiveController extends Controller
         $itemName = trim((string) ($poItem->item_name ?? ''));
         $itemRecord = DB::table('items')
             ->join('categories', 'items.category_id', '=', 'categories.id')
-            ->where('categories.is_asset', 1)
+            ->where('categories.is_asset', '1')
             ->where(function ($q) use ($itemName) {
                 $q->where('items.name', $itemName)
                     ->orWhereRaw('TRIM(items.name) = ?', [$itemName])
