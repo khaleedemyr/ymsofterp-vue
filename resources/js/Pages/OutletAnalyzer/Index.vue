@@ -21,6 +21,7 @@ const idOutlet = ref(
 
 const activeModal = ref(null);
 const expandedPettyCashKeys = ref(new Set());
+const expandedPrOpsKeys = ref(new Set());
 
 const hasAnalysis = computed(() => !!props.analysis?.outlet);
 
@@ -98,6 +99,9 @@ watch(activeModal, (val) => {
   if (val !== 'petty_cash') {
     expandedPettyCashKeys.value = new Set();
   }
+  if (val !== 'pr_ops') {
+    expandedPrOpsKeys.value = new Set();
+  }
 });
 
 onMounted(() => window.addEventListener('keydown', onKeydown));
@@ -138,6 +142,30 @@ function togglePettyCashRow(row) {
     next.add(key);
   }
   expandedPettyCashKeys.value = next;
+}
+
+function prOpsRowKey(row) {
+  return row.row_key || `nfp_${row.id}`;
+}
+
+function isPrOpsExpanded(row) {
+  return expandedPrOpsKeys.value.has(prOpsRowKey(row));
+}
+
+function togglePrOpsRow(row) {
+  const key = prOpsRowKey(row);
+  const next = new Set(expandedPrOpsKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedPrOpsKeys.value = next;
+}
+
+function formatApprovers(approvers) {
+  if (!approvers?.length) return '-';
+  return approvers.map((a) => `${a.role}: ${a.name}`).join(' · ');
 }
 
 const chartBase = {
@@ -1388,10 +1416,13 @@ function visitorArea(userId) {
                     <table class="min-w-full text-sm">
                       <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                         <tr>
+                          <th class="px-3 py-3 w-8"></th>
                           <th class="px-4 py-3 text-left">Tanggal</th>
                           <th class="px-4 py-3 text-left">No. Payment</th>
                           <th class="px-4 py-3 text-left">PR</th>
                           <th class="px-4 py-3 text-left">Kategori</th>
+                          <th class="px-4 py-3 text-left">Creator</th>
+                          <th class="px-4 py-3 text-left">Approver</th>
                           <th class="px-4 py-3 text-left">PO</th>
                           <th class="px-4 py-3 text-left">Metode</th>
                           <th class="px-4 py-3 text-right">Nominal</th>
@@ -1399,22 +1430,67 @@ function visitorArea(userId) {
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
-                        <tr
-                          v-for="row in analysis.pr_ops_expenditure?.transactions || []"
-                          :key="row.id"
-                          class="hover:bg-cyan-50/30"
-                        >
-                          <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.payment_date || '-' }}</td>
-                          <td class="px-4 py-2.5 font-medium">{{ row.payment_number }}</td>
-                          <td class="px-4 py-2.5">{{ row.pr_number }}</td>
-                          <td class="px-4 py-2.5">{{ row.category_name }}</td>
-                          <td class="px-4 py-2.5 text-slate-600">{{ row.po_number || '-' }}</td>
-                          <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
-                          <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.amount) }}</td>
-                          <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.title || '-' }}</td>
-                        </tr>
+                        <template v-for="row in analysis.pr_ops_expenditure?.transactions || []" :key="prOpsRowKey(row)">
+                          <tr
+                            class="hover:bg-cyan-50/30 cursor-pointer"
+                            @click="togglePrOpsRow(row)"
+                          >
+                            <td class="px-3 py-2.5 text-slate-400">
+                              <i
+                                class="fas text-xs transition-transform"
+                                :class="isPrOpsExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                              ></i>
+                            </td>
+                            <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.payment_date || '-' }}</td>
+                            <td class="px-4 py-2.5 font-medium">{{ row.payment_number }}</td>
+                            <td class="px-4 py-2.5">{{ row.pr_number }}</td>
+                            <td class="px-4 py-2.5">{{ row.category_name }}</td>
+                            <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
+                            <td class="px-4 py-2.5 text-xs text-slate-600 max-w-[180px]">{{ formatApprovers(row.approvers) }}</td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ row.po_number || '-' }}</td>
+                            <td class="px-4 py-2.5">{{ row.payment_method_label }}</td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.amount) }}</td>
+                            <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.title || '-' }}</td>
+                          </tr>
+                          <tr v-if="isPrOpsExpanded(row)">
+                            <td colspan="11" class="px-4 py-3 bg-slate-50">
+                              <div v-if="row.approvers?.length" class="mb-3 flex flex-wrap gap-2">
+                                <span
+                                  v-for="(approver, idx) in row.approvers"
+                                  :key="idx"
+                                  class="inline-flex items-center rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200 px-2.5 py-1 text-xs font-medium"
+                                >
+                                  {{ approver.role }}: {{ approver.name }}
+                                </span>
+                              </div>
+                              <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table class="min-w-full text-xs">
+                                  <thead class="bg-slate-100 text-slate-500 uppercase">
+                                    <tr>
+                                      <th class="px-3 py-2 text-left">Item</th>
+                                      <th class="px-3 py-2 text-right">Qty</th>
+                                      <th class="px-3 py-2 text-left">Satuan</th>
+                                      <th class="px-3 py-2 text-right">Harga</th>
+                                      <th class="px-3 py-2 text-right">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-slate-100">
+                                    <tr v-for="(item, idx) in row.items" :key="idx">
+                                      <td class="px-3 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                                      <td class="px-3 py-2 text-right">{{ item.qty }}</td>
+                                      <td class="px-3 py-2">{{ item.unit || '-' }}</td>
+                                      <td class="px-3 py-2 text-right">{{ formatRupiah(item.price) }}</td>
+                                      <td class="px-3 py-2 text-right font-semibold">{{ formatRupiah(item.subtotal) }}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
+                            </td>
+                          </tr>
+                        </template>
                         <tr v-if="!(analysis.pr_ops_expenditure?.transactions?.length)">
-                          <td colspan="8" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
+                          <td colspan="11" class="px-4 py-8 text-center text-slate-400">Tidak ada pembayaran PR Ops pada periode ini.</td>
                         </tr>
                       </tbody>
                     </table>

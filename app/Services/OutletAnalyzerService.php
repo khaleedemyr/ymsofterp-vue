@@ -1080,11 +1080,23 @@ class OutletAnalyzerService
                 $this->applyPrOpsPaymentScope($q, 'nfp');
             })
             ->select(
+                'nfpo.id as payment_outlet_id',
                 'nfp.id',
                 'nfp.payment_number',
                 'nfp.payment_date',
                 'nfpo.amount',
                 'nfp.payment_method',
+                'nfp.purchase_order_ops_id',
+                'nfp.purchase_requisition_id',
+                'nfpo.category_id',
+                DB::raw('COALESCE(pr_direct.id, pr_po.id, nfp.purchase_requisition_id) as pr_id'),
+                'nfp.created_by as payment_created_by',
+                'nfp.approved_by',
+                'nfp.approved_finance_manager_by',
+                'nfp.approved_gm_finance_by',
+                DB::raw('COALESCE(pr_direct.created_by, pr_po.created_by) as pr_created_by'),
+                DB::raw('COALESCE(pr_direct.approved_ssd_by, pr_po.approved_ssd_by) as pr_approved_ssd_by'),
+                DB::raw('COALESCE(pr_direct.approved_cc_by, pr_po.approved_cc_by) as pr_approved_cc_by'),
                 DB::raw('COALESCE(pr_direct.pr_number, pr_po.pr_number) as pr_number'),
                 DB::raw('COALESCE(pr_direct.title, pr_po.title) as title'),
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1113,11 +1125,23 @@ class OutletAnalyzerService
                 $this->applyOutletPrOpsScope($q, $outletId, 'pr');
             })
             ->select(
+                DB::raw('NULL as payment_outlet_id'),
                 'nfp.id',
                 'nfp.payment_number',
                 'nfp.payment_date',
                 'nfp.amount',
                 'nfp.payment_method',
+                'nfp.purchase_order_ops_id',
+                'nfp.purchase_requisition_id',
+                'prc.id as category_id',
+                'pr.id as pr_id',
+                'nfp.created_by as payment_created_by',
+                'nfp.approved_by',
+                'nfp.approved_finance_manager_by',
+                'nfp.approved_gm_finance_by',
+                'pr.created_by as pr_created_by',
+                'pr.approved_ssd_by as pr_approved_ssd_by',
+                'pr.approved_cc_by as pr_approved_cc_by',
                 'pr.pr_number',
                 'pr.title',
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1143,11 +1167,23 @@ class OutletAnalyzerService
                 $this->applyOutletPrOpsScope($q, $outletId, 'pr');
             })
             ->select(
+                DB::raw('NULL as payment_outlet_id'),
                 'nfp.id',
                 'nfp.payment_number',
                 'nfp.payment_date',
                 'nfp.amount',
                 'nfp.payment_method',
+                DB::raw('NULL as purchase_order_ops_id'),
+                'nfp.purchase_requisition_id',
+                'prc.id as category_id',
+                'pr.id as pr_id',
+                'nfp.created_by as payment_created_by',
+                'nfp.approved_by',
+                'nfp.approved_finance_manager_by',
+                'nfp.approved_gm_finance_by',
+                'pr.created_by as pr_created_by',
+                'pr.approved_ssd_by as pr_approved_ssd_by',
+                'pr.approved_cc_by as pr_approved_cc_by',
                 'pr.pr_number',
                 'pr.title',
                 DB::raw("COALESCE(prc.name, 'Tanpa Kategori') as category_name"),
@@ -1155,31 +1191,270 @@ class OutletAnalyzerService
             )
             ->get();
 
-        return $viaOutletSplit->concat($legacyViaPo)->concat($legacyDirect)
+        $rows = $viaOutletSplit->concat($legacyViaPo)->concat($legacyDirect)
             ->sortByDesc('payment_date')
             ->values()
-            ->map(function ($row) {
-                $paymentMethod = (string) ($row->payment_method ?? 'transfer');
-
-                return [
-                    'id' => (int) $row->id,
-                    'payment_number' => (string) ($row->payment_number ?? '-'),
-                    'payment_date' => $row->payment_date,
-                    'amount' => round((float) ($row->amount ?? 0), 2),
-                    'payment_method' => $paymentMethod,
-                    'payment_method_label' => match ($paymentMethod) {
-                        'cash' => 'Cash',
-                        'transfer' => 'Transfer',
-                        'check' => 'Check',
-                        default => ucfirst(str_replace('_', ' ', $paymentMethod)),
-                    },
-                    'pr_number' => (string) ($row->pr_number ?? '-'),
-                    'title' => mb_substr((string) ($row->title ?? ''), 0, 120),
-                    'category_name' => (string) ($row->category_name ?: 'Tanpa Kategori'),
-                    'po_number' => $row->po_number ? (string) $row->po_number : null,
-                ];
-            })
             ->all();
+
+        return $this->enrichPrOpsTransactions($rows, $outletId);
+    }
+
+    /**
+     * @param  list<object>  $rows
+     * @return list<array<string, mixed>>
+     */
+    private function enrichPrOpsTransactions(array $rows, int $outletId): array
+    {
+        if ($rows === []) {
+            return [];
+        }
+
+        $userIds = [];
+        foreach ($rows as $row) {
+            foreach ([
+                'payment_created_by',
+                'pr_created_by',
+                'approved_by',
+                'approved_finance_manager_by',
+                'approved_gm_finance_by',
+                'pr_approved_ssd_by',
+                'pr_approved_cc_by',
+            ] as $field) {
+                $uid = (int) ($row->{$field} ?? 0);
+                if ($uid > 0) {
+                    $userIds[$uid] = true;
+                }
+            }
+        }
+
+        $users = $userIds === []
+            ? collect()
+            : DB::table('users')->whereIn('id', array_keys($userIds))->pluck('nama_lengkap', 'id');
+
+        $itemsMap = $this->buildPrOpsPaymentItemsMap($rows, $outletId);
+
+        return array_map(function ($row) use ($users, $itemsMap, $outletId) {
+            $paymentMethod = (string) ($row->payment_method ?? 'transfer');
+            $rowKey = $row->payment_outlet_id
+                ? 'nfpo_' . (int) $row->payment_outlet_id
+                : 'nfp_' . (int) $row->id;
+
+            $paymentCreator = $users[(int) ($row->payment_created_by ?? 0)] ?? null;
+            $prCreator = $users[(int) ($row->pr_created_by ?? 0)] ?? null;
+
+            return [
+                'row_key' => $rowKey,
+                'id' => (int) $row->id,
+                'payment_number' => (string) ($row->payment_number ?? '-'),
+                'payment_date' => $row->payment_date,
+                'amount' => round((float) ($row->amount ?? 0), 2),
+                'payment_method' => $paymentMethod,
+                'payment_method_label' => match ($paymentMethod) {
+                    'cash' => 'Cash',
+                    'transfer' => 'Transfer',
+                    'check' => 'Check',
+                    default => ucfirst(str_replace('_', ' ', $paymentMethod)),
+                },
+                'pr_number' => (string) ($row->pr_number ?? '-'),
+                'title' => mb_substr((string) ($row->title ?? ''), 0, 120),
+                'category_name' => (string) ($row->category_name ?: 'Tanpa Kategori'),
+                'po_number' => $row->po_number ? (string) $row->po_number : null,
+                'creator_name' => (string) ($paymentCreator ?: $prCreator ?: '-'),
+                'pr_creator_name' => $prCreator,
+                'approvers' => $this->buildPrOpsApproversList($row, $users),
+                'items' => $this->resolvePrOpsItemsForRow($row, $itemsMap, $outletId),
+            ];
+        }, $rows);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, string>  $users
+     * @return list<array{role: string, name: string}>
+     */
+    private function buildPrOpsApproversList(object $row, $users): array
+    {
+        $approvers = [];
+        $append = function (string $role, ?int $userId) use (&$approvers, $users): void {
+            if ($userId === null || $userId <= 0) {
+                return;
+            }
+            $name = $users[$userId] ?? null;
+            if ($name) {
+                $approvers[] = ['role' => $role, 'name' => (string) $name];
+            }
+        };
+
+        $append('Finance Manager', isset($row->approved_finance_manager_by) ? (int) $row->approved_finance_manager_by : null);
+        $append('GM Finance', isset($row->approved_gm_finance_by) ? (int) $row->approved_gm_finance_by : null);
+        $append('Payment Approver', isset($row->approved_by) ? (int) $row->approved_by : null);
+        $append('PR SSD', isset($row->pr_approved_ssd_by) ? (int) $row->pr_approved_ssd_by : null);
+        $append('PR CC', isset($row->pr_approved_cc_by) ? (int) $row->pr_approved_cc_by : null);
+
+        return $approvers;
+    }
+
+    /**
+     * @param  list<object>  $rows
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function buildPrOpsPaymentItemsMap(array $rows, int $outletId): array
+    {
+        $map = [];
+
+        $poIds = collect($rows)
+            ->pluck('purchase_order_ops_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($poIds !== []) {
+            $poItems = DB::table('purchase_order_ops_items as poi')
+                ->leftJoin('purchase_requisition_items as pri', 'poi.pr_ops_item_id', '=', 'pri.id')
+                ->whereIn('poi.purchase_order_ops_id', $poIds)
+                ->where('poi.source_type', 'purchase_requisition_ops')
+                ->select(
+                    'poi.purchase_order_ops_id',
+                    DB::raw('COALESCE(poi.outlet_id, pri.outlet_id) as outlet_id'),
+                    'pri.category_id',
+                    'poi.item_name',
+                    'poi.quantity',
+                    'poi.unit',
+                    'poi.price',
+                    'poi.total',
+                )
+                ->orderBy('poi.id')
+                ->get();
+
+            foreach ($poItems as $item) {
+                $itemOutlet = $this->normalizePrOpsOutletId($item->outlet_id);
+                if ($itemOutlet !== null && $itemOutlet !== $outletId) {
+                    continue;
+                }
+
+                $categoryId = $item->category_id !== null ? (int) $item->category_id : null;
+                $key = $this->prOpsPaymentItemKey((int) $item->purchase_order_ops_id, null, $outletId, $categoryId);
+                $map[$key][] = $this->mapPrOpsPoItemRow($item);
+            }
+        }
+
+        $prIds = collect($rows)
+            ->filter(fn ($row) => empty($row->purchase_order_ops_id))
+            ->map(fn ($row) => (int) ($row->pr_id ?? $row->purchase_requisition_id ?? 0))
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($prIds !== []) {
+            DB::table('purchase_requisition_items')
+                ->whereIn('purchase_requisition_id', $prIds)
+                ->orderBy('id')
+                ->get()
+                ->each(function ($item) use (&$map, $outletId) {
+                    $itemOutlet = $this->normalizePrOpsOutletId($item->outlet_id);
+                    if ($itemOutlet !== null && $itemOutlet !== $outletId) {
+                        return;
+                    }
+
+                    $categoryId = $item->category_id !== null ? (int) $item->category_id : null;
+                    $key = $this->prOpsPaymentItemKey(
+                        null,
+                        (int) $item->purchase_requisition_id,
+                        $outletId,
+                        $categoryId,
+                    );
+                    $map[$key][] = $this->mapPrOpsPrItemRow($item);
+                });
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $itemsMap
+     * @return list<array<string, mixed>>
+     */
+    private function resolvePrOpsItemsForRow(object $row, array $itemsMap, int $outletId): array
+    {
+        $categoryId = isset($row->category_id) && $row->category_id ? (int) $row->category_id : null;
+        $poId = ! empty($row->purchase_order_ops_id) ? (int) $row->purchase_order_ops_id : null;
+        $prId = (int) ($row->pr_id ?? $row->purchase_requisition_id ?? 0);
+
+        $candidateKeys = [];
+        if ($poId) {
+            $candidateKeys[] = $this->prOpsPaymentItemKey($poId, null, $outletId, $categoryId);
+            $candidateKeys[] = $this->prOpsPaymentItemKey($poId, null, $outletId, null);
+        } elseif ($prId > 0) {
+            $candidateKeys[] = $this->prOpsPaymentItemKey(null, $prId, $outletId, $categoryId);
+            $candidateKeys[] = $this->prOpsPaymentItemKey(null, $prId, $outletId, null);
+        }
+
+        foreach ($candidateKeys as $key) {
+            if (! empty($itemsMap[$key])) {
+                return $itemsMap[$key];
+            }
+        }
+
+        return [];
+    }
+
+    private function prOpsPaymentItemKey(?int $poId, ?int $prId, int $outletId, ?int $categoryId): string
+    {
+        if ($poId) {
+            return 'po:' . $poId . ':' . $outletId . ':' . ($categoryId ?? 'all');
+        }
+
+        return 'pr:' . (int) $prId . ':' . $outletId . ':' . ($categoryId ?? 'all');
+    }
+
+    private function normalizePrOpsOutletId($outletId): ?int
+    {
+        if ($outletId === null || $outletId === '' || $outletId === 0 || $outletId === '0') {
+            return null;
+        }
+
+        return (int) $outletId;
+    }
+
+    /**
+     * @return array{item_name: string, qty: float, unit: string, price: float, subtotal: float}
+     */
+    private function mapPrOpsPoItemRow(object $row): array
+    {
+        return [
+            'item_name' => (string) ($row->item_name ?? '-'),
+            'qty' => round((float) ($row->quantity ?? 0), 3),
+            'unit' => (string) ($row->unit ?? ''),
+            'price' => round((float) ($row->price ?? 0), 2),
+            'subtotal' => round((float) ($row->total ?? 0), 2),
+        ];
+    }
+
+    /**
+     * @return array{item_name: string, qty: float, unit: string, price: float, subtotal: float}
+     */
+    private function mapPrOpsPrItemRow(object $row): array
+    {
+        $qty = (float) ($row->qty ?? 0);
+        if ($qty <= 0) {
+            $qty = 1;
+        }
+
+        $subtotal = (float) ($row->subtotal ?? 0);
+        $price = (float) ($row->unit_price ?? 0);
+        if ($price <= 0 && $subtotal > 0) {
+            $price = $subtotal / $qty;
+        }
+
+        return [
+            'item_name' => (string) ($row->item_name ?? '-'),
+            'qty' => round($qty, 3),
+            'unit' => (string) ($row->unit ?? ''),
+            'price' => round($price, 2),
+            'subtotal' => round($subtotal, 2),
+        ];
     }
 
     /**
