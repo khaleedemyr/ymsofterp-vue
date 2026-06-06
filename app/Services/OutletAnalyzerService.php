@@ -81,7 +81,7 @@ class OutletAnalyzerService
             ],
             'period' => $period,
             'revenue' => $revenue,
-            'cashflow_summary' => $this->buildCashflowSummary($revenue, $fj, $pettyCash, $prOps, $categoryCost),
+            'cashflow_summary' => $this->buildCashflowSummary($revenue, $fj, $pettyCash, $prOps),
             'top_menu_items' => $this->getTopMenuItems($outlet, $start, $end),
             'waiter_upsell_ranking' => $this->getWaiterUpsellRanking($outlet, $start, $end),
             'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
@@ -111,7 +111,6 @@ class OutletAnalyzerService
         array $fj,
         array $pettyCash,
         array $prOps,
-        array $categoryCost,
     ): array {
         $cashIn = round((float) ($revenue['total'] ?? 0), 2);
 
@@ -130,11 +129,6 @@ class OutletAnalyzerService
                 'key' => 'pr_ops',
                 'label' => 'PR Ops',
                 'amount' => round((float) ($prOps['total'] ?? 0), 2),
-            ],
-            [
-                'key' => 'category_cost',
-                'label' => 'Category Cost',
-                'amount' => round((float) ($categoryCost['total'] ?? 0), 2),
             ],
         ];
 
@@ -838,6 +832,31 @@ class OutletAnalyzerService
             ['key' => 'marketing', 'label' => 'Marketing', 'amount' => round($totals['marketing'], 2)],
         ];
 
+        $foodGrTransactions = $this->fetchFjFoodGrTransactions($outletId, $start, $end);
+        $serialGrTransactions = $this->fetchFjSerialGrTransactions($outletId, $start, $end);
+        $retailContraBonTransactions = $this->fetchFjRetailFoodContraBonTransactions($outletId, $start, $end);
+
+        $sources = [
+            [
+                'key' => 'food_gr',
+                'label' => 'GR Food',
+                'amount' => round(array_sum(array_column($foodGrTransactions, 'total_amount')), 2),
+                'count' => count($foodGrTransactions),
+            ],
+            [
+                'key' => 'serial_gr',
+                'label' => 'GR Serial',
+                'amount' => round(array_sum(array_column($serialGrTransactions, 'total_amount')), 2),
+                'count' => count($serialGrTransactions),
+            ],
+            [
+                'key' => 'retail_food_contra_bon',
+                'label' => 'Retail Food Contra Bon',
+                'amount' => round(array_sum(array_column($retailContraBonTransactions, 'total_amount')), 2),
+                'count' => count($retailContraBonTransactions),
+            ],
+        ];
+
         return [
             'main_kitchen' => round($totals['main_kitchen'], 2),
             'main_store' => round($totals['main_store'], 2),
@@ -847,6 +866,357 @@ class OutletAnalyzerService
             'line_total' => round($totals['line_total'], 2),
             'categories' => $categories,
             'retail_food_contra_bon_total' => round((float) ($retailContraBon['line_total'] ?? 0), 2),
+            'transaction_count' => count($foodGrTransactions) + count($serialGrTransactions) + count($retailContraBonTransactions),
+            'sources' => array_values(array_filter($sources, fn ($row) => $row['count'] > 0 || $row['amount'] > 0)),
+            'transactions' => [
+                'food_gr' => $foodGrTransactions,
+                'serial_gr' => $serialGrTransactions,
+                'retail_food_contra_bon' => $retailContraBonTransactions,
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchFjFoodGrTransactions(int $outletId, string $start, string $end): array
+    {
+        $headers = DB::table('outlet_food_good_receives as gr')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('users as u', 'gr.created_by', '=', 'u.id')
+            ->where('gr.outlet_id', $outletId)
+            ->whereNull('gr.deleted_at')
+            ->whereDate('gr.receive_date', '>=', $start)
+            ->whereDate('gr.receive_date', '<=', $end)
+            ->select(
+                'gr.id',
+                'gr.number',
+                'gr.receive_date',
+                'gr.notes',
+                'do.number as delivery_order_number',
+                'u.nama_lengkap as creator_name',
+            )
+            ->orderByDesc('gr.receive_date')
+            ->orderByDesc('gr.id')
+            ->get();
+
+        if ($headers->isEmpty()) {
+            return [];
+        }
+
+        $itemsByGr = $this->fetchFjFoodGrItemsByHeaderIds(
+            $headers->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        return $headers
+            ->map(function ($row) use ($itemsByGr) {
+                $items = $itemsByGr[(int) $row->id] ?? [];
+                $total = round(array_sum(array_column($items, 'subtotal')), 2);
+                if ($total <= 0) {
+                    return null;
+                }
+
+                return $this->mapFjTransaction($row, 'food_gr', 'GR Food', $items, $total, [
+                    'reference' => (string) ($row->delivery_order_number ?? '-'),
+                ]);
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $headerIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchFjFoodGrItemsByHeaderIds(array $headerIds): array
+    {
+        if ($headerIds === []) {
+            return [];
+        }
+
+        $effectivePriceExpr = $this->rekapFjFoodGrEffectivePriceSql();
+        $grouped = [];
+
+        DB::table('outlet_food_good_receive_items as i')
+            ->join('outlet_food_good_receives as gr', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereIn('gr.id', $headerIds)
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
+            ->select(
+                'gr.id as header_id',
+                'it.name as item_name',
+                'u.name as unit',
+                DB::raw('i.received_qty as qty'),
+                DB::raw("{$effectivePriceExpr} as price"),
+                DB::raw("i.received_qty * {$effectivePriceExpr} as subtotal"),
+                'w.name as warehouse',
+            )
+            ->orderBy('it.name')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $subtotal = round((float) ($row->subtotal ?? 0), 2);
+                if ($subtotal <= 0) {
+                    return;
+                }
+
+                $headerId = (int) $row->header_id;
+                $grouped[$headerId][] = [
+                    'item_name' => (string) ($row->item_name ?? '-'),
+                    'qty' => round((float) ($row->qty ?? 0), 3),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'price' => round((float) ($row->price ?? 0), 2),
+                    'subtotal' => $subtotal,
+                    'warehouse' => (string) ($row->warehouse ?? '-'),
+                ];
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchFjSerialGrTransactions(int $outletId, string $start, string $end): array
+    {
+        if (! $this->rekapFjHasSerialGrTables()) {
+            return [];
+        }
+
+        $headers = DB::table('outlet_serial_receive_headers as h')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->where('h.outlet_id', $outletId)
+            ->whereNull('h.deleted_at')
+            ->whereDate('h.receive_date', '>=', $start)
+            ->whereDate('h.receive_date', '<=', $end)
+            ->select(
+                'h.id',
+                'h.number',
+                'h.receive_date',
+                'h.notes',
+                'u.nama_lengkap as creator_name',
+            )
+            ->orderByDesc('h.receive_date')
+            ->orderByDesc('h.id')
+            ->get();
+
+        if ($headers->isEmpty()) {
+            return [];
+        }
+
+        $itemsByHeader = $this->fetchFjSerialGrItemsByHeaderIds(
+            $headers->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        return $headers
+            ->map(function ($row) use ($itemsByHeader) {
+                $items = $itemsByHeader[(int) $row->id] ?? [];
+                $total = round(array_sum(array_column($items, 'subtotal')), 2);
+                if ($total <= 0) {
+                    return null;
+                }
+
+                return $this->mapFjTransaction($row, 'serial_gr', 'GR Serial', $items, $total);
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $headerIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchFjSerialGrItemsByHeaderIds(array $headerIds): array
+    {
+        if ($headerIds === []) {
+            return [];
+        }
+
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql();
+        $grouped = [];
+
+        DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereIn('h.id', $headerIds)
+            ->whereNull('h.deleted_at')
+            ->whereNotNull('w.name')
+            ->select(
+                'h.id as header_id',
+                'it.name as item_name',
+                'u.name as unit',
+                DB::raw('si.qty as qty'),
+                DB::raw("{$effectivePriceExpr} as price"),
+                DB::raw("si.qty * {$effectivePriceExpr} as subtotal"),
+                'w.name as warehouse',
+            )
+            ->orderBy('it.name')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $subtotal = round((float) ($row->subtotal ?? 0), 2);
+                if ($subtotal <= 0) {
+                    return;
+                }
+
+                $headerId = (int) $row->header_id;
+                $grouped[$headerId][] = [
+                    'item_name' => (string) ($row->item_name ?? '-'),
+                    'qty' => round((float) ($row->qty ?? 0), 3),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'price' => round((float) ($row->price ?? 0), 2),
+                    'subtotal' => $subtotal,
+                    'warehouse' => (string) ($row->warehouse ?? '-'),
+                ];
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function fetchFjRetailFoodContraBonTransactions(int $outletId, string $start, string $end): array
+    {
+        $rows = DB::table('retail_food as rf')
+            ->leftJoin('users as u', 'rf.created_by', '=', 'u.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.payment_method', 'contra_bon')
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $start)
+            ->whereDate('rf.transaction_date', '<=', $end)
+            ->select(
+                'rf.id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount',
+                'rf.notes',
+                'u.nama_lengkap as creator_name',
+            )
+            ->orderByDesc('rf.transaction_date')
+            ->orderByDesc('rf.id')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $itemsByRetail = $this->fetchFjRetailFoodContraBonItems(
+            $rows->pluck('id')->map(fn ($id) => (int) $id)->all(),
+        );
+
+        return $rows
+            ->map(function ($row) use ($itemsByRetail) {
+                $items = $itemsByRetail[(int) $row->id] ?? [];
+                $total = round(array_sum(array_column($items, 'subtotal')), 2);
+                if ($total <= 0) {
+                    $total = round((float) ($row->total_amount ?? 0), 2);
+                }
+                if ($total <= 0) {
+                    return null;
+                }
+
+                return $this->mapFjTransaction(
+                    $row,
+                    'retail_food_contra_bon',
+                    'Retail Food Contra Bon',
+                    $items,
+                    $total,
+                    ['document_number' => (string) ($row->retail_number ?? '-')],
+                );
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $retailFoodIds
+     * @return array<int, list<array<string, mixed>>>
+     */
+    private function fetchFjRetailFoodContraBonItems(array $retailFoodIds): array
+    {
+        if ($retailFoodIds === []) {
+            return [];
+        }
+
+        $grouped = [];
+        DB::table('retail_food_items as rfi')
+            ->join('retail_food as rf', 'rf.id', '=', 'rfi.retail_food_id')
+            ->leftJoin('items as it', 'rfi.item_name', '=', 'it.name')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereIn('rf.id', $retailFoodIds)
+            ->select(
+                'rf.id as retail_food_id',
+                'rfi.item_name',
+                'rfi.qty',
+                'rfi.unit',
+                'rfi.price',
+                'rfi.subtotal',
+                'w.name as warehouse',
+            )
+            ->orderBy('rfi.id')
+            ->get()
+            ->each(function ($row) use (&$grouped) {
+                $subtotal = round((float) ($row->subtotal ?? 0), 2);
+                if ($subtotal <= 0) {
+                    return;
+                }
+
+                $parentId = (int) $row->retail_food_id;
+                $grouped[$parentId][] = [
+                    'item_name' => (string) ($row->item_name ?? '-'),
+                    'qty' => round((float) ($row->qty ?? 0), 3),
+                    'unit' => (string) ($row->unit ?? ''),
+                    'price' => round((float) ($row->price ?? 0), 2),
+                    'subtotal' => $subtotal,
+                    'warehouse' => (string) ($row->warehouse ?? '-'),
+                ];
+            });
+
+        return $grouped;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $items
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function mapFjTransaction(
+        object $row,
+        string $source,
+        string $sourceLabel,
+        array $items,
+        float $total,
+        array $overrides = [],
+    ): array {
+        $documentNumber = (string) ($overrides['document_number'] ?? $row->number ?? $row->retail_number ?? '-');
+
+        return [
+            'id' => (int) $row->id,
+            'source' => $source,
+            'source_label' => $sourceLabel,
+            'document_number' => $documentNumber,
+            'transaction_date' => $row->receive_date ?? $row->transaction_date ?? null,
+            'reference' => (string) ($overrides['reference'] ?? '-'),
+            'total_amount' => round($total, 2),
+            'creator_name' => (string) ($row->creator_name ?? '-'),
+            'notes' => mb_substr((string) ($row->notes ?? ''), 0, 120),
+            'items' => $items,
         ];
     }
 

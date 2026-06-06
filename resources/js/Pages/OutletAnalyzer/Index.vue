@@ -24,6 +24,7 @@ const activeModal = ref(null);
 const expandedPettyCashKeys = ref(new Set());
 const expandedPrOpsKeys = ref(new Set());
 const expandedCatCostKeys = ref(new Set());
+const expandedFjKeys = ref(new Set());
 
 const hasAnalysis = computed(() => !!props.analysis?.outlet);
 
@@ -86,6 +87,12 @@ const modalMeta = computed(() => ({
     icon: 'fa-solid fa-money-bill-transfer',
     accent: 'from-teal-600 to-emerald-700',
   },
+  fj_inventory: {
+    title: 'Detail Belanja Inventory (Rekap FJ)',
+    subtitle: 'GR Food, GR Serial, dan retail food contra bon',
+    icon: 'fa-solid fa-boxes-stacked',
+    accent: 'from-orange-600 to-amber-700',
+  },
 }));
 
 function applyFilters() {
@@ -118,6 +125,9 @@ watch(activeModal, (val) => {
   }
   if (val !== 'catcost') {
     expandedCatCostKeys.value = new Set();
+  }
+  if (val !== 'fj_inventory') {
+    expandedFjKeys.value = new Set();
   }
 });
 
@@ -159,6 +169,25 @@ function togglePettyCashRow(row) {
     next.add(key);
   }
   expandedPettyCashKeys.value = next;
+}
+
+function fjRowKey(row) {
+  return `${row.source}-${row.id}`;
+}
+
+function isFjExpanded(row) {
+  return expandedFjKeys.value.has(fjRowKey(row));
+}
+
+function toggleFjRow(row) {
+  const key = fjRowKey(row);
+  const next = new Set(expandedFjKeys.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  expandedFjKeys.value = next;
 }
 
 function prOpsRowKey(row) {
@@ -407,6 +436,12 @@ const regionalHourlyOptions = computed(() => ({
 const fjCategories = computed(() =>
   (props.analysis?.fj_inventory?.categories || []).filter((c) => Number(c.amount) > 0),
 );
+const fjAllTransactions = computed(() => {
+  const tx = props.analysis?.fj_inventory?.transactions || {};
+  return [...(tx.food_gr || []), ...(tx.serial_gr || []), ...(tx.retail_food_contra_bon || [])].sort(
+    (a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')),
+  );
+});
 
 const fjPieSeries = computed(() => fjCategories.value.map((c) => Number(c.amount)));
 const fjPieLabels = computed(() => fjCategories.value.map((c) => c.label));
@@ -542,7 +577,7 @@ const cashflowOutPieOptions = computed(() => ({
   ...chartBase,
   chart: { ...chartBase.chart, type: 'pie' },
   labels: cashflowOutPieLabels.value,
-  colors: ['#F97316', '#F43F5E', '#06B6D4', '#10B981'],
+  colors: ['#F97316', '#F43F5E', '#06B6D4'],
   tooltip: { y: { formatter: (val) => formatRupiah(val) } },
   dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
 }));
@@ -701,7 +736,7 @@ function visitorArea(userId) {
             <div>
               <h2 class="text-base font-semibold text-slate-900">Summary Cashflow</h2>
               <p class="text-xs text-slate-500 mt-0.5">
-                Revenue vs pengeluaran operasional (FJ, petty cash, PR Ops, category cost)
+                Revenue vs pengeluaran operasional (FJ, petty cash, PR Ops)
                 <span class="text-teal-600">· Klik untuk detail</span>
               </p>
             </div>
@@ -1172,14 +1207,28 @@ function visitorArea(userId) {
 
         <!-- FJ Inventory -->
         <section class="bg-white rounded-xl border border-slate-200 p-5">
-          <div class="mb-4">
-            <h2 class="text-base font-semibold text-slate-900">Belanja Inventory (Rekap FJ)</h2>
-            <p class="text-xs text-slate-500 mt-0.5">
-              Good Receive per kategori gudang
-              <span v-if="(analysis.fj_inventory?.retail_food_contra_bon_total ?? 0) > 0">
-                · termasuk retail food contra bon {{ formatRupiah(analysis.fj_inventory.retail_food_contra_bon_total) }}
-              </span>
-            </p>
+          <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Belanja Inventory (Rekap FJ)</h2>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Good Receive per kategori gudang
+                <span v-if="(analysis.fj_inventory?.retail_food_contra_bon_total ?? 0) > 0">
+                  · termasuk retail food contra bon {{ formatRupiah(analysis.fj_inventory.retail_food_contra_bon_total) }}
+                </span>
+                <span class="text-orange-600">· Klik baris transaksi untuk detail item</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="text-left rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 hover:border-orange-300 hover:shadow-sm transition-all"
+              @click="openModal('fj_inventory')"
+            >
+              <p class="text-xs font-semibold uppercase text-orange-700">Line Total</p>
+              <p class="text-xl font-bold text-orange-900 mt-0.5">{{ formatRupiah(analysis.fj_inventory?.line_total) }}</p>
+              <p class="text-xs text-orange-600 mt-1">
+                {{ analysis.fj_inventory?.transaction_count ?? 0 }} transaksi
+              </p>
+            </button>
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -1223,6 +1272,69 @@ function visitorArea(userId) {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div v-if="fjAllTransactions.length" class="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th class="px-3 py-3 w-8"></th>
+                  <th class="px-4 py-3 text-left">Tanggal</th>
+                  <th class="px-4 py-3 text-left">No. Dokumen</th>
+                  <th class="px-4 py-3 text-left">Sumber</th>
+                  <th class="px-4 py-3 text-left">Referensi</th>
+                  <th class="px-4 py-3 text-left">Creator</th>
+                  <th class="px-4 py-3 text-right">Nominal</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                <template v-for="row in fjAllTransactions" :key="fjRowKey(row)">
+                  <tr class="hover:bg-orange-50/30 cursor-pointer" @click="toggleFjRow(row)">
+                    <td class="px-3 py-2.5 text-slate-400">
+                      <i
+                        class="fas text-xs transition-transform"
+                        :class="isFjExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                      ></i>
+                    </td>
+                    <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
+                    <td class="px-4 py-2.5 font-medium">{{ row.document_number }}</td>
+                    <td class="px-4 py-2.5">{{ row.source_label }}</td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ row.reference || '-' }}</td>
+                    <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
+                  </tr>
+                  <tr v-if="isFjExpanded(row)">
+                    <td colspan="7" class="px-4 py-3 bg-slate-50">
+                      <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table class="min-w-full text-xs">
+                          <thead class="bg-slate-100 text-slate-500 uppercase">
+                            <tr>
+                              <th class="px-3 py-2 text-left">Item</th>
+                              <th class="px-3 py-2 text-left">Gudang</th>
+                              <th class="px-3 py-2 text-right">Qty</th>
+                              <th class="px-3 py-2 text-left">Satuan</th>
+                              <th class="px-3 py-2 text-right">Harga</th>
+                              <th class="px-3 py-2 text-right">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100">
+                            <tr v-for="(item, idx) in row.items" :key="idx">
+                              <td class="px-3 py-2">{{ item.item_name }}</td>
+                              <td class="px-3 py-2 text-slate-600">{{ item.warehouse || '-' }}</td>
+                              <td class="px-3 py-2 text-right">{{ item.qty }}</td>
+                              <td class="px-3 py-2">{{ item.unit || '-' }}</td>
+                              <td class="px-3 py-2 text-right">{{ formatRupiah(item.price) }}</td>
+                              <td class="px-3 py-2 text-right font-medium">{{ formatRupiah(item.subtotal) }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -1985,8 +2097,112 @@ function visitorArea(userId) {
                   </div>
 
                   <p class="text-xs text-slate-500">
-                    Cash in = total revenue POS. Cash out = inventaris FJ + petty cash + PR Ops + category cost pada periode yang sama.
+                    Cash in = total revenue POS. Cash out = inventaris FJ + petty cash + PR Ops pada periode yang sama.
                   </p>
+                </template>
+
+                <!-- FJ Inventory -->
+                <template v-else-if="activeModal === 'fj_inventory'">
+                  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="rounded-xl bg-orange-50 border border-orange-100 p-4 lg:col-span-2">
+                      <p class="text-xs text-orange-700 font-semibold uppercase">Line Total</p>
+                      <p class="text-2xl font-bold text-orange-900 mt-1">{{ formatRupiah(analysis.fj_inventory?.line_total) }}</p>
+                    </div>
+                    <div class="rounded-xl bg-amber-50 border border-amber-100 p-4">
+                      <p class="text-xs text-amber-700 font-semibold uppercase">GR Food</p>
+                      <p class="text-xl font-bold text-amber-900 mt-1">
+                        {{ formatRupiah((analysis.fj_inventory?.transactions?.food_gr || []).reduce((s, r) => s + Number(r.total_amount || 0), 0)) }}
+                      </p>
+                      <p class="text-xs text-amber-600 mt-1">{{ (analysis.fj_inventory?.transactions?.food_gr || []).length }} transaksi</p>
+                    </div>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 p-4">
+                      <p class="text-xs text-slate-600 font-semibold uppercase">GR Serial + Contra Bon</p>
+                      <p class="text-xl font-bold text-slate-900 mt-1">
+                        {{
+                          formatRupiah(
+                            [...(analysis.fj_inventory?.transactions?.serial_gr || []), ...(analysis.fj_inventory?.transactions?.retail_food_contra_bon || [])]
+                              .reduce((s, r) => s + Number(r.total_amount || 0), 0),
+                          )
+                        }}
+                      </p>
+                      <p class="text-xs text-slate-500 mt-1">
+                        {{ (analysis.fj_inventory?.transactions?.serial_gr || []).length + (analysis.fj_inventory?.transactions?.retail_food_contra_bon || []).length }} transaksi
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-if="fjCategories.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi per Kategori Gudang</h3>
+                    <apexchart type="pie" height="280" :options="fjPieOptions" :series="fjPieSeries" />
+                  </div>
+
+                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                        <tr>
+                          <th class="px-3 py-3 w-8"></th>
+                          <th class="px-4 py-3 text-left">Tanggal</th>
+                          <th class="px-4 py-3 text-left">No. Dokumen</th>
+                          <th class="px-4 py-3 text-left">Sumber</th>
+                          <th class="px-4 py-3 text-left">Referensi</th>
+                          <th class="px-4 py-3 text-left">Creator</th>
+                          <th class="px-4 py-3 text-right">Nominal</th>
+                          <th class="px-4 py-3 text-left">Catatan</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        <template v-for="row in fjAllTransactions" :key="fjRowKey(row)">
+                          <tr class="hover:bg-orange-50/30 cursor-pointer" @click="toggleFjRow(row)">
+                            <td class="px-3 py-2.5 text-slate-400">
+                              <i
+                                class="fas text-xs transition-transform"
+                                :class="isFjExpanded(row) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                              ></i>
+                            </td>
+                            <td class="px-4 py-2.5 whitespace-nowrap text-slate-600">{{ row.transaction_date || '-' }}</td>
+                            <td class="px-4 py-2.5 font-medium">{{ row.document_number }}</td>
+                            <td class="px-4 py-2.5">{{ row.source_label }}</td>
+                            <td class="px-4 py-2.5 text-slate-600">{{ row.reference || '-' }}</td>
+                            <td class="px-4 py-2.5">{{ row.creator_name || '-' }}</td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(row.total_amount) }}</td>
+                            <td class="px-4 py-2.5 text-slate-600 max-w-xs truncate">{{ row.notes || '-' }}</td>
+                          </tr>
+                          <tr v-if="isFjExpanded(row)">
+                            <td colspan="8" class="px-4 py-3 bg-slate-50">
+                              <div v-if="row.items?.length" class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                                <table class="min-w-full text-xs">
+                                  <thead class="bg-slate-100 text-slate-500 uppercase">
+                                    <tr>
+                                      <th class="px-3 py-2 text-left">Item</th>
+                                      <th class="px-3 py-2 text-left">Gudang</th>
+                                      <th class="px-3 py-2 text-right">Qty</th>
+                                      <th class="px-3 py-2 text-left">Satuan</th>
+                                      <th class="px-3 py-2 text-right">Harga</th>
+                                      <th class="px-3 py-2 text-right">Subtotal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody class="divide-y divide-slate-100">
+                                    <tr v-for="(item, idx) in row.items" :key="idx">
+                                      <td class="px-3 py-2">{{ item.item_name }}</td>
+                                      <td class="px-3 py-2 text-slate-600">{{ item.warehouse || '-' }}</td>
+                                      <td class="px-3 py-2 text-right">{{ item.qty }}</td>
+                                      <td class="px-3 py-2">{{ item.unit || '-' }}</td>
+                                      <td class="px-3 py-2 text-right">{{ formatRupiah(item.price) }}</td>
+                                      <td class="px-3 py-2 text-right font-medium">{{ formatRupiah(item.subtotal) }}</td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p v-else class="text-sm text-slate-400 text-center py-3">Tidak ada detail item.</p>
+                            </td>
+                          </tr>
+                        </template>
+                        <tr v-if="!fjAllTransactions.length">
+                          <td colspan="8" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi inventory pada periode ini.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </template>
 
                 <!-- Petty Cash -->
