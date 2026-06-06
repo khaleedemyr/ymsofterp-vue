@@ -107,6 +107,7 @@
                   <th class="px-3 py-2 text-left border">NO.</th>
                   <th class="px-3 py-2 text-left border">TANGGAL</th>
                   <th class="px-3 py-2 text-left border">OUTLET</th>
+                  <th class="px-3 py-2 text-left border">REFERENSI</th>
                   <th class="px-3 py-2 text-left border">{{ report.category.name }}</th>
                   <th class="px-3 py-2 text-right border">Db</th>
                   <th class="px-3 py-2 text-right border">Cr</th>
@@ -133,12 +134,13 @@
                     <td class="px-3 py-1.5 border text-center">{{ row.no }}</td>
                     <td class="px-3 py-1.5 border whitespace-nowrap">{{ row.date_label }}</td>
                     <td class="px-3 py-1.5 border">{{ row.outlet }}</td>
+                    <td class="px-3 py-1.5 border text-xs text-gray-600 whitespace-nowrap">{{ row.reference || '' }}</td>
                     <td class="px-3 py-1.5 border">{{ row.description }}</td>
                     <td class="px-3 py-1.5 border text-right font-mono">{{ formatDebit(row.debit) }}</td>
                     <td class="px-3 py-1.5 border text-right font-mono">{{ formatCredit(row.credit) }}</td>
                   </tr>
                   <tr v-if="isExpandableRow(row) && isExpanded(row.row_key)" class="bg-gray-50">
-                    <td colspan="7" class="px-4 py-3 border">
+                    <td colspan="8" class="px-4 py-3 border">
                       <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
                         <div class="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase">
                           Detail Item
@@ -180,12 +182,12 @@
               </tbody>
               <tfoot>
                 <tr class="bg-gray-100 font-semibold">
-                  <td colspan="5" class="px-3 py-2 border text-right">TOTAL</td>
+                  <td colspan="6" class="px-3 py-2 border text-right">TOTAL</td>
                   <td class="px-3 py-2 border text-right font-mono">{{ formatDebit(report.summary.total_debit) }}</td>
                   <td class="px-3 py-2 border text-right font-mono">{{ formatCredit(report.summary.total_credit) }}</td>
                 </tr>
                 <tr class="bg-green-50 font-bold">
-                  <td colspan="5" class="px-3 py-2 border text-right">SISA SALDO</td>
+                  <td colspan="6" class="px-3 py-2 border text-right">SISA SALDO</td>
                   <td class="px-3 py-2 border text-right font-mono" colspan="2">{{ formatCurrency(report.summary.ending_balance) }}</td>
                 </tr>
               </tfoot>

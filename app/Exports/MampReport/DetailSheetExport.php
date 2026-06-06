@@ -24,13 +24,14 @@ class DetailSheetExport implements FromArray, WithStyles, WithColumnWidths, With
 
         $rows[] = ['MAMP REPORT — ' . $categoryName . ' — ' . ($this->report['period']['label'] ?? '')];
         $rows[] = [];
-        $rows[] = ['NO.', 'TANGGAL', 'OUTLET', $categoryName, 'Db', 'Cr'];
+        $rows[] = ['NO.', 'TANGGAL', 'OUTLET', 'REFERENSI', $categoryName, 'Db', 'Cr'];
 
         foreach ($this->report['rows'] as $row) {
             $rows[] = [
                 $row['no'],
                 $row['date_label'] ?? '',
                 $row['outlet'] ?? '',
+                $row['reference'] ?? '',
                 $row['description'] ?? '',
                 $this->formatAmountForExcel($row['debit'] ?? null),
                 $this->formatAmountForExcel($row['credit'] ?? null),
@@ -39,8 +40,8 @@ class DetailSheetExport implements FromArray, WithStyles, WithColumnWidths, With
 
         $summary = $this->report['summary'] ?? [];
         $rows[] = [];
-        $rows[] = ['', '', '', 'TOTAL', $summary['total_debit'] ?? 0, $summary['total_credit'] ?? 0];
-        $rows[] = ['', '', '', 'SISA SALDO', $summary['ending_balance'] ?? 0, ''];
+        $rows[] = ['', '', '', '', 'TOTAL', $summary['total_debit'] ?? 0, $summary['total_credit'] ?? 0];
+        $rows[] = ['', '', '', '', 'SISA SALDO', $summary['ending_balance'] ?? 0, ''];
 
         return $rows;
     }
@@ -56,9 +57,10 @@ class DetailSheetExport implements FromArray, WithStyles, WithColumnWidths, With
             'A' => 6,
             'B' => 14,
             'C' => 18,
-            'D' => 48,
-            'E' => 16,
+            'D' => 36,
+            'E' => 40,
             'F' => 16,
+            'G' => 16,
         ];
     }
 
@@ -69,29 +71,29 @@ class DetailSheetExport implements FromArray, WithStyles, WithColumnWidths, With
         $dataEnd = $dataStart + count($this->report['rows']) - 1;
         $totalRow = $dataEnd + 2;
 
-        $sheet->mergeCells('A1:F1');
+        $sheet->mergeCells('A1:G1');
         $sheet->getStyle('A1')->applyFromArray([
             'font' => ['bold' => true, 'size' => 14],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
-        $sheet->getStyle("A{$headerRow}:F{$headerRow}")->applyFromArray([
+        $sheet->getStyle("A{$headerRow}:G{$headerRow}")->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '4472C4']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         if ($dataEnd >= $dataStart) {
-            $sheet->getStyle("A{$dataStart}:F{$dataEnd}")->applyFromArray([
+            $sheet->getStyle("A{$dataStart}:G{$dataEnd}")->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
             ]);
-            $sheet->getStyle("E{$dataStart}:F{$dataEnd}")->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle("F{$dataStart}:G{$dataEnd}")->getNumberFormat()->setFormatCode('#,##0');
         }
 
-        $sheet->getStyle("A{$totalRow}:F" . ($totalRow + 1))->applyFromArray([
+        $sheet->getStyle("A{$totalRow}:G" . ($totalRow + 1))->applyFromArray([
             'font' => ['bold' => true],
         ]);
-        $sheet->getStyle("E{$totalRow}:F" . ($totalRow + 1))->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("F{$totalRow}:G" . ($totalRow + 1))->getNumberFormat()->setFormatCode('#,##0');
 
         return [];
     }

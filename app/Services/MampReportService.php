@@ -46,6 +46,7 @@ class MampReportService
                 'date' => $line->transaction_date,
                 'date_label' => $this->formatDateLabel($line->transaction_date),
                 'outlet' => $line->outlet_name ?? '-',
+                'reference' => $line->reference ?? '',
                 'description' => $line->description ?? '-',
                 'debit' => null,
                 'credit' => (float) $line->amount,
@@ -172,6 +173,7 @@ class MampReportService
             ->whereNull('rnf.deleted_at')
             ->select(
                 'rnf.id',
+                'rnf.retail_number',
                 'rnf.outlet_id',
                 'rnf.transaction_date',
                 'o.nama_outlet as outlet_name',
@@ -193,6 +195,7 @@ class MampReportService
                 'outlet_id' => $row->outlet_id ? (int) $row->outlet_id : null,
                 'transaction_date' => $row->transaction_date,
                 'outlet_name' => $row->outlet_name,
+                'reference' => $this->buildReferenceLabel(rnf: $row->retail_number),
                 'description' => $row->description,
                 'amount' => (float) $row->amount,
                 'items' => $items,
@@ -203,6 +206,12 @@ class MampReportService
         $nfpRows = DB::table('non_food_payment_outlets as nfpo')
             ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'nfpo.outlet_id')
+            ->leftJoin('purchase_order_ops as poo', 'poo.id', '=', 'nfp.purchase_order_ops_id')
+            ->leftJoin('purchase_requisitions as pr_direct', 'pr_direct.id', '=', 'nfp.purchase_requisition_id')
+            ->leftJoin('purchase_requisitions as pr_po', function ($join) {
+                $join->on('pr_po.id', '=', 'poo.source_id')
+                    ->where('poo.source_type', '=', 'purchase_requisition_ops');
+            })
             ->where('nfpo.category_id', $categoryId)
             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
             ->whereIn('nfp.status', ['paid', 'approved'])
@@ -215,7 +224,12 @@ class MampReportService
                 'nfpo.category_id as payment_category_id',
                 'nfp.payment_date as transaction_date',
                 'o.nama_outlet as outlet_name',
+                DB::raw('COALESCE(pr_direct.pr_number, pr_po.pr_number) as pr_number'),
+                'poo.number as po_number',
+                'nfp.payment_number',
                 DB::raw("COALESCE(
+                    pr_direct.title,
+                    pr_po.title,
                     (
                         SELECT pr.title
                         FROM purchase_order_ops_items poi
@@ -223,16 +237,9 @@ class MampReportService
                             AND poi.source_type = 'purchase_requisition_ops'
                         WHERE poi.purchase_order_ops_id = nfp.purchase_order_ops_id
                         LIMIT 1
-                    ),
-                    (
-                        SELECT pr.title
-                        FROM purchase_requisitions pr
-                        WHERE pr.id = nfp.purchase_requisition_id
-                        LIMIT 1
                     )
                 ) as pr_title"),
                 'nfp.notes',
-                'nfp.payment_number',
                 'nfpo.amount'
             )
             ->get();
@@ -275,6 +282,11 @@ class MampReportService
                 'outlet_id' => $row->outlet_id ? (int) $row->outlet_id : null,
                 'transaction_date' => $row->transaction_date,
                 'outlet_name' => $row->outlet_name,
+                'reference' => $this->buildReferenceLabel(
+                    pr: $row->pr_number ?? null,
+                    po: $row->po_number ?? null,
+                    nfp: $row->payment_number ?? null
+                ),
                 'description' => $description,
                 'amount' => (float) $row->amount,
                 'items' => $items,
@@ -629,6 +641,7 @@ class MampReportService
             'date' => $date,
             'date_label' => $this->formatDateLabel($date),
             'outlet' => $outlet,
+            'reference' => '',
             'description' => $description,
             'debit' => $amount,
             'credit' => null,
@@ -637,6 +650,26 @@ class MampReportService
             'items' => [],
             'expandable' => false,
         ];
+    }
+
+    private function buildReferenceLabel(?string $pr = null, ?string $po = null, ?string $nfp = null, ?string $rnf = null): string
+    {
+        $parts = [];
+
+        if ($pr && trim($pr) !== '') {
+            $parts[] = 'PR: ' . trim($pr);
+        }
+        if ($po && trim($po) !== '') {
+            $parts[] = 'PO: ' . trim($po);
+        }
+        if ($nfp && trim($nfp) !== '') {
+            $parts[] = 'NFP: ' . trim($nfp);
+        }
+        if ($rnf && trim($rnf) !== '') {
+            $parts[] = 'RNF: ' . trim($rnf);
+        }
+
+        return $parts !== [] ? implode(' | ', $parts) : '-';
     }
 
     private function saldoAwalLabel(object $category, Carbon $periodStart): string
