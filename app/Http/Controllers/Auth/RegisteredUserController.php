@@ -80,9 +80,9 @@ class RegisteredUserController extends Controller
             
             // Files
             'avatar' => 'nullable|image|max:2048',
-            'foto_ktp' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
-            'foto_kk' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
-            'upload_latest_color_photo' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+            'foto_ktp' => 'required|file|mimes:jpeg,png,jpg|max:2048',
+            'foto_kk' => 'required|file|mimes:jpeg,png,jpg|max:2048',
+            'upload_latest_color_photo' => 'required|file|mimes:jpeg,png,jpg|max:2048',
             'recaptcha_token' => [
                 $recaptchaService->enabled() ? 'required' : 'nullable',
                 'string',

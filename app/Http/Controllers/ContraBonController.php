@@ -2591,6 +2591,50 @@ class ContraBonController extends Controller
     }
 
     /**
+     * Hanya GR yang masih punya baris item belum dipakai Contra Bon.
+     */
+    private function applyContraBonAvailableGrItemConstraint($query, string $grIdColumn = 'gr.id'): void
+    {
+        $query->whereExists(function ($q) use ($grIdColumn) {
+            $q->select(DB::raw(1))
+                ->from('food_good_receive_items as gri_avail')
+                ->whereColumn('gri_avail.good_receive_id', $grIdColumn)
+                ->whereNotExists(function ($sub) {
+                    $sub->select(DB::raw(1))
+                        ->from('food_contra_bon_items as cbi')
+                        ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
+                        ->whereColumn('cbi.gr_item_id', 'gri_avail.id');
+                    if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
+                        $sub->whereNull('cb.deleted_at');
+                    }
+                });
+        });
+    }
+
+    /**
+     * Filter PO/GR by PO number, GR number, supplier name, or outlet (RO Supplier).
+     */
+    private function applyPoGrSearchFilter($query, string $search): void
+    {
+        $searchTerm = '%' . $search . '%';
+
+        $query->where(function ($q) use ($searchTerm) {
+            $q->where('po.number', 'like', $searchTerm)
+                ->orWhere('gr.gr_number', 'like', $searchTerm)
+                ->orWhere('s.name', 'like', $searchTerm)
+                ->orWhereExists(function ($sub) use ($searchTerm) {
+                    $sub->select(DB::raw(1))
+                        ->from('purchase_order_food_items as poi_s')
+                        ->join('food_floor_orders as fo_s', 'poi_s.ro_id', '=', 'fo_s.id')
+                        ->join('tbl_data_outlet as o_s', 'fo_s.id_outlet', '=', 'o_s.id_outlet')
+                        ->whereColumn('poi_s.purchase_order_food_id', 'po.id')
+                        ->where('po.source_type', 'ro_supplier')
+                        ->where('o_s.nama_outlet', 'like', $searchTerm);
+                });
+        });
+    }
+
+    /**
      * Map GR line items (belum dipakai contra bon) per good_receive_id.
      */
     private function mapGoodReceiveItemsToGroupedCollection(array $grIds): \Illuminate\Support\Collection
@@ -2675,7 +2719,7 @@ class ContraBonController extends Controller
 
             // Get all PO with GR in one query with pagination
             // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
-            $poWithGRQuery = \DB::table('purchase_order_foods as po')
+            $poWithGRQuery = DB::table('purchase_order_foods as po')
                 ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
                 ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
                 ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
@@ -2697,43 +2741,17 @@ class ContraBonController extends Controller
                     's.id as supplier_id',
                     's.name as supplier_name'
                 );
-            
-            // Apply search filter if provided
+
+            // Hanya GR yang masih punya baris tersedia (hindari scan + filter di PHP)
+            $this->applyContraBonAvailableGrItemConstraint($poWithGRQuery);
+
             if (!empty($search)) {
-                $searchTerm = '%' . $search . '%';
-                
-                // Get PO IDs that match search criteria (including outlet names)
-                $matchingPoIds = \DB::table('purchase_order_foods as po')
-                    ->leftJoin('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
-                    ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
-                    ->leftJoin('purchase_order_food_items as poi', 'po.id', '=', 'poi.purchase_order_food_id')
-                    ->leftJoin('food_floor_orders as fo', function($join) {
-                        $join->on('poi.ro_id', '=', 'fo.id')
-                             ->where('po.source_type', '=', 'ro_supplier');
-                    })
-                    ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                    ->where(function($query) use ($searchTerm) {
-                        $query->where('po.number', 'like', $searchTerm)
-                              ->orWhere('gr.gr_number', 'like', $searchTerm)
-                              ->orWhere('s.name', 'like', $searchTerm)
-                              ->orWhere('o.nama_outlet', 'like', $searchTerm);
-                    })
-                    ->distinct()
-                    ->pluck('po.id')
-                    ->toArray();
-                
-                if (!empty($matchingPoIds)) {
-                    $poWithGRQuery->whereIn('po.id', $matchingPoIds);
-                } else {
-                    // No matches found, return empty result
-                    $poWithGRQuery->whereRaw('1 = 0');
-                }
+                $this->applyPoGrSearchFilter($poWithGRQuery, $search);
             }
-            
+
             $poWithGRQuery->orderByDesc('gr.receive_date');
-            
-            // Get total count for pagination
-            $total = $poWithGRQuery->count();
+
+            $total = (clone $poWithGRQuery)->count('gr.id');
             
             // Apply pagination
             $poWithGR = $poWithGRQuery
@@ -2765,22 +2783,6 @@ class ContraBonController extends Controller
 
             // --- Ringkas: tanpa muat detail baris GR (items di-fetch saat user memilih)
             if (!$includeItems) {
-                $grIdsWithAvailableLines = \DB::table('food_good_receive_items as gri')
-                    ->whereIn('gri.good_receive_id', $grIds)
-                    ->whereNotExists(function ($q) {
-                        $q->select(\DB::raw(1))
-                            ->from('food_contra_bon_items as cbi')
-                            ->join('food_contra_bons as cb', 'cbi.contra_bon_id', '=', 'cb.id')
-                            ->whereColumn('cbi.gr_item_id', 'gri.id');
-                        if (Schema::hasColumn('food_contra_bons', 'deleted_at')) {
-                            $q->whereNull('cb.deleted_at');
-                        }
-                    })
-                    ->distinct()
-                    ->pluck('good_receive_id')
-                    ->all();
-                $grHasLines = array_flip($grIdsWithAvailableLines);
-
                 $outletDataMap = [];
                 if (!empty($roSupplierPoIds)) {
                     $allOutletData = \DB::table('food_floor_orders as fo')
@@ -2803,9 +2805,6 @@ class ContraBonController extends Controller
 
                 $result = [];
                 foreach ($poWithGR as $row) {
-                    if (! isset($grHasLines[$row->gr_id])) {
-                        continue;
-                    }
                     $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
                     $outletNames = $outletDataMap[$row->po_id] ?? [];
                     $poDiscountInfo = [

@@ -5,7 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
@@ -118,20 +118,152 @@ const form = useForm({
 });
 
 const previewUrl = ref(null);
+const fotoKtpPreview = ref(null);
+const fotoKkPreview = ref(null);
+const colorPhotoPreview = ref(null);
 const isLoading = ref(false);
+
+const requiredTextFields = [
+    'nama_lengkap', 'nama_panggilan', 'email', 'password', 'password_confirmation',
+    'no_hp', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir', 'suku', 'agama',
+    'status_pernikahan', 'golongan_darah', 'alamat', 'alamat_ktp', 'pin_payroll',
+    'nama_kontak_darurat', 'no_hp_kontak_darurat', 'hubungan_kontak_darurat',
+    'no_ktp', 'nomor_kk', 'npwp_number', 'bpjs_health_number', 'bpjs_employment_number',
+    'last_education', 'name_school_college', 'school_college_major',
+    'nama_rekening', 'no_rekening',
+];
+
+const requiredFileFields = [
+    { key: 'foto_ktp', label: 'Foto KTP' },
+    { key: 'foto_kk', label: 'Foto KK' },
+    { key: 'upload_latest_color_photo', label: 'Foto Terbaru (Warna)' },
+];
+
+function isFilledText(value) {
+    return value !== null && value !== undefined && String(value).trim() !== '';
+}
+
+function isFilledFile(value) {
+    return value instanceof File;
+}
+
+const missingDocumentFiles = computed(() =>
+    requiredFileFields.filter(({ key }) => !isFilledFile(form[key])).map(({ label }) => label)
+);
+
+const documentsComplete = computed(() => missingDocumentFiles.value.length === 0);
+
+const canSubmit = computed(() => {
+    if (form.password !== form.password_confirmation) return false;
+    if (!requiredTextFields.every((key) => isFilledText(form[key]))) return false;
+    return documentsComplete.value;
+});
+
+const submitDisabledReason = computed(() => {
+    if (canSubmit.value) return '';
+    const missing = [];
+    requiredTextFields.forEach((key) => {
+        if (!isFilledText(form[key])) {
+            missing.push(getFieldDisplayName(key));
+        }
+    });
+    missing.push(...missingDocumentFiles.value);
+    if (form.password && form.password_confirmation && form.password !== form.password_confirmation) {
+        missing.push('Konfirmasi Password harus sama');
+    }
+    return missing.length ? `Lengkapi: ${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '...' : ''}` : '';
+});
 const alertMessage = ref('');
 const alertType = ref(''); // 'success', 'error', 'warning'
 const showAlert = ref(false);
 
-// Handle file uploads
-function handleFileChange(e, field) {
-    const file = e.target.files[0];
-    if (file) {
-        form[field] = file;
-        if (field === 'avatar') {
-            previewUrl.value = URL.createObjectURL(file);
-        }
+const previewByField = {
+    avatar: previewUrl,
+    foto_ktp: fotoKtpPreview,
+    foto_kk: fotoKkPreview,
+    upload_latest_color_photo: colorPhotoPreview,
+};
+
+function revokePreview(ref) {
+    if (ref.value && ref.value.startsWith('blob:')) {
+        URL.revokeObjectURL(ref.value);
     }
+}
+
+function handleFileChange(e, field) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+        showModalAlert('File harus berupa gambar (JPG/PNG).', 'error');
+        e.target.value = '';
+        return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+        showModalAlert('Ukuran file maksimal 2MB.', 'error');
+        e.target.value = '';
+        return;
+    }
+
+    form[field] = file;
+    const previewRef = previewByField[field];
+    if (previewRef) {
+        revokePreview(previewRef);
+        previewRef.value = URL.createObjectURL(file);
+    }
+    e.target.value = '';
+}
+
+const fotoKtpCameraInput = ref(null);
+const fotoKtpUploadInput = ref(null);
+const fotoKkCameraInput = ref(null);
+const fotoKkUploadInput = ref(null);
+const colorPhotoCameraInput = ref(null);
+const colorPhotoUploadInput = ref(null);
+
+function triggerFilePicker(inputEl) {
+    inputEl?.click();
+}
+
+function getFieldDisplayName(field) {
+    const fieldNames = {
+        nama_lengkap: 'Nama Lengkap',
+        nama_panggilan: 'Nama Panggilan',
+        email: 'Email',
+        password: 'Password',
+        password_confirmation: 'Konfirmasi Password',
+        no_hp: 'No HP',
+        jenis_kelamin: 'Jenis Kelamin',
+        tempat_lahir: 'Tempat Lahir',
+        tanggal_lahir: 'Tanggal Lahir',
+        suku: 'Suku',
+        agama: 'Agama',
+        status_pernikahan: 'Status Pernikahan',
+        golongan_darah: 'Golongan Darah',
+        alamat: 'Alamat',
+        alamat_ktp: 'Alamat KTP',
+        pin_pos: 'PIN POS',
+        pin_payroll: 'PIN Payroll',
+        nama_kontak_darurat: 'Nama Kontak Darurat',
+        no_hp_kontak_darurat: 'No HP Kontak Darurat',
+        hubungan_kontak_darurat: 'Hubungan Kontak Darurat',
+        no_ktp: 'No KTP',
+        nomor_kk: 'Nomor KK',
+        npwp_number: 'NPWP',
+        bpjs_health_number: 'BPJS Kesehatan',
+        bpjs_employment_number: 'BPJS Ketenagakerjaan',
+        last_education: 'Pendidikan Terakhir',
+        name_school_college: 'Nama Sekolah/Kampus',
+        school_college_major: 'Jurusan',
+        nama_rekening: 'Nama Rekening',
+        no_rekening: 'No Rekening',
+        avatar: 'Avatar',
+        foto_ktp: 'Foto KTP',
+        foto_kk: 'Foto KK',
+        upload_latest_color_photo: 'Foto Terbaru',
+    };
+    return fieldNames[field] || field;
 }
 
 // Show alert in modal
@@ -154,74 +286,33 @@ function hideAlert() {
 watch(() => props.show, (val) => {
     if (val) {
         activeTab.value = 'personal';
-        // Reset form when modal opens
         form.reset();
+        revokePreview(previewUrl);
+        revokePreview(fotoKtpPreview);
+        revokePreview(fotoKkPreview);
+        revokePreview(colorPhotoPreview);
         previewUrl.value = null;
+        fotoKtpPreview.value = null;
+        fotoKkPreview.value = null;
+        colorPhotoPreview.value = null;
     }
 });
 
 const submitRegister = async () => {
-    // Validasi field yang wajib diisi
-    const requiredFields = {
-        // Personal Info
-        'nama_lengkap': 'Nama Lengkap',
-        'nama_panggilan': 'Nama Panggilan',
-        'email': 'Email',
-        'password': 'Password',
-        'password_confirmation': 'Konfirmasi Password',
-        'no_hp': 'No HP',
-        'jenis_kelamin': 'Jenis Kelamin',
-        'tempat_lahir': 'Tempat Lahir',
-        'tanggal_lahir': 'Tanggal Lahir',
-        'suku': 'Suku',
-        'agama': 'Agama',
-        'status_pernikahan': 'Status Pernikahan',
-        'golongan_darah': 'Golongan Darah',
-        
-        // Contact Info
-        'alamat': 'Alamat',
-        'alamat_ktp': 'Alamat KTP',
-        'pin_payroll': 'PIN Payroll',
-        'nama_kontak_darurat': 'Nama Kontak Darurat',
-        'no_hp_kontak_darurat': 'No HP Kontak Darurat',
-        'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
-        
-        // Documents Info
-        'no_ktp': 'No KTP',
-        'nomor_kk': 'Nomor KK',
-        'npwp_number': 'NPWP Number',
-        'bpjs_health_number': 'BPJS Health Number',
-        'bpjs_employment_number': 'BPJS Employment Number',
-        'last_education': 'Pendidikan Terakhir',
-        'name_school_college': 'Nama Sekolah/Kampus',
-        'school_college_major': 'Jurusan',
-        'nama_rekening': 'Nama Rekening',
-        'no_rekening': 'No Rekening',
-        'foto_ktp': 'Foto KTP',
-        'foto_kk': 'Foto KK',
-        'upload_latest_color_photo': 'Upload Latest Color Photo'
-    };
-
-    const emptyFields = [];
-    
-    // Cek field yang kosong
-    Object.entries(requiredFields).forEach(([key, label]) => {
-        const value = form[key];
-        if (!value || (typeof value === 'string' && value.trim() === '') || value === null || value === undefined) {
-            emptyFields.push(label);
+    if (!canSubmit.value) {
+        const missing = [];
+        requiredTextFields.forEach((key) => {
+            if (!isFilledText(form[key])) missing.push(getFieldDisplayName(key));
+        });
+        missing.push(...missingDocumentFiles.value);
+        if (form.password !== form.password_confirmation) {
+            missing.push('Konfirmasi Password');
         }
-    });
-
-    // Jika ada field yang kosong, tampilkan alert di modal
-    if (emptyFields.length > 0) {
-        const fieldList = emptyFields.map(field => `• ${field}`).join('\n');
+        if (missingDocumentFiles.value.length > 0) {
+            activeTab.value = 'documents';
+        }
+        const fieldList = missing.map((field) => `• ${field}`).join('\n');
         showModalAlert(`Data Belum Lengkap\n\nSilakan lengkapi data berikut:\n\n${fieldList}`, 'warning');
-        return;
-    }
-
-    // Validasi password confirmation
-    if (form.password !== form.password_confirmation) {
-        showModalAlert('Password Tidak Cocok\n\nPassword dan Konfirmasi Password tidak sama. Silakan periksa kembali.', 'error');
         return;
     }
 
@@ -276,47 +367,6 @@ const submitRegister = async () => {
         if (error.response?.data?.errors) {
             // Handle validation errors
             const errors = error.response.data.errors;
-            
-            // Field display names mapping
-            const getFieldDisplayName = (field) => {
-                const fieldNames = {
-                    'nama_lengkap': 'Nama Lengkap',
-                    'nama_panggilan': 'Nama Panggilan',
-                    'email': 'Email',
-                    'password': 'Password',
-                    'password_confirmation': 'Konfirmasi Password',
-                    'no_hp': 'No HP',
-                    'jenis_kelamin': 'Jenis Kelamin',
-                    'tempat_lahir': 'Tempat Lahir',
-                    'tanggal_lahir': 'Tanggal Lahir',
-                    'suku': 'Suku',
-                    'agama': 'Agama',
-                    'status_pernikahan': 'Status Pernikahan',
-                    'golongan_darah': 'Golongan Darah',
-                    'alamat': 'Alamat',
-                    'alamat_ktp': 'Alamat KTP',
-                    'pin_pos': 'PIN POS',
-                    'pin_payroll': 'PIN Payroll',
-                    'nama_kontak_darurat': 'Nama Kontak Darurat',
-                    'no_hp_kontak_darurat': 'No HP Kontak Darurat',
-                    'hubungan_kontak_darurat': 'Hubungan Kontak Darurat',
-                    'no_ktp': 'No KTP',
-                    'nomor_kk': 'Nomor KK',
-                    'npwp_number': 'NPWP',
-                    'bpjs_health_number': 'BPJS Kesehatan',
-                    'bpjs_employment_number': 'BPJS Ketenagakerjaan',
-                    'last_education': 'Pendidikan Terakhir',
-                    'name_school_college': 'Nama Sekolah/Kampus',
-                    'school_college_major': 'Jurusan',
-                    'nama_rekening': 'Nama Rekening',
-                    'no_rekening': 'No Rekening',
-                    'avatar': 'Avatar',
-                    'foto_ktp': 'Foto KTP',
-                    'foto_kk': 'Foto KK',
-                    'upload_latest_color_photo': 'Foto Terbaru'
-                };
-                return fieldNames[field] || field;
-            };
             
             // Create detailed error message for SweetAlert
             let errorMessage = '<div class="text-left">';
@@ -494,7 +544,14 @@ const submitRegister = async () => {
             <div class="flex border-b mb-4 overflow-x-auto">
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'personal' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'personal'">Personal</button>
                 <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'contact' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'contact'">Contact</button>
-                <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap', activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'documents'">Documents</button>
+                <button :class="['px-4 py-2 -mb-px font-semibold whitespace-nowrap flex items-center gap-1.5', activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500']" @click="activeTab = 'documents'">
+                    Documents
+                    <span
+                        v-if="!documentsComplete"
+                        class="inline-flex h-2 w-2 rounded-full bg-red-500"
+                        title="Foto KTP, KK, dan Foto Terbaru wajib diunggah"
+                    ></span>
+                </button>
             </div>
 
             <!-- Personal Tab -->
@@ -702,11 +759,14 @@ const submitRegister = async () => {
                         >
                             Cancel
                         </button>
-                        <PrimaryButton :disabled="isLoading">
+                        <PrimaryButton :disabled="isLoading || !canSubmit">
                             <span v-if="isLoading">Mendaftar...</span>
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
                     </div>
+                    <p v-if="!canSubmit && submitDisabledReason" class="text-xs text-amber-600 text-right mt-1">
+                        {{ submitDisabledReason }}
+                    </p>
                     <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
                         Form ini dilindungi Google reCAPTCHA.
                     </div>
@@ -808,11 +868,14 @@ const submitRegister = async () => {
                         >
                             Cancel
                         </button>
-                        <PrimaryButton :disabled="isLoading">
+                        <PrimaryButton :disabled="isLoading || !canSubmit">
                             <span v-if="isLoading">Mendaftar...</span>
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
                     </div>
+                    <p v-if="!canSubmit && submitDisabledReason" class="text-xs text-amber-600 text-right mt-1">
+                        {{ submitDisabledReason }}
+                    </p>
                     <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
                         Form ini dilindungi Google reCAPTCHA.
                     </div>
@@ -822,6 +885,10 @@ const submitRegister = async () => {
             <!-- Documents Tab -->
             <div v-else-if="activeTab === 'documents'">
                 <form @submit.prevent="submitRegister" class="space-y-6">
+                    <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                        <span class="font-medium text-red-600">*</span> Foto KTP, Foto KK, dan Foto Terbaru (warna) wajib diunggah.
+                        Bisa <strong>ambil foto dari kamera</strong> atau <strong>upload file</strong> (JPG/PNG, maks. 2MB).
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <InputLabel for="no_ktp" value="No KTP *" />
@@ -940,25 +1007,138 @@ const submitRegister = async () => {
                             <InputError class="mt-2" :message="form.errors.no_rekening" />
                         </div>
 
-                        <!-- File Uploads -->
-                        <div>
-                            <InputLabel for="foto_ktp" value="Foto KTP *" />
-                            <input type="file" required @change="handleFileChange($event, 'foto_ktp')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                            <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                        <!-- Foto KTP -->
+                        <div
+                            class="md:col-span-2 rounded-lg border p-4"
+                            :class="form.foto_ktp ? 'border-green-300 bg-green-50/50' : 'border-red-200 bg-red-50/30'"
+                        >
+                            <div class="flex items-center justify-between gap-2">
+                                <InputLabel for="foto_ktp" value="Foto KTP" />
+                                <span class="text-xs font-semibold text-red-600">Wajib *</span>
+                            </div>
+                            <div class="mt-3 flex flex-col sm:flex-row gap-4">
+                                <div class="w-28 h-28 rounded-lg overflow-hidden border-2 border-gray-200 bg-white flex-shrink-0">
+                                    <img v-if="fotoKtpPreview" :src="fotoKtpPreview" alt="Preview Foto KTP" class="w-full h-full object-cover" />
+                                    <div v-else class="w-full h-full flex flex-col items-center justify-center text-gray-400 text-xs p-2 text-center">
+                                        <i class="fas fa-id-card text-2xl mb-1"></i>
+                                        Belum diunggah
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                            @click="triggerFilePicker(fotoKtpCameraInput)"
+                                        >
+                                            <i class="fas fa-camera"></i> Ambil Foto
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                            @click="triggerFilePicker(fotoKtpUploadInput)"
+                                        >
+                                            <i class="fas fa-upload"></i> Upload File
+                                        </button>
+                                    </div>
+                                    <p v-if="form.foto_ktp" class="text-xs text-green-700">
+                                        <i class="fas fa-check-circle"></i> {{ form.foto_ktp.name }}
+                                    </p>
+                                    <p v-else class="text-xs text-red-600">Foto KTP belum diunggah</p>
+                                </div>
+                            </div>
+                            <input ref="fotoKtpCameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="handleFileChange($event, 'foto_ktp')" />
+                            <input ref="fotoKtpUploadInput" type="file" accept="image/*" class="hidden" @change="handleFileChange($event, 'foto_ktp')" />
                             <InputError class="mt-2" :message="form.errors.foto_ktp" />
                         </div>
 
-                        <div>
-                            <InputLabel for="foto_kk" value="Foto KK *" />
-                            <input type="file" required @change="handleFileChange($event, 'foto_kk')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                            <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                        <!-- Foto KK -->
+                        <div
+                            class="md:col-span-2 rounded-lg border p-4"
+                            :class="form.foto_kk ? 'border-green-300 bg-green-50/50' : 'border-red-200 bg-red-50/30'"
+                        >
+                            <div class="flex items-center justify-between gap-2">
+                                <InputLabel for="foto_kk" value="Foto KK" />
+                                <span class="text-xs font-semibold text-red-600">Wajib *</span>
+                            </div>
+                            <div class="mt-3 flex flex-col sm:flex-row gap-4">
+                                <div class="w-28 h-28 rounded-lg overflow-hidden border-2 border-gray-200 bg-white flex-shrink-0">
+                                    <img v-if="fotoKkPreview" :src="fotoKkPreview" alt="Preview Foto KK" class="w-full h-full object-cover" />
+                                    <div v-else class="w-full h-full flex flex-col items-center justify-center text-gray-400 text-xs p-2 text-center">
+                                        <i class="fas fa-users text-2xl mb-1"></i>
+                                        Belum diunggah
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                            @click="triggerFilePicker(fotoKkCameraInput)"
+                                        >
+                                            <i class="fas fa-camera"></i> Ambil Foto
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                            @click="triggerFilePicker(fotoKkUploadInput)"
+                                        >
+                                            <i class="fas fa-upload"></i> Upload File
+                                        </button>
+                                    </div>
+                                    <p v-if="form.foto_kk" class="text-xs text-green-700">
+                                        <i class="fas fa-check-circle"></i> {{ form.foto_kk.name }}
+                                    </p>
+                                    <p v-else class="text-xs text-red-600">Foto KK belum diunggah</p>
+                                </div>
+                            </div>
+                            <input ref="fotoKkCameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="handleFileChange($event, 'foto_kk')" />
+                            <input ref="fotoKkUploadInput" type="file" accept="image/*" class="hidden" @change="handleFileChange($event, 'foto_kk')" />
                             <InputError class="mt-2" :message="form.errors.foto_kk" />
                         </div>
 
-                        <div>
-                            <InputLabel for="upload_latest_color_photo" value="Upload Latest Color Photo *" />
-                            <input type="file" required @change="handleFileChange($event, 'upload_latest_color_photo')" accept="image/*" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                            <p class="text-xs text-gray-500 mt-1">Format: JPG, PNG. Maksimal 2MB</p>
+                        <!-- Foto Terbaru -->
+                        <div
+                            class="md:col-span-2 rounded-lg border p-4"
+                            :class="form.upload_latest_color_photo ? 'border-green-300 bg-green-50/50' : 'border-red-200 bg-red-50/30'"
+                        >
+                            <div class="flex items-center justify-between gap-2">
+                                <InputLabel for="upload_latest_color_photo" value="Foto Terbaru (Warna)" />
+                                <span class="text-xs font-semibold text-red-600">Wajib *</span>
+                            </div>
+                            <div class="mt-3 flex flex-col sm:flex-row gap-4">
+                                <div class="w-28 h-28 rounded-lg overflow-hidden border-2 border-gray-200 bg-white flex-shrink-0">
+                                    <img v-if="colorPhotoPreview" :src="colorPhotoPreview" alt="Preview Foto Terbaru" class="w-full h-full object-cover" />
+                                    <div v-else class="w-full h-full flex flex-col items-center justify-center text-gray-400 text-xs p-2 text-center">
+                                        <i class="fas fa-portrait text-2xl mb-1"></i>
+                                        Belum diunggah
+                                    </div>
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                                            @click="triggerFilePicker(colorPhotoCameraInput)"
+                                        >
+                                            <i class="fas fa-camera"></i> Ambil Foto
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                                            @click="triggerFilePicker(colorPhotoUploadInput)"
+                                        >
+                                            <i class="fas fa-upload"></i> Upload File
+                                        </button>
+                                    </div>
+                                    <p v-if="form.upload_latest_color_photo" class="text-xs text-green-700">
+                                        <i class="fas fa-check-circle"></i> {{ form.upload_latest_color_photo.name }}
+                                    </p>
+                                    <p v-else class="text-xs text-red-600">Foto terbaru belum diunggah</p>
+                                </div>
+                            </div>
+                            <input ref="colorPhotoCameraInput" type="file" accept="image/*" capture="user" class="hidden" @change="handleFileChange($event, 'upload_latest_color_photo')" />
+                            <input ref="colorPhotoUploadInput" type="file" accept="image/*" class="hidden" @change="handleFileChange($event, 'upload_latest_color_photo')" />
                             <InputError class="mt-2" :message="form.errors.upload_latest_color_photo" />
                         </div>
                     </div>
@@ -971,11 +1151,14 @@ const submitRegister = async () => {
                         >
                             Cancel
                         </button>
-                        <PrimaryButton :disabled="isLoading">
+                        <PrimaryButton :disabled="isLoading || !canSubmit">
                             <span v-if="isLoading">Mendaftar...</span>
                             <span v-else>DAFTAR</span>
                         </PrimaryButton>
                     </div>
+                    <p v-if="!canSubmit && submitDisabledReason" class="text-xs text-amber-600 text-right mt-1">
+                        {{ submitDisabledReason }}
+                    </p>
                     <div v-if="isRecaptchaEnabled()" class="text-xs text-gray-500 text-right">
                         Form ini dilindungi Google reCAPTCHA.
                     </div>

@@ -264,6 +264,7 @@ onMounted(async () => {
 let searchTimeout = null;
 let retailFoodSearchTimeout = null;
 let warehouseRetailFoodSearchTimeout = null;
+let poGrAbortController = null;
 
 function filterPOList() {
   // Clear previous timeout
@@ -276,13 +277,15 @@ function filterPOList() {
     loadingPOGR.value = true;
   }
   
-  // Debounce search - wait 500ms after user stops typing
+  // Debounce search - wait 600ms after user stops typing
   searchTimeout = setTimeout(async () => {
     const query = poSearchQuery.value.trim();
-    
-    // Reset to page 1 when searching
+    if (query.length > 0 && query.length < 2) {
+      loadingPOGR.value = false;
+      return;
+    }
     await loadPOGRList(1, false, query);
-  }, 500);
+  }, 600);
 }
 
 function filterRetailFoodList() {
@@ -326,6 +329,12 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
   } else {
     loadingPOGR.value = true;
   }
+
+  if (poGrAbortController) {
+    poGrAbortController.abort();
+  }
+  poGrAbortController = new AbortController();
+  const requestSignal = poGrAbortController.signal;
   
   try {
     const params = {
@@ -339,7 +348,10 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
       params.search = searchQuery.trim();
     }
     
-    const response = await axios.get('/api/contra-bon/po-with-approved-gr', { params });
+    const response = await axios.get('/api/contra-bon/po-with-approved-gr', {
+      params,
+      signal: requestSignal,
+    });
     
     const data = response.data?.data || response.data || [];
     const pagination = response.data?.pagination || null;
@@ -359,14 +371,23 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
       poGRPagination.value = pagination;
     }
   } catch (e) {
-    Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + (e.response?.data?.error || e.message), 'error');
+    if (e.code === 'ERR_CANCELED' || e.name === 'CanceledError') {
+      return;
+    }
+    const status = e.response?.status;
+    const message = status === 504
+      ? 'Server timeout. Coba perjelas kata kunci pencarian (PO/GR/Supplier) lalu tunggu sebentar.'
+      : (e.response?.data?.error || e.message);
+    Swal.fire('Error', 'Gagal mengambil data PO/GR: ' + message, 'error');
     if (!append) {
       poWithGRList.value = [];
       filteredPOList.value = [];
     }
   } finally {
-    loadingPOGR.value = false;
-    loadingMorePOGR.value = false;
+    if (!requestSignal.aborted) {
+      loadingPOGR.value = false;
+      loadingMorePOGR.value = false;
+    }
   }
 }
 
@@ -1953,7 +1974,7 @@ function getUnitName(item) {
               @input="filterPOList"
               type="text" 
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-              placeholder="Cari PO, GR, Supplier, atau Outlet..."
+              placeholder="Cari PO, GR, Supplier, atau Outlet (min. 2 karakter)..."
             />
           </div>
         </div>
