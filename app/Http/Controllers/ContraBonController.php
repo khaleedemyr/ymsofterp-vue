@@ -3909,8 +3909,111 @@ class ContraBonController extends Controller
             });
         }
 
+        $this->enrichContraBonForEditForm($contraBon);
+
         return inertia('ContraBon/Form', [
             'contraBon' => $contraBon
+        ]);
+    }
+
+    /**
+     * Siapkan po_id/gr_id untuk form edit (data sering hanya ada di sources / gr_item).
+     */
+    private function enrichContraBonForEditForm(ContraBon $contraBon): void
+    {
+        $poSource = $contraBon->sources
+            ? $contraBon->sources->firstWhere('source_type', 'purchase_order')
+            : null;
+
+        if ($poSource) {
+            $contraBon->setAttribute('gr_id', $poSource->gr_id);
+            if (!$contraBon->po_id) {
+                $contraBon->setAttribute('po_id', $poSource->po_id);
+            }
+        }
+
+        if (!$contraBon->getAttribute('gr_id')) {
+            $firstGrItemId = $contraBon->items->firstWhere('gr_item_id', '!=', null)?->gr_item_id;
+            if ($firstGrItemId) {
+                $grRow = DB::table('food_good_receive_items')->where('id', $firstGrItemId)->first();
+                if ($grRow) {
+                    $contraBon->setAttribute('gr_id', $grRow->good_receive_id);
+                    if (!$contraBon->po_id) {
+                        $contraBon->setAttribute(
+                            'po_id',
+                            DB::table('food_good_receives')->where('id', $grRow->good_receive_id)->value('po_id')
+                        );
+                    }
+                }
+            }
+        }
+
+        $defaultPoId = $contraBon->po_id;
+        $defaultGrId = $contraBon->getAttribute('gr_id');
+
+        $contraBon->items->each(function ($item) use ($defaultPoId, $defaultGrId, $contraBon) {
+            $item->source_type = $item->source_type ?? $contraBon->source_type ?? 'purchase_order';
+            $item->po_id = $item->po_id ?? $defaultPoId;
+            $item->gr_id = $item->gr_id ?? $defaultGrId;
+
+            if ($item->gr_item_id) {
+                $grRow = DB::table('food_good_receive_items')->where('id', $item->gr_item_id)->first();
+                if ($grRow) {
+                    $item->gr_id = $grRow->good_receive_id;
+                    $item->po_id = DB::table('food_good_receives')->where('id', $grRow->good_receive_id)->value('po_id')
+                        ?? $item->po_id;
+                }
+            }
+        });
+    }
+
+    /**
+     * Isi po_id/gr_id dari data existing saat update (mis. user hanya ubah harga).
+     */
+    private function mergeMissingPurchaseOrderIdsForUpdate(Request $request, ContraBon $contraBon): void
+    {
+        if ($request->input('source_type', $contraBon->source_type) !== 'purchase_order') {
+            return;
+        }
+
+        if ($request->filled('po_id') && $request->filled('gr_id')) {
+            return;
+        }
+
+        $existingPoSource = $contraBon->sources()
+            ->where('source_type', 'purchase_order')
+            ->whereNotNull('gr_id')
+            ->first();
+
+        if ($existingPoSource) {
+            $request->merge([
+                'po_id' => $request->input('po_id') ?: $existingPoSource->po_id,
+                'gr_id' => $request->input('gr_id') ?: $existingPoSource->gr_id,
+            ]);
+
+            return;
+        }
+
+        $grItemId = collect($request->input('items', []))
+            ->pluck('gr_item_id')
+            ->filter()
+            ->first()
+            ?? $contraBon->items()->whereNotNull('gr_item_id')->value('gr_item_id');
+
+        if (!$grItemId) {
+            return;
+        }
+
+        $grRow = DB::table('food_good_receive_items')->where('id', $grItemId)->first();
+        if (!$grRow) {
+            return;
+        }
+
+        $request->merge([
+            'gr_id' => $request->input('gr_id') ?: $grRow->good_receive_id,
+            'po_id' => $request->input('po_id')
+                ?: DB::table('food_good_receives')->where('id', $grRow->good_receive_id)->value('po_id')
+                ?: $contraBon->po_id,
         ]);
     }
 
@@ -3933,6 +4036,8 @@ class ContraBonController extends Controller
         }
         
         $contraBon = ContraBon::findOrFail($id);
+
+        $this->mergeMissingPurchaseOrderIdsForUpdate($request, $contraBon);
         
         // Gunakan logika yang sama dengan store, tapi untuk update
         $sourceType = $request->input('source_type', $contraBon->source_type ?? 'purchase_order');

@@ -1063,6 +1063,35 @@ function onDiscountTotalAmountChange() {
   }
 }
 
+/** PO/GR id sering ada di sources, bukan di header contra bon — resolve sebelum submit */
+function resolvePurchaseOrderIds(poId, grId) {
+  let resolvedPoId = poId || null;
+  let resolvedGrId = grId || null;
+
+  const poSource = selectedSources.value.find((s) => s.type === 'purchase_order');
+  if (poSource) {
+    resolvedPoId = resolvedPoId || poSource.po_id || null;
+    resolvedGrId = resolvedGrId || poSource.gr_id || null;
+  }
+
+  if (!resolvedPoId || !resolvedGrId) {
+    resolvedPoId = resolvedPoId || props.contraBon?.po_id || form.po_id || null;
+    resolvedGrId = resolvedGrId || props.contraBon?.gr_id || form.gr_id || null;
+  }
+
+  if ((!resolvedPoId || !resolvedGrId) && props.contraBon?.sources?.length) {
+    const src = props.contraBon.sources.find(
+      (s) => s.source_type === 'purchase_order' && s.po_id && s.gr_id
+    );
+    if (src) {
+      resolvedPoId = resolvedPoId || src.po_id;
+      resolvedGrId = resolvedGrId || src.gr_id;
+    }
+  }
+
+  return { poId: resolvedPoId, grId: resolvedGrId };
+}
+
 async function onSubmit() {
   // Validasi: minimal harus ada 1 item yang dicentang
   const selectedItems = form.items.filter(item => item.selected);
@@ -1092,10 +1121,19 @@ async function onSubmit() {
       itemSourceId = firstSource?.source_id || null;
     }
   }
+
+  if (itemSourceType === 'purchase_order') {
+    const resolved = resolvePurchaseOrderIds(itemPoId, itemGrId);
+    itemPoId = resolved.poId;
+    itemGrId = resolved.grId;
+  }
   
   // Fallback ke purchase_order hanya jika benar-benar tidak ada source_type
   if (!itemSourceType) {
     itemSourceType = 'purchase_order';
+    const resolved = resolvePurchaseOrderIds(itemPoId, itemGrId);
+    itemPoId = resolved.poId;
+    itemGrId = resolved.grId;
   }
   
   // Debug logging
