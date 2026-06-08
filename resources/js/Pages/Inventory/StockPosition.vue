@@ -1,91 +1,112 @@
 <template>
   <AppLayout>
-    <div class="w-full py-8 px-4">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Laporan Stok Akhir</h1>
-        <button 
-          @click="exportToExcel" 
+    <InventoryReportPage
+      eyebrow="Warehouse Inventory"
+      title="Laporan Stok Akhir Gudang"
+      subtitle="Posisi stok per warehouse. Klik barang untuk kartu stok lengkap — grup serial per DO/kedatangan bisa di-expand."
+      variant="warehouse"
+    >
+      <template #badges>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-full border border-white/20 bg-emerald-500/90 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 disabled:opacity-50"
           :disabled="isExporting"
-          class="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          @click="exportToExcel"
         >
-          <i v-if="isExporting" class="fas fa-spinner fa-spin"></i>
-          <i v-else class="fas fa-file-excel"></i>
+          <i :class="isExporting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-file-excel'"></i>
           {{ isExporting ? 'Exporting...' : 'Export Excel' }}
         </button>
-      </div>
-      
-      <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-        <input v-model="search" type="text" placeholder="Cari nama barang atau warehouse..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Warehouse</label>
-          <select v-model="selectedWarehouse" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option value="">Semua Warehouse</option>
-            <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
-          </select>
+      </template>
+
+      <template v-if="filteredStocks.length" #stats>
+        <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+          <p class="text-[11px] uppercase tracking-wide text-indigo-200/80">Total Item</p>
+          <p class="mt-1 text-lg font-bold tabular-nums">{{ filteredStocks.length }}</p>
         </div>
-       
-        <div class="flex items-center gap-2">
-          <label class="text-sm">Tampilkan</label>
-          <select v-model="perPage" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
-            <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
-          </select>
-          <span class="text-sm">data</span>
+        <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur xl:col-span-3">
+          <p class="text-[11px] uppercase tracking-wide text-indigo-200/80">Navigasi</p>
+          <p class="mt-1 text-xs font-medium">Klik nama barang → mutasi stok → expand baris SN untuk nomor seri</p>
         </div>
-      </div>
-      <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
+      </template>
+
+      <template #filters>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div class="xl:col-span-2 field">
+            <label>Pencarian</label>
+            <input v-model="search" type="text" placeholder="Cari nama barang atau warehouse..." class="field-input" />
+          </div>
+          <div class="field">
+            <label>Warehouse</label>
+            <select v-model="selectedWarehouse" class="field-input">
+              <option value="">Semua Warehouse</option>
+              <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Per Halaman</label>
+            <select v-model="perPage" class="field-input">
+              <option v-for="n in [10, 25, 50, 100]" :key="n" :value="n">{{ n }}</option>
+            </select>
+          </div>
+        </div>
+      </template>
+
+      <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+        <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="bg-slate-800 text-white">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Small</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Large</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal Update</th>
+              <th class="th-cell">Nama Barang</th>
+              <th class="th-cell">Warehouse</th>
+              <th class="th-cell text-right">Qty Small</th>
+              <th class="th-cell text-right">Qty Medium</th>
+              <th class="th-cell text-right">Qty Large</th>
+              <th class="th-cell">Update</th>
             </tr>
           </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
+          <tbody class="divide-y divide-slate-100 bg-white">
             <tr v-if="!filteredStocks.length">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data stok.</td>
+              <td colspan="6" class="px-6 py-12 text-center text-slate-400">Tidak ada data stok.</td>
             </tr>
             <template v-for="row in paginatedStocks" :key="row.item_id + '-' + row.warehouse_id">
-              <!-- Item Row (clickable to expand) -->
-              <tr 
-                class="hover:bg-gray-50 transition cursor-pointer" 
+              <tr
+                class="cursor-pointer transition hover:bg-slate-50/80"
                 @click="toggleItemDetail(row)"
-                :class="{ 'bg-blue-50': expandedItems.includes(getItemKey(row)) }"
+                :class="{ 'bg-indigo-50 ring-1 ring-inset ring-indigo-200': expandedItems.includes(getItemKey(row)) }"
               >
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                <td class="td-cell font-medium text-slate-900">
                   <div class="flex items-center gap-2">
-                    <i :class="expandedItems.includes(getItemKey(row)) ? 'fa-solid fa-chevron-down text-blue-600' : 'fa-solid fa-chevron-right text-gray-400'"></i>
+                    <span class="inline-flex h-6 w-6 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+                      <i :class="expandedItems.includes(getItemKey(row)) ? 'fa-solid fa-chevron-down text-[10px]' : 'fa-solid fa-chevron-right text-[10px]'"></i>
+                    </span>
                     <span>{{ row.item_name }}</span>
                   </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_name }}</td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                  <span v-if="row.display_small > 0">{{ displayQty(row.display_small) }} <span v-if="row.small_unit_name">{{ row.small_unit_name }}</span></span>
+                <td class="td-cell">{{ row.warehouse_name }}</td>
+                <td class="td-cell text-right tabular-nums">
+                  <span v-if="row.display_small > 0">{{ displayQty(row.display_small) }} <span v-if="row.small_unit_name" class="text-slate-500">{{ row.small_unit_name }}</span></span>
                   <span v-else>-</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                  <span v-if="row.display_medium > 0">{{ displayQty(row.display_medium, 2) }} <span v-if="row.medium_unit_name">{{ row.medium_unit_name }}</span></span>
+                <td class="td-cell text-right tabular-nums">
+                  <span v-if="row.display_medium > 0">{{ displayQty(row.display_medium, 2) }} <span v-if="row.medium_unit_name" class="text-slate-500">{{ row.medium_unit_name }}</span></span>
                   <span v-else>-</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-right">
-                  <span v-if="row.display_large > 0">{{ displayQty(row.display_large, 2) }} <span v-if="row.large_unit_name">{{ row.large_unit_name }}</span></span>
+                <td class="td-cell text-right tabular-nums">
+                  <span v-if="row.display_large > 0">{{ displayQty(row.display_large, 2) }} <span v-if="row.large_unit_name" class="text-slate-500">{{ row.large_unit_name }}</span></span>
                   <span v-else>-</span>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.updated_at ? new Date(row.updated_at).toLocaleString() : '-' }}</td>
+                <td class="td-cell text-slate-500">{{ row.updated_at ? new Date(row.updated_at).toLocaleString('id-ID') : '-' }}</td>
               </tr>
-              <!-- Stock Card Detail Row (shown when expanded) -->
-              <tr v-if="expandedItems.includes(getItemKey(row))" class="bg-gray-50">
-                <td colspan="6" class="px-6 py-4">
+              <tr v-if="expandedItems.includes(getItemKey(row))" class="bg-indigo-50/40">
+                <td colspan="6" class="px-4 py-4 sm:px-6">
                   <div v-if="loadingItems[getItemKey(row)]" class="text-center py-4">
                     <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                     <p class="mt-2 text-gray-600 text-sm">Memuat detail transaksi...</p>
                   </div>
-                  <div v-else-if="itemDetails[getItemKey(row)] && Array.isArray(itemDetails[getItemKey(row)]) && itemDetails[getItemKey(row)].length > 0" class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                      <thead class="bg-gray-100">
+                  <div v-else-if="itemDetails[getItemKey(row)] && Array.isArray(itemDetails[getItemKey(row)]) && itemDetails[getItemKey(row)].length > 0" class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-200 bg-slate-800 px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Kartu Stok — {{ row.item_name }}</div>
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead class="bg-slate-100">
                         <tr>
                           <th class="px-4 py-2 text-left text-xs font-bold text-gray-700 uppercase">Tanggal</th>
                           <th class="px-4 py-2 text-right text-xs font-bold text-gray-700 uppercase">Masuk (Qty)</th>
@@ -96,34 +117,15 @@
                         </tr>
                       </thead>
                       <tbody class="bg-white divide-y divide-gray-200">
-                        <!-- Saldo Awal Bulan Berjalan -->
-                        <tr v-if="saldoAwalItems[getItemKey(row)]" class="bg-yellow-50 font-semibold">
-                          <td class="px-4 py-2 text-gray-700">
-                            {{ getCurrentMonthFirstDate() }}
-                          </td>
-                          <td class="px-4 py-2 text-right text-gray-700">-</td>
-                          <td class="px-4 py-2 text-right text-gray-700">-</td>
-                          <td class="px-4 py-2 text-right text-gray-700">
-                            {{ formatSaldoQty(saldoAwalItems[getItemKey(row)]) }}
-                          </td>
-                          <td class="px-4 py-2 text-gray-700">Saldo Awal Bulan</td>
-                          <td class="px-4 py-2 text-gray-700">Saldo akhir bulan sebelumnya</td>
-                        </tr>
-                        <!-- Transaction Rows -->
-                        <tr 
-                          v-for="(card, index) in itemDetails[getItemKey(row)]" 
-                          :key="card.id"
-                          :class="index === itemDetails[getItemKey(row)].length - 1 ? 'bg-yellow-200 font-bold' : 'hover:bg-gray-50'"
-                        >
-                          <td class="px-4 py-2 text-gray-700">{{ card.date ? new Date(card.date).toLocaleDateString('id-ID') : '-' }}</td>
-                          <td class="px-4 py-2 text-right text-gray-700">{{ formatQty(card, 'in') }}</td>
-                          <td class="px-4 py-2 text-right text-gray-700">{{ formatQty(card, 'out') }}</td>
-                          <td class="px-4 py-2 text-right text-gray-700">{{ formatSaldoQty(card) }}</td>
-                          <td class="px-4 py-2 text-gray-700">
-                            {{ formatReference(card) }}
-                          </td>
-                          <td class="px-4 py-2 text-gray-700">{{ card.description || '-' }}</td>
-                        </tr>
+                        <GroupedStockCardBody
+                          :cards="itemDetails[getItemKey(row)]"
+                          :saldo-awal="saldoAwalItems[getItemKey(row)]"
+                          :saldo-awal-date="getCurrentMonthFirstDate()"
+                          :format-qty="formatQty"
+                          :format-saldo-qty="formatSaldoQty"
+                          :format-reference="formatReference"
+                          compact
+                        />
                       </tbody>
                     </table>
                   </div>
@@ -143,23 +145,24 @@
             </template>
           </tbody>
         </table>
-      </div>
-      <div class="flex justify-between items-center mt-4" v-if="filteredStocks.length">
-        <div class="text-sm text-gray-600">
-          Menampilkan {{ startIndex + 1 }} - {{ endIndex }} dari {{ filteredStocks.length }} data
-        </div>
-        <div class="flex gap-1">
-          <button @click="prevPage" :disabled="page === 1" class="px-3 py-1 rounded border text-sm" :class="page === 1 ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&lt;</button>
-          <span class="px-2">Halaman {{ page }} / {{ totalPages }}</span>
-          <button @click="nextPage" :disabled="page === totalPages" class="px-3 py-1 rounded border text-sm" :class="page === totalPages ? 'bg-gray-200 text-gray-400' : 'bg-white text-blue-700 hover:bg-blue-50'">&gt;</button>
         </div>
       </div>
-    </div>
+      <div class="mt-4 flex items-center justify-between" v-if="filteredStocks.length">
+        <p class="text-sm text-slate-600">{{ startIndex + 1 }}–{{ endIndex }} dari {{ filteredStocks.length }}</p>
+        <div class="flex gap-2">
+          <button type="button" class="pager-btn" :disabled="page === 1" @click="prevPage"><i class="fa-solid fa-chevron-left"></i></button>
+          <span class="px-2 text-sm text-slate-600">{{ page }} / {{ totalPages }}</span>
+          <button type="button" class="pager-btn" :disabled="page === totalPages" @click="nextPage"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+      </div>
+    </InventoryReportPage>
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import InventoryReportPage from '@/Components/Inventory/InventoryReportPage.vue';
+import GroupedStockCardBody from '@/Components/Inventory/GroupedStockCardBody.vue';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
@@ -423,4 +426,12 @@ function getCurrentMonthFirstDate() {
     year: 'numeric'
   });
 }
-</script> 
+</script>
+
+<style scoped>
+.field label { @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500; }
+.field-input { @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100; }
+.th-cell { @apply px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider sm:px-5; }
+.td-cell { @apply whitespace-nowrap px-4 py-3.5 text-sm text-slate-700 sm:px-5; }
+.pager-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40; }
+</style>

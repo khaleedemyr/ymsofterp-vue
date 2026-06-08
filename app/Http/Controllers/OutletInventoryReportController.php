@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use App\Exports\OutletStockPositionExport;
+use App\Support\InventoryCardSerialGrouper;
 use Maatwebsite\Excel\Facades\Excel;
 
 class OutletInventoryReportController extends Controller
@@ -440,7 +441,7 @@ class OutletInventoryReportController extends Controller
         if ($from) $query->whereDate('c.date', '>=', $from);
         if ($to) $query->whereDate('c.date', '<=', $to);
         $query->orderBy('c.date')->orderBy('c.id');
-        $data = $query->get();
+        $data = collect(InventoryCardSerialGrouper::group($query->get()));
         // Saldo awal: ambil saldo akhir transaksi terakhir sebelum tanggal from
         $saldoAwal = null;
         if ($from && $itemId) {
@@ -625,13 +626,12 @@ class OutletInventoryReportController extends Controller
         }
         
         $query->orderBy('c.date')->orderBy('c.id');
-        $data = $query->get();
-        
-        // Convert collection to array for JSON response
+        $groupedCards = InventoryCardSerialGrouper::group($query->get());
+
         return response()->json([
-            'cards' => $data->toArray(),
+            'cards' => $groupedCards,
             'saldo_awal' => $saldoAwal,
-            'count' => $data->count()
+            'count' => count($groupedCards),
         ]);
     }
 
@@ -763,12 +763,12 @@ class OutletInventoryReportController extends Controller
         }
 
         $query->orderBy('c.date')->orderBy('c.id');
-        $data = $query->get();
+        $groupedCards = InventoryCardSerialGrouper::group($query->get());
 
         return response()->json([
-            'cards' => $data->toArray(),
+            'cards' => $groupedCards,
             'saldo_awal' => $saldoAwal,
-            'count' => $data->count()
+            'count' => count($groupedCards),
         ]);
     }
 
@@ -927,12 +927,12 @@ class OutletInventoryReportController extends Controller
         }
 
         $query->orderBy('c.date')->orderBy('c.id');
-        $data = $query->get();
+        $groupedCards = InventoryCardSerialGrouper::group($query->get());
 
         return response()->json([
-            'cards' => $data->toArray(),
+            'cards' => $groupedCards,
             'saldo_awal' => $saldoAwal,
-            'count' => $data->count()
+            'count' => count($groupedCards),
         ]);
     }
 

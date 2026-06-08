@@ -1,22 +1,37 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div>
-          <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Laporan Stok Akhir Outlet</h1>
-          <p class="text-sm text-gray-500 mt-1">Ringkasan stok akhir per outlet & warehouse outlet, lengkap dengan detail kartu stok.</p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-            Real-time (session)
-          </span>
-          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
-            Updated: {{ new Date().toLocaleDateString('id-ID') }}
-          </span>
-        </div>
-      </div>
+    <InventoryReportPage
+      eyebrow="Outlet Inventory"
+      title="Laporan Stok Akhir Outlet"
+      subtitle="Ringkasan stok per outlet & warehouse. Klik barang untuk melihat kartu stok — transaksi serial bisa di-expand per kedatangan."
+      variant="outlet"
+    >
+      <template #badges>
+        <span class="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold backdrop-blur">
+          <i class="fa-solid fa-bolt mr-1.5 opacity-80"></i> Real-time
+        </span>
+        <span class="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold backdrop-blur">
+          {{ new Date().toLocaleDateString('id-ID') }}
+        </span>
+      </template>
 
-      <div class="bg-white/70 backdrop-blur border border-gray-200 rounded-2xl shadow-sm p-4 sm:p-5 mb-6">
+      <template v-if="stocks.length > 0 && hasAnySelection" #stats>
+        <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+          <p class="text-[11px] uppercase tracking-wide text-sky-200/80">Total Item</p>
+          <p class="mt-1 text-lg font-bold tabular-nums">{{ filteredStocks.length }}</p>
+        </div>
+        <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+          <p class="text-[11px] uppercase tracking-wide text-sky-200/80">Kategori</p>
+          <p class="mt-1 text-lg font-bold tabular-nums">{{ Object.keys(groupedStocks).length }}</p>
+        </div>
+        <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur xl:col-span-2">
+          <p class="text-[11px] uppercase tracking-wide text-sky-200/80">Tips</p>
+          <p class="mt-1 text-xs font-medium leading-snug">Expand kategori → klik barang → lihat mutasi & nomor seri</p>
+        </div>
+      </template>
+
+      <template #filters>
+      <div>
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <div class="flex flex-col gap-2">
             <label class="text-xs font-semibold text-gray-600">Pencarian</label>
@@ -62,35 +77,36 @@
           </div>
         </div>
       </div>
-      <div v-if="props.error" class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-xl my-6 text-center font-semibold">
+      </template>
+
+      <div v-if="props.error" class="mb-5 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-center text-sm font-semibold text-rose-900">
         {{ props.error }}
       </div>
-      <div v-else-if="!hasAnySelection" class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-xl my-6 text-center font-semibold">
+      <div v-else-if="!hasAnySelection" class="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-center text-sm font-semibold text-sky-900">
         <i class="fas fa-info-circle mr-2"></i>
         Silakan pilih minimal satu filter (Outlet atau Warehouse Outlet), kemudian klik tombol "Load Data" untuk melihat laporan stok akhir.
       </div>
-      <div v-else-if="stocks.length === 0" class="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-xl my-6 text-center font-semibold">
+      <div v-else-if="stocks.length === 0" class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-center text-sm font-semibold text-amber-900">
         <i class="fas fa-exclamation-triangle mr-2"></i>
         Tidak ada data stok untuk filter yang dipilih. Coba ubah filter atau pilih kombinasi filter yang berbeda.
       </div>
-      <div v-else class="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-200">
-        <div class="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-          <div class="text-sm text-gray-600">
-            Total <span class="font-semibold text-gray-900">{{ filteredStocks.length }}</span> item
-          </div>
-          <div class="text-xs text-gray-500">Klik kategori untuk expand/collapse</div>
+      <div v-else class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+        <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-6">
+          <p class="text-sm text-slate-600">Total <span class="font-bold text-slate-900">{{ filteredStocks.length }}</span> item</p>
+          <p class="text-xs text-slate-500">Klik kategori / barang untuk expand</p>
         </div>
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50 sticky top-0 z-10">
+        <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-slate-200">
+          <thead class="sticky top-0 z-10 bg-slate-800 text-white">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Kategori</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Outlet</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse Outlet</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Small</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Medium</th>
-              <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty Large</th>
-              <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Tanggal Update</th>
+              <th class="th-cell">Kategori</th>
+              <th class="th-cell">Nama Barang</th>
+              <th class="th-cell">Outlet</th>
+              <th class="th-cell">Warehouse</th>
+              <th class="th-cell text-right">Qty Small</th>
+              <th class="th-cell text-right">Qty Medium</th>
+              <th class="th-cell text-right">Qty Large</th>
+              <th class="th-cell">Update</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -102,8 +118,8 @@
             <template v-else>
               <template v-for="(categoryGroup, categoryName) in groupedStocks" :key="categoryName || 'no-category'">
                 <!-- Category Header Row -->
-                <tr class="bg-blue-50 hover:bg-blue-100 cursor-pointer" @click="toggleCategory(categoryName || 'no-category')">
-                  <td class="px-6 py-3 font-semibold text-blue-700" colspan="8">
+                <tr class="cursor-pointer bg-sky-50 hover:bg-sky-100/80" @click="toggleCategory(categoryName || 'no-category')">
+                  <td class="px-5 py-3 font-semibold text-sky-800" colspan="8">
                     <div class="flex items-center gap-2">
                       <i :class="expandedCategories.includes(categoryName || 'no-category') ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'"></i>
                       <span>{{ categoryName || 'Tanpa Kategori' }}</span>
@@ -118,7 +134,7 @@
                     <tr 
                       class="hover:bg-gray-50 transition cursor-pointer" 
                       @click="toggleItemDetail(row)"
-                      :class="{ 'bg-blue-50': expandedItems.includes(getItemKey(row)) }"
+                      :class="{ 'bg-sky-50 ring-1 ring-inset ring-sky-200': expandedItems.includes(getItemKey(row)) }"
                     >
                       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -163,34 +179,14 @@
                               </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
-                              <!-- Saldo Awal Bulan Berjalan -->
-                              <tr v-if="saldoAwalItems[getItemKey(row)]" class="bg-yellow-50 font-semibold">
-                                <td class="px-4 py-2 text-gray-700">
-                                  {{ getCurrentMonthFirstDate() }}
-                                </td>
-                                <td class="px-4 py-2 text-right text-gray-700">-</td>
-                                <td class="px-4 py-2 text-right text-gray-700">-</td>
-                                <td class="px-4 py-2 text-right text-gray-700">
-                                  {{ formatSaldoQty(saldoAwalItems[getItemKey(row)]) }}
-                                </td>
-                                <td class="px-4 py-2 text-gray-700">Saldo Awal Bulan</td>
-                                <td class="px-4 py-2 text-gray-700">Saldo akhir bulan sebelumnya</td>
-                              </tr>
-                              <!-- Transaction Rows -->
-                              <tr 
-                                v-for="(card, index) in itemDetails[getItemKey(row)]" 
-                                :key="card.id"
-                                :class="index === itemDetails[getItemKey(row)].length - 1 ? 'bg-yellow-200 font-bold' : 'hover:bg-gray-50'"
-                              >
-                                <td class="px-4 py-2 text-gray-700">{{ card.date ? new Date(card.date).toLocaleDateString('id-ID') : '-' }}</td>
-                                <td class="px-4 py-2 text-right text-gray-700">{{ formatQty(card, 'in') }}</td>
-                                <td class="px-4 py-2 text-right text-gray-700">{{ formatQty(card, 'out') }}</td>
-                                <td class="px-4 py-2 text-right text-gray-700">{{ formatSaldoQty(card) }}</td>
-                                <td class="px-4 py-2 text-gray-700">
-                                  {{ card.reference_type ? card.reference_type + (card.reference_id ? ' #' + card.reference_id : '') : '-' }}
-                                </td>
-                                <td class="px-4 py-2 text-gray-700">{{ card.description || '-' }}</td>
-                              </tr>
+                              <GroupedStockCardBody
+                                :cards="itemDetails[getItemKey(row)]"
+                                :saldo-awal="saldoAwalItems[getItemKey(row)]"
+                                :saldo-awal-date="getCurrentMonthFirstDate()"
+                                :format-qty="formatQty"
+                                :format-saldo-qty="formatSaldoQty"
+                                compact
+                              />
                             </tbody>
                           </table>
                         </div>
@@ -214,20 +210,23 @@
             </template>
           </tbody>
         </table>
+        </div>
       </div>
-      <div class="flex justify-between items-center mt-4" v-if="Object.keys(groupedStocks).length > 0">
+      <div class="mt-4 flex items-center justify-between" v-if="Object.keys(groupedStocks).length > 0">
         <div class="text-sm text-gray-600">
           Total {{ Object.keys(groupedStocks).length }} kategori, {{ filteredStocks.length }} item
           <button @click="expandAll" class="ml-4 text-blue-600 hover:text-blue-800 text-sm">Expand All</button>
           <button @click="collapseAll" class="ml-2 text-blue-600 hover:text-blue-800 text-sm">Collapse All</button>
         </div>
       </div>
-    </div>
+    </InventoryReportPage>
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import InventoryReportPage from '@/Components/Inventory/InventoryReportPage.vue';
+import GroupedStockCardBody from '@/Components/Inventory/GroupedStockCardBody.vue';
 import { ref, computed, watch, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -586,4 +585,8 @@ function exportToExcel() {
     exporting.value = false;
   }, 2000);
 }
-</script> 
+</script>
+
+<style scoped>
+.th-cell { @apply px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider sm:px-5; }
+</style>

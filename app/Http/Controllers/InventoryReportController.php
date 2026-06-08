@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Carbon\Carbon;
 use App\Exports\StockPositionExport;
+use App\Support\InventoryCardSerialGrouper;
 use Maatwebsite\Excel\Facades\Excel;
 
 class InventoryReportController extends Controller
@@ -268,23 +269,8 @@ class InventoryReportController extends Controller
                 'to' => $to
             ]);
             
-            // Modifikasi description untuk delivery order
-            $data = $data->map(function($row) {
-                if ($row->reference_type === 'delivery_order' && $row->do_number) {
-                    $description = 'Stock Out - Delivery Order';
-                    if ($row->outlet_name || $row->warehouse_outlet_name) {
-                        $description .= ' - DO: ' . $row->do_number;
-                        if ($row->outlet_name) {
-                            $description .= ', Outlet: ' . $row->outlet_name;
-                        }
-                        if ($row->warehouse_outlet_name) {
-                            $description .= ', Warehouse Outlet: ' . $row->warehouse_outlet_name;
-                        }
-                    }
-                    $row->description = $description;
-                }
-                return $row;
-            });
+            $data = $this->mapWarehouseStockCardRows($data);
+            $data = collect(InventoryCardSerialGrouper::group($data));
             
             // Saldo awal: ambil saldo akhir transaksi terakhir sebelum tanggal from
             $saldoAwal = null;
@@ -469,21 +455,8 @@ class InventoryReportController extends Controller
             $query->orderBy('c.date')->orderBy('c.id')->limit(10000);
             $data = $query->get();
 
-            $data = $data->map(function ($row) {
-                if ($row->reference_type === 'delivery_order' && $row->do_number) {
-                    $row->description = 'Stock Out - Delivery Order';
-                    if ($row->outlet_name || $row->warehouse_outlet_name) {
-                        $row->description .= ' - DO: '.$row->do_number;
-                        if ($row->outlet_name) {
-                            $row->description .= ', Outlet: '.$row->outlet_name;
-                        }
-                        if ($row->warehouse_outlet_name) {
-                            $row->description .= ', Warehouse Outlet: '.$row->warehouse_outlet_name;
-                        }
-                    }
-                }
-                return $row;
-            });
+            $data = $this->mapWarehouseStockCardRows($data);
+            $groupedCards = InventoryCardSerialGrouper::group($data);
 
             $saldoAwal = null;
             if ($from && $itemId) {
@@ -515,7 +488,7 @@ class InventoryReportController extends Controller
                 'success' => true,
                 'warehouses' => $warehouses,
                 'items' => $items,
-                'cards' => $data->values()->all(),
+                'cards' => $groupedCards,
                 'saldo_awal' => $saldoAwal,
             ]);
         } catch (\Exception $e) {
@@ -703,30 +676,39 @@ class InventoryReportController extends Controller
         $query->orderBy('c.date')->orderBy('c.id');
         $data = $query->get();
         
-        // Modifikasi description untuk delivery order
-        $data = $data->map(function($row) {
+        $data = $this->mapWarehouseStockCardRows($data);
+        $groupedCards = InventoryCardSerialGrouper::group($data);
+
+        return response()->json([
+            'cards' => $groupedCards,
+            'saldo_awal' => $saldoAwal,
+            'count' => count($groupedCards),
+        ]);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mapWarehouseStockCardRows($rows)
+    {
+        return $rows->map(function ($row) {
             if ($row->reference_type === 'delivery_order' && $row->do_number) {
                 $description = 'Stock Out - Delivery Order';
                 if ($row->outlet_name || $row->warehouse_outlet_name) {
-                    $description .= ' - DO: ' . $row->do_number;
+                    $description .= ' - DO: '.$row->do_number;
                     if ($row->outlet_name) {
-                        $description .= ', Outlet: ' . $row->outlet_name;
+                        $description .= ', Outlet: '.$row->outlet_name;
                     }
                     if ($row->warehouse_outlet_name) {
-                        $description .= ', Warehouse Outlet: ' . $row->warehouse_outlet_name;
+                        $description .= ', Warehouse Outlet: '.$row->warehouse_outlet_name;
                     }
                 }
                 $row->description = $description;
             }
+
             return $row;
         });
-        
-        // Convert collection to array for JSON response
-        return response()->json([
-            'cards' => $data->toArray(),
-            'saldo_awal' => $saldoAwal,
-            'count' => $data->count()
-        ]);
     }
 
     // Laporan Penerimaan Barang (Goods Received Report)
