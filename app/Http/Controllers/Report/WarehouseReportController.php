@@ -40,7 +40,7 @@ class WarehouseReportController extends Controller
      * Report Good Receive Outlet
      * 
      * Pivot report showing good receives per outlet per date
-     * Combines data from outlet_food_good_receives and good_receive_outlet_suppliers
+     * Combines data from outlet_food_good_receives, good_receive_outlet_suppliers, and outlet_serial_receive
      * 
      * @param Request $request
      * @return \Inertia\Response
@@ -59,73 +59,12 @@ class WarehouseReportController extends Controller
         }
 
         $tanggal = $request->tanggal;
-
-        // Ambil semua outlet aktif (using cached helper)
         $outlets = $this->getCachedActiveOutlets();
-
-        // Ambil data GR per item, unit, outlet pada tanggal (dari outlet_food_good_receives)
-        $data1 = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
-            ->whereNull('gr.deleted_at')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                'u.name as unit_name',
-                'o.id_outlet',
-                'o.nama_outlet',
-                DB::raw('SUM(i.received_qty) as qty'),
-                DB::raw("'outlet' as source")
-            )
-            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
-            ->get();
-
-        // Ambil data GR per item, unit, outlet pada tanggal (dari good_receive_outlet_suppliers)
-        $data2 = DB::table('good_receive_outlet_suppliers as gr')
-            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                'u.name as unit_name',
-                'o.id_outlet',
-                'o.nama_outlet',
-                DB::raw('SUM(i.qty_received) as qty'),
-                DB::raw("'supplier' as source")
-            )
-            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
-            ->get();
-
-        // Gabungkan kedua data
-        $data = $data1->concat($data2);
-
-        // Bentuk pivot: items = [{item_name, unit_name, outlet_name => qty, ...}]
-        $pivot = [];
-        foreach ($data as $row) {
-            $key = $row->item_id . '|' . $row->unit_name;
-            if (!isset($pivot[$key])) {
-                $pivot[$key] = [
-                    'item_name' => $row->item_name,
-                    'unit_name' => $row->unit_name,
-                ];
-            }
-            // Jika sudah ada data untuk outlet ini, tambahkan qty
-            if (isset($pivot[$key][$row->nama_outlet])) {
-                $pivot[$key][$row->nama_outlet] += $row->qty;
-            } else {
-                $pivot[$key][$row->nama_outlet] = $row->qty;
-            }
-        }
+        $items = $this->buildGoodReceiveOutletPivotItems($tanggal);
 
         return Inertia::render('Report/ReportGoodReceiveOutlet', [
             'outlets' => $outlets,
-            'items' => array_values($pivot),
+            'items' => $items,
             'filters' => [
                 'tanggal' => $tanggal,
             ],
@@ -147,71 +86,8 @@ class WarehouseReportController extends Controller
         ]);
 
         $tanggal = $request->tanggal;
-
-        // Ambil semua outlet aktif (using cached helper)
         $outlets = $this->getCachedActiveOutlets();
-
-        // Ambil data GR per item, unit, outlet pada tanggal (dari outlet_food_good_receives)
-        $data1 = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
-            ->whereNull('gr.deleted_at')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                'u.name as unit_name',
-                'o.id_outlet',
-                'o.nama_outlet',
-                DB::raw('SUM(i.received_qty) as qty'),
-                DB::raw("'outlet' as source")
-            )
-            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
-            ->get();
-
-        // Ambil data GR per item, unit, outlet pada tanggal (dari good_receive_outlet_suppliers)
-        $data2 = DB::table('good_receive_outlet_suppliers as gr')
-            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                'u.name as unit_name',
-                'o.id_outlet',
-                'o.nama_outlet',
-                DB::raw('SUM(i.qty_received) as qty'),
-                DB::raw("'supplier' as source")
-            )
-            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
-            ->get();
-
-        // Gabungkan kedua data
-        $data = $data1->concat($data2);
-
-        // Bentuk pivot: items = [{item_name, unit_name, outlet_name => qty, ...}]
-        $pivot = [];
-        foreach ($data as $row) {
-            $key = $row->item_id . '|' . $row->unit_name;
-            if (!isset($pivot[$key])) {
-                $pivot[$key] = [
-                    'item_name' => $row->item_name,
-                    'unit_name' => $row->unit_name,
-                ];
-            }
-            // Jika sudah ada data untuk outlet ini, tambahkan qty
-            if (isset($pivot[$key][$row->nama_outlet])) {
-                $pivot[$key][$row->nama_outlet] += $row->qty;
-            } else {
-                $pivot[$key][$row->nama_outlet] = $row->qty;
-            }
-        }
-
-        $items = array_values($pivot);
+        $items = $this->buildGoodReceiveOutletPivotItems($tanggal);
 
         // Prepare data for export
         $exportData = [];
@@ -234,6 +110,99 @@ class WarehouseReportController extends Controller
             new \App\Exports\GoodReceiveOutletExport($exportData, $outlets),
             $filename
         );
+    }
+
+    /**
+     * Pivot GR outlet per tanggal: Food + Supplier + Nomor Seri.
+     */
+    private function buildGoodReceiveOutletPivotItems(string $tanggal): array
+    {
+        $data = $this->fetchGoodReceiveOutletRawRows($tanggal);
+
+        $pivot = [];
+        foreach ($data as $row) {
+            $key = $row->item_id . '|' . $row->unit_name;
+            if (!isset($pivot[$key])) {
+                $pivot[$key] = [
+                    'item_name' => $row->item_name,
+                    'unit_name' => $row->unit_name,
+                ];
+            }
+            if (isset($pivot[$key][$row->nama_outlet])) {
+                $pivot[$key][$row->nama_outlet] += $row->qty;
+            } else {
+                $pivot[$key][$row->nama_outlet] = $row->qty;
+            }
+        }
+
+        return array_values($pivot);
+    }
+
+    /**
+     * Baris agregat GR per item, unit, outlet (sumber: food, supplier, serial).
+     */
+    private function fetchGoodReceiveOutletRawRows(string $tanggal)
+    {
+        $data1 = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->whereDate('gr.receive_date', $tanggal)
+            ->whereNull('gr.deleted_at')
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'o.id_outlet',
+                'o.nama_outlet',
+                DB::raw('SUM(i.received_qty) as qty')
+            )
+            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
+            ->get();
+
+        $data2 = DB::table('good_receive_outlet_suppliers as gr')
+            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->whereDate('gr.receive_date', $tanggal)
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'o.id_outlet',
+                'o.nama_outlet',
+                DB::raw('SUM(i.qty_received) as qty')
+            )
+            ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
+            ->get();
+
+        $data = $data1->concat($data2);
+
+        if ($this->rekapFjHasSerialGrTables()) {
+            $data3 = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('units as u', 'si.unit_id', '=', 'u.id')
+                ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+                ->whereDate('h.receive_date', $tanggal)
+                ->whereNull('h.deleted_at')
+                ->select(
+                    'it.id as item_id',
+                    'it.name as item_name',
+                    'u.name as unit_name',
+                    'o.id_outlet',
+                    'o.nama_outlet',
+                    DB::raw('SUM(si.qty) as qty')
+                )
+                ->groupBy('it.id', 'it.name', 'u.name', 'o.id_outlet', 'o.nama_outlet')
+                ->get();
+
+            $data = $data->concat($data3);
+        }
+
+        return $data;
     }
 
     /**
