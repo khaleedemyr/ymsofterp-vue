@@ -179,28 +179,8 @@ class ReportHelperController extends Controller
             $query->where('al.user_id', $request->user_id);
         }
 
-        // Filter by outlet (user outlet, JSON payload, or description)
         if ($request->filled('outlet_id')) {
-            $outletId = (int) $request->outlet_id;
-            $outletName = DB::table('tbl_data_outlet')
-                ->where('id_outlet', $outletId)
-                ->value('nama_outlet');
-
-            $query->where(function ($q) use ($outletId, $outletName) {
-                $q->whereIn('al.user_id', function ($sub) use ($outletId) {
-                    $sub->select('id')
-                        ->from('users')
-                        ->where('id_outlet', $outletId);
-                })
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.old_data, '$.outlet_id')) = ?", [(string) $outletId])
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.new_data, '$.outlet_id')) = ?", [(string) $outletId])
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.old_data, '$.id_outlet')) = ?", [(string) $outletId])
-                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.new_data, '$.id_outlet')) = ?", [(string) $outletId]);
-
-                if ($outletName) {
-                    $q->orWhere('al.description', 'like', '%' . $outletName . '%');
-                }
-            });
+            $this->applyActivityLogOutletFilter($query, (int) $request->outlet_id);
         }
 
         // Filter by activity type
@@ -270,6 +250,14 @@ class ReportHelperController extends Controller
         // Pagination
         $perPage = $request->get('per_page', 25);
         $logs = $query->orderByDesc('al.created_at')->paginate($perPage)->withQueryString();
+        $logs->setCollection(
+            $logs->getCollection()->map(function ($log) {
+                $log->outlet_name = $this->resolveActivityLogOutletName($log);
+                $log->outlet_id_resolved = $this->resolveActivityLogOutletId($log);
+
+                return $log;
+            })
+        );
 
         // For API requests, return JSON
         if ($request->expectsJson() || $request->is('api/*') || $request->wantsJson()) {
@@ -310,5 +298,139 @@ class ReportHelperController extends Controller
                 'per_page' => $perPage,
             ]
         ]);
+    }
+
+    private function applyActivityLogOutletFilter($query, int $outletId): void
+    {
+        $outletName = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->value('nama_outlet');
+
+        $jsonRegex = '(\"outlet_id\"|\"id_outlet\")[[:space:]]*:[[:space:]]*\"?' . $outletId . '\"?([,}[:space:]])';
+        $jsonPaths = [
+            '$.outlet_id',
+            '$.id_outlet',
+            '$.header.outlet_id',
+            '$.header.id_outlet',
+        ];
+
+        $query->where(function ($q) use ($outletId, $outletName, $jsonRegex, $jsonPaths) {
+            $q->whereRaw('al.old_data REGEXP ?', [$jsonRegex])
+                ->orWhereRaw('al.new_data REGEXP ?', [$jsonRegex]);
+
+            foreach (['old_data', 'new_data'] as $column) {
+                foreach ($jsonPaths as $path) {
+                    $q->orWhereRaw(
+                        "CAST(JSON_UNQUOTE(JSON_EXTRACT(al.{$column}, '{$path}')) AS UNSIGNED) = ?",
+                        [$outletId]
+                    );
+                }
+            }
+
+            if ($outletName) {
+                $q->orWhere('al.description', 'like', '%' . $outletName . '%');
+            }
+        });
+    }
+
+    private function decodeActivityLogJson($json): ?array
+    {
+        if (!$json) {
+            return null;
+        }
+
+        $data = is_string($json) ? json_decode($json, true) : $json;
+
+        return is_array($data) ? $data : null;
+    }
+
+    private function extractOutletIdFromActivityPayload(?array $data): ?int
+    {
+        if (!$data) {
+            return null;
+        }
+
+        foreach (['outlet_id', 'id_outlet'] as $key) {
+            if (isset($data[$key]) && $data[$key] !== '' && $data[$key] !== null) {
+                return (int) $data[$key];
+            }
+        }
+
+        foreach ($data as $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $outletId = $this->extractOutletIdFromActivityPayload($value);
+            if ($outletId) {
+                return $outletId;
+            }
+        }
+
+        return null;
+    }
+
+    private function extractOutletNameFromActivityPayload(?array $data): ?string
+    {
+        if (!$data) {
+            return null;
+        }
+
+        foreach (['nama_outlet', 'outlet_name'] as $key) {
+            if (!empty($data[$key]) && is_string($data[$key])) {
+                return $data[$key];
+            }
+        }
+
+        foreach ($data as $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+
+            $name = $this->extractOutletNameFromActivityPayload($value);
+            if ($name) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveActivityLogOutletId($log): ?int
+    {
+        foreach ([$log->new_data, $log->old_data] as $json) {
+            $data = $this->decodeActivityLogJson($json);
+            $outletId = $this->extractOutletIdFromActivityPayload($data);
+            if ($outletId) {
+                return $outletId;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveActivityLogOutletName($log): ?string
+    {
+        foreach ([$log->new_data, $log->old_data] as $json) {
+            $data = $this->decodeActivityLogJson($json);
+            $outletName = $this->extractOutletNameFromActivityPayload($data);
+            if ($outletName) {
+                return $outletName;
+            }
+        }
+
+        $outletId = $this->resolveActivityLogOutletId($log);
+        if (!$outletId) {
+            return null;
+        }
+
+        static $outletNames = [];
+        if (!isset($outletNames[$outletId])) {
+            $outletNames[$outletId] = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->value('nama_outlet');
+        }
+
+        return $outletNames[$outletId] ?: null;
     }
 }

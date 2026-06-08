@@ -212,6 +212,9 @@
                   User
                 </th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Outlet
+                </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   Activity Type
                 </th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -230,7 +233,7 @@
             </thead>
             <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               <tr v-if="logs.data && logs.data.length === 0">
-                <td colspan="7" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+                <td colspan="8" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                   <i class="fa fa-inbox text-4xl mb-2"></i>
                   <p>No activity logs found</p>
                 </td>
@@ -247,6 +250,12 @@
                   <div class="flex items-center">
                     <i class="fa fa-user mr-2 text-gray-400"></i>
                     {{ log.user_name || 'Unknown' }}
+                  </div>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                  <div class="flex items-center">
+                    <i class="fa fa-store mr-2 text-orange-400"></i>
+                    {{ log.outlet_name || '-' }}
                   </div>
                 </td>
                 <td class="px-4 py-3 whitespace-nowrap">
@@ -336,6 +345,10 @@
               <div>
                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">User</label>
                 <p class="text-gray-900 dark:text-white">{{ selectedLog.user_name || 'Unknown' }}</p>
+              </div>
+              <div>
+                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Outlet</label>
+                <p class="text-gray-900 dark:text-white">{{ selectedLog.outlet_name || '-' }}</p>
               </div>
               <div>
                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Activity Type</label>
