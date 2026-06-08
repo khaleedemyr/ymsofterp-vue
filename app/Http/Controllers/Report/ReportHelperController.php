@@ -179,6 +179,30 @@ class ReportHelperController extends Controller
             $query->where('al.user_id', $request->user_id);
         }
 
+        // Filter by outlet (user outlet, JSON payload, or description)
+        if ($request->filled('outlet_id')) {
+            $outletId = (int) $request->outlet_id;
+            $outletName = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->value('nama_outlet');
+
+            $query->where(function ($q) use ($outletId, $outletName) {
+                $q->whereIn('al.user_id', function ($sub) use ($outletId) {
+                    $sub->select('id')
+                        ->from('users')
+                        ->where('id_outlet', $outletId);
+                })
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.old_data, '$.outlet_id')) = ?", [(string) $outletId])
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.new_data, '$.outlet_id')) = ?", [(string) $outletId])
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.old_data, '$.id_outlet')) = ?", [(string) $outletId])
+                    ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(al.new_data, '$.id_outlet')) = ?", [(string) $outletId]);
+
+                if ($outletName) {
+                    $q->orWhere('al.description', 'like', '%' . $outletName . '%');
+                }
+            });
+        }
+
         // Filter by activity type
         if ($request->filled('activity_type')) {
             $query->where('al.activity_type', $request->activity_type);
@@ -229,6 +253,20 @@ class ReportHelperController extends Controller
             ->orderBy('module')
             ->pluck('module');
 
+        $authUser = auth()->user();
+        $outletsQuery = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->whereNotNull('nama_outlet')
+            ->where('nama_outlet', '!=', '');
+
+        if ($authUser && $authUser->id_outlet != 1) {
+            $outletsQuery->where('id_outlet', $authUser->id_outlet);
+        }
+
+        $outlets = $outletsQuery
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet as id', 'nama_outlet as name']);
+
         // Pagination
         $perPage = $request->get('per_page', 25);
         $logs = $query->orderByDesc('al.created_at')->paginate($perPage)->withQueryString();
@@ -239,10 +277,12 @@ class ReportHelperController extends Controller
                 'success' => true,
                 'logs' => $logs,
                 'users' => $users,
+                'outlets' => $outlets,
                 'activityTypes' => $activityTypes,
                 'modules' => $modules,
                 'filters' => [
                     'user_id' => $request->user_id,
+                    'outlet_id' => $request->outlet_id,
                     'activity_type' => $request->activity_type,
                     'module' => $request->module,
                     'date_from' => $request->date_from,
@@ -256,10 +296,12 @@ class ReportHelperController extends Controller
         return Inertia::render('Report/ActivityLog', [
             'logs' => $logs,
             'users' => $users,
+            'outlets' => $outlets,
             'activityTypes' => $activityTypes,
             'modules' => $modules,
             'filters' => [
                 'user_id' => $request->user_id,
+                'outlet_id' => $request->outlet_id,
                 'activity_type' => $request->activity_type,
                 'module' => $request->module,
                 'date_from' => $request->date_from,

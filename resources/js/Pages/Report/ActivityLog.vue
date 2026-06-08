@@ -35,19 +35,44 @@
             />
           </div>
 
-          <!-- User -->
+          <!-- User (searchable) -->
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">User</label>
-            <select 
-              v-model="filters.user_id" 
-              @change="applyFilters"
-              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-            >
-              <option value="">All Users</option>
-              <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.nama_lengkap }}
-              </option>
-            </select>
+            <Multiselect
+              v-model="selectedUser"
+              :options="userOptions"
+              :searchable="true"
+              :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :allow-empty="true"
+              placeholder="Semua user — ketik untuk cari..."
+              track-by="id"
+              label="name"
+              :preselect-first="false"
+              @select="onUserChange"
+              @remove="onUserChange"
+            />
+          </div>
+
+          <!-- Outlet (searchable) -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Outlet</label>
+            <Multiselect
+              v-model="selectedOutlet"
+              :options="outletOptions"
+              :searchable="true"
+              :close-on-select="true"
+              :clear-on-select="false"
+              :preserve-search="true"
+              :allow-empty="true"
+              placeholder="Semua outlet — ketik untuk cari..."
+              track-by="id"
+              label="name"
+              :preselect-first="false"
+              @select="onOutletChange"
+              @remove="onOutletChange"
+            />
           </div>
 
           <!-- Activity Type -->
@@ -359,13 +384,16 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue';
+import { ref, reactive, computed } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   logs: Object,
   users: Array,
+  outlets: Array,
   activityTypes: Array,
   modules: Array,
   filters: Object,
@@ -373,6 +401,7 @@ const props = defineProps({
 
 const filters = reactive({
   user_id: props.filters?.user_id || '',
+  outlet_id: props.filters?.outlet_id || '',
   activity_type: props.filters?.activity_type || '',
   module: props.filters?.module || '',
   date_from: props.filters?.date_from || '',
@@ -381,9 +410,51 @@ const filters = reactive({
   per_page: props.filters?.per_page || 25,
 });
 
+const userOptions = computed(() =>
+  (props.users || []).map((user) => ({
+    id: user.id,
+    name: user.nama_lengkap,
+  }))
+);
+
+const outletOptions = computed(() =>
+  (props.outlets || []).map((outlet) => ({
+    id: outlet.id,
+    name: outlet.name,
+  }))
+);
+
+const selectedUser = ref(
+  userOptions.value.find((user) => String(user.id) === String(filters.user_id)) || null
+);
+
+const selectedOutlet = ref(
+  outletOptions.value.find((outlet) => String(outlet.id) === String(filters.outlet_id)) || null
+);
+
 const selectedLog = ref(null);
 
+function syncUserFilter() {
+  filters.user_id = selectedUser.value?.id || '';
+}
+
+function syncOutletFilter() {
+  filters.outlet_id = selectedOutlet.value?.id || '';
+}
+
+function onUserChange() {
+  syncUserFilter();
+  applyFilters();
+}
+
+function onOutletChange() {
+  syncOutletFilter();
+  applyFilters();
+}
+
 function applyFilters() {
+  syncUserFilter();
+  syncOutletFilter();
   router.get('/report/activity-log', filters, {
     preserveState: true,
     preserveScroll: true,
@@ -391,7 +462,10 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  selectedUser.value = null;
+  selectedOutlet.value = null;
   filters.user_id = '';
+  filters.outlet_id = '';
   filters.activity_type = '';
   filters.module = '';
   filters.date_from = '';
