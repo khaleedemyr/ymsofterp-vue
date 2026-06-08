@@ -116,7 +116,7 @@ class AssetInventoryTransferController extends Controller
             'items.*.unit_id' => 'nullable|integer',
             'items.*.qty' => 'required|numeric|min:0.01',
             'items.*.note' => 'nullable|string',
-            'approvers' => 'nullable|array|min:1',
+            'approvers' => 'required|array|min:1',
             'approvers.*' => 'required|integer|exists:users,id',
         ]);
 
@@ -180,10 +180,24 @@ class AssetInventoryTransferController extends Controller
                 ]);
             }
 
+            $this->persistTransferApprovers($transfer, $validated['approvers'], true);
+
+            DB::table('activity_logs')->insert([
+                'user_id' => Auth::id(),
+                'activity_type' => 'submit',
+                'module' => 'asset_inventory_transfer',
+                'description' => 'Submit asset inventory transfer: ' . $transferNumber,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => json_encode($transfer->fresh()->toArray()),
+                'created_at' => now(),
+            ]);
+
             DB::commit();
 
             return redirect()->route('asset-inventory-transfers.show', $transfer->id)
-                ->with('success', 'Transfer asset berhasil dibuat.');
+                ->with('success', 'Transfer asset berhasil dibuat dan dikirim untuk approval.');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error store asset inventory transfer', ['error' => $e->getMessage()]);
@@ -255,6 +269,7 @@ class AssetInventoryTransferController extends Controller
                     ->value('nama_jabatan');
                 return [
                     'id' => $flow->id,
+                    'approver_id' => $flow->approver_id,
                     'approver_name' => optional($flow->approver)->nama_lengkap,
                     'approver_jabatan' => $jabatan ?? '-',
                     'approval_level' => $flow->approval_level,
@@ -314,23 +329,7 @@ class AssetInventoryTransferController extends Controller
 
         DB::beginTransaction();
         try {
-            $transfer->approvalFlows()->delete();
-
-            foreach ($validated['approvers'] as $index => $approverId) {
-                AssetInventoryTransferApprovalFlow::create([
-                    'asset_inventory_transfer_id' => $transfer->id,
-                    'approver_id' => $approverId,
-                    'approval_level' => $index + 1,
-                    'status' => 'PENDING',
-                ]);
-            }
-
-            $transfer->update([
-                'status' => 'submitted',
-                'approval_by' => null,
-                'approval_at' => null,
-                'approval_notes' => null,
-            ]);
+            $this->persistTransferApprovers($transfer, $validated['approvers'], true);
 
             DB::table('activity_logs')->insert([
                 'user_id' => Auth::id(),
@@ -345,8 +344,6 @@ class AssetInventoryTransferController extends Controller
             ]);
 
             DB::commit();
-
-            $this->sendNotificationToNextApprover($transfer->id);
 
             return response()->json(['success' => true, 'message' => 'Transfer berhasil di-submit.']);
         } catch (\Exception $e) {
@@ -701,17 +698,8 @@ class AssetInventoryTransferController extends Controller
                 ]);
             }
 
-            // Auto-submit if approvers provided
             if (!empty($validated['approvers'])) {
-                foreach ($validated['approvers'] as $index => $approverId) {
-                    AssetInventoryTransferApprovalFlow::create([
-                        'asset_inventory_transfer_id' => $transfer->id,
-                        'approver_id' => $approverId,
-                        'approval_level' => $index + 1,
-                        'status' => 'PENDING',
-                    ]);
-                }
-                $transfer->update(['status' => 'submitted']);
+                $this->persistTransferApprovers($transfer, $validated['approvers'], true);
             }
 
             DB::commit();
@@ -1080,7 +1068,7 @@ class AssetInventoryTransferController extends Controller
             if (!$nextApprover) return;
 
             $transfer = DB::table('asset_inventory_transfers as t')
-                ->leftJoin('warehouse_outlets as wf', 't.from_warehouse_outlet_id', '=', 'wf.id')
+                ->leftJoin('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
                 ->join('users as creator', 't.created_by', '=', 'creator.id')
                 ->where('t.id', $transferId)
                 ->select('t.*', 'wf.name as from_warehouse', 'creator.nama_lengkap as creator_name')
@@ -1101,6 +1089,30 @@ class AssetInventoryTransferController extends Controller
     }
 
     // ─── HELPERS ─────────────────────────────────────────────────────
+
+    private function persistTransferApprovers(AssetInventoryTransfer $transfer, array $approverIds, bool $submit = false): void
+    {
+        $transfer->approvalFlows()->delete();
+
+        foreach ($approverIds as $index => $approverId) {
+            AssetInventoryTransferApprovalFlow::create([
+                'asset_inventory_transfer_id' => $transfer->id,
+                'approver_id' => $approverId,
+                'approval_level' => $index + 1,
+                'status' => 'PENDING',
+            ]);
+        }
+
+        if ($submit) {
+            $transfer->update([
+                'status' => 'submitted',
+                'approval_by' => null,
+                'approval_at' => null,
+                'approval_notes' => null,
+            ]);
+            $this->sendNotificationToNextApprover($transfer->id);
+        }
+    }
 
     private function assertUserCanView($user, AssetInventoryTransfer $transfer): void
     {

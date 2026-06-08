@@ -149,6 +149,11 @@ function submitForm() {
         }
     }
 
+    if (!selectedApprovers.value.length) {
+        Swal.fire('Error', 'Pilih minimal 1 approver.', 'error');
+        return;
+    }
+
     form.approvers = selectedApprovers.value.map(a => a.id);
 
     form.post('/asset-inventory-transfers', {

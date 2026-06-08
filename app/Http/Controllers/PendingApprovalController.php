@@ -66,6 +66,10 @@ class PendingApprovalController extends Controller
                 'employee_resignation' => [],
                 'lost_breakage' => [],
                 'pos_void_items' => [],
+                'asset_inventory_transfer' => [],
+                'asset_stock_adjustment' => [],
+                'asset_service_order' => [],
+                'asset_disposal' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain

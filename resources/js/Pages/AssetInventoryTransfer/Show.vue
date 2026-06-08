@@ -40,8 +40,15 @@ async function submitForApproval() {
 
     isSubmitting.value = true;
     try {
+        const approverIds = (props.transfer.approval_flows || [])
+            .map(f => f.approver_id)
+            .filter(Boolean);
+        if (!approverIds.length) {
+            Swal.fire('Error', 'Belum ada approver. Buat ulang transfer dan pilih approver saat pembuatan.', 'error');
+            return;
+        }
         await axios.post(`/asset-inventory-transfers/${props.transfer.id}/submit`, {
-            approvers: props.transfer.approval_flows.map(f => f.approver_id || f.id),
+            approvers: approverIds,
         });
         Swal.fire('Berhasil', 'Transfer berhasil di-submit.', 'success');
         router.reload();
@@ -175,6 +182,10 @@ function deleteTransfer() {
 
                 <!-- Action Buttons -->
                 <div class="flex gap-3 mt-5 pt-4 border-t">
+                    <button v-if="transfer.status === 'draft'" @click="submitForApproval" :disabled="isSubmitting"
+                        class="px-5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm shadow transition disabled:opacity-50">
+                        <i class="fa-solid fa-paper-plane mr-1"></i> Submit Approval
+                    </button>
                     <button v-if="canApprove" @click="handleApproval('approve')" :disabled="isSubmitting"
                         class="px-5 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm shadow transition disabled:opacity-50">
                         <i class="fa-solid fa-check mr-1"></i> Approve
