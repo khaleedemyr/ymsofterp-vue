@@ -42,6 +42,8 @@ use RuntimeException;
 class OmnichannelInboxController extends Controller
 {
     private const MESSAGES_PAGE_SIZE = 40;
+
+    private const CONVERSATIONS_PAGE_SIZE = 50;
     public function index(Request $request): Response
     {
         $this->assertInboxAccess($request);
@@ -57,7 +59,8 @@ class OmnichannelInboxController extends Controller
             $leadStageFilter = null;
         }
 
-        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
+        $conversationPage = $this->loadConversationsPage($request, $inbox, $canSeeAll);
+        $conversations = $conversationPage['conversations'];
 
         $selectedId = $request->integer('conversation')
             ?: ($conversations->first()['id'] ?? null);
@@ -101,6 +104,8 @@ class OmnichannelInboxController extends Controller
         return Inertia::render('Crm/OmnichannelInbox/Index', [
             'messageTemplates' => OmniMessageTemplate::listActiveForInbox(),
             'conversations' => $conversations,
+            'conversationsHasMore' => $conversationPage['has_more'],
+            'conversationsOldestId' => $conversationPage['oldest_conversation_id'],
             'selectedConversation' => $selectedConversation,
             'messages' => $messages,
             'messagesHasMoreOlder' => $messagePage['has_more_older'] ?? false,
@@ -155,7 +160,8 @@ class OmnichannelInboxController extends Controller
         $user = $request->user();
         $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
         $inbox = $this->resolveInboxFilter($request, $canSeeAll);
-        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
+        $conversationPage = $this->loadConversationsPage($request, $inbox, $canSeeAll);
+        $conversations = $conversationPage['conversations'];
 
         $selectedConversation = null;
         $messages = [];
@@ -187,11 +193,35 @@ class OmnichannelInboxController extends Controller
 
         return response()->json([
             'conversations' => $conversations->values()->all(),
+            'has_more_conversations' => $conversationPage['has_more'],
+            'oldest_conversation_id' => $conversationPage['oldest_conversation_id'],
             'selected_conversation' => $selectedConversation,
             'messages' => $messages,
             'has_more_older' => $messagePage['has_more_older'],
             'oldest_message_id' => $messagePage['oldest_message_id'],
             'can_see_all_chats' => $canSeeAll,
+        ]);
+    }
+
+    /**
+     * Muat halaman chat lebih lama (lazy load saat scroll daftar inbox).
+     */
+    public function conversationsMore(Request $request): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+
+        $beforeId = $request->integer('before_id') ?: null;
+        abort_unless($beforeId, 422, 'Parameter before_id diperlukan.');
+
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        $inbox = $this->resolveInboxFilter($request, $canSeeAll);
+        $page = $this->loadConversationsPage($request, $inbox, $canSeeAll, $beforeId);
+
+        return response()->json([
+            'conversations' => $page['conversations']->values()->all(),
+            'has_more' => $page['has_more'],
+            'oldest_conversation_id' => $page['oldest_conversation_id'],
         ]);
     }
 
@@ -213,12 +243,14 @@ class OmnichannelInboxController extends Controller
             $leadStageFilter = null;
         }
 
-        $conversations = $this->queryInboxConversations($request, $inbox, $canSeeAll);
+        $conversationPage = $this->loadConversationsPage($request, $inbox, $canSeeAll);
 
         return response()->json([
             'success' => true,
             'data' => [
-                'conversations' => $conversations,
+                'conversations' => $conversationPage['conversations'],
+                'conversations_has_more' => $conversationPage['has_more'],
+                'conversations_oldest_id' => $conversationPage['oldest_conversation_id'],
                 'inbox' => $inbox,
                 'channel_filter' => $this->parseChannelFilter($request),
                 'lead_stage_filter' => $leadStageFilter,
@@ -817,14 +849,24 @@ class OmnichannelInboxController extends Controller
         return $inbox;
     }
 
-    private function queryInboxConversations(
+    /**
+     * @return array{
+     *   conversations: \Illuminate\Support\Collection<int, array<string, mixed>>,
+     *   has_more: bool,
+     *   oldest_conversation_id: int|null
+     * }
+     */
+    private function loadConversationsPage(
         Request $request,
         ?string $inbox = null,
-        ?bool $canSeeAll = null
-    ): \Illuminate\Support\Collection {
+        ?bool $canSeeAll = null,
+        ?int $beforeId = null,
+        ?int $limit = null,
+    ): array {
         $user = $request->user();
         $canSeeAll ??= OmnichannelAuthorization::canSeeAllChats($user);
         $inbox ??= $this->resolveInboxFilter($request, $canSeeAll);
+        $limit = min(max((int) ($limit ?? self::CONVERSATIONS_PAGE_SIZE), 10), 100);
 
         $leadStageFilter = $request->get('lead_stage');
         if ($leadStageFilter !== null && $leadStageFilter !== '' && ! OmniLeadStages::isValid((string) $leadStageFilter)) {
@@ -848,12 +890,42 @@ class OmnichannelInboxController extends Controller
 
         $this->applyChannelFilter($query, $this->parseChannelFilter($request));
 
-        return $query
+        if ($beforeId) {
+            $cursor = OmniConversation::query()->find($beforeId);
+            if ($cursor) {
+                $ts = $cursor->last_message_at;
+                $query->where(function ($q) use ($ts, $beforeId) {
+                    if ($ts !== null) {
+                        $q->where('last_message_at', '<', $ts)
+                            ->orWhere(function ($q2) use ($ts, $beforeId) {
+                                $q2->where('last_message_at', $ts)->where('id', '<', $beforeId);
+                            });
+                    } else {
+                        $q->whereNull('last_message_at')->where('id', '<', $beforeId);
+                    }
+                });
+            }
+        }
+
+        $rows = $query
             ->orderByDesc('last_message_at')
             ->orderByDesc('id')
-            ->limit(150)
-            ->get()
-            ->map(fn (OmniConversation $c) => $this->formatConversation($c));
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+        if ($hasMore) {
+            $rows = $rows->take($limit);
+        }
+
+        $conversations = $rows->map(fn (OmniConversation $c) => $this->formatConversation($c));
+        $oldestId = $rows->last()?->id;
+
+        return [
+            'conversations' => $conversations,
+            'has_more' => $hasMore,
+            'oldest_conversation_id' => $oldestId !== null ? (int) $oldestId : null,
+        ];
     }
 
     /**

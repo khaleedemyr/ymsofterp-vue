@@ -117,7 +117,11 @@
             class="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
         </div>
-        <div class="flex-1 overflow-y-auto">
+        <div
+          ref="conversationsListEl"
+          class="flex-1 overflow-y-auto"
+          @scroll="onConversationsListScroll"
+        >
           <button
             v-for="conv in filteredConversations"
             :key="conv.id"
@@ -229,6 +233,19 @@
           </button>
           <p v-if="filteredConversations.length === 0" class="px-3 py-6 text-center text-xs text-slate-400">
             {{ emptyListHint }}
+          </p>
+          <div
+            v-else-if="loadingMoreConversations"
+            class="px-3 py-3 text-center text-[11px] text-slate-400"
+          >
+            <i class="fa-solid fa-spinner fa-spin mr-1" />
+            Memuat chat lebih lama...
+          </div>
+          <p
+            v-else-if="!hasMoreConversations && !search.trim() && liveConversations.length > 0"
+            class="px-3 py-2 text-center text-[10px] text-slate-400"
+          >
+            Semua chat sudah dimuat
           </p>
         </div>
       </aside>
@@ -1144,6 +1161,8 @@ import { compressImageFileForOutbound } from '@/utils/omniOutboundMedia.js'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
+  conversationsHasMore: { type: Boolean, default: false },
+  conversationsOldestId: { type: Number, default: null },
   selectedConversation: { type: Object, default: null },
   messages: { type: Array, default: () => [] },
   messagesHasMoreOlder: { type: Boolean, default: false },
@@ -1170,6 +1189,8 @@ const props = defineProps({
 /** Kunci partial reload Inertia agar daftar chat, pesan, dan hak "lihat semua" selalu sinkron (satu sumber kebenaran). */
 const inboxPartialReloadKeys = [
   'conversations',
+  'conversationsHasMore',
+  'conversationsOldestId',
   'selectedConversation',
   'messages',
   'messagesHasMoreOlder',
@@ -1380,11 +1401,19 @@ const sendButtonLabel = computed(() => {
 /** Diperbarui poll axios + sinkron dari props saat navigasi Inertia. */
 const liveConversations = ref([...(props.conversations || [])])
 const liveSelectedConversation = ref(props.selectedConversation ?? null)
+const conversationsListEl = ref(null)
+const hasMoreConversations = ref(!!props.conversationsHasMore)
+const oldestConversationId = ref(props.conversationsOldestId ?? null)
+const loadingMoreConversations = ref(false)
+const loadedExtraConversations = ref(false)
 
 watch(
   () => props.conversations,
   (v) => {
     liveConversations.value = v ?? []
+    loadedExtraConversations.value = false
+    hasMoreConversations.value = !!props.conversationsHasMore
+    oldestConversationId.value = props.conversationsOldestId ?? null
   },
   { deep: true }
 )
@@ -2853,6 +2882,56 @@ async function saveCrmPanel() {
   }
 }
 
+function mergePolledConversations(head, existing) {
+  const headIds = new Set(head.map((c) => c.id))
+  const tail = existing.filter((c) => !headIds.has(c.id))
+  return [...head, ...tail]
+}
+
+async function loadMoreConversations() {
+  if (loadingMoreConversations.value || !hasMoreConversations.value || search.value.trim()) {
+    return
+  }
+  const beforeId = oldestConversationId.value ?? liveConversations.value.at(-1)?.id
+  if (!beforeId) {
+    return
+  }
+  loadingMoreConversations.value = true
+  try {
+    const { data } = await axios.get('/crm/omnichannel-inbox/conversations-more', {
+      params: { ...listQuery(), before_id: beforeId },
+    })
+    const more = data.conversations ?? []
+    const existingIds = new Set(liveConversations.value.map((c) => c.id))
+    const append = more.filter((c) => !existingIds.has(c.id))
+    if (append.length > 0) {
+      liveConversations.value = [...liveConversations.value, ...append]
+    }
+    hasMoreConversations.value = !!data.has_more
+    if (data.oldest_conversation_id) {
+      oldestConversationId.value = data.oldest_conversation_id
+    }
+    loadedExtraConversations.value = true
+  } catch {
+    /* ignore */
+  } finally {
+    loadingMoreConversations.value = false
+  }
+}
+
+function onConversationsListScroll() {
+  if (loadingMoreConversations.value || !hasMoreConversations.value || search.value.trim()) {
+    return
+  }
+  const el = conversationsListEl.value
+  if (!el) {
+    return
+  }
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 96) {
+    loadMoreConversations()
+  }
+}
+
 /** Segarkan daftar & pesan via JSON — tidak memicu reload halaman Inertia (tidak "kedip"). */
 async function pollInbox() {
   if (pollInFlight || pendingConversationId.value != null) {
@@ -2861,7 +2940,12 @@ async function pollInbox() {
   pollInFlight = true
   try {
     const { data } = await axios.get('/crm/omnichannel-inbox/poll', { params: listQuery() })
-    liveConversations.value = data.conversations ?? []
+    const head = data.conversations ?? []
+    liveConversations.value = mergePolledConversations(head, liveConversations.value)
+    if (!loadedExtraConversations.value) {
+      hasMoreConversations.value = !!data.has_more_conversations
+      oldestConversationId.value = data.oldest_conversation_id ?? null
+    }
     if (data.can_see_all_chats === false && inbox.value === 'unassigned') {
       setInbox('mine')
     }

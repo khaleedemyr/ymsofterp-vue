@@ -2740,6 +2740,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
     Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');
+    Route::get('/crm/omnichannel-inbox/conversations-more', [App\Http\Controllers\OmnichannelInboxController::class, 'conversationsMore'])->name('crm.omnichannel-inbox.conversations-more');
     Route::patch('/crm/omnichannel-inbox/conversations/{conversation}', [App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('crm.omnichannel-inbox.update');
     Route::get('/crm/omnichannel-inbox/conversations/{conversation}/messages', [App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('crm.omnichannel-inbox.messages');
     Route::get('/crm/omnichannel-inbox/messages/{message}/media', [App\Http\Controllers\OmnichannelInboxController::class, 'messageMedia'])->name('crm.omnichannel-inbox.message-media');

@@ -1294,6 +1294,7 @@ Route::prefix('approval-app')->group(function () {
         // Omnichannel Inbox (WhatsApp) — YMSoft App
         Route::get('/omnichannel-inbox/bootstrap', [\App\Http\Controllers\OmnichannelInboxController::class, 'apiBootstrap'])->name('api.approval-app.omnichannel-inbox.bootstrap');
         Route::get('/omnichannel-inbox/poll', [\App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('api.approval-app.omnichannel-inbox.poll');
+        Route::get('/omnichannel-inbox/conversations-more', [\App\Http\Controllers\OmnichannelInboxController::class, 'conversationsMore'])->name('api.approval-app.omnichannel-inbox.conversations-more');
         Route::get('/omnichannel-inbox/conversations/{conversation}/messages', [\App\Http\Controllers\OmnichannelInboxController::class, 'messages'])->name('api.approval-app.omnichannel-inbox.messages');
         Route::get('/omnichannel-inbox/messages/{message}/media', [\App\Http\Controllers\OmnichannelInboxController::class, 'messageMedia'])->name('api.approval-app.omnichannel-inbox.message-media');
         Route::patch('/omnichannel-inbox/conversations/{conversation}', [\App\Http\Controllers\OmnichannelInboxController::class, 'update'])->name('api.approval-app.omnichannel-inbox.update');
