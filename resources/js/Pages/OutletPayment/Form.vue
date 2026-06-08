@@ -67,7 +67,7 @@
             ]"
           >
             <i class="fas fa-truck mr-2"></i>
-            Good Receive (GR)
+            Good Receive (GR / GSR)
           </button>
           <button 
             type="button"
@@ -119,10 +119,18 @@
               
               <!-- GR List -->
               <div v-if="grListFiltered.length > 0" class="divide-y divide-gray-200">
-                <div v-for="gr in grListFiltered" :key="gr.id" class="p-3 hover:bg-gray-50 transition-colors">
+                <div v-for="gr in grListFiltered" :key="transactionRowKey(gr)" class="p-3 hover:bg-gray-50 transition-colors">
                   <!-- GR Header -->
                   <div class="flex items-center">
                     <input 
+                      v-if="isGsrRow(gr)"
+                      type="checkbox" 
+                      :value="gr.id"
+                      v-model="selectedGSRs"
+                      class="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    <input 
+                      v-else
                       type="checkbox" 
                       :value="gr.id"
                       v-model="selectedGRs"
@@ -131,7 +139,11 @@
                     <div class="ml-3 flex-1">
                       <div class="flex items-center justify-between">
                         <div>
-                          <h4 class="text-sm font-medium text-gray-900">{{ gr.number || gr.gr_number || '-' }}</h4>
+                          <h4 class="text-sm font-medium text-gray-900 flex items-center gap-2">
+                            {{ gr.number || gr.gr_number || '-' }}
+                            <span v-if="isGsrRow(gr)" class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">GSR</span>
+                            <span v-else class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">GR</span>
+                          </h4>
                           <p class="text-xs text-gray-500">
                             {{ formatDate(gr.receive_date) }} • {{ gr.outlet_name }}
                           </p>
@@ -143,11 +155,11 @@
                           <p class="text-sm font-semibold text-blue-600">{{ formatCurrency(gr.total_amount) }}</p>
                           <button 
                             type="button"
-                            @click="toggleGRExpanded(gr.id)"
+                            @click="toggleGRExpanded(gr)"
                             class="text-xs text-blue-500 hover:text-blue-700 flex items-center"
                           >
-                            <i class="fas" :class="expandedGRs.has(gr.id) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-                            <span class="ml-1">{{ expandedGRs.has(gr.id) ? 'Tutup' : 'Lihat Item' }}</span>
+                            <i class="fas" :class="expandedGRs.has(transactionRowKey(gr)) ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+                            <span class="ml-1">{{ expandedGRs.has(transactionRowKey(gr)) ? 'Tutup' : 'Lihat Item' }}</span>
                           </button>
                         </div>
                       </div>
@@ -155,15 +167,15 @@
                   </div>
                   
                   <!-- Expanded GR Items -->
-                  <div v-if="expandedGRs.has(gr.id)" class="mt-3 ml-7">
-                    <div v-if="loadingGRItems[gr.id]" class="flex items-center justify-center py-4">
+                  <div v-if="expandedGRs.has(transactionRowKey(gr))" class="mt-3 ml-7">
+                    <div v-if="loadingGRItems[transactionRowKey(gr)]" class="flex items-center justify-center py-4">
                       <i class="fas fa-spinner fa-spin text-blue-500"></i>
                       <span class="ml-2 text-sm text-gray-500">Memuat item...</span>
                     </div>
-                    <div v-else-if="grItems[gr.id] && grItems[gr.id].length > 0" class="bg-gray-50 rounded-lg p-3">
+                    <div v-else-if="grItems[transactionRowKey(gr)] && grItems[transactionRowKey(gr)].length > 0" class="bg-gray-50 rounded-lg p-3">
                       <h5 class="text-xs font-medium text-gray-700 mb-2">Detail Item:</h5>
                       <div class="space-y-2">
-                        <div v-for="item in grItems[gr.id]" :key="item.id" class="flex justify-between items-center text-xs">
+                        <div v-for="item in grItems[transactionRowKey(gr)]" :key="item.id" class="flex justify-between items-center text-xs">
                           <div class="flex-1">
                             <span class="font-medium text-gray-900">{{ item.item_name }}</span>
                             <div class="text-gray-500">
@@ -464,6 +476,7 @@ const activeTab = ref('gr');
 
 // State for GR list with checkboxes
 const selectedGRs = ref([]);
+const selectedGSRs = ref([]);
 const selectAllGR = ref(false);
 const expandedGRs = ref(new Set());
 const grItems = ref({});
@@ -489,8 +502,9 @@ const form = ref({
   outlet_id: '',
   date_from: new Date().toISOString().split('T')[0],
   date_to: new Date().toISOString().split('T')[0],
-  gr_ids: [], // Changed from gr_id to gr_ids for multiple selection
-  retail_ids: [], // New field for retail sales
+  gr_ids: [],
+  gsr_ids: [],
+  retail_ids: [],
   total_amount: 0,
   payment_method: 'cash',
   bank_id: null,
@@ -607,15 +621,35 @@ const totalAmountFromSelectedRetailSales = computed(() => {
   return total;
 });
 
-// Computed for total amount from all selected transactions
-// Include GR Supplier total amount (calculated for outlet and date range, like Rekap FJ)
-const totalAmountFromSelectedTransactions = computed(() => {
-  // Ensure all values are numbers, not strings
-  const grTotal = parseFloat(totalAmountFromSelectedGRs.value) || 0;
-  const retailTotal = parseFloat(totalAmountFromSelectedRetailSales.value) || 0;
-  
-  return grTotal + retailTotal;
+const totalAmountFromSelectedGSRs = computed(() => {
+  if (!selectedGSRs.value || selectedGSRs.value.length === 0) {
+    return 0;
+  }
+
+  return selectedGSRs.value.reduce((sum, gsrId) => {
+    const gsr = grListFiltered.value.find(g => g.id == gsrId && isGsrRow(g));
+    if (!gsr) return sum;
+    const amount = parseFloat(gsr.total_amount);
+    return sum + (isNaN(amount) ? 0 : amount);
+  }, 0);
 });
+
+// Computed for total amount from all selected transactions
+const totalAmountFromSelectedTransactions = computed(() => {
+  const grTotal = parseFloat(totalAmountFromSelectedGRs.value) || 0;
+  const gsrTotal = parseFloat(totalAmountFromSelectedGSRs.value) || 0;
+  const retailTotal = parseFloat(totalAmountFromSelectedRetailSales.value) || 0;
+
+  return grTotal + gsrTotal + retailTotal;
+});
+
+function isGsrRow(row) {
+  return row?.type === 'gsr';
+}
+
+function transactionRowKey(row) {
+  return `${row?.type || 'gr'}-${row?.id}`;
+}
 
 // Computed for warehouse summary from selected GRs and Retail Sales
 const warehouseSummary = computed(() => {
@@ -658,6 +692,39 @@ const warehouseSummary = computed(() => {
       warehouseMap[key].total += amount;
       warehouseMap[key].grCount += 1;
       warehouseMap[key].grIds.push(grId);
+    });
+  }
+
+  if (selectedGSRs.value && selectedGSRs.value.length > 0) {
+    selectedGSRs.value.forEach(gsrId => {
+      const gsr = grListFiltered.value.find(g => g.id == gsrId && isGsrRow(g));
+      if (!gsr) return;
+
+      const warehouseName = gsr.warehouse_name || 'Tidak Ada Warehouse';
+      const warehouseId = gsr.warehouse_id || null;
+      const key = warehouseId ? `wh_${warehouseId}` : warehouseName;
+
+      if (!warehouseMap[key]) {
+        warehouseMap[key] = {
+          id: warehouseId,
+          name: warehouseName,
+          total: 0,
+          grCount: 0,
+          retailCount: 0,
+          grIds: [],
+          retailIds: []
+        };
+      }
+
+      let amount = 0;
+      if (gsr.total_amount !== null && gsr.total_amount !== undefined) {
+        amount = parseFloat(gsr.total_amount);
+        if (isNaN(amount)) amount = 0;
+      }
+
+      warehouseMap[key].total += amount;
+      warehouseMap[key].grCount += 1;
+      warehouseMap[key].grIds.push(gsrId);
     });
   }
   
@@ -739,7 +806,11 @@ const coaSummary = computed(() => {
   };
 
   selectedGRs.value.forEach(grId => {
-    addItemsToSummary(grItems.value[grId] || []);
+    addItemsToSummary(grItems.value[`gr-${grId}`] || []);
+  });
+
+  selectedGSRs.value.forEach(gsrId => {
+    addItemsToSummary(grItems.value[`gsr-${gsrId}`] || []);
   });
 
   selectedRetailSales.value.forEach(retailId => {
@@ -750,9 +821,10 @@ const coaSummary = computed(() => {
 });
 
 const coaSummaryLoading = computed(() => {
-  const loadingSelectedGR = selectedGRs.value.some(grId => loadingGRItems.value[grId]);
+  const loadingSelectedGR = selectedGRs.value.some(grId => loadingGRItems.value[`gr-${grId}`]);
+  const loadingSelectedGSR = selectedGSRs.value.some(gsrId => loadingGRItems.value[`gsr-${gsrId}`]);
   const loadingSelectedRetail = selectedRetailSales.value.some(retailId => loadingRetailSalesItems.value[retailId]);
-  return loadingSelectedGR || loadingSelectedRetail;
+  return loadingSelectedGR || loadingSelectedGSR || loadingSelectedRetail;
 });
 
 const hasNoCoaAmount = computed(() => {
@@ -763,9 +835,13 @@ const hasNoCoaAmount = computed(() => {
 watch(selectedGRs, (newSelectedGRs) => {
   form.value.gr_ids = newSelectedGRs;
   form.value.total_amount = totalAmountFromSelectedTransactions.value;
-  
-  // Update select all state
-  selectAllGR.value = newSelectedGRs.length === grListFiltered.value.length && grListFiltered.value.length > 0;
+  updateSelectAllGRState();
+}, { deep: true });
+
+watch(selectedGSRs, (newSelectedGSRs) => {
+  form.value.gsr_ids = newSelectedGSRs;
+  form.value.total_amount = totalAmountFromSelectedTransactions.value;
+  updateSelectAllGRState();
 }, { deep: true });
 
 // Watch for selected Retail Sales changes to update total amount
@@ -778,12 +854,20 @@ watch(selectedRetailSales, (newSelectedRetailSales) => {
 }, { deep: true });
 
 // Auto-load item details for selected transactions to support sub category summary
-watch([selectedGRs, selectedRetailSales], async () => {
+watch([selectedGRs, selectedGSRs, selectedRetailSales], async () => {
   const loadTasks = [];
 
   selectedGRs.value.forEach(grId => {
-    if (!grItems.value[grId] && !loadingGRItems.value[grId]) {
-      loadTasks.push(loadGRItems(grId));
+    const key = `gr-${grId}`;
+    if (!grItems.value[key] && !loadingGRItems.value[key]) {
+      loadTasks.push(loadGRItems(grId, 'gr'));
+    }
+  });
+
+  selectedGSRs.value.forEach(gsrId => {
+    const key = `gsr-${gsrId}`;
+    if (!grItems.value[key] && !loadingGRItems.value[key]) {
+      loadTasks.push(loadGRItems(gsrId, 'gsr'));
     }
   });
 
@@ -815,11 +899,22 @@ function goBack() {
 }
 
 // Function to toggle select all GRs
+function updateSelectAllGRState() {
+  const foodGrIds = grListFiltered.value.filter(g => !isGsrRow(g)).map(g => g.id);
+  const gsrIds = grListFiltered.value.filter(g => isGsrRow(g)).map(g => g.id);
+  selectAllGR.value =
+    foodGrIds.every(id => selectedGRs.value.includes(id)) &&
+    gsrIds.every(id => selectedGSRs.value.includes(id)) &&
+    grListFiltered.value.length > 0;
+}
+
 function toggleSelectAll() {
   if (selectAllGR.value) {
-    selectedGRs.value = grListFiltered.value.map(gr => gr.id);
+    selectedGRs.value = grListFiltered.value.filter(g => !isGsrRow(g)).map(gr => gr.id);
+    selectedGSRs.value = grListFiltered.value.filter(g => isGsrRow(g)).map(gr => gr.id);
   } else {
     selectedGRs.value = [];
+    selectedGSRs.value = [];
   }
 }
 
@@ -833,14 +928,14 @@ function toggleSelectAllRetailSales() {
 }
 
 // Function to toggle GR expansion
-function toggleGRExpanded(grId) {
-  if (expandedGRs.value.has(grId)) {
-    expandedGRs.value.delete(grId);
+function toggleGRExpanded(gr) {
+  const key = transactionRowKey(gr);
+  if (expandedGRs.value.has(key)) {
+    expandedGRs.value.delete(key);
   } else {
-    expandedGRs.value.add(grId);
-    // Load GR items if not already loaded
-    if (!grItems.value[grId]) {
-      loadGRItems(grId);
+    expandedGRs.value.add(key);
+    if (!grItems.value[key]) {
+      loadGRItems(gr.id, gr.type || 'gr');
     }
   }
 }
@@ -859,23 +954,27 @@ function toggleRetailSalesExpanded(retailId) {
 }
 
 // Function to load GR items
-async function loadGRItems(grId) {
-  loadingGRItems.value[grId] = true;
-  
+async function loadGRItems(grId, type = 'gr') {
+  const key = `${type}-${grId}`;
+  loadingGRItems.value[key] = true;
+
   try {
-    const response = await fetch(`/outlet-payments/gr-items/${grId}`);
+    const endpoint = type === 'gsr'
+      ? `/outlet-payments/gsr-items/${grId}`
+      : `/outlet-payments/gr-items/${grId}`;
+    const response = await fetch(endpoint);
     const data = await response.json();
-    
+
     if (data.success) {
-      grItems.value[grId] = data.items;
+      grItems.value[key] = data.items;
     } else {
-      grItems.value[grId] = [];
+      grItems.value[key] = [];
     }
   } catch (error) {
     console.error('Error loading GR items:', error);
-    grItems.value[grId] = [];
+    grItems.value[key] = [];
   } finally {
-    loadingGRItems.value[grId] = false;
+    loadingGRItems.value[key] = false;
   }
 }
 
@@ -926,11 +1025,13 @@ async function refreshGRList() {
 
           // Clear selected GRs that are no longer in the list
           selectedGRs.value = selectedGRs.value.filter(grId =>
-            data.grList.find(gr => gr.id == grId)
+            data.grList.find(gr => gr.id == grId && !isGsrRow(gr))
           );
-      
-      // Update select all state
-      selectAllGR.value = selectedGRs.value.length === data.grList.length && data.grList.length > 0;
+          selectedGSRs.value = selectedGSRs.value.filter(gsrId =>
+            data.grList.find(gr => gr.id == gsrId && isGsrRow(gr))
+          );
+
+      updateSelectAllGRState();
       
       // Clear expanded GRs and items
       expandedGRs.value.clear();

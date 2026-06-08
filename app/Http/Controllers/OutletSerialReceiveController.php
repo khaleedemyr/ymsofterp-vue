@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use App\Support\FoodGrLastPurchaseForItem;
 use App\Support\InventorySerialEffectiveQty;
 use App\Support\ItemUnitCost;
@@ -13,6 +14,7 @@ use Inertia\Inertia;
 
 class OutletSerialReceiveController extends Controller
 {
+    use WritesActivityLogTrait;
     public const GR_REJECT_REASONS = [
         'not_found' => 'Serial tidak ditemukan',
         'not_dispatched' => 'Belum keluar via DO',
@@ -221,7 +223,7 @@ class OutletSerialReceiveController extends Controller
         $user = Auth::user();
 
         try {
-            return DB::transaction(function () use ($request, $user) {
+            $result = DB::transaction(function () use ($request, $user) {
                 $serialIds = collect($request->serials)->pluck('serial_id')->toArray();
 
                 $serials = DB::table('inventory_item_serials')
@@ -324,8 +326,28 @@ class OutletSerialReceiveController extends Controller
                         ]);
                 }
 
-                return redirect("/outlet-serial-receive/{$headerId}")->with('success', "GR Serial {$grNumber} berhasil disimpan.");
+                return [
+                    'header_id' => $headerId,
+                    'number' => $grNumber,
+                    'serial_count' => count($request->serials),
+                ];
             });
+
+            $header = DB::table('outlet_serial_receive_headers')->where('id', $result['header_id'])->first();
+            $items = DB::table('outlet_serial_receive_items')->where('header_id', $result['header_id'])->get();
+            $this->writeActivityLog(
+                $request,
+                'outlet_serial_receive',
+                'create',
+                'Membuat GR Nomor Seri Outlet: ' . $result['number'],
+                null,
+                [
+                    'header' => (array) $header,
+                    'items' => $items->toArray(),
+                ]
+            );
+
+            return redirect("/outlet-serial-receive/{$result['header_id']}")->with('success', "GR Serial {$result['number']} berhasil disimpan.");
         } catch (\Throwable $e) {
             return back()->withErrors(['serials' => 'Gagal menyimpan: ' . $e->getMessage()]);
         }
@@ -404,6 +426,24 @@ class OutletSerialReceiveController extends Controller
             return back()->withErrors(['message' => 'Data tidak ditemukan.']);
         }
 
+        $hasPayment = DB::table('outlet_payments')
+            ->where('gsr_id', $id)
+            ->where('status', '!=', 'cancelled')
+            ->exists();
+        if ($hasPayment) {
+            $message = 'GR Nomor Seri tidak dapat dihapus karena sudah memiliki outlet payment aktif.';
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 422);
+            }
+
+            return back()->withErrors(['message' => $message]);
+        }
+
+        $deleteSnapshot = $this->enrichDeleteSnapshot([
+            ...(array) $header,
+            'items' => DB::table('outlet_serial_receive_items')->where('header_id', $id)->get()->toArray(),
+        ]);
+
         try {
             DB::transaction(function () use ($id) {
                 $items = DB::table('outlet_serial_receive_items')->where('header_id', $id)->get();
@@ -442,6 +482,15 @@ class OutletSerialReceiveController extends Controller
                     ->where('id', $id)
                     ->update(['deleted_at' => now(), 'updated_at' => now()]);
             });
+
+            $this->writeActivityLog(
+                $request,
+                'outlet_serial_receive',
+                'delete',
+                'Menghapus GR Nomor Seri Outlet: ' . $header->number,
+                $deleteSnapshot,
+                null
+            );
 
             if ($request->wantsJson()) {
                 return response()->json([
@@ -685,6 +734,22 @@ class OutletSerialReceiveController extends Controller
                 return ['success' => true, 'message' => "GR Serial {$grNumber} berhasil disimpan.", 'id' => $headerId, 'number' => $grNumber];
             });
 
+            if (!empty($result['success']) && !empty($result['id'])) {
+                $header = DB::table('outlet_serial_receive_headers')->where('id', $result['id'])->first();
+                $items = DB::table('outlet_serial_receive_items')->where('header_id', $result['id'])->get();
+                $this->writeActivityLog(
+                    $request,
+                    'outlet_serial_receive',
+                    'create',
+                    'Membuat GR Nomor Seri Outlet: ' . $result['number'],
+                    null,
+                    [
+                        'header' => (array) $header,
+                        'items' => $items->toArray(),
+                    ]
+                );
+            }
+
             return response()->json($result, $result['success'] ? 200 : 422);
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Gagal menyimpan: ' . $e->getMessage()], 500);
@@ -708,6 +773,22 @@ class OutletSerialReceiveController extends Controller
         if (!$header) {
             return response()->json(['success' => false, 'message' => 'Data tidak ditemukan.'], 404);
         }
+
+        $hasPayment = DB::table('outlet_payments')
+            ->where('gsr_id', $id)
+            ->where('status', '!=', 'cancelled')
+            ->exists();
+        if ($hasPayment) {
+            return response()->json([
+                'success' => false,
+                'message' => 'GR Nomor Seri tidak dapat dihapus karena sudah memiliki outlet payment aktif.',
+            ], 422);
+        }
+
+        $deleteSnapshot = $this->enrichDeleteSnapshot([
+            ...(array) $header,
+            'items' => DB::table('outlet_serial_receive_items')->where('header_id', $id)->get()->toArray(),
+        ]);
 
         try {
             DB::transaction(function () use ($id) {
@@ -747,6 +828,15 @@ class OutletSerialReceiveController extends Controller
                     ->where('id', $id)
                     ->update(['deleted_at' => now(), 'updated_at' => now()]);
             });
+
+            $this->writeActivityLog(
+                request(),
+                'outlet_serial_receive',
+                'delete',
+                'Menghapus GR Nomor Seri Outlet: ' . $header->number,
+                $deleteSnapshot,
+                null
+            );
 
             return response()->json(['success' => true, 'message' => "GR Serial {$header->number} berhasil dihapus."]);
         } catch (\Throwable $e) {

@@ -14,6 +14,7 @@ class OutletPayment extends Model
         'outlet_id',
         'warehouse_id',
         'gr_id',
+        'gsr_id',
         'retail_sales_id',
         'date',
         'total_amount',

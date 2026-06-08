@@ -566,28 +566,20 @@ class RetailFoodController extends Controller
 
             DB::commit();
 
-            // Activity log
-            try {
-                DB::table('activity_logs')->insert([
-                    'user_id' => auth()->id(),
-                    'activity_type' => 'create',
-                    'module' => 'retail_food',
-                    'description' => 'Membuat retail food: ' . $retailNumber,
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'old_data' => null,
-                    'new_data' => json_encode([
-                        'retail_number' => $retailNumber,
-                        'outlet_id' => $request->outlet_id,
-                        'total_amount' => $totalAmount,
-                        'payment_method' => $request->payment_method,
-                        'item_count' => count($request->items)
-                    ]),
-                    'created_at' => now()
-                ]);
-            } catch (\Exception $e) {
-                // Tidak throw error karena activity log bukan critical
-            }
+            $creatorMeta = $this->resolveActivityUserMeta(auth()->id());
+            $this->writeRetailFoodActivityLog(
+                $request,
+                'create',
+                'Membuat retail food: ' . $retailNumber . ' (dibuat oleh: ' . $creatorMeta['user_name'] . ')',
+                null,
+                array_merge($creatorMeta, [
+                    'retail_number' => $retailNumber,
+                    'outlet_id' => $request->outlet_id,
+                    'total_amount' => $totalAmount,
+                    'payment_method' => $request->payment_method,
+                    'item_count' => count($request->items),
+                ])
+            );
 
             // Cek apakah total hari ini sudah melebihi 500rb
             if ($dailyTotal + $totalAmount >= 500000) {
@@ -653,7 +645,8 @@ class RetailFoodController extends Controller
                 ], 403);
             }
 
-            $retailFood = RetailFood::findOrFail($id);
+            $retailFood = RetailFood::with(['items', 'creator'])->findOrFail($id);
+            $deleteSnapshot = $this->buildRetailFoodDeleteSnapshot($retailFood, $user);
 
             DB::beginTransaction();
 
@@ -666,6 +659,16 @@ class RetailFoodController extends Controller
             $retailFood->delete();
 
             DB::commit();
+
+            $this->writeRetailFoodActivityLog(
+                request(),
+                'delete',
+                'Menghapus retail food: ' . $deleteSnapshot['retail_number']
+                    . ' (dibuat oleh: ' . ($deleteSnapshot['created_by_name'] ?? '-')
+                    . ', dihapus oleh: ' . ($deleteSnapshot['deleted_by_name'] ?? '-') . ')',
+                $deleteSnapshot,
+                null
+            );
 
             return response()->json([
                 'success' => true,
@@ -1624,5 +1627,78 @@ class RetailFoodController extends Controller
     public function apiStore(Request $request)
     {
         return $this->store($request);
+    }
+
+    private function resolveActivityUserMeta(?int $userId): array
+    {
+        if (!$userId) {
+            return [
+                'user_id' => null,
+                'user_name' => '-',
+            ];
+        }
+
+        $name = DB::table('users')->where('id', $userId)->value('nama_lengkap');
+
+        return [
+            'user_id' => $userId,
+            'user_name' => $name ?: ('User #' . $userId),
+        ];
+    }
+
+    private function buildRetailFoodDeleteSnapshot(RetailFood $retailFood, $deletedByUser): array
+    {
+        $creatorMeta = $this->resolveActivityUserMeta($retailFood->created_by);
+        $deleterMeta = $this->resolveActivityUserMeta($deletedByUser->id ?? null);
+
+        return [
+            'id' => $retailFood->id,
+            'retail_number' => $retailFood->retail_number,
+            'outlet_id' => $retailFood->outlet_id,
+            'warehouse_outlet_id' => $retailFood->warehouse_outlet_id,
+            'transaction_date' => $retailFood->transaction_date?->format('Y-m-d'),
+            'total_amount' => (float) $retailFood->total_amount,
+            'payment_method' => $retailFood->payment_method,
+            'supplier_id' => $retailFood->supplier_id,
+            'status' => $retailFood->status,
+            'notes' => $retailFood->notes,
+            'created_by' => $retailFood->created_by,
+            'created_by_name' => $creatorMeta['user_name'],
+            'deleted_by' => $deleterMeta['user_id'],
+            'deleted_by_name' => $deleterMeta['user_name'],
+            'items' => $retailFood->items->map(function ($item) {
+                return [
+                    'item_name' => $item->item_name,
+                    'qty' => (float) $item->qty,
+                    'unit' => $item->unit,
+                    'price' => (float) $item->price,
+                    'subtotal' => (float) $item->subtotal,
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private function writeRetailFoodActivityLog(
+        Request $request,
+        string $activityType,
+        string $description,
+        ?array $oldData,
+        ?array $newData
+    ): void {
+        try {
+            DB::table('activity_logs')->insert([
+                'user_id' => auth()->id(),
+                'activity_type' => $activityType,
+                'module' => 'retail_food',
+                'description' => $description,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => $oldData ? json_encode($oldData) : null,
+                'new_data' => $newData ? json_encode($newData) : null,
+                'created_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            // Activity log tidak critical
+        }
     }
 } 

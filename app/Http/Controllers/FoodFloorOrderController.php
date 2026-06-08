@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use App\Models\FoodFloorOrder;
 use App\Models\FoodFloorOrderItem;
 use App\Services\NotificationService;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 
 class FoodFloorOrderController extends Controller
 {
+    use WritesActivityLogTrait;
     private const FORECAST_KITCHEN_BAR_RATIO = 0.40;
 
     private const FORECAST_SERVICE_RATIO = 0.05;
@@ -204,6 +206,17 @@ class FoodFloorOrderController extends Controller
             }
 
             \DB::commit();
+
+            $order = FoodFloorOrder::with('items')->find($floorOrderId);
+            $this->writeActivityLog(
+                $request,
+                'food_floor_order',
+                'create',
+                'Membuat Floor Order / Request Order: ' . ($order->order_number ?? $floorOrderId),
+                null,
+                $order ? $order->toArray() : ['floor_order_id' => $floorOrderId]
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Floor Order berhasil dibuat',
@@ -314,8 +327,22 @@ class FoodFloorOrderController extends Controller
             return redirect()->route('floor-order.index')
                 ->with('error', 'Request Order tidak dapat dihapus karena sudah ada di Packing List');
         }
-        
+
+        $deleteSnapshot = $this->enrichDeleteSnapshot(
+            array_merge($order->toArray(), ['items' => $order->items()->get()->toArray()]),
+            'user_id'
+        );
+
         $order->delete();
+
+        $this->writeActivityLog(
+            request(),
+            'food_floor_order',
+            'delete',
+            'Menghapus Floor Order / Request Order: ' . ($deleteSnapshot['order_number'] ?? $id),
+            $deleteSnapshot,
+            null
+        );
         
         if (request()->expectsJson() || request()->ajax()) {
             return response()->json([
@@ -349,6 +376,8 @@ class FoodFloorOrderController extends Controller
             
         }
         
+        $oldData = $order->toArray();
+
         $date = now()->format('Ymd');
         $random = strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
         $order_number = 'RO-' . $date . '-' . $random;
@@ -362,6 +391,15 @@ class FoodFloorOrderController extends Controller
         if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
             $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
         }
+
+        $this->writeActivityLog(
+            $request,
+            'food_floor_order',
+            'submit',
+            'Submit Floor Order / Request Order: ' . $order_number,
+            $oldData,
+            $order->fresh()->toArray()
+        );
 
         return response()->json(['success' => true]);
     }

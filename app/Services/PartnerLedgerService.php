@@ -369,6 +369,23 @@ class PartnerLedgerService
                     DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
                 )
                 ->get();
+        } elseif ($payment->gsr_id) {
+            $effectivePriceExpr = "(CASE
+                WHEN si.unit_id = i.large_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(i.small_conversion_qty, 1) * COALESCE(i.medium_conversion_qty, 1)
+                WHEN si.unit_id = i.medium_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(i.small_conversion_qty, 1)
+                ELSE COALESCE(si.cost_small, 0)
+            END)";
+            $coaAmounts = DB::table('outlet_serial_receive_items as si')
+                ->join('items as i', 'si.item_id', '=', 'i.id')
+                ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->where('si.header_id', $payment->gsr_id)
+                ->whereNotNull('sc.coa_id')
+                ->groupBy('sc.coa_id')
+                ->select(
+                    'sc.coa_id',
+                    DB::raw("SUM(si.qty * ({$effectivePriceExpr})) as total_amount")
+                )
+                ->get();
         } elseif ($payment->retail_sales_id) {
             $coaAmounts = DB::table('retail_warehouse_sale_items as rwsi')
                 ->join('items as i', 'rwsi.item_id', '=', 'i.id')

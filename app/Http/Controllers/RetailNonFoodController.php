@@ -558,6 +558,23 @@ class RetailNonFoodController extends Controller
 
             DB::commit();
 
+            $creatorMeta = $this->resolveActivityUserMeta(auth()->id());
+            $this->writeRetailNonFoodActivityLog(
+                $request,
+                'create',
+                'Membuat retail non food: ' . $retailNumber . ' (dibuat oleh: ' . $creatorMeta['user_name'] . ')',
+                null,
+                array_merge($creatorMeta, [
+                    'retail_number' => $retailNumber,
+                    'outlet_id' => $request->outlet_id,
+                    'category_budget_id' => $request->category_budget_id,
+                    'total_amount' => $totalAmount,
+                    'payment_method' => $request->payment_method,
+                    'supplier_id' => $request->supplier_id,
+                    'item_count' => count($request->items),
+                ])
+            );
+
             // Cek apakah total hari ini sudah melebihi 500rb
             if ($dailyTotal + $totalAmount >= 500000) {
                 return response()->json([
@@ -612,7 +629,8 @@ class RetailNonFoodController extends Controller
                 ], 403);
             }
 
-            $retailNonFood = RetailNonFood::findOrFail($id);
+            $retailNonFood = RetailNonFood::with(['items', 'creator'])->findOrFail($id);
+            $deleteSnapshot = $this->buildRetailNonFoodDeleteSnapshot($retailNonFood, $user);
 
             \Log::info('RETAIL_NON_FOOD_DELETE: Starting deletion process', [
                 'user_id' => $user->id,
@@ -627,6 +645,16 @@ class RetailNonFoodController extends Controller
             $retailNonFood->delete();
             
             DB::commit();
+
+            $this->writeRetailNonFoodActivityLog(
+                request(),
+                'delete',
+                'Menghapus retail non food: ' . $deleteSnapshot['retail_number']
+                    . ' (dibuat oleh: ' . ($deleteSnapshot['created_by_name'] ?? '-')
+                    . ', dihapus oleh: ' . ($deleteSnapshot['deleted_by_name'] ?? '-') . ')',
+                $deleteSnapshot,
+                null
+            );
 
             \Log::info('RETAIL_NON_FOOD_DELETE: Deletion completed successfully', [
                 'retail_non_food_id' => $id,
@@ -982,5 +1010,79 @@ class RetailNonFoodController extends Controller
     public function apiStore(Request $request)
     {
         return $this->store($request);
+    }
+
+    private function resolveActivityUserMeta(?int $userId): array
+    {
+        if (!$userId) {
+            return [
+                'user_id' => null,
+                'user_name' => '-',
+            ];
+        }
+
+        $name = DB::table('users')->where('id', $userId)->value('nama_lengkap');
+
+        return [
+            'user_id' => $userId,
+            'user_name' => $name ?: ('User #' . $userId),
+        ];
+    }
+
+    private function buildRetailNonFoodDeleteSnapshot(RetailNonFood $retailNonFood, $deletedByUser): array
+    {
+        $creatorMeta = $this->resolveActivityUserMeta($retailNonFood->created_by);
+        $deleterMeta = $this->resolveActivityUserMeta($deletedByUser->id ?? null);
+
+        return [
+            'id' => $retailNonFood->id,
+            'retail_number' => $retailNonFood->retail_number,
+            'outlet_id' => $retailNonFood->outlet_id,
+            'category_budget_id' => $retailNonFood->category_budget_id,
+            'warehouse_outlet_id' => $retailNonFood->warehouse_outlet_id,
+            'transaction_date' => $retailNonFood->transaction_date?->format('Y-m-d'),
+            'total_amount' => (float) $retailNonFood->total_amount,
+            'payment_method' => $retailNonFood->payment_method,
+            'supplier_id' => $retailNonFood->supplier_id,
+            'status' => $retailNonFood->status,
+            'notes' => $retailNonFood->notes,
+            'created_by' => $retailNonFood->created_by,
+            'created_by_name' => $creatorMeta['user_name'],
+            'deleted_by' => $deleterMeta['user_id'],
+            'deleted_by_name' => $deleterMeta['user_name'],
+            'items' => $retailNonFood->items->map(function ($item) {
+                return [
+                    'item_name' => $item->item_name,
+                    'qty' => (float) $item->qty,
+                    'unit' => $item->unit,
+                    'price' => (float) $item->price,
+                    'subtotal' => (float) $item->subtotal,
+                ];
+            })->values()->all(),
+        ];
+    }
+
+    private function writeRetailNonFoodActivityLog(
+        Request $request,
+        string $activityType,
+        string $description,
+        ?array $oldData,
+        ?array $newData
+    ): void {
+        try {
+            DB::table('activity_logs')->insert([
+                'user_id' => auth()->id(),
+                'activity_type' => $activityType,
+                'module' => 'retail_non_food',
+                'description' => $description,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => $oldData ? json_encode($oldData) : null,
+                'new_data' => $newData ? json_encode($newData) : null,
+                'created_at' => now(),
+            ]);
+        } catch (\Exception $e) {
+            // Activity log tidak critical
+        }
     }
 } 

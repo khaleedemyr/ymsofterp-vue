@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class OutletFoodInventoryAdjustmentController extends Controller
 {
+    use WritesActivityLogTrait;
+
     private function unitMatches($selectedUnit, $unitId, $unitName): bool
     {
         $selected = strtolower(trim((string) $selectedUnit));
@@ -1421,18 +1424,16 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     ->delete();
             }
             
-            // Store data for activity log before deletion
             $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $adj->id_outlet)->value('nama_outlet') ?? 'Unknown';
             $warehouseName = DB::table('warehouse_outlets')->where('id', $adj->warehouse_outlet_id)->value('name') ?? 'Unknown';
             $typeLabel = $adj->type === 'in' ? 'Stock In' : 'Stock Out';
-            $itemsCount = $adj->items->count();
-            $adjustmentNumber = $adj->number;
-            $adjustmentStatus = $adj->status;
-            $adjustmentDate = $adj->date;
-            $adjustmentType = $adj->type;
-            $adjustmentOutletId = $adj->id_outlet;
-            $adjustmentWarehouseOutletId = $adj->warehouse_outlet_id;
-            
+
+            $deleteSnapshot = $this->enrichDeleteSnapshot(array_merge($adj->toArray(), [
+                'items' => $adj->items->toArray(),
+                'outlet_name' => $outletName,
+                'warehouse_name' => $warehouseName,
+            ]));
+
             $adj->items()->delete();
             
             // Delete approval flows if exists
@@ -1441,37 +1442,15 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 ->delete();
             
             $adj->delete();
-            
-            // Activity log DELETE
-            try {
-                DB::table('activity_logs')->insert([
-                    'user_id' => $user->id,
-                    'activity_type' => 'delete',
-                    'module' => 'outlet_stock_adjustment',
-                    'description' => "Menghapus Outlet Stock Adjustment: {$typeLabel} - {$outletName} ({$warehouseName}) - Status: {$adjustmentStatus}",
-                    'ip_address' => request()->ip(),
-                    'user_agent' => request()->userAgent(),
-                    'old_data' => json_encode([
-                        'adjustment_id' => $id,
-                        'number' => $adjustmentNumber,
-                        'type' => $adjustmentType,
-                        'outlet_id' => $adjustmentOutletId,
-                        'warehouse_outlet_id' => $adjustmentWarehouseOutletId,
-                        'date' => $adjustmentDate,
-                        'status' => $adjustmentStatus,
-                        'items_count' => $itemsCount
-                    ]),
-                    'new_data' => null,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-            } catch (\Exception $logError) {
-                // Tidak throw error karena activity log bukan critical
-                \Log::warning('OutletFoodInventoryAdjustment destroy - Activity log failed (but data deleted):', [
-                    'adjustment_id' => $id,
-                    'error' => $logError->getMessage()
-                ]);
-            }
+
+            $this->writeActivityLog(
+                request(),
+                'outlet_stock_adjustment',
+                'delete',
+                "Menghapus Outlet Stock Adjustment: {$typeLabel} - {$outletName} ({$warehouseName}) - Status: {$deleteSnapshot['status']}",
+                $deleteSnapshot,
+                null
+            );
             
             DB::commit();
             return response()->json(['success' => true]);

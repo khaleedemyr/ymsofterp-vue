@@ -119,6 +119,10 @@
                   <span class="text-blue-600 font-medium">{{ formatDate(payment.gr_date) }}</span>
                   <div class="text-xs text-gray-500">GR Date</div>
                 </div>
+                <div v-else-if="payment.payment_type === 'GSR'">
+                  <span class="text-purple-600 font-medium">{{ formatDate(payment.gsr_date) }}</span>
+                  <div class="text-xs text-gray-500">GSR Date</div>
+                </div>
                 <div v-else-if="payment.payment_type === 'Retail'">
                   <span class="text-green-600 font-medium">{{ formatDate(payment.rws_date) }}</span>
                   <div class="text-xs text-gray-500">RWS Date</div>
@@ -136,6 +140,11 @@
                 <div v-if="payment.payment_type === 'GR'">
                   <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     <i class="fa fa-box mr-1"></i> {{ payment.gr_number || '-' }}
+                  </span>
+                </div>
+                <div v-else-if="payment.payment_type === 'GSR'">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    <i class="fa fa-barcode mr-1"></i> {{ payment.gsr_number || '-' }}
                   </span>
                 </div>
                 <div v-else-if="payment.payment_type === 'Retail'">

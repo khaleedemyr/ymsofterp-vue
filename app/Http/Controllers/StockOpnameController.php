@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use App\Models\StockOpname;
 use App\Models\StockOpnameItem;
 use App\Models\StockOpnameApprovalFlow;
@@ -23,6 +24,8 @@ use App\Support\OutletInventoryCostResolver;
 
 class StockOpnameController extends Controller
 {
+    use WritesActivityLogTrait;
+
     private function filterFilledItems(array $items): array
     {
         return array_values(array_filter($items, function ($itemData) {
@@ -430,6 +433,18 @@ class StockOpnameController extends Controller
 
             DB::commit();
 
+            if (!$request->has('autosave') || !$request->autosave) {
+                $stockOpname->load('items');
+                $this->writeActivityLog(
+                    $request,
+                    'stock_opname',
+                    'create',
+                    'Membuat Stock Opname: ' . $stockOpname->opname_number,
+                    null,
+                    $stockOpname->toArray()
+                );
+            }
+
             // If autosave request, return JSON
             if ($request->has('autosave') && $request->autosave) {
                 return response()->json([
@@ -682,6 +697,8 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Stock opname hanya dapat diedit jika status masih DRAFT.']);
         }
 
+        $oldData = $stockOpname->load('items')->toArray();
+
         // For autosave, allow empty items array
         $itemsRule = $request->has('autosave') && $request->autosave 
             ? 'nullable|array' 
@@ -878,6 +895,18 @@ class StockOpnameController extends Controller
 
             DB::commit();
 
+            if (!$request->has('autosave') || !$request->autosave) {
+                $stockOpname->refresh()->load('items');
+                $this->writeActivityLog(
+                    $request,
+                    'stock_opname',
+                    'update',
+                    'Update Stock Opname: ' . $stockOpname->opname_number,
+                    $oldData,
+                    $stockOpname->toArray()
+                );
+            }
+
             // If autosave request, return JSON
             if ($request->has('autosave') && $request->autosave) {
                 return response()->json([
@@ -958,6 +987,12 @@ class StockOpnameController extends Controller
                 return back()->withErrors(['error' => 'Stock opname hanya dapat dihapus jika status adalah DRAFT.']);
             }
 
+            $deleteSnapshot = $this->enrichDeleteSnapshot(
+                array_merge($stockOpname->load('items')->toArray(), [
+                    'items' => $stockOpname->items->toArray(),
+                ])
+            );
+
             DB::beginTransaction();
 
             // Delete items (cascade will handle this, but we do it explicitly)
@@ -970,6 +1005,15 @@ class StockOpnameController extends Controller
             $stockOpname->delete();
 
             DB::commit();
+
+            $this->writeActivityLog(
+                $request,
+                'stock_opname',
+                'delete',
+                'Menghapus Stock Opname: ' . ($deleteSnapshot['opname_number'] ?? $id),
+                $deleteSnapshot,
+                null
+            );
 
             // Return JSON if AJAX request, otherwise redirect
             if ($request->expectsJson() || $request->ajax()) {
@@ -1018,6 +1062,8 @@ class StockOpnameController extends Controller
             'approvers.*' => 'required|integer|exists:users,id',
         ]);
 
+        $oldData = $stockOpname->toArray();
+
         try {
             DB::beginTransaction();
 
@@ -1041,6 +1087,15 @@ class StockOpnameController extends Controller
             $this->sendNotificationToNextApprover($stockOpname);
 
             DB::commit();
+
+            $this->writeActivityLog(
+                $request,
+                'stock_opname',
+                'submit',
+                'Submit Stock Opname untuk approval: ' . $stockOpname->opname_number,
+                $oldData,
+                $stockOpname->fresh()->toArray()
+            );
 
             return redirect()->route('stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock opname berhasil di-submit untuk approval!');
@@ -1082,6 +1137,8 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Anda tidak memiliki approval yang pending.']);
         }
 
+        $oldData = $stockOpname->toArray();
+
         try {
             DB::beginTransaction();
 
@@ -1105,6 +1162,16 @@ class StockOpnameController extends Controller
             }
 
             DB::commit();
+
+            $activityType = $validated['action'] === 'approve' ? 'approve' : 'reject';
+            $this->writeActivityLog(
+                $request,
+                'stock_opname',
+                $activityType,
+                ucfirst($activityType) . ' Stock Opname: ' . $stockOpname->opname_number,
+                $oldData,
+                $stockOpname->fresh()->toArray()
+            );
 
             $message = $validated['action'] === 'approve' 
                 ? 'Stock opname berhasil di-approve!' 
@@ -1138,6 +1205,8 @@ class StockOpnameController extends Controller
             return back()->withErrors(['error' => 'Process & Update Inventory hanya untuk stock opname dengan tanggal opname akhir bulan atau tanggal 1.']);
         }
 
+        $oldData = $stockOpname->toArray();
+
         try {
             DB::beginTransaction();
 
@@ -1149,6 +1218,15 @@ class StockOpnameController extends Controller
             $stockOpname->update(['status' => 'COMPLETED']);
 
             DB::commit();
+
+            $this->writeActivityLog(
+                request(),
+                'stock_opname',
+                'process',
+                'Process Stock Opname & update inventory: ' . $stockOpname->opname_number,
+                $oldData,
+                $stockOpname->fresh()->toArray()
+            );
 
             return redirect()->route('stock-opnames.show', $stockOpname->id)
                            ->with('success', 'Stock opname berhasil di-process!');

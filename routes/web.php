@@ -1526,6 +1526,8 @@ Route::post('/outlet-revenue-targets/generate-historical', [\App\Http\Controller
 Route::get('/outlet-revenue-targets/historical-month-detail', [\App\Http\Controllers\OutletRevenueTargetController::class, 'historicalMonthDetail'])->name('outlet-revenue-targets.historical-month-detail');
 Route::get('/reports/floor-order-vs-forecast', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'index'])->name('reports.floor-order-vs-forecast');
 Route::get('/reports/floor-order-vs-forecast/export', [\App\Http\Controllers\FloorOrderVsForecastReportController::class, 'export'])->name('reports.floor-order-vs-forecast.export');
+Route::get('/reports/modal-engineering', [\App\Http\Controllers\ModalEngineeringReportController::class, 'index'])->name('reports.modal-engineering');
+Route::get('/reports/modal-engineering/export', [\App\Http\Controllers\ModalEngineeringReportController::class, 'export'])->name('reports.modal-engineering.export');
 Route::get('/reports/rekap-pb1-outlet', [\App\Http\Controllers\RekapPb1OutletController::class, 'index'])->name('reports.rekap-pb1-outlet');
 Route::get('/reports/rekap-pb1-outlet/export', [\App\Http\Controllers\RekapPb1OutletController::class, 'export'])->name('reports.rekap-pb1-outlet.export');
 
@@ -1710,6 +1712,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/outlet-payments', [OutletPaymentController::class, 'store'])->name('outlet-payments.store');
     Route::get('/outlet-payments/unpaid-gr', [\App\Http\Controllers\OutletPaymentController::class, 'unpaidGR'])->name('outlet-payments.unpaid-gr');
     Route::get('/outlet-payments/gr-items/{grId}', [\App\Http\Controllers\OutletPaymentController::class, 'getGrItems'])->name('outlet-payments.gr-items');
+    Route::get('/outlet-payments/gsr-items/{gsrId}', [\App\Http\Controllers\OutletPaymentController::class, 'getGsrItems'])->name('outlet-payments.gsr-items');
     Route::get('/outlet-payments/gr-list', [\App\Http\Controllers\OutletPaymentController::class, 'getGrList'])->name('outlet-payments.gr-list');
     Route::get('/outlet-payments/retail-sales-list', [\App\Http\Controllers\OutletPaymentController::class, 'getRetailSalesList'])->name('outlet-payments.retail-sales-list');
     Route::get('/outlet-payments/retail-sales-items/{retailId}', [\App\Http\Controllers\OutletPaymentController::class, 'getRetailSalesItems'])->name('outlet-payments.retail-sales-items');

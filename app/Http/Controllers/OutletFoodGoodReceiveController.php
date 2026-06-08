@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use App\Models\OutletFoodGoodReceive;
 use App\Models\Outlet;
 use Illuminate\Http\Request;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class OutletFoodGoodReceiveController extends Controller
 {
+    use WritesActivityLogTrait;
     public function apiIndex(Request $request)
     {
         $user = auth()->user();
@@ -680,6 +682,20 @@ class OutletFoodGoodReceiveController extends Controller
                 DB::table('outlet_food_inventory_cost_histories')->insert($costHistoryInserts);
             }
             DB::commit();
+
+            $grHeader = DB::table('outlet_food_good_receives')->where('id', $grId)->first();
+            $grItems = DB::table('outlet_food_good_receive_items')->where('outlet_food_good_receive_id', $grId)->get();
+            $this->writeActivityLog(
+                $request,
+                'outlet_food_good_receive',
+                'create',
+                'Membuat Food GR Outlet: ' . ($grHeader->number ?? $grId),
+                null,
+                [
+                    'header' => (array) $grHeader,
+                    'items' => $grItems->toArray(),
+                ]
+            );
             
             // Update floor order status jika floorOrderId tersedia
             // TAMBAHAN VALIDASI: Hanya update jika semua DO yang terkait sudah di-GR
@@ -789,6 +805,11 @@ class OutletFoodGoodReceiveController extends Controller
             return response()->json(['success' => false, 'message' => 'Tidak dapat menghapus GR yang sudah memiliki payment aktif'], 400);
         }
         
+        $deleteSnapshot = $this->enrichDeleteSnapshot([
+            ...$outletFoodGoodReceive->toArray(),
+            'items' => $outletFoodGoodReceive->items()->get()->toArray(),
+        ]);
+
         DB::beginTransaction();
         try {
             // Rollback efek stok dari kartu stok reference good_receive_outlet.
@@ -840,6 +861,15 @@ class OutletFoodGoodReceiveController extends Controller
 
             $outletFoodGoodReceive->delete();
             DB::commit();
+
+            $this->writeActivityLog(
+                request(),
+                'outlet_food_good_receive',
+                'delete',
+                'Menghapus Food GR Outlet: ' . ($deleteSnapshot['number'] ?? $id),
+                $deleteSnapshot,
+                null
+            );
 
             return response()->json(['success' => true, 'message' => 'Good Receive berhasil dihapus']);
         } catch (\Exception $e) {
@@ -1408,6 +1438,10 @@ class OutletFoodGoodReceiveController extends Controller
             'items.*.id' => 'required|integer',
             'items.*.qty' => 'required|numeric|min:0',
         ]);
+        $oldData = [
+            'header' => $gr->toArray(),
+            'items' => $gr->items->toArray(),
+        ];
         \DB::beginTransaction();
         try {
             // Rollback efek inventory lama
@@ -1452,6 +1486,20 @@ class OutletFoodGoodReceiveController extends Controller
             // Proses ulang efek inventory dengan qty baru (reuse logic processStock)
             $this->processStock($gr->id);
             \DB::commit();
+
+            $gr->refresh()->load('items');
+            $this->writeActivityLog(
+                $request,
+                'outlet_food_good_receive',
+                'update',
+                'Update Food GR Outlet: ' . $gr->number,
+                $oldData,
+                [
+                    'header' => $gr->toArray(),
+                    'items' => $gr->items->toArray(),
+                ]
+            );
+
             return response()->json(['success' => true, 'message' => 'Qty GR & inventory berhasil diupdate']);
         } catch (\Throwable $e) {
             \DB::rollBack();

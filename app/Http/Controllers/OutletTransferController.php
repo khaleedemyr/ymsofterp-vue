@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Log;
 
 class OutletTransferController extends Controller
 {
+    use WritesActivityLogTrait;
+
     public function validateSerialForTransfer(Request $request)
     {
         $request->validate([
@@ -1524,22 +1527,19 @@ class OutletTransferController extends Controller
             $transfer->items()->delete();
             
             // Simpan data transfer untuk activity log sebelum dihapus
-            $transferData = $transfer->toArray();
+            $transferData = $this->enrichDeleteSnapshot($transfer->toArray());
             
             // Hapus header transfer
             $transfer->delete();
             
-            DB::table('activity_logs')->insert([
-                'user_id' => Auth::id(),
-                'activity_type' => 'delete',
-                'module' => 'outlet_transfer',
-                'description' => 'Menghapus transfer outlet: ' . $transferData['transfer_number'],
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-                'old_data' => json_encode($transferData),
-                'new_data' => null,
-                'created_at' => now(),
-            ]);
+            $this->writeActivityLog(
+                request(),
+                'outlet_transfer',
+                'delete',
+                'Menghapus transfer outlet: ' . $transferData['transfer_number'],
+                $transferData,
+                null
+            );
             
             DB::commit();
             return redirect()->route('outlet-transfer.index')->with('success', 'Data berhasil dihapus!');

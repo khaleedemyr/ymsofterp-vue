@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Traits\WritesActivityLogTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\Log;
 
 class InternalWarehouseTransferController extends Controller
 {
+    use WritesActivityLogTrait;
+
     /**
      * Generate unique transfer number dengan retry mechanism untuk menghindari duplicate
      * Menggunakan lockForUpdate untuk mencegah race condition
@@ -815,22 +818,19 @@ class InternalWarehouseTransferController extends Controller
             $transfer->items()->delete();
             
             // Simpan data transfer untuk activity log sebelum dihapus
-            $transferData = $transfer->toArray();
+            $transferData = $this->enrichDeleteSnapshot($transfer->toArray());
             
             // Hapus header transfer
             $transfer->delete();
             
-            DB::table('activity_logs')->insert([
-                'user_id' => Auth::id(),
-                'activity_type' => 'delete',
-                'module' => 'internal_warehouse_transfer',
-                'description' => 'Menghapus internal warehouse transfer: ' . $transferData['transfer_number'],
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-                'old_data' => json_encode($transferData),
-                'new_data' => null,
-                'created_at' => now(),
-            ]);
+            $this->writeActivityLog(
+                request(),
+                'internal_warehouse_transfer',
+                'delete',
+                'Menghapus internal warehouse transfer: ' . $transferData['transfer_number'],
+                $transferData,
+                null
+            );
             
             DB::commit();
             return redirect()->route('internal-warehouse-transfer.index')->with('success', 'Data berhasil dihapus!');

@@ -10,6 +10,7 @@ use App\Services\BankBookService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class OutletPaymentController extends Controller
 {
@@ -63,6 +64,7 @@ class OutletPaymentController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'outlet_payments.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'outlet_payments.created_by', '=', 'u.id')
             ->leftJoin('outlet_food_good_receives as gr', 'outlet_payments.gr_id', '=', 'gr.id')
+            ->leftJoin('outlet_serial_receive_headers as gsr', 'outlet_payments.gsr_id', '=', 'gsr.id')
             ->leftJoin('retail_warehouse_sales as rws', 'outlet_payments.retail_sales_id', '=', 'rws.id')
             ->select(
                 'outlet_payments.*',
@@ -70,6 +72,8 @@ class OutletPaymentController extends Controller
                 'u.nama_lengkap as creator_name',
                 'gr.number as gr_number',
                 'gr.receive_date as gr_date',
+                'gsr.number as gsr_number',
+                'gsr.receive_date as gsr_date',
                 'rws.number as retail_number',
                 'rws.sale_date as rws_date',
                 'outlet_payments.created_at as payment_created_at'
@@ -99,6 +103,7 @@ class OutletPaymentController extends Controller
                   ->orWhere('o.nama_outlet', 'like', "%{$search}%")
                   ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
                   ->orWhere('gr.number', 'like', "%{$search}%")
+                  ->orWhere('gsr.number', 'like', "%{$search}%")
                   ->orWhere('rws.number', 'like', "%{$search}%");
             });
         }
@@ -112,6 +117,8 @@ class OutletPaymentController extends Controller
         $payments->getCollection()->transform(function($payment) {
             if ($payment->gr_id) {
                 $payment->payment_type = 'GR';
+            } elseif ($payment->gsr_id) {
+                $payment->payment_type = 'GSR';
             } else {
                 $payment->payment_type = 'Retail';
             }
@@ -310,6 +317,7 @@ class OutletPaymentController extends Controller
         
         // Handle both single gr_id and multiple gr_ids
         $grIds = $request->input('gr_ids', []);
+        $gsrIds = $request->input('gsr_ids', []);
         $retailIds = $request->input('retail_ids', []);
         
         if (empty($grIds) && $request->has('gr_id')) {
@@ -320,6 +328,8 @@ class OutletPaymentController extends Controller
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
             'gr_ids' => 'nullable|array',
             'gr_ids.*' => 'exists:outlet_food_good_receives,id',
+            'gsr_ids' => 'nullable|array',
+            'gsr_ids.*' => 'integer',
             'retail_ids' => 'nullable|array',
             'retail_ids.*' => 'exists:retail_warehouse_sales,id',
             'date_from' => 'required|date',
@@ -333,8 +343,8 @@ class OutletPaymentController extends Controller
         ]);
 
         // Validate that at least one transaction is selected
-        if (empty($grIds) && empty($retailIds)) {
-            return back()->with('error', 'Pilih minimal satu transaksi (GR atau Retail Sales).');
+        if (empty($grIds) && empty($gsrIds) && empty($retailIds)) {
+            return back()->with('error', 'Pilih minimal satu transaksi (GR, GR Nomor Seri, atau Retail Sales).');
         }
 
         // Check if any GR already has a payment
@@ -342,6 +352,26 @@ class OutletPaymentController extends Controller
             $gr = OutletFoodGoodReceive::findOrFail($grId);
             if ($gr->outletPayment && $gr->outletPayment->status !== 'cancelled') {
                 return back()->with('error', "GR {$gr->number} sudah memiliki payment yang aktif.");
+            }
+        }
+
+        foreach ($gsrIds as $gsrId) {
+            if (!$this->rekapFjHasSerialGrTables()) {
+                return back()->with('error', 'Tabel GR Nomor Seri belum tersedia.');
+            }
+            $gsr = DB::table('outlet_serial_receive_headers')
+                ->where('id', $gsrId)
+                ->whereNull('deleted_at')
+                ->first();
+            if (!$gsr) {
+                return back()->with('error', "GR Nomor Seri #{$gsrId} tidak ditemukan.");
+            }
+            $hasPayment = DB::table('outlet_payments')
+                ->where('gsr_id', $gsrId)
+                ->where('status', '!=', 'cancelled')
+                ->exists();
+            if ($hasPayment) {
+                return back()->with('error', "GR Nomor Seri {$gsr->number} sudah memiliki payment yang aktif.");
             }
         }
 
@@ -451,6 +481,53 @@ class OutletPaymentController extends Controller
                 ];
                 
                 $created = OutletPayment::create($dataToInsert);
+                $createdPayments[] = $created;
+            }
+
+            // Process GR Nomor Seri payments
+            foreach ($gsrIds as $gsrId) {
+                $gsr = DB::table('outlet_serial_receive_headers')
+                    ->where('id', $gsrId)
+                    ->whereNull('deleted_at')
+                    ->first();
+                if (!$gsr) {
+                    throw new \RuntimeException("GR Nomor Seri #{$gsrId} tidak ditemukan.");
+                }
+
+                $totalAmount = $this->sumInvoiceReportGsrTotal($gsrId);
+                $receiverBankId = null;
+                $notesGsr = $request->notes ?? '';
+
+                if (($request->payment_method === 'transfer' || $request->payment_method === 'check') && !empty($request->receiver_bank_ids)) {
+                    $receiverBankId = is_array($request->receiver_bank_ids) ? $request->receiver_bank_ids[0] : $request->receiver_bank_ids;
+                    if (is_array($request->receiver_bank_ids) && count($request->receiver_bank_ids) > 0) {
+                        $receiverBanksInfo = json_encode($request->receiver_bank_ids);
+                        $notesGsr = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notesGsr);
+                        $notesGsr = trim($notesGsr);
+                        $notesGsr = $notesGsr ? $notesGsr . "\n[Receiver Banks: " . $receiverBanksInfo . "]" : "[Receiver Banks: " . $receiverBanksInfo . "]";
+                    }
+                } elseif (($request->payment_method === 'transfer' || $request->payment_method === 'check') && $request->receiver_bank_id) {
+                    $receiverBankId = $request->receiver_bank_id;
+                } else {
+                    $notesGsr = preg_replace('/\n\[Receiver Banks:.*?\]/', '', $notesGsr);
+                    $notesGsr = trim($notesGsr);
+                }
+
+                $created = OutletPayment::create([
+                    'outlet_id' => $request->outlet_id,
+                    'warehouse_id' => $this->resolveGsrWarehouseId($gsrId),
+                    'gr_id' => null,
+                    'gsr_id' => $gsrId,
+                    'retail_sales_id' => null,
+                    'date' => $request->date_from,
+                    'total_amount' => $totalAmount,
+                    'notes' => $notesGsr,
+                    'payment_method' => $request->payment_method ?? 'cash',
+                    'bank_id' => ($request->payment_method === 'transfer' || $request->payment_method === 'check') ? $request->bank_id : null,
+                    'receiver_bank_id' => $receiverBankId,
+                    'coa_id' => $request->coa_id,
+                    'status' => 'pending',
+                ]);
                 $createdPayments[] = $created;
             }
             
@@ -850,7 +927,8 @@ class OutletPaymentController extends Controller
                 'warehouse_id' => $gr->warehouse_id,
                 'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
-                'items' => [] // Will be loaded via API when needed
+                'items' => [],
+                'type' => 'gr',
             ];
         });
 
@@ -888,6 +966,11 @@ class OutletPaymentController extends Controller
                     'display_name' => $coa->code . ' - ' . $coa->name,
                 ];
             });
+
+        $groupedGrList = $groupedGrList
+            ->concat($this->fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo))
+            ->sortByDesc('receive_date')
+            ->values();
 
         return Inertia::render('OutletPayment/Form', [
             'mode' => 'create',
@@ -991,14 +1074,99 @@ class OutletPaymentController extends Controller
                 'warehouse_name' => $gr->warehouse_name,
                 'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
                 'items' => [], // Will be loaded via API when needed
-                'type' => 'gr' // Add type identifier
+                'type' => 'gr',
             ];
         });
+
+        $groupedGrList = $groupedGrList
+            ->concat($this->fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo))
+            ->sortByDesc('receive_date')
+            ->values();
 
         return response()->json([
             'success' => true,
             'grList' => $groupedGrList,
         ]);
+    }
+
+    /**
+     * Get GR Nomor Seri items for lazy loading (sama perhitungan Rekap FJ).
+     */
+    public function getGsrItems($gsrId)
+    {
+        try {
+            if (!$this->rekapFjHasSerialGrTables()) {
+                return response()->json(['success' => false, 'message' => 'Tabel GR Nomor Seri belum tersedia.'], 404);
+            }
+
+            $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('i');
+            $items = DB::table('outlet_serial_receive_items as si')
+                ->join('items as i', 'si.item_id', '=', 'i.id')
+                ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->leftJoin('chart_of_accounts as coa', 'sc.coa_id', '=', 'coa.id')
+                ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+                ->where('si.header_id', $gsrId)
+                ->select(
+                    'si.id as item_id',
+                    'si.item_id as item_master_id',
+                    'si.qty as received_qty',
+                    DB::raw("({$effectivePriceExpr}) as item_price"),
+                    'i.name as item_name',
+                    'sc.name as sub_category_name',
+                    'coa.id as coa_id',
+                    'coa.code as coa_code',
+                    'coa.name as coa_name',
+                    DB::raw('COALESCE(u.name, "-") as unit_name'),
+                    DB::raw("(si.qty * ({$effectivePriceExpr})) as subtotal")
+                )
+                ->get();
+
+            $totalAmount = $items->sum('subtotal');
+            $coaTotals = $items
+                ->groupBy(function ($item) {
+                    return $item->coa_id ?: 'no_coa';
+                })
+                ->map(function ($group, $coaKey) {
+                    $first = $group->first();
+
+                    return [
+                        'coa_id' => $coaKey !== 'no_coa' ? (int) $coaKey : null,
+                        'coa_code' => $first->coa_code,
+                        'coa_name' => $first->coa_name ?: 'Tanpa CoA',
+                        'total_amount' => (float) $group->sum('subtotal'),
+                    ];
+                })
+                ->sortByDesc('total_amount')
+                ->values();
+
+            return response()->json([
+                'success' => true,
+                'total_amount' => $totalAmount,
+                'coa_totals' => $coaTotals,
+                'items' => $items->map(function ($item) {
+                    return [
+                        'id' => $item->item_id,
+                        'item_id' => $item->item_master_id,
+                        'received_qty' => $item->received_qty,
+                        'price' => $item->item_price ?: 0,
+                        'item_name' => $item->item_name,
+                        'sub_category_name' => $item->sub_category_name ?: 'Tanpa Sub Category',
+                        'coa_id' => $item->coa_id,
+                        'coa_code' => $item->coa_code,
+                        'coa_name' => $item->coa_name,
+                        'unit' => $item->unit_name,
+                        'subtotal' => $item->subtotal ?: 0,
+                    ];
+                }),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error in getGsrItems: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memuat detail items GSR: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -1663,6 +1831,8 @@ class OutletPaymentController extends Controller
             $dataArray[] = $rowData;
         }
 
+        $dataArray = $this->enrichInvoiceReportPaymentInfo($dataArray);
+
         return [
             'data' => $dataArray,
             'pagination' => [
@@ -2219,6 +2389,130 @@ class OutletPaymentController extends Controller
             ->join('items as it', 'si.item_id', '=', 'it.id')
             ->where('si.header_id', $headerId)
             ->sum(DB::raw("si.qty * ({$effectivePriceExpr})"));
+    }
+
+    protected function outletPaymentSupportsGsr(): bool
+    {
+        return $this->rekapFjHasSerialGrTables()
+            && Schema::hasColumn('outlet_payments', 'gsr_id');
+    }
+
+    protected function fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo)
+    {
+        if (!$this->outletPaymentSupportsGsr()) {
+            return collect();
+        }
+
+        $query = DB::table('outlet_serial_receive_headers as h')
+            ->leftJoin('outlet_payments as op', function ($join) {
+                $join->on('h.id', '=', 'op.gsr_id')
+                    ->where('op.status', '!=', 'cancelled');
+            })
+            ->leftJoin('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->whereNull('op.id')
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->select(
+                'h.id',
+                'h.number',
+                'h.receive_date',
+                'h.outlet_id',
+                'o.nama_outlet as outlet_name'
+            );
+
+        if ($outletId) {
+            $query->where('h.outlet_id', $outletId);
+        }
+        if ($dateFrom) {
+            $query->whereDate('h.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('h.receive_date', '<=', $dateTo);
+        }
+
+        return $query->orderBy('h.receive_date', 'desc')
+            ->limit(50)
+            ->get()
+            ->map(function ($gsr) {
+                $warehouseId = $this->resolveGsrWarehouseId($gsr->id);
+                $warehouseName = $warehouseId
+                    ? DB::table('warehouses')->where('id', $warehouseId)->value('name')
+                    : null;
+
+                return (object) [
+                    'id' => $gsr->id,
+                    'number' => $gsr->number,
+                    'gr_number' => $gsr->number,
+                    'receive_date' => $gsr->receive_date,
+                    'outlet_id' => $gsr->outlet_id,
+                    'outlet_name' => $gsr->outlet_name,
+                    'warehouse_outlet_name' => null,
+                    'warehouse_id' => $warehouseId,
+                    'warehouse_name' => $warehouseName,
+                    'total_amount' => $this->sumInvoiceReportGsrTotal($gsr->id),
+                    'items' => [],
+                    'type' => 'gsr',
+                ];
+            });
+    }
+
+    protected function resolveGsrWarehouseId(int $gsrId): ?int
+    {
+        if (!$this->rekapFjHasSerialGrTables()) {
+            return null;
+        }
+
+        return DB::table('outlet_serial_receive_items as si')
+            ->join('items as i', 'si.item_id', '=', 'i.id')
+            ->leftJoin('warehouse_division as wd', 'i.warehouse_division_id', '=', 'wd.id')
+            ->where('si.header_id', $gsrId)
+            ->value('wd.warehouse_id');
+    }
+
+    protected function enrichInvoiceReportPaymentInfo(array $rows): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $supportsGsr = $this->outletPaymentSupportsGsr();
+
+        $grIds = collect($rows)->where('transaction_type', 'GR')->pluck('gr_id')->filter()->unique()->values();
+        $gsrIds = $supportsGsr
+            ? collect($rows)->where('transaction_type', 'GSR')->pluck('gr_id')->filter()->unique()->values()
+            : collect();
+        $rwsIds = collect($rows)->where('transaction_type', 'RWS')->pluck('gr_id')->filter()->unique()->values();
+
+        $grPayments = $grIds->isNotEmpty()
+            ? DB::table('outlet_payments')->whereIn('gr_id', $grIds)->where('status', '!=', 'cancelled')->get()->keyBy('gr_id')
+            : collect();
+        $gsrPayments = $gsrIds->isNotEmpty()
+            ? DB::table('outlet_payments')->whereIn('gsr_id', $gsrIds)->where('status', '!=', 'cancelled')->get()->keyBy('gsr_id')
+            : collect();
+        $rwsPayments = $rwsIds->isNotEmpty()
+            ? DB::table('outlet_payments')->whereIn('retail_sales_id', $rwsIds)->where('status', '!=', 'cancelled')->get()->keyBy('retail_sales_id')
+            : collect();
+
+        return array_map(function ($row) use ($grPayments, $gsrPayments, $rwsPayments) {
+            $row = (array) $row;
+            $payment = null;
+            if (($row['transaction_type'] ?? '') === 'GR') {
+                $payment = $grPayments->get($row['gr_id'] ?? null);
+            } elseif (($row['transaction_type'] ?? '') === 'GSR') {
+                $payment = $gsrPayments->get($row['gr_id'] ?? null);
+            } elseif (($row['transaction_type'] ?? '') === 'RWS') {
+                $payment = $rwsPayments->get($row['gr_id'] ?? null);
+            }
+
+            if ($payment) {
+                $row['payment_number'] = $payment->payment_number;
+                if (empty($row['payment_total'])) {
+                    $row['payment_total'] = (float) $payment->total_amount;
+                }
+            }
+
+            return $row;
+        }, $rows);
     }
 
 } 

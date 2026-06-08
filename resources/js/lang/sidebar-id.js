@@ -99,6 +99,7 @@ export default {
     "ticketing_system": "Sistem Tiket",
     "pr_tracking_report": "Laporan Pelacakan PR",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
+    "modal_x_engineering": "Modal x Engineering",
     "data_level": "Data Level",
     "kategori_bpjs": "Kategori BPJS",
     "data_jabatan": "Data Jabatan",

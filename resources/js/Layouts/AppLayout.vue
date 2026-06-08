@@ -465,6 +465,12 @@ const menuGroups = [
                 code: 'cost_report_ho',
             },
             {
+                name: () => t('sidebar.menus.modal_x_engineering'),
+                icon: 'fa-solid fa-chart-pie',
+                route: '/reports/modal-engineering',
+                code: 'modal_x_engineering',
+            },
+            {
                 name: () => t('sidebar.menus.report_pembelanjaan_supplier_warehouse_gr'),
                 icon: 'fa-solid fa-sack-dollar',
                 route: '/food-good-receive-report-supplier-spending',
