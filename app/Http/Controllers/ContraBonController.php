@@ -2591,14 +2591,14 @@ class ContraBonController extends Controller
     }
 
     /**
-     * Hanya GR yang masih punya baris item belum dipakai Contra Bon.
+     * GR masih punya baris item yang belum dipakai Contra Bon (dipakai setelah filter search).
      */
-    private function applyContraBonAvailableGrItemConstraint($query, string $grIdColumn = 'gr.id'): void
+    private function applyAvailableGrItemExists($query): void
     {
-        $query->whereExists(function ($q) use ($grIdColumn) {
+        $query->whereExists(function ($q) {
             $q->select(DB::raw(1))
                 ->from('food_good_receive_items as gri_avail')
-                ->whereColumn('gri_avail.good_receive_id', $grIdColumn)
+                ->whereColumn('gri_avail.good_receive_id', 'gr.id')
                 ->whereNotExists(function ($sub) {
                     $sub->select(DB::raw(1))
                         ->from('food_contra_bon_items as cbi')
@@ -2612,26 +2612,149 @@ class ContraBonController extends Controller
     }
 
     /**
-     * Filter PO/GR by PO number, GR number, supplier name, or outlet (RO Supplier).
+     * Filter cepat: resolve supplier & outlet di query terpisah (terbatas), lalu filter GR.
      */
-    private function applyPoGrSearchFilter($query, string $search): void
+    private function applyFastPoGrSearchFilter($query, string $search): void
     {
         $searchTerm = '%' . $search . '%';
 
-        $query->where(function ($q) use ($searchTerm) {
+        $supplierIds = DB::table('suppliers')
+            ->where('name', 'like', $searchTerm)
+            ->limit(150)
+            ->pluck('id')
+            ->all();
+
+        $poIdsFromOutlet = DB::table('purchase_order_food_items as poi')
+            ->join('food_floor_orders as fo', 'poi.ro_id', '=', 'fo.id')
+            ->join('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+            ->where('o.nama_outlet', 'like', $searchTerm)
+            ->limit(300)
+            ->pluck('poi.purchase_order_food_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $query->where(function ($q) use ($searchTerm, $supplierIds, $poIdsFromOutlet) {
             $q->where('po.number', 'like', $searchTerm)
-                ->orWhere('gr.gr_number', 'like', $searchTerm)
-                ->orWhere('s.name', 'like', $searchTerm)
-                ->orWhereExists(function ($sub) use ($searchTerm) {
-                    $sub->select(DB::raw(1))
-                        ->from('purchase_order_food_items as poi_s')
-                        ->join('food_floor_orders as fo_s', 'poi_s.ro_id', '=', 'fo_s.id')
-                        ->join('tbl_data_outlet as o_s', 'fo_s.id_outlet', '=', 'o_s.id_outlet')
-                        ->whereColumn('poi_s.purchase_order_food_id', 'po.id')
-                        ->where('po.source_type', 'ro_supplier')
-                        ->where('o_s.nama_outlet', 'like', $searchTerm);
-                });
+                ->orWhere('gr.gr_number', 'like', $searchTerm);
+
+            if (!empty($supplierIds)) {
+                $q->orWhereIn('po.supplier_id', $supplierIds);
+            }
+
+            if (!empty($poIdsFromOutlet)) {
+                $q->orWhereIn('po.id', $poIdsFromOutlet);
+            }
         });
+    }
+
+    private function buildPoGrPaginationMeta(int $page, int $perPage, int $rowCount, bool $hasMore): array
+    {
+        return [
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => null,
+            'has_more' => $hasMore,
+            'last_page' => $hasMore ? $page + 1 : $page,
+            'from' => $rowCount > 0 ? (($page - 1) * $perPage) + 1 : 0,
+            'to' => $rowCount > 0 ? (($page - 1) * $perPage) + $rowCount : 0,
+        ];
+    }
+
+    /**
+     * Daftar ringkas PO/GR untuk modal Contra Bon (tanpa item, tanpa COUNT global).
+     */
+    private function getPOWithApprovedGRListFast(int $perPage, int $page, string $search)
+    {
+        $query = DB::table('food_good_receives as gr')
+            ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+            ->join('suppliers as s', 'po.supplier_id', '=', 's.id');
+
+        $this->applyFastPoGrSearchFilter($query, $search);
+        $this->applyAvailableGrItemExists($query);
+
+        $query->select(
+            'po.id as po_id',
+            'po.number as po_number',
+            'po.date as po_date',
+            'po.source_type',
+            'po.discount_total_percent',
+            'po.discount_total_amount',
+            'po.subtotal',
+            'po.grand_total',
+            'gr.id as gr_id',
+            'gr.gr_number',
+            'gr.receive_date as gr_date',
+            's.id as supplier_id',
+            's.name as supplier_name'
+        )
+            ->orderByDesc('gr.receive_date');
+
+        $offset = ($page - 1) * $perPage;
+        $rows = $query->offset($offset)->limit($perPage + 1)->get();
+        $hasMore = $rows->count() > $perPage;
+        if ($hasMore) {
+            $rows = $rows->take($perPage);
+        }
+
+        if ($rows->isEmpty()) {
+            return response()->json([
+                'data' => [],
+                'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, 0, false),
+            ]);
+        }
+
+        $roSupplierPoIds = $rows->where('source_type', 'ro_supplier')->pluck('po_id')->unique()->values()->all();
+        $outletDataMap = [];
+
+        if (!empty($roSupplierPoIds)) {
+            $allOutletData = DB::table('purchase_order_food_items as poi')
+                ->join('food_floor_orders as fo', 'poi.ro_id', '=', 'fo.id')
+                ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
+                ->whereIn('poi.purchase_order_food_id', $roSupplierPoIds)
+                ->whereNotNull('o.nama_outlet')
+                ->select('poi.purchase_order_food_id', 'o.nama_outlet')
+                ->distinct()
+                ->get();
+
+            foreach ($allOutletData as $outlet) {
+                $outletDataMap[$outlet->purchase_order_food_id][] = $outlet->nama_outlet;
+            }
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
+            $outletNames = $outletDataMap[$row->po_id] ?? [];
+
+            $result[] = [
+                'po_id' => $row->po_id,
+                'po_number' => $row->po_number,
+                'po_date' => $row->po_date,
+                'po_creator_name' => null,
+                'gr_id' => $row->gr_id,
+                'gr_number' => $row->gr_number,
+                'gr_date' => $row->gr_date,
+                'gr_receiver_name' => null,
+                'supplier_id' => $row->supplier_id,
+                'supplier_name' => $row->supplier_name,
+                'source_type' => $row->source_type,
+                'source_type_display' => $sourceTypeDisplay,
+                'outlet_names' => array_values(array_unique($outletNames)),
+                'items' => [],
+                'po_discount_info' => [
+                    'discount_total_percent' => $row->discount_total_percent ?? 0,
+                    'discount_total_amount' => $row->discount_total_amount ?? 0,
+                    'subtotal' => $row->subtotal ?? 0,
+                    'grand_total' => $row->grand_total ?? 0,
+                ],
+            ];
+        }
+
+        return response()->json([
+            'data' => $result,
+            'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, $rows->count(), $hasMore),
+        ]);
     }
 
     /**
@@ -2712,138 +2835,72 @@ class ContraBonController extends Controller
     public function getPOWithApprovedGR(Request $request)
     {
         try {
-            // Pagination parameters
-            $perPage = $request->get('per_page', 50); // Default 50 items per page
-            $page = $request->get('page', 1);
-            $search = $request->get('search', '');
+            $perPage = min(max((int) $request->get('per_page', 50), 1), 100);
+            $page = max((int) $request->get('page', 1), 1);
+            $search = trim((string) $request->get('search', ''));
+            $includeItems = $request->boolean('include_items', false);
 
-            // Get all PO with GR in one query with pagination
-            // Note: food_good_receives table doesn't have 'status' column, so we get all GRs
-            $poWithGRQuery = DB::table('purchase_order_foods as po')
-                ->join('food_good_receives as gr', 'gr.po_id', '=', 'po.id')
-                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
-                ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
-                ->join('users as gr_receiver', 'gr.received_by', '=', 'gr_receiver.id')
-                ->select(
-                    'po.id as po_id',
-                    'po.number as po_number',
-                    'po.date as po_date',
-                    'po.source_type',
-                    'po.discount_total_percent',
-                    'po.discount_total_amount',
-                    'po.subtotal',
-                    'po.grand_total',
-                    'po_creator.nama_lengkap as po_creator_name',
-                    'gr.id as gr_id',
-                    'gr.gr_number',
-                    'gr.receive_date as gr_date',
-                    'gr_receiver.nama_lengkap as gr_receiver_name',
-                    's.id as supplier_id',
-                    's.name as supplier_name'
-                );
+            if (!$includeItems) {
+                if (mb_strlen($search) < 2) {
+                    return response()->json([
+                        'data' => [],
+                        'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, 0, false),
+                        'message' => 'Ketik minimal 2 karakter (PO, GR, supplier, atau outlet) untuk mencari.',
+                    ]);
+                }
 
-            // Hanya GR yang masih punya baris tersedia (hindari scan + filter di PHP)
-            $this->applyContraBonAvailableGrItemConstraint($poWithGRQuery);
-
-            if (!empty($search)) {
-                $this->applyPoGrSearchFilter($poWithGRQuery, $search);
+                return $this->getPOWithApprovedGRListFast($perPage, $page, $search);
             }
 
-            $poWithGRQuery->orderByDesc('gr.receive_date');
+            if ($search === '') {
+                return response()->json([
+                    'data' => [],
+                    'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, 0, false),
+                    'message' => 'Parameter search wajib diisi.',
+                ]);
+            }
 
-            $total = (clone $poWithGRQuery)->count('gr.id');
-            
-            // Apply pagination
-            $poWithGR = $poWithGRQuery
-                ->skip(($page - 1) * $perPage)
-                ->take($perPage)
-                ->get();
+            $poWithGRQuery = DB::table('food_good_receives as gr')
+                ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->join('users as po_creator', 'po.created_by', '=', 'po_creator.id')
+                ->join('users as gr_receiver', 'gr.received_by', '=', 'gr_receiver.id');
 
-            $safePerPage = max((int) $perPage, 1);
+            $this->applyFastPoGrSearchFilter($poWithGRQuery, $search);
+            $this->applyAvailableGrItemExists($poWithGRQuery);
+
+            $poWithGRQuery->select(
+                'po.id as po_id',
+                'po.number as po_number',
+                'po.date as po_date',
+                'po.source_type',
+                'po.discount_total_percent',
+                'po.discount_total_amount',
+                'po.subtotal',
+                'po.grand_total',
+                'po_creator.nama_lengkap as po_creator_name',
+                'gr.id as gr_id',
+                'gr.gr_number',
+                'gr.receive_date as gr_date',
+                'gr_receiver.nama_lengkap as gr_receiver_name',
+                's.id as supplier_id',
+                's.name as supplier_name'
+            )->orderByDesc('gr.receive_date');
+
+            $offset = ($page - 1) * $perPage;
+            $poWithGRBatch = $poWithGRQuery->offset($offset)->limit($perPage + 1)->get();
+            $hasMore = $poWithGRBatch->count() > $perPage;
+            $poWithGR = $hasMore ? $poWithGRBatch->take($perPage) : $poWithGRBatch;
 
             if ($poWithGR->isEmpty()) {
                 return response()->json([
                     'data' => [],
-                    'pagination' => [
-                        'current_page' => (int) $page,
-                        'per_page' => (int) $perPage,
-                        'total' => (int) $total,
-                        'last_page' => (int) ceil($total / $safePerPage),
-                        'from' => 0,
-                        'to' => 0,
-                    ],
+                    'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, 0, false),
                 ]);
             }
 
-            $includeItems = $request->boolean('include_items', true);
-
-            // Batch query: Get all GR IDs
             $grIds = $poWithGR->pluck('gr_id')->toArray();
             $roSupplierPoIds = $poWithGR->where('source_type', 'ro_supplier')->pluck('po_id')->unique()->toArray();
-
-            // --- Ringkas: tanpa muat detail baris GR (items di-fetch saat user memilih)
-            if (!$includeItems) {
-                $outletDataMap = [];
-                if (!empty($roSupplierPoIds)) {
-                    $allOutletData = \DB::table('food_floor_orders as fo')
-                        ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
-                        ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
-                        ->whereIn('poi.purchase_order_food_id', $roSupplierPoIds)
-                        ->select('poi.purchase_order_food_id', 'o.nama_outlet')
-                        ->distinct()
-                        ->get();
-
-                    foreach ($allOutletData as $outlet) {
-                        if (! isset($outletDataMap[$outlet->purchase_order_food_id])) {
-                            $outletDataMap[$outlet->purchase_order_food_id] = [];
-                        }
-                        if ($outlet->nama_outlet) {
-                            $outletDataMap[$outlet->purchase_order_food_id][] = $outlet->nama_outlet;
-                        }
-                    }
-                }
-
-                $result = [];
-                foreach ($poWithGR as $row) {
-                    $sourceTypeDisplay = $row->source_type === 'ro_supplier' ? 'RO Supplier' : 'PR Foods';
-                    $outletNames = $outletDataMap[$row->po_id] ?? [];
-                    $poDiscountInfo = [
-                        'discount_total_percent' => $row->discount_total_percent ?? 0,
-                        'discount_total_amount' => $row->discount_total_amount ?? 0,
-                        'subtotal' => $row->subtotal ?? 0,
-                        'grand_total' => $row->grand_total ?? 0,
-                    ];
-                    $result[] = [
-                        'po_id' => $row->po_id,
-                        'po_number' => $row->po_number,
-                        'po_date' => $row->po_date,
-                        'po_creator_name' => $row->po_creator_name,
-                        'gr_id' => $row->gr_id,
-                        'gr_number' => $row->gr_number,
-                        'gr_date' => $row->gr_date,
-                        'gr_receiver_name' => $row->gr_receiver_name,
-                        'supplier_id' => $row->supplier_id,
-                        'supplier_name' => $row->supplier_name,
-                        'source_type' => $row->source_type,
-                        'source_type_display' => $sourceTypeDisplay,
-                        'outlet_names' => array_unique($outletNames),
-                        'items' => [],
-                        'po_discount_info' => $poDiscountInfo,
-                    ];
-                }
-
-                return response()->json([
-                    'data' => $result,
-                    'pagination' => [
-                        'current_page' => (int) $page,
-                        'per_page' => (int) $perPage,
-                        'total' => (int) $total,
-                        'last_page' => (int) ceil($total / $safePerPage),
-                        'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
-                        'to' => min($page * $perPage, $total),
-                    ],
-                ]);
-            }
 
             $allItemsGrouped = $this->mapGoodReceiveItemsToGroupedCollection($grIds);
 
@@ -2950,17 +3007,9 @@ class ContraBonController extends Controller
                 ];
             }
             
-            // Return with pagination metadata
             return response()->json([
                 'data' => $result,
-                'pagination' => [
-                    'current_page' => (int) $page,
-                    'per_page' => (int) $perPage,
-                    'total' => $total,
-                    'last_page' => (int) ceil($total / $safePerPage),
-                    'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
-                    'to' => min($page * $perPage, $total),
-                ],
+                'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, count($result), $hasMore),
             ]);
         } catch (\Exception $e) {
             \Log::error('Error in getPOWithApprovedGR: ' . $e->getMessage());

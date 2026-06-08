@@ -20,7 +20,8 @@ const loadingMorePOGR = ref(false);
 const poGRPagination = ref({
   current_page: 1,
   per_page: 50,
-  total: 0,
+  total: null,
+  has_more: false,
   last_page: 1,
   from: 0,
   to: 0,
@@ -318,9 +319,17 @@ function filterWarehouseRetailFoodList() {
 async function openPOListModal() {
   showPOListModal.value = true;
   poSearchQuery.value = '';
-  
-  // Reset and load first page
-  await loadPOGRList(1, false, '');
+  poWithGRList.value = [];
+  filteredPOList.value = [];
+  poGRPagination.value = {
+    current_page: 1,
+    per_page: 50,
+    total: null,
+    has_more: false,
+    last_page: 1,
+    from: 0,
+    to: 0,
+  };
 }
 
 async function loadPOGRList(page = 1, append = false, searchQuery = '') {
@@ -356,11 +365,9 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
     const data = response.data?.data || response.data || [];
     const pagination = response.data?.pagination || null;
     
-    if (append && !searchQuery) {
-      // Append to existing list only if not searching
+    if (append) {
       poWithGRList.value = [...poWithGRList.value, ...data];
     } else {
-      // Replace list (new search or first load)
       poWithGRList.value = data;
     }
     
@@ -392,9 +399,10 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
 }
 
 async function loadMorePOGR() {
-  if (poGRPagination.value.current_page < poGRPagination.value.last_page) {
-    // Pass current search query when loading more
-    await loadPOGRList(poGRPagination.value.current_page + 1, true, poSearchQuery.value.trim());
+  const query = poSearchQuery.value.trim();
+  if (query.length < 2) return;
+  if (poGRPagination.value.has_more || poGRPagination.value.current_page < poGRPagination.value.last_page) {
+    await loadPOGRList(poGRPagination.value.current_page + 1, true, query);
   }
 }
 
@@ -1983,6 +1991,9 @@ function getUnitName(item) {
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             <p class="mt-2 text-gray-600">Memuat data...</p>
           </div>
+          <div v-else-if="!poSearchQuery.trim() || poSearchQuery.trim().length < 2" class="p-8 text-center text-gray-500">
+            Ketik minimal 2 karakter (nomor PO, GR, nama supplier, atau outlet) untuk mencari.
+          </div>
           <div v-else-if="filteredPOList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
           </div>
@@ -2014,7 +2025,7 @@ function getUnitName(item) {
             </div>
           </div>
           <!-- Load More Button -->
-          <div v-if="!loadingPOGR && poGRPagination.current_page < poGRPagination.last_page" class="p-4 border-t text-center">
+          <div v-if="!loadingPOGR && poGRPagination.has_more" class="p-4 border-t text-center">
             <button 
               @click="loadMorePOGR" 
               :disabled="loadingMorePOGR"
@@ -2024,12 +2035,13 @@ function getUnitName(item) {
                 <i class="fa fa-spinner fa-spin mr-2"></i>Memuat...
               </span>
               <span v-else>
-                Muat Lebih Banyak ({{ poGRPagination.current_page }} / {{ poGRPagination.last_page }})
+                Muat Lebih Banyak
               </span>
             </button>
             <p class="text-sm text-gray-500 mt-2">
-              Menampilkan {{ poGRPagination.from }}-{{ poGRPagination.to }} dari {{ poGRPagination.total }} data
-              <span v-if="poSearchQuery.trim()" class="text-blue-600">(hasil pencarian)</span>
+              Menampilkan {{ poGRPagination.from }}-{{ poGRPagination.to }} data
+              <span v-if="poGRPagination.total"> dari {{ poGRPagination.total }}</span>
+              <span v-if="poSearchQuery.trim()" class="text-blue-600"> (hasil pencarian)</span>
             </p>
           </div>
         </div>
