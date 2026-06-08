@@ -32,11 +32,17 @@ class OmniConversation extends Model
         'status',
         'automation_paused',
         'active_flow_run_id',
+        'complaint_severity',
+        'complaint_snippet',
+        'complaint_message_id',
+        'complaint_detected_at',
+        'feedback_case_id',
     ];
 
     protected $casts = [
         'last_message_at' => 'datetime',
         'last_customer_message_at' => 'datetime',
+        'complaint_detected_at' => 'datetime',
         'unread_count' => 'integer',
         'automation_paused' => 'boolean',
     ];

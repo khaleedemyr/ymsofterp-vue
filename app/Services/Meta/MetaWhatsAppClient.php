@@ -129,12 +129,24 @@ class MetaWhatsAppClient
             throw new RuntimeException('Meta WhatsApp API credentials are not configured.');
         }
 
-        $response = Http::withToken($token)
-            ->attach('file', file_get_contents($absolutePath), basename($absolutePath))
-            ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/media", [
-                'messaging_product' => 'whatsapp',
-                'type' => $mimeType,
-            ]);
+        $handle = fopen($absolutePath, 'rb');
+        if ($handle === false) {
+            throw new RuntimeException('Meta WhatsApp media upload failed: cannot read file.');
+        }
+
+        try {
+            $response = Http::withToken($token)
+                ->timeout(120)
+                ->attach('file', $handle, basename($absolutePath))
+                ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/media", [
+                    'messaging_product' => 'whatsapp',
+                    'type' => $mimeType,
+                ]);
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+        }
 
         if (! $response->successful()) {
             throw new RuntimeException(
@@ -508,6 +520,7 @@ class MetaWhatsAppClient
 
         $response = Http::withToken($token)
             ->acceptJson()
+            ->timeout(60)
             ->post("https://graph.facebook.com/{$version}/{$phoneNumberId}/messages", $payload);
 
         if (! $response->successful()) {

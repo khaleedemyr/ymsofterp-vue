@@ -24,6 +24,7 @@ use App\Services\Omni\OmniInternalNoteMentionService;
 use App\Support\OmniContactMaritalStatus;
 use App\Support\OmniInstagramStoryReply;
 use App\Support\OmniLeadStages;
+use App\Services\Omni\OmniConversationComplaintService;
 use App\Services\Omni\OmnichannelInboxMediaService;
 use App\Services\Omni\OmnichannelInboxOutboundMediaService;
 use App\Support\OmnichannelAuthorization;
@@ -78,6 +79,8 @@ class OmnichannelInboxController extends Controller
                 ])
                 ->find($selectedId);
             if ($conversation && OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll)) {
+                app(OmniConversationComplaintService::class)->scanConversation($conversation);
+                $conversation->refresh();
                 $selectedConversation = $this->formatConversation($conversation);
                 $messagePage = $this->loadMessagesPage($conversation);
                 $messages = $messagePage['messages'];
@@ -624,6 +627,46 @@ class OmnichannelInboxController extends Controller
         ]);
     }
 
+    public function escalateToCustomerVoice(Request $request, OmniConversation $conversation): JsonResponse
+    {
+        $this->assertInboxAccess($request);
+        $user = $request->user();
+        $canSeeAll = OmnichannelAuthorization::canSeeAllChats($user);
+        abort_unless(
+            OmnichannelAuthorization::userCanAccessConversation($user, $conversation, $canSeeAll),
+            403
+        );
+
+        try {
+            $result = app(OmniConversationComplaintService::class)->escalateToCustomerVoice($conversation, $user);
+            $conversation->refresh();
+
+            return response()->json([
+                'success' => true,
+                'message' => $result['created']
+                    ? 'Chat berhasil dimasukkan ke Customer Voice Command Center.'
+                    : 'Kasus sudah ada di Customer Voice Command Center.',
+                'case_id' => $result['case_id'],
+                'case_url' => $result['case_url'],
+                'conversation' => $this->formatConversation($conversation->fresh([
+                    'member',
+                    'assignee' => fn ($q) => $q->with(['jabatan', 'outlet']),
+                    'assignees' => fn ($q) => $q->with(['jabatan', 'outlet'])->orderBy('nama_lengkap'),
+                    'teams:id,name',
+                    'activeFlowRun.flow:id,name',
+                    'omniContact.preferredOutlet',
+                ])),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage() ?: 'Gagal eskalasi ke Customer Voice.',
+            ], 422);
+        }
+    }
+
     public function pauseAutomation(Request $request, OmniConversation $conversation): JsonResponse
     {
         $this->assertInboxAccess($request);
@@ -1007,7 +1050,24 @@ class OmnichannelInboxController extends Controller
                     'flow_name' => $conversation->activeFlowRun->flow?->name,
                 ]
                 : null,
+            'complaint_severity' => $conversation->complaint_severity,
+            'complaint_snippet' => $conversation->complaint_snippet,
+            'complaint_detected_at' => $conversation->complaint_detected_at?->toIso8601String(),
+            'feedback_case_id' => $conversation->feedback_case_id ? (int) $conversation->feedback_case_id : null,
+            'needs_voice_escalation' => $this->conversationNeedsVoiceEscalation($conversation),
+            'voice_case_url' => $conversation->feedback_case_id
+                ? url('/customer-voice-command-center?show_all=1&open_case='.$conversation->feedback_case_id)
+                : null,
         ];
+    }
+
+    private function conversationNeedsVoiceEscalation(OmniConversation $conversation): bool
+    {
+        if ($conversation->feedback_case_id) {
+            return false;
+        }
+
+        return in_array((string) ($conversation->complaint_severity ?? ''), ['minor', 'major', 'critical'], true);
     }
 
     /**

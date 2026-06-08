@@ -1301,6 +1301,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/omnichannel-inbox/conversations/{conversation}/internal-notes', [\App\Http\Controllers\OmnichannelInboxController::class, 'storeInternalNote'])->name('api.approval-app.omnichannel-inbox.internal-notes');
         Route::post('/omnichannel-inbox/ai-assist', [\App\Http\Controllers\OmnichannelInboxController::class, 'aiAssist'])->name('api.approval-app.omnichannel-inbox.ai-assist');
         Route::post('/omnichannel-inbox/conversations/{conversation}/pause-automation', [\App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('api.approval-app.omnichannel-inbox.pause-automation');
+        Route::post('/omnichannel-inbox/conversations/{conversation}/escalate-to-voice', [\App\Http\Controllers\OmnichannelInboxController::class, 'escalateToCustomerVoice'])->name('api.approval-app.omnichannel-inbox.escalate-to-voice');
         Route::get('/omnichannel-chat-analytics', [\App\Http\Controllers\OmnichannelChatAnalyticsController::class, 'apiIndex'])->name('api.approval-app.omnichannel-chat-analytics');
 
         // Komentar post IG / FB — YMSoft App

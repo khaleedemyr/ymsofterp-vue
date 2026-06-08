@@ -2766,6 +2766,7 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('/crm/omnichannel-flows/{flow}/toggle-active', [App\Http\Controllers\OmnichannelFlowController::class, 'toggleActive'])->name('crm.omnichannel-flows.toggle-active');
     Route::delete('/crm/omnichannel-flows/{flow}', [App\Http\Controllers\OmnichannelFlowController::class, 'destroy'])->name('crm.omnichannel-flows.destroy');
     Route::post('/crm/omnichannel-inbox/conversations/{conversation}/pause-automation', [App\Http\Controllers\OmnichannelInboxController::class, 'pauseAutomation'])->name('crm.omnichannel-inbox.pause-automation');
+    Route::post('/crm/omnichannel-inbox/conversations/{conversation}/escalate-to-voice', [App\Http\Controllers\OmnichannelInboxController::class, 'escalateToCustomerVoice'])->name('crm.omnichannel-inbox.escalate-to-voice');
 
     Route::get('/crm/wa-broadcast', [App\Http\Controllers\WaBroadcastController::class, 'index'])->name('crm.wa-broadcast.index');
     Route::get('/crm/wa-broadcast/create', [App\Http\Controllers\WaBroadcastController::class, 'create'])->name('crm.wa-broadcast.create');

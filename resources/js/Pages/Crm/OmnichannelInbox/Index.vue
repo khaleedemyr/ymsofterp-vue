@@ -159,6 +159,17 @@
                     <span v-if="conv.member.is_exclusive_member" class="text-amber-600" title="Eksklusif">★</span>
                   </span>
                 </div>
+                <button
+                  v-if="conv.needs_voice_escalation || conv.feedback_case_id"
+                  type="button"
+                  class="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1"
+                  :class="complaintBadgeClass(conv)"
+                  :title="complaintBadgeTitle(conv)"
+                  @click.stop="handleComplaintBadgeClick(conv)"
+                >
+                  <i class="fa-solid fa-triangle-exclamation text-[9px]" />
+                  {{ complaintBadgeLabel(conv) }}
+                </button>
                 <span v-if="conv.unread_count > 0" class="shrink-0 rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white">
                   {{ conv.unread_count }}
                 </span>
@@ -290,6 +301,27 @@
                 </div>
               </div>
             </div>
+            <button
+              v-if="selectedConversation.needs_voice_escalation"
+              type="button"
+              class="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+              :disabled="escalatingToVoice"
+              :title="selectedConversation.complaint_snippet || 'Komplain terdeteksi'"
+              @click="escalateToCustomerVoice"
+            >
+              <i class="fa-solid fa-headset mr-1" />
+              {{ escalatingToVoice ? '...' : 'Kirim ke Customer Voice' }}
+            </button>
+            <a
+              v-else-if="selectedConversation.feedback_case_id && selectedConversation.voice_case_url"
+              :href="selectedConversation.voice_case_url"
+              target="_blank"
+              rel="noopener"
+              class="shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-800 hover:bg-indigo-100"
+            >
+              <i class="fa-solid fa-headset mr-1" />
+              Lihat di Customer Voice
+            </a>
             <button
               v-if="selectedConversation.active_flow && !selectedConversation.automation_paused"
               type="button"
@@ -1086,6 +1118,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { autoResizeTextarea, insertEmojiIntoTextarea } from '@/utils/omniEmojiPicker.js'
 import { inferSendMessageMode } from '@/utils/omniFlowGraph'
 import { applyOmniChatSpellfix } from '@/utils/omniChatSpellfix.js'
+import { compressImageFileForOutbound } from '@/utils/omniOutboundMedia.js'
 
 const props = defineProps({
   conversations: { type: Array, default: () => [] },
@@ -1243,6 +1276,7 @@ const canSubmitComposer = computed(() => {
 const imageInputRef = ref(null)
 const fileInputRef = ref(null)
 const pausingAutomation = ref(false)
+const escalatingToVoice = ref(false)
 const aiMenuOpen = ref(false)
 const aiLoading = ref(false)
 const aiError = ref('')
@@ -1272,6 +1306,24 @@ let pollInFlight = false
 /** Polling JSON (bukan Inertia) — tab aktif ~8s; background lebih jarang. */
 const POLL_MS_TAB_VISIBLE = 8000
 const POLL_MS_TAB_HIDDEN = 30000
+
+/** Update preview chat di sidebar tanpa router.reload penuh setelah kirim pesan. */
+function bumpConversationAfterSend(conversationId, preview) {
+  if (!conversationId) return
+  const now = new Date().toISOString()
+  const snippet = (preview || '').toString().slice(0, 500)
+  const list = [...liveConversations.value]
+  const idx = list.findIndex((c) => c.id === conversationId)
+  if (idx < 0) return
+  const updated = {
+    ...list[idx],
+    last_message_preview: snippet || list[idx].last_message_preview,
+    last_message_at: now,
+  }
+  list.splice(idx, 1)
+  list.unshift(updated)
+  liveConversations.value = list
+}
 
 const inbox = computed(() => props.inbox || 'all')
 const channelFilter = computed(() => props.channelFilter || null)
@@ -2155,13 +2207,14 @@ async function requestGrammarCorrection(text) {
 }
 
 /**
- * Gabungkan koreksi rule-based (lokal) + AI. AI opsional; rule tetap jalan jika AI gagal.
+ * Gabungkan koreksi rule-based (lokal) + AI.
+ * @param {{ quickOnly?: boolean }} opts — quickOnly: saat auto-kirim, hanya rule lokal (tanpa panggilan AI lambat).
  */
-async function resolveGrammarSuggestion(rawBody) {
+async function resolveGrammarSuggestion(rawBody, { quickOnly = false } = {}) {
   const ruleFixed = applyOmniChatSpellfix(rawBody)
   let aiErrorMessage = null
 
-  if (showAiWriting.value) {
+  if (!quickOnly && showAiWriting.value) {
     try {
       const aiResult = await requestGrammarCorrection(rawBody)
       if (grammarTextsDiffer(rawBody, aiResult)) {
@@ -2196,7 +2249,7 @@ async function resolveOutboundBodyBeforeSend(rawBody) {
   grammarChecking.value = true
   aiError.value = ''
   try {
-    const { corrected, aiErrorMessage } = await resolveGrammarSuggestion(rawBody)
+    const { corrected, aiErrorMessage } = await resolveGrammarSuggestion(rawBody, { quickOnly: true })
     if (!corrected) {
       if (aiErrorMessage) {
         aiError.value = aiErrorMessage
@@ -2557,7 +2610,8 @@ async function submitComposer() {
   const isInternal = composerMode.value === 'internal'
   const mentionIds = isInternal ? [...pendingMentionUserIds.value] : []
 
-  if (!isInternal && body) {
+  const hasAttachments = pendingAttachments.value.length > 0
+  if (!isInternal && body && !hasAttachments) {
     const resolved = await resolveOutboundBodyBeforeSend(body)
     if (resolved === null) {
       return
@@ -2578,14 +2632,18 @@ async function submitComposer() {
 
   sending.value = true
   try {
+    const outboundFiles = hasAttachments
+      ? await Promise.all(pendingAttachments.value.map((f) => compressImageFileForOutbound(f)))
+      : []
+
     const formData = new FormData()
     if (body) {
       formData.append('body', body)
     }
-    if (pendingAttachments.value.length === 1) {
-      formData.append('attachment', pendingAttachments.value[0])
-    } else if (pendingAttachments.value.length > 1) {
-      pendingAttachments.value.forEach((file) => {
+    if (outboundFiles.length === 1) {
+      formData.append('attachment', outboundFiles[0])
+    } else if (outboundFiles.length > 1) {
+      outboundFiles.forEach((file) => {
         formData.append('attachments[]', file)
       })
     }
@@ -2612,25 +2670,116 @@ async function submitComposer() {
     if (data.conversation) {
       liveSelectedConversation.value = data.conversation
     }
+    const preview = newMessages[newMessages.length - 1]?.body
+      || newMessages[newMessages.length - 1]?.preview
+      || body
+      || '[Lampiran]'
+    bumpConversationAfterSend(selectedId.value, preview)
     replyText.value = ''
     clearReplyTarget()
     clearAttachments()
     clearPendingTemplateSend()
     clearMentionState()
     scrollToBottom()
-    await router.reload({
-      only: isInternal && mentionIds.length > 0
-        ? ['conversations', 'selectedConversation']
-        : isInternal
-          ? ['conversations']
-          : inboxPartialReloadKeys,
-      preserveState: true,
-      preserveScroll: true,
-    })
+    kickPollInboxSoon()
   } catch (e) {
     sendError.value = e.response?.data?.message || 'Gagal mengirim.'
   } finally {
     sending.value = false
+  }
+}
+
+function complaintSeverityLabel(severity) {
+  const map = { critical: 'Kritis', major: 'Buruk', minor: 'Komplain' }
+  return map[severity] || 'Komplain'
+}
+
+function complaintBadgeClass(conv) {
+  if (conv.feedback_case_id) {
+    return 'bg-indigo-50 text-indigo-800 ring-indigo-200'
+  }
+  const sev = conv.complaint_severity
+  if (sev === 'critical') return 'bg-rose-100 text-rose-800 ring-rose-300'
+  if (sev === 'major') return 'bg-orange-100 text-orange-800 ring-orange-300'
+  return 'bg-amber-100 text-amber-900 ring-amber-300'
+}
+
+function complaintBadgeLabel(conv) {
+  if (conv.feedback_case_id) return 'CVCC'
+  return complaintSeverityLabel(conv.complaint_severity)
+}
+
+function complaintBadgeTitle(conv) {
+  if (conv.feedback_case_id) return 'Sudah di Customer Voice Command Center — klik untuk buka'
+  const snippet = conv.complaint_snippet ? `\n"${conv.complaint_snippet}"` : ''
+  return `Komplain terdeteksi (${complaintSeverityLabel(conv.complaint_severity)}) — klik untuk kirim ke Customer Voice${snippet}`
+}
+
+function patchConversationVoiceState(conversation) {
+  if (!conversation?.id) return
+  const idx = liveConversations.value.findIndex((c) => c.id === conversation.id)
+  if (idx >= 0) {
+    liveConversations.value[idx] = { ...liveConversations.value[idx], ...conversation }
+    liveConversations.value = [...liveConversations.value]
+  }
+  if (liveSelectedConversation.value?.id === conversation.id) {
+    liveSelectedConversation.value = { ...liveSelectedConversation.value, ...conversation }
+  }
+}
+
+async function escalateToCustomerVoice(conv = null) {
+  const target = conv || selectedConversation.value
+  const conversationId = conv?.id || selectedId.value
+  if (!conversationId) return
+
+  if (conv?.feedback_case_id && conv.voice_case_url) {
+    window.open(conv.voice_case_url, '_blank', 'noopener')
+    return
+  }
+  if (!conv && selectedConversation.value?.feedback_case_id && selectedConversation.value?.voice_case_url) {
+    window.open(selectedConversation.value.voice_case_url, '_blank', 'noopener')
+    return
+  }
+
+  escalatingToVoice.value = true
+  try {
+    const { data } = await axios.post(
+      `/crm/omnichannel-inbox/conversations/${conversationId}/escalate-to-voice`
+    )
+    if (data.conversation) {
+      patchConversationVoiceState(data.conversation)
+    }
+    if (data.case_url) {
+      window.open(data.case_url, '_blank', 'noopener')
+    }
+    if (data.message) {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Customer Voice',
+        text: data.message,
+        timer: 2200,
+        showConfirmButton: false,
+      })
+    }
+  } catch (e) {
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal mengirim ke Customer Voice.',
+    })
+  } finally {
+    escalatingToVoice.value = false
+  }
+}
+
+function handleComplaintBadgeClick(conv) {
+  if (conv.feedback_case_id && conv.voice_case_url) {
+    window.open(conv.voice_case_url, '_blank', 'noopener')
+    return
+  }
+  if (conv.needs_voice_escalation) {
+    selectConversation(conv.id)
+    escalateToCustomerVoice(conv)
   }
 }
 

@@ -156,6 +156,9 @@ class MetaWhatsAppInboundService
             $conversation->last_message_preview = mb_substr($body ?: '['.$messageType.']', 0, 500);
             $conversation->unread_count = (int) $conversation->unread_count + 1;
             $conversation->save();
+
+            app(\App\Services\Omni\OmniConversationComplaintService::class)
+                ->evaluateInboundMessage($conversation, $inbound);
         });
 
         if ($conversationId && $inboundMessageId) {
