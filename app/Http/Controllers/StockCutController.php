@@ -306,6 +306,9 @@ class StockCutController extends Controller
                 })
                 ->get();
             foreach ($boms as $bom) {
+                if ($this->isStockCutAssetMaterial($bom->material_item_id)) {
+                    continue;
+                }
                 $key = $bom->material_item_id . '-' . $warehouse->id;
                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
             }
@@ -338,6 +341,9 @@ class StockCutController extends Controller
                                                 continue;
                                             }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
+                                                if ($this->isStockCutAssetMaterial($bomItem['item_id'])) {
+                                                    continue;
+                                                }
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
                                                 // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
                                                 $bomQty = $this->toNumeric($bomItem['qty']);
@@ -386,6 +392,10 @@ class StockCutController extends Controller
                 // Handle struktur data lama
                 $qty_small = $data; // Dalam unit small
                 [$item_id, $warehouse_id] = explode('-', $key);
+            }
+
+            if ($this->isStockCutAssetMaterial($item_id)) {
+                continue;
             }
             
             // Ambil inventory_item_id
@@ -508,6 +518,10 @@ class StockCutController extends Controller
                 // Handle struktur data lama
                 $qty_input = $data; // Ini dalam unit small
                 [$item_id, $warehouse_id] = explode('-', $key);
+            }
+
+            if ($this->isStockCutAssetMaterial($item_id)) {
+                continue;
             }
             
             // Debug: Log sebelum potong stock
@@ -985,6 +999,9 @@ class StockCutController extends Controller
         ]);
                 
             foreach ($boms as $bom) {
+                if ($this->isStockCutAssetMaterial($bom->material_item_id)) {
+                    continue;
+                }
                 $key = $bom->material_item_id . '-' . $warehouse->id . '-' . $bom->unit_id;
                 if (!isset($kebutuhanBahan[$key])) {
                     $kebutuhanBahan[$key] = [
@@ -1053,6 +1070,9 @@ class StockCutController extends Controller
                                                 continue;
                                             }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
+                                                if ($this->isStockCutAssetMaterial($bomItem['item_id'])) {
+                                                    continue;
+                                                }
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id . '-' . $bomItem['unit_id'];
                                                 if (!isset($kebutuhanBahan[$key])) {
                                                     $unitName = DB::table('units')->where('id', $bomItem['unit_id'])->value('name');
@@ -1179,6 +1199,10 @@ class StockCutController extends Controller
         foreach ($aggregatedItems as $uniqueKey => $aggregatedData) {
             $item_id = $aggregatedData['item_id'];
             $warehouse_id = $aggregatedData['warehouse_id'];
+
+            if ($this->isStockCutAssetMaterial($item_id)) {
+                continue;
+            }
             
             // Ambil info item
             $item = DB::table('items')
@@ -1376,6 +1400,9 @@ class StockCutController extends Controller
                 })
                 ->get();
             foreach ($boms as $bom) {
+                if ($this->isStockCutAssetMaterial($bom->material_item_id)) {
+                    continue;
+                }
                 $key = $bom->material_item_id . '-' . $warehouse->id;
                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bom->qty * $oi->qty);
             }
@@ -1408,6 +1435,9 @@ class StockCutController extends Controller
                                                 continue;
                                             }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty'])) {
+                                                if ($this->isStockCutAssetMaterial($bomItem['item_id'])) {
+                                                    continue;
+                                                }
                                                 $key = $bomItem['item_id'] . '-' . $warehouse->id;
                                                 // modifierQty dari POS = total porsi modifier (e.g. 30 Caesar untuk 30 Rib Eye), jadi pakai = BOM × modifierQty
                                                 $kebutuhanBahan[$key] = ($kebutuhanBahan[$key] ?? 0) + ($bomItem['qty'] * $modifierQty);
@@ -1428,6 +1458,10 @@ class StockCutController extends Controller
         
         foreach ($kebutuhanBahan as $key => $qty) {
             [$item_id, $warehouse_id] = explode('-', $key);
+
+            if ($this->isStockCutAssetMaterial($item_id)) {
+                continue;
+            }
             
             // Ambil info item
             $item = DB::table('items')->where('id', $item_id)->first();
@@ -2196,6 +2230,9 @@ class StockCutController extends Controller
                                                 continue;
                                             }
                                             if (isset($bomItem['item_id']) && isset($bomItem['qty']) && isset($bomItem['unit_id'])) {
+                                                if ($this->isStockCutAssetMaterial($bomItem['item_id'])) {
+                                                    continue;
+                                                }
                                                 // Ambil harga bahan baku modifier
                                                 $inventoryItem = DB::table('outlet_food_inventory_items')
                                                     ->where('item_id', $bomItem['item_id'])
@@ -2307,6 +2344,9 @@ class StockCutController extends Controller
                 ->get();
                 
             foreach ($boms as $bom) {
+                if ($this->isStockCutAssetMaterial($bom->material_item_id)) {
+                    continue;
+                }
                 // Ambil harga bahan baku dari inventory
                 $inventoryItem = DB::table('outlet_food_inventory_items')
                     ->where('item_id', $bom->material_item_id)
@@ -2477,6 +2517,32 @@ class StockCutController extends Controller
             'outlet_id' => $id_outlet
         ]);
     }
+    /**
+     * Lookup item bahan baku kategori asset (is_asset=1) — tidak ikut stock cut food inventory.
+     */
+    private function stockCutAssetMaterialIdLookup(): array
+    {
+        static $lookup = null;
+        if ($lookup === null) {
+            $lookup = array_fill_keys(
+                DB::table('items')
+                    ->join('categories', 'items.category_id', '=', 'categories.id')
+                    ->where('categories.is_asset', '1')
+                    ->pluck('items.id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all(),
+                true
+            );
+        }
+
+        return $lookup;
+    }
+
+    private function isStockCutAssetMaterial($itemId): bool
+    {
+        return isset($this->stockCutAssetMaterialIdLookup()[(int) $itemId]);
+    }
+
     /**
      * Apakah baris BOM ikut dihitung saat stock cut.
      * stock_cut=0 / null → Ya (ikut); stock_cut=1 → Tidak (abaikan). Selaras POS & Recipe Checker.
