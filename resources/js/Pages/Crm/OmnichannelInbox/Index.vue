@@ -160,7 +160,17 @@
                   </span>
                 </div>
                 <button
-                  v-if="conv.needs_voice_escalation || conv.feedback_case_id"
+                  v-if="conv.feedback_case_id"
+                  type="button"
+                  class="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-800 ring-1 ring-indigo-200"
+                  title="Sudah di Customer Voice Command Center — klik untuk buka"
+                  @click.stop="handleComplaintBadgeClick(conv)"
+                >
+                  <i class="fa-solid fa-headset text-[9px]" />
+                  CVCC
+                </button>
+                <button
+                  v-else-if="conv.needs_voice_escalation"
                   type="button"
                   class="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ring-1"
                   :class="complaintBadgeClass(conv)"
@@ -169,6 +179,15 @@
                 >
                   <i class="fa-solid fa-triangle-exclamation text-[9px]" />
                   {{ complaintBadgeLabel(conv) }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="shrink-0 inline-flex items-center justify-center rounded-full p-1 text-slate-400 ring-1 ring-slate-200 hover:bg-indigo-50 hover:text-indigo-700 hover:ring-indigo-200"
+                  title="Kirim ke Customer Voice Command Center"
+                  @click.stop="handleComplaintBadgeClick(conv)"
+                >
+                  <i class="fa-solid fa-headset text-[10px]" />
                 </button>
                 <span v-if="conv.unread_count > 0" class="shrink-0 rounded-full bg-emerald-600 px-1.5 text-[10px] font-bold text-white">
                   {{ conv.unread_count }}
@@ -302,15 +321,18 @@
               </div>
             </div>
             <button
-              v-if="selectedConversation.needs_voice_escalation"
+              v-if="!selectedConversation.feedback_case_id"
               type="button"
-              class="shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+              class="shrink-0 rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:opacity-60"
+              :class="selectedConversation.needs_voice_escalation
+                ? 'border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100'
+                : 'border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100'"
               :disabled="escalatingToVoice"
-              :title="selectedConversation.complaint_snippet || 'Komplain terdeteksi'"
+              :title="selectedConversation.complaint_snippet || 'Kirim chat ini ke Customer Voice Command Center'"
               @click="escalateToCustomerVoice"
             >
               <i class="fa-solid fa-headset mr-1" />
-              {{ escalatingToVoice ? '...' : 'Kirim ke Customer Voice' }}
+              {{ escalatingToVoice ? '...' : 'Kirim ke CVCC' }}
             </button>
             <a
               v-else-if="selectedConversation.feedback_case_id && selectedConversation.voice_case_url"
@@ -2777,10 +2799,8 @@ function handleComplaintBadgeClick(conv) {
     window.open(conv.voice_case_url, '_blank', 'noopener')
     return
   }
-  if (conv.needs_voice_escalation) {
-    selectConversation(conv.id)
-    escalateToCustomerVoice(conv)
-  }
+  selectConversation(conv.id)
+  escalateToCustomerVoice(conv)
 }
 
 async function pauseAutomation() {
