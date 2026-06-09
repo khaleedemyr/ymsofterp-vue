@@ -16,12 +16,15 @@ class KpiTemplate extends Model
         'version',
         'template_status',
         'scoring_rules',
+        'erp_data_scope',
+        'erp_scope_outlet_ids',
         'status',
         'created_by',
     ];
 
     protected $casts = [
         'scoring_rules' => 'array',
+        'erp_scope_outlet_ids' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

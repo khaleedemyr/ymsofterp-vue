@@ -56,6 +56,8 @@ class KpiEvaluationController extends Controller
     {
         return Inertia::render('KpiEvaluations/Create', [
             'employees' => $this->employeeOptions(),
+            'outlets' => $this->evaluationService->outletOptions(),
+            'erpScopeOptions' => $this->erpScopeOptions(),
             'defaultPeriod' => now()->format('Y-m'),
         ]);
     }
@@ -65,11 +67,18 @@ class KpiEvaluationController extends Controller
         $validated = $request->validate([
             'user_id' => 'required|integer|exists:users,id',
             'period_month' => 'required|regex:/^\d{4}-\d{2}$/',
+            'erp_data_scope' => 'required|in:employee_outlet,single_outlet,multiple_outlets,all_outlets',
+            'erp_scope_outlet_ids' => 'nullable|array',
+            'erp_scope_outlet_ids.*' => 'integer',
         ]);
 
         $evaluation = $this->evaluationService->createDraft(
             (int) $validated['user_id'],
             $validated['period_month'],
+            [
+                'erp_data_scope' => $validated['erp_data_scope'],
+                'erp_scope_outlet_ids' => $validated['erp_scope_outlet_ids'] ?? [],
+            ],
         );
 
         return redirect()
@@ -93,6 +102,8 @@ class KpiEvaluationController extends Controller
         return Inertia::render('KpiEvaluations/Edit', [
             'evaluation' => $this->formatEvaluation($evaluation),
             'erpDiagnostics' => $this->evaluationService->erpDiagnostics($evaluation),
+            'outlets' => $this->evaluationService->outletOptions(),
+            'erpScopeOptions' => $this->erpScopeOptions(),
         ]);
     }
 
@@ -109,6 +120,9 @@ class KpiEvaluationController extends Controller
             'items.*.improvement_plan' => 'nullable|string|max:2000',
             'employee_comments' => 'nullable|string|max:5000',
             'assessor_comments' => 'nullable|string|max:5000',
+            'erp_data_scope' => 'nullable|in:employee_outlet,single_outlet,multiple_outlets,all_outlets',
+            'erp_scope_outlet_ids' => 'nullable|array',
+            'erp_scope_outlet_ids.*' => 'integer',
         ]);
 
         $this->evaluationService->saveDraft(
@@ -118,6 +132,8 @@ class KpiEvaluationController extends Controller
             [
                 'employee_comments' => $validated['employee_comments'] ?? null,
                 'assessor_comments' => $validated['assessor_comments'] ?? null,
+                'erp_data_scope' => $validated['erp_data_scope'] ?? null,
+                'erp_scope_outlet_ids' => $validated['erp_scope_outlet_ids'] ?? null,
             ],
         );
 
@@ -154,6 +170,8 @@ class KpiEvaluationController extends Controller
                 'code' => $preview['template']->code,
                 'name' => $preview['template']->name,
                 'version' => $preview['template']->version,
+                'erp_data_scope' => $preview['template']->erp_data_scope ?? 'employee_outlet',
+                'erp_scope_outlet_ids' => $preview['template']->erp_scope_outlet_ids ?? [],
             ] : null,
             'period' => $preview['period'],
         ]);
@@ -196,12 +214,23 @@ class KpiEvaluationController extends Controller
             ->get()
             ->map(fn ($u) => [
                 'id' => $u->id,
+                'id_outlet' => $u->id_outlet ? (int) $u->id_outlet : null,
                 'label' => trim($u->nama_lengkap . ' — ' . ($u->nama_jabatan ?? '-') . ' @ ' . ($u->nama_outlet ?? '-')),
                 'nama_lengkap' => $u->nama_lengkap,
                 'nama_jabatan' => $u->nama_jabatan,
                 'nama_outlet' => $u->nama_outlet,
             ])
             ->all();
+    }
+
+    protected function erpScopeOptions(): array
+    {
+        return [
+            ['value' => 'employee_outlet', 'label' => 'Outlet karyawan (default)'],
+            ['value' => 'single_outlet', 'label' => '1 outlet (pilih)'],
+            ['value' => 'multiple_outlets', 'label' => 'Beberapa outlet (jumlahkan)'],
+            ['value' => 'all_outlets', 'label' => 'Semua outlet operasional'],
+        ];
     }
 
     protected function formatEvaluation(KpiEvaluation $evaluation): array
@@ -228,6 +257,8 @@ class KpiEvaluationController extends Controller
             'jabatan_name' => $evaluation->jabatan_name,
             'outlet_name' => $evaluation->outlet_name,
             'division_name' => $evaluation->division_name,
+            'erp_data_scope' => $evaluation->erp_data_scope ?? 'employee_outlet',
+            'erp_scope_outlet_ids' => $evaluation->erp_scope_outlet_ids ?? [],
             'period_month' => $evaluation->period_month,
             'period_start' => $evaluation->period_start?->toDateString(),
             'period_end' => $evaluation->period_end?->toDateString(),

@@ -37,63 +37,79 @@ class KpiParameterResolverService
      */
     public function diagnose(array $context): array
     {
-        $outletId = (int) ($context['outlet_id'] ?? 0);
+        $outletIds = $this->outletIdsFromContext($context);
         $periodMonth = (string) ($context['period_month'] ?? '');
+        $erpDataScope = (string) ($context['erp_data_scope'] ?? 'employee_outlet');
 
         $issues = [];
         $hints = [];
-
-        if ($outletId <= 0) {
-            $issues[] = 'Karyawan/outlet belum ter-link — id_outlet kosong di data karyawan.';
-        }
 
         if (!preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             $issues[] = 'Format periode tidak valid.';
         }
 
-        $outlet = $outletId > 0
-            ? DB::table('tbl_data_outlet')
-                ->where('id_outlet', $outletId)
-                ->select('id_outlet', 'nama_outlet', 'qr_code', 'status')
-                ->first()
-            : null;
-
-        if ($outletId > 0 && !$outlet) {
-            $issues[] = "Outlet id={$outletId} tidak ditemukan di master outlet.";
+        if ($erpDataScope !== 'all_outlets' && empty($outletIds)) {
+            $issues[] = 'Belum ada outlet dalam scope data ERP — pilih outlet di setting evaluasi.';
         }
 
-        $qrCode = trim((string) ($outlet->qr_code ?? ''));
+        $scopeOutlets = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $outletIds)
+            ->select('id_outlet', 'nama_outlet', 'qr_code')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $revenueMtd = null;
+        $revenueMatch = null;
         $orderCount = null;
         $budgetAmount = null;
 
-        if ($outlet && $qrCode === '') {
-            $issues[] = 'Outlet "' . $outlet->nama_outlet . '" belum punya QR Code — revenue (D001) & budget (D002) tidak bisa diambil dari POS.';
-        }
-
-        if ($outlet && $qrCode !== '' && preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
-            $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
-            $orderCount = (int) DB::table('orders')
-                ->where('kode_outlet', $qrCode)
-                ->whereDate('created_at', '>=', $period['start_date'])
-                ->whereDate('created_at', '<=', $period['end_date'])
-                ->where('status', '!=', 'cancelled')
-                ->where('grand_total', '>', 0)
-                ->count();
+        if (!empty($outletIds) && preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            $revenueProbe = $this->queryOrderRevenue($outletIds, $periodMonth, true);
+            $revenueMtd = $revenueProbe['total'];
+            $revenueMatch = $revenueProbe['match'];
+            $orderCount = $revenueProbe['count'];
 
             if ($orderCount === 0) {
-                $hints[] = "Tidak ada order POS di periode {$periodMonth} untuk qr_code \"{$qrCode}\" — D001 akan 0.";
+                $year = (int) substr($periodMonth, 0, 4);
+                $month = (int) substr($periodMonth, 5, 2);
+                $sampleCodes = DB::table('orders')
+                    ->whereYear('created_at', $year)
+                    ->whereMonth('created_at', $month)
+                    ->where('status', '!=', 'cancelled')
+                    ->where('grand_total', '>', 0)
+                    ->distinct()
+                    ->limit(5)
+                    ->pluck('kode_outlet')
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                $hints[] = 'Tidak ada order POS untuk scope outlet di periode ' . $periodMonth
+                    . (empty($sampleCodes) ? '' : '. Sample kode_outlet di orders: ' . implode(', ', $sampleCodes));
             }
 
             $year = (int) substr($periodMonth, 0, 4);
             $month = (int) substr($periodMonth, 5, 2);
-            $budgetAmount = DB::table('outlet_monthly_budgets')
-                ->where('outlet_qr_code', $qrCode)
-                ->where('month', $month)
-                ->where('year', $year)
-                ->value('budget_amount');
-
-            if ($budgetAmount === null) {
+            $budgetAmount = 0.0;
+            $budgetFound = false;
+            foreach ($scopeOutlets as $o) {
+                $qr = trim((string) ($o->qr_code ?? ''));
+                if ($qr === '') {
+                    continue;
+                }
+                $b = DB::table('outlet_monthly_budgets')
+                    ->where('outlet_qr_code', $qr)
+                    ->where('month', $month)
+                    ->where('year', $year)
+                    ->value('budget_amount');
+                if ($b !== null) {
+                    $budgetAmount += (float) $b;
+                    $budgetFound = true;
+                }
+            }
+            if (!$budgetFound) {
                 $hints[] = "Budget belum di-set di outlet_monthly_budgets untuk {$periodMonth} — D002 akan 0.";
+                $budgetAmount = null;
             }
         }
 
@@ -111,25 +127,22 @@ class KpiParameterResolverService
             }
         }
 
-        $mappingCount = DB::table('kpi_parameter_erp_mappings')->where('status', 'A')->count();
-        if ($mappingCount === 0) {
-            $issues[] = 'ERP mapping belum di-seed — jalankan seed_kpi_template_justus_sample.sql.';
-        }
-
         return [
-            'outlet_id' => $outletId ?: null,
-            'outlet_name' => $outlet->nama_outlet ?? null,
-            'qr_code' => $qrCode ?: null,
+            'erp_data_scope' => $erpDataScope,
+            'scope_outlet_ids' => $outletIds,
+            'scope_outlet_names' => $scopeOutlets->pluck('nama_outlet')->all(),
             'period_month' => $periodMonth,
             'order_count' => $orderCount,
-            'budget_amount' => $budgetAmount !== null ? (float) $budgetAmount : null,
+            'revenue_mtd' => $revenueMtd,
+            'revenue_match_kode' => $revenueMatch,
+            'budget_amount' => $budgetAmount,
             'issues' => $issues,
             'hints' => $hints,
         ];
     }
 
     /**
-     * @param  array{outlet_id?: int|null, user_id?: int|null, period_month: string}  $context
+     * @param  array{outlet_ids?: list<int>, outlet_id?: int|null, user_id?: int|null, period_month: string, erp_data_scope?: string}  $context
      */
     private function resolveValue(KpiParameter $parameter, array $context): ?float
     {
@@ -138,9 +151,14 @@ class KpiParameterResolverService
             return null;
         }
 
-        $outletId = (int) ($context['outlet_id'] ?? 0);
+        $outletIds = $this->outletIdsFromContext($context);
         $periodMonth = (string) ($context['period_month'] ?? '');
-        if ($outletId <= 0 || !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+
+        if (!preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        if ($parameter->scope_type !== 'employee' && empty($outletIds)) {
             return null;
         }
 
@@ -148,17 +166,18 @@ class KpiParameterResolverService
         $year = (int) substr($periodMonth, 0, 4);
         $month = (int) substr($periodMonth, 5, 2);
 
-        // Resolver yang tidak butuh Outlet Analyzer
         $standalone = match ($mapping->resolver_key) {
-            'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletId, $month, $year),
+            'daily_revenue_forecast' => $this->resolveDailyRevenueMtd($outletIds, $periodMonth),
+            'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletIds, $month, $year),
             'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $period['start_date'], $period['end_date']),
-            'ticket_complaint_count' => $this->resolveTicketCount($outletId, $period['start_date'], $period['end_date'], 'complaint'),
-            'ticket_improvement_closed' => $this->resolveTicketCount($outletId, $period['start_date'], $period['end_date'], 'improvement', true),
-            'ticket_improvement_total' => $this->resolveTicketCount($outletId, $period['start_date'], $period['end_date'], 'improvement', false),
+            'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
+            'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
+            'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
             default => null,
         };
 
         if ($standalone !== null || in_array($mapping->resolver_key, [
+            'daily_revenue_forecast',
             'daily_revenue_forecast_budget',
             'training_compliance',
             'ticket_complaint_count',
@@ -168,35 +187,248 @@ class KpiParameterResolverService
             return $standalone;
         }
 
-        $analyzer = $this->getAnalyzerData($outletId, $periodMonth);
-        if ($analyzer === null) {
-            return null;
-        }
-
         return match ($mapping->resolver_key) {
-            'daily_revenue_forecast' => $this->resolveRevenueActual($outletId, $analyzer),
-            'cost_report_cogs' => $this->nullableAmount($analyzer['fj_inventory']['line_total'] ?? null),
-            'outlet_analyzer_payroll' => $this->nullableAmount($analyzer['payroll']['total_gaji'] ?? null),
-            'outlet_analyzer_petty_cash' => $this->nullableAmount($analyzer['petty_cash']['total'] ?? null),
-            'outlet_internal_use_waste' => $this->resolveCategoryCost($analyzer, $parameter->code),
-            'lost_breakage' => $this->resolveCategoryCostByType($analyzer, 'stock_cut'),
-            'guest_comment_gsi' => $this->nullableAmount($analyzer['guest_comment_gsi']['total_forms'] ?? null),
-            'regional_visit_report' => $this->nullableAmount($analyzer['regional_visits']['visit_days'] ?? null),
+            'cost_report_cogs' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['fj_inventory', 'line_total']),
+            'outlet_analyzer_payroll' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['payroll', 'total_gaji']),
+            'outlet_analyzer_petty_cash' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['petty_cash', 'total']),
+            'outlet_internal_use_waste' => $this->sumCategoryCost($outletIds, $periodMonth, $parameter->code),
+            'lost_breakage' => $this->sumCategoryCostByType($outletIds, $periodMonth, 'stock_cut'),
+            'guest_comment_gsi' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['guest_comment_gsi', 'total_forms']),
+            'regional_visit_report' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['regional_visits', 'visit_days']),
             default => null,
         };
     }
 
-    private function resolveRevenueActual(int $outletId, array $analyzer): ?float
+    /**
+     * @param  array{outlet_ids?: list<int>, outlet_id?: int|null}  $context
+     * @return list<int>
+     */
+    private function outletIdsFromContext(array $context): array
     {
-        $qrCode = trim((string) DB::table('tbl_data_outlet')
-            ->where('id_outlet', $outletId)
-            ->value('qr_code'));
+        if (!empty($context['outlet_ids']) && is_array($context['outlet_ids'])) {
+            return array_values(array_unique(array_filter(array_map('intval', $context['outlet_ids']))));
+        }
 
-        if ($qrCode === '') {
+        $id = (int) ($context['outlet_id'] ?? 0);
+
+        return $id > 0 ? [$id] : [];
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     * @param  list<string>  $path
+     */
+    private function sumAnalyzerPath(array $outletIds, string $periodMonth, array $path): ?float
+    {
+        $total = 0.0;
+        $found = false;
+
+        foreach ($outletIds as $outletId) {
+            $analyzer = $this->getAnalyzerData((int) $outletId, $periodMonth);
+            if ($analyzer === null) {
+                continue;
+            }
+
+            $value = $analyzer;
+            foreach ($path as $key) {
+                $value = is_array($value) ? ($value[$key] ?? null) : null;
+                if ($value === null) {
+                    break;
+                }
+            }
+
+            if (is_numeric($value)) {
+                $total += (float) $value;
+                $found = true;
+            }
+        }
+
+        return $found ? round($total, 2) : null;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function sumCategoryCost(array $outletIds, string $periodMonth, string $parameterCode): ?float
+    {
+        return match ($parameterCode) {
+            'D005' => $this->sumCategoryCostByType($outletIds, $periodMonth, 'waste'),
+            'D006' => $this->sumCategoryCostByType($outletIds, $periodMonth, 'spoil'),
+            default => $this->sumAnalyzerPath($outletIds, $periodMonth, ['category_cost_outlet', 'total']),
+        };
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function sumCategoryCostByType(array $outletIds, string $periodMonth, string $type): ?float
+    {
+        $total = 0.0;
+        $found = false;
+
+        foreach ($outletIds as $outletId) {
+            $analyzer = $this->getAnalyzerData((int) $outletId, $periodMonth);
+            if ($analyzer === null) {
+                continue;
+            }
+
+            foreach ($analyzer['category_cost_outlet']['modes'] ?? [] as $mode) {
+                if (($mode['key'] ?? '') === $type) {
+                    $total += (float) ($mode['amount'] ?? 0);
+                    $found = true;
+                    break;
+                }
+            }
+        }
+
+        return $found ? round($total, 2) : null;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveDailyRevenueMtd(array $outletIds, string $periodMonth): ?float
+    {
+        if (empty($outletIds)) {
             return null;
         }
 
-        return (float) ($analyzer['revenue']['total'] ?? 0);
+        $result = $this->queryOrderRevenue($outletIds, $periodMonth, true);
+
+        return $result['match'] === null ? null : $result['total'];
+    }
+    /**
+     * @param  list<int>  $outletIds
+     * @return array{total: float, count: int, match: string|null}
+     */
+    private function queryOrderRevenue(array $outletIds, string $periodMonth, bool $mtdOnly = true): array
+    {
+        $total = 0.0;
+        $count = 0;
+        $matches = [];
+
+        foreach (array_unique(array_filter($outletIds)) as $outletId) {
+            $result = $this->queryOrderRevenueSingle((int) $outletId, $periodMonth, $mtdOnly);
+            $total += $result['total'];
+            $count += $result['count'];
+            if ($result['match']) {
+                $matches[] = $result['match'];
+            }
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => $count,
+            'match' => $matches !== [] ? implode(', ', array_unique($matches)) : null,
+        ];
+    }
+
+    /**
+     * @return array{total: float, count: int, match: string|null}
+     */
+    private function queryOrderRevenueSingle(int $outletId, string $periodMonth, bool $mtdOnly = true): array
+    {
+        $empty = ['total' => 0.0, 'count' => 0, 'match' => null];
+
+        if (!preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return $empty;
+        }
+
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->select('id_outlet', 'nama_outlet', 'qr_code')
+            ->first();
+
+        if (!$outlet) {
+            return $empty;
+        }
+
+        $year = (int) substr($periodMonth, 0, 4);
+        $month = (int) substr($periodMonth, 5, 2);
+
+        $baseQuery = function () use ($year, $month, $mtdOnly, $periodMonth) {
+            $query = DB::table('orders')
+                ->where('status', '!=', 'cancelled')
+                ->where('grand_total', '>', 0);
+
+            if ($mtdOnly) {
+                $currentDate = Carbon::now();
+                $mtdEndDay = ($currentDate->year === $year && $currentDate->month === $month)
+                    ? $currentDate->day
+                    : Carbon::create($year, $month, 1)->daysInMonth;
+
+                $query->whereYear('created_at', $year)
+                    ->whereMonth('created_at', $month)
+                    ->whereDay('created_at', '<=', $mtdEndDay);
+            } else {
+                $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
+                $query->whereDate('created_at', '>=', $period['start_date'])
+                    ->whereDate('created_at', '<=', $period['end_date']);
+            }
+
+            return $query;
+        };
+
+        $candidates = array_values(array_unique(array_filter([
+            trim((string) ($outlet->qr_code ?? '')),
+            trim((string) ($outlet->nama_outlet ?? '')),
+            (string) $outletId,
+        ])));
+
+        foreach ($candidates as $code) {
+            $count = (int) $baseQuery()->where('kode_outlet', $code)->count();
+            if ($count > 0) {
+                return [
+                    'total' => round((float) $baseQuery()->where('kode_outlet', $code)->sum('grand_total'), 2),
+                    'count' => $count,
+                    'match' => $code,
+                ];
+            }
+        }
+
+        $qrCode = trim((string) ($outlet->qr_code ?? ''));
+        if ($qrCode !== '') {
+            $count = (int) $baseQuery()->whereRaw('LOWER(TRIM(kode_outlet)) = ?', [strtolower($qrCode)])->count();
+            if ($count > 0) {
+                return [
+                    'total' => round((float) $baseQuery()->whereRaw('LOWER(TRIM(kode_outlet)) = ?', [strtolower($qrCode)])->sum('grand_total'), 2),
+                    'count' => $count,
+                    'match' => $qrCode,
+                ];
+            }
+        }
+
+        $joinedQuery = DB::table('orders')
+            ->join('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+            ->where('o.id_outlet', $outletId)
+            ->where('orders.status', '!=', 'cancelled')
+            ->where('orders.grand_total', '>', 0);
+
+        if ($mtdOnly) {
+            $currentDate = Carbon::now();
+            $mtdEndDay = ($currentDate->year === $year && $currentDate->month === $month)
+                ? $currentDate->day
+                : Carbon::create($year, $month, 1)->daysInMonth;
+
+            $joinedQuery->whereYear('orders.created_at', $year)
+                ->whereMonth('orders.created_at', $month)
+                ->whereDay('orders.created_at', '<=', $mtdEndDay);
+        } else {
+            $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
+            $joinedQuery->whereDate('orders.created_at', '>=', $period['start_date'])
+                ->whereDate('orders.created_at', '<=', $period['end_date']);
+        }
+
+        $joinedCount = (int) (clone $joinedQuery)->count();
+        if ($joinedCount > 0) {
+            return [
+                'total' => round((float) (clone $joinedQuery)->sum('orders.grand_total'), 2),
+                'count' => $joinedCount,
+                'match' => $qrCode !== '' ? $qrCode : 'join:id_outlet',
+            ];
+        }
+
+        return $empty;
     }
 
     private function nullableAmount(mixed $value): ?float
@@ -233,50 +465,40 @@ class KpiParameterResolverService
         return $this->analyzerCache;
     }
 
-    private function resolveMonthlyBudget(int $outletId, int $month, int $year): ?float
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveMonthlyBudget(array $outletIds, int $month, int $year): ?float
     {
-        $qrCode = trim((string) DB::table('tbl_data_outlet')
-            ->where('id_outlet', $outletId)
-            ->value('qr_code'));
-
-        if ($qrCode === '') {
+        if (empty($outletIds)) {
             return null;
         }
 
-        $budget = DB::table('outlet_monthly_budgets')
-            ->where('outlet_qr_code', $qrCode)
-            ->where('month', $month)
-            ->where('year', $year)
-            ->value('budget_amount');
+        $total = 0.0;
+        $found = false;
 
-        return $budget !== null ? (float) $budget : 0.0;
-    }
+        foreach ($outletIds as $outletId) {
+            $qrCode = trim((string) DB::table('tbl_data_outlet')
+                ->where('id_outlet', $outletId)
+                ->value('qr_code'));
 
-    /**
-     * @param  array<string, mixed>  $analyzer
-     */
-    private function resolveCategoryCost(array $analyzer, string $parameterCode): float
-    {
-        return match ($parameterCode) {
-            'D005' => $this->resolveCategoryCostByType($analyzer, 'waste'),
-            'D006' => $this->resolveCategoryCostByType($analyzer, 'spoil'),
-            default => (float) ($analyzer['category_cost_outlet']['total'] ?? 0),
-        };
-    }
+            if ($qrCode === '') {
+                continue;
+            }
 
-    /**
-     * @param  array<string, mixed>  $analyzer
-     */
-    private function resolveCategoryCostByType(array $analyzer, string $type): float
-    {
-        $modes = $analyzer['category_cost_outlet']['modes'] ?? [];
-        foreach ($modes as $mode) {
-            if (($mode['key'] ?? '') === $type) {
-                return (float) ($mode['amount'] ?? 0);
+            $budget = DB::table('outlet_monthly_budgets')
+                ->where('outlet_qr_code', $qrCode)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->value('budget_amount');
+
+            if ($budget !== null) {
+                $total += (float) $budget;
+                $found = true;
             }
         }
 
-        return 0.0;
+        return $found ? round($total, 2) : 0.0;
     }
 
     private function resolveTrainingCompliance(int $userId, string $start, string $end): ?float
@@ -304,14 +526,31 @@ class KpiParameterResolverService
         return round(((int) ($stats->completed ?? 0) / $total) * 100, 2);
     }
 
-    private function resolveTicketCount(int $outletId, string $start, string $end, string $kind, ?bool $closedOnly = null): ?float
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveTicketCount(array $outletIds, string $start, string $end, string $kind, ?bool $closedOnly = null): ?float
     {
-        if (!DB::getSchemaBuilder()->hasTable('tickets')) {
+        if (empty($outletIds)) {
             return null;
         }
 
+        $total = 0.0;
+        foreach ($outletIds as $outletId) {
+            $total += $this->resolveTicketCountSingle((int) $outletId, $start, $end, $kind, $closedOnly);
+        }
+
+        return $total;
+    }
+
+    private function resolveTicketCountSingle(int $outletId, string $start, string $end, string $kind, ?bool $closedOnly = null): float
+    {
+        if (!DB::getSchemaBuilder()->hasTable('tickets')) {
+            return 0.0;
+        }
+
         if (!DB::getSchemaBuilder()->hasTable('ticket_categories')) {
-            return null;
+            return 0.0;
         }
 
         $query = DB::table('tickets as t')

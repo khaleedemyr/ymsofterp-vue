@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import Multiselect from 'vue-multiselect';
@@ -8,6 +8,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   employees: Array,
+  outlets: Array,
+  erpScopeOptions: Array,
   defaultPeriod: String,
 });
 
@@ -20,16 +22,64 @@ const previewError = ref('');
 const form = useForm({
   user_id: null,
   period_month: props.defaultPeriod,
+  erp_data_scope: 'single_outlet',
+  erp_scope_outlet_ids: [],
 });
+
+const selectedSingleOutlet = ref(null);
+const selectedMultipleOutlets = ref([]);
+
+const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet');
+const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
 
 watch(selectedEmployee, (emp) => {
   form.user_id = emp?.id ?? null;
+  if (emp?.id_outlet && form.erp_data_scope === 'single_outlet') {
+    const outlet = props.outlets.find((o) => o.id === emp.id_outlet);
+    if (outlet) {
+      selectedSingleOutlet.value = outlet;
+      form.erp_scope_outlet_ids = [outlet.id];
+    }
+  }
   loadPreview();
 });
 
 watch(periodMonth, (val) => {
   form.period_month = val;
   loadPreview();
+});
+
+watch(() => form.erp_data_scope, (scope) => {
+  if (scope === 'employee_outlet' || scope === 'all_outlets') {
+    form.erp_scope_outlet_ids = [];
+    selectedSingleOutlet.value = null;
+    selectedMultipleOutlets.value = [];
+  }
+  if (scope === 'single_outlet' && selectedEmployee.value?.id_outlet) {
+    const outlet = props.outlets.find((o) => o.id === selectedEmployee.value.id_outlet);
+    if (outlet) {
+      selectedSingleOutlet.value = outlet;
+      form.erp_scope_outlet_ids = [outlet.id];
+    }
+  }
+  if (scope === 'multiple_outlets') {
+    selectedMultipleOutlets.value = [];
+    form.erp_scope_outlet_ids = [];
+  }
+});
+
+watch(selectedSingleOutlet, (outlet) => {
+  form.erp_scope_outlet_ids = outlet ? [outlet.id] : [];
+});
+
+watch(selectedMultipleOutlets, (list) => {
+  form.erp_scope_outlet_ids = list.map((o) => o.id);
+});
+
+watch(preview, (p) => {
+  if (p?.template?.erp_data_scope && form.erp_data_scope === 'single_outlet') {
+    form.erp_data_scope = p.template.erp_data_scope;
+  }
 });
 
 async function loadPreview() {
@@ -43,6 +93,9 @@ async function loadPreview() {
       params: { user_id: form.user_id, period_month: form.period_month },
     });
     preview.value = data;
+    if (data.template?.erp_data_scope) {
+      form.erp_data_scope = data.template.erp_data_scope;
+    }
     if (!data.template) {
       previewError.value = 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.';
     }
@@ -69,7 +122,7 @@ function back() {
         <button class="text-gray-500" @click="back"><i class="fa-solid fa-arrow-left"></i></button>
         <div>
           <h1 class="text-2xl font-bold">Buat Evaluasi KPI</h1>
-          <p class="text-sm text-gray-600">Pilih karyawan dan periode — template mengikuti jabatan.</p>
+          <p class="text-sm text-gray-600">Pilih karyawan, periode, dan scope data ERP.</p>
         </div>
       </div>
 
@@ -91,25 +144,68 @@ function back() {
         <div>
           <label class="block text-sm font-medium mb-1">Periode (Bulan)</label>
           <input v-model="periodMonth" type="month" class="w-full rounded-xl border-gray-300" />
-          <div v-if="form.errors.period_month" class="text-xs text-red-500 mt-1">{{ form.errors.period_month }}</div>
+        </div>
+
+        <div class="border rounded-xl p-4 bg-indigo-50/40 space-y-3">
+          <div>
+            <label class="block text-sm font-semibold mb-1">Scope Data ERP</label>
+            <p class="text-xs text-gray-500 mb-2">Dari outlet mana data revenue, COGS, ticket, dll diambil &amp; dijumlahkan.</p>
+            <select v-model="form.erp_data_scope" class="w-full rounded-lg border-gray-300">
+              <option v-for="opt in erpScopeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+
+          <div v-if="showSinglePicker">
+            <label class="block text-sm font-medium mb-1">Pilih Outlet</label>
+            <Multiselect
+              v-model="selectedSingleOutlet"
+              :options="outlets"
+              label="label"
+              track-by="id"
+              placeholder="Cari outlet..."
+              :searchable="true"
+              :allow-empty="false"
+              :show-labels="false"
+            />
+          </div>
+
+          <div v-if="showMultiplePicker">
+            <label class="block text-sm font-medium mb-1">Pilih Outlet (multi)</label>
+            <Multiselect
+              v-model="selectedMultipleOutlets"
+              :options="outlets"
+              label="label"
+              track-by="id"
+              placeholder="Cari outlet..."
+              :searchable="true"
+              :multiple="true"
+              :close-on-select="false"
+              :show-labels="false"
+            />
+          </div>
+
+          <p v-if="form.erp_data_scope === 'employee_outlet'" class="text-xs text-gray-600">
+            Data diambil dari outlet yang ter-link di profil karyawan.
+          </p>
+          <p v-if="form.erp_data_scope === 'all_outlets'" class="text-xs text-gray-600">
+            Data dijumlahkan dari semua outlet operasional aktif.
+          </p>
+          <div v-if="form.errors.erp_data_scope" class="text-xs text-red-500">{{ form.errors.erp_data_scope }}</div>
+          <div v-if="form.errors.erp_scope_outlet_ids" class="text-xs text-red-500">{{ form.errors.erp_scope_outlet_ids }}</div>
         </div>
 
         <div v-if="previewLoading" class="text-sm text-gray-500">Memuat preview...</div>
 
         <div v-else-if="preview" class="rounded-xl border bg-rose-50/40 p-4 text-sm space-y-2">
           <div><span class="text-gray-500">Jabatan:</span> <strong>{{ preview.user?.nama_jabatan || '—' }}</strong></div>
-          <div><span class="text-gray-500">Outlet:</span> <strong>{{ preview.user?.nama_outlet || '—' }}</strong></div>
-          <div><span class="text-gray-500">Divisi:</span> <strong>{{ preview.user?.nama_divisi || '—' }}</strong></div>
+          <div><span class="text-gray-500">Outlet karyawan:</span> <strong>{{ preview.user?.nama_outlet || '—' }}</strong></div>
           <div v-if="preview.template">
             <span class="text-gray-500">Template:</span>
             <strong>{{ preview.template.name }}</strong>
-            <span class="text-gray-400 font-mono text-xs ml-1">({{ preview.template.code }} v{{ preview.template.version }})</span>
           </div>
-          <div v-if="preview.period?.label"><span class="text-gray-500">Periode:</span> {{ preview.period.label }}</div>
         </div>
 
         <div v-if="previewError" class="text-sm text-red-600 bg-red-50 rounded-xl p-3">{{ previewError }}</div>
-        <div v-if="form.errors.user_id" class="text-xs text-red-500">{{ form.errors.user_id }}</div>
 
         <div class="flex justify-end gap-3 pt-2">
           <button type="button" class="px-4 py-2 rounded-xl border" @click="back">Batal</button>

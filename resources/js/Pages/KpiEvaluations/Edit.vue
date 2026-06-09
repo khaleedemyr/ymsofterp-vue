@@ -1,13 +1,24 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   evaluation: Object,
   erpDiagnostics: Object,
+  outlets: Array,
+  erpScopeOptions: Array,
 });
+
+const selectedSingleOutlet = ref(
+  props.outlets.find((o) => o.id === (props.evaluation.erp_scope_outlet_ids?.[0] ?? null)) ?? null,
+);
+const selectedMultipleOutlets = ref(
+  props.outlets.filter((o) => (props.evaluation.erp_scope_outlet_ids ?? []).includes(o.id)),
+);
 
 const form = useForm({
   parameter_values: props.evaluation.parameter_values.map((pv) => ({
@@ -22,6 +33,27 @@ const form = useForm({
   })),
   employee_comments: props.evaluation.employee_comments || '',
   assessor_comments: props.evaluation.assessor_comments || '',
+  erp_data_scope: props.evaluation.erp_data_scope || 'employee_outlet',
+  erp_scope_outlet_ids: props.evaluation.erp_scope_outlet_ids || [],
+});
+
+const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet');
+const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
+
+watch(selectedSingleOutlet, (outlet) => {
+  form.erp_scope_outlet_ids = outlet ? [outlet.id] : [];
+});
+
+watch(selectedMultipleOutlets, (list) => {
+  form.erp_scope_outlet_ids = list.map((o) => o.id);
+});
+
+watch(() => form.erp_data_scope, (scope) => {
+  if (scope === 'employee_outlet' || scope === 'all_outlets') {
+    form.erp_scope_outlet_ids = [];
+    selectedSingleOutlet.value = null;
+    selectedMultipleOutlets.value = [];
+  }
 });
 
 const groupedStrategies = computed(() => props.evaluation.strategies || []);
@@ -115,11 +147,33 @@ function back() {
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow p-4 mb-4 text-sm flex flex-wrap gap-4">
-        <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
-        <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
-        <div v-if="erpDiagnostics?.qr_code"><span class="text-gray-500">QR Code:</span> <code>{{ erpDiagnostics.qr_code }}</code></div>
-        <div v-if="erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
+      <div class="bg-white rounded-2xl shadow p-4 mb-4 text-sm space-y-3">
+        <div class="flex flex-wrap gap-4">
+          <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
+          <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
+          <div v-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ Number(erpDiagnostics.revenue_mtd).toLocaleString('id-ID') }}</div>
+          <div v-if="erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
+        </div>
+
+        <div class="border-t pt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 mb-1">Scope Data ERP</label>
+            <select v-model="form.erp_data_scope" class="w-full rounded-lg border-gray-300 text-sm">
+              <option v-for="opt in erpScopeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </div>
+          <div v-if="showSinglePicker" class="md:col-span-2">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Outlet</label>
+            <Multiselect v-model="selectedSingleOutlet" :options="outlets" label="label" track-by="id" :searchable="true" :show-labels="false" />
+          </div>
+          <div v-if="showMultiplePicker" class="md:col-span-2">
+            <label class="block text-xs font-medium text-gray-500 mb-1">Outlet (multi)</label>
+            <Multiselect v-model="selectedMultipleOutlets" :options="outlets" label="label" track-by="id" :multiple="true" :searchable="true" :close-on-select="false" :show-labels="false" />
+          </div>
+        </div>
+        <div v-if="erpDiagnostics?.scope_outlet_names?.length" class="text-xs text-gray-600">
+          Outlet scope aktif: <strong>{{ erpDiagnostics.scope_outlet_names.join(', ') }}</strong>
+        </div>
       </div>
 
       <div v-if="erpDiagnostics?.issues?.length" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

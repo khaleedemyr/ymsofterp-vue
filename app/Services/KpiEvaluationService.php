@@ -47,7 +47,7 @@ class KpiEvaluationService
         ];
     }
 
-    public function createDraft(int $userId, string $periodMonth): KpiEvaluation
+    public function createDraft(int $userId, string $periodMonth, array $scopeInput = []): KpiEvaluation
     {
         if (!preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             throw ValidationException::withMessages(['period_month' => 'Format periode harus YYYY-MM.']);
@@ -76,10 +76,18 @@ class KpiEvaluationService
             'strategies.items.itemParameters.parameter',
         ]);
 
+        [$erpDataScope, $erpScopeOutletIds] = $this->normalizeErpScope(
+            $scopeInput['erp_data_scope'] ?? $template->erp_data_scope ?? 'employee_outlet',
+            $scopeInput['erp_scope_outlet_ids'] ?? $template->erp_scope_outlet_ids ?? [],
+            (int) $user->id_outlet,
+        );
+
+        $this->validateErpScope($erpDataScope, $erpScopeOutletIds);
+
         $period = app(OutletAnalyzerService::class)->calendarPeriod($periodMonth);
         $dataCodes = $this->collectDataParameterCodes($template);
 
-        return DB::transaction(function () use ($user, $template, $periodMonth, $period, $dataCodes) {
+        return DB::transaction(function () use ($user, $template, $periodMonth, $period, $dataCodes, $erpDataScope, $erpScopeOutletIds) {
             $evaluation = KpiEvaluation::create([
                 'evaluation_code' => $this->generateCode($periodMonth),
                 'user_id' => $user->id,
@@ -92,6 +100,8 @@ class KpiEvaluationService
                 'jabatan_name' => $user->nama_jabatan,
                 'outlet_name' => $user->nama_outlet,
                 'division_name' => $user->nama_divisi,
+                'erp_data_scope' => $erpDataScope,
+                'erp_scope_outlet_ids' => $erpScopeOutletIds,
                 'period_month' => $periodMonth,
                 'period_start' => $period['start_date'],
                 'period_end' => $period['end_date'],
@@ -161,6 +171,27 @@ class KpiEvaluationService
                 'assessor_comments' => $meta['assessor_comments'] ?? $evaluation->assessor_comments,
             ]);
 
+            if (isset($meta['erp_data_scope'])) {
+                [$scope, $outletIds] = $this->normalizeErpScope(
+                    (string) $meta['erp_data_scope'],
+                    $meta['erp_scope_outlet_ids'] ?? [],
+                    (int) $evaluation->id_outlet,
+                );
+                $this->validateErpScope($scope, $outletIds);
+
+                $scopeChanged = $scope !== ($evaluation->erp_data_scope ?? 'employee_outlet')
+                    || $outletIds !== ($evaluation->erp_scope_outlet_ids ?? []);
+
+                $evaluation->update([
+                    'erp_data_scope' => $scope,
+                    'erp_scope_outlet_ids' => $outletIds,
+                ]);
+
+                if ($scopeChanged) {
+                    return $this->refreshErp($evaluation->fresh());
+                }
+            }
+
             $this->recalculate($evaluation->fresh());
 
             return $evaluation->fresh(['template', 'parameterValues', 'items']);
@@ -173,11 +204,7 @@ class KpiEvaluationService
             throw ValidationException::withMessages(['eval_status' => 'Evaluasi sudah disubmit.']);
         }
 
-        $context = [
-            'outlet_id' => $evaluation->id_outlet,
-            'user_id' => $evaluation->user_id,
-            'period_month' => $evaluation->period_month,
-        ];
+        $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();
 
@@ -215,11 +242,121 @@ class KpiEvaluationService
      */
     public function erpDiagnostics(KpiEvaluation $evaluation): array
     {
-        return $this->resolver->diagnose([
-            'outlet_id' => $evaluation->id_outlet,
+        return $this->resolver->diagnose($this->buildErpContext($evaluation));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildErpContext(KpiEvaluation $evaluation): array
+    {
+        $outletIds = $this->resolveErpOutletIds($evaluation);
+
+        return [
+            'outlet_ids' => $outletIds,
+            'outlet_id' => $outletIds[0] ?? (int) $evaluation->id_outlet,
             'user_id' => $evaluation->user_id,
             'period_month' => $evaluation->period_month,
-        ]);
+            'erp_data_scope' => $evaluation->erp_data_scope ?? 'employee_outlet',
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function resolveErpOutletIds(KpiEvaluation $evaluation): array
+    {
+        [$scope, $ids] = $this->normalizeErpScope(
+            $evaluation->erp_data_scope ?? 'employee_outlet',
+            $evaluation->erp_scope_outlet_ids ?? [],
+            (int) $evaluation->id_outlet,
+        );
+
+        if ($scope === 'all_outlets') {
+            return $this->allActiveOutletIds();
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param  array<int|string>|null  $outletIds
+     * @return array{0: string, 1: list<int>}
+     */
+    public function normalizeErpScope(string $scope, ?array $outletIds, int $employeeOutletId): array
+    {
+        $allowed = ['employee_outlet', 'single_outlet', 'multiple_outlets', 'all_outlets'];
+        $scope = in_array($scope, $allowed, true) ? $scope : 'employee_outlet';
+        $ids = array_values(array_unique(array_filter(array_map('intval', $outletIds ?? []))));
+
+        return match ($scope) {
+            'employee_outlet' => ['employee_outlet', $employeeOutletId > 0 ? [$employeeOutletId] : []],
+            'single_outlet' => ['single_outlet', $ids !== [] ? [(int) $ids[0]] : ($employeeOutletId > 0 ? [$employeeOutletId] : [])],
+            'multiple_outlets' => ['multiple_outlets', $ids],
+            'all_outlets' => ['all_outlets', []],
+            default => ['employee_outlet', $employeeOutletId > 0 ? [$employeeOutletId] : []],
+        };
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    public function validateErpScope(string $scope, array $outletIds): void
+    {
+        if ($scope === 'all_outlets') {
+            return;
+        }
+
+        if ($scope === 'employee_outlet' && empty($outletIds)) {
+            throw ValidationException::withMessages([
+                'erp_data_scope' => 'Karyawan belum memiliki outlet — pilih scope "1 outlet" atau "beberapa outlet".',
+            ]);
+        }
+
+        if (in_array($scope, ['single_outlet', 'multiple_outlets'], true) && empty($outletIds)) {
+            throw ValidationException::withMessages([
+                'erp_scope_outlet_ids' => 'Pilih minimal 1 outlet untuk scope data ERP.',
+            ]);
+        }
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function allActiveOutletIds(): array
+    {
+        $query = DB::table('tbl_data_outlet')->where('status', 'A');
+
+        if (DB::getSchemaBuilder()->hasColumn('tbl_data_outlet', 'is_outlet')) {
+            $query->where('is_outlet', 1);
+        }
+
+        return $query->orderBy('nama_outlet')
+            ->pluck('id_outlet')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * @return list<array{id: int, label: string, nama_outlet: string, qr_code: string|null}>
+     */
+    public function outletOptions(): array
+    {
+        return DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->when(
+                DB::getSchemaBuilder()->hasColumn('tbl_data_outlet', 'is_outlet'),
+                fn ($q) => $q->where('is_outlet', 1),
+            )
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet', 'qr_code'])
+            ->map(fn ($o) => [
+                'id' => (int) $o->id_outlet,
+                'label' => trim($o->nama_outlet . ($o->qr_code ? " ({$o->qr_code})" : '')),
+                'nama_outlet' => $o->nama_outlet,
+                'qr_code' => $o->qr_code,
+            ])
+            ->all();
     }
 
     public function submit(KpiEvaluation $evaluation): KpiEvaluation
@@ -383,11 +520,7 @@ class KpiEvaluationService
             ->get()
             ->keyBy('code');
 
-        $context = [
-            'outlet_id' => $evaluation->id_outlet,
-            'user_id' => $evaluation->user_id,
-            'period_month' => $evaluation->period_month,
-        ];
+        $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();
 
