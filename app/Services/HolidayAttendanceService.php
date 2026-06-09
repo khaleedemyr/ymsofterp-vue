@@ -303,6 +303,30 @@ class HolidayAttendanceService
     }
 
     /**
+     * Saldo PH (tipe bonus) yang masih bisa dipakai untuk cuti Public Holiday.
+     * Sama basis dengan Data Karyawan, dikurangi used_amount per baris kompensasi.
+     */
+    public function getAvailablePublicHolidayBonusDays(int $userId): float
+    {
+        return (float) HolidayAttendanceCompensation::where('user_id', $userId)
+            ->where('compensation_type', 'bonus')
+            ->where('status', 'approved')
+            ->get()
+            ->sum(fn ($row) => max(0, (float) $row->compensation_amount - (float) ($row->used_amount ?? 0)));
+    }
+
+    /**
+     * Total saldo PH (bonus) bruto — dipakai modul Input Saldo HRD / Data Karyawan.
+     */
+    public function getTotalPublicHolidayBonusBalance(int $userId): float
+    {
+        return (float) HolidayAttendanceCompensation::where('user_id', $userId)
+            ->where('compensation_type', 'bonus')
+            ->where('status', 'approved')
+            ->sum('compensation_amount');
+    }
+
+    /**
      * Get employee's holiday attendance history
      * 
      * @param int $userId

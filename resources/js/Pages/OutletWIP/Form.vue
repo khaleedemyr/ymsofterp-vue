@@ -130,7 +130,9 @@
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Qty Produksi</label>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                {{ productionQtyLabel(production) }}
+              </label>
               <input 
                 type="number" 
                 min="0" 
@@ -141,11 +143,16 @@
                 @input="() => onQtyChange(index)"
                 :disabled="!form.warehouse_outlet_id || !production.item_id" 
               />
+              <p v-if="production.itemData?.small_conversion_qty" class="text-xs text-gray-500 mt-1">
+                1 {{ productionRecipeUnit(production) }} = {{ formatNumber(production.itemData.small_conversion_qty) }} {{ production.itemData.small_unit_name || 'small' }}
+              </p>
             </div>
 
             <div class="flex gap-2">
               <div class="flex-1">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Qty Jadi</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  Qty Jadi{{ production.itemData?.small_unit_name ? ` (${production.itemData.small_unit_name})` : '' }}
+                </label>
                 <input 
                   type="number" 
                   min="0" 
@@ -155,9 +162,12 @@
                   required 
                   :disabled="!form.warehouse_outlet_id || !production.item_id" 
                 />
+                <p v-if="production.itemData?.small_conversion_qty" class="text-xs text-blue-600 mt-1">
+                  Otomatis dari master: {{ production.qty || 0 }} × {{ formatNumber(production.itemData.small_conversion_qty) }} — masih bisa diedit
+                </p>
               </div>
               <div class="flex-1">
-                <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Unit Small</label>
                 <input 
                   type="text" 
                   :value="production.itemData?.small_unit_name || '-'" 
@@ -347,6 +357,33 @@ const canSubmit = computed(() => {
          })
 })
 
+function getSmallConversionQty(itemData) {
+  const conv = Number(itemData?.small_conversion_qty)
+  return conv > 0 ? conv : 1
+}
+
+function calculateQtyJadi(qty, itemData) {
+  const recipeQty = Number(qty) || 0
+  const result = recipeQty * getSmallConversionQty(itemData)
+  return Math.round(result * 100) / 100
+}
+
+function applyAutoQtyJadi(production) {
+  if (!production.itemData) return
+  production.qty_jadi = calculateQtyJadi(production.qty, production.itemData)
+}
+
+function productionRecipeUnit(production) {
+  return production.itemData?.medium_unit_name
+    || production.itemData?.large_unit_name
+    || 'recipe'
+}
+
+function productionQtyLabel(production) {
+  const unit = productionRecipeUnit(production)
+  return unit && unit !== 'recipe' ? `Qty Produksi (${unit})` : 'Qty Produksi'
+}
+
 function newProductionItem() {
   return {
     id: null,
@@ -411,6 +448,11 @@ function onItemSelect(item, index) {
   production.bom = []
   production.showBom = false
   production.canProduce = false
+
+  if (!production.qty || production.qty <= 0) {
+    production.qty = 1
+  }
+  applyAutoQtyJadi(production)
   
   if (production.item_id && production.qty > 0 && form.outlet_id && form.warehouse_outlet_id) {
     fetchBom(index)
@@ -430,6 +472,7 @@ function onItemRemove(index) {
 
 function onQtyChange(index) {
   const production = form.productions[index]
+  applyAutoQtyJadi(production)
   if (production.item_id && production.qty > 0 && form.outlet_id && form.warehouse_outlet_id) {
     fetchBom(index)
   } else {

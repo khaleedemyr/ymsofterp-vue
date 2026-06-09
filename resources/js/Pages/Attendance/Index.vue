@@ -705,55 +705,48 @@
                 </p>
               </div>
               
-              <!-- Public Holiday Extra Off Days Balance - Show only if Public Holiday is selected -->
+              <!-- Saldo Public Holiday - Show only if Public Holiday leave type is selected -->
               <div v-if="isPublicHolidayType" class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
                 <div class="flex items-center justify-between">
                   <div>
-                    <h4 class="text-sm font-medium text-blue-900 dark:text-blue-100">Saldo Extra Off dari Public Holiday</h4>
+                    <h4 class="text-sm font-medium text-blue-900 dark:text-blue-100">Saldo Public Holiday (PH)</h4>
                     <p class="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                      Total hari extra off dari kerja di hari libur nasional
+                      Hari cuti PH yang masih bisa digunakan (sama dengan Data Karyawan, dikurangi pemakaian)
                     </p>
                   </div>
                   <div class="text-right">
-                    <div v-if="loadingExtraOff" class="flex items-center">
-                      <i class="fas fa-spinner fa-spin text-blue-600 mr-2"></i>
-                      <span class="text-sm text-blue-600">Loading...</span>
-                    </div>
-                    <div v-else>
-                      <span class="text-2xl font-bold text-blue-900 dark:text-blue-100">
-                        {{ totalExtraOffDays }}
-                      </span>
-                      <span class="text-sm text-blue-700 dark:text-blue-300 ml-1">hari</span>
-                    </div>
+                    <span class="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                      {{ Number(publicHolidayLeaveBalance).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }}
+                    </span>
+                    <span class="text-sm text-blue-700 dark:text-blue-300 ml-1">hari</span>
                   </div>
                 </div>
-                
-                <!-- Show warning if no extra off days available -->
-                <div v-if="!loadingExtraOff && totalExtraOffDays === 0" class="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-700">
+
+                <div v-if="publicHolidayLeaveBalance === 0 && (phData.total_bonus_balance ?? 0) > 0" class="mt-3 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                   <div class="flex items-center">
-                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
-                    <span class="text-sm text-yellow-800 dark:text-yellow-200">
-                      Anda tidak memiliki saldo extra off dari kerja di hari libur nasional.
+                    <i class="fas fa-info-circle text-amber-600 mr-2"></i>
+                    <span class="text-sm text-amber-800 dark:text-amber-200">
+                      Saldo PH tercatat {{ Number(phData.total_bonus_balance).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} hari, tetapi sudah terpakai semua.
                     </span>
                   </div>
                 </div>
-                
-                <!-- Show extra off days details -->
-                <div v-if="!loadingExtraOff && totalExtraOffDays > 0" class="mt-3">
-                  <details class="text-xs">
-                    <summary class="cursor-pointer text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100">
-                      Lihat detail extra off days
-                    </summary>
-                    <div class="mt-2 space-y-1">
-                      <div v-for="extraOff in extraOffDays" :key="extraOff.id" class="flex justify-between items-center p-2 bg-white dark:bg-gray-800 rounded border">
-                        <div>
-                          <span class="font-medium">{{ extraOff.holiday_name }}</span>
-                          <span class="text-gray-500 dark:text-gray-400 ml-2">({{ extraOff.holiday_date }})</span>
-                        </div>
-                        <span class="text-green-600 dark:text-green-400 font-medium">1 hari</span>
-                      </div>
-                    </div>
-                  </details>
+
+                <div v-else-if="publicHolidayLeaveBalance === 0" class="mt-3 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+                    <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                      Anda tidak memiliki saldo Public Holiday yang tersedia.
+                    </span>
+                  </div>
+                </div>
+
+                <div v-else class="mt-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-700">
+                  <div class="flex items-center">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                    <span class="text-sm text-green-800 dark:text-green-200">
+                      Anda dapat mengajukan cuti Public Holiday hingga {{ Number(publicHolidayLeaveBalance).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} hari.
+                    </span>
+                  </div>
                 </div>
               </div>
               
@@ -1627,10 +1620,14 @@ const selectedDaysCount = computed(() => {
   return daysDiff
 })
 
+const publicHolidayLeaveBalance = computed(() => {
+  return Number(props.phData?.available_leave_days ?? 0)
+})
+
 // Computed property untuk mendapatkan saldo yang tersedia berdasarkan jenis cuti
 const availableBalance = computed(() => {
   if (isPublicHolidayType.value) {
-    return totalExtraOffDays.value
+    return publicHolidayLeaveBalance.value
   } else if (isAnnualLeaveType.value) {
     return annualLeaveBalance.value
   } else if (isExtraOffType.value) {
@@ -1939,12 +1936,15 @@ const clearAllPhotos = () => {
 }
 
 const submitAbsentRequest = async () => {
-  // Validate public holiday extra off days availability
-  if (isPublicHolidayType.value && totalExtraOffDays.value === 0) {
+  // Validate public holiday (PH bonus) balance
+  if (isPublicHolidayType.value && publicHolidayLeaveBalance.value <= 0) {
+    const totalRecorded = Number(props.phData?.total_bonus_balance ?? 0)
     await Swal.fire({
       icon: 'warning',
       title: 'Saldo Tidak Tersedia',
-      text: 'Anda tidak memiliki saldo extra off dari kerja di hari libur nasional yang tersedia untuk mengajukan izin ini.',
+      text: totalRecorded > 0
+        ? `Saldo PH tercatat ${totalRecorded} hari, tetapi sudah terpakai semua. Hubungi HRD jika perlu penyesuaian.`
+        : 'Anda tidak memiliki saldo Public Holiday yang tersedia untuk mengajukan izin ini.',
       confirmButtonText: 'OK',
       confirmButtonColor: '#3B82F6'
     })

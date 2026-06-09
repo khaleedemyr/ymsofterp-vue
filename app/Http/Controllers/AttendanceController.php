@@ -131,8 +131,9 @@ class AttendanceController extends Controller
         
         // Get PH and Extra Off data for current month (phData: detail per periode filter; saldo tersedia = global)
         $phData = $this->getPHData($user->id, $startDate, $endDate);
-        $phData['available_leave_days'] = app(HolidayAttendanceService::class)
-            ->getTotalAvailablePublicHolidayExtraOffDays($user->id);
+        $phService = app(HolidayAttendanceService::class);
+        $phData['available_leave_days'] = $phService->getAvailablePublicHolidayBonusDays($user->id);
+        $phData['total_bonus_balance'] = $phService->getTotalPublicHolidayBonusBalance($user->id);
         $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
         
         // Get correction requests for this user
@@ -1865,8 +1866,9 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
         
         // Get PH and Extra Off data
         $phData = $this->getPHData($user->id, $startDate, $endDate);
-        $phData['available_leave_days'] = app(HolidayAttendanceService::class)
-            ->getTotalAvailablePublicHolidayExtraOffDays($user->id);
+        $phService = app(HolidayAttendanceService::class);
+        $phData['available_leave_days'] = $phService->getAvailablePublicHolidayBonusDays($user->id);
+        $phData['total_bonus_balance'] = $phService->getTotalPublicHolidayBonusBalance($user->id);
         $extraOffData = $this->getExtraOffData($user->id, $startDate, $endDate);
         
         // Get correction requests

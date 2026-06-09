@@ -700,15 +700,14 @@ class UserController extends Controller
     
     public function getPublicHolidayBalance($userId)
     {
-        $balance = DB::table('holiday_attendance_compensations')
-            ->where('user_id', $userId)
-            ->where('compensation_type', 'bonus')
-            ->where('status', 'approved')
-            ->sum('compensation_amount');
-            
+        $service = app(\App\Services\HolidayAttendanceService::class);
+        $totalBalance = $service->getTotalPublicHolidayBonusBalance((int) $userId);
+        $availableBalance = $service->getAvailablePublicHolidayBonusDays((int) $userId);
+
         return response()->json([
             'success' => true,
-            'balance' => $balance ?: 0
+            'balance' => $totalBalance,
+            'available_balance' => $availableBalance,
         ]);
     }
 
