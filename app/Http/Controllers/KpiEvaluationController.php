@@ -189,6 +189,7 @@ class KpiEvaluationController extends Controller
                 'erp_scope_outlet_ids' => $preview['template']->erp_scope_outlet_ids ?? [],
             ] : null,
             'period' => $preview['period'],
+            'template_hint' => $preview['template_hint'],
         ]);
     }
 

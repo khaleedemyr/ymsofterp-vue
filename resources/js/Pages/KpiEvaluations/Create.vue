@@ -98,7 +98,8 @@ async function loadPreview() {
       form.erp_data_scope = data.template.erp_data_scope;
     }
     if (!data.template) {
-      previewError.value = 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.';
+      previewError.value = data.template_hint
+        || 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.';
     }
   } catch (e) {
     previewError.value = e.response?.data?.message || 'Gagal memuat preview.';

@@ -117,20 +117,30 @@ class KpiTemplateService
 
     protected function syncPositions(KpiTemplate $template, array $jabatanIds): void
     {
-        KpiTemplatePosition::where('kpi_template_id', $template->id)->delete();
+        $jabatanIds = array_values(array_unique(array_filter($jabatanIds)));
+        $existing = KpiTemplatePosition::where('kpi_template_id', $template->id)
+            ->get()
+            ->keyBy('id_jabatan');
 
-        foreach (array_unique($jabatanIds) as $jabatanId) {
-            if (!$jabatanId) {
+        foreach ($jabatanIds as $jabatanId) {
+            if ($existing->has($jabatanId)) {
+                $existing[$jabatanId]->update(['status' => 'A']);
+
                 continue;
             }
 
             KpiTemplatePosition::create([
                 'kpi_template_id' => $template->id,
                 'id_jabatan' => $jabatanId,
-                'effective_from' => now()->startOfMonth()->toDateString(),
+                'effective_from' => null,
+                'effective_to' => null,
                 'status' => 'A',
             ]);
         }
+
+        KpiTemplatePosition::where('kpi_template_id', $template->id)
+            ->whereNotIn('id_jabatan', $jabatanIds)
+            ->delete();
     }
 
     protected function syncStrategies(KpiTemplate $template, array $strategies): void

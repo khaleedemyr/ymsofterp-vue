@@ -141,8 +141,8 @@ WHERE `code` = 'KPI_OUTLET_MANAGER_v1';
 SET @tpl_id := (SELECT `id` FROM `kpi_templates` WHERE `code` = 'KPI_OUTLET_MANAGER_v1' LIMIT 1);
 
 -- ── Bridging jabatan ───────────────────────────────────
-INSERT INTO `kpi_template_positions` (`kpi_template_id`, `id_jabatan`, `effective_from`, `status`, `created_at`, `updated_at`)
-SELECT @tpl_id, j.id_jabatan, CURDATE(), 'A', NOW(), NOW()
+INSERT INTO `kpi_template_positions` (`kpi_template_id`, `id_jabatan`, `effective_from`, `effective_to`, `status`, `created_at`, `updated_at`)
+SELECT @tpl_id, j.id_jabatan, NULL, NULL, 'A', NOW(), NOW()
 FROM `tbl_data_jabatan` j
 WHERE j.status = 'A'
   AND (j.nama_jabatan LIKE '%Outlet Manager%' OR j.nama_jabatan LIKE '%Manager Outlet%')

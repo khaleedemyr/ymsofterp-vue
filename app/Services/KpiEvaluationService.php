@@ -32,7 +32,7 @@ class KpiEvaluationService
     }
 
     /**
-     * @return array{user: object, template: KpiTemplate|null, period: array<string, string>}
+     * @return array{user: object, template: KpiTemplate|null, period: array<string, string>, template_hint: string|null}
      */
     public function previewEmployee(int $userId, string $periodMonth): array
     {
@@ -44,6 +44,7 @@ class KpiEvaluationService
             'user' => $user,
             'template' => $template,
             'period' => $period,
+            'template_hint' => $template ? null : $this->explainMissingTemplate((int) $user->id_jabatan, $periodMonth),
         ];
     }
 
@@ -67,7 +68,8 @@ class KpiEvaluationService
         $template = $this->resolveTemplate((int) $user->id_jabatan, $periodMonth);
         if (!$template) {
             throw ValidationException::withMessages([
-                'user_id' => 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.',
+                'user_id' => $this->explainMissingTemplate((int) $user->id_jabatan, $periodMonth)
+                    ?? 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.',
             ]);
         }
 
@@ -474,6 +476,48 @@ class KpiEvaluationService
             ->first();
 
         return $position?->template;
+    }
+
+    protected function explainMissingTemplate(int $jabatanId, string $periodMonth): ?string
+    {
+        $periodDate = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth();
+        $periodLabel = $periodDate->locale('id')->translatedFormat('F Y');
+
+        $positions = KpiTemplatePosition::query()
+            ->where('id_jabatan', $jabatanId)
+            ->where('status', 'A')
+            ->with('template:id,code,name,template_status,status')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($positions->isEmpty()) {
+            return 'Belum ada template KPI yang di-assign ke jabatan karyawan ini.';
+        }
+
+        $activeTemplate = $positions->first(fn ($p) => $p->template
+            && $p->template->status === 'A'
+            && $p->template->template_status === 'active');
+
+        if (!$activeTemplate) {
+            $draft = $positions->first(fn ($p) => $p->template && $p->template->template_status === 'draft');
+
+            return $draft
+                ? "Template \"{$draft->template->name}\" masih draft — publish template terlebih dahulu."
+                : 'Tidak ada template KPI aktif untuk jabatan karyawan ini.';
+        }
+
+        $from = $activeTemplate->effective_from;
+        $to = $activeTemplate->effective_to;
+
+        if ($from && $from->gt($periodDate)) {
+            return "Template \"{$activeTemplate->template->name}\" baru berlaku dari {$from->locale('id')->translatedFormat('F Y')} — periode {$periodLabel} belum tercakup.";
+        }
+
+        if ($to && $to->lt($periodDate)) {
+            return "Template \"{$activeTemplate->template->name}\" berakhir {$to->locale('id')->translatedFormat('F Y')} — periode {$periodLabel} sudah di luar masa berlaku.";
+        }
+
+        return 'Tidak ada template KPI aktif untuk periode ini.';
     }
 
     protected function getUserSnapshot(int $userId): object
