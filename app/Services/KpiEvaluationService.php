@@ -694,17 +694,34 @@ class KpiEvaluationService
 
         if (preg_match('/^\s*(D\d{3}|KPI\d{2})\s*$/', $trimmed, $single)) {
             $code = $single[1];
+
             return isset($valueMap[$code]) && $valueMap[$code] !== null ? (float) $valueMap[$code] : null;
         }
 
-        $expr = $trimmed;
-        uksort($valueMap, fn ($a, $b) => strlen($b) <=> strlen($a));
+        $codesNeeded = $this->extractCodes($trimmed);
+        if ($codesNeeded === []) {
+            return null;
+        }
 
-        foreach ($valueMap as $code => $value) {
-            if ($value === null) {
+        foreach ($codesNeeded as $code) {
+            if (!array_key_exists($code, $valueMap) || $valueMap[$code] === null) {
                 return null;
             }
-            $expr = preg_replace('/\b' . preg_quote($code, '/') . '\b/', (string) ((float) $value), $expr);
+        }
+
+        $expr = $trimmed;
+        usort($codesNeeded, fn ($a, $b) => strlen($b) <=> strlen($a));
+
+        foreach ($codesNeeded as $code) {
+            $expr = preg_replace(
+                '/\b' . preg_quote($code, '/') . '\b/',
+                (string) ((float) $valueMap[$code]),
+                $expr,
+            );
+        }
+
+        if (preg_match('/\b(D\d{3}|KPI\d{2})\b/', $expr)) {
+            return null;
         }
 
         if (!preg_match('/^[0-9+\-*\/().\s]+$/', $expr)) {
@@ -715,7 +732,11 @@ class KpiEvaluationService
             /** @var float|int $result */
             $result = eval('return ' . $expr . ';');
 
-            return is_numeric($result) ? round((float) $result, 4) : null;
+            if (!is_numeric($result) || !is_finite((float) $result)) {
+                return null;
+            }
+
+            return round((float) $result, 4);
         } catch (\Throwable) {
             return null;
         }
