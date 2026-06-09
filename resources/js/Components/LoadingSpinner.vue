@@ -30,22 +30,12 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed } from 'vue';
 import { useLoading } from '@/Composables/useLoading';
 
 const { isLoading, message, subMessage, progress } = useLoading();
-const isMounted = ref(false);
 
-onMounted(() => {
-  isMounted.value = true;
-});
-
-const safeIsLoading = computed(() => {
-  if (!isMounted.value || !isLoading || typeof isLoading.value === 'undefined') {
-    return false;
-  }
-  return isLoading.value;
-});
+const safeIsLoading = computed(() => Boolean(isLoading?.value));
 
 const safeMessage = computed(() => {
   if (!message || typeof message.value === 'undefined') {

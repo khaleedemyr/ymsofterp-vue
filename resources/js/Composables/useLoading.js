@@ -1,5 +1,6 @@
 import { ref, provide, inject } from 'vue';
 
+// Singleton global — dipakai LoadingSpinner & semua halaman (hindari inject mismatch)
 const globalLoading = ref(false);
 const globalMessage = ref('Memuat Data...');
 const globalSubMessage = ref('');
@@ -18,25 +19,15 @@ function clearProgressTimer() {
 
 function createLoadingApi(isLoading, message, subMessage, progress) {
   const setLoading = (value, msg = 'Memuat Data...', subMsg = '', pct = null) => {
-    if (isLoading && typeof isLoading.value !== 'undefined') {
-      isLoading.value = value;
-    }
-    if (message && typeof message.value !== 'undefined') {
-      message.value = msg;
-    }
-    if (subMessage && typeof subMessage.value !== 'undefined') {
-      subMessage.value = subMsg;
-    }
-    if (progress && typeof progress.value !== 'undefined') {
-      progress.value = pct;
-    }
+    isLoading.value = value;
+    message.value = msg;
+    subMessage.value = subMsg;
+    progress.value = pct;
   };
 
   const setProgress = (pct, subMsg = null) => {
-    if (progress && typeof progress.value !== 'undefined') {
-      progress.value = Math.max(0, Math.min(100, Math.round(pct)));
-    }
-    if (subMsg !== null && subMessage && typeof subMessage.value !== 'undefined') {
+    progress.value = Math.max(0, Math.min(100, Math.round(pct)));
+    if (subMsg !== null) {
       subMessage.value = subMsg;
     }
   };
@@ -50,10 +41,6 @@ function createLoadingApi(isLoading, message, subMessage, progress) {
     setLoading(false, 'Memuat Data...', '', null);
   };
 
-  /**
-   * Progress simulasi untuk operasi async tanpa streaming server.
-   * Naik perlahan sampai ~92%, lalu finishProgress() ke 100%.
-   */
   const startProgressSimulation = (msg = 'Memuat Data...', options = {}) => {
     const {
       subMsg = '',
@@ -78,7 +65,7 @@ function createLoadingApi(isLoading, message, subMessage, progress) {
       setProgress(pct);
 
       const activeStep = [...steps].reverse().find((step) => pct >= step.at);
-      if (activeStep && subMessage && typeof subMessage.value !== 'undefined') {
+      if (activeStep) {
         subMessage.value = activeStep.message;
       }
     }, 180);
@@ -125,30 +112,17 @@ function createLoadingApi(isLoading, message, subMessage, progress) {
   };
 }
 
+const globalApi = createLoadingApi(globalLoading, globalMessage, globalSubMessage, globalProgress);
+
 export function useLoading() {
-  const injectedLoading = inject('loading', null);
-  const injectedMessage = inject('loadingMessage', null);
-  const injectedSubMessage = inject('loadingSubMessage', null);
-  const injectedProgress = inject('loadingProgress', null);
-
-  const isLoading = injectedLoading !== null ? injectedLoading : globalLoading;
-  const message = injectedMessage !== null ? injectedMessage : globalMessage;
-  const subMessage = injectedSubMessage !== null ? injectedSubMessage : globalSubMessage;
-  const progress = injectedProgress !== null ? injectedProgress : globalProgress;
-
-  return createLoadingApi(isLoading, message, subMessage, progress);
+  return globalApi;
 }
 
 export function provideLoading() {
-  const loading = ref(false);
-  const message = ref('Memuat Data...');
-  const subMessage = ref('');
-  const progress = ref(null);
+  provide('loading', globalLoading);
+  provide('loadingMessage', globalMessage);
+  provide('loadingSubMessage', globalSubMessage);
+  provide('loadingProgress', globalProgress);
 
-  provide('loading', loading);
-  provide('loadingMessage', message);
-  provide('loadingSubMessage', subMessage);
-  provide('loadingProgress', progress);
-
-  return createLoadingApi(loading, message, subMessage, progress);
+  return globalApi;
 }

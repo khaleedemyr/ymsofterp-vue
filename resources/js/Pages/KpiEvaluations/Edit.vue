@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
@@ -13,6 +13,25 @@ const props = defineProps({
   outlets: Array,
   erpScopeOptions: Array,
 });
+
+const page = usePage();
+const evaluation = ref({ ...props.evaluation });
+
+watch(
+  () => page.props.evaluation,
+  (val) => { if (val) evaluation.value = val; },
+  { deep: true },
+);
+
+watch(
+  () => props.evaluation,
+  (val) => { if (val) evaluation.value = val; },
+  { deep: true },
+);
+
+function applyEvaluation(data) {
+  evaluation.value = data;
+}
 
 const {
   startProgressSimulation,
@@ -62,8 +81,8 @@ const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet')
 const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
 
 const scopeUnsaved = computed(() => {
-  const savedScope = props.evaluation.erp_data_scope || 'employee_outlet';
-  const savedIds = JSON.stringify(props.evaluation.erp_scope_outlet_ids ?? []);
+  const savedScope = evaluation.value.erp_data_scope || 'employee_outlet';
+  const savedIds = JSON.stringify(evaluation.value.erp_scope_outlet_ids ?? []);
   const formIds = JSON.stringify(form.erp_scope_outlet_ids ?? []);
   return form.erp_data_scope !== savedScope || formIds !== savedIds;
 });
@@ -94,7 +113,7 @@ watch(selectedMultipleOutlets, (list) => {
   scheduleLoadDiagnostics();
 });
 
-const groupedStrategies = computed(() => props.evaluation.strategies || []);
+const groupedStrategies = computed(() => evaluation.value.strategies || []);
 
 function pvRow(id) {
   return form.parameter_values.find((r) => r.id === id);
@@ -132,16 +151,31 @@ function onManualChange(pv, original) {
 
 function save() {
   startProgressSimulation('Menyimpan draft evaluasi...', { estimatedMs: 15000 });
-  form.put(route('kpi-evaluations.update', props.evaluation.id), {
+  form.put(route('kpi-evaluations.update', evaluation.value.id), {
     onFinish: () => finishProgress('Draft berhasil disimpan.'),
     onError: () => failProgress('Gagal menyimpan draft.'),
   });
 }
 
+async function recalculateScores() {
+  startProgressSimulation('Menghitung ulang skor KPI...', { estimatedMs: 8000 });
+  try {
+    const { data } = await axios.post(
+      route('kpi-evaluations.recalculate', evaluation.value.id),
+      {},
+      { headers: { Accept: 'application/json' } },
+    );
+    applyEvaluation(data.evaluation);
+    await finishProgress('Skor KPI diperbarui.');
+  } catch {
+    failProgress('Gagal menghitung ulang skor.');
+  }
+}
+
 async function refreshErp() {
   const result = await Swal.fire({
     title: 'Refresh data ERP?',
-    text: 'Nilai ERP akan diambil ulang dari sistem.',
+    text: 'Nilai ERP akan diambil ulang dan skor KPI dihitung ulang.',
     icon: 'question',
     showCancelButton: true,
   });
@@ -159,17 +193,17 @@ async function refreshErp() {
   });
 
   try {
-    await axios.post(route('kpi-evaluations.refresh-erp', props.evaluation.id), {
-      erp_data_scope: form.erp_data_scope,
-      erp_scope_outlet_ids: form.erp_scope_outlet_ids,
-    }, {
-      headers: { Accept: 'application/json' },
-    });
-    await finishProgress('Data ERP berhasil di-refresh.');
-    router.reload({
-      only: ['evaluation'],
-      onFinish: () => loadDiagnostics(),
-    });
+    const { data } = await axios.post(
+      route('kpi-evaluations.refresh-erp', evaluation.value.id),
+      {
+        erp_data_scope: form.erp_data_scope,
+        erp_scope_outlet_ids: form.erp_scope_outlet_ids,
+      },
+      { headers: { Accept: 'application/json' } },
+    );
+    applyEvaluation(data.evaluation);
+    await finishProgress('Data ERP & skor KPI diperbarui.');
+    loadDiagnostics();
   } catch {
     failProgress('Gagal refresh data ERP.');
   }
@@ -186,10 +220,10 @@ async function submitEval() {
 
   startProgressSimulation('Menyimpan & submit evaluasi...', { estimatedMs: 20000 });
 
-  form.put(route('kpi-evaluations.update', props.evaluation.id), {
+  form.put(route('kpi-evaluations.update', evaluation.value.id), {
     preserveScroll: true,
     onSuccess: () => {
-      router.post(route('kpi-evaluations.submit', props.evaluation.id), {}, {
+      router.post(route('kpi-evaluations.submit', evaluation.value.id), {}, {
         onFinish: () => finishProgress('Evaluasi berhasil disubmit.'),
         onError: () => failProgress('Gagal submit evaluasi.'),
       });
@@ -223,7 +257,7 @@ async function loadDiagnostics() {
   }, 400);
 
   try {
-    const { data } = await axios.get(route('kpi-evaluations.erp-diagnostics', props.evaluation.id), {
+    const { data } = await axios.get(route('kpi-evaluations.erp-diagnostics', evaluation.value.id), {
       params: {
         erp_data_scope: form.erp_data_scope,
         erp_scope_outlet_ids: form.erp_scope_outlet_ids,
@@ -333,11 +367,16 @@ onMounted(() => {
 
       <!-- Data Parameters -->
       <div class="bg-white rounded-2xl shadow mb-6 overflow-hidden">
-        <div class="bg-indigo-700 text-white px-4 py-3 flex justify-between items-center">
+        <div class="bg-indigo-700 text-white px-4 py-3 flex justify-between items-center gap-2 flex-wrap">
           <span class="font-semibold">Data Parameter (D*)</span>
-          <button type="button" class="text-sm bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg disabled:opacity-50" :disabled="form.processing" @click="refreshErp">
-            <i class="fa-solid fa-rotate mr-1"></i> Refresh ERP
-          </button>
+          <div class="flex gap-2">
+            <button type="button" class="text-sm bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg" @click="recalculateScores">
+              <i class="fa-solid fa-calculator mr-1"></i> Hitung Ulang Skor
+            </button>
+            <button type="button" class="text-sm bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg disabled:opacity-50" :disabled="form.processing" @click="refreshErp">
+              <i class="fa-solid fa-rotate mr-1"></i> Refresh ERP
+            </button>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">

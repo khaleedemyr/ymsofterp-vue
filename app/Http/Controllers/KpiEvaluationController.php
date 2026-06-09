@@ -99,6 +99,11 @@ class KpiEvaluationController extends Controller
     {
         $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
 
+        if ($evaluation->isEditable()) {
+            $this->evaluationService->recalculate($evaluation);
+            $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+        }
+
         return Inertia::render('KpiEvaluations/Edit', [
             'evaluation' => $this->formatEvaluation($evaluation),
             'outlets' => $this->evaluationService->outletOptions(),
@@ -215,12 +220,28 @@ class KpiEvaluationController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Data ERP berhasil di-refresh.',
+                'evaluation' => $this->formatEvaluation($evaluation),
             ]);
         }
 
         return redirect()
             ->route('kpi-evaluations.edit', $kpiEvaluation->id)
             ->with('success', 'Data ERP berhasil di-refresh.');
+    }
+
+    public function recalculate(KpiEvaluation $kpiEvaluation)
+    {
+        if (!$kpiEvaluation->isEditable()) {
+            return response()->json(['message' => 'Evaluasi sudah disubmit.'], 422);
+        }
+
+        $this->evaluationService->recalculate($kpiEvaluation);
+        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+
+        return response()->json([
+            'success' => true,
+            'evaluation' => $this->formatEvaluation($evaluation),
+        ]);
     }
 
     public function submit(KpiEvaluation $kpiEvaluation)
