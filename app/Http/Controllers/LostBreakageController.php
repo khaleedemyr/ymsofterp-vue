@@ -1073,14 +1073,32 @@ class LostBreakageController extends Controller
             ->orderBy('af.approval_level')
             ->get();
 
+        $currentApprover = $this->resolveCurrentLostBreakageApprover((int) $id);
+
         return response()->json([
             'success' => true,
             'header' => $header,
             'details' => $details,
             'approval_flows' => $approvalFlows,
+            'current_approver' => $currentApprover,
+            'can_approve' => $header->status === 'SUBMITTED' && $currentApprover !== null,
             // Penggantian lewat Asset Replacement → PR → PO → GR (sama seperti web Show.vue).
             'can_record_replacements' => false,
         ]);
+    }
+
+    private function resolveCurrentLostBreakageApprover(int $headerId): ?object
+    {
+        $currentUserId = auth()->id();
+        if (! $currentUserId) {
+            return null;
+        }
+
+        return DB::table('lost_breakage_approval_flows')
+            ->where('header_id', $headerId)
+            ->where('approver_id', $currentUserId)
+            ->where('status', 'PENDING')
+            ->first() ?: null;
     }
 
     public function apiFormMeta()

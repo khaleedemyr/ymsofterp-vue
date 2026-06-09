@@ -39,11 +39,13 @@ const errorSummary = computed(() => formatBrandFormErrors(errors.value));
 const hasFormErrors = computed(() => errorSummary.value.length > 0);
 
 function showErrorAlert(message, html = null) {
+  const body = html || (message ? String(message).replace(/\n/g, '<br>') : 'Terjadi kesalahan saat memperbarui brand.');
   Swal.fire({
     icon: 'error',
     title: 'Gagal memperbarui brand',
-    ...(html ? { html } : { text: message }),
+    html: `<div style="text-align:left;font-size:14px;line-height:1.5;">${body}</div>`,
     confirmButtonText: 'OK',
+    width: '36rem',
   });
 }
 

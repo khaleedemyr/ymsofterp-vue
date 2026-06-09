@@ -20,6 +20,9 @@ use App\Http\Controllers\SubCategoryController;
 use App\Http\Controllers\UnitController;
 use App\Http\Controllers\DataLevelController;
 use App\Http\Controllers\BpjsKategoriController;
+use App\Http\Controllers\KpiKeyStrategyController;
+use App\Http\Controllers\KpiParameterController;
+use App\Http\Controllers\KpiTemplateController;
 use App\Http\Controllers\JabatanController;
 use App\Http\Controllers\DivisiController;
 use App\Http\Controllers\ManPowerOutletController;
@@ -736,6 +739,22 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::patch('/bpjs-kategori/{id}', [BpjsKategoriController::class, 'update']);
     Route::post('/bpjs-kategori/{id}', [BpjsKategoriController::class, 'update'])->name('bpjs-kategori.update');
     Route::patch('/bpjs-kategori/{id}/toggle-status', [BpjsKategoriController::class, 'toggleStatus'])->name('bpjs-kategori.toggle-status');
+
+    // KPI Master Data
+    Route::resource('kpi-parameters', KpiParameterController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::put('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update']);
+    Route::patch('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update']);
+    Route::post('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update'])->name('kpi-parameters.update');
+    Route::patch('/kpi-parameters/{kpiParameter}/toggle-status', [KpiParameterController::class, 'toggleStatus'])->name('kpi-parameters.toggle-status');
+
+    Route::resource('kpi-key-strategies', KpiKeyStrategyController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::put('/kpi-key-strategies/{kpiKeyStrategy}', [KpiKeyStrategyController::class, 'update']);
+    Route::patch('/kpi-key-strategies/{kpiKeyStrategy}', [KpiKeyStrategyController::class, 'update']);
+    Route::post('/kpi-key-strategies/{kpiKeyStrategy}', [KpiKeyStrategyController::class, 'update'])->name('kpi-key-strategies.update');
+    Route::patch('/kpi-key-strategies/{kpiKeyStrategy}/toggle-status', [KpiKeyStrategyController::class, 'toggleStatus'])->name('kpi-key-strategies.toggle-status');
+
+    Route::resource('kpi-templates', KpiTemplateController::class);
+    Route::post('/kpi-templates/{kpiTemplate}/publish', [KpiTemplateController::class, 'publish'])->name('kpi-templates.publish');
 
     // Jabatan dropdown and debug routes (PASTIKAN INI DI ATAS resource!)
     Route::get('/jabatans/dropdown-data', [JabatanController::class, 'getDropdownData'])->name('jabatans.dropdown-data');

@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Pagination\LengthAwarePaginator;
 
@@ -1390,9 +1391,8 @@ class WebProfileController extends Controller
                     $uploadedFiles[] = $path;
                 }
 
-                // Set created_by
-                $validated['created_by'] = auth()->user()->name ?? 'System';
                 unset($validated['hero_title'], $validated['hero_subtitle'], $validated['hero_media']);
+                $validated = $this->prepareBrandPayloadForSave($validated, true);
 
                 // Create brand record
                 $brand = WebProfileBrand::create($validated);
@@ -1420,7 +1420,7 @@ class WebProfileController extends Controller
         } catch (\Exception $e) {
             Log::error('Brand creation failed: ' . $e->getMessage(), [
                 'request' => $request->except(['thumbnail', 'image', 'menu_pdf', 'logo_cp', 'hero_media']),
-                'trace' => $e->getMessage()
+                'sql_error' => $e instanceof \Illuminate\Database\QueryException ? $e->errorInfo : null,
             ]);
 
             return redirect()->back()
@@ -1566,9 +1566,8 @@ class WebProfileController extends Controller
                     unset($validated['menu_pdf']);
                 }
 
-                // Set updated_by
-                $validated['updated_by'] = auth()->user()->name ?? 'System';
                 unset($validated['hero_title'], $validated['hero_subtitle'], $validated['hero_media'], $validated['remove_hero_media']);
+                $validated = $this->prepareBrandPayloadForSave($validated, false);
 
                 $brand->update($validated);
             });
@@ -3031,15 +3030,76 @@ class WebProfileController extends Controller
         ];
     }
 
+    private function prepareBrandPayloadForSave(array $validated, bool $isCreate): array
+    {
+        $columns = Schema::getColumnListing('web_profile_brands');
+        $actor = auth()->user()->name ?? 'System';
+
+        if ($isCreate && in_array('created_by', $columns, true)) {
+            $validated['created_by'] = $actor;
+        }
+
+        if (! $isCreate && in_array('updated_by', $columns, true)) {
+            $validated['updated_by'] = $actor;
+        }
+
+        // Di server legacy, kolom `content` sering NOT NULL tanpa default.
+        if (in_array('content', $columns, true) && (! array_key_exists('content', $validated) || $validated['content'] === null)) {
+            $validated['content'] = '';
+        }
+
+        return array_intersect_key($validated, array_flip($columns));
+    }
+
+    private function simplifySqlError(string $message): string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return 'Terjadi kesalahan database tanpa pesan detail.';
+        }
+
+        if (str_contains($message, ' (SQL:')) {
+            $message = strstr($message, ' (SQL:', true) ?: $message;
+        }
+
+        return trim($message);
+    }
+
     private function brandSaveUserMessage(\Throwable $e, string $action = 'menyimpan'): string
     {
         if ($e instanceof \Illuminate\Database\QueryException) {
-            $sqlMessage = $e->getMessage();
-            if (str_contains($sqlMessage, 'Duplicate entry') && str_contains($sqlMessage, 'slug')) {
-                return 'Slug sudah dipakai brand lain. Silakan ubah slug lalu coba lagi.';
+            $driverMessage = $this->simplifySqlError((string) ($e->errorInfo[2] ?? $e->getMessage()));
+
+            if (str_contains($driverMessage, 'Duplicate entry')) {
+                if (str_contains($driverMessage, 'slug')) {
+                    return 'Slug sudah dipakai brand lain. Silakan ubah slug lalu coba lagi.';
+                }
+
+                return 'Data duplikat di database: ' . $driverMessage;
             }
 
-            return 'Gagal ' . $action . ' brand ke database. Silakan coba lagi atau hubungi admin IT.';
+            if (preg_match("/Unknown column '([^']+)'/i", $driverMessage, $matches)) {
+                return 'Kolom database `' . $matches[1] . '` belum ada di tabel `web_profile_brands`. '
+                    . 'Jalankan migrasi terbaru (`php artisan migrate`) atau hubungi admin IT.';
+            }
+
+            if (preg_match("/Field '([^']+)' doesn't have a default value/i", $driverMessage, $matches)) {
+                return 'Field `' . $matches[1] . '` wajib diisi di database, tapi nilainya kosong saat simpan.';
+            }
+
+            if (preg_match("/Data too long for column '([^']+)'/i", $driverMessage, $matches)) {
+                return 'Data terlalu panjang untuk field `' . $matches[1] . '`. Perpendek teks atau gunakan file lebih kecil.';
+            }
+
+            if (str_contains($driverMessage, 'cannot be null')) {
+                return 'Ada field wajib yang masih kosong: ' . $driverMessage;
+            }
+
+            if (str_contains($driverMessage, 'Integrity constraint violation')) {
+                return 'Pelanggaran aturan database: ' . $driverMessage;
+            }
+
+            return 'Gagal ' . $action . ' brand ke database. Detail: ' . $driverMessage;
         }
 
         $map = [
