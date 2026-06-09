@@ -158,27 +158,43 @@ class KpiParameterResolverService
             return null;
         }
 
-        $query = DB::table('tickets')
-            ->where('outlet_id', $outletId)
-            ->whereDate('created_at', '>=', $start)
-            ->whereDate('created_at', '<=', $end);
+        if (!DB::getSchemaBuilder()->hasTable('ticket_categories')) {
+            return null;
+        }
+
+        $query = DB::table('tickets as t')
+            ->join('ticket_categories as tc', 't.category_id', '=', 'tc.id')
+            ->where('t.outlet_id', $outletId)
+            ->whereDate('t.created_at', '>=', $start)
+            ->whereDate('t.created_at', '<=', $end)
+            ->where('tc.status', 'A');
 
         if ($kind === 'complaint') {
             $query->where(function ($q) {
-                $q->where('category', 'like', '%complaint%')
-                    ->orWhere('type', 'like', '%complaint%');
+                $q->where('tc.name', 'like', '%complaint%')
+                    ->orWhere('tc.name', 'like', '%komplain%')
+                    ->orWhere('tc.name', 'like', '%keluhan%')
+                    ->orWhere('tc.description', 'like', '%complaint%')
+                    ->orWhere('tc.description', 'like', '%komplain%');
             });
         } else {
             $query->where(function ($q) {
-                $q->where('category', 'like', '%improvement%')
-                    ->orWhere('type', 'like', '%improvement%');
+                $q->where('tc.name', 'like', '%improvement%')
+                    ->orWhere('tc.name', 'like', '%perbaikan%')
+                    ->orWhere('tc.name', 'like', '%action%')
+                    ->orWhere('tc.description', 'like', '%improvement%')
+                    ->orWhere('tc.description', 'like', '%perbaikan%');
             });
 
-            if ($closedOnly === true) {
-                $query->whereIn('status', ['closed', 'resolved', 'done']);
+            if ($closedOnly === true && DB::getSchemaBuilder()->hasTable('ticket_statuses')) {
+                $query->join('ticket_statuses as ts', 't.status_id', '=', 'ts.id')
+                    ->where(function ($q) {
+                        $q->where('ts.is_final', 1)
+                            ->orWhereIn('ts.slug', ['closed', 'resolved', 'done']);
+                    });
             }
         }
 
-        return (float) $query->count();
+        return (float) $query->count('t.id');
     }
 }
