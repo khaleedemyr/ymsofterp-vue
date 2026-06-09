@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -7,6 +7,7 @@ import TextInput from '@/Components/TextInput.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import InputError from '@/Components/InputError.vue';
 import Swal from 'sweetalert2';
+import { brandFormErrorsHtml, formatBrandFormErrors } from '@/utils/formatBrandFormErrors';
 
 const form = ref({
   title: '',
@@ -26,15 +27,41 @@ const page = usePage();
 const errors = ref({});
 const isSubmitting = ref(false);
 
+const errorSummary = computed(() => formatBrandFormErrors(errors.value));
+const hasFormErrors = computed(() => errorSummary.value.length > 0);
+
+function showErrorAlert(message, html = null) {
+  Swal.fire({
+    icon: 'error',
+    title: 'Gagal menyimpan brand',
+    ...(html ? { html } : { text: message }),
+    confirmButtonText: 'OK',
+  });
+}
+
+function applyValidationErrors(validationErrors) {
+  errors.value = validationErrors || {};
+  const html = brandFormErrorsHtml(validationErrors);
+  if (html) {
+    showErrorAlert(null, html);
+  } else {
+    showErrorAlert('Periksa kembali data yang diisi.');
+  }
+}
+
+function syncPageErrors() {
+  const pageErrors = page.props.errors || {};
+  if (Object.keys(pageErrors).length > 0) {
+    applyValidationErrors(pageErrors);
+  }
+}
+
 onMounted(() => {
+  syncPageErrors();
+
   const flash = page.props.flash || {};
   if (flash.error) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Gagal',
-      text: flash.error,
-      confirmButtonText: 'OK',
-    });
+    showErrorAlert(flash.error);
   }
 });
 const thumbnailPreview = ref(null);
@@ -134,22 +161,8 @@ function submit() {
   router.post('/web-profile/brands', formData, {
     forceFormData: true,
     onError: (validationErrors) => {
-      errors.value = validationErrors || {};
       isSubmitting.value = false;
-      
-      let errorMessage = 'Gagal membuat brand. Silakan periksa form yang diisi.';
-      if (validationErrors && Object.keys(validationErrors).length > 0) {
-        const errorMessages = Object.values(validationErrors).flat();
-        if (errorMessages.length > 0) {
-          errorMessage = errorMessages.join('<br>');
-        }
-      }
-      
-      Swal.fire({
-        icon: 'error',
-        title: 'Error!',
-        html: errorMessage,
-      });
+      applyValidationErrors(validationErrors);
     },
     onFinish: () => {
       isSubmitting.value = false;
@@ -173,6 +186,16 @@ function cancel() {
       </div>
 
       <div class="bg-white rounded-lg shadow p-6">
+        <div
+          v-if="hasFormErrors"
+          class="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+        >
+          <p class="font-semibold mb-2">Perbaiki field berikut:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li v-for="(item, index) in errorSummary" :key="index" v-html="item" />
+          </ul>
+        </div>
+
         <form @submit.prevent="submit" class="space-y-6">
           <!-- Title -->
           <div>

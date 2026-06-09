@@ -1323,13 +1323,7 @@ class WebProfileController extends Controller
                 'hero_title' => 'nullable|string|max:255',
                 'hero_subtitle' => 'nullable|string|max:2000',
                 'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
-            ], [
-                'thumbnail.required' => 'Thumbnail image is required',
-                'thumbnail.image' => 'Thumbnail must be an image file',
-                'logo_cp.image' => 'Logo CP must be an image file',
-                'menu_pdf.file' => 'Menu PDF must be a file',
-                'menu_pdf.mimes' => 'Menu PDF must be a PDF file',
-            ]);
+            ], $this->brandValidationMessages());
 
             $brand = DB::transaction(function () use ($request, $validated) {
                 $uploadedFiles = [];
@@ -1434,7 +1428,7 @@ class WebProfileController extends Controller
             ]);
 
             return redirect()->back()
-                ->with('error', 'Gagal membuat brand: ' . $e->getMessage())
+                ->with('error', $this->brandSaveUserMessage($e, 'membuat'))
                 ->withInput();
         }
     }
@@ -1491,7 +1485,7 @@ class WebProfileController extends Controller
                 'hero_subtitle' => 'nullable|string|max:2000',
                 'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
                 'remove_hero_media' => 'nullable|boolean',
-            ]);
+            ], $this->brandValidationMessages());
 
             DB::transaction(function () use ($request, $validated, $brand) {
                 $uploadedFiles = [];
@@ -1600,7 +1594,7 @@ class WebProfileController extends Controller
             Log::error('Brand update failed: ' . $e->getMessage());
 
             return redirect()->back()
-                ->with('error', 'Gagal memperbarui brand: ' . $e->getMessage())
+                ->with('error', $this->brandSaveUserMessage($e, 'memperbarui'))
                 ->withInput();
         }
     }
@@ -3013,6 +3007,68 @@ class WebProfileController extends Controller
         $encodedPath = implode('/', $encodedParts);
 
         return $baseUrl.'/storage/'.$encodedPath;
+    }
+
+    private function brandValidationMessages(): array
+    {
+        return [
+            'title.required' => 'Judul wajib diisi.',
+            'title.max' => 'Judul maksimal 255 karakter.',
+            'slug.required' => 'Slug wajib diisi.',
+            'slug.unique' => 'Slug sudah dipakai brand lain. Gunakan slug yang berbeda.',
+            'slug.max' => 'Slug maksimal 255 karakter.',
+            'link_menu.url' => 'Link menu harus URL valid (contoh: https://example.com/menu).',
+            'link_menu.max' => 'Link menu maksimal 255 karakter.',
+            'thumbnail.required' => 'Thumbnail wajib diupload.',
+            'thumbnail.image' => 'Thumbnail harus berupa file gambar.',
+            'thumbnail.mimes' => 'Thumbnail harus berformat JPG, PNG, atau WEBP.',
+            'thumbnail.max' => 'Thumbnail maksimal 5MB.',
+            'logo_cp.image' => 'Logo Company Profile harus berupa file gambar.',
+            'logo_cp.mimes' => 'Logo Company Profile harus berformat JPG, PNG, atau WEBP.',
+            'logo_cp.max' => 'Logo Company Profile maksimal 5MB.',
+            'image.image' => 'Gambar harus berupa file gambar.',
+            'image.mimes' => 'Gambar harus berformat JPG, PNG, atau WEBP.',
+            'image.max' => 'Gambar maksimal 5MB.',
+            'menu_pdf.file' => 'Menu PDF harus berupa file.',
+            'menu_pdf.mimes' => 'Menu PDF harus berformat PDF.',
+            'menu_pdf.max' => 'Menu PDF maksimal 10MB.',
+            'hero_title.max' => 'Header title maksimal 255 karakter.',
+            'hero_subtitle.max' => 'Header subtitle maksimal 2000 karakter.',
+            'hero_media.mimes' => 'Header media harus berformat JPG, PNG, WEBP, MP4, atau WEBM.',
+            'hero_media.max' => 'Header media maksimal 50MB.',
+        ];
+    }
+
+    private function brandSaveUserMessage(\Throwable $e, string $action = 'menyimpan'): string
+    {
+        if ($e instanceof \Illuminate\Database\QueryException) {
+            $sqlMessage = $e->getMessage();
+            if (str_contains($sqlMessage, 'Duplicate entry') && str_contains($sqlMessage, 'slug')) {
+                return 'Slug sudah dipakai brand lain. Silakan ubah slug lalu coba lagi.';
+            }
+
+            return 'Gagal ' . $action . ' brand ke database. Silakan coba lagi atau hubungi admin IT.';
+        }
+
+        $map = [
+            'Failed to upload thumbnail' => 'Gagal mengupload thumbnail. Periksa format (JPG/PNG/WEBP), ukuran maks. 5MB, dan pastikan folder storage server dapat ditulis.',
+            'Failed to upload image' => 'Gagal mengupload gambar. Periksa format (JPG/PNG/WEBP) dan ukuran maks. 5MB.',
+            'Failed to upload company profile logo' => 'Gagal mengupload logo company profile. Periksa format (JPG/PNG/WEBP) dan ukuran maks. 5MB.',
+            'Failed to upload menu PDF' => 'Gagal mengupload menu PDF. Periksa format PDF dan ukuran maks. 10MB.',
+            'Failed to create brand record' => 'Gagal menyimpan data brand ke database setelah upload file.',
+        ];
+
+        $technicalMessage = $e->getMessage();
+
+        if (isset($map[$technicalMessage])) {
+            return $map[$technicalMessage];
+        }
+
+        if (str_contains($technicalMessage, 'upload')) {
+            return 'Gagal mengupload file: ' . $technicalMessage;
+        }
+
+        return 'Gagal ' . $action . ' brand. ' . $technicalMessage;
     }
 
     private function ensureUniqueBrandSlug(string $slug, ?int $ignoreId = null): string
