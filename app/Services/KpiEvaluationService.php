@@ -132,32 +132,8 @@ class KpiEvaluationService
         }
 
         return DB::transaction(function () use ($evaluation, $parameterValues, $items, $meta) {
-            foreach ($parameterValues as $row) {
-                $pv = KpiEvaluationParameterValue::where('kpi_evaluation_id', $evaluation->id)
-                    ->where('id', $row['id'] ?? 0)
-                    ->first();
-
-                if (!$pv) {
-                    continue;
-                }
-
-                $manualValue = isset($row['manual_value']) && $row['manual_value'] !== '' && $row['manual_value'] !== null
-                    ? (float) $row['manual_value']
-                    : null;
-                $isOverridden = (bool) ($row['is_overridden'] ?? false);
-
-                if (in_array($pv->source_type, ['manual', 'hybrid'], true) && $manualValue !== null) {
-                    $isOverridden = $pv->source_type === 'hybrid' && $pv->erp_value !== null && $manualValue != $pv->erp_value;
-                }
-
-                $finalValue = $this->resolveFinalValue($pv->source_type, $pv->erp_value, $manualValue, $isOverridden);
-
-                $pv->update([
-                    'manual_value' => $manualValue,
-                    'final_value' => $finalValue,
-                    'is_overridden' => $isOverridden,
-                    'override_reason' => $row['override_reason'] ?? null,
-                ]);
+            if ($parameterValues !== []) {
+                $this->applyParameterValueRows($evaluation, $parameterValues);
             }
 
             foreach ($items as $row) {
@@ -453,6 +429,73 @@ class KpiEvaluationService
         }
 
         $evaluation->update(['total_score' => round($totalScore, 2)]);
+    }
+
+    /**
+     * Simpan input parameter dari form lalu hitung ulang skor KPI.
+     *
+     * @param  array<int, array<string, mixed>>  $parameterValues
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    public function recalculateFromForm(KpiEvaluation $evaluation, array $parameterValues = [], array $items = []): KpiEvaluation
+    {
+        if (!$evaluation->isEditable()) {
+            throw ValidationException::withMessages(['eval_status' => 'Evaluasi sudah disubmit.']);
+        }
+
+        return DB::transaction(function () use ($evaluation, $parameterValues, $items) {
+            if ($parameterValues !== []) {
+                $this->applyParameterValueRows($evaluation, $parameterValues);
+            }
+
+            foreach ($items as $row) {
+                KpiEvaluationItem::where('kpi_evaluation_id', $evaluation->id)
+                    ->where('id', $row['id'] ?? 0)
+                    ->update([
+                        'improvement_plan' => $row['improvement_plan'] ?? null,
+                    ]);
+            }
+
+            $this->recalculate($evaluation->fresh());
+
+            return $evaluation->fresh(['template', 'parameterValues', 'items']);
+        });
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $parameterValues
+     */
+    protected function applyParameterValueRows(KpiEvaluation $evaluation, array $parameterValues): void
+    {
+        foreach ($parameterValues as $row) {
+            $pv = KpiEvaluationParameterValue::where('kpi_evaluation_id', $evaluation->id)
+                ->where('id', $row['id'] ?? 0)
+                ->first();
+
+            if (!$pv) {
+                continue;
+            }
+
+            $manualValue = isset($row['manual_value']) && $row['manual_value'] !== '' && $row['manual_value'] !== null
+                ? (float) $row['manual_value']
+                : null;
+            $isOverridden = (bool) ($row['is_overridden'] ?? false);
+
+            if ($pv->source_type === 'hybrid' && $manualValue !== null) {
+                $isOverridden = $pv->erp_value !== null
+                    ? $manualValue != $pv->erp_value
+                    : true;
+            }
+
+            $finalValue = $this->resolveFinalValue($pv->source_type, $pv->erp_value, $manualValue, $isOverridden);
+
+            $pv->update([
+                'manual_value' => $manualValue,
+                'final_value' => $finalValue,
+                'is_overridden' => $isOverridden,
+                'override_reason' => $row['override_reason'] ?? null,
+            ]);
+        }
     }
 
     protected function resolveTemplate(int $jabatanId, string $periodMonth): ?KpiTemplate

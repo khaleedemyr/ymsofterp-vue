@@ -229,14 +229,28 @@ class KpiEvaluationController extends Controller
             ->with('success', 'Data ERP berhasil di-refresh.');
     }
 
-    public function recalculate(KpiEvaluation $kpiEvaluation)
+    public function recalculate(Request $request, KpiEvaluation $kpiEvaluation)
     {
         if (!$kpiEvaluation->isEditable()) {
             return response()->json(['message' => 'Evaluasi sudah disubmit.'], 422);
         }
 
-        $this->evaluationService->recalculate($kpiEvaluation);
-        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+        $validated = $request->validate([
+            'parameter_values' => 'nullable|array',
+            'parameter_values.*.id' => 'required|integer',
+            'parameter_values.*.manual_value' => 'nullable|numeric',
+            'parameter_values.*.is_overridden' => 'nullable|boolean',
+            'parameter_values.*.override_reason' => 'nullable|string|max:1000',
+            'items' => 'nullable|array',
+            'items.*.id' => 'required|integer',
+            'items.*.improvement_plan' => 'nullable|string|max:2000',
+        ]);
+
+        $evaluation = $this->evaluationService->recalculateFromForm(
+            $kpiEvaluation,
+            $validated['parameter_values'] ?? [],
+            $validated['items'] ?? [],
+        );
 
         return response()->json([
             'success' => true,

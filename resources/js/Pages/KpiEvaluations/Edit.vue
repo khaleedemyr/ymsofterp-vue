@@ -31,6 +31,14 @@ watch(
 
 function applyEvaluation(data) {
   evaluation.value = data;
+  data.parameter_values?.forEach((pv) => {
+    const row = pvRow(pv.id);
+    if (row) {
+      row.manual_value = pv.manual_value;
+      row.is_overridden = pv.is_overridden;
+      row.override_reason = pv.override_reason;
+    }
+  });
 }
 
 const {
@@ -144,8 +152,10 @@ function formatNum(val) {
 function onManualChange(pv, original) {
   const row = pvRow(pv.id);
   if (!row) return;
-  if (original.source_type === 'hybrid' && row.manual_value !== '' && row.manual_value != original.erp_value) {
-    row.is_overridden = true;
+  if (original.source_type === 'hybrid' && row.manual_value !== '' && row.manual_value != null) {
+    row.is_overridden = original.erp_value != null
+      ? row.manual_value != original.erp_value
+      : true;
   }
 }
 
@@ -158,11 +168,14 @@ function save() {
 }
 
 async function recalculateScores() {
-  startProgressSimulation('Menghitung ulang skor KPI...', { estimatedMs: 8000 });
+  startProgressSimulation('Menyimpan input & menghitung skor KPI...', { estimatedMs: 8000 });
   try {
     const { data } = await axios.post(
       route('kpi-evaluations.recalculate', evaluation.value.id),
-      {},
+      {
+        parameter_values: form.parameter_values,
+        items: form.items,
+      },
       { headers: { Accept: 'application/json' } },
     );
     applyEvaluation(data.evaluation);
