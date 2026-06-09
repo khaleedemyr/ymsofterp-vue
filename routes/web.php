@@ -743,6 +743,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
 
     // KPI Master Data
     Route::resource('kpi-parameters', KpiParameterController::class)->only(['index', 'store', 'update', 'destroy']);
+    Route::get('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'show'])->name('kpi-parameters.show');
     Route::put('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update']);
     Route::patch('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update']);
     Route::post('/kpi-parameters/{kpiParameter}', [KpiParameterController::class, 'update'])->name('kpi-parameters.update');

@@ -47,7 +47,7 @@ const fieldHints = {
     example: 'Diambil dari Daily Revenue Forecast, filter outlet + bulan',
   },
   resolver_key: {
-    hint: 'Pilih modul/sumber data ERP yang paling sesuai. Sistem akan fetch nilai dari modul ini saat penilaian KPI (fase 2).',
+    hint: 'Wajib untuk source ERP. Opsional untuk Hybrid — kosongkan jika nilai diisi manual saat penilaian.',
     example: 'Actual revenue MTD → Daily Revenue Forecast',
   },
   aggregation: {
@@ -98,6 +98,16 @@ const createDefaults = () => ({
 const form = useForm(createDefaults());
 
 const showErpMapping = computed(() => ['erp', 'hybrid'].includes(form.source_type));
+const resolverRequired = computed(() => form.source_type === 'erp');
+
+const resolverOptions = computed(() => {
+  const base = props.options?.resolver_keys || [];
+  const current = form.erp_mapping?.resolver_key;
+  if (!current || base.some((o) => o.value === current)) {
+    return base;
+  }
+  return [{ value: current, label: `${current} (tersimpan)` }, ...base];
+});
 
 function rowErpMapping(row) {
   return row?.erp_mapping || row?.erpMapping || {};
@@ -287,11 +297,17 @@ function submit() {
             hint="Konfigurasi ini menghubungkan parameter ke modul ERP. Muncul hanya jika Source = ERP atau Hybrid."
           />
           <div>
-            <KpiFormFieldLabel label="Resolver Key" required :hint="fieldHints.resolver_key.hint" :example="fieldHints.resolver_key.example" />
+            <KpiFormFieldLabel
+              label="Resolver Key"
+              :required="resolverRequired"
+              :hint="fieldHints.resolver_key.hint"
+              :example="fieldHints.resolver_key.example"
+            />
             <select v-model="form.erp_mapping.resolver_key" class="mt-1 w-full rounded-lg border-gray-300">
-              <option value="">-- Pilih sumber data ERP --</option>
-              <option v-for="opt in options.resolver_keys" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              <option value="">{{ resolverRequired ? '-- Pilih sumber data ERP --' : '-- Opsional (kosongkan jika manual) --' }}</option>
+              <option v-for="opt in resolverOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
+            <p v-if="!resolverRequired" class="text-xs text-gray-500 mt-1">Hybrid: resolver opsional. Kosongkan jika nilai diisi manual saat penilaian.</p>
             <div v-if="form.errors['erp_mapping.resolver_key']" class="text-xs text-red-500 mt-1">{{ form.errors['erp_mapping.resolver_key'] }}</div>
           </div>
           <div>

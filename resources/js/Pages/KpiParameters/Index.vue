@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { router, Link } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -40,9 +40,18 @@ function openCreate() {
   showModal.value = true;
 }
 
-function openEdit(row) {
+async function openEdit(row) {
   modalMode.value = 'edit';
-  selectedRow.value = row;
+  showModal.value = false;
+
+  try {
+    const { data } = await axios.get(route('kpi-parameters.show', row.id));
+    selectedRow.value = data;
+  } catch {
+    selectedRow.value = row;
+    Swal.fire('Peringatan', 'Gagal memuat detail parameter. Data dari tabel digunakan.', 'warning');
+  }
+
   showModal.value = true;
 }
 
@@ -150,6 +159,29 @@ function reload() {
             </tr>
           </tbody>
         </table>
+
+        <div v-if="parameters.links?.length > 3" class="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+          <span>
+            Menampilkan {{ parameters.from }}–{{ parameters.to }} dari {{ parameters.total }} parameter
+          </span>
+          <div class="flex flex-wrap gap-1">
+            <Link
+              v-for="link in parameters.links"
+              :key="link.label"
+              :href="link.url || '#'"
+              :class="[
+                'px-3 py-1.5 rounded-lg border text-sm',
+                link.active
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : link.url
+                    ? 'bg-white text-gray-700 hover:bg-gray-50'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed pointer-events-none',
+              ]"
+              v-html="link.label"
+              preserve-state
+            />
+          </div>
+        </div>
       </div>
     </div>
 

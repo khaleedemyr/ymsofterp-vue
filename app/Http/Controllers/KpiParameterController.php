@@ -76,6 +76,28 @@ class KpiParameterController extends Controller
         return redirect()->route('kpi-parameters.index')->with('success', 'Parameter KPI berhasil diperbarui.');
     }
 
+    public function show(KpiParameter $kpiParameter)
+    {
+        $kpiParameter->load('erpMapping');
+
+        return response()->json([
+            'id' => $kpiParameter->id,
+            'code' => $kpiParameter->code,
+            'name' => $kpiParameter->name,
+            'source_type' => $kpiParameter->source_type,
+            'scope_type' => $kpiParameter->scope_type,
+            'data_type' => $kpiParameter->data_type,
+            'description' => $kpiParameter->description,
+            'target_value' => $kpiParameter->target_value,
+            'target_direction' => $kpiParameter->target_direction,
+            'frequency' => $kpiParameter->frequency,
+            'formula' => $kpiParameter->formula,
+            'is_shared' => $kpiParameter->is_shared,
+            'status' => $kpiParameter->status,
+            'erp_mapping' => $kpiParameter->erpMapping,
+        ]);
+    }
+
     public function destroy(KpiParameter $kpiParameter)
     {
         $kpiParameter->update(['status' => 'N']);
@@ -126,7 +148,8 @@ class KpiParameterController extends Controller
         $validated['target_direction'] = $validated['target_direction'] ?? 'higher_better';
         $validated['frequency'] = $validated['frequency'] ?? 'monthly';
 
-        if (in_array($validated['source_type'], ['erp', 'hybrid'], true)) {
+        // Resolver wajib hanya untuk source ERP murni. Hybrid boleh tanpa resolver (input manual).
+        if ($validated['source_type'] === 'erp') {
             $request->validate([
                 'erp_mapping.resolver_key' => 'required|string|max:100',
             ]);
