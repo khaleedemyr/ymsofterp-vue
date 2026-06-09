@@ -83,7 +83,7 @@ class KpiEvaluationController extends Controller
 
         return redirect()
             ->route('kpi-evaluations.edit', $evaluation->id)
-            ->with('success', 'Draft evaluasi KPI berhasil dibuat.');
+            ->with('success', 'Draft evaluasi KPI berhasil dibuat. Klik Refresh ERP untuk mengambil data.');
     }
 
     public function show(KpiEvaluation $kpiEvaluation)
@@ -101,10 +101,25 @@ class KpiEvaluationController extends Controller
 
         return Inertia::render('KpiEvaluations/Edit', [
             'evaluation' => $this->formatEvaluation($evaluation),
-            'erpDiagnostics' => $this->evaluationService->erpDiagnostics($evaluation),
             'outlets' => $this->evaluationService->outletOptions(),
             'erpScopeOptions' => $this->erpScopeOptions(),
         ]);
+    }
+
+    public function erpDiagnostics(Request $request, KpiEvaluation $kpiEvaluation)
+    {
+        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+
+        $scope = $request->query('erp_data_scope');
+        $outletIds = $request->query('erp_scope_outlet_ids');
+
+        return response()->json(
+            $this->evaluationService->erpDiagnostics(
+                $evaluation,
+                is_string($scope) ? $scope : null,
+                is_array($outletIds) ? array_map('intval', $outletIds) : null,
+            ),
+        );
     }
 
     public function update(Request $request, KpiEvaluation $kpiEvaluation)
@@ -177,8 +192,22 @@ class KpiEvaluationController extends Controller
         ]);
     }
 
-    public function refreshErp(KpiEvaluation $kpiEvaluation)
+    public function refreshErp(Request $request, KpiEvaluation $kpiEvaluation)
     {
+        $validated = $request->validate([
+            'erp_data_scope' => 'nullable|in:employee_outlet,single_outlet,multiple_outlets,all_outlets',
+            'erp_scope_outlet_ids' => 'nullable|array',
+            'erp_scope_outlet_ids.*' => 'integer',
+        ]);
+
+        if (isset($validated['erp_data_scope'])) {
+            $kpiEvaluation = $this->evaluationService->applyErpScope(
+                $kpiEvaluation,
+                $validated['erp_data_scope'],
+                $validated['erp_scope_outlet_ids'] ?? [],
+            );
+        }
+
         $this->evaluationService->refreshErp($kpiEvaluation);
 
         return redirect()

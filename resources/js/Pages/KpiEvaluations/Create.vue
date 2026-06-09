@@ -93,7 +93,8 @@ async function loadPreview() {
       params: { user_id: form.user_id, period_month: form.period_month },
     });
     preview.value = data;
-    if (data.template?.erp_data_scope) {
+    const scopeBefore = form.erp_data_scope;
+    if (data.template?.erp_data_scope && scopeBefore === 'single_outlet') {
       form.erp_data_scope = data.template.erp_data_scope;
     }
     if (!data.template) {

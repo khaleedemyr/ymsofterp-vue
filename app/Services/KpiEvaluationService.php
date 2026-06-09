@@ -111,7 +111,7 @@ class KpiEvaluationService
                 'created_by' => Auth::id(),
             ]);
 
-            $this->seedParameterValues($evaluation, $dataCodes);
+            $this->seedParameterValues($evaluation, $dataCodes, fetchErp: false);
             $this->seedItems($evaluation, $template);
             $this->recalculate($evaluation);
 
@@ -208,7 +208,10 @@ class KpiEvaluationService
 
         $this->resolver->clearCache();
 
-        foreach ($evaluation->parameterValues()->with('parameter.erpMapping')->get() as $pv) {
+        $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
+        $this->resolver->prefetch($context, $parameterRows->pluck('parameter')->filter());
+
+        foreach ($parameterRows as $pv) {
             if (!in_array($pv->source_type, ['erp', 'hybrid'], true)) {
                 continue;
             }
@@ -240,43 +243,71 @@ class KpiEvaluationService
     /**
      * @return array<string, mixed>
      */
-    public function erpDiagnostics(KpiEvaluation $evaluation): array
+    public function erpDiagnostics(KpiEvaluation $evaluation, ?string $scopeOverride = null, ?array $outletIdsOverride = null): array
     {
-        return $this->resolver->diagnose($this->buildErpContext($evaluation));
+        return $this->erpDiagnosticsFromContext(
+            $this->buildErpContext($evaluation, $scopeOverride, $outletIdsOverride),
+        );
+    }
+
+    public function applyErpScope(KpiEvaluation $evaluation, string $scope, array $outletIds): KpiEvaluation
+    {
+        [$normalizedScope, $normalizedIds] = $this->normalizeErpScope(
+            $scope,
+            $outletIds,
+            (int) $evaluation->id_outlet,
+        );
+        $this->validateErpScope($normalizedScope, $normalizedIds);
+
+        $evaluation->update([
+            'erp_data_scope' => $normalizedScope,
+            'erp_scope_outlet_ids' => $normalizedIds,
+        ]);
+
+        return $evaluation->fresh();
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function buildErpContext(KpiEvaluation $evaluation): array
+    public function buildErpContext(KpiEvaluation $evaluation, ?string $scopeOverride = null, ?array $outletIdsOverride = null): array
     {
-        $outletIds = $this->resolveErpOutletIds($evaluation);
+        $scope = $scopeOverride ?? ($evaluation->erp_data_scope ?? 'employee_outlet');
+        $storedIds = $outletIdsOverride ?? ($evaluation->erp_scope_outlet_ids ?? []);
+
+        [$normalizedScope, $ids] = $this->normalizeErpScope(
+            $scope,
+            $storedIds,
+            (int) $evaluation->id_outlet,
+        );
+
+        $outletIds = $normalizedScope === 'all_outlets'
+            ? $this->allActiveOutletIds()
+            : $ids;
 
         return [
             'outlet_ids' => $outletIds,
             'outlet_id' => $outletIds[0] ?? (int) $evaluation->id_outlet,
             'user_id' => $evaluation->user_id,
             'period_month' => $evaluation->period_month,
-            'erp_data_scope' => $evaluation->erp_data_scope ?? 'employee_outlet',
+            'erp_data_scope' => $normalizedScope,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function erpDiagnosticsFromContext(array $context): array
+    {
+        return $this->resolver->diagnose($context);
     }
 
     /**
      * @return list<int>
      */
-    public function resolveErpOutletIds(KpiEvaluation $evaluation): array
+    public function resolveErpOutletIds(KpiEvaluation $evaluation, ?string $scopeOverride = null, ?array $outletIdsOverride = null): array
     {
-        [$scope, $ids] = $this->normalizeErpScope(
-            $evaluation->erp_data_scope ?? 'employee_outlet',
-            $evaluation->erp_scope_outlet_ids ?? [],
-            (int) $evaluation->id_outlet,
-        );
-
-        if ($scope === 'all_outlets') {
-            return $this->allActiveOutletIds();
-        }
-
-        return $ids;
+        return $this->buildErpContext($evaluation, $scopeOverride, $outletIdsOverride)['outlet_ids'];
     }
 
     /**
@@ -508,7 +539,7 @@ class KpiEvaluationService
     /**
      * @param  list<string>  $codes
      */
-    protected function seedParameterValues(KpiEvaluation $evaluation, array $codes): void
+    protected function seedParameterValues(KpiEvaluation $evaluation, array $codes, bool $fetchErp = true): void
     {
         if (empty($codes)) {
             return;
@@ -522,7 +553,10 @@ class KpiEvaluationService
 
         $context = $this->buildErpContext($evaluation);
 
-        $this->resolver->clearCache();
+        if ($fetchErp) {
+            $this->resolver->clearCache();
+            $this->resolver->prefetch($context, $parameters->values());
+        }
 
         foreach ($codes as $code) {
             $param = $parameters->get($code);
@@ -530,7 +564,7 @@ class KpiEvaluationService
                 continue;
             }
 
-            $erpValue = in_array($param->source_type, ['erp', 'hybrid'], true)
+            $erpValue = $fetchErp && in_array($param->source_type, ['erp', 'hybrid'], true)
                 ? $this->resolver->resolve($param, $context)
                 : null;
 

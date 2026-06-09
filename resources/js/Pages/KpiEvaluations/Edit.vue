@@ -1,17 +1,20 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import axios from 'axios';
 
 const props = defineProps({
   evaluation: Object,
-  erpDiagnostics: Object,
   outlets: Array,
   erpScopeOptions: Array,
 });
+
+const erpDiagnostics = ref(null);
+const diagnosticsLoading = ref(false);
 
 const selectedSingleOutlet = ref(
   props.outlets.find((o) => o.id === (props.evaluation.erp_scope_outlet_ids?.[0] ?? null)) ?? null,
@@ -40,12 +43,18 @@ const form = useForm({
 const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet');
 const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
 
-watch(selectedSingleOutlet, (outlet) => {
-  form.erp_scope_outlet_ids = outlet ? [outlet.id] : [];
+const scopeUnsaved = computed(() => {
+  const savedScope = props.evaluation.erp_data_scope || 'employee_outlet';
+  const savedIds = JSON.stringify(props.evaluation.erp_scope_outlet_ids ?? []);
+  const formIds = JSON.stringify(form.erp_scope_outlet_ids ?? []);
+  return form.erp_data_scope !== savedScope || formIds !== savedIds;
 });
 
-watch(selectedMultipleOutlets, (list) => {
-  form.erp_scope_outlet_ids = list.map((o) => o.id);
+const scopeDisplayNames = computed(() => {
+  if (!erpDiagnostics.value) return [];
+  return erpDiagnostics.value.scope_outlet_names_preview
+    ?? erpDiagnostics.value.scope_outlet_names
+    ?? [];
 });
 
 watch(() => form.erp_data_scope, (scope) => {
@@ -54,6 +63,17 @@ watch(() => form.erp_data_scope, (scope) => {
     selectedSingleOutlet.value = null;
     selectedMultipleOutlets.value = [];
   }
+  loadDiagnostics();
+});
+
+watch(selectedSingleOutlet, (outlet) => {
+  form.erp_scope_outlet_ids = outlet ? [outlet.id] : [];
+  loadDiagnostics();
+});
+
+watch(selectedMultipleOutlets, (list) => {
+  form.erp_scope_outlet_ids = list.map((o) => o.id);
+  loadDiagnostics();
 });
 
 const groupedStrategies = computed(() => props.evaluation.strategies || []);
@@ -104,7 +124,10 @@ async function refreshErp() {
     showCancelButton: true,
   });
   if (!result.isConfirmed) return;
-  router.post(route('kpi-evaluations.refresh-erp', props.evaluation.id));
+  router.post(route('kpi-evaluations.refresh-erp', props.evaluation.id), {
+    erp_data_scope: form.erp_data_scope,
+    erp_scope_outlet_ids: form.erp_scope_outlet_ids,
+  });
 }
 
 async function submitEval() {
@@ -127,6 +150,27 @@ async function submitEval() {
 function back() {
   router.visit(route('kpi-evaluations.index'));
 }
+
+async function loadDiagnostics() {
+  diagnosticsLoading.value = true;
+  try {
+    const { data } = await axios.get(route('kpi-evaluations.erp-diagnostics', props.evaluation.id), {
+      params: {
+        erp_data_scope: form.erp_data_scope,
+        erp_scope_outlet_ids: form.erp_scope_outlet_ids,
+      },
+    });
+    erpDiagnostics.value = data;
+  } catch {
+    erpDiagnostics.value = null;
+  } finally {
+    diagnosticsLoading.value = false;
+  }
+}
+
+onMounted(() => {
+  loadDiagnostics();
+});
 </script>
 
 <template>
@@ -151,8 +195,10 @@ function back() {
         <div class="flex flex-wrap gap-4">
           <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
           <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
-          <div v-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ Number(erpDiagnostics.revenue_mtd).toLocaleString('id-ID') }}</div>
-          <div v-if="erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
+          <div v-if="diagnosticsLoading" class="text-gray-400 text-xs">Memuat probe ERP...</div>
+          <div v-else-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ Number(erpDiagnostics.revenue_mtd).toLocaleString('id-ID') }}</div>
+          <div v-else-if="erpDiagnostics"><span class="text-gray-500">Revenue MTD (probe):</span> —</div>
+          <div v-if="!diagnosticsLoading && erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
         </div>
 
         <div class="border-t pt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -171,9 +217,24 @@ function back() {
             <Multiselect v-model="selectedMultipleOutlets" :options="outlets" label="label" track-by="id" :multiple="true" :searchable="true" :close-on-select="false" :show-labels="false" />
           </div>
         </div>
-        <div v-if="erpDiagnostics?.scope_outlet_names?.length" class="text-xs text-gray-600">
-          Outlet scope aktif: <strong>{{ erpDiagnostics.scope_outlet_names.join(', ') }}</strong>
+        <div v-if="erpDiagnostics?.scope_label || scopeDisplayNames.length" class="text-xs text-gray-600 space-y-1">
+          <div>
+            Scope aktif:
+            <strong>{{ erpDiagnostics?.scope_label || '—' }}</strong>
+            <span v-if="erpDiagnostics?.scope_outlet_count != null"> ({{ erpDiagnostics.scope_outlet_count }} outlet)</span>
+            <span v-if="scopeUnsaved" class="text-amber-600 font-medium"> — belum disimpan</span>
+          </div>
+          <div v-if="scopeDisplayNames.length && form.erp_data_scope !== 'all_outlets'">
+            {{ scopeDisplayNames.join(', ') }}
+          </div>
+          <div v-else-if="form.erp_data_scope === 'all_outlets' && erpDiagnostics?.scope_outlet_count">
+            {{ scopeDisplayNames.slice(0, 8).join(', ') }}
+            <span v-if="erpDiagnostics.scope_outlet_count > 8">, … +{{ erpDiagnostics.scope_outlet_count - 8 }} outlet lainnya</span>
+          </div>
         </div>
+        <p v-if="scopeUnsaved" class="text-xs text-amber-700">
+          Scope berubah — klik <strong>Simpan Draft</strong> atau <strong>Refresh ERP</strong> untuk menerapkan.
+        </p>
       </div>
 
       <div v-if="erpDiagnostics?.issues?.length" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

@@ -758,6 +758,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::post('/kpi-templates/{kpiTemplate}/publish', [KpiTemplateController::class, 'publish'])->name('kpi-templates.publish');
 
     Route::get('/kpi-evaluations/preview-employee', [KpiEvaluationController::class, 'previewEmployee'])->name('kpi-evaluations.preview-employee');
+    Route::get('/kpi-evaluations/{kpiEvaluation}/erp-diagnostics', [KpiEvaluationController::class, 'erpDiagnostics'])->name('kpi-evaluations.erp-diagnostics');
     Route::post('/kpi-evaluations/{kpiEvaluation}/refresh-erp', [KpiEvaluationController::class, 'refreshErp'])->name('kpi-evaluations.refresh-erp');
     Route::post('/kpi-evaluations/{kpiEvaluation}/submit', [KpiEvaluationController::class, 'submit'])->name('kpi-evaluations.submit');
     Route::resource('kpi-evaluations', KpiEvaluationController::class);
