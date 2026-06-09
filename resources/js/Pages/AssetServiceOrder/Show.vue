@@ -4,6 +4,7 @@ import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { formatAssetQty } from '@/utils/formatAssetQty';
 
 const props = defineProps({
     serviceOrder: Object,
@@ -384,8 +385,8 @@ function deleteOrder() {
                                 <td class="px-4 py-2 text-sm text-gray-500">{{ idx + 1 }}</td>
                                 <td class="px-4 py-2 text-sm font-medium text-gray-800">{{ item.item_name }}</td>
                                 <td class="px-4 py-2 text-sm text-gray-600">{{ item.unit }}</td>
-                                <td class="px-4 py-2 text-sm text-right text-gray-700">{{ item.qty_out }}</td>
-                                <td class="px-4 py-2 text-sm text-right text-gray-700">{{ item.qty_returned }}</td>
+                                <td class="px-4 py-2 text-sm text-right text-gray-700 tabular-nums">{{ formatAssetQty(item.qty_out) }}</td>
+                                <td class="px-4 py-2 text-sm text-right text-gray-700 tabular-nums">{{ formatAssetQty(item.qty_returned) }}</td>
                                 <td class="px-4 py-2">
                                     <div class="flex items-center gap-2">
                                         <div class="flex-1 bg-gray-200 rounded-full h-2.5">

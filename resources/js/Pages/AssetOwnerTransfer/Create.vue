@@ -5,6 +5,7 @@ import { useForm, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
+import { formatAssetQty } from '@/utils/formatAssetQty';
 
 const props = defineProps({ user: Object, outlets: Array, warehouseOutlets: Array });
 
@@ -83,6 +84,7 @@ function submitForm() {
     if (form.owner_outlet_from_id === form.owner_outlet_to_id) return Swal.fire('Error', 'Pemilik asal dan tujuan harus berbeda.', 'error');
     if (!form.outlet_id || !form.warehouse_outlet_id) return Swal.fire('Error', 'Pilih lokasi dan gudang.', 'error');
     if (!form.items.length) return Swal.fire('Error', 'Tambahkan minimal 1 item.', 'error');
+    if (!selectedApprovers.value.length) return Swal.fire('Error', 'Pilih minimal 1 approver.', 'error');
     form.approvers = selectedApprovers.value.map(a => a.id);
     form.post('/asset-owner-transfers', {
         onSuccess: () => Swal.fire('Berhasil', 'Transfer kepemilikan dibuat.', 'success'),
@@ -142,7 +144,7 @@ function submitForm() {
                     <div v-for="it in itemResults" :key="it.id" @click="addItem(it)" class="px-3 py-2 hover:bg-violet-50 cursor-pointer text-sm border-b last:border-0">
                         <span class="font-medium">{{ it.name }}</span>
                         <span class="text-gray-400 ml-2">{{ it.sku }}</span>
-                        <span class="float-right text-gray-500">Stok: {{ it.stock_small }} {{ it.unit_small || '-' }}</span>
+                        <span class="float-right text-gray-500">Stok: {{ formatAssetQty(it.stock_small) }} {{ it.unit_small || '-' }}</span>
                     </div>
                 </div>
                 <div v-if="form.items.length" class="overflow-x-auto">
@@ -164,7 +166,7 @@ function submitForm() {
                                     <span class="font-medium text-gray-800">{{ it.item_name }}</span>
                                     <span v-if="it.sku" class="text-xs text-gray-400 ml-1">{{ it.sku }}</span>
                                 </td>
-                                <td class="px-3 py-2 text-gray-600">{{ it.stock_small }}</td>
+                                <td class="px-3 py-2 text-gray-600 tabular-nums">{{ formatAssetQty(it.stock_small) }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ it.unit_name }}</td>
                                 <td class="px-3 py-2">
                                     <input v-model.number="it.qty" type="number" min="0.01" :max="it.stock_small" step="0.01" class="w-24 rounded border-gray-300 text-sm" />
@@ -221,7 +223,7 @@ function submitForm() {
                         <i v-if="isApproverSelected(u.id)" class="fa-solid fa-check text-violet-600 flex-shrink-0 ml-2"></i>
                     </div>
                 </div>
-                <p class="text-xs text-gray-400 mt-2">Urutan approver menentukan level approval (1 = pertama). Klik lagi pada nama di daftar untuk membatalkan pilihan.</p>
+                <p class="text-xs text-gray-400 mt-2">Urutan approver menentukan level approval (1 = pertama). Approver disimpan bersama draft — tidak perlu pilih ulang saat submit.</p>
             </div>
 
             <div class="flex justify-end gap-2">

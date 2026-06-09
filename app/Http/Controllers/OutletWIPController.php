@@ -2090,6 +2090,7 @@ class OutletWIPController extends Controller
                     'items.small_unit_id',
                     'items.medium_unit_id',
                     'items.large_unit_id',
+                    'items.small_conversion_qty',
                     'small_unit.name as small_unit_name',
                     'medium_unit.name as medium_unit_name',
                     'large_unit.name as large_unit_name'

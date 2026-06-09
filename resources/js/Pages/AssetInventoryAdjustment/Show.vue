@@ -4,6 +4,7 @@ import { ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { formatAssetQty } from '@/utils/formatAssetQty';
 
 const props = defineProps({
     adjustment: Object,
@@ -218,7 +219,7 @@ function deleteAdjustment() {
                                 <td class="px-4 py-2 text-sm text-gray-500">{{ idx + 1 }}</td>
                                 <td class="px-4 py-2 text-sm font-medium text-gray-800">{{ item.item_name }}</td>
                                 <td class="px-4 py-2 text-sm text-gray-600">{{ item.unit }}</td>
-                                <td class="px-4 py-2 text-sm text-right">{{ item.qty }}</td>
+                                <td class="px-4 py-2 text-sm text-right tabular-nums">{{ formatAssetQty(item.qty) }}</td>
                                 <td class="px-4 py-2 text-sm text-gray-500">{{ item.note || '-' }}</td>
                             </tr>
                         </tbody>

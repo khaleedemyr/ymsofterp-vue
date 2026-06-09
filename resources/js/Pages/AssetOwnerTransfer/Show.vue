@@ -1,13 +1,17 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
+import { formatAssetQty } from '@/utils/formatAssetQty';
 
 const props = defineProps({ transfer: Object, canApprove: Boolean, user: Object });
 const busy = ref(false);
+const hasSavedApprovers = computed(() =>
+    props.transfer?.status === 'draft' && (props.transfer?.approval_flows?.length ?? 0) > 0
+);
 const showSubmitModal = ref(false);
 const approverSearch = ref('');
 const approverResults = ref([]);
@@ -53,6 +57,34 @@ function openSubmitModal() {
     approverResults.value = [];
     showSubmitModal.value = true;
     searchApprovers();
+}
+
+async function handleSubmitClick() {
+    if (hasSavedApprovers.value) {
+        const list = props.transfer.approval_flows
+            .map(f => `<div class="text-sm py-0.5"><span class="font-semibold text-violet-700">Level ${f.approval_level}:</span> ${f.approver_name} (${f.approver_jabatan})</div>`)
+            .join('');
+        const { isConfirmed } = await Swal.fire({
+            title: 'Submit untuk Approval?',
+            html: `<p class="text-sm text-gray-600 mb-2">Approver sudah dipilih saat create:</p>${list}`,
+            showCancelButton: true,
+            confirmButtonText: 'Submit',
+            confirmButtonColor: '#7c3aed',
+        });
+        if (!isConfirmed) return;
+        busy.value = true;
+        try {
+            await axios.post(`/asset-owner-transfers/${props.transfer.id}/submit`, {});
+            Swal.fire('OK', 'Transfer berhasil di-submit untuk approval.', 'success');
+            router.reload();
+        } catch (e) {
+            Swal.fire('Error', e.response?.data?.message || e.message, 'error');
+        } finally {
+            busy.value = false;
+        }
+        return;
+    }
+    openSubmitModal();
 }
 
 function closeSubmitModal() {
@@ -118,7 +150,7 @@ async function handleApproval(action) {
                     <tbody>
                         <tr v-for="it in transfer.items" :key="it.id" class="border-t">
                             <td class="py-2">{{ it.item_name }}</td>
-                            <td class="py-2">{{ it.qty }}</td>
+                            <td class="py-2 tabular-nums">{{ formatAssetQty(it.qty) }}<span v-if="it.unit_name" class="text-gray-500 ml-1">{{ it.unit_name }}</span></td>
                             <td class="py-2">{{ it.note || '-' }}</td>
                         </tr>
                     </tbody>
@@ -145,7 +177,10 @@ async function handleApproval(action) {
             </div>
 
             <div v-if="transfer.status === 'draft'" class="flex gap-2">
-                <button @click="openSubmitModal" class="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm">Submit</button>
+                <button @click="handleSubmitClick" :disabled="busy" class="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm disabled:opacity-50">
+                    <i v-if="busy" class="fa fa-spinner fa-spin mr-1"></i>
+                    Submit
+                </button>
             </div>
             <div v-if="canApprove && transfer.status === 'submitted'" class="flex gap-2">
                 <button @click="handleApproval('approve')" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm">Approve</button>

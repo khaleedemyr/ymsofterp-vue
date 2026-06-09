@@ -1,0 +1,1 @@
+function n(t){if(t==null||t==="")return"-";const i=Number(t);return Number.isNaN(i)?String(t):new Intl.NumberFormat("id-ID",{minimumFractionDigits:0,maximumFractionDigits:4}).format(i)}export{n as f};

@@ -143,6 +143,17 @@ class AssetOwnerTransferController extends Controller
                 ]);
             }
 
+            if (!empty($validated['approvers'])) {
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    AssetOwnerTransferApprovalFlow::create([
+                        'asset_owner_transfer_id' => $transfer->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
+            }
+
             DB::commit();
 
             return redirect()->route('asset-owner-transfers.show', $transfer->id)
@@ -255,21 +266,23 @@ class AssetOwnerTransferController extends Controller
             return response()->json(['success' => false, 'message' => 'Hanya draft yang bisa di-submit'], 422);
         }
 
-        $validated = $request->validate([
-            'approvers' => 'required|array|min:1',
-            'approvers.*' => 'required|integer|exists:users,id',
-        ]);
+        $existingFlows = $transfer->approvalFlows()->orderBy('approval_level')->get();
 
         DB::beginTransaction();
         try {
-            $transfer->approvalFlows()->delete();
-            foreach ($validated['approvers'] as $index => $approverId) {
-                AssetOwnerTransferApprovalFlow::create([
-                    'asset_owner_transfer_id' => $transfer->id,
-                    'approver_id' => $approverId,
-                    'approval_level' => $index + 1,
-                    'status' => 'PENDING',
+            if ($existingFlows->isEmpty()) {
+                $validated = $request->validate([
+                    'approvers' => 'required|array|min:1',
+                    'approvers.*' => 'required|integer|exists:users,id',
                 ]);
+                foreach ($validated['approvers'] as $index => $approverId) {
+                    AssetOwnerTransferApprovalFlow::create([
+                        'asset_owner_transfer_id' => $transfer->id,
+                        'approver_id' => $approverId,
+                        'approval_level' => $index + 1,
+                        'status' => 'PENDING',
+                    ]);
+                }
             }
             $transfer->update(['status' => 'submitted', 'approval_by' => null, 'approval_at' => null, 'approval_notes' => null]);
             DB::commit();
@@ -579,8 +592,6 @@ class AssetOwnerTransferController extends Controller
                         'status' => 'PENDING',
                     ]);
                 }
-                $transfer->update(['status' => 'submitted']);
-                $this->notifyNextApprover($transfer->id);
             }
 
             DB::commit();
