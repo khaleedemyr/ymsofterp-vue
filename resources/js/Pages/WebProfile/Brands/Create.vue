@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -49,21 +49,41 @@ function applyValidationErrors(validationErrors) {
   }
 }
 
-function syncPageErrors() {
-  const pageErrors = page.props.errors || {};
+function handleVisitResult(visitPage) {
+  const props = visitPage?.props || page.props;
+
+  if (props.flash?.error) {
+    showErrorAlert(props.flash.error);
+    return true;
+  }
+
+  const pageErrors = props.errors || {};
   if (Object.keys(pageErrors).length > 0) {
     applyValidationErrors(pageErrors);
+    return true;
   }
+
+  return false;
 }
 
-onMounted(() => {
-  syncPageErrors();
+watch(
+  () => page.props.errors,
+  (pageErrors) => {
+    if (pageErrors && Object.keys(pageErrors).length > 0) {
+      errors.value = pageErrors;
+    }
+  },
+  { deep: true },
+);
 
-  const flash = page.props.flash || {};
-  if (flash.error) {
-    showErrorAlert(flash.error);
-  }
-});
+watch(
+  () => page.props.flash?.error,
+  (message) => {
+    if (message) {
+      showErrorAlert(message);
+    }
+  },
+);
 const thumbnailPreview = ref(null);
 const logoCpPreview = ref(null);
 const imagePreview = ref(null);
@@ -132,8 +152,20 @@ function handleHeroMediaChange(event) {
 }
 
 function submit() {
+  errors.value = {};
+
+  if (!form.value.title?.trim()) {
+    applyValidationErrors({ title: ['Judul wajib diisi.'] });
+    return;
+  }
+
+  if (!form.value.thumbnail) {
+    applyValidationErrors({ thumbnail: ['Thumbnail wajib diupload.'] });
+    return;
+  }
+
   isSubmitting.value = true;
-  
+
   const formData = new FormData();
   formData.append('title', form.value.title);
   formData.append('slug', form.value.slug || '');
@@ -160,13 +192,16 @@ function submit() {
 
   router.post('/web-profile/brands', formData, {
     forceFormData: true,
+    preserveScroll: true,
+    onSuccess: (visitPage) => {
+      handleVisitResult(visitPage);
+    },
     onError: (validationErrors) => {
-      isSubmitting.value = false;
       applyValidationErrors(validationErrors);
     },
     onFinish: () => {
       isSubmitting.value = false;
-    }
+    },
   });
 }
 
@@ -236,7 +271,6 @@ function cancel() {
               accept="image/jpeg,image/jpg,image/png,image/webp"
               class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               @change="handleThumbnailChange"
-              required
             />
             <InputError :message="errors.thumbnail" class="mt-2" />
             <p class="mt-1 text-sm text-gray-500">Recommended: 400x300px, Max 5MB, Format: JPG/PNG/WEBP</p>
@@ -376,7 +410,7 @@ function cancel() {
             >
               Cancel
             </button>
-            <PrimaryButton :disabled="isSubmitting">
+            <PrimaryButton type="submit" :disabled="isSubmitting">
               {{ isSubmitting ? 'Creating...' : 'Create Brand' }}
             </PrimaryButton>
           </div>

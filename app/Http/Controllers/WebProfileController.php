@@ -1310,21 +1310,21 @@ class WebProfileController extends Controller
      */
     public function brandsStore(Request $request)
     {
-        try {
-            $validated = $request->validate([
-                'title' => 'required|string|max:255',
-                'slug' => 'nullable|string|max:255|unique:web_profile_brands,slug',
-                'link_menu' => 'nullable|url|max:255',
-                'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
-                'thumbnail' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'content' => 'nullable|string',
-                'hero_title' => 'nullable|string|max:255',
-                'hero_subtitle' => 'nullable|string|max:2000',
-                'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
-            ], $this->brandValidationMessages());
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'slug' => 'nullable|string|max:255|unique:web_profile_brands,slug',
+            'link_menu' => 'nullable|url|max:255',
+            'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
+            'thumbnail' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'content' => 'nullable|string',
+            'hero_title' => 'nullable|string|max:255',
+            'hero_subtitle' => 'nullable|string|max:2000',
+            'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
+        ], $this->brandValidationMessages());
 
+        try {
             $brand = DB::transaction(function () use ($request, $validated) {
                 $uploadedFiles = [];
 
@@ -1417,10 +1417,6 @@ class WebProfileController extends Controller
 
             return redirect()->route('web-profile.brands.index')
                 ->with('success', 'Brand berhasil dibuat.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return redirect()->back()
-                ->withErrors($e->errors())
-                ->withInput();
         } catch (\Exception $e) {
             Log::error('Brand creation failed: ' . $e->getMessage(), [
                 'request' => $request->except(['thumbnail', 'image', 'menu_pdf', 'logo_cp', 'hero_media']),
@@ -1471,22 +1467,22 @@ class WebProfileController extends Controller
     {
         $brand = WebProfileBrand::findOrFail($id);
 
-        try {
-            $validated = $request->validate([
-                'title' => 'required|string|max:255',
-                'slug' => 'required|string|max:255|unique:web_profile_brands,slug,' . $id,
-                'link_menu' => 'nullable|url|max:255',
-                'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
-                'thumbnail' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-                'content' => 'nullable|string',
-                'hero_title' => 'nullable|string|max:255',
-                'hero_subtitle' => 'nullable|string|max:2000',
-                'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
-                'remove_hero_media' => 'nullable|boolean',
-            ], $this->brandValidationMessages());
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'slug' => 'required|string|max:255|unique:web_profile_brands,slug,' . $id,
+            'link_menu' => 'nullable|url|max:255',
+            'menu_pdf' => 'nullable|file|mimes:pdf|max:10240',
+            'thumbnail' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'logo_cp' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
+            'content' => 'nullable|string',
+            'hero_title' => 'nullable|string|max:255',
+            'hero_subtitle' => 'nullable|string|max:2000',
+            'hero_media' => 'nullable|file|mimes:jpeg,jpg,png,webp,mp4,webm|max:51200',
+            'remove_hero_media' => 'nullable|boolean',
+        ], $this->brandValidationMessages());
 
+        try {
             DB::transaction(function () use ($request, $validated, $brand) {
                 $uploadedFiles = [];
 
@@ -1586,10 +1582,6 @@ class WebProfileController extends Controller
             }
 
             return redirect()->back()->with('success', 'Brand berhasil diperbarui.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return redirect()->back()
-                ->withErrors($e->errors())
-                ->withInput();
         } catch (\Exception $e) {
             Log::error('Brand update failed: ' . $e->getMessage());
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -57,29 +57,42 @@ function applyValidationErrors(validationErrors) {
   }
 }
 
-function syncPageErrors() {
-  const pageErrors = page.props.errors || {};
+function handleVisitResult(visitPage) {
+  const props = visitPage?.props || page.props;
+
+  if (props.flash?.error) {
+    showErrorAlert(props.flash.error);
+    return true;
+  }
+
+  const pageErrors = props.errors || {};
   if (Object.keys(pageErrors).length > 0) {
     applyValidationErrors(pageErrors);
+    return true;
   }
-}
 
-onMounted(() => {
-  syncPageErrors();
-
-  const flash = page.props.flash || {};
-  if (flash.success) {
+  if (props.flash?.success) {
     Swal.fire({
       icon: 'success',
       title: 'Berhasil',
-      text: flash.success,
+      text: props.flash.success,
       confirmButtonText: 'OK',
     });
+    return true;
   }
-  if (flash.error) {
-    showErrorAlert(flash.error);
-  }
-});
+
+  return false;
+}
+
+watch(
+  () => page.props.errors,
+  (pageErrors) => {
+    if (pageErrors && Object.keys(pageErrors).length > 0) {
+      errors.value = pageErrors;
+    }
+  },
+  { deep: true },
+);
 const thumbnailPreview = ref(props.brand.thumbnail_url || null);
 const logoCpPreview = ref(props.brand.logo_cp_url || null);
 const imagePreview = ref(props.brand.image_url || null);
@@ -171,13 +184,15 @@ function submit() {
   router.post(`/web-profile/brands/${props.brand.id}`, formData, {
     forceFormData: true,
     preserveScroll: true,
+    onSuccess: (visitPage) => {
+      handleVisitResult(visitPage);
+    },
     onError: (validationErrors) => {
-      isSubmitting.value = false;
       applyValidationErrors(validationErrors);
     },
     onFinish: () => {
       isSubmitting.value = false;
-    }
+    },
   });
 }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, watch } from 'vue';
 import { router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -16,25 +16,35 @@ const props = defineProps({
 const page = usePage();
 const search = ref('');
 
-onMounted(() => {
-  const flash = page.props.flash || {};
-  if (flash.success) {
-    Swal.fire({
-      icon: 'success',
-      title: 'Berhasil',
-      text: flash.success,
-      confirmButtonText: 'OK',
-    });
-  }
-  if (flash.error) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Gagal',
-      text: flash.error,
-      confirmButtonText: 'OK',
-    });
-  }
-});
+watch(
+  () => page.props.flash?.success,
+  (message) => {
+    if (message) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: message,
+        confirmButtonText: 'OK',
+      });
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => page.props.flash?.error,
+  (message) => {
+    if (message) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal',
+        text: message,
+        confirmButtonText: 'OK',
+      });
+    }
+  },
+  { immediate: true },
+);
 
 function handleSearch() {
   router.get('/web-profile/brands', { search: search.value }, {
