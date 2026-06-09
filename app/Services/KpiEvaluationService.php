@@ -167,7 +167,7 @@ class KpiEvaluationService
         });
     }
 
-    public function refreshErpValues(KpiEvaluation $evaluation): KpiEvaluation
+    public function refreshErp(KpiEvaluation $evaluation): KpiEvaluation
     {
         if (!$evaluation->isEditable()) {
             throw ValidationException::withMessages(['eval_status' => 'Evaluasi sudah disubmit.']);
@@ -183,6 +183,10 @@ class KpiEvaluationService
 
         foreach ($evaluation->parameterValues()->with('parameter.erpMapping')->get() as $pv) {
             if (!in_array($pv->source_type, ['erp', 'hybrid'], true)) {
+                continue;
+            }
+
+            if (!$pv->parameter) {
                 continue;
             }
 
@@ -204,6 +208,18 @@ class KpiEvaluationService
         $this->recalculate($evaluation->fresh());
 
         return $evaluation->fresh(['template', 'parameterValues', 'items']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function erpDiagnostics(KpiEvaluation $evaluation): array
+    {
+        return $this->resolver->diagnose([
+            'outlet_id' => $evaluation->id_outlet,
+            'user_id' => $evaluation->user_id,
+            'period_month' => $evaluation->period_month,
+        ]);
     }
 
     public function submit(KpiEvaluation $evaluation): KpiEvaluation

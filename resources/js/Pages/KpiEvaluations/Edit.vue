@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
   evaluation: Object,
+  erpDiagnostics: Object,
 });
 
 const form = useForm({
@@ -117,6 +118,23 @@ function back() {
       <div class="bg-white rounded-2xl shadow p-4 mb-4 text-sm flex flex-wrap gap-4">
         <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
         <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
+        <div v-if="erpDiagnostics?.qr_code"><span class="text-gray-500">QR Code:</span> <code>{{ erpDiagnostics.qr_code }}</code></div>
+        <div v-if="erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
+      </div>
+
+      <div v-if="erpDiagnostics?.issues?.length" class="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <p class="font-semibold mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Masalah sumber ERP</p>
+        <ul class="list-disc list-inside space-y-1">
+          <li v-for="(issue, i) in erpDiagnostics.issues" :key="'issue-' + i">{{ issue }}</li>
+        </ul>
+      </div>
+
+      <div v-if="erpDiagnostics?.hints?.length" class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p class="font-semibold mb-1"><i class="fa-solid fa-lightbulb mr-1"></i> Kemungkinan penyebab nilai 0</p>
+        <ul class="list-disc list-inside space-y-1">
+          <li v-for="(hint, i) in erpDiagnostics.hints" :key="'hint-' + i">{{ hint }}</li>
+        </ul>
+        <p class="mt-2 text-xs text-amber-800">Tip: bandingkan dengan menu <strong>Outlet Analyzer</strong> untuk outlet &amp; periode yang sama.</p>
       </div>
 
       <!-- Data Parameters -->

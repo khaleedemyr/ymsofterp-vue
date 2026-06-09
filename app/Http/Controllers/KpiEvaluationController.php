@@ -92,6 +92,7 @@ class KpiEvaluationController extends Controller
 
         return Inertia::render('KpiEvaluations/Edit', [
             'evaluation' => $this->formatEvaluation($evaluation),
+            'erpDiagnostics' => $this->evaluationService->erpDiagnostics($evaluation),
         ]);
     }
 
@@ -160,7 +161,7 @@ class KpiEvaluationController extends Controller
 
     public function refreshErp(KpiEvaluation $kpiEvaluation)
     {
-        $this->evaluationService->refreshErpValues($kpiEvaluation);
+        $this->evaluationService->refreshErp($kpiEvaluation);
 
         return redirect()
             ->route('kpi-evaluations.edit', $kpiEvaluation->id)
