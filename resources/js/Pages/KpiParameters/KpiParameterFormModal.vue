@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
+import KpiFormFieldLabel from './KpiFormFieldLabel.vue';
 
 const props = defineProps({
   show: Boolean,
@@ -12,6 +13,49 @@ const props = defineProps({
 const emit = defineEmits(['close', 'success']);
 
 const showErpMapping = computed(() => ['erp', 'hybrid'].includes(form.source_type));
+
+const fieldHints = {
+  code: {
+    hint: 'ID unik parameter. Dipakai di formula KPI, misalnya: P001 / P002 * 100. Gunakan huruf + angka atau snake_case, tanpa spasi.',
+    example: 'P001, P010, fb_actual_revenue',
+  },
+  name: {
+    hint: 'Nama lengkap parameter yang mudah dibaca oleh HR/asesor. Ini yang tampil di form penilaian nanti.',
+    example: 'MTD Actual F&B Revenue',
+  },
+  source_type: {
+    hint: 'ERP = diambil otomatis dari modul ERP. Manual = asesor isi sendiri. Hybrid = default ERP, asesor boleh koreksi dengan alasan.',
+    example: 'Revenue → ERP, INC Program → Manual',
+  },
+  scope_type: {
+    hint: 'Scope filter saat ambil data: Outlet = per outlet karyawan (revenue, waste). Employee = per karyawan (training). Division = per divisi.',
+    example: 'Revenue → Outlet, Training % → Employee',
+  },
+  data_type: {
+    hint: 'Tipe nilai parameter. Decimal = angka/uang, Percent = persen, Hours = jam, Integer = jumlah/count, Text = teks bebas.',
+    example: 'Revenue → Decimal, Training → Percent',
+  },
+  status: {
+    hint: 'Aktif = parameter bisa dipilih di template KPI. Nonaktif = disembunyikan dari pilihan baru (data lama tetap aman).',
+    example: 'Aktif untuk parameter yang masih dipakai',
+  },
+  is_shared: {
+    hint: 'Centang jika 1 parameter dipakai di banyak KPI. Contoh: Actual Revenue (P001) dipakai di Revenue Achievement, COGS Ratio, dan Waste Ratio — cukup definisi sekali.',
+    example: 'P001 Actual Revenue → shared',
+  },
+  description: {
+    hint: 'Catatan internal opsional: dari modul mana datanya, rumus sumber, atau penjelasan untuk tim HR.',
+    example: 'Diambil dari Daily Revenue Forecast, filter outlet + bulan',
+  },
+  resolver_key: {
+    hint: 'Pilih modul/sumber data ERP yang paling sesuai. Sistem akan fetch nilai dari modul ini saat penilaian KPI (fase 2).',
+    example: 'Actual revenue MTD → Daily Revenue Forecast',
+  },
+  aggregation: {
+    hint: 'Cara menggabungkan data jika hasil query ERP banyak baris: sum = total, avg = rata-rata, count = jumlah baris.',
+    example: 'Revenue → sum, Skor QA → avg',
+  },
+};
 
 const form = useForm({
   code: '',
@@ -83,39 +127,44 @@ function submit() {
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
       <div class="px-6 pt-6 pb-2 border-b">
         <h3 class="text-xl font-bold">{{ mode === 'edit' ? 'Edit' : 'Tambah' }} Parameter KPI</h3>
+        <p class="text-sm text-gray-500 mt-1">
+          Arahkan kursor ke ikon
+          <i class="fa-solid fa-circle-question text-indigo-400 text-xs mx-0.5"></i>
+          di setiap field untuk penjelasan cara mengisi.
+        </p>
       </div>
       <div class="px-6 py-4 max-h-[70vh] overflow-y-auto space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700">Kode *</label>
+            <KpiFormFieldLabel label="Kode" required :hint="fieldHints.code.hint" :example="fieldHints.code.example" />
             <input v-model="form.code" class="mt-1 w-full rounded-lg border-gray-300" placeholder="P001" />
             <div v-if="form.errors.code" class="text-xs text-red-500 mt-1">{{ form.errors.code }}</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Nama *</label>
-            <input v-model="form.name" class="mt-1 w-full rounded-lg border-gray-300" />
+            <KpiFormFieldLabel label="Nama" required :hint="fieldHints.name.hint" :example="fieldHints.name.example" />
+            <input v-model="form.name" class="mt-1 w-full rounded-lg border-gray-300" placeholder="MTD Actual F&B Revenue" />
             <div v-if="form.errors.name" class="text-xs text-red-500 mt-1">{{ form.errors.name }}</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Source *</label>
+            <KpiFormFieldLabel label="Source" required :hint="fieldHints.source_type.hint" :example="fieldHints.source_type.example" />
             <select v-model="form.source_type" class="mt-1 w-full rounded-lg border-gray-300">
               <option v-for="opt in options.source_types" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Scope *</label>
+            <KpiFormFieldLabel label="Scope" required :hint="fieldHints.scope_type.hint" :example="fieldHints.scope_type.example" />
             <select v-model="form.scope_type" class="mt-1 w-full rounded-lg border-gray-300">
               <option v-for="opt in options.scope_types" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Data Type *</label>
+            <KpiFormFieldLabel label="Data Type" required :hint="fieldHints.data_type.hint" :example="fieldHints.data_type.example" />
             <select v-model="form.data_type" class="mt-1 w-full rounded-lg border-gray-300">
               <option v-for="opt in options.data_types" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Status *</label>
+            <KpiFormFieldLabel label="Status" required :hint="fieldHints.status.hint" :example="fieldHints.status.example" />
             <select v-model="form.status" class="mt-1 w-full rounded-lg border-gray-300">
               <option value="A">Aktif</option>
               <option value="N">Nonaktif</option>
@@ -123,30 +172,42 @@ function submit() {
           </div>
         </div>
         <div>
-          <label class="inline-flex items-center gap-2 text-sm">
+          <KpiFormFieldLabel label="Parameter shared" :hint="fieldHints.is_shared.hint" :example="fieldHints.is_shared.example" />
+          <label class="inline-flex items-center gap-2 text-sm mt-1">
             <input v-model="form.is_shared" type="checkbox" class="rounded border-gray-300" />
-            Parameter shared (bisa dipakai banyak KPI)
+            Ya, parameter ini bisa dipakai banyak KPI
           </label>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">Deskripsi</label>
-          <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border-gray-300" />
+          <KpiFormFieldLabel label="Deskripsi" :hint="fieldHints.description.hint" :example="fieldHints.description.example" />
+          <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border-gray-300" placeholder="Catatan internal (opsional)" />
         </div>
         <div v-if="showErpMapping" class="border rounded-xl p-4 bg-indigo-50/50 space-y-3">
-          <h4 class="font-semibold text-indigo-800">ERP Mapping</h4>
+          <div class="flex items-center gap-2">
+            <h4 class="font-semibold text-indigo-800">ERP Mapping</h4>
+            <span class="relative group cursor-help">
+              <i class="fa-solid fa-circle-question text-indigo-400 text-sm"></i>
+              <span class="pointer-events-none absolute left-0 top-full z-[60] mt-1 hidden w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal text-white shadow-xl group-hover:block">
+                Konfigurasi ini menghubungkan parameter ke modul ERP. Muncul hanya jika Source = ERP atau Hybrid.
+              </span>
+            </span>
+          </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Resolver Key *</label>
+            <KpiFormFieldLabel label="Resolver Key" required :hint="fieldHints.resolver_key.hint" :example="fieldHints.resolver_key.example" />
             <select v-model="form.erp_mapping.resolver_key" class="mt-1 w-full rounded-lg border-gray-300">
-              <option value="">-- Pilih --</option>
+              <option value="">-- Pilih sumber data ERP --</option>
               <option v-for="opt in options.resolver_keys" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
             <div v-if="form.errors['erp_mapping.resolver_key']" class="text-xs text-red-500 mt-1">{{ form.errors['erp_mapping.resolver_key'] }}</div>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700">Aggregation</label>
+            <KpiFormFieldLabel label="Aggregation" :hint="fieldHints.aggregation.hint" :example="fieldHints.aggregation.example" />
             <input v-model="form.erp_mapping.aggregation" class="mt-1 w-full rounded-lg border-gray-300" placeholder="sum, avg, count" />
           </div>
-          <p class="text-xs text-gray-500">Filter dinamis (outlet, bulan) akan di-resolve saat evaluation — fase 2.</p>
+          <p class="text-xs text-indigo-700 bg-indigo-100/60 rounded-lg px-3 py-2">
+            <i class="fa-solid fa-lightbulb mr-1"></i>
+            Filter outlet &amp; bulan otomatis saat penilaian KPI — tidak perlu diisi manual di sini (fase 2).
+          </p>
         </div>
       </div>
       <div class="bg-gray-50 px-6 py-4 flex justify-end gap-2 rounded-b-2xl">
