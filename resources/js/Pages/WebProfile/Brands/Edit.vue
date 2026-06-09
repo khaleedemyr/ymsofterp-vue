@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -30,8 +30,29 @@ const form = ref({
   remove_hero_media: false,
 });
 
+const page = usePage();
 const errors = ref({});
 const isSubmitting = ref(false);
+
+onMounted(() => {
+  const flash = page.props.flash || {};
+  if (flash.success) {
+    Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: flash.success,
+      confirmButtonText: 'OK',
+    });
+  }
+  if (flash.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: flash.error,
+      confirmButtonText: 'OK',
+    });
+  }
+});
 const thumbnailPreview = ref(props.brand.thumbnail_url || null);
 const logoCpPreview = ref(props.brand.logo_cp_url || null);
 const imagePreview = ref(props.brand.image_url || null);
@@ -123,9 +144,6 @@ function submit() {
   router.post(`/web-profile/brands/${props.brand.id}`, formData, {
     forceFormData: true,
     preserveScroll: true,
-    onSuccess: () => {
-      Swal.fire('Berhasil!', 'Brand berhasil diperbarui.', 'success');
-    },
     onError: (validationErrors) => {
       errors.value = validationErrors || {};
       isSubmitting.value = false;

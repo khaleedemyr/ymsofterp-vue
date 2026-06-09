@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router, Link } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
+import { router, Link, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -13,7 +13,28 @@ const props = defineProps({
   }
 });
 
+const page = usePage();
 const search = ref('');
+
+onMounted(() => {
+  const flash = page.props.flash || {};
+  if (flash.success) {
+    Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: flash.success,
+      confirmButtonText: 'OK',
+    });
+  }
+  if (flash.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: flash.error,
+      confirmButtonText: 'OK',
+    });
+  }
+});
 
 function handleSearch() {
   router.get('/web-profile/brands', { search: search.value }, {

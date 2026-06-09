@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
+import { router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -22,8 +22,21 @@ const form = ref({
   hero_media: null,
 });
 
+const page = usePage();
 const errors = ref({});
 const isSubmitting = ref(false);
+
+onMounted(() => {
+  const flash = page.props.flash || {};
+  if (flash.error) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: flash.error,
+      confirmButtonText: 'OK',
+    });
+  }
+});
 const thumbnailPreview = ref(null);
 const logoCpPreview = ref(null);
 const imagePreview = ref(null);
@@ -120,9 +133,6 @@ function submit() {
 
   router.post('/web-profile/brands', formData, {
     forceFormData: true,
-    onSuccess: () => {
-      Swal.fire('Berhasil!', 'Brand berhasil dibuat.', 'success');
-    },
     onError: (validationErrors) => {
       errors.value = validationErrors || {};
       isSubmitting.value = false;

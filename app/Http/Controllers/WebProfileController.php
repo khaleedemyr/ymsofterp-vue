@@ -1331,13 +1331,14 @@ class WebProfileController extends Controller
                 'menu_pdf.mimes' => 'Menu PDF must be a PDF file',
             ]);
 
-            return DB::transaction(function () use ($request, $validated) {
+            $brand = DB::transaction(function () use ($request, $validated) {
                 $uploadedFiles = [];
 
                 // Generate slug if not provided
                 if (empty($validated['slug'])) {
                     $validated['slug'] = Str::slug($validated['title']);
                 }
+                $validated['slug'] = $this->ensureUniqueBrandSlug($validated['slug']);
 
                 // Upload thumbnail
                 if ($request->hasFile('thumbnail')) {
@@ -1409,23 +1410,31 @@ class WebProfileController extends Controller
                     throw new \Exception('Failed to create brand record');
                 }
 
-                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $validated['title']);
-
-                return redirect()->route('web-profile.brands.index')
-                    ->with('success', 'Brand created successfully');
+                return $brand;
             });
+
+            try {
+                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $brand->title);
+            } catch (\Exception $e) {
+                Log::warning('Brand hero save failed after create: ' . $e->getMessage(), [
+                    'brand_id' => $brand->id,
+                ]);
+            }
+
+            return redirect()->route('web-profile.brands.index')
+                ->with('success', 'Brand berhasil dibuat.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->back()
                 ->withErrors($e->errors())
                 ->withInput();
         } catch (\Exception $e) {
             Log::error('Brand creation failed: ' . $e->getMessage(), [
-                'request' => $request->except(['thumbnail', 'image', 'menu_pdf']),
+                'request' => $request->except(['thumbnail', 'image', 'menu_pdf', 'logo_cp', 'hero_media']),
                 'trace' => $e->getMessage()
             ]);
 
             return redirect()->back()
-                ->with('error', 'Failed to create brand: ' . $e->getMessage())
+                ->with('error', 'Gagal membuat brand: ' . $e->getMessage())
                 ->withInput();
         }
     }
@@ -1484,7 +1493,7 @@ class WebProfileController extends Controller
                 'remove_hero_media' => 'nullable|boolean',
             ]);
 
-            return DB::transaction(function () use ($request, $validated, $brand) {
+            DB::transaction(function () use ($request, $validated, $brand) {
                 $uploadedFiles = [];
 
                 // Upload new thumbnail if provided
@@ -1572,10 +1581,17 @@ class WebProfileController extends Controller
                 unset($validated['hero_title'], $validated['hero_subtitle'], $validated['hero_media'], $validated['remove_hero_media']);
 
                 $brand->update($validated);
-                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $validated['title']);
-
-                return redirect()->back()->with('success', 'Brand updated successfully');
             });
+
+            try {
+                $this->saveBrandHeroFromRequest($request, (int) $brand->id, (string) $validated['title']);
+            } catch (\Exception $e) {
+                Log::warning('Brand hero save failed after update: ' . $e->getMessage(), [
+                    'brand_id' => $brand->id,
+                ]);
+            }
+
+            return redirect()->back()->with('success', 'Brand berhasil diperbarui.');
         } catch (\Illuminate\Validation\ValidationException $e) {
             return redirect()->back()
                 ->withErrors($e->errors())
@@ -1584,7 +1600,7 @@ class WebProfileController extends Controller
             Log::error('Brand update failed: ' . $e->getMessage());
 
             return redirect()->back()
-                ->with('error', 'Failed to update brand: ' . $e->getMessage())
+                ->with('error', 'Gagal memperbarui brand: ' . $e->getMessage())
                 ->withInput();
         }
     }
@@ -2997,6 +3013,22 @@ class WebProfileController extends Controller
         $encodedPath = implode('/', $encodedParts);
 
         return $baseUrl.'/storage/'.$encodedPath;
+    }
+
+    private function ensureUniqueBrandSlug(string $slug, ?int $ignoreId = null): string
+    {
+        $base = $slug !== '' ? $slug : 'brand';
+        $candidate = $base;
+        $counter = 1;
+
+        while (WebProfileBrand::when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+            ->where('slug', $candidate)
+            ->exists()) {
+            $candidate = $base . '-' . $counter;
+            $counter++;
+        }
+
+        return $candidate;
     }
 
     private function brandHeroSettingKey(int $brandId, string $field): string
