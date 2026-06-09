@@ -5,6 +5,7 @@ import axios from 'axios';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   employees: Array,
@@ -12,6 +13,8 @@ const props = defineProps({
   erpScopeOptions: Array,
   defaultPeriod: String,
 });
+
+const { startProgressSimulation, finishProgress, failProgress } = useLoading();
 
 const selectedEmployee = ref(null);
 const periodMonth = ref(props.defaultPeriod);
@@ -88,6 +91,14 @@ async function loadPreview() {
   if (!form.user_id || !form.period_month) return;
 
   previewLoading.value = true;
+  startProgressSimulation('Memuat preview template...', {
+    estimatedMs: 8000,
+    steps: [
+      { at: 30, message: 'Mencari template KPI jabatan...' },
+      { at: 65, message: 'Memvalidasi periode evaluasi...' },
+    ],
+  });
+
   try {
     const { data } = await axios.get(route('kpi-evaluations.preview-employee'), {
       params: { user_id: form.user_id, period_month: form.period_month },
@@ -101,15 +112,27 @@ async function loadPreview() {
       previewError.value = data.template_hint
         || 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.';
     }
+    await finishProgress('Preview selesai.');
   } catch (e) {
     previewError.value = e.response?.data?.message || 'Gagal memuat preview.';
+    failProgress('Gagal memuat preview.');
   } finally {
     previewLoading.value = false;
   }
 }
 
 function submit() {
-  form.post(route('kpi-evaluations.store'));
+  startProgressSimulation('Membuat draft evaluasi...', {
+    estimatedMs: 20000,
+    steps: [
+      { at: 25, message: 'Menyiapkan parameter evaluasi...' },
+      { at: 55, message: 'Menyimpan draft ke database...' },
+    ],
+  });
+  form.post(route('kpi-evaluations.store'), {
+    onFinish: () => finishProgress('Draft evaluasi dibuat.'),
+    onError: () => failProgress('Gagal membuat draft evaluasi.'),
+  });
 }
 
 function back() {

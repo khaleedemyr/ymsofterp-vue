@@ -209,7 +209,14 @@ class KpiEvaluationController extends Controller
             );
         }
 
-        $this->evaluationService->refreshErp($kpiEvaluation);
+        $evaluation = $this->evaluationService->refreshErp($kpiEvaluation);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Data ERP berhasil di-refresh.',
+            ]);
+        }
 
         return redirect()
             ->route('kpi-evaluations.edit', $kpiEvaluation->id)

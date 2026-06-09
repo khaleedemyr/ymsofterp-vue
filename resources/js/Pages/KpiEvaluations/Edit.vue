@@ -6,6 +6,7 @@ import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
+import { useLoading } from '@/Composables/useLoading';
 
 const props = defineProps({
   evaluation: Object,
@@ -13,8 +14,25 @@ const props = defineProps({
   erpScopeOptions: Array,
 });
 
+const {
+  startProgressSimulation,
+  finishProgress,
+  failProgress,
+} = useLoading();
+
 const erpDiagnostics = ref(null);
 const diagnosticsLoading = ref(false);
+let diagnosticsDelayTimer = null;
+let diagnosticsDebounceTimer = null;
+
+function scheduleLoadDiagnostics() {
+  if (diagnosticsDebounceTimer) {
+    clearTimeout(diagnosticsDebounceTimer);
+  }
+  diagnosticsDebounceTimer = setTimeout(() => {
+    loadDiagnostics();
+  }, 350);
+}
 
 const selectedSingleOutlet = ref(
   props.outlets.find((o) => o.id === (props.evaluation.erp_scope_outlet_ids?.[0] ?? null)) ?? null,
@@ -63,17 +81,17 @@ watch(() => form.erp_data_scope, (scope) => {
     selectedSingleOutlet.value = null;
     selectedMultipleOutlets.value = [];
   }
-  loadDiagnostics();
+  scheduleLoadDiagnostics();
 });
 
 watch(selectedSingleOutlet, (outlet) => {
   form.erp_scope_outlet_ids = outlet ? [outlet.id] : [];
-  loadDiagnostics();
+  scheduleLoadDiagnostics();
 });
 
 watch(selectedMultipleOutlets, (list) => {
   form.erp_scope_outlet_ids = list.map((o) => o.id);
-  loadDiagnostics();
+  scheduleLoadDiagnostics();
 });
 
 const groupedStrategies = computed(() => props.evaluation.strategies || []);
@@ -113,7 +131,11 @@ function onManualChange(pv, original) {
 }
 
 function save() {
-  form.put(route('kpi-evaluations.update', props.evaluation.id));
+  startProgressSimulation('Menyimpan draft evaluasi...', { estimatedMs: 15000 });
+  form.put(route('kpi-evaluations.update', props.evaluation.id), {
+    onFinish: () => finishProgress('Draft berhasil disimpan.'),
+    onError: () => failProgress('Gagal menyimpan draft.'),
+  });
 }
 
 async function refreshErp() {
@@ -124,10 +146,33 @@ async function refreshErp() {
     showCancelButton: true,
   });
   if (!result.isConfirmed) return;
-  router.post(route('kpi-evaluations.refresh-erp', props.evaluation.id), {
-    erp_data_scope: form.erp_data_scope,
-    erp_scope_outlet_ids: form.erp_scope_outlet_ids,
+
+  startProgressSimulation('Refresh data ERP...', {
+    estimatedMs: 90000,
+    steps: [
+      { at: 5, message: 'Menyimpan scope outlet...' },
+      { at: 18, message: 'Memuat data outlet analyzer...' },
+      { at: 40, message: 'Mengambil revenue, budget, dan ticket...' },
+      { at: 62, message: 'Menghitung parameter ERP...' },
+      { at: 82, message: 'Menghitung skor KPI...' },
+    ],
   });
+
+  try {
+    await axios.post(route('kpi-evaluations.refresh-erp', props.evaluation.id), {
+      erp_data_scope: form.erp_data_scope,
+      erp_scope_outlet_ids: form.erp_scope_outlet_ids,
+    }, {
+      headers: { Accept: 'application/json' },
+    });
+    await finishProgress('Data ERP berhasil di-refresh.');
+    router.reload({
+      only: ['evaluation'],
+      onFinish: () => loadDiagnostics(),
+    });
+  } catch {
+    failProgress('Gagal refresh data ERP.');
+  }
 }
 
 async function submitEval() {
@@ -139,11 +184,17 @@ async function submitEval() {
   });
   if (!result.isConfirmed) return;
 
+  startProgressSimulation('Menyimpan & submit evaluasi...', { estimatedMs: 20000 });
+
   form.put(route('kpi-evaluations.update', props.evaluation.id), {
     preserveScroll: true,
     onSuccess: () => {
-      router.post(route('kpi-evaluations.submit', props.evaluation.id));
+      router.post(route('kpi-evaluations.submit', props.evaluation.id), {}, {
+        onFinish: () => finishProgress('Evaluasi berhasil disubmit.'),
+        onError: () => failProgress('Gagal submit evaluasi.'),
+      });
     },
+    onError: () => failProgress('Gagal menyimpan sebelum submit.'),
   });
 }
 
@@ -152,7 +203,25 @@ function back() {
 }
 
 async function loadDiagnostics() {
+  if (diagnosticsDelayTimer) {
+    clearTimeout(diagnosticsDelayTimer);
+    diagnosticsDelayTimer = null;
+  }
+
   diagnosticsLoading.value = true;
+  let progressStarted = false;
+
+  diagnosticsDelayTimer = setTimeout(() => {
+    progressStarted = true;
+    startProgressSimulation('Memuat probe ERP...', {
+      estimatedMs: 12000,
+      steps: [
+        { at: 20, message: 'Memeriksa scope outlet...' },
+        { at: 55, message: 'Menghitung revenue & order POS...' },
+      ],
+    });
+  }, 400);
+
   try {
     const { data } = await axios.get(route('kpi-evaluations.erp-diagnostics', props.evaluation.id), {
       params: {
@@ -161,9 +230,19 @@ async function loadDiagnostics() {
       },
     });
     erpDiagnostics.value = data;
+    if (progressStarted) {
+      await finishProgress('', 200);
+    }
   } catch {
     erpDiagnostics.value = null;
+    if (progressStarted) {
+      failProgress('Gagal memuat probe ERP.');
+    }
   } finally {
+    if (diagnosticsDelayTimer) {
+      clearTimeout(diagnosticsDelayTimer);
+      diagnosticsDelayTimer = null;
+    }
     diagnosticsLoading.value = false;
   }
 }
@@ -256,7 +335,7 @@ onMounted(() => {
       <div class="bg-white rounded-2xl shadow mb-6 overflow-hidden">
         <div class="bg-indigo-700 text-white px-4 py-3 flex justify-between items-center">
           <span class="font-semibold">Data Parameter (D*)</span>
-          <button type="button" class="text-sm bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg" @click="refreshErp">
+          <button type="button" class="text-sm bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg disabled:opacity-50" :disabled="form.processing" @click="refreshErp">
             <i class="fa-solid fa-rotate mr-1"></i> Refresh ERP
           </button>
         </div>
@@ -365,9 +444,10 @@ onMounted(() => {
       <div class="flex justify-end gap-3">
         <button type="button" class="px-4 py-2 rounded-xl border" @click="back">Kembali</button>
         <button type="button" class="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-50" :disabled="form.processing" @click="save">
+          <i v-if="form.processing" class="fa-solid fa-spinner fa-spin mr-1"></i>
           Simpan Draft
         </button>
-        <button type="button" class="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold" @click="submitEval">
+        <button type="button" class="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold disabled:opacity-50" :disabled="form.processing" @click="submitEval">
           Submit Evaluasi
         </button>
       </div>
