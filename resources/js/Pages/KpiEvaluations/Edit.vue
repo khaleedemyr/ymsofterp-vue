@@ -7,6 +7,7 @@ import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import { useLoading } from '@/Composables/useLoading';
+import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/formatKpiNumber';
 
 const props = defineProps({
   evaluation: Object,
@@ -39,6 +40,7 @@ function applyEvaluation(data) {
       row.override_reason = pv.override_reason;
     }
   });
+  initManualRaw();
 }
 
 const {
@@ -84,6 +86,19 @@ const form = useForm({
   erp_data_scope: props.evaluation.erp_data_scope || 'employee_outlet',
   erp_scope_outlet_ids: props.evaluation.erp_scope_outlet_ids || [],
 });
+
+const manualFocusedId = ref(null);
+const manualRaw = ref({});
+
+function initManualRaw() {
+  const next = {};
+  form.parameter_values.forEach((row) => {
+    next[row.id] = formatKpiNumberPlain(row.manual_value);
+  });
+  manualRaw.value = next;
+}
+
+initManualRaw();
 
 const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet');
 const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
@@ -145,8 +160,39 @@ function levelBadge(level) {
 }
 
 function formatNum(val) {
-  if (val === null || val === undefined || val === '') return '—';
-  return Number(val).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  return formatKpiNumber(val);
+}
+
+function manualDisplay(id) {
+  if (manualFocusedId.value === id) {
+    return manualRaw.value[id] ?? '';
+  }
+  const row = pvRow(id);
+  return formatKpiNumber(row?.manual_value, '');
+}
+
+function onManualFocus(id) {
+  const row = pvRow(id);
+  manualRaw.value[id] = formatKpiNumberPlain(row?.manual_value);
+  manualFocusedId.value = id;
+}
+
+function onManualInput(id, value, pv, original) {
+  manualRaw.value[id] = value;
+  const row = pvRow(id);
+  if (row) {
+    row.manual_value = parseKpiNumber(value);
+  }
+  onManualChange(pv, original);
+}
+
+function onManualBlur(id, pv, original) {
+  const row = pvRow(id);
+  if (row) {
+    row.manual_value = parseKpiNumber(manualRaw.value[id] ?? '');
+  }
+  manualFocusedId.value = null;
+  onManualChange(pv, original);
 }
 
 function onManualChange(pv, original) {
@@ -312,7 +358,7 @@ onMounted(() => {
           </div>
         </div>
         <div class="text-right">
-          <div class="text-3xl font-bold text-rose-600">{{ evaluation.total_score ?? '—' }}</div>
+          <div class="text-3xl font-bold text-rose-600">{{ formatNum(evaluation.total_score) }}</div>
           <div class="text-xs text-gray-500">Total Skor</div>
         </div>
       </div>
@@ -322,7 +368,7 @@ onMounted(() => {
           <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
           <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
           <div v-if="diagnosticsLoading" class="text-gray-400 text-xs">Memuat probe ERP...</div>
-          <div v-else-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ Number(erpDiagnostics.revenue_mtd).toLocaleString('id-ID') }}</div>
+          <div v-else-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ formatKpiNumber(erpDiagnostics.revenue_mtd) }}</div>
           <div v-else-if="erpDiagnostics"><span class="text-gray-500">Revenue MTD (probe):</span> —</div>
           <div v-if="!diagnosticsLoading && erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
         </div>
@@ -413,11 +459,14 @@ onMounted(() => {
                 <td class="px-4 py-2 text-right">
                   <input
                     v-if="pv.source_type !== 'erp'"
-                    v-model="pvRow(pv.id).manual_value"
-                    type="number"
-                    step="any"
-                    class="w-32 text-right rounded border-gray-300 text-sm ml-auto block"
-                    @input="onManualChange(pv, pv)"
+                    :value="manualDisplay(pv.id)"
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="0"
+                    class="w-36 text-right rounded border-gray-300 text-sm ml-auto block tabular-nums"
+                    @focus="onManualFocus(pv.id)"
+                    @blur="onManualBlur(pv.id, pv, pv)"
+                    @input="onManualInput(pv.id, $event.target.value, pv, pv)"
                   />
                   <span v-else class="text-gray-400">—</span>
                 </td>
@@ -465,7 +514,7 @@ onMounted(() => {
                 <td class="px-4 py-2 font-medium">{{ item.item_name }}</td>
                 <td class="px-4 py-2 text-gray-600">{{ item.target_value || '—' }}</td>
                 <td class="px-4 py-2 font-mono text-xs text-gray-500">{{ item.formula || '—' }}</td>
-                <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}%</td>
+                <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}<template v-if="item.achievement_percent != null">%</template></td>
                 <td class="px-4 py-2">
                   <span v-if="item.performance_level" class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(item.performance_level)">{{ item.performance_level }}</span>
                   <span v-else>—</span>

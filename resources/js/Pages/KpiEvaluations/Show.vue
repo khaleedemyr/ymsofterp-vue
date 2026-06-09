@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { formatKpiNumber } from '@/utils/formatKpiNumber';
 
 const props = defineProps({
   evaluation: Object,
@@ -23,8 +24,7 @@ function levelBadge(level) {
 }
 
 function formatNum(val) {
-  if (val === null || val === undefined || val === '') return '—';
-  return Number(val).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  return formatKpiNumber(val);
 }
 
 function back() {

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 import KpiFormFieldLabel from './KpiFormFieldLabel.vue';
 
 const props = defineProps({
@@ -11,8 +12,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'success']);
-
-const showErpMapping = computed(() => ['erp', 'hybrid'].includes(form.source_type));
 
 const fieldHints = {
   code: {
@@ -73,7 +72,14 @@ const fieldHints = {
   },
 };
 
-const form = useForm({
+const emptyErpMapping = () => ({
+  resolver_key: '',
+  aggregation: 'sum',
+  static_filters: null,
+  dynamic_filter_bindings: null,
+});
+
+const createDefaults = () => ({
   code: '',
   name: '',
   source_type: 'manual',
@@ -86,66 +92,96 @@ const form = useForm({
   formula: '',
   is_shared: true,
   status: 'A',
-  erp_mapping: {
-    resolver_key: '',
-    aggregation: 'sum',
-    static_filters: null,
-    dynamic_filter_bindings: null,
-  },
+  erp_mapping: emptyErpMapping(),
 });
 
-watch(
-  () => props.show,
-  (val) => {
-    if (!val) return;
-    if (props.mode === 'edit' && props.row) {
-      form.code = props.row.code;
-      form.name = props.row.name;
-      form.source_type = props.row.source_type;
-      form.scope_type = props.row.scope_type;
-      form.data_type = props.row.data_type;
-      form.description = props.row.description || '';
-      form.target_value = props.row.target_value || '';
-      form.target_direction = props.row.target_direction || 'higher_better';
-      form.frequency = props.row.frequency || 'monthly';
-      form.formula = props.row.formula || '';
-      form.is_shared = !!props.row.is_shared;
-      form.status = props.row.status;
-      const mapping = props.row.erp_mapping || {};
-      form.erp_mapping = {
+const form = useForm(createDefaults());
+
+const showErpMapping = computed(() => ['erp', 'hybrid'].includes(form.source_type));
+
+function rowErpMapping(row) {
+  return row?.erp_mapping || row?.erpMapping || {};
+}
+
+function populateForm() {
+  form.clearErrors();
+
+  if (props.mode === 'edit' && props.row) {
+    const row = props.row;
+    const mapping = rowErpMapping(row);
+
+    form.defaults({
+      code: row.code,
+      name: row.name,
+      source_type: row.source_type,
+      scope_type: row.scope_type,
+      data_type: row.data_type,
+      description: row.description || '',
+      target_value: row.target_value || '',
+      target_direction: row.target_direction || 'higher_better',
+      frequency: row.frequency || 'monthly',
+      formula: row.formula || '',
+      is_shared: !!row.is_shared,
+      status: row.status,
+      erp_mapping: {
         resolver_key: mapping.resolver_key || '',
         aggregation: mapping.aggregation || 'sum',
         static_filters: mapping.static_filters || null,
         dynamic_filter_bindings: mapping.dynamic_filter_bindings || null,
-      };
-    } else {
-      form.reset();
-      form.source_type = 'manual';
-      form.scope_type = 'outlet';
-      form.data_type = 'decimal';
-      form.target_value = '';
-      form.target_direction = 'higher_better';
-      form.frequency = 'monthly';
-      form.formula = '';
-      form.is_shared = true;
-      form.status = 'A';
-      form.erp_mapping = { resolver_key: '', aggregation: 'sum', static_filters: null, dynamic_filter_bindings: null };
-    }
+      },
+    });
+    form.reset();
+    return;
+  }
+
+  form.defaults(createDefaults());
+  form.reset();
+}
+
+watch(
+  () => [props.show, props.mode, props.row?.id],
+  ([show]) => {
+    if (!show) return;
+    populateForm();
   },
 );
 
 const isSubmitting = ref(false);
 
+function firstError(errors) {
+  const values = Object.values(errors || {});
+  return values.length ? values[0] : 'Periksa kembali isian form.';
+}
+
 function submit() {
   isSubmitting.value = true;
+
   const opts = {
-    onSuccess: () => { emit('success'); emit('close'); },
-    onFinish: () => { isSubmitting.value = false; },
+    onSuccess: () => {
+      Swal.fire(
+        'Berhasil',
+        props.mode === 'edit' ? 'Parameter KPI diperbarui.' : 'Parameter KPI ditambahkan.',
+        'success',
+      );
+      emit('success');
+      emit('close');
+    },
+    onError: (errors) => {
+      Swal.fire('Gagal menyimpan', firstError(errors), 'error');
+    },
+    onFinish: () => {
+      isSubmitting.value = false;
+    },
   };
+
   if (props.mode === 'create') {
     form.post(route('kpi-parameters.store'), opts);
-  } else if (props.row) {
-    form.put(route('kpi-parameters.update', props.row.id), opts);
+    return;
+  }
+
+  if (props.mode === 'edit' && props.row?.id) {
+    form._method = 'PUT';
+    form.post(route('kpi-parameters.update', props.row.id), opts);
   }
 }
 </script>
@@ -165,7 +201,14 @@ function submit() {
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <KpiFormFieldLabel label="Kode" required :hint="fieldHints.code.hint" :example="fieldHints.code.example" />
-            <input v-model="form.code" class="mt-1 w-full rounded-lg border-gray-300" placeholder="P001" />
+            <input
+              v-model="form.code"
+              class="mt-1 w-full rounded-lg border-gray-300"
+              :class="{ 'bg-gray-100 cursor-not-allowed': mode === 'edit' }"
+              :readonly="mode === 'edit'"
+              placeholder="P001"
+            />
+            <p v-if="mode === 'edit'" class="text-xs text-gray-500 mt-1">Kode tidak bisa diubah setelah dibuat.</p>
             <div v-if="form.errors.code" class="text-xs text-red-500 mt-1">{{ form.errors.code }}</div>
           </div>
           <div>
