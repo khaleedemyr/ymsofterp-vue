@@ -224,6 +224,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.kpi_parameters'), icon: 'fa-solid fa-sliders', route: '/kpi-parameters', code: 'kpi_parameters' },
             { name: () => t('sidebar.menus.kpi_key_strategies'), icon: 'fa-solid fa-layer-group', route: '/kpi-key-strategies', code: 'kpi_key_strategies' },
             { name: () => t('sidebar.menus.kpi_templates'), icon: 'fa-solid fa-bullseye', route: '/kpi-templates', code: 'kpi_templates' },
+            { name: () => t('sidebar.menus.kpi_evaluations'), icon: 'fa-solid fa-clipboard-check', route: '/kpi-evaluations', code: 'kpi_evaluations' },
             { name: () => t('sidebar.menus.data_jabatan'), icon: 'fa-solid fa-user-tie', route: '/jabatans', code: 'data_jabatan' },
             { name: () => t('sidebar.menus.data_divisi'), icon: 'fa-solid fa-building', route: '/divisis', code: 'data_divisi' },
             { name: () => t('sidebar.menus.data_karyawan'), icon: 'fa-solid fa-users', route: '/users', code: 'data_karyawan' },

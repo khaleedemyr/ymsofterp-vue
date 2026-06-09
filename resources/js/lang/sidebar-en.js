@@ -105,6 +105,7 @@ export default {
     "kpi_parameters": "KPI Parameters",
     "kpi_key_strategies": "KPI Key Strategy",
     "kpi_templates": "KPI Template",
+    "kpi_evaluations": "KPI Evaluation",
     "data_jabatan": "Data Jabatan",
     "data_divisi": "Data Divisi",
     "data_karyawan": "Data Karyawan",
