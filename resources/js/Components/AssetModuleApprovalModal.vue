@@ -36,6 +36,12 @@ const MODULE_META = {
         iconClass: 'text-rose-500',
         approvePath: (id) => `/asset-disposals/${id}/approve`,
     },
+    owner_transfer: {
+        title: 'Detail Asset Owner Transfer',
+        icon: 'fa-right-left',
+        iconClass: 'text-violet-500',
+        approvePath: (id) => `/asset-owner-transfers/${id}/approve`,
+    },
 };
 
 const meta = computed(() => MODULE_META[props.module] || MODULE_META.transfer);
@@ -230,6 +236,25 @@ function showReject() {
                                 <div class="text-gray-900 dark:text-white">
                                     {{ header.estimated_cost != null ? 'Rp ' + Number(header.estimated_cost).toLocaleString('id-ID') : '-' }}
                                 </div>
+                            </div>
+                        </template>
+
+                        <template v-if="module === 'owner_transfer'">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Pemilik Asal</div>
+                                <div class="text-gray-900 dark:text-white">{{ header.owner_from_name || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Pemilik Tujuan</div>
+                                <div class="text-gray-900 dark:text-white">{{ header.owner_to_name || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Lokasi</div>
+                                <div class="text-gray-900 dark:text-white">{{ header.location_outlet_name || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Gudang</div>
+                                <div class="text-gray-900 dark:text-white">{{ header.warehouse_outlet_name || '-' }}</div>
                             </div>
                         </template>
 

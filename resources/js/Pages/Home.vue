@@ -198,7 +198,11 @@ const loadingAssetServiceApprovals = ref(false);
 const pendingAssetDisposalApprovals = ref([]);
 const loadingAssetDisposalApprovals = ref(false);
 
-// Asset module approval modal (transfer, adjustment, service, disposal)
+// Asset Owner Transfer approvals
+const pendingAssetOwnerTransferApprovals = ref([]);
+const loadingAssetOwnerTransferApprovals = ref(false);
+
+// Asset module approval modal (transfer, adjustment, service, disposal, owner_transfer)
 const showAssetModuleApprovalModal = ref(false);
 const assetModuleApprovalType = ref('transfer');
 const selectedAssetModuleApproval = ref(null);
@@ -1084,6 +1088,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingAssetAdjustmentApprovals.value = data.asset_stock_adjustment || [];
             pendingAssetServiceApprovals.value = data.asset_service_order || [];
             pendingAssetDisposalApprovals.value = data.asset_disposal || [];
+            pendingAssetOwnerTransferApprovals.value = data.asset_owner_transfer || [];
             
             // Set loading states to false
             loadingPrApprovals.value = false;
@@ -2599,6 +2604,7 @@ const ASSET_APPROVAL_DETAIL_URLS = {
     adjustment: (id) => `/api/asset-adjustment/${id}/approval-details`,
     service: (id) => `/api/asset-service/${id}/approval-details`,
     disposal: (id) => `/api/asset-disposal/${id}/approval-details`,
+    owner_transfer: (id) => `/api/asset-owner-transfer/${id}/approval-details`,
 };
 
 async function showAssetModuleApprovalDetails(type, id) {
@@ -2629,11 +2635,16 @@ function showAssetServiceApprovalDetails(id) {
     showAssetModuleApprovalDetails('service', id);
 }
 
+function showAssetOwnerTransferApprovalDetails(id) {
+    showAssetModuleApprovalDetails('owner_transfer', id);
+}
+
 function onAssetModuleApprovalDone(type) {
     if (type === 'transfer') loadPendingAssetTransferApprovals();
     else if (type === 'adjustment') loadPendingAssetAdjustmentApprovals();
     else if (type === 'service') loadPendingAssetServiceApprovals();
     else if (type === 'disposal') loadPendingAssetDisposalApprovals();
+    else if (type === 'owner_transfer') loadPendingAssetOwnerTransferApprovals();
     loadAllPendingApprovalsOptimized();
 }
 
@@ -2648,6 +2659,20 @@ async function loadPendingAssetDisposalApprovals() {
         console.error('Error loading pending Asset Disposal approvals:', error);
     } finally {
         loadingAssetDisposalApprovals.value = false;
+    }
+}
+
+async function loadPendingAssetOwnerTransferApprovals() {
+    loadingAssetOwnerTransferApprovals.value = true;
+    try {
+        const response = await axios.get('/asset-owner-transfer-approvals/pending');
+        if (response.data.success) {
+            pendingAssetOwnerTransferApprovals.value = response.data.headers;
+        }
+    } catch (error) {
+        console.error('Error loading pending Asset Owner Transfer approvals:', error);
+    } finally {
+        loadingAssetOwnerTransferApprovals.value = false;
     }
 }
 
@@ -5912,6 +5937,8 @@ onMounted(async () => {
         loadPendingAssetTransferApprovals();
         loadPendingAssetAdjustmentApprovals();
         loadPendingAssetServiceApprovals();
+        loadPendingAssetDisposalApprovals();
+        loadPendingAssetOwnerTransferApprovals();
     }
     
     // Load yang tidak termasuk di optimized endpoint
@@ -7229,6 +7256,41 @@ watch(locale, () => {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Owner Transfer Approval Section -->
+                <div v-if="pendingAssetOwnerTransferApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md bg-white/80 dark:bg-gray-800/80 rounded-2xl shadow-2xl border border-violet-200/50 dark:border-violet-700/50 p-4 hover:shadow-violet-200/20 dark:hover:shadow-violet-800/20 transition-all duration-300">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="relative">
+                                    <div class="w-2.5 h-2.5 bg-violet-500 rounded-full animate-pulse"></div>
+                                    <div class="absolute inset-0 w-2.5 h-2.5 bg-violet-400 rounded-full animate-ping opacity-75"></div>
+                                </div>
+                                <h3 class="text-sm font-bold text-violet-700 dark:text-violet-300">Asset Owner Transfer Approval</h3>
+                            </div>
+                            <div class="bg-violet-500 text-white text-xs font-bold px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                                {{ pendingAssetOwnerTransferApprovals.length }}
+                            </div>
+                        </div>
+                        <div class="space-y-2">
+                            <div v-for="header in pendingAssetOwnerTransferApprovals.slice(0, 3)" :key="header.id"
+                                @click="showAssetOwnerTransferApprovalDetails(header.id)"
+                                class="bg-gradient-to-r from-violet-50 to-transparent dark:from-violet-900/20 rounded-xl p-3 cursor-pointer hover:from-violet-100 dark:hover:from-violet-900/40 transition-all duration-200 border border-violet-100 dark:border-violet-800/50">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-bold text-violet-700 dark:text-violet-300">{{ header.number || header.transfer_number || 'N/A' }}</span>
+                                    <span class="text-[10px] text-gray-400">{{ formatDate(header.date) }}</span>
+                                </div>
+                                <div class="text-[11px] text-gray-600 dark:text-gray-400 mt-1">{{ header.owner_from_name }} → {{ header.owner_to_name }}</div>
+                                <div class="text-[10px] text-gray-400 mt-0.5">{{ header.creator_name }}</div>
+                            </div>
+                        </div>
+                        <div v-if="pendingAssetOwnerTransferApprovals.length > 3" class="text-center mt-2">
+                            <span class="text-[10px] text-violet-500 cursor-pointer hover:underline" @click="showAssetOwnerTransferApprovalDetails(pendingAssetOwnerTransferApprovals[0]?.id)">
+                                Lihat {{ pendingAssetOwnerTransferApprovals.length - 3 }} lainnya...
+                            </span>
                         </div>
                     </div>
                 </div>

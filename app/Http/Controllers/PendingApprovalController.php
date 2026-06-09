@@ -70,6 +70,7 @@ class PendingApprovalController extends Controller
                 'asset_stock_adjustment' => [],
                 'asset_service_order' => [],
                 'asset_disposal' => [],
+                'asset_owner_transfer' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -453,6 +454,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Asset Disposal approvals: ' . $e->getMessage());
+            }
+
+            // 24. Asset Owner Transfer
+            try {
+                $aotController = app(\App\Http\Controllers\AssetOwnerTransferController::class);
+                $aotResponse = $aotController->getPendingApprovals($request);
+                if ($aotResponse->getStatusCode() === 200) {
+                    $aotData = json_decode($aotResponse->getContent(), true);
+                    $data['asset_owner_transfer'] = $aotData['headers'] ?? $aotData['data'] ?? [];
+                    if ($limit > 0 && count($data['asset_owner_transfer']) > $limit) {
+                        $data['asset_owner_transfer'] = array_slice($data['asset_owner_transfer'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Asset Owner Transfer approvals: ' . $e->getMessage());
             }
 
                 return $data;

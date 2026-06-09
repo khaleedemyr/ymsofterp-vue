@@ -634,6 +634,52 @@ class AssetOwnerTransferController extends Controller
         }
     }
 
+    public function getApprovalDetails($id)
+    {
+        $transfer = DB::table('asset_owner_transfers as t')
+            ->leftJoin('tbl_data_outlet as of', 't.owner_outlet_from_id', '=', 'of.id_outlet')
+            ->leftJoin('tbl_data_outlet as ot', 't.owner_outlet_to_id', '=', 'ot.id_outlet')
+            ->leftJoin('tbl_data_outlet as ol', 't.outlet_id', '=', 'ol.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 't.warehouse_outlet_id', '=', 'wo.id')
+            ->join('users as creator', 't.created_by', '=', 'creator.id')
+            ->where('t.id', $id)
+            ->select(
+                't.*',
+                'of.nama_outlet as owner_from_name',
+                'ot.nama_outlet as owner_to_name',
+                'ol.nama_outlet as location_outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'creator.nama_lengkap as creator_name'
+            )
+            ->first();
+
+        if (!$transfer) {
+            return response()->json(['success' => false, 'message' => 'Data tidak ditemukan'], 404);
+        }
+
+        $items = DB::table('asset_owner_transfer_items as ti')
+            ->join('items as i', 'ti.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'ti.unit_id', '=', 'u.id')
+            ->where('ti.asset_owner_transfer_id', $id)
+            ->select('ti.*', 'i.name as item_name', 'u.name as unit_name')
+            ->get();
+
+        $approvalFlows = DB::table('asset_owner_transfer_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.asset_owner_transfer_id', $id)
+            ->orderBy('af.approval_level')
+            ->select('af.*', 'u.nama_lengkap as approver_name', 'j.nama_jabatan as approver_jabatan')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'header' => $transfer,
+            'items' => $items,
+            'approval_flows' => $approvalFlows,
+        ]);
+    }
+
     public function getPendingApprovals(Request $request)
     {
         $currentUser = auth()->user();

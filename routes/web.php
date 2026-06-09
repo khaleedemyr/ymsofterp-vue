@@ -3512,6 +3512,8 @@ Route::get('/asset-service-approvals/pending', [\App\Http\Controllers\AssetServi
 Route::get('/api/asset-service/{id}/approval-details', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovalDetails'])->name('asset-service.approval-details');
 Route::get('/asset-disposal-approvals/pending', [\App\Http\Controllers\AssetDisposalController::class, 'getPendingApprovals'])->name('asset-disposal.approvals.pending');
 Route::get('/api/asset-disposal/{id}/approval-details', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovalDetails'])->name('asset-disposal.approval-details');
+Route::get('/asset-owner-transfer-approvals/pending', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getPendingApprovals'])->name('asset-owner-transfer.approvals.pending');
+Route::get('/api/asset-owner-transfer/{id}/approval-details', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getApprovalDetails'])->name('asset-owner-transfer.approval-details');
 Route::get('/lost-breakage-report', [\App\Http\Controllers\LostBreakageController::class, 'report'])->name('lost-breakage.report');
 Route::get('/lost-breakage-report/details/{id}', [\App\Http\Controllers\LostBreakageController::class, 'reportDetails'])->name('lost-breakage.report.details');
 Route::get('/lost-breakage-report/export', [\App\Http\Controllers\LostBreakageController::class, 'exportReport'])->name('lost-breakage.report.export');
