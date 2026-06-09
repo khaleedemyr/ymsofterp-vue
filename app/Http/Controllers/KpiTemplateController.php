@@ -132,7 +132,7 @@ class KpiTemplateController extends Controller
             'strategies.*.sort_order' => 'nullable|integer|min:0',
             'strategies.*.items' => 'nullable|array',
             'strategies.*.items.*.id' => 'nullable|integer',
-            'strategies.*.items.*.name' => 'required|string|max:255',
+            'strategies.*.items.*.name' => 'nullable|string|max:255',
             'strategies.*.items.*.description' => 'nullable|string',
             'strategies.*.items.*.weight_percent' => 'required|numeric|min:0|max:100',
             'strategies.*.items.*.target_value' => 'nullable|string|max:100',
@@ -141,7 +141,7 @@ class KpiTemplateController extends Controller
             'strategies.*.items.*.formula' => 'nullable|string',
             'strategies.*.items.*.scoring_levels' => 'nullable|array',
             'strategies.*.items.*.sort_order' => 'nullable|integer|min:0',
-            'strategies.*.items.*.parameter_ids' => 'nullable|array',
+            'strategies.*.items.*.parameter_ids' => 'required|array|min:1',
             'strategies.*.items.*.parameter_ids.*' => 'integer|exists:kpi_parameters,id',
         ]);
     }

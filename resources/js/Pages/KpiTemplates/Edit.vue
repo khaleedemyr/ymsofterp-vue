@@ -2,6 +2,8 @@
 import { computed } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -10,6 +12,10 @@ const props = defineProps({
 });
 
 const isEdit = computed(() => !!props.template?.id);
+
+const jabatanOptions = computed(() => props.formData?.jabatans ?? []);
+const keyStrategyOptions = computed(() => props.formData?.keyStrategies ?? []);
+const parameterOptions = computed(() => props.formData?.parameters ?? []);
 
 const form = useForm({
   code: '',
@@ -20,6 +26,15 @@ const form = useForm({
   scoring_rules: { exceeding_min: 100, meeting_min: 85, below_max: 85 },
   jabatan_ids: [],
   strategies: [],
+});
+
+const selectedJabatans = computed({
+  get() {
+    return jabatanOptions.value.filter((j) => form.jabatan_ids.includes(j.id_jabatan));
+  },
+  set(value) {
+    form.jabatan_ids = (value || []).map((j) => j.id_jabatan);
+  },
 });
 
 function initFromTemplate() {
@@ -55,6 +70,8 @@ function initFromTemplate() {
       parameter_ids: [...(item.parameter_ids || [])],
     })),
   }));
+
+  form.strategies.forEach((s) => s.items?.forEach((item) => syncItemFromParameters(item)));
 }
 
 initFromTemplate();
@@ -104,13 +121,64 @@ function keyStrategyName(id) {
   return props.formData?.keyStrategies?.find((k) => k.id === id)?.name || '';
 }
 
-function toggleJabatan(id) {
-  const idx = form.jabatan_ids.indexOf(id);
-  if (idx >= 0) form.jabatan_ids.splice(idx, 1);
-  else form.jabatan_ids.push(id);
+function formatKeyStrategyLabel(ks) {
+  return ks ? `${ks.code} — ${ks.name}` : '';
+}
+
+function formatParameterLabel(param) {
+  return param ? `${param.code} — ${param.name} (${param.source_type})` : '';
+}
+
+function findKeyStrategy(id) {
+  if (!id) return null;
+  return keyStrategyOptions.value.find((k) => k.id === id) || null;
+}
+
+function setKeyStrategy(strategy, option) {
+  strategy.kpi_key_strategy_id = option?.id ?? '';
+}
+
+function getSelectedParameters(item) {
+  return parameterOptions.value.filter((p) => item.parameter_ids.includes(p.id));
+}
+
+function generateKpiNameFromParameters(params) {
+  if (!params.length) return '';
+  if (params.length === 1) return params[0].name;
+  return params.map((p) => p.name).join(' / ');
+}
+
+function generateFormulaFromParameters(params) {
+  if (!params.length) return '';
+  if (params.length === 1) return params[0].code;
+  if (params.length === 2) return `${params[0].code} / ${params[1].code} * 100`;
+  return params.map((p) => p.code).join(' ');
+}
+
+function syncItemFromParameters(item) {
+  const params = getSelectedParameters(item);
+  item.name = generateKpiNameFromParameters(params);
+  item.formula = generateFormulaFromParameters(params);
+}
+
+function setSelectedParameters(item, value) {
+  item.parameter_ids = (value || []).map((p) => p.id);
+  syncItemFromParameters(item);
 }
 
 function submit() {
+  let missingParameters = false;
+  form.strategies.forEach((s) => {
+    s.items?.forEach((item) => {
+      syncItemFromParameters(item);
+      if (!item.parameter_ids.length) missingParameters = true;
+    });
+  });
+
+  if (missingParameters) {
+    Swal.fire('Validasi', 'Setiap KPI wajib memilih minimal 1 parameter.', 'warning');
+    return;
+  }
   if (form.strategies.length === 0) {
     Swal.fire('Validasi', 'Minimal 1 Key Strategy diperlukan.', 'warning');
     return;
@@ -171,20 +239,33 @@ function cancel() {
 
         <!-- Jabatan bridging -->
         <div class="bg-white rounded-2xl shadow p-6">
-          <h2 class="font-bold text-lg mb-3">Assign Jabatan</h2>
-          <p class="text-sm text-gray-600 mb-3">Template ini akan dipakai karyawan dengan jabatan berikut (auto saat evaluation fase 2).</p>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="j in formData.jabatans"
-              :key="j.id_jabatan"
-              type="button"
-              class="px-3 py-1.5 rounded-full text-sm border transition"
-              :class="form.jabatan_ids.includes(j.id_jabatan) ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-gray-700 border-gray-300'"
-              @click="toggleJabatan(j.id_jabatan)"
-            >
-              {{ j.nama_jabatan }}
-            </button>
-          </div>
+          <h2 class="font-bold text-lg mb-1">Assign Jabatan</h2>
+          <p class="text-sm text-gray-600 mb-3">Pilih jabatan yang memakai template ini. Ketik untuk mencari nama jabatan.</p>
+          <Multiselect
+            v-model="selectedJabatans"
+            :options="jabatanOptions"
+            :multiple="true"
+            :close-on-select="false"
+            :clear-on-select="false"
+            :searchable="true"
+            :preserve-search="true"
+            :show-labels="false"
+            :hide-selected="true"
+            placeholder="Ketik nama jabatan..."
+            label="nama_jabatan"
+            track-by="id_jabatan"
+            class="kpi-template-multiselect"
+          >
+            <template #noResult>
+              <span class="px-2 py-1 text-sm text-gray-500">Jabatan tidak ditemukan</span>
+            </template>
+            <template #noOptions>
+              <span class="px-2 py-1 text-sm text-gray-500">Tidak ada data jabatan</span>
+            </template>
+          </Multiselect>
+          <p v-if="selectedJabatans.length" class="text-xs text-gray-500 mt-2">
+            {{ selectedJabatans.length }} jabatan dipilih
+          </p>
         </div>
 
         <!-- Weight summary -->
@@ -208,14 +289,27 @@ function cancel() {
             <button type="button" class="text-sm bg-rose-100 text-rose-700 px-3 py-1.5 rounded-lg" @click="addStrategy">+ Key Strategy</button>
           </div>
 
-          <div v-for="(strategy, sIdx) in form.strategies" :key="sIdx" class="bg-white rounded-2xl shadow border border-rose-100 overflow-hidden">
+          <div v-for="(strategy, sIdx) in form.strategies" :key="sIdx" class="bg-white rounded-2xl shadow border border-rose-100">
             <div class="bg-rose-50 px-4 py-3 flex flex-wrap gap-3 items-end">
-              <div class="flex-1 min-w-[200px]">
+              <div class="flex-1 min-w-[240px]">
                 <label class="text-xs font-medium text-gray-600">Key Strategy</label>
-                <select v-model="strategy.kpi_key_strategy_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm">
-                  <option value="">-- Pilih --</option>
-                  <option v-for="ks in formData.keyStrategies" :key="ks.id" :value="ks.id">{{ ks.code }} — {{ ks.name }}</option>
-                </select>
+                <Multiselect
+                  :model-value="findKeyStrategy(strategy.kpi_key_strategy_id)"
+                  :options="keyStrategyOptions"
+                  :searchable="true"
+                  :allow-empty="true"
+                  :show-labels="false"
+                  :custom-label="formatKeyStrategyLabel"
+                  placeholder="Ketik kode atau nama key strategy..."
+                  label="name"
+                  track-by="id"
+                  class="kpi-template-multiselect mt-1"
+                  @update:model-value="(val) => setKeyStrategy(strategy, val)"
+                >
+                  <template #noResult>
+                    <span class="px-2 py-1 text-xs text-gray-500">Key strategy tidak ditemukan</span>
+                  </template>
+                </Multiselect>
               </div>
               <div class="w-28">
                 <label class="text-xs font-medium text-gray-600">Bobot %</label>
@@ -232,9 +326,36 @@ function cancel() {
 
               <div v-for="(item, iIdx) in strategy.items" :key="iIdx" class="border rounded-xl p-4 bg-gray-50/50 space-y-3">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div class="md:col-span-2">
-                    <label class="text-xs font-medium">Nama KPI *</label>
-                    <input v-model="item.name" class="mt-1 w-full rounded-lg border-gray-300 text-sm" placeholder="Revenue Achievement" />
+                  <div class="md:col-span-3">
+                    <label class="text-xs font-medium">Parameter *</label>
+                    <p class="text-xs text-gray-500 mb-1">Pilih parameter dulu — nama KPI &amp; formula otomatis dari parameter terpilih.</p>
+                    <Multiselect
+                      :model-value="getSelectedParameters(item)"
+                      :options="parameterOptions"
+                      :multiple="true"
+                      :close-on-select="false"
+                      :clear-on-select="false"
+                      :searchable="true"
+                      :preserve-search="true"
+                      :hide-selected="true"
+                      :show-labels="false"
+                      :custom-label="formatParameterLabel"
+                      placeholder="Ketik kode atau nama parameter..."
+                      label="name"
+                      track-by="id"
+                      class="kpi-template-multiselect mt-1"
+                      @update:model-value="(val) => setSelectedParameters(item, val)"
+                    >
+                      <template #noResult>
+                        <span class="px-2 py-1 text-xs text-gray-500">Parameter tidak ditemukan</span>
+                      </template>
+                    </Multiselect>
+                  </div>
+                  <div class="md:col-span-3">
+                    <label class="text-xs font-medium text-gray-500">Nama KPI (otomatis)</label>
+                    <div class="mt-1 px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-gray-800 min-h-[38px]">
+                      {{ item.name || '— pilih parameter terlebih dahulu —' }}
+                    </div>
                   </div>
                   <div>
                     <label class="text-xs font-medium">Bobot % *</label>
@@ -257,15 +378,8 @@ function cancel() {
                     </select>
                   </div>
                   <div class="md:col-span-3">
-                    <label class="text-xs font-medium">Formula</label>
-                    <input v-model="item.formula" class="mt-1 w-full rounded-lg border-gray-300 text-sm font-mono" placeholder="P001 / P002 * 100" />
-                  </div>
-                  <div class="md:col-span-3">
-                    <label class="text-xs font-medium">Parameter</label>
-                    <select v-model="item.parameter_ids" multiple class="mt-1 w-full rounded-lg border-gray-300 text-sm h-24">
-                      <option v-for="p in formData.parameters" :key="p.id" :value="p.id">{{ p.code }} — {{ p.name }} ({{ p.source_type }})</option>
-                    </select>
-                    <p class="text-xs text-gray-500 mt-1">Ctrl+klik untuk pilih banyak parameter.</p>
+                    <label class="text-xs font-medium text-gray-500">Formula (otomatis, bisa diedit)</label>
+                    <input v-model="item.formula" class="mt-1 w-full rounded-lg border-gray-300 text-sm font-mono" placeholder="Otomatis dari parameter" />
                   </div>
                 </div>
                 <div class="flex justify-end">
@@ -288,3 +402,43 @@ function cancel() {
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.kpi-template-multiselect :deep(.multiselect__tags) {
+  min-height: 38px;
+  border-radius: 0.5rem;
+  border-color: #d1d5db;
+  padding-top: 6px;
+}
+
+.kpi-template-multiselect :deep(.multiselect__input),
+.kpi-template-multiselect :deep(.multiselect__single),
+.kpi-template-multiselect :deep(.multiselect__placeholder) {
+  font-size: 0.875rem;
+}
+
+.kpi-template-multiselect :deep(.multiselect__option--highlight) {
+  background: #e11d48;
+}
+
+.kpi-template-multiselect :deep(.multiselect__option--selected) {
+  background: #ffe4e6;
+  color: #9f1239;
+  font-weight: 500;
+}
+
+.kpi-template-multiselect :deep(.multiselect__tag) {
+  background: #e11d48;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+}
+
+.kpi-template-multiselect :deep(.multiselect__tag-icon:hover) {
+  background: #be123c;
+}
+
+.kpi-template-multiselect :deep(.multiselect__content-wrapper) {
+  border-radius: 0.5rem;
+  z-index: 60;
+}
+</style>

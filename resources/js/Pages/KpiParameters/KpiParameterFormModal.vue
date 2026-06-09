@@ -183,15 +183,10 @@ function submit() {
           <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border-gray-300" placeholder="Catatan internal (opsional)" />
         </div>
         <div v-if="showErpMapping" class="border rounded-xl p-4 bg-indigo-50/50 space-y-3">
-          <div class="flex items-center gap-2">
-            <h4 class="font-semibold text-indigo-800">ERP Mapping</h4>
-            <span class="relative group cursor-help">
-              <i class="fa-solid fa-circle-question text-indigo-400 text-sm"></i>
-              <span class="pointer-events-none absolute left-0 top-full z-[60] mt-1 hidden w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal text-white shadow-xl group-hover:block">
-                Konfigurasi ini menghubungkan parameter ke modul ERP. Muncul hanya jika Source = ERP atau Hybrid.
-              </span>
-            </span>
-          </div>
+          <KpiFormFieldLabel
+            label="ERP Mapping"
+            hint="Konfigurasi ini menghubungkan parameter ke modul ERP. Muncul hanya jika Source = ERP atau Hybrid."
+          />
           <div>
             <KpiFormFieldLabel label="Resolver Key" required :hint="fieldHints.resolver_key.hint" :example="fieldHints.resolver_key.example" />
             <select v-model="form.erp_mapping.resolver_key" class="mt-1 w-full rounded-lg border-gray-300">
