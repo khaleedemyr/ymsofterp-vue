@@ -141,7 +141,7 @@ class KpiTemplateController extends Controller
             'strategies.*.items.*.formula' => 'nullable|string',
             'strategies.*.items.*.scoring_levels' => 'nullable|array',
             'strategies.*.items.*.sort_order' => 'nullable|integer|min:0',
-            'strategies.*.items.*.parameter_ids' => 'required|array|min:1',
+            'strategies.*.items.*.parameter_ids' => 'required|array|size:1',
             'strategies.*.items.*.parameter_ids.*' => 'integer|exists:kpi_parameters,id',
         ]);
     }
@@ -151,7 +151,10 @@ class KpiTemplateController extends Controller
         return [
             'jabatans' => Jabatan::active()->orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan']),
             'keyStrategies' => KpiKeyStrategy::active()->orderBy('sort_order')->get(['id', 'code', 'name']),
-            'parameters' => KpiParameter::active()->orderBy('code')->get(['id', 'code', 'name', 'source_type', 'scope_type']),
+            'parameters' => KpiParameter::active()->orderBy('code')->get([
+                'id', 'code', 'name', 'source_type', 'scope_type',
+                'target_value', 'target_direction', 'frequency', 'formula',
+            ]),
             'defaultScoringRules' => $this->templateService->defaultScoringRules(),
             'targetDirections' => [
                 ['value' => 'higher_better', 'label' => 'Higher is better'],

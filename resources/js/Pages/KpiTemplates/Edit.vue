@@ -71,7 +71,12 @@ function initFromTemplate() {
     })),
   }));
 
-  form.strategies.forEach((s) => s.items?.forEach((item) => syncItemFromParameters(item)));
+  form.strategies.forEach((s) => s.items?.forEach((item) => {
+    if (item.parameter_ids?.length > 1) {
+      item.parameter_ids = [item.parameter_ids[0]];
+    }
+    syncItemFromParameter(item);
+  }));
 }
 
 initFromTemplate();
@@ -138,45 +143,53 @@ function setKeyStrategy(strategy, option) {
   strategy.kpi_key_strategy_id = option?.id ?? '';
 }
 
-function getSelectedParameters(item) {
-  return parameterOptions.value.filter((p) => item.parameter_ids.includes(p.id));
+function formatDirectionLabel(value) {
+  return props.formData?.targetDirections?.find((d) => d.value === value)?.label || value || '—';
 }
 
-function generateKpiNameFromParameters(params) {
-  if (!params.length) return '';
-  if (params.length === 1) return params[0].name;
-  return params.map((p) => p.name).join(' / ');
+function formatFrequencyLabel(value) {
+  return props.formData?.frequencies?.find((f) => f.value === value)?.label || value || '—';
 }
 
-function generateFormulaFromParameters(params) {
-  if (!params.length) return '';
-  if (params.length === 1) return params[0].code;
-  if (params.length === 2) return `${params[0].code} / ${params[1].code} * 100`;
-  return params.map((p) => p.code).join(' ');
+function getSelectedParameter(item) {
+  const id = item.parameter_ids?.[0];
+  if (!id) return null;
+  return parameterOptions.value.find((p) => p.id === id) || null;
 }
 
-function syncItemFromParameters(item) {
-  const params = getSelectedParameters(item);
-  item.name = generateKpiNameFromParameters(params);
-  item.formula = generateFormulaFromParameters(params);
+function syncItemFromParameter(item) {
+  const param = getSelectedParameter(item);
+  if (!param) {
+    item.name = '';
+    item.formula = '';
+    item.target_value = '';
+    item.target_direction = 'higher_better';
+    item.frequency = 'monthly';
+    return;
+  }
+  item.name = param.name;
+  item.formula = param.formula || '';
+  item.target_value = param.target_value || '';
+  item.target_direction = param.target_direction || 'higher_better';
+  item.frequency = param.frequency || 'monthly';
 }
 
-function setSelectedParameters(item, value) {
-  item.parameter_ids = (value || []).map((p) => p.id);
-  syncItemFromParameters(item);
+function setSelectedParameter(item, param) {
+  item.parameter_ids = param ? [param.id] : [];
+  syncItemFromParameter(item);
 }
 
 function submit() {
   let missingParameters = false;
   form.strategies.forEach((s) => {
     s.items?.forEach((item) => {
-      syncItemFromParameters(item);
-      if (!item.parameter_ids.length) missingParameters = true;
+      syncItemFromParameter(item);
+      if (!item.parameter_ids?.length) missingParameters = true;
     });
   });
 
   if (missingParameters) {
-    Swal.fire('Validasi', 'Setiap KPI wajib memilih minimal 1 parameter.', 'warning');
+    Swal.fire('Validasi', 'Setiap KPI wajib memilih 1 parameter.', 'warning');
     return;
   }
   if (form.strategies.length === 0) {
@@ -326,60 +339,52 @@ function cancel() {
 
               <div v-for="(item, iIdx) in strategy.items" :key="iIdx" class="border rounded-xl p-4 bg-gray-50/50 space-y-3">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div class="md:col-span-3">
-                    <label class="text-xs font-medium">Parameter *</label>
-                    <p class="text-xs text-gray-500 mb-1">Pilih parameter dulu — nama KPI &amp; formula otomatis dari parameter terpilih.</p>
+                  <div class="md:col-span-2">
+                    <label class="text-xs font-medium">Parameter KPI *</label>
+                    <p class="text-xs text-gray-500 mb-1">Pilih parameter — nama, target, direction, frequency &amp; formula mengikuti master parameter.</p>
                     <Multiselect
-                      :model-value="getSelectedParameters(item)"
+                      :model-value="getSelectedParameter(item)"
                       :options="parameterOptions"
-                      :multiple="true"
-                      :close-on-select="false"
-                      :clear-on-select="false"
                       :searchable="true"
-                      :preserve-search="true"
-                      :hide-selected="true"
+                      :allow-empty="true"
                       :show-labels="false"
                       :custom-label="formatParameterLabel"
                       placeholder="Ketik kode atau nama parameter..."
                       label="name"
                       track-by="id"
                       class="kpi-template-multiselect mt-1"
-                      @update:model-value="(val) => setSelectedParameters(item, val)"
+                      @update:model-value="(val) => setSelectedParameter(item, val)"
                     >
                       <template #noResult>
                         <span class="px-2 py-1 text-xs text-gray-500">Parameter tidak ditemukan</span>
                       </template>
                     </Multiselect>
                   </div>
-                  <div class="md:col-span-3">
-                    <label class="text-xs font-medium text-gray-500">Nama KPI (otomatis)</label>
-                    <div class="mt-1 px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-gray-800 min-h-[38px]">
-                      {{ item.name || '— pilih parameter terlebih dahulu —' }}
-                    </div>
-                  </div>
                   <div>
                     <label class="text-xs font-medium">Bobot % *</label>
                     <input v-model.number="item.weight_percent" type="number" step="0.01" min="0" max="100" class="mt-1 w-full rounded-lg border-gray-300 text-sm" />
                   </div>
-                  <div>
-                    <label class="text-xs font-medium">Target</label>
-                    <input v-model="item.target_value" class="mt-1 w-full rounded-lg border-gray-300 text-sm" placeholder="100%" />
-                  </div>
-                  <div>
-                    <label class="text-xs font-medium">Direction</label>
-                    <select v-model="item.target_direction" class="mt-1 w-full rounded-lg border-gray-300 text-sm">
-                      <option v-for="d in formData.targetDirections" :key="d.value" :value="d.value">{{ d.label }}</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="text-xs font-medium">Frequency</label>
-                    <select v-model="item.frequency" class="mt-1 w-full rounded-lg border-gray-300 text-sm">
-                      <option v-for="f in formData.frequencies" :key="f.value" :value="f.value">{{ f.label }}</option>
-                    </select>
-                  </div>
-                  <div class="md:col-span-3">
-                    <label class="text-xs font-medium text-gray-500">Formula (otomatis, bisa diedit)</label>
-                    <input v-model="item.formula" class="mt-1 w-full rounded-lg border-gray-300 text-sm font-mono" placeholder="Otomatis dari parameter" />
+                  <div class="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 rounded-lg bg-white border border-gray-200 p-3 text-sm">
+                    <div>
+                      <span class="text-xs text-gray-500 block">Nama KPI</span>
+                      <span class="font-medium text-gray-800">{{ item.name || '—' }}</span>
+                    </div>
+                    <div>
+                      <span class="text-xs text-gray-500 block">Target</span>
+                      <span class="font-medium text-gray-800">{{ item.target_value || '—' }}</span>
+                    </div>
+                    <div>
+                      <span class="text-xs text-gray-500 block">Direction</span>
+                      <span class="font-medium text-gray-800">{{ formatDirectionLabel(item.target_direction) }}</span>
+                    </div>
+                    <div>
+                      <span class="text-xs text-gray-500 block">Frequency</span>
+                      <span class="font-medium text-gray-800">{{ formatFrequencyLabel(item.frequency) }}</span>
+                    </div>
+                    <div class="sm:col-span-2 md:col-span-4">
+                      <span class="text-xs text-gray-500 block">Formula</span>
+                      <span class="font-mono text-gray-800">{{ item.formula || '—' }}</span>
+                    </div>
                   </div>
                 </div>
                 <div class="flex justify-end">

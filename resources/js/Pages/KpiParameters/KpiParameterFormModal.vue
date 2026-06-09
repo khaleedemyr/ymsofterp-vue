@@ -55,6 +55,22 @@ const fieldHints = {
     hint: 'Cara menggabungkan data jika hasil query ERP banyak baris: sum = total, avg = rata-rata, count = jumlah baris.',
     example: 'Revenue → sum, Skor QA → avg',
   },
+  target_value: {
+    hint: 'Target KPI saat penilaian. Dipakai otomatis saat parameter dipilih di template KPI.',
+    example: '100%, <=24 hours, <=5%',
+  },
+  target_direction: {
+    hint: 'Higher is better = nilai lebih tinggi lebih baik. Lower is better = nilai lebih rendah lebih baik (COGS, waste, complaint).',
+    example: 'Revenue → Higher, Waste ratio → Lower',
+  },
+  frequency: {
+    hint: 'Seberapa sering KPI ini dinilai.',
+    example: 'Monthly untuk kebanyakan KPI outlet',
+  },
+  formula: {
+    hint: 'Rumus perhitungan KPI. Gunakan kode parameter lain jika perlu, mis. P001 / P002 * 100.',
+    example: 'P001 / P002 * 100',
+  },
 };
 
 const form = useForm({
@@ -64,6 +80,10 @@ const form = useForm({
   scope_type: 'outlet',
   data_type: 'decimal',
   description: '',
+  target_value: '',
+  target_direction: 'higher_better',
+  frequency: 'monthly',
+  formula: '',
   is_shared: true,
   status: 'A',
   erp_mapping: {
@@ -85,6 +105,10 @@ watch(
       form.scope_type = props.row.scope_type;
       form.data_type = props.row.data_type;
       form.description = props.row.description || '';
+      form.target_value = props.row.target_value || '';
+      form.target_direction = props.row.target_direction || 'higher_better';
+      form.frequency = props.row.frequency || 'monthly';
+      form.formula = props.row.formula || '';
       form.is_shared = !!props.row.is_shared;
       form.status = props.row.status;
       const mapping = props.row.erp_mapping || {};
@@ -99,6 +123,10 @@ watch(
       form.source_type = 'manual';
       form.scope_type = 'outlet';
       form.data_type = 'decimal';
+      form.target_value = '';
+      form.target_direction = 'higher_better';
+      form.frequency = 'monthly';
+      form.formula = '';
       form.is_shared = true;
       form.status = 'A';
       form.erp_mapping = { resolver_key: '', aggregation: 'sum', static_filters: null, dynamic_filter_bindings: null };
@@ -182,6 +210,34 @@ function submit() {
           <KpiFormFieldLabel label="Deskripsi" :hint="fieldHints.description.hint" :example="fieldHints.description.example" />
           <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border-gray-300" placeholder="Catatan internal (opsional)" />
         </div>
+
+        <div class="border rounded-xl p-4 bg-rose-50/40 space-y-4">
+          <h4 class="font-semibold text-rose-800 text-sm">Konfigurasi KPI</h4>
+          <p class="text-xs text-gray-600">Field ini dipakai otomatis saat parameter dipilih di Template KPI.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <KpiFormFieldLabel label="Target" :hint="fieldHints.target_value.hint" :example="fieldHints.target_value.example" />
+              <input v-model="form.target_value" class="mt-1 w-full rounded-lg border-gray-300" placeholder="100%" />
+            </div>
+            <div>
+              <KpiFormFieldLabel label="Direction" :hint="fieldHints.target_direction.hint" :example="fieldHints.target_direction.example" />
+              <select v-model="form.target_direction" class="mt-1 w-full rounded-lg border-gray-300">
+                <option v-for="opt in options.target_directions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <div>
+              <KpiFormFieldLabel label="Frequency" :hint="fieldHints.frequency.hint" :example="fieldHints.frequency.example" />
+              <select v-model="form.frequency" class="mt-1 w-full rounded-lg border-gray-300">
+                <option v-for="opt in options.frequencies" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+              </select>
+            </div>
+            <div class="md:col-span-2">
+              <KpiFormFieldLabel label="Formula" :hint="fieldHints.formula.hint" :example="fieldHints.formula.example" />
+              <input v-model="form.formula" class="mt-1 w-full rounded-lg border-gray-300 font-mono text-sm" placeholder="P001 / P002 * 100" />
+            </div>
+          </div>
+        </div>
+
         <div v-if="showErpMapping" class="border rounded-xl p-4 bg-indigo-50/50 space-y-3">
           <KpiFormFieldLabel
             label="ERP Mapping"

@@ -109,6 +109,10 @@ class KpiParameterController extends Controller
             'scope_type' => 'required|in:outlet,employee,division',
             'data_type' => 'required|in:decimal,integer,percent,hours,text',
             'description' => 'nullable|string',
+            'target_value' => 'nullable|string|max:100',
+            'target_direction' => 'nullable|in:higher_better,lower_better',
+            'frequency' => 'nullable|string|max:50',
+            'formula' => 'nullable|string',
             'is_shared' => 'boolean',
             'status' => 'required|in:A,N',
             'erp_mapping' => 'nullable|array',
@@ -119,6 +123,8 @@ class KpiParameterController extends Controller
         ]);
 
         $validated['is_shared'] = $request->boolean('is_shared', true);
+        $validated['target_direction'] = $validated['target_direction'] ?? 'higher_better';
+        $validated['frequency'] = $validated['frequency'] ?? 'monthly';
 
         if (in_array($validated['source_type'], ['erp', 'hybrid'], true)) {
             $request->validate([
@@ -171,6 +177,14 @@ class KpiParameterController extends Controller
                 ['value' => 'percent', 'label' => 'Percent'],
                 ['value' => 'hours', 'label' => 'Hours'],
                 ['value' => 'text', 'label' => 'Text'],
+            ],
+            'target_directions' => [
+                ['value' => 'higher_better', 'label' => 'Higher is better'],
+                ['value' => 'lower_better', 'label' => 'Lower is better'],
+            ],
+            'frequencies' => [
+                ['value' => 'monthly', 'label' => 'Monthly'],
+                ['value' => 'quarterly', 'label' => 'Quarterly'],
             ],
             'resolver_keys' => [
                 ['value' => 'daily_revenue_forecast', 'label' => 'Daily Revenue Forecast (Actual MTD)'],
