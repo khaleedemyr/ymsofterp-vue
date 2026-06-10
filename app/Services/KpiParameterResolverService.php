@@ -227,8 +227,11 @@ class KpiParameterResolverService
         $year = (int) substr($periodMonth, 0, 4);
         $month = (int) substr($periodMonth, 5, 2);
 
+        $aggregation = strtolower(trim((string) ($mapping->aggregation ?? 'sum')));
+
         $standalone = match ($mapping->resolver_key) {
-            'daily_revenue_forecast' => $this->resolveDailyRevenueMtd($outletIds, $periodMonth),
+            'daily_revenue_forecast' => $this->resolveOrderPosMetric($outletIds, $periodMonth, $aggregation),
+            'pos_order_count' => $this->resolveOrderPosMetric($outletIds, $periodMonth, 'count'),
             'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletIds, $month, $year),
             'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $period['start_date'], $period['end_date']),
             'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
@@ -239,6 +242,7 @@ class KpiParameterResolverService
 
         if ($standalone !== null || in_array($mapping->resolver_key, [
             'daily_revenue_forecast',
+            'pos_order_count',
             'daily_revenue_forecast_budget',
             'training_compliance',
             'ticket_complaint_count',
@@ -346,17 +350,26 @@ class KpiParameterResolverService
     }
 
     /**
+     * Revenue MTD (sum) atau jumlah order POS sesuai aggregation.
+     *
      * @param  list<int>  $outletIds
      */
-    private function resolveDailyRevenueMtd(array $outletIds, string $periodMonth): ?float
+    private function resolveOrderPosMetric(array $outletIds, string $periodMonth, string $aggregation = 'sum'): ?float
     {
         if (empty($outletIds)) {
             return null;
         }
 
         $result = $this->queryOrderRevenue($outletIds, $periodMonth, true);
+        if ($result['match'] === null) {
+            return null;
+        }
 
-        return $result['match'] === null ? null : $result['total'];
+        return match (strtolower(trim($aggregation))) {
+            'count' => (float) $result['count'],
+            'avg' => $result['count'] > 0 ? round($result['total'] / $result['count'], 2) : null,
+            default => $result['total'],
+        };
     }
     /**
      * @param  list<int>  $outletIds

@@ -312,7 +312,12 @@ function submit() {
           </div>
           <div>
             <KpiFormFieldLabel label="Aggregation" :hint="fieldHints.aggregation.hint" :example="fieldHints.aggregation.example" />
-            <input v-model="form.erp_mapping.aggregation" class="mt-1 w-full rounded-lg border-gray-300" placeholder="sum, avg, count" />
+            <select v-model="form.erp_mapping.aggregation" class="mt-1 w-full rounded-lg border-gray-300">
+              <option value="sum">sum — total nilai (revenue, amount)</option>
+              <option value="count">count — jumlah baris/order</option>
+              <option value="avg">avg — rata-rata</option>
+            </select>
+            <p class="text-xs text-gray-500 mt-1">Untuk jumlah order (D011), pilih resolver <strong>POS Orders — Jumlah Order</strong> atau aggregation <strong>count</strong>.</p>
           </div>
           <p class="text-xs text-indigo-700 bg-indigo-100/60 rounded-lg px-3 py-2">
             <i class="fa-solid fa-lightbulb mr-1"></i>

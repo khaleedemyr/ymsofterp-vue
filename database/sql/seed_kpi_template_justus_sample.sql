@@ -100,6 +100,7 @@ FROM `kpi_parameters` p
 JOIN (
     SELECT 'D001' AS code, 'daily_revenue_forecast' AS resolver_key, 'sum' AS aggregation UNION ALL
     SELECT 'D002', 'daily_revenue_forecast_budget', 'sum' UNION ALL
+    SELECT 'D011', 'pos_order_count', 'count' UNION ALL
     SELECT 'D003', 'cost_report_cogs', 'sum' UNION ALL
     SELECT 'D005', 'outlet_internal_use_waste', 'sum' UNION ALL
     SELECT 'D006', 'outlet_internal_use_waste', 'sum' UNION ALL
