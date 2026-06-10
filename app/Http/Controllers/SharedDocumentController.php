@@ -90,7 +90,7 @@ class SharedDocumentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'folder_id' => 'nullable|exists:document_folders,id',
-            'file' => 'required|file|mimes:pdf,xlsx,xls,docx,doc,pptx,ppt,csv,txt,zip,rar|max:20480',
+            'file' => 'required|file|mimes:pdf,xlsx,xls,docx,doc,pptx,ppt,csv,txt,zip,rar,jpg,jpeg,png,gif,webp,bmp,svg,mp4,mov,avi,mkv,webm,3gp,m4v',
             'is_public' => 'boolean',
             'shared_users' => 'array',
             'shared_users.*.user_id' => 'exists:users,id',
@@ -819,7 +819,7 @@ class SharedDocumentController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'folder_id' => 'nullable|exists:document_folders,id',
-            'file' => 'required|file|mimes:pdf,xlsx,xls,docx,doc,pptx,ppt,csv,txt,zip,rar|max:20480',
+            'file' => 'required|file|mimes:pdf,xlsx,xls,docx,doc,pptx,ppt,csv,txt,zip,rar,jpg,jpeg,png,gif,webp,bmp,svg,mp4,mov,avi,mkv,webm,3gp,m4v',
         ]);
 
         $user = Auth::user();

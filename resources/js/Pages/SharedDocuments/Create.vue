@@ -96,7 +96,7 @@
                                             id="file"
                                             ref="fileInput"
                                             type="file"
-                                            accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt,.zip,.rar"
+                                            accept=".pdf,.xlsx,.xls,.docx,.doc,.pptx,.ppt,.csv,.txt,.zip,.rar,image/*,video/*"
                                             class="sr-only"
                                             @change="handleFileSelect"
                                             required
@@ -105,7 +105,7 @@
                                     <p class="pl-1">atau drag and drop</p>
                                 </div>
                                 <p class="text-xs text-gray-500">
-                                    PDF, Office, CSV, TXT, ZIP, RAR (maksimal 20MB)
+                                    PDF, Office, CSV, TXT, ZIP, RAR, Image, Video
                                 </p>
                             </div>
                         </div>
@@ -137,11 +137,17 @@
                                 </select>
                                 <span class="text-xs text-gray-500 self-center">Permission untuk pilihan jabatan</span>
                             </div>
-                            <select v-model="selectedJabatanIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                                <option v-for="jabatan in props.scopeOptions.jabatans" :key="jabatan.id_jabatan" :value="jabatan.id_jabatan">
-                                    {{ jabatan.nama_jabatan }}
-                                </option>
-                            </select>
+                            <Multiselect
+                                v-model="selectedJabatans"
+                                :options="jabatanOptions"
+                                :multiple="true"
+                                :close-on-select="false"
+                                :clear-on-select="false"
+                                :preserve-search="true"
+                                track-by="id_jabatan"
+                                label="nama_jabatan"
+                                placeholder="Pilih satu atau lebih jabatan"
+                            />
                         </div>
 
                         <div>
@@ -154,11 +160,17 @@
                                 </select>
                                 <span class="text-xs text-gray-500 self-center">Permission untuk pilihan divisi</span>
                             </div>
-                            <select v-model="selectedDivisiIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                                <option v-for="divisi in props.scopeOptions.divisis" :key="divisi.id" :value="divisi.id">
-                                    {{ divisi.nama_divisi }}
-                                </option>
-                            </select>
+                            <Multiselect
+                                v-model="selectedDivisis"
+                                :options="divisiOptions"
+                                :multiple="true"
+                                :close-on-select="false"
+                                :clear-on-select="false"
+                                :preserve-search="true"
+                                track-by="id"
+                                label="nama_divisi"
+                                placeholder="Pilih satu atau lebih divisi"
+                            />
                         </div>
 
                         <div>
@@ -171,11 +183,17 @@
                                 </select>
                                 <span class="text-xs text-gray-500 self-center">Permission untuk pilihan outlet</span>
                             </div>
-                            <select v-model="selectedOutletIds" multiple class="w-full min-h-[110px] px-3 py-2 border border-gray-200 rounded-xl bg-white">
-                                <option v-for="outlet in props.scopeOptions.outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
-                                    {{ outlet.nama_outlet }}
-                                </option>
-                            </select>
+                            <Multiselect
+                                v-model="selectedOutlets"
+                                :options="outletOptions"
+                                :multiple="true"
+                                :close-on-select="false"
+                                :clear-on-select="false"
+                                :preserve-search="true"
+                                track-by="id_outlet"
+                                label="nama_outlet"
+                                placeholder="Pilih satu atau lebih outlet"
+                            />
                         </div>
                     </div>
 
@@ -287,8 +305,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useForm, Link } from '@inertiajs/vue3'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import UserSearchDropdown from '@/Components/UserSearchDropdown.vue'
 
@@ -306,12 +326,16 @@ const props = defineProps({
 const fileInput = ref(null)
 const selectedFile = ref(null)
 const selectedUsers = ref([])
-const selectedJabatanIds = ref([])
-const selectedDivisiIds = ref([])
-const selectedOutletIds = ref([])
+const selectedJabatans = ref([])
+const selectedDivisis = ref([])
+const selectedOutlets = ref([])
 const jabatanPermission = ref('view')
 const divisiPermission = ref('view')
 const outletPermission = ref('view')
+
+const jabatanOptions = computed(() => props.scopeOptions?.jabatans ?? [])
+const divisiOptions = computed(() => props.scopeOptions?.divisis ?? [])
+const outletOptions = computed(() => props.scopeOptions?.outlets ?? [])
 
 const form = useForm({
     folder_id: null,
@@ -372,19 +396,19 @@ const formatFileSize = (bytes) => {
 
 const submit = () => {
     form.scope_permissions = [
-        ...selectedJabatanIds.value.map((id) => ({
+        ...selectedJabatans.value.map((jabatan) => ({
             scope_type: 'jabatan',
-            scope_id: id,
+            scope_id: jabatan.id_jabatan,
             permission: jabatanPermission.value
         })),
-        ...selectedDivisiIds.value.map((id) => ({
+        ...selectedDivisis.value.map((divisi) => ({
             scope_type: 'divisi',
-            scope_id: id,
+            scope_id: divisi.id,
             permission: divisiPermission.value
         })),
-        ...selectedOutletIds.value.map((id) => ({
+        ...selectedOutlets.value.map((outlet) => ({
             scope_type: 'outlet',
-            scope_id: id,
+            scope_id: outlet.id_outlet,
             permission: outletPermission.value
         }))
     ]
