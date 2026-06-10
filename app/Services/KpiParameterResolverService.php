@@ -17,7 +17,6 @@ class KpiParameterResolverService
         'outlet_internal_use_waste',
         'lost_breakage',
         'guest_comment_gsi',
-        'regional_visit_report',
     ];
 
     /** @var array<string, array<string, mixed>> */
@@ -42,6 +41,7 @@ class KpiParameterResolverService
 
     public function __construct(
         private OutletAnalyzerService $outletAnalyzer,
+        private RegionalVisitAnalyticsService $regionalVisits,
     ) {}
 
     /**
@@ -239,6 +239,12 @@ class KpiParameterResolverService
             'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
             'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
             'regional_target_outlet_visits' => $this->resolveRegionalTargetOutletVisits((int) ($context['user_id'] ?? 0)),
+            'regional_visit_report' => $this->resolveRegionalUserVisitCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                (int) ($context['user_id'] ?? 0),
+            ),
             default => null,
         };
 
@@ -251,6 +257,7 @@ class KpiParameterResolverService
             'ticket_improvement_closed',
             'ticket_improvement_total',
             'regional_target_outlet_visits',
+            'regional_visit_report',
         ], true)) {
             return $standalone;
         }
@@ -262,7 +269,6 @@ class KpiParameterResolverService
             'outlet_internal_use_waste' => $this->sumCategoryCost($outletIds, $periodMonth, $parameter->code),
             'lost_breakage' => $this->sumCategoryCostByType($outletIds, $periodMonth, 'stock_cut'),
             'guest_comment_gsi' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['guest_comment_gsi', 'total_forms']),
-            'regional_visit_report' => $this->sumAnalyzerPath($outletIds, $periodMonth, ['regional_visits', 'visit_days']),
             default => null,
         };
     }
@@ -597,6 +603,35 @@ class KpiParameterResolverService
         }
 
         return (float) $target;
+    }
+
+    /**
+     * Jumlah hari kunjungan outlet oleh karyawan KPI (bukan semua regional user).
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveRegionalUserVisitCount(array $outletIds, string $startDate, string $endDate, int $userId): ?float
+    {
+        if ($userId <= 0 || empty($outletIds)) {
+            return null;
+        }
+
+        if (! UserRegional::where('user_id', $userId)->exists()) {
+            return null;
+        }
+
+        $totalVisitDays = 0;
+
+        foreach (array_unique(array_filter(array_map('intval', $outletIds))) as $outletId) {
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
+            $totalVisitDays += (int) ($detail['summary']['visit_days'] ?? 0);
+        }
+
+        return (float) $totalVisitDays;
     }
 
     private function resolveTrainingCompliance(int $userId, string $start, string $end): ?float

@@ -187,26 +187,53 @@ class KpiEvaluationService
         $this->resolver->clearCache();
 
         $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
+
+        foreach ($parameterRows as $pv) {
+            $param = $pv->parameter;
+            if (! $param) {
+                continue;
+            }
+
+            $sync = [];
+            if ($pv->source_type !== $param->source_type) {
+                $sync['source_type'] = $param->source_type;
+            }
+            if ($pv->scope_type !== $param->scope_type) {
+                $sync['scope_type'] = $param->scope_type;
+            }
+            if ($pv->parameter_name !== $param->name) {
+                $sync['parameter_name'] = $param->name;
+            }
+            if ($sync !== []) {
+                $pv->update($sync);
+                $pv->refresh();
+            }
+        }
+
         $this->resolver->prefetch($context, $parameterRows->pluck('parameter')->filter());
 
         foreach ($parameterRows as $pv) {
-            if (!in_array($pv->source_type, ['erp', 'hybrid'], true)) {
+            $pv->refresh();
+            $param = $pv->parameter;
+            if (! $param) {
                 continue;
             }
 
-            if (!$pv->parameter) {
+            $sourceType = $param->source_type;
+            if (! in_array($sourceType, ['erp', 'hybrid'], true)) {
                 continue;
             }
 
-            $erpValue = $this->resolver->resolve($pv->parameter, $context);
+            $erpValue = $this->resolver->resolve($param, $context);
             $finalValue = $this->resolveFinalValue(
-                $pv->source_type,
+                $sourceType,
                 $erpValue,
                 $pv->manual_value !== null ? (float) $pv->manual_value : null,
                 (bool) $pv->is_overridden,
             );
 
             $pv->update([
+                'source_type' => $sourceType,
                 'erp_value' => $erpValue,
                 'final_value' => $finalValue,
                 'erp_fetched_at' => now(),

@@ -21,3 +21,12 @@ ON DUPLICATE KEY UPDATE
     `resolver_key` = 'regional_target_outlet_visits',
     `aggregation` = 'sum',
     `updated_at` = NOW();
+
+-- Sinkronkan snapshot evaluasi draft yang masih source manual
+UPDATE `kpi_evaluation_parameter_values` pv
+INNER JOIN `kpi_parameters` p ON p.id = pv.kpi_parameter_id
+SET
+    pv.`source_type` = p.`source_type`,
+    pv.`scope_type` = p.`scope_type`,
+    pv.`parameter_name` = p.`name`
+WHERE p.`code` IN ('D021', 'D022');
