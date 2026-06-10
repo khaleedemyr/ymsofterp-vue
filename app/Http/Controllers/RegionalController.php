@@ -25,6 +25,7 @@ class RegionalController extends Controller
                 'j.nama_jabatan',
                 'd.nama_divisi',
                 'ur.area',
+                'ur.target_outlet_visits',
                 'ur.updated_at as assigned_at',
             )
             ->orderBy('u.nama_lengkap');
@@ -64,12 +65,14 @@ class RegionalController extends Controller
                 Rule::unique('user_regional', 'user_id'),
             ],
             'area' => ['required', Rule::in(UserRegional::AREAS)],
+            'target_outlet_visits' => ['nullable', 'integer', 'min:0', 'max:9999'],
         ]);
 
         try {
             UserRegional::create([
                 'user_id' => $request->user_id,
                 'area' => $request->area,
+                'target_outlet_visits' => $request->input('target_outlet_visits'),
             ]);
 
             return redirect()->route('regional.index')
@@ -83,11 +86,12 @@ class RegionalController extends Controller
     public function edit($id)
     {
         $user = User::findOrFail($id);
-        $currentArea = UserRegional::where('user_id', $id)->value('area');
+        $assignment = UserRegional::where('user_id', $id)->first();
 
         return inertia('Regional/Edit', [
             'user' => $user,
-            'currentArea' => $currentArea,
+            'currentArea' => $assignment?->area,
+            'targetOutletVisits' => $assignment?->target_outlet_visits,
         ]);
     }
 
@@ -95,12 +99,16 @@ class RegionalController extends Controller
     {
         $request->validate([
             'area' => ['required', Rule::in(UserRegional::AREAS)],
+            'target_outlet_visits' => ['nullable', 'integer', 'min:0', 'max:9999'],
         ]);
 
         try {
             UserRegional::updateOrCreate(
                 ['user_id' => $id],
-                ['area' => $request->area],
+                [
+                    'area' => $request->area,
+                    'target_outlet_visits' => $request->input('target_outlet_visits'),
+                ],
             );
 
             return redirect()->route('regional.index')
@@ -150,6 +158,7 @@ class RegionalController extends Controller
         return response()->json([
             'user_id' => (int) $userId,
             'area' => $assignment?->area,
+            'target_outlet_visits' => $assignment?->target_outlet_visits,
         ]);
     }
 }

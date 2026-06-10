@@ -79,6 +79,14 @@
               </span>
               <span v-else class="text-gray-400 italic text-sm">Belum ada area</span>
             </div>
+
+            <div class="bg-amber-50 rounded-lg p-4">
+              <span class="text-sm font-semibold text-amber-900 block mb-1">Target Kunjungan / Bulan</span>
+              <span v-if="user.target_outlet_visits != null" class="text-lg font-bold text-amber-800">
+                {{ user.target_outlet_visits }} outlet
+              </span>
+              <span v-else class="text-gray-400 italic text-sm">Belum di-set</span>
+            </div>
           </div>
 
           <!-- Card Footer with Actions -->

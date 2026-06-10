@@ -62,6 +62,22 @@
               <p v-if="form.errors?.area" class="text-red-500 text-xs">{{ form.errors.area }}</p>
             </div>
 
+            <div class="mt-6 max-w-xl space-y-2">
+              <label class="block text-sm font-semibold text-gray-700">
+                <i class="fa-solid fa-bullseye mr-2"></i>Target Kunjungan Outlet / Bulan
+              </label>
+              <input
+                v-model.number="form.target_outlet_visits"
+                type="number"
+                min="0"
+                max="9999"
+                placeholder="Contoh: 12"
+                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+              />
+              <p class="text-xs text-gray-500">Dipakai KPI regional (D022 / KPI15). Kosongkan jika belum ditetapkan.</p>
+              <p v-if="form.errors?.target_outlet_visits" class="text-red-500 text-xs">{{ form.errors.target_outlet_visits }}</p>
+            </div>
+
             <div v-if="form.user_id && form.area" class="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm max-w-3xl">
               <div class="flex items-center mb-4">
                 <div class="bg-blue-100 p-2 rounded-lg mr-3">
@@ -77,6 +93,10 @@
                 <div class="bg-white p-4 rounded-lg border border-blue-100">
                   <p class="text-sm text-gray-600">Area</p>
                   <p class="font-semibold text-gray-800">{{ getAreaLabel(form.area) }}</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg border border-blue-100 md:col-span-2">
+                  <p class="text-sm text-gray-600">Target Kunjungan / Bulan</p>
+                  <p class="font-semibold text-gray-800">{{ form.target_outlet_visits != null && form.target_outlet_visits !== '' ? form.target_outlet_visits : '—' }}</p>
                 </div>
               </div>
             </div>
@@ -114,6 +134,7 @@ import 'vue-multiselect/dist/vue-multiselect.min.css'
 const form = useForm({
   user_id: null,
   area: '',
+  target_outlet_visits: null,
 })
 
 const userOptions = ref([])
@@ -157,6 +178,7 @@ function submitForm() {
       <div class="text-left">
         <p class="mb-2"><strong>Karyawan:</strong> ${getUserName(form.user_id)}</p>
         <p class="mb-2"><strong>Area:</strong> ${getAreaLabel(form.area)}</p>
+        <p class="mb-2"><strong>Target Kunjungan:</strong> ${form.target_outlet_visits != null && form.target_outlet_visits !== '' ? form.target_outlet_visits : '—'}</p>
       </div>
     `,
     icon: 'question',
@@ -171,6 +193,7 @@ function submitForm() {
       form.transform((data) => ({
         user_id: typeof data.user_id === 'object' ? data.user_id.id : data.user_id,
         area: data.area,
+        target_outlet_visits: data.target_outlet_visits === '' || data.target_outlet_visits == null ? null : data.target_outlet_visits,
       })).post('/regional', {
         onSuccess: () => {
           isSubmitting.value = false

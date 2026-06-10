@@ -16,9 +16,11 @@ class UserRegional extends Model
     protected $fillable = [
         'user_id',
         'area',
+        'target_outlet_visits',
     ];
 
     protected $casts = [
+        'target_outlet_visits' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

@@ -40,6 +40,22 @@
           </div>
         </div>
 
+        <div class="mb-6 max-w-xl">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">
+            <i class="fa-solid fa-bullseye mr-1"></i>
+            Target Kunjungan Outlet / Bulan
+          </label>
+          <input
+            v-model.number="form.target_outlet_visits"
+            type="number"
+            min="0"
+            max="9999"
+            placeholder="Contoh: 12"
+            class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+          />
+          <p class="text-xs text-gray-500 mt-1">Dipakai otomatis di KPI evaluasi (parameter D022). Kosongkan jika belum ditetapkan.</p>
+        </div>
+
         <div class="flex justify-end gap-2 mt-8">
           <button type="button" @click="goBack" class="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold shadow-sm">Batal</button>
           <button type="submit" :disabled="!form.area" class="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg hover:bg-blue-700 transition-all disabled:opacity-50">Update</button>
@@ -58,14 +74,17 @@ import { REGIONAL_DEPARTMENTS } from './regionalOutletUtils'
 const props = defineProps({
   user: Object,
   currentArea: String,
+  targetOutletVisits: [Number, String, null],
 })
 
 const form = ref({
   area: '',
+  target_outlet_visits: null,
 })
 
 onMounted(() => {
   form.value.area = props.currentArea || ''
+  form.value.target_outlet_visits = props.targetOutletVisits ?? null
 })
 
 function submitForm() {
@@ -76,6 +95,9 @@ function submitForm() {
 
   router.put(`/regional/${props.user.id}`, {
     area: form.value.area,
+    target_outlet_visits: form.value.target_outlet_visits === '' || form.value.target_outlet_visits == null
+      ? null
+      : form.value.target_outlet_visits,
   })
 }
 

@@ -48,7 +48,7 @@ INSERT INTO `kpi_parameters` (
 ('D019', 'Competency Assessment Score',    'hybrid', 'employee', 'percent', 'Assessment test avg score',    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D020', 'INC Program Completion',         'manual', 'employee', 'percent', 'INC program completion',       NULL, 'higher_better', 'monthly', NULL, 0, 'A', NOW(), NOW()),
 ('D021', 'Outlet Visit Count',             'erp',    'outlet',   'integer', 'Regional/ops visit count',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D022', 'Target Outlet Visits',           'manual', 'outlet',   'integer', 'Target visit count',           NULL, 'higher_better', 'monthly', NULL, 0, 'A', NOW(), NOW()),
+('D022', 'Target Outlet Visits',           'hybrid', 'employee', 'integer', 'Target visit count (Regional Management)', NULL, 'higher_better', 'monthly', NULL, 0, 'A', NOW(), NOW()),
 ('D023', 'Improvement Actions Closed',     'erp',    'outlet',   'integer', 'Closed improvement tickets',   NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D024', 'Total Improvement Actions',      'erp',    'outlet',   'integer', 'Total improvement tickets',    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
@@ -111,6 +111,7 @@ JOIN (
     SELECT 'D014', 'ticket_complaint_count', 'count' UNION ALL
     SELECT 'D018', 'training_compliance', 'avg' UNION ALL
     SELECT 'D021', 'regional_visit_report', 'count' UNION ALL
+    SELECT 'D022', 'regional_target_outlet_visits', 'sum' UNION ALL
     SELECT 'D023', 'ticket_improvement_closed', 'count' UNION ALL
     SELECT 'D024', 'ticket_improvement_total', 'count'
 ) v ON v.code = p.code

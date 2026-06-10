@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\KpiParameter;
+use App\Models\UserRegional;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -237,6 +238,7 @@ class KpiParameterResolverService
             'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
             'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
             'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
+            'regional_target_outlet_visits' => $this->resolveRegionalTargetOutletVisits((int) ($context['user_id'] ?? 0)),
             default => null,
         };
 
@@ -248,6 +250,7 @@ class KpiParameterResolverService
             'ticket_complaint_count',
             'ticket_improvement_closed',
             'ticket_improvement_total',
+            'regional_target_outlet_visits',
         ], true)) {
             return $standalone;
         }
@@ -580,6 +583,20 @@ class KpiParameterResolverService
         }
 
         return $this->budgetCache[$cacheKey] = round((float) $budgets->sum(), 2);
+    }
+
+    private function resolveRegionalTargetOutletVisits(int $userId): ?float
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $target = UserRegional::where('user_id', $userId)->value('target_outlet_visits');
+        if ($target === null || $target === '') {
+            return null;
+        }
+
+        return (float) $target;
     }
 
     private function resolveTrainingCompliance(int $userId, string $start, string $end): ?float

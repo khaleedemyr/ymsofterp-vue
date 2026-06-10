@@ -219,6 +219,7 @@ class KpiParameterController extends Controller
                 ['value' => 'cost_report_cogs', 'label' => 'Cost Report - COGS'],
                 ['value' => 'training_compliance', 'label' => 'Training Compliance'],
                 ['value' => 'ticket_complaint_count', 'label' => 'Ticketing - Complaint Count'],
+                ['value' => 'regional_target_outlet_visits', 'label' => 'Regional Management — Target Kunjungan Outlet / Bulan'],
             ],
         ];
     }
