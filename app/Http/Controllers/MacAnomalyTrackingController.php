@@ -2,15 +2,55 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\MacAnomalyDetectionService;
+use App\Support\MacAnomalyReferenceRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class MacAnomalyTrackingController extends Controller
 {
+    public function __construct(
+        private MacAnomalyDetectionService $anomalyDetection,
+    ) {}
+
     public function index()
     {
-        return Inertia::render('MacAnomalyTracking/Index');
+        return Inertia::render('MacAnomalyTracking/Index', [
+            'referenceModules' => MacAnomalyReferenceRegistry::moduleCatalog(),
+        ]);
+    }
+
+    public function scan(Request $request)
+    {
+        $validated = $request->validate([
+            'id_outlet' => ['nullable', 'integer'],
+            'warehouse_outlet_id' => ['nullable', 'integer'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
+            'min_spike_percent' => ['nullable', 'numeric', 'min:0'],
+            'spike_multiplier' => ['nullable', 'numeric', 'min:1.1'],
+            'max_mac' => ['nullable', 'numeric', 'min:0'],
+            'types' => ['nullable', 'array'],
+            'types.*' => ['string', 'in:negative_mac,negative_new_cost,spike_percent,spike_multiplier,absolute_high,current_stock'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+        ]);
+
+        $result = $this->anomalyDetection->scan($validated);
+
+        return response()->json([
+            'status' => 'success',
+            ...$result,
+        ]);
+    }
+
+    public function referenceModules()
+    {
+        return response()->json([
+            'status' => 'success',
+            'modules' => MacAnomalyReferenceRegistry::moduleCatalog(),
+        ]);
     }
 
     public function options(Request $request)

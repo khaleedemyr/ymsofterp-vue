@@ -228,7 +228,7 @@ export default {
     "kelola_return_outlet": "Kelola Return Outlet",
     "laporan_perubahan_harga_po": "Laporan Perubahan Harga PO",
     "mac_report": "MAC Report",
-    "outlet_mac_tracking": "Outlet MAC Tracking",
+    "outlet_mac_tracking": "Outlet MAC Anomaly Tracking",
     "warehouse_mac_tracking": "Warehouse MAC Tracking",
     "tracking_nomor_seri": "Tracking Nomor Seri",
     "outlet_stock_report": "Outlet Stock Report",
