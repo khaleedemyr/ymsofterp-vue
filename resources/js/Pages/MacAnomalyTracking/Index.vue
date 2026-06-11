@@ -23,6 +23,16 @@
 
       <!-- ── TAB: Scan Anomali ── -->
       <template v-if="activeTab === 'scan'">
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-900">
+          <p class="font-semibold mb-2"><i class="fa-solid fa-circle-info mr-1"></i> Cara pakai</p>
+          <ul class="list-disc pl-5 space-y-1 text-blue-800">
+            <li><strong>Scan Anomali</strong> hanya menampilkan MAC yang <em>dicurigai bermasalah</em> (minus, lonjakan besar, dll.) — bukan semua riwayat.</li>
+            <li>Kalau mau lihat <strong>semua perubahan MAC</strong> satu barang, pakai tab <button type="button" class="underline font-medium" @click="activeTab = 'detail'">Detail per Barang</button>.</li>
+            <li>Mulai dengan <strong>Semua outlet</strong> + rentang tanggal lebih lebar (3–6 bulan). Warehouse boleh dikosongkan.</li>
+            <li>Kalau hasil kosong tapi ada riwayat MAC, turunkan <strong>Lonjakan min.</strong> ke 50% atau klik preset <strong>Sensitif</strong> di bawah.</li>
+          </ul>
+        </div>
+
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div>
@@ -62,11 +72,18 @@
               <label class="block text-sm font-medium text-gray-700 mb-2">MAC maks. (Rp/unit kecil)</label>
               <input v-model.number="scanFilters.max_mac" type="number" min="0" step="100000" class="w-full border border-gray-300 rounded-md px-3 py-2">
             </div>
-            <div class="flex items-end">
-              <button @click="runScan(1)" :disabled="scanLoading" class="w-full bg-amber-600 disabled:bg-amber-300 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition">
+            <div class="flex items-end gap-2">
+              <button @click="runScan(1)" :disabled="scanLoading" class="flex-1 bg-amber-600 disabled:bg-amber-300 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition">
                 <i class="fa-solid fa-radar mr-1"></i> Scan Anomali
               </button>
             </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2 mb-4">
+            <span class="text-xs text-gray-500 self-center mr-1">Preset:</span>
+            <button type="button" @click="applyPreset('sensitive')" class="text-xs px-3 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100">Sensitif (50%, ×2)</button>
+            <button type="button" @click="applyPreset('default')" class="text-xs px-3 py-1 rounded-full border border-gray-300 bg-gray-50 hover:bg-gray-100">Default (100%, ×5)</button>
+            <button type="button" @click="applyPreset('wide')" class="text-xs px-3 py-1 rounded-full border border-gray-300 bg-gray-50 hover:bg-gray-100">Rentang 6 bulan</button>
           </div>
 
           <div class="flex flex-wrap gap-3">
@@ -174,9 +191,19 @@
           </div>
         </div>
 
-        <div v-if="!scanLoading && scanSearched && anomalies.length === 0" class="bg-white rounded-2xl border p-8 text-center text-gray-500">
-          <i class="fa-solid fa-circle-check text-4xl text-green-500 mb-3"></i>
-          <p>Tidak ada anomali MAC pada filter yang dipilih.</p>
+        <div v-if="!scanLoading && scanSearched && anomalies.length === 0" class="bg-white rounded-2xl border p-8 text-center text-gray-600">
+          <i :class="emptyStateIcon" class="text-4xl mb-3"></i>
+          <p class="text-lg font-medium text-gray-800 mb-2">{{ emptyStateTitle }}</p>
+          <p class="text-sm max-w-xl mx-auto mb-4">{{ emptyStateMessage }}</p>
+          <div v-if="scanSummary" class="inline-flex flex-col gap-1 text-left text-sm bg-gray-50 border rounded-lg px-4 py-3 mb-4">
+            <span>Riwayat MAC dalam periode: <strong>{{ scanSummary.history_rows_in_period ?? 0 }}</strong> baris</span>
+            <span>Total histori (scope filter): <strong>{{ scanSummary.history_rows_total_scope ?? 0 }}</strong> baris</span>
+            <span v-if="scanSummary.stock_rows_checked">Baris stok dicek: <strong>{{ scanSummary.stock_rows_checked }}</strong></span>
+          </div>
+          <div class="flex flex-wrap justify-center gap-2">
+            <button type="button" @click="applyPreset('sensitive'); runScan(1)" class="px-4 py-2 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700">Coba preset Sensitif</button>
+            <button type="button" @click="activeTab = 'detail'" class="px-4 py-2 text-sm border border-blue-300 text-blue-700 rounded-md hover:bg-blue-50">Buka Detail per Barang</button>
+          </div>
         </div>
         <div v-if="scanLoading" class="bg-white rounded-2xl border p-8 text-center text-gray-500">
           <i class="fa-solid fa-spinner fa-spin text-4xl mb-3"></i>
@@ -186,6 +213,9 @@
 
       <!-- ── TAB: Detail per Barang ── -->
       <template v-if="activeTab === 'detail'">
+        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 mb-6 text-sm text-indigo-900">
+          <p><strong>Detail per Barang</strong> — pilih <em>Outlet + Warehouse + Barang</em>, lalu klik <strong>Lihat Riwayat MAC</strong> untuk melihat semua perubahan MAC barang tersebut (termasuk transaksi normal).</p>
+        </div>
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
           <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
@@ -300,12 +330,13 @@ const anomalyTypeOptions = [
 ]
 
 const today = new Date().toISOString().slice(0, 10)
-const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+const threeMonthsAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
+const sixMonthsAgo = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10)
 
 const scanFilters = ref({
   outlet_id: '',
   warehouse_outlet_id: '',
-  date_from: monthAgo,
+  date_from: threeMonthsAgo,
   date_to: today,
   min_spike_percent: 100,
   spike_multiplier: 5,
@@ -337,6 +368,46 @@ const filteredItems = computed(() => {
   if (!kw) return items.value
   return items.value.filter(i => (i.item_name || '').toLowerCase().includes(kw) || (i.item_code || '').toLowerCase().includes(kw))
 })
+
+const emptyStateTitle = computed(() => {
+  if (!scanSummary.value) return 'Belum ada hasil scan'
+  const inPeriod = scanSummary.value.history_rows_in_period ?? 0
+  if (inPeriod === 0) return 'Tidak ada riwayat MAC dalam periode ini'
+  return 'Tidak ada anomali yang memenuhi kriteria'
+})
+
+const emptyStateMessage = computed(() => {
+  const inPeriod = scanSummary.value?.history_rows_in_period ?? 0
+  const total = scanSummary.value?.history_rows_total_scope ?? 0
+  if (inPeriod === 0 && total === 0) {
+    return 'Outlet/warehouse yang dipilih belum punya data di outlet_food_inventory_cost_histories. Coba outlet lain atau perlebar tanggal.'
+  }
+  if (inPeriod === 0 && total > 0) {
+    return `Ada ${total} riwayat MAC di luar periode tanggal. Perlebar rentang tanggal atau klik preset "Rentang 6 bulan".`
+  }
+  return 'MAC dalam periode ini terlihat normal menurut filter (minus / lonjakan / batas maks.). Turunkan threshold atau cek riwayat per barang di tab Detail.'
+})
+
+const emptyStateIcon = computed(() => {
+  const inPeriod = scanSummary.value?.history_rows_in_period ?? 0
+  if (inPeriod === 0) return 'fa-solid fa-database text-gray-400'
+  return 'fa-solid fa-circle-check text-green-500'
+})
+
+function applyPreset(name) {
+  if (name === 'sensitive') {
+    scanFilters.value.min_spike_percent = 50
+    scanFilters.value.spike_multiplier = 2
+    scanFilters.value.max_mac = 10000000
+  } else if (name === 'default') {
+    scanFilters.value.min_spike_percent = 100
+    scanFilters.value.spike_multiplier = 5
+    scanFilters.value.max_mac = 10000000
+  } else if (name === 'wide') {
+    scanFilters.value.date_from = sixMonthsAgo
+    scanFilters.value.date_to = today
+  }
+}
 
 onMounted(async () => {
   await loadOutlets()

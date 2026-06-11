@@ -41,7 +41,7 @@ class MacAnomalyDetectionService
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = min(100, max(10, (int) ($filters['per_page'] ?? 25)));
 
-        $historyAnomalies = $this->scanHistoryAnomalies(
+        $historyScan = $this->scanHistoryAnomalies(
             $idOutlet,
             $warehouseOutletId,
             $dateFrom,
@@ -51,10 +51,12 @@ class MacAnomalyDetectionService
             $maxMac,
             $types,
         );
+        $historyAnomalies = $historyScan['anomalies'];
 
-        $stockAnomalies = in_array('current_stock', $types, true)
+        $stockScan = in_array('current_stock', $types, true)
             ? $this->scanCurrentStockAnomalies($idOutlet, $warehouseOutletId, $maxMac)
-            : [];
+            : ['anomalies' => [], 'stock_rows_checked' => 0];
+        $stockAnomalies = $stockScan['anomalies'];
 
         $all = array_merge($historyAnomalies, $stockAnomalies);
         usort($all, fn ($a, $b) => strcmp((string) ($b['date'] ?? ''), (string) ($a['date'] ?? '')));
@@ -77,6 +79,9 @@ class MacAnomalyDetectionService
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'type_breakdown' => $typeBreakdown,
+                'history_rows_in_period' => $historyScan['rows_in_period'],
+                'history_rows_total_scope' => $historyScan['rows_total_scope'],
+                'stock_rows_checked' => $stockScan['stock_rows_checked'],
                 'filters' => [
                     'min_spike_percent' => $minSpikePercent,
                     'spike_multiplier' => $spikeMultiplier,
@@ -96,7 +101,7 @@ class MacAnomalyDetectionService
 
     /**
      * @param  list<string>  $types
-     * @return list<array<string, mixed>>
+     * @return array{anomalies: list<array<string, mixed>>, rows_in_period: int, rows_total_scope: int}
      */
     private function scanHistoryAnomalies(
         int $idOutlet,
@@ -108,55 +113,73 @@ class MacAnomalyDetectionService
         float $maxMac,
         array $types,
     ): array {
-        $bindings = [$dateFrom, $dateTo];
-        $where = 'h.date BETWEEN ? AND ?';
+        $scopeBindings = [];
+        $scopeWhere = '1 = 1';
 
         if ($idOutlet > 0) {
-            $where .= ' AND h.id_outlet = ?';
-            $bindings[] = $idOutlet;
+            $scopeWhere .= ' AND h.id_outlet = ?';
+            $scopeBindings[] = $idOutlet;
         }
         if ($warehouseOutletId > 0) {
-            $where .= ' AND h.warehouse_outlet_id = ?';
-            $bindings[] = $warehouseOutletId;
+            $scopeWhere .= ' AND h.warehouse_outlet_id = ?';
+            $scopeBindings[] = $warehouseOutletId;
         }
 
+        // LAG dihitung dari seluruh histori (bukan hanya periode filter) agar lonjakan tidak terlewat.
         $sql = "
-            SELECT
-                h.id AS history_id,
-                h.id_outlet,
-                h.warehouse_outlet_id,
-                h.inventory_item_id,
-                h.date,
-                h.created_at,
-                h.old_cost,
-                h.new_cost,
-                h.mac,
-                h.type,
-                h.reference_type,
-                h.reference_id,
-                o.nama_outlet AS outlet_name,
-                wo.name AS warehouse_name,
-                i.id AS item_id,
-                i.name AS item_name,
-                i.sku AS item_code,
-                LAG(h.mac) OVER (
-                    PARTITION BY h.id_outlet, h.warehouse_outlet_id, h.inventory_item_id
-                    ORDER BY h.date, h.id
-                ) AS prev_mac
-            FROM outlet_food_inventory_cost_histories h
-            LEFT JOIN tbl_data_outlet o ON o.id_outlet = h.id_outlet
-            LEFT JOIN warehouse_outlets wo ON wo.id = h.warehouse_outlet_id
-            LEFT JOIN outlet_food_inventory_items ofii ON ofii.id = h.inventory_item_id
-            LEFT JOIN items i ON i.id = ofii.item_id
-            WHERE {$where}
+            SELECT scoped.*
+            FROM (
+                SELECT
+                    h.id AS history_id,
+                    h.id_outlet,
+                    h.warehouse_outlet_id,
+                    h.inventory_item_id,
+                    h.date,
+                    h.created_at,
+                    h.old_cost,
+                    h.new_cost,
+                    h.mac,
+                    h.type,
+                    h.reference_type,
+                    h.reference_id,
+                    o.nama_outlet AS outlet_name,
+                    wo.name AS warehouse_name,
+                    i.id AS item_id,
+                    i.name AS item_name,
+                    i.sku AS item_code,
+                    LAG(h.mac) OVER (
+                        PARTITION BY h.id_outlet, h.warehouse_outlet_id, h.inventory_item_id
+                        ORDER BY h.date, h.id
+                    ) AS prev_mac
+                FROM outlet_food_inventory_cost_histories h
+                LEFT JOIN tbl_data_outlet o ON o.id_outlet = h.id_outlet
+                LEFT JOIN warehouse_outlets wo ON wo.id = h.warehouse_outlet_id
+                LEFT JOIN outlet_food_inventory_items ofii ON ofii.id = h.inventory_item_id
+                LEFT JOIN items i ON i.id = ofii.item_id
+                WHERE {$scopeWhere}
+            ) scoped
+            WHERE scoped.date BETWEEN ? AND ?
         ";
 
+        $bindings = array_merge($scopeBindings, [$dateFrom, $dateTo]);
         $rows = DB::select($sql, $bindings);
+
+        $countSql = "
+            SELECT
+                SUM(CASE WHEN h.date BETWEEN ? AND ? THEN 1 ELSE 0 END) AS rows_in_period,
+                COUNT(*) AS rows_total_scope
+            FROM outlet_food_inventory_cost_histories h
+            WHERE {$scopeWhere}
+        ";
+        $countBindings = array_merge([$dateFrom, $dateTo], $scopeBindings);
+        $counts = DB::selectOne($countSql, $countBindings);
+
         $anomalies = [];
 
         foreach ($rows as $row) {
             $mac = (float) ($row->mac ?? 0);
             $newCost = (float) ($row->new_cost ?? 0);
+            $oldCost = (float) ($row->old_cost ?? 0);
             $prevMac = $row->prev_mac !== null ? (float) $row->prev_mac : null;
             $flags = [];
 
@@ -176,6 +199,12 @@ class MacAnomalyDetectionService
                 }
                 if (in_array('spike_multiplier', $types, true) && $mac >= $prevMac * $spikeMultiplier) {
                     $flags[] = 'spike_multiplier';
+                }
+            }
+            if ($oldCost > 0 && in_array('spike_percent', $types, true)) {
+                $newCostChangePct = abs((($newCost - $oldCost) / $oldCost) * 100);
+                if ($newCostChangePct >= $minSpikePercent && !in_array('spike_percent', $flags, true)) {
+                    $flags[] = 'spike_percent';
                 }
             }
 
@@ -221,11 +250,15 @@ class MacAnomalyDetectionService
             ];
         }
 
-        return $anomalies;
+        return [
+            'anomalies' => $anomalies,
+            'rows_in_period' => (int) ($counts->rows_in_period ?? 0),
+            'rows_total_scope' => (int) ($counts->rows_total_scope ?? 0),
+        ];
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{anomalies: list<array<string, mixed>>, stock_rows_checked: int}
      */
     private function scanCurrentStockAnomalies(int $idOutlet, int $warehouseOutletId, float $maxMac): array
     {
@@ -262,6 +295,7 @@ class MacAnomalyDetectionService
             's.updated_at',
         )->get();
 
+        $stockRowsChecked = $rows->count();
         $anomalies = [];
         foreach ($rows as $row) {
             $mac = (float) ($row->last_cost_small ?? 0);
@@ -305,7 +339,10 @@ class MacAnomalyDetectionService
             ];
         }
 
-        return $anomalies;
+        return [
+            'anomalies' => $anomalies,
+            'stock_rows_checked' => $stockRowsChecked,
+        ];
     }
 
     private function typeLabel(string $type): string
