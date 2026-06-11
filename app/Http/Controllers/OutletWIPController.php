@@ -748,10 +748,22 @@ class OutletWIPController extends Controller
         $outlet_id = $header->outlet_id;
         $warehouse_outlet_id = $header->warehouse_outlet_id;
         $production_date = $header->production_date;
+
+        $stockAlreadyProcessed = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_wip_production')
+            ->where('reference_id', $id)
+            ->exists();
         
         DB::beginTransaction();
         try {
-            // Process each production
+            if ($stockAlreadyProcessed) {
+                Log::warning('[OutletWIP] Submit - stock cards already exist, finalizing status only', [
+                    'header_id' => $id,
+                ]);
+            }
+
+            // Potong/tambah stok hanya saat proceed — skip jika sudah pernah diproses (bug legacy)
+            if (!$stockAlreadyProcessed) {
             foreach ($productions as $prod) {
                 $item_id = $prod->item_id;
                 $qty_produksi = $prod->qty;
@@ -1008,6 +1020,7 @@ class OutletWIPController extends Controller
                     'description' => "Hasil produksi WIP",
                     'created_at' => now(),
                 ]);
+            }
             }
             
             // Generate final number
@@ -1685,9 +1698,13 @@ class OutletWIPController extends Controller
                 $oldData = json_encode($production);
             } else {
                 // Handle data baru: hapus header dan details
-                // Only rollback stock if status is not DRAFT
-                if ($header->status !== 'DRAFT') {
-                    // Rollback stock for each production
+                $hasStockCards = DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'outlet_wip_production')
+                    ->where('reference_id', $id)
+                    ->exists();
+
+                // Rollback stok jika sudah diproses (PROCESSED) atau draft legacy yang sudah motong stok
+                if ($header->status !== 'DRAFT' || $hasStockCards) {
                     $productions = DB::table('outlet_wip_productions')
                         ->where('header_id', $id)
                         ->get();

@@ -10,7 +10,7 @@
       </div>
     </div>
     
-    <form @submit.prevent="submit" class="space-y-4">
+    <form @submit.prevent class="space-y-4">
       <!-- Header Fields (Shared for all productions) -->
       <div class="bg-gray-50 rounded-lg p-4 space-y-4">
         <h3 class="font-semibold text-gray-700 mb-2">Informasi Umum</h3>
@@ -263,12 +263,13 @@
           Batal
         </button>
         <button 
-          type="submit" 
+          type="button"
+          @click="proceedProduction"
           :disabled="isSubmitting || !canSubmit" 
           class="btn btn-primary"
         >
           <span v-if="isSubmitting" class="loading loading-spinner loading-sm"></span>
-          {{ isSubmitting ? 'Menyimpan...' : 'Submit Produksi' }}
+          {{ isSubmitting ? 'Memproses...' : 'Proses Produksi' }}
         </button>
       </div>
     </form>
@@ -693,7 +694,7 @@ async function saveDraft() {
   }
 }
 
-function submit() {
+async function proceedProduction() {
   if (!canSubmit.value) {
     Swal.fire({
       icon: 'warning',
@@ -704,9 +705,31 @@ function submit() {
     return
   }
 
+  if (!form.header_id) {
+    Swal.fire({
+      icon: 'info',
+      title: 'Simpan Draft Dulu',
+      text: 'Stok hanya dipotong saat Proses Produksi. Silakan simpan draft terlebih dahulu (atau tunggu autosave).',
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  const confirmed = await Swal.fire({
+    title: 'Proses Produksi?',
+    html: 'Stok <strong>bahan baku akan dipotong</strong> dan hasil produksi ditambahkan ke inventory.<br><br>Lanjutkan?',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Proses',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#2563eb',
+  })
+  if (!confirmed.isConfirmed) {
+    return
+  }
+
   isSubmitting.value = true
   
-  // Prepare submit data
   const submitData = {
     outlet_id: form.outlet_id,
     warehouse_outlet_id: form.warehouse_outlet_id,
@@ -723,11 +746,7 @@ function submit() {
       }))
   }
   
-  // If header_id exists, submit existing draft
-  // Otherwise, create and submit directly
-  const submitUrl = form.header_id 
-    ? route('outlet-wip.submit', form.header_id)
-    : route('outlet-wip.store-and-submit')
+  const submitUrl = route('outlet-wip.submit', form.header_id)
   
   axios.post(submitUrl, submitData, {
     headers: {
@@ -740,7 +759,7 @@ function submit() {
       Swal.fire({
         icon: 'success',
         title: 'Berhasil',
-        text: response.data.message || 'Produksi WIP berhasil disubmit',
+        text: response.data.message || 'Produksi WIP berhasil diproses',
         timer: 1500,
         showConfirmButton: false
       }).then(() => {
@@ -752,8 +771,8 @@ function submit() {
     console.error('Submit failed:', error)
     Swal.fire({
       icon: 'error',
-      title: 'Gagal Submit',
-      text: error.response?.data?.message || 'Gagal submit produksi',
+      title: 'Gagal Proses',
+      text: error.response?.data?.message || 'Gagal memproses produksi',
       confirmButtonText: 'OK'
     })
   })
