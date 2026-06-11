@@ -1,10 +1,31 @@
 <script setup>
+import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   user: Object,
 });
+
+const lightboxVisible = ref(false);
+const lightboxIndex = ref(0);
+
+const lightboxImages = computed(() => [
+  props.user.foto_ktp,
+  props.user.foto_kk,
+  props.user.upload_latest_color_photo,
+]
+  .filter(Boolean)
+  .map((path) => `/storage/${path}`));
+
+function openPhotoLightbox(path) {
+  if (!path) return;
+  const url = `/storage/${path}`;
+  const index = lightboxImages.value.indexOf(url);
+  lightboxIndex.value = index >= 0 ? index : 0;
+  lightboxVisible.value = true;
+}
 
 function goBack() {
   router.visit('/users');
@@ -337,7 +358,13 @@ function getInitials(name) {
           <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div v-if="props.user.foto_ktp" class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto KTP</h3>
-              <img :src="`/storage/${props.user.foto_ktp}`" alt="Foto KTP" class="w-full h-48 object-cover rounded-lg shadow-md" />
+              <img
+                :src="`/storage/${props.user.foto_ktp}`"
+                alt="Foto KTP"
+                class="w-full h-48 object-cover rounded-lg shadow-md cursor-pointer hover:opacity-90 transition-opacity"
+                title="Klik untuk perbesar"
+                @click="openPhotoLightbox(props.user.foto_ktp)"
+              />
             </div>
             <div v-else class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto KTP</h3>
@@ -348,7 +375,13 @@ function getInitials(name) {
 
             <div v-if="props.user.foto_kk" class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto KK</h3>
-              <img :src="`/storage/${props.user.foto_kk}`" alt="Foto KK" class="w-full h-48 object-cover rounded-lg shadow-md" />
+              <img
+                :src="`/storage/${props.user.foto_kk}`"
+                alt="Foto KK"
+                class="w-full h-48 object-cover rounded-lg shadow-md cursor-pointer hover:opacity-90 transition-opacity"
+                title="Klik untuk perbesar"
+                @click="openPhotoLightbox(props.user.foto_kk)"
+              />
             </div>
             <div v-else class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto KK</h3>
@@ -359,7 +392,13 @@ function getInitials(name) {
 
             <div v-if="props.user.upload_latest_color_photo" class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto Terbaru</h3>
-              <img :src="`/storage/${props.user.upload_latest_color_photo}`" alt="Foto Terbaru" class="w-full h-48 object-cover rounded-lg shadow-md" />
+              <img
+                :src="`/storage/${props.user.upload_latest_color_photo}`"
+                alt="Foto Terbaru"
+                class="w-full h-48 object-cover rounded-lg shadow-md cursor-pointer hover:opacity-90 transition-opacity"
+                title="Klik untuk perbesar"
+                @click="openPhotoLightbox(props.user.upload_latest_color_photo)"
+              />
             </div>
             <div v-else class="bg-gray-50 rounded-lg p-4">
               <h3 class="font-semibold text-gray-800 mb-3">Foto Terbaru</h3>
@@ -371,5 +410,12 @@ function getInitials(name) {
         </div>
       </div>
     </div>
+
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImages"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
   </AppLayout>
-</template> 
+</template>
