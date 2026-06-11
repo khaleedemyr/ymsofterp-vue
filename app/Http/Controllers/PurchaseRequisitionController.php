@@ -1787,6 +1787,11 @@ class PurchaseRequisitionController extends Controller
         $kasbonPatch = null;
         if ($purchaseRequisition->mode === 'kasbon') {
             if ($request->filled('kasbon_amount') || $request->filled('kasbon_termin')) {
+                if ($request->filled('kasbon_amount')) {
+                    $request->merge([
+                        'kasbon_amount' => $this->parseKasbonAmountInput($request->input('kasbon_amount')),
+                    ]);
+                }
                 $kasbonPatch = $request->validate([
                     'kasbon_amount' => 'required|integer|min:1|max:999999999999',
                     'kasbon_termin' => 'required|integer|min:1|max:255',
@@ -6708,6 +6713,34 @@ class PurchaseRequisitionController extends Controller
             'valid' => true,
             'message' => 'Budget validation passed'
         ];
+    }
+
+    /**
+     * Parse free-text Rupiah (e.g. "2.000.000,00") without treating ",00" as extra digits.
+     */
+    private function parseKasbonAmountInput(mixed $value): int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_float($value)) {
+            return (int) round($value);
+        }
+
+        $s = trim((string) $value);
+        if ($s === '') {
+            return 0;
+        }
+
+        $s = preg_replace('/^Rp\.?\s*/i', '', $s) ?? $s;
+
+        if (str_contains($s, ',')) {
+            $s = explode(',', $s, 2)[0];
+        }
+
+        $s = str_replace(['.', ' '], '', $s);
+
+        return (int) $s;
     }
 
     private function shouldBypassKasbonDateValidation(): bool

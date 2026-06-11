@@ -22,6 +22,7 @@ import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { parseRupiahInput } from '@/utils/parseRupiahInput.js';
 
 const page = usePage();
 const user = page.props.auth?.user || {};
@@ -2112,7 +2113,7 @@ async function approvePr(prId) {
     try {
         const payload = {};
         if (selectedPrApproval.value?.mode === 'kasbon') {
-            const amt = parseInt(String(prApprovalKasbonAmountInput.value ?? '').replace(/[^\d]/g, ''), 10);
+            const amt = parseRupiahInput(prApprovalKasbonAmountInput.value);
             const term = parseInt(String(prApprovalKasbonTerminInput.value ?? '').replace(/[^\d]/g, ''), 10);
             if (!Number.isFinite(amt) || amt < 1) {
                 await Swal.fire({

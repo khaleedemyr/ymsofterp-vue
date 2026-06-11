@@ -858,6 +858,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import { parseRupiahInput } from '@/utils/parseRupiahInput.js'
 
 const props = defineProps({
   purchaseRequisition: Object,
@@ -1184,7 +1185,7 @@ const submitRequisition = () => {
 const approveRequisition = () => {
   const payload = {}
   if (props.purchaseRequisition.mode === 'kasbon') {
-    const amt = parseInt(String(kasbonApproveAmountInput.value ?? '').replace(/[^\d]/g, ''), 10)
+    const amt = parseRupiahInput(kasbonApproveAmountInput.value)
     const term = parseInt(String(kasbonApproveTerminInput.value ?? '').replace(/[^\d]/g, ''), 10)
     if (!Number.isFinite(amt) || amt < 1) {
       Swal.fire({ icon: 'warning', title: 'Nilai kasbon tidak valid', text: 'Masukkan nominal (angka, minimal Rp 1).', confirmButtonColor: '#F59E0B' })

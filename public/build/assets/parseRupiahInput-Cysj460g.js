@@ -1,0 +1,1 @@
+function i(e){if(e==null||e==="")return NaN;let r=String(e).trim();if(!r)return NaN;r=r.replace(/^Rp\.?\s*/i,"").trim();const t=r.lastIndexOf(",");if(t>=0&&(r=r.slice(0,t)),r=r.replace(/[\s.]/g,""),!/^\d+$/.test(r))return NaN;const n=Number(r);return Number.isSafeInteger(n)?n:NaN}export{i as p};
