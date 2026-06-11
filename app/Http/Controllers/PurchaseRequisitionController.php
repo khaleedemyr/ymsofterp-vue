@@ -1079,9 +1079,9 @@ class PurchaseRequisitionController extends Controller
             $kasbonItem = $purchaseRequisition->items->first();
             if ($kasbonItem) {
                 $modeSpecificData = [
-                    'kasbon_amount' => $kasbonItem->subtotal ?? 0,
+                    'kasbon_amount' => $this->kasbonAmountForApi($kasbonItem->subtotal ?? 0),
                     'kasbon_reason' => $kasbonItem->item_name ?? '',
-                    'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
+                    'kasbon_termin' => (int) ($purchaseRequisition->kasbon_termin ?? 1),
                 ];
             }
         }
@@ -1342,9 +1342,9 @@ class PurchaseRequisitionController extends Controller
             $kasbonItem = $purchaseRequisition->items->first();
             if ($kasbonItem) {
                 $modeSpecificData = [
-                    'kasbon_amount' => $kasbonItem->subtotal ?? 0,
+                    'kasbon_amount' => $this->kasbonAmountForApi($kasbonItem->subtotal ?? 0),
                     'kasbon_reason' => $kasbonItem->item_name ?? '',
-                    'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
+                    'kasbon_termin' => (int) ($purchaseRequisition->kasbon_termin ?? 1),
                 ];
             }
         }
@@ -3154,9 +3154,9 @@ class PurchaseRequisitionController extends Controller
                 $kasbonItem = $purchaseRequisition->items->first();
                 if ($kasbonItem) {
                     $modeSpecificData = [
-                        'kasbon_amount' => $kasbonItem->subtotal ?? 0,
+                        'kasbon_amount' => $this->kasbonAmountForApi($kasbonItem->subtotal ?? 0),
                         'kasbon_reason' => $kasbonItem->item_name ?? '',
-                        'kasbon_termin' => $purchaseRequisition->kasbon_termin ?? 1,
+                        'kasbon_termin' => (int) ($purchaseRequisition->kasbon_termin ?? 1),
                     ];
                 }
             }
@@ -6733,6 +6733,12 @@ class PurchaseRequisitionController extends Controller
         }
 
         $s = preg_replace('/^Rp\.?\s*/i', '', $s) ?? $s;
+        $s = trim($s);
+
+        // Western decimal: 2000000.00 — jangan dianggap ribuan
+        if (preg_match('/^\d+\.\d{1,2}$/', $s)) {
+            return (int) round((float) $s);
+        }
 
         if (str_contains($s, ',')) {
             $s = explode(',', $s, 2)[0];
@@ -6741,6 +6747,11 @@ class PurchaseRequisitionController extends Controller
         $s = str_replace(['.', ' '], '', $s);
 
         return (int) $s;
+    }
+
+    private function kasbonAmountForApi(mixed $value): int
+    {
+        return $this->parseKasbonAmountInput($value);
     }
 
     private function shouldBypassKasbonDateValidation(): bool

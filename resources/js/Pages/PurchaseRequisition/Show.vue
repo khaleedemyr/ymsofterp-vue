@@ -858,7 +858,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
-import { parseRupiahInput } from '@/utils/parseRupiahInput.js'
+import { parseRupiahInput, formatKasbonAmountForInput } from '@/utils/parseRupiahInput.js'
 
 const props = defineProps({
   purchaseRequisition: Object,
@@ -876,6 +876,8 @@ const lightboxImage = ref(null)
 
 const kasbonApproveAmountInput = ref('')
 const kasbonApproveTerminInput = ref('')
+const kasbonApproveAmountOriginal = ref(null)
+const kasbonApproveTerminOriginal = ref(null)
 
 watch(
   () => [props.purchaseRequisition?.id, props.modeSpecificData?.kasbon_amount, props.modeSpecificData?.kasbon_termin],
@@ -883,10 +885,13 @@ watch(
     if (props.purchaseRequisition?.mode !== 'kasbon' || !props.modeSpecificData) {
       return
     }
-    const a = props.modeSpecificData.kasbon_amount
-    const t = props.modeSpecificData.kasbon_termin
-    kasbonApproveAmountInput.value = a != null && a !== '' ? String(Number(a)) : ''
-    kasbonApproveTerminInput.value = t != null && t !== '' ? String(Number(t)) : '1'
+    const amtStr = formatKasbonAmountForInput(props.modeSpecificData.kasbon_amount)
+    const termNum = parseInt(String(props.modeSpecificData.kasbon_termin ?? '1').replace(/[^\d]/g, ''), 10)
+    const term = Number.isFinite(termNum) && termNum >= 1 ? termNum : 1
+    kasbonApproveAmountInput.value = amtStr
+    kasbonApproveTerminInput.value = String(term)
+    kasbonApproveAmountOriginal.value = amtStr ? parseRupiahInput(amtStr) : null
+    kasbonApproveTerminOriginal.value = term
   },
   { immediate: true }
 )
@@ -1203,8 +1208,12 @@ const approveRequisition = () => {
       Swal.fire({ icon: 'warning', title: 'Termin tidak valid', text: 'Termin maksimal 255.', confirmButtonColor: '#F59E0B' })
       return
     }
-    payload.kasbon_amount = amt
-    payload.kasbon_termin = term
+    const origAmt = kasbonApproveAmountOriginal.value
+    const origTerm = kasbonApproveTerminOriginal.value
+    if (origAmt == null || amt !== origAmt || origTerm == null || term !== origTerm) {
+      payload.kasbon_amount = amt
+      payload.kasbon_termin = term
+    }
   }
   router.post(`/purchase-requisitions/${props.purchaseRequisition.id}/approve`, payload)
 }

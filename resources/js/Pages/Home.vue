@@ -22,7 +22,7 @@ import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { parseRupiahInput } from '@/utils/parseRupiahInput.js';
+import { parseRupiahInput, formatKasbonAmountForInput } from '@/utils/parseRupiahInput.js';
 
 const page = usePage();
 const user = page.props.auth?.user || {};
@@ -52,6 +52,9 @@ const prModeSpecificData = ref(null);
 /** PR kasbon — approver isi bebas (angka); pengaju tetap pakai pilihan di halaman Create/Edit PR */
 const prApprovalKasbonAmountInput = ref('');
 const prApprovalKasbonTerminInput = ref('');
+/** Nilai saat modal dibuka — patch ke server hanya jika approver mengubah */
+const prApprovalKasbonAmountOriginal = ref(null);
+const prApprovalKasbonTerminOriginal = ref(null);
 const selectedPrApprovals = ref(new Set()); // For multi-select
 const isSelectingPrApprovals = ref(false); // Toggle select mode
 const showLightbox = ref(false);
@@ -1904,10 +1907,16 @@ async function showPrApprovalDetails(prId) {
             prModeSpecificData.value = response.data.mode_specific_data || null;
             if (response.data.purchase_requisition?.mode === 'kasbon' && response.data.mode_specific_data) {
                 const m = response.data.mode_specific_data;
-                prApprovalKasbonAmountInput.value =
-                    m.kasbon_amount != null && m.kasbon_amount !== '' ? String(Number(m.kasbon_amount)) : '';
-                prApprovalKasbonTerminInput.value =
-                    m.kasbon_termin != null && m.kasbon_termin !== '' ? String(Number(m.kasbon_termin)) : '1';
+                const amtStr = formatKasbonAmountForInput(m.kasbon_amount);
+                const termNum = parseInt(String(m.kasbon_termin ?? '1').replace(/[^\d]/g, ''), 10);
+                const term = Number.isFinite(termNum) && termNum >= 1 ? termNum : 1;
+                prApprovalKasbonAmountInput.value = amtStr;
+                prApprovalKasbonTerminInput.value = String(term);
+                prApprovalKasbonAmountOriginal.value = amtStr ? parseRupiahInput(amtStr) : null;
+                prApprovalKasbonTerminOriginal.value = term;
+            } else {
+                prApprovalKasbonAmountOriginal.value = null;
+                prApprovalKasbonTerminOriginal.value = null;
             }
             
             // Debug logging
@@ -2151,8 +2160,14 @@ async function approvePr(prId) {
                 });
                 return;
             }
-            payload.kasbon_amount = amt;
-            payload.kasbon_termin = term;
+            const origAmt = prApprovalKasbonAmountOriginal.value;
+            const origTerm = prApprovalKasbonTerminOriginal.value;
+            const amountChanged = origAmt == null || amt !== origAmt;
+            const terminChanged = origTerm == null || term !== origTerm;
+            if (amountChanged || terminChanged) {
+                payload.kasbon_amount = amt;
+                payload.kasbon_termin = term;
+            }
         }
         const response = await axios.post(`/purchase-requisitions/${prId}/approve`, payload);
         if (response.status === 200) {
@@ -8210,7 +8225,7 @@ watch(locale, () => {
                             Informasi Kasbon
                         </h4>
                         <p class="text-xs text-gray-600 dark:text-gray-400 mb-4">
-                            Sebagai approver Anda dapat mengetik nilai kasbon dan termin apa pun sebelum menyetujui (tidak terbatas pada pilihan pengaju). Perubahan disimpan ke PR saat Anda klik Approve.
+                            Sebagai approver Anda dapat mengubah nilai kasbon dan termin sebelum menyetujui. Perubahan hanya disimpan jika Anda mengedit field di bawah; approve tanpa mengubah tidak mengubah nominal pengaju.
                         </p>
                         <div class="space-y-4">
                             <div>
@@ -8223,7 +8238,7 @@ watch(locale, () => {
                                     placeholder="contoh: 2750000 atau 2.750.000"
                                     class="w-full max-w-md rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                                 />
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Angka saja; pemisah ribuan (titik/koma) boleh, akan diabaikan.</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Angka saja (contoh: 2750000). Hindari format dengan ,00 di akhir.</p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Termin potong gaji</label>
