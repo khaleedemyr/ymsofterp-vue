@@ -312,6 +312,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 
 const props = defineProps({
   referenceModules: { type: Array, default: () => [] }
@@ -475,17 +476,40 @@ async function runScan(page = 1) {
   }
 }
 
-function openDetailForRow(row) {
+async function openDetailForRow(row) {
+  if (!row.item_id) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Barang tidak tersedia',
+      text: 'Anomali ini tidak terhubung ke master barang. Pilih barang manual di tab Detail.',
+      confirmButtonColor: '#2563eb',
+    })
+    return
+  }
+
+  activeTab.value = 'detail'
   filters.value.outlet_id = String(row.id_outlet)
   filters.value.warehouse_outlet_id = String(row.warehouse_outlet_id)
   filters.value.item_id = String(row.item_id)
-  activeTab.value = 'detail'
-  handleOutletChange().then(() => loadData())
+  itemSearch.value = row.item_name || ''
+
+  await loadOptions()
+  await loadData()
 }
 
 async function loadData(page = 1) {
-  if (!filters.value.outlet_id || !filters.value.warehouse_outlet_id || !filters.value.item_id) {
-    alert('Pilih outlet, warehouse, dan barang')
+  const missing = []
+  if (!filters.value.outlet_id) missing.push('Outlet')
+  if (!filters.value.warehouse_outlet_id) missing.push('Warehouse Outlet')
+  if (!filters.value.item_id) missing.push('Barang')
+
+  if (missing.length > 0) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Lengkapi pilihan',
+      html: `Silakan pilih <strong>${missing.join('</strong>, <strong>')}</strong> terlebih dahulu.`,
+      confirmButtonColor: '#2563eb',
+    })
     return
   }
   loading.value = true
@@ -504,10 +528,24 @@ async function loadData(page = 1) {
       macChanges.value = res.data.mac_changes || []
       summary.value = res.data.summary || null
       pagination.value = res.data.pagination || pagination.value
+      if (macChanges.value.length === 0 && res.data.message) {
+        await Swal.fire({
+          icon: 'info',
+          title: 'Tidak ada riwayat',
+          text: res.data.message,
+          confirmButtonColor: '#2563eb',
+        })
+      }
     }
   } catch (e) {
     console.error(e)
     macChanges.value = []
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal memuat riwayat',
+      text: e.response?.data?.message || 'Terjadi kesalahan saat memuat data MAC.',
+      confirmButtonColor: '#2563eb',
+    })
   } finally {
     loading.value = false
   }
