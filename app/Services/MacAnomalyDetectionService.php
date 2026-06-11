@@ -113,147 +113,158 @@ class MacAnomalyDetectionService
         float $maxMac,
         array $types,
     ): array {
-        $scopeBindings = [];
-        $scopeWhere = '1 = 1';
-
+        $countQuery = DB::table('outlet_food_inventory_cost_histories as h');
         if ($idOutlet > 0) {
-            $scopeWhere .= ' AND h.id_outlet = ?';
-            $scopeBindings[] = $idOutlet;
+            $countQuery->where('h.id_outlet', $idOutlet);
         }
         if ($warehouseOutletId > 0) {
-            $scopeWhere .= ' AND h.warehouse_outlet_id = ?';
-            $scopeBindings[] = $warehouseOutletId;
+            $countQuery->where('h.warehouse_outlet_id', $warehouseOutletId);
         }
+        $rowsTotalScope = (int) (clone $countQuery)->count();
+        $rowsInPeriod = (int) (clone $countQuery)
+            ->whereBetween('h.date', [$dateFrom, $dateTo])
+            ->count();
 
-        // LAG dihitung dari seluruh histori (bukan hanya periode filter) agar lonjakan tidak terlewat.
-        $sql = "
-            SELECT scoped.*
-            FROM (
-                SELECT
-                    h.id AS history_id,
-                    h.id_outlet,
-                    h.warehouse_outlet_id,
-                    h.inventory_item_id,
-                    h.date,
-                    h.created_at,
-                    h.old_cost,
-                    h.new_cost,
-                    h.mac,
-                    h.type,
-                    h.reference_type,
-                    h.reference_id,
-                    o.nama_outlet AS outlet_name,
-                    wo.name AS warehouse_name,
-                    i.id AS item_id,
-                    i.name AS item_name,
-                    i.sku AS item_code,
-                    LAG(h.mac) OVER (
-                        PARTITION BY h.id_outlet, h.warehouse_outlet_id, h.inventory_item_id
-                        ORDER BY h.date, h.id
-                    ) AS prev_mac
-                FROM outlet_food_inventory_cost_histories h
-                LEFT JOIN tbl_data_outlet o ON o.id_outlet = h.id_outlet
-                LEFT JOIN warehouse_outlets wo ON wo.id = h.warehouse_outlet_id
-                LEFT JOIN outlet_food_inventory_items ofii ON ofii.id = h.inventory_item_id
-                LEFT JOIN items i ON i.id = ofii.item_id
-                WHERE {$scopeWhere}
-            ) scoped
-            WHERE scoped.date BETWEEN ? AND ?
-        ";
+        // Tanpa window function (MySQL lama tidak support LAG): prev MAC dihitung di PHP via cursor.
+        $historyQuery = DB::table('outlet_food_inventory_cost_histories as h')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'h.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'h.warehouse_outlet_id')
+            ->leftJoin('outlet_food_inventory_items as ofii', 'ofii.id', '=', 'h.inventory_item_id')
+            ->leftJoin('items as i', 'i.id', '=', 'ofii.item_id')
+            ->when($idOutlet > 0, fn ($q) => $q->where('h.id_outlet', $idOutlet))
+            ->when($warehouseOutletId > 0, fn ($q) => $q->where('h.warehouse_outlet_id', $warehouseOutletId))
+            ->orderBy('h.id_outlet')
+            ->orderBy('h.warehouse_outlet_id')
+            ->orderBy('h.inventory_item_id')
+            ->orderBy('h.date')
+            ->orderBy('h.id')
+            ->select([
+                'h.id as history_id',
+                'h.id_outlet',
+                'h.warehouse_outlet_id',
+                'h.inventory_item_id',
+                'h.date',
+                'h.created_at',
+                'h.old_cost',
+                'h.new_cost',
+                'h.mac',
+                'h.type',
+                'h.reference_type',
+                'h.reference_id',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_name',
+                'i.id as item_id',
+                'i.name as item_name',
+                'i.sku as item_code',
+            ]);
 
-        $bindings = array_merge($scopeBindings, [$dateFrom, $dateTo]);
-        $rows = DB::select($sql, $bindings);
-
-        $countSql = "
-            SELECT
-                SUM(CASE WHEN h.date BETWEEN ? AND ? THEN 1 ELSE 0 END) AS rows_in_period,
-                COUNT(*) AS rows_total_scope
-            FROM outlet_food_inventory_cost_histories h
-            WHERE {$scopeWhere}
-        ";
-        $countBindings = array_merge([$dateFrom, $dateTo], $scopeBindings);
-        $counts = DB::selectOne($countSql, $countBindings);
-
+        $lastMacByKey = [];
         $anomalies = [];
 
-        foreach ($rows as $row) {
+        foreach ($historyQuery->cursor() as $row) {
+            $partitionKey = (int) $row->id_outlet . '|' . (int) $row->warehouse_outlet_id . '|' . (int) $row->inventory_item_id;
+            $prevMac = array_key_exists($partitionKey, $lastMacByKey) ? $lastMacByKey[$partitionKey] : null;
             $mac = (float) ($row->mac ?? 0);
-            $newCost = (float) ($row->new_cost ?? 0);
-            $oldCost = (float) ($row->old_cost ?? 0);
-            $prevMac = $row->prev_mac !== null ? (float) $row->prev_mac : null;
-            $flags = [];
+            $lastMacByKey[$partitionKey] = $mac;
 
-            if (in_array('negative_mac', $types, true) && $mac < 0) {
-                $flags[] = 'negative_mac';
-            }
-            if (in_array('negative_new_cost', $types, true) && $newCost < 0) {
-                $flags[] = 'negative_new_cost';
-            }
-            if (in_array('absolute_high', $types, true) && $maxMac > 0 && $mac > $maxMac) {
-                $flags[] = 'absolute_high';
-            }
-            if ($prevMac !== null && $prevMac > 0) {
-                $changePct = (($mac - $prevMac) / $prevMac) * 100;
-                if (in_array('spike_percent', $types, true) && abs($changePct) >= $minSpikePercent) {
-                    $flags[] = 'spike_percent';
-                }
-                if (in_array('spike_multiplier', $types, true) && $mac >= $prevMac * $spikeMultiplier) {
-                    $flags[] = 'spike_multiplier';
-                }
-            }
-            if ($oldCost > 0 && in_array('spike_percent', $types, true)) {
-                $newCostChangePct = abs((($newCost - $oldCost) / $oldCost) * 100);
-                if ($newCostChangePct >= $minSpikePercent && !in_array('spike_percent', $flags, true)) {
-                    $flags[] = 'spike_percent';
-                }
-            }
-
-            if (empty($flags)) {
+            if ($row->date < $dateFrom || $row->date > $dateTo) {
                 continue;
             }
 
-            $changePct = ($prevMac !== null && $prevMac > 0)
-                ? round((($mac - $prevMac) / $prevMac) * 100, 2)
-                : null;
-
-            $refType = $row->reference_type ?? null;
-            $refId = $row->reference_id ? (int) $row->reference_id : null;
-
-            $anomalies[] = [
-                'history_id' => (int) $row->history_id,
-                'anomaly_types' => $flags,
-                'anomaly_labels' => array_map(fn ($f) => $this->typeLabel($f), $flags),
-                'date' => $row->date,
-                'created_at' => $row->created_at,
-                'id_outlet' => (int) $row->id_outlet,
-                'outlet_name' => $row->outlet_name ?? '-',
-                'warehouse_outlet_id' => (int) $row->warehouse_outlet_id,
-                'warehouse_name' => $row->warehouse_name ?? '-',
-                'item_id' => $row->item_id ? (int) $row->item_id : null,
-                'inventory_item_id' => (int) $row->inventory_item_id,
-                'item_name' => $row->item_name ?? '-',
-                'item_code' => $row->item_code ?? null,
-                'old_cost' => number_format((float) ($row->old_cost ?? 0), 4, '.', ''),
-                'new_cost' => number_format($newCost, 4, '.', ''),
-                'prev_mac' => $prevMac !== null ? number_format($prevMac, 4, '.', '') : null,
-                'mac' => number_format($mac, 4, '.', ''),
-                'change_percent' => $changePct !== null ? number_format($changePct, 2, '.', '') : null,
-                'type' => $row->type,
-                'reference_type' => $refType,
-                'reference_id' => $refId,
-                'reference_label' => MacAnomalyReferenceRegistry::labelFor($refType),
-                'module_name' => MacAnomalyReferenceRegistry::moduleFor($refType),
-                'fix_hint' => MacAnomalyReferenceRegistry::fixHintFor($refType),
-                'source_url' => MacAnomalyReferenceRegistry::sourceUrl($refType, $refId),
-                'transaction_number' => null,
-                'source' => 'history',
-            ];
+            $anomalyRow = $this->evaluateHistoryAnomalyRow($row, $prevMac, $types, $minSpikePercent, $spikeMultiplier, $maxMac);
+            if ($anomalyRow !== null) {
+                $anomalies[] = $anomalyRow;
+            }
         }
 
         return [
             'anomalies' => $anomalies,
-            'rows_in_period' => (int) ($counts->rows_in_period ?? 0),
-            'rows_total_scope' => (int) ($counts->rows_total_scope ?? 0),
+            'rows_in_period' => $rowsInPeriod,
+            'rows_total_scope' => $rowsTotalScope,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $types
+     * @return array<string, mixed>|null
+     */
+    private function evaluateHistoryAnomalyRow(
+        object $row,
+        ?float $prevMac,
+        array $types,
+        float $minSpikePercent,
+        float $spikeMultiplier,
+        float $maxMac,
+    ): ?array {
+        $mac = (float) ($row->mac ?? 0);
+        $newCost = (float) ($row->new_cost ?? 0);
+        $oldCost = (float) ($row->old_cost ?? 0);
+        $flags = [];
+
+        if (in_array('negative_mac', $types, true) && $mac < 0) {
+            $flags[] = 'negative_mac';
+        }
+        if (in_array('negative_new_cost', $types, true) && $newCost < 0) {
+            $flags[] = 'negative_new_cost';
+        }
+        if (in_array('absolute_high', $types, true) && $maxMac > 0 && $mac > $maxMac) {
+            $flags[] = 'absolute_high';
+        }
+        if ($prevMac !== null && $prevMac > 0) {
+            $changePctRaw = (($mac - $prevMac) / $prevMac) * 100;
+            if (in_array('spike_percent', $types, true) && abs($changePctRaw) >= $minSpikePercent) {
+                $flags[] = 'spike_percent';
+            }
+            if (in_array('spike_multiplier', $types, true) && $mac >= $prevMac * $spikeMultiplier) {
+                $flags[] = 'spike_multiplier';
+            }
+        }
+        if ($oldCost > 0 && in_array('spike_percent', $types, true)) {
+            $newCostChangePct = abs((($newCost - $oldCost) / $oldCost) * 100);
+            if ($newCostChangePct >= $minSpikePercent && !in_array('spike_percent', $flags, true)) {
+                $flags[] = 'spike_percent';
+            }
+        }
+
+        if (empty($flags)) {
+            return null;
+        }
+
+        $changePct = ($prevMac !== null && $prevMac > 0)
+            ? round((($mac - $prevMac) / $prevMac) * 100, 2)
+            : null;
+
+        $refType = $row->reference_type ?? null;
+        $refId = $row->reference_id ? (int) $row->reference_id : null;
+
+        return [
+            'history_id' => (int) $row->history_id,
+            'anomaly_types' => $flags,
+            'anomaly_labels' => array_map(fn ($f) => $this->typeLabel($f), $flags),
+            'date' => $row->date,
+            'created_at' => $row->created_at,
+            'id_outlet' => (int) $row->id_outlet,
+            'outlet_name' => $row->outlet_name ?? '-',
+            'warehouse_outlet_id' => (int) $row->warehouse_outlet_id,
+            'warehouse_name' => $row->warehouse_name ?? '-',
+            'item_id' => $row->item_id ? (int) $row->item_id : null,
+            'inventory_item_id' => (int) $row->inventory_item_id,
+            'item_name' => $row->item_name ?? '-',
+            'item_code' => $row->item_code ?? null,
+            'old_cost' => number_format($oldCost, 4, '.', ''),
+            'new_cost' => number_format($newCost, 4, '.', ''),
+            'prev_mac' => $prevMac !== null ? number_format($prevMac, 4, '.', '') : null,
+            'mac' => number_format($mac, 4, '.', ''),
+            'change_percent' => $changePct !== null ? number_format($changePct, 2, '.', '') : null,
+            'type' => $row->type,
+            'reference_type' => $refType,
+            'reference_id' => $refId,
+            'reference_label' => MacAnomalyReferenceRegistry::labelFor($refType),
+            'module_name' => MacAnomalyReferenceRegistry::moduleFor($refType),
+            'fix_hint' => MacAnomalyReferenceRegistry::fixHintFor($refType),
+            'source_url' => MacAnomalyReferenceRegistry::sourceUrl($refType, $refId),
+            'transaction_number' => null,
+            'source' => 'history',
         ];
     }
 

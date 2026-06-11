@@ -37,12 +37,21 @@ class MacAnomalyTrackingController extends Controller
             'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
         ]);
 
-        $result = $this->anomalyDetection->scan($validated);
+        try {
+            $result = $this->anomalyDetection->scan($validated);
 
-        return response()->json([
-            'status' => 'success',
-            ...$result,
-        ]);
+            return response()->json([
+                'status' => 'success',
+                ...$result,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memindai anomali MAC: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function referenceModules()

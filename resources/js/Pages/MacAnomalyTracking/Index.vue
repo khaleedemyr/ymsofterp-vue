@@ -94,6 +94,10 @@
           </div>
         </div>
 
+        <div v-if="scanError" class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-sm text-red-800">
+          <i class="fa-solid fa-circle-exclamation mr-1"></i> {{ scanError }}
+        </div>
+
         <div v-if="scanSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div class="bg-red-50 border border-red-200 rounded-xl p-4">
             <p class="text-xs text-red-600">Total anomali</p>
@@ -346,6 +350,7 @@ const scanFilters = ref({
 
 const scanLoading = ref(false)
 const scanSearched = ref(false)
+const scanError = ref(null)
 const anomalies = ref([])
 const scanSummary = ref(null)
 const moduleBreakdown = ref([])
@@ -435,6 +440,7 @@ async function handleScanOutletChange() {
 async function runScan(page = 1) {
   scanLoading.value = true
   scanSearched.value = true
+  scanError.value = null
   try {
     const res = await axios.get('/api/mac-anomaly-tracking/scan', {
       params: {
@@ -455,10 +461,15 @@ async function runScan(page = 1) {
       scanSummary.value = res.data.summary || null
       moduleBreakdown.value = res.data.module_breakdown || []
       scanPagination.value = res.data.pagination || scanPagination.value
+    } else {
+      scanError.value = res.data.message || 'Scan gagal'
+      anomalies.value = []
     }
   } catch (e) {
     console.error(e)
+    scanError.value = e.response?.data?.message || e.message || 'Gagal menghubungi server'
     anomalies.value = []
+    scanSummary.value = null
   } finally {
     scanLoading.value = false
   }
