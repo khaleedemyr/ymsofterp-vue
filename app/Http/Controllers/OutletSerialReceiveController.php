@@ -6,6 +6,7 @@ use App\Http\Traits\WritesActivityLogTrait;
 use App\Support\FoodGrLastPurchaseForItem;
 use App\Support\InventorySerialEffectiveQty;
 use App\Support\ItemUnitCost;
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -978,6 +979,11 @@ class OutletSerialReceiveController extends Controller
         $outletId = $serial->out_outlet_id ?? null;
         $itemMaster = DB::table('items')->where('id', $itemId)->first();
 
+        // Harga jual gudang tercatat saat serial di-generate/dispatch — sumber utama GR receive outlet.
+        if ((float) ($serial->cost_small ?? 0) > 0) {
+            return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga jual gudang (serial)'];
+        }
+
         $priceRow = $this->resolveItemPriceRowForOutlet($itemId, $outletId);
         $mode = 'manual';
         if ($priceRow && Schema::hasColumn('item_prices', 'pricing_mode')) {
@@ -1004,10 +1010,6 @@ class OutletSerialReceiveController extends Controller
             $costSmall = $this->itemPriceLargeToCostSmall((float) $priceRow->price, $itemMaster);
 
             return [$costSmall, 'item_prices', 'Item Price (manual)'];
-        }
-
-        if ((float) ($serial->cost_small ?? 0) > 0) {
-            return [(float) $serial->cost_small, 'serial_cost_fallback', 'Harga serial'];
         }
 
         return [0.0, 'item_prices', 'Item Price (manual)'];
@@ -1128,12 +1130,15 @@ class OutletSerialReceiveController extends Controller
             ->where('warehouse_outlet_id', $warehouseOutletId)
             ->first();
 
+        // Nilai masuk GR = harga jual gudang (costSmall), bukan MAC lama outlet.
         $nilaiBaru = $qtySmall * $costSmall;
         $qtyLama = $stock ? (float) $stock->qty_small : 0;
-        $nilaiLama = $stock ? (float) $stock->value : 0;
+        $macLama = $stock ? (float) ($stock->last_cost_small ?? 0) : 0.0;
+        $nilaiLama = $qtyLama * $macLama;
         $totalQty = $qtyLama + $qtySmall;
         $totalNilai = $nilaiLama + $nilaiBaru;
         $mac = $totalQty > 0 ? $totalNilai / $totalQty : $costSmall;
+        $syncedValue = OutletInventoryCostResolver::stockTotalValue($totalQty, $mac);
 
         if ($stock) {
             DB::table('outlet_food_inventory_stocks')
@@ -1142,7 +1147,7 @@ class OutletSerialReceiveController extends Controller
                     'qty_small' => DB::raw("qty_small + {$qtySmall}"),
                     'qty_medium' => DB::raw("qty_medium + {$qtyMedium}"),
                     'qty_large' => DB::raw("qty_large + {$qtyLarge}"),
-                    'value' => DB::raw("value + {$nilaiBaru}"),
+                    'value' => $syncedValue,
                     'last_cost_small' => $mac,
                     'last_cost_medium' => $costMedium,
                     'last_cost_large' => $costLarge,
@@ -1190,7 +1195,7 @@ class OutletSerialReceiveController extends Controller
             'out_qty_small' => 0,
             'out_qty_medium' => 0,
             'out_qty_large' => 0,
-            'cost_per_small' => $mac,
+            'cost_per_small' => $costSmall,
             'cost_per_medium' => $costMedium,
             'cost_per_large' => $costLarge,
             'value_in' => $nilaiBaru,
@@ -1198,7 +1203,7 @@ class OutletSerialReceiveController extends Controller
             'saldo_qty_small' => $saldoSmall,
             'saldo_qty_medium' => $saldoMedium,
             'saldo_qty_large' => $saldoLarge,
-            'saldo_value' => $saldoSmall * $mac,
+            'saldo_value' => OutletInventoryCostResolver::stockTotalValue($saldoSmall, $mac),
             'description' => "Serial Receive: {$serial->serial_number}",
             'created_at' => now(),
             'updated_at' => now(),

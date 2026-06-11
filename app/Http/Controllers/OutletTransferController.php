@@ -682,12 +682,15 @@ class OutletTransferController extends Controller
                     $inventory_item_id
                 );
 
+                $qtyFromAfter = $stockFrom->qty_small - $qty_small;
+                $fromMac = OutletInventoryCostResolver::resolveMacFromStockRow($stockFrom);
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
                     ->update([
-                        'qty_small' => $stockFrom->qty_small - $qty_small,
+                        'qty_small' => $qtyFromAfter,
                         'qty_medium' => $stockFrom->qty_medium - $qty_medium,
                         'qty_large' => $stockFrom->qty_large - $qty_large,
+                        'value' => OutletInventoryCostResolver::stockTotalValue($qtyFromAfter, $fromMac),
                         'updated_at' => now(),
                     ]);
 
@@ -757,6 +760,7 @@ class OutletTransferController extends Controller
                         'last_cost_small' => $mac,
                         'last_cost_medium' => $mac * $smallConv,
                         'last_cost_large' => $mac * $smallConv * $mediumConv,
+                        'value' => OutletInventoryCostResolver::stockTotalValue($total_qty, $mac),
                     ]);
 
                 // Insert kartu stok OUT di warehouse outlet asal
@@ -864,12 +868,15 @@ class OutletTransferController extends Controller
             DB::table('outlet_transfer_serial_items')->where('id', $si->id)->update(['cost_small' => $costSmall]);
 
             // Deduct stock from source
+            $qtyFromAfter = $stockFrom->qty_small - $qty_small;
+            $fromMac = OutletInventoryCostResolver::resolveMacFromStockRow($stockFrom);
             DB::table('outlet_food_inventory_stocks')
                 ->where('id', $stockFrom->id)
                 ->update([
-                    'qty_small' => $stockFrom->qty_small - $qty_small,
+                    'qty_small' => $qtyFromAfter,
                     'qty_medium' => $stockFrom->qty_medium - $qty_medium,
                     'qty_large' => $stockFrom->qty_large - $qty_large,
+                    'value' => OutletInventoryCostResolver::stockTotalValue($qtyFromAfter, $fromMac),
                     'updated_at' => now(),
                 ]);
 
@@ -929,6 +936,7 @@ class OutletTransferController extends Controller
                     'last_cost_small' => $mac,
                     'last_cost_medium' => $mac * $smallConv,
                     'last_cost_large' => $mac * $smallConv * $mediumConv,
+                    'value' => OutletInventoryCostResolver::stockTotalValue($total_qty, $mac),
                 ]);
 
             // Inventory card OUT (source)
@@ -1708,12 +1716,15 @@ class OutletTransferController extends Controller
                     (int) $validated['warehouse_outlet_from_id'],
                     $inventory_item_id
                 );
+                $qtyFromAfter = $stockFrom->qty_small - $qty_small;
+                $fromMac = OutletInventoryCostResolver::resolveMacFromStockRow($stockFrom);
                 DB::table('outlet_food_inventory_stocks')
                     ->where('id', $stockFrom->id)
                     ->update([
-                        'qty_small' => $stockFrom->qty_small - $qty_small,
+                        'qty_small' => $qtyFromAfter,
                         'qty_medium' => $stockFrom->qty_medium - $qty_medium,
                         'qty_large' => $stockFrom->qty_large - $qty_large,
+                        'value' => OutletInventoryCostResolver::stockTotalValue($qtyFromAfter, $fromMac),
                         'updated_at' => now(),
                     ]);
                 
@@ -1776,6 +1787,7 @@ class OutletTransferController extends Controller
                         'last_cost_small' => $mac,
                         'last_cost_medium' => $mac * $smallConv,
                         'last_cost_large' => $mac * $smallConv * $mediumConv,
+                        'value' => OutletInventoryCostResolver::stockTotalValue($total_qty, $mac),
                     ]);
                 
                 // Insert kartu stok OUT di warehouse outlet asal

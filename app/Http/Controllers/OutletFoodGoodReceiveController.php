@@ -509,7 +509,8 @@ class OutletFoodGoodReceiveController extends Controller
                 $stockKey = $inventoryItemId;
                 $stock = $stocks[$stockKey] ?? null;
                 $qty_lama = $stock ? $stock->qty_small : 0;
-                $nilai_lama = $stock ? $stock->value : 0;
+                $mac_lama = $stock ? (float) ($stock->last_cost_small ?? 0) : 0;
+                $nilai_lama = $qty_lama * $mac_lama;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small_for_value * $cost_small;
                 $total_qty = $qty_lama + $qty_baru;
@@ -574,7 +575,7 @@ class OutletFoodGoodReceiveController extends Controller
                     'out_qty_small' => 0,
                     'out_qty_medium' => 0,
                     'out_qty_large' => 0,
-                    'cost_per_small' => $mac,
+                    'cost_per_small' => $cost_small,
                     'cost_per_medium' => $cost_medium,
                     'cost_per_large' => $cost_large,
                     'value_in' => $qty_small_for_value * $cost_small,

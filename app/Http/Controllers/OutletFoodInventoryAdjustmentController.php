@@ -16,6 +16,7 @@ use App\Models\Item;
 use App\Models\User;
 use App\Exports\OutletStockAdjustmentDetailExport;
 use App\Services\NotificationService;
+use App\Support\OutletInventoryCostResolver;
 use Maatwebsite\Excel\Facades\Excel;
 
 class OutletFoodInventoryAdjustmentController extends Controller
@@ -1542,13 +1543,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     private function resolveMacFromOutletStock($stock): float
     {
-        $qty = (float) ($stock->qty_small ?? 0);
-        $value = (float) ($stock->value ?? 0);
-        if ($qty > 0) {
-            return $value / $qty;
-        }
-
-        return (float) ($stock->last_cost_small ?? 0);
+        return OutletInventoryCostResolver::resolveMacFromStockRow($stock);
     }
 
     private function insertOutletCostHistory(
@@ -1612,8 +1607,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
         );
 
         $qty_lama = (float) $stock->qty_small;
-        $nilai_lama = (float) $stock->value;
         $mac_lama = $this->resolveMacFromOutletStock($stock);
+        $nilai_lama = $qty_lama * $mac_lama;
 
         if ($isIn) {
             $nilai_baru = $qty_small * $mac_lama;

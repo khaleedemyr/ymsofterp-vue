@@ -95,4 +95,38 @@ final class OutletInventoryCostResolver
 
         return self::scaledCostsMediumLargeFromStockRow($small, $stockFrom);
     }
+
+    /**
+     * MAC per unit kecil dari baris stok outlet.
+     * Jika value/qty tidak selaras dengan last_cost_small (>5%), pakai last_cost_small
+     * agar tidak memperparah anomali dari field value yang stale.
+     */
+    public static function resolveMacFromStockRow(?object $stock): float
+    {
+        if (!$stock) {
+            return 0.0;
+        }
+
+        $qty = (float) ($stock->qty_small ?? 0);
+        $lastCost = (float) ($stock->last_cost_small ?? 0);
+        if ($qty <= 0) {
+            return $lastCost;
+        }
+
+        $value = (float) ($stock->value ?? 0);
+        $implied = $value / $qty;
+        if ($lastCost > 0) {
+            $divergence = abs($implied - $lastCost) / max($lastCost, 1e-9);
+            if ($implied <= 0 || $divergence > 0.05) {
+                return $lastCost;
+            }
+        }
+
+        return $implied > 0 ? $implied : $lastCost;
+    }
+
+    public static function stockTotalValue(float $qtySmall, float $macPerSmall): float
+    {
+        return max(0.0, $qtySmall * $macPerSmall);
+    }
 }
