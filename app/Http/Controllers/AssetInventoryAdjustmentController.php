@@ -827,17 +827,22 @@ class AssetInventoryAdjustmentController extends Controller
                 ]);
             }
 
-            $lastCostHistory = DB::table('asset_inventory_cost_histories')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('outlet_id', $outletId)
-                ->where('warehouse_outlet_id', $adjustment->warehouse_outlet_id)
+            $lastCostQuery = DB::table('asset_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId);
+            AssetInventoryStockService::applyOwnerWarehouseScope(
+                $lastCostQuery,
+                $ownerOutletId,
+                (int) $adjustment->warehouse_outlet_id
+            );
+            $lastCostHistory = $lastCostQuery
                 ->orderByDesc('date')
                 ->orderByDesc('created_at')
                 ->first();
 
             DB::table('asset_inventory_cost_histories')->insert([
                 'inventory_item_id' => $inventoryItemId,
-                'outlet_id' => $outletId,
+                'owner_outlet_id' => $ownerOutletId,
+                'outlet_id' => $locationOutletId,
                 'warehouse_outlet_id' => $adjustment->warehouse_outlet_id,
                 'date' => $adjustment->date,
                 'reference_type' => 'asset_stock_adjustment',
