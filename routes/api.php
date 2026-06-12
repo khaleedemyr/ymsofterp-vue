@@ -886,6 +886,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'index']);
         Route::get('/outlet-internal-use-waste/items', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'items']);
         Route::get('/outlet-internal-use-waste/stock-cut-items', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getStockCutItems']);
+        Route::get('/outlet-internal-use-waste/search-items-with-stock', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'searchItemsWithStock']);
         Route::get('/outlet-internal-use-waste/{id}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'show']);
         Route::post('/outlet-internal-use-waste', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'store']);
         Route::post('/outlet-internal-use-waste/store-and-submit', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'storeAndSubmit']);

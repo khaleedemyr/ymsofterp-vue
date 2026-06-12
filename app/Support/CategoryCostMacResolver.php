@@ -1,0 +1,244 @@
+<?php
+
+namespace App\Support;
+
+use Illuminate\Support\Facades\DB;
+
+/**
+ * MAC khusus modul Category Cost (Biaya Kategori Outlet).
+ * Item WIP: MAC per satuan kecil = biaya BOM 1 resep / yield (small_conversion_qty).
+ * Item non-WIP: tidak diubah (pakai MAC histori seperti biasa).
+ */
+final class CategoryCostMacResolver
+{
+    public static function isWipItem(?object $itemMaster): bool
+    {
+        return $itemMaster !== null
+            && strtoupper(trim((string) ($itemMaster->type ?? ''))) === 'WIP';
+    }
+
+    /**
+     * MAC per unit kecil untuk perhitungan category cost.
+     */
+    public static function resolveMacPerSmallUnit(
+        object $itemMaster,
+        ?float $historyMac,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): float {
+        if (!self::isWipItem($itemMaster)) {
+            return (float) ($historyMac ?? 0);
+        }
+
+        $yield = (float) ($itemMaster->small_conversion_qty ?? 0);
+        $recipeCost = self::computeRecipeBomCost(
+            (int) $itemMaster->id,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate,
+            1.0
+        );
+
+        if ($recipeCost > 0 && $yield > 0) {
+            return $recipeCost / $yield;
+        }
+
+        // Fallback: MAC tersimpan sering level 1 resep, normalisasi ke satuan kecil.
+        if ($historyMac !== null && $historyMac > 0 && $yield > 0) {
+            return $historyMac / $yield;
+        }
+
+        return (float) ($historyMac ?? 0);
+    }
+
+    public static function convertMacToUnit(float $macPerSmall, object $itemMaster, int $unitId): float
+    {
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+        if ($unitId === (int) $itemMaster->medium_unit_id && $smallConv > 0) {
+            return $macPerSmall * $smallConv;
+        }
+        if (
+            $unitId === (int) $itemMaster->large_unit_id
+            && $smallConv > 0
+            && $mediumConv > 0
+        ) {
+            return $macPerSmall * $smallConv * $mediumConv;
+        }
+
+        return $macPerSmall;
+    }
+
+    public static function subtotalFromDetail(
+        object $itemMaster,
+        ?float $historyMac,
+        int $unitId,
+        float $qty,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): float {
+        $macPerSmall = self::resolveMacPerSmallUnit(
+            $itemMaster,
+            $historyMac,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate
+        );
+        $macConverted = self::convertMacToUnit($macPerSmall, $itemMaster, $unitId);
+
+        return $macConverted * $qty;
+    }
+
+    /**
+     * Biaya BOM untuk N resep WIP (default 1 resep) pada tanggal transaksi.
+     */
+    public static function computeRecipeBomCost(
+        int $wipItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate,
+        float $recipeQty = 1.0
+    ): float {
+        $bom = DB::table('item_bom')->where('item_id', $wipItemId)->get();
+        if ($bom->isEmpty()) {
+            return 0.0;
+        }
+
+        $materialIds = $bom->pluck('material_item_id')->unique()->values()->all();
+        $itemMasters = DB::table('items')
+            ->whereIn('id', $materialIds)
+            ->get()
+            ->keyBy('id');
+        $inventoryItems = DB::table('outlet_food_inventory_items')
+            ->whereIn('item_id', $materialIds)
+            ->get()
+            ->keyBy('item_id');
+        $unitNames = DB::table('units')
+            ->whereIn('id', $bom->pluck('unit_id')->merge($itemMasters->pluck('small_unit_id'))->unique()->filter())
+            ->pluck('name', 'id');
+
+        $totalCost = 0.0;
+        foreach ($bom as $bomLine) {
+            $materialMaster = $itemMasters->get($bomLine->material_item_id);
+            $inventoryItem = $inventoryItems->get($bomLine->material_item_id);
+            if (!$materialMaster || !$inventoryItem) {
+                continue;
+            }
+
+            $qtySmallBahan = self::bomLineQtyToSmall(
+                $bomLine,
+                $materialMaster,
+                $unitNames,
+                $recipeQty
+            );
+            $materialMac = self::materialMacAtDate(
+                (int) $inventoryItem->id,
+                $outletId,
+                $warehouseOutletId,
+                $asOfDate
+            );
+            $totalCost += $qtySmallBahan * $materialMac;
+        }
+
+        return $totalCost;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, string>|array<int, string>  $unitNames
+     */
+    private static function bomLineQtyToSmall(
+        object $bomLine,
+        object $materialMaster,
+        $unitNames,
+        float $recipeQty
+    ): float {
+        $qtyInput = (float) $bomLine->qty * $recipeQty;
+        $unitName = $unitNames[$bomLine->unit_id] ?? '';
+        $unitSmall = $unitNames[$materialMaster->small_unit_id] ?? '';
+        $unitMedium = $unitNames[$materialMaster->medium_unit_id] ?? '';
+        $unitLarge = $unitNames[$materialMaster->large_unit_id] ?? '';
+        $smallConv = (float) ($materialMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($materialMaster->medium_conversion_qty ?: 1);
+
+        if ($unitName === $unitSmall) {
+            return $qtyInput;
+        }
+        if ($unitName === $unitMedium) {
+            return $qtyInput * $smallConv;
+        }
+        if ($unitName === $unitLarge) {
+            return $qtyInput * $smallConv * $mediumConv;
+        }
+
+        return $qtyInput;
+    }
+
+    private static function materialMacAtDate(
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): float {
+        $row = DB::table('outlet_food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->where('date', '<=', $asOfDate)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first(['mac', 'new_cost']);
+
+        if (!$row) {
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->first(['last_cost_small']);
+
+            return (float) ($stock->last_cost_small ?? 0);
+        }
+
+        $mac = $row->mac ?? null;
+        if ($mac !== null && (float) $mac > 0) {
+            return (float) $mac;
+        }
+
+        return (float) ($row->new_cost ?? 0);
+    }
+
+    /**
+     * @return array{0: float, 1: float, 2: float} [small, medium, large]
+     */
+    public static function costRatesPerUnit(
+        object $itemMaster,
+        float $macPerSmall,
+        ?object $stockRow = null
+    ): array {
+        if (!self::isWipItem($itemMaster)) {
+            if ($stockRow) {
+                return OutletInventoryCostResolver::scaledCostsMediumLargeFromStockRow($macPerSmall, $stockRow);
+            }
+
+            $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+            $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+            return [
+                $macPerSmall,
+                $smallConv > 0 ? $macPerSmall * $smallConv : $macPerSmall,
+                ($smallConv > 0 && $mediumConv > 0) ? $macPerSmall * $smallConv * $mediumConv : $macPerSmall,
+            ];
+        }
+
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+        return [
+            $macPerSmall,
+            $smallConv > 0 ? $macPerSmall * $smallConv : $macPerSmall,
+            ($smallConv > 0 && $mediumConv > 0) ? $macPerSmall * $smallConv * $mediumConv : $macPerSmall,
+        ];
+    }
+}

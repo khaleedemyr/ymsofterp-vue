@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Support\CategoryCostMacResolver;
 use Maatwebsite\Excel\Facades\Excel;
 
 class OutletInternalUseWasteController extends Controller
@@ -746,21 +747,35 @@ class OutletInternalUseWasteController extends Controller
                     throw new \Exception("Quantity item '{$itemName}' melebihi stok yang tersedia. Stok tersedia: " . number_format($stock->qty_small, 2) . " {$unitSmall}");
                 }
 
-                $subtotalMac += $qty_small * ($stock->last_cost_small ?? 0);
+                $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+                    $itemMaster,
+                    (float) ($stock->last_cost_small ?? 0),
+                    (int) $header->outlet_id,
+                    (int) $header->warehouse_outlet_id,
+                    (string) $header->date
+                );
+                [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
+                    $itemMaster,
+                    $macPerSmall,
+                    $stock
+                );
+                $subtotalMac += $qty_small * $macPerSmall;
                 
                 // Only process stock if status will be PROCESSED (no approval needed)
                 if ($newStatus === 'PROCESSED') {
-                    // Update stok di outlet (kurangi)
+                    // Update stok di outlet (kurangi) — item WIP: potong stok WIP itu sendiri
                     $stockUpdated = DB::table('outlet_food_inventory_stocks')
                         ->where('inventory_item_id', $inventoryItem->id)
                         ->where('id_outlet', $header->outlet_id)
                         ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                        ->update([
-                            'qty_small' => $stock->qty_small - $qty_small,
-                            'qty_medium' => $stock->qty_medium - $qty_medium,
-                            'qty_large' => $stock->qty_large - $qty_large,
-                            'updated_at' => now(),
-                        ]);
+                        ->update($this->buildCategoryCostStockRowUpdate(
+                            $itemMaster,
+                            $stock,
+                            $qty_small,
+                            $qty_medium,
+                            $qty_large,
+                            $costPerSmall
+                        ));
                     
                     if ($stockUpdated === false) {
                         throw new \Exception("Gagal mengupdate stok untuk item '{$itemMaster->name}'");
@@ -777,14 +792,14 @@ class OutletInternalUseWasteController extends Controller
                         'out_qty_small' => $qty_small,
                         'out_qty_medium' => $qty_medium,
                         'out_qty_large' => $qty_large,
-                        'cost_per_small' => $stock->last_cost_small ?? 0,
-                        'cost_per_medium' => $stock->last_cost_medium ?? 0,
-                        'cost_per_large' => $stock->last_cost_large ?? 0,
-                        'value_out' => $qty_small * ($stock->last_cost_small ?? 0),
+                        'cost_per_small' => $costPerSmall,
+                        'cost_per_medium' => $costPerMedium,
+                        'cost_per_large' => $costPerLarge,
+                        'value_out' => $qty_small * $costPerSmall,
                         'saldo_qty_small' => $stock->qty_small - $qty_small,
                         'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
                         'saldo_qty_large' => $stock->qty_large - $qty_large,
-                        'saldo_value' => ($stock->qty_small - $qty_small) * ($stock->last_cost_small ?? 0),
+                        'saldo_value' => ($stock->qty_small - $qty_small) * $costPerSmall,
                         'description' => 'Stock Out - ' . $header->type,
                         'created_at' => now(),
                     ]);
@@ -1139,22 +1154,36 @@ class OutletInternalUseWasteController extends Controller
                         throw new \Exception("Stok item '{$itemName}' tidak cukup. Stok tersedia: " . number_format($stock->qty_small, 2) . ", dibutuhkan: " . number_format($qty_small, 2));
                     }
 
-                    $subtotalMac += $qty_small * ($stock->last_cost_small ?? 0);
+                    $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+                        $itemMaster,
+                        (float) ($stock->last_cost_small ?? 0),
+                        (int) $request->outlet_id,
+                        (int) $request->warehouse_outlet_id,
+                        (string) $request->date
+                    );
+                    [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
+                        $itemMaster,
+                        $macPerSmall,
+                        $stock
+                    );
+                    $subtotalMac += $qty_small * $macPerSmall;
                     
                     // Update stock
                     $saldo_qty_small = $stock->qty_small - $qty_small;
                     $saldo_qty_medium = $stock->qty_medium - $qty_medium;
                     $saldo_qty_large = $stock->qty_large - $qty_large;
-                    $saldo_value = $saldo_qty_small * $stock->last_cost_small;
+                    $saldo_value = $saldo_qty_small * $costPerSmall;
                     
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $stock->id)
-                        ->update([
-                            'qty_small' => $saldo_qty_small,
-                            'qty_medium' => $saldo_qty_medium,
-                            'qty_large' => $saldo_qty_large,
-                            'updated_at' => now()
-                        ]);
+                        ->update($this->buildCategoryCostStockRowUpdate(
+                            $itemMaster,
+                            $stock,
+                            $qty_small,
+                            $qty_medium,
+                            $qty_large,
+                            $costPerSmall
+                        ));
                     
                     // Insert stock card
                     DB::table('outlet_food_inventory_cards')->insert([
@@ -1167,10 +1196,10 @@ class OutletInternalUseWasteController extends Controller
                         'out_qty_small' => $qty_small,
                         'out_qty_medium' => $qty_medium,
                         'out_qty_large' => $qty_large,
-                        'cost_per_small' => $stock->last_cost_small,
-                        'cost_per_medium' => $stock->last_cost_medium,
-                        'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
+                        'cost_per_small' => $costPerSmall,
+                        'cost_per_medium' => $costPerMedium,
+                        'cost_per_large' => $costPerLarge,
+                        'value_out' => $qty_small * $costPerSmall,
                         'saldo_qty_small' => $saldo_qty_small,
                         'saldo_qty_medium' => $saldo_qty_medium,
                         'saldo_qty_large' => $saldo_qty_large,
@@ -1862,6 +1891,96 @@ class OutletInternalUseWasteController extends Controller
         ]);
     }
 
+    /**
+     * Cari item yang punya stok di outlet (termasuk WIP hasil produksi).
+     * Dipakai form Category Cost non-Usage: input WIP memotong stok WIP itu sendiri.
+     */
+    public function searchItemsWithStock(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
+            'q' => 'nullable|string|max:100',
+        ]);
+
+        $q = trim((string) $request->input('q', ''));
+        $outletId = (int) $request->outlet_id;
+        $warehouseOutletId = (int) $request->warehouse_outlet_id;
+
+        $query = DB::table('outlet_food_inventory_stocks as ofs')
+            ->join('outlet_food_inventory_items as ofii', 'ofii.id', '=', 'ofs.inventory_item_id')
+            ->join('items as i', 'i.id', '=', 'ofii.item_id')
+            ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
+            ->where('ofs.id_outlet', $outletId)
+            ->where('ofs.warehouse_outlet_id', $warehouseOutletId)
+            ->where('i.status', 'active')
+            ->where(function ($sub) {
+                $sub->where('ofs.qty_small', '>', 0)
+                    ->orWhere('ofs.qty_medium', '>', 0)
+                    ->orWhere('ofs.qty_large', '>', 0);
+            });
+
+        if ($q !== '') {
+            $like = '%' . addcslashes($q, '%_\\') . '%';
+            $query->where(function ($sub) use ($like) {
+                $sub->where('i.name', 'like', $like)
+                    ->orWhere('i.sku', 'like', $like);
+            });
+        }
+
+        $rows = $query
+            ->select(
+                'i.id',
+                'i.name',
+                'i.sku',
+                'i.type',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name',
+                'ofs.qty_small',
+                'ofs.qty_medium',
+                'ofs.qty_large'
+            )
+            ->orderByRaw("CASE WHEN UPPER(TRIM(i.type)) = 'WIP' THEN 0 ELSE 1 END")
+            ->orderBy('i.name')
+            ->limit(40)
+            ->get();
+
+        $items = $rows->map(function ($row) {
+            return [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'sku' => $row->sku,
+                'type' => $row->type,
+                'is_wip' => strtoupper(trim((string) ($row->type ?? ''))) === 'WIP',
+                'small_unit_id' => $row->small_unit_id,
+                'medium_unit_id' => $row->medium_unit_id,
+                'large_unit_id' => $row->large_unit_id,
+                'small_unit_name' => $row->small_unit_name,
+                'medium_unit_name' => $row->medium_unit_name,
+                'large_unit_name' => $row->large_unit_name,
+                'stock' => [
+                    'qty_small' => (float) ($row->qty_small ?? 0),
+                    'qty_medium' => (float) ($row->qty_medium ?? 0),
+                    'qty_large' => (float) ($row->qty_large ?? 0),
+                    'unit_small' => $row->small_unit_name,
+                    'unit_medium' => $row->medium_unit_name,
+                    'unit_large' => $row->large_unit_name,
+                ],
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+        ]);
+    }
+
     public function items(Request $request)
     {
         $search = trim((string) $request->input('search', ''));
@@ -2085,7 +2204,7 @@ class OutletInternalUseWasteController extends Controller
                 ->join('outlet_internal_use_waste_headers as h', 'd.header_id', '=', 'h.id')
                 ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
                 ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
-                ->select('d.*', 'h.type as header_type', 'h.date as header_date', 'h.outlet_id as header_outlet_id', 'h.warehouse_outlet_id as header_warehouse_outlet_id', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
+                ->select('d.*', 'h.type as header_type', 'h.date as header_date', 'h.outlet_id as header_outlet_id', 'h.warehouse_outlet_id as header_warehouse_outlet_id', 'i.type as item_type', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
                 ->whereIn('d.header_id', $headerIds)
                 ->get();
             
@@ -2143,29 +2262,27 @@ class OutletInternalUseWasteController extends Controller
             // Calculate totals
             foreach ($details as $item) {
                 $mac = null;
-                if (isset($inventoryItems[$item->item_id])) {
+                $header = $data->firstWhere('id', $item->header_id);
+                if ($header && isset($inventoryItems[$item->item_id])) {
                     $inventoryItem = $inventoryItems[$item->item_id];
-                    $header = $data->firstWhere('id', $item->header_id);
-                    if ($header) {
-                        $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
-                        if (isset($macHistories[$macKey])) {
-                            $mac = $macHistories[$macKey];
-                        }
+                    $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                    if (isset($macHistories[$macKey])) {
+                        $mac = $macHistories[$macKey];
                     }
                 }
-                
-                $mac_converted = null;
-                if ($mac !== null) {
-                    $mac_converted = $mac;
-                    if ($item->unit_id == $item->medium_unit_id && $item->small_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty;
-                    } elseif ($item->unit_id == $item->large_unit_id && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty * $item->medium_conversion_qty;
-                    }
-                }
-                $subtotal_mac = ($mac_converted !== null) ? ($mac_converted * $item->qty) : 0;
+
+                $lineMac = $this->categoryCostMacForDetailLine(
+                    $item,
+                    $mac,
+                    (int) ($item->header_outlet_id ?? 0),
+                    (int) ($item->header_warehouse_outlet_id ?? 0),
+                    (string) ($item->header_date ?? '')
+                );
+                $subtotal_mac = $lineMac['subtotal_mac'];
                 $type = $item->header_type;
-                if (!isset($totalPerType[$type])) $totalPerType[$type] = 0;
+                if (!isset($totalPerType[$type])) {
+                    $totalPerType[$type] = 0;
+                }
                 $totalPerType[$type] += $subtotal_mac;
             }
             
@@ -2173,27 +2290,23 @@ class OutletInternalUseWasteController extends Controller
             $subtotalPerHeader = [];
             foreach ($details as $item) {
                 $mac = null;
-                if (isset($inventoryItems[$item->item_id])) {
+                $header = $data->firstWhere('id', $item->header_id);
+                if ($header && isset($inventoryItems[$item->item_id])) {
                     $inventoryItem = $inventoryItems[$item->item_id];
-                    $header = $data->firstWhere('id', $item->header_id);
-                    if ($header) {
-                        $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
-                        if (isset($macHistories[$macKey])) {
-                            $mac = $macHistories[$macKey];
-                        }
+                    $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                    if (isset($macHistories[$macKey])) {
+                        $mac = $macHistories[$macKey];
                     }
                 }
-                
-                $mac_converted = null;
-                if ($mac !== null) {
-                    $mac_converted = $mac;
-                    if ($item->unit_id == $item->medium_unit_id && $item->small_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty;
-                    } elseif ($item->unit_id == $item->large_unit_id && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty * $item->medium_conversion_qty;
-                    }
-                }
-                $subtotal_mac = ($mac_converted !== null) ? ($mac_converted * $item->qty) : 0;
+
+                $lineMac = $this->categoryCostMacForDetailLine(
+                    $item,
+                    $mac,
+                    (int) ($item->header_outlet_id ?? 0),
+                    (int) ($item->header_warehouse_outlet_id ?? 0),
+                    (string) ($item->header_date ?? '')
+                );
+                $subtotal_mac = $lineMac['subtotal_mac'];
                 
                 if (!isset($subtotalPerHeader[$item->header_id])) {
                     $subtotalPerHeader[$item->header_id] = 0;
@@ -2317,7 +2430,7 @@ class OutletInternalUseWasteController extends Controller
         $details = DB::table('outlet_internal_use_waste_details as d')
             ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
-            ->select('d.*', 'i.name as item_name', 'u.name as unit_name', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
+            ->select('d.*', 'i.name as item_name', 'i.type as item_type', 'u.name as unit_name', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
             ->where('d.header_id', $id)
             ->get();
         \Log::debug('DETAILS: Found ' . count($details) . ' detail(s) for header_id ' . $id);
@@ -2346,19 +2459,15 @@ class OutletInternalUseWasteController extends Controller
                     }
                 }
                 \Log::debug('DETAILS: MAC for item_id ' . $item->item_id . ': ' . ($mac !== null ? $mac : 'NOT FOUND'));
-                // Konversi MAC ke unit yang dipakai user
-                $mac_converted = null;
-                if ($mac !== null) {
-                    // Default: MAC sudah dalam unit kecil
-                    $mac_converted = $mac;
-                    // Cek unit yang dipakai user
-                    if ($item->unit_id == $item->medium_unit_id && $item->small_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty;
-                    } elseif ($item->unit_id == $item->large_unit_id && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty * $item->medium_conversion_qty;
-                    }
-                }
-                $subtotal_mac = ($mac_converted !== null) ? ($mac_converted * $item->qty) : null;
+                $lineMac = $this->categoryCostMacForDetailLine(
+                    $item,
+                    $mac,
+                    (int) $header->outlet_id,
+                    (int) $header->warehouse_outlet_id,
+                    (string) $header->date
+                );
+                $mac_converted = $lineMac['mac_converted'];
+                $subtotal_mac = $mac !== null ? $lineMac['subtotal_mac'] : null;
                 \Log::debug('DETAILS: mac_converted=' . $mac_converted . ', subtotal_mac=' . $subtotal_mac);
                 $result[] = [
                     ...collect($item)->toArray(),
@@ -2853,17 +2962,32 @@ class OutletInternalUseWasteController extends Controller
                 continue;
             }
             
+            $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+                $itemMaster,
+                (float) ($stock->last_cost_small ?? 0),
+                (int) $header->outlet_id,
+                (int) $header->warehouse_outlet_id,
+                (string) $header->date
+            );
+            [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
+                $itemMaster,
+                $macPerSmall,
+                $stock
+            );
+
             // Update stok di outlet (kurangi) - Stock check already done in first pass
             $updated = DB::table('outlet_food_inventory_stocks')
                 ->where('inventory_item_id', $inventoryItem->id)
                 ->where('id_outlet', $header->outlet_id)
                 ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                ->update([
-                    'qty_small' => $stock->qty_small - $qty_small,
-                    'qty_medium' => $stock->qty_medium - $qty_medium,
-                    'qty_large' => $stock->qty_large - $qty_large,
-                    'updated_at' => now(),
-                ]);
+                ->update($this->buildCategoryCostStockRowUpdate(
+                    $itemMaster,
+                    $stock,
+                    $qty_small,
+                    $qty_medium,
+                    $qty_large,
+                    $costPerSmall
+                ));
             
             if ($updated === 0) {
                 $itemName = $itemMaster->name ?? $item->item_id;
@@ -2882,7 +3006,7 @@ class OutletInternalUseWasteController extends Controller
                 'old_qty_small' => $stock->qty_small,
                 'new_qty_small' => $stock->qty_small - $qty_small
             ]);
-            
+
             // Insert kartu stok OUT
             DB::table('outlet_food_inventory_cards')->insert([
                 'inventory_item_id' => $inventoryItem->id,
@@ -2894,14 +3018,14 @@ class OutletInternalUseWasteController extends Controller
                 'out_qty_small' => $qty_small,
                 'out_qty_medium' => $qty_medium,
                 'out_qty_large' => $qty_large,
-                'cost_per_small' => $stock->last_cost_small,
-                'cost_per_medium' => $stock->last_cost_medium,
-                'cost_per_large' => $stock->last_cost_large,
-                'value_out' => $qty_small * $stock->last_cost_small,
+                'cost_per_small' => $costPerSmall,
+                'cost_per_medium' => $costPerMedium,
+                'cost_per_large' => $costPerLarge,
+                'value_out' => $qty_small * $costPerSmall,
                 'saldo_qty_small' => $stock->qty_small - $qty_small,
                 'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
                 'saldo_qty_large' => $stock->qty_large - $qty_large,
-                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                'saldo_value' => ($stock->qty_small - $qty_small) * $costPerSmall,
                 'description' => 'Stock Out - ' . $header->type . ' (After Approval)',
                 'created_at' => now(),
             ]);
@@ -3128,5 +3252,80 @@ class OutletInternalUseWasteController extends Controller
         }
 
         return $row;
+    }
+
+    /**
+     * Update baris stok setelah pemotongan Category Cost.
+     * Item WIP: qty & value disinkronkan (potong stok WIP itu sendiri, bukan bahan baku).
+     */
+    private function buildCategoryCostStockRowUpdate(
+        object $itemMaster,
+        object $stock,
+        float $qty_small,
+        float $qty_medium,
+        float $qty_large,
+        float $costPerSmall
+    ): array {
+        $newQtySmall = (float) $stock->qty_small - $qty_small;
+        $newQtyMedium = (float) $stock->qty_medium - $qty_medium;
+        $newQtyLarge = (float) $stock->qty_large - $qty_large;
+
+        $update = [
+            'qty_small' => $newQtySmall,
+            'qty_medium' => $newQtyMedium,
+            'qty_large' => $newQtyLarge,
+            'updated_at' => now(),
+        ];
+
+        if (CategoryCostMacResolver::isWipItem($itemMaster)) {
+            $update['value'] = max(0, $newQtySmall * $costPerSmall);
+        }
+
+        return $update;
+    }
+
+    /**
+     * Hitung MAC & subtotal satu baris detail category cost (termasuk penyesuaian item WIP).
+     *
+     * @return array{mac_converted: ?float, subtotal_mac: float}
+     */
+    private function categoryCostMacForDetailLine(
+        object $detailRow,
+        ?float $historyMac,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): array {
+        if ($historyMac === null) {
+            return ['mac_converted' => null, 'subtotal_mac' => 0.0];
+        }
+
+        $itemMaster = (object) [
+            'id' => $detailRow->item_id,
+            'type' => $detailRow->item_type ?? null,
+            'small_unit_id' => $detailRow->small_unit_id,
+            'medium_unit_id' => $detailRow->medium_unit_id,
+            'large_unit_id' => $detailRow->large_unit_id,
+            'small_conversion_qty' => $detailRow->small_conversion_qty,
+            'medium_conversion_qty' => $detailRow->medium_conversion_qty,
+        ];
+
+        $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+            $itemMaster,
+            $historyMac,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate
+        );
+        $macConverted = CategoryCostMacResolver::convertMacToUnit(
+            $macPerSmall,
+            $itemMaster,
+            (int) $detailRow->unit_id
+        );
+
+        return [
+            'mac_converted' => $macConverted,
+            'subtotal_mac' => $macConverted * (float) ($detailRow->qty ?? 0),
+        ];
     }
 } 

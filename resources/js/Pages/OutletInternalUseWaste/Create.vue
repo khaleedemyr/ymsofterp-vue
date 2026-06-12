@@ -56,6 +56,10 @@
               </button>
             </div>
 
+            <div v-if="!isUsageAutoBomType" class="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2">
+              Ketik minimal 2 huruf untuk mencari item yang punya stok di outlet. Item <span class="font-semibold text-purple-700">WIP</span> bisa dipilih jika sudah ada stok hasil produksi WIP — stok dipotong dari WIP itu sendiri (bukan bahan baku).
+            </div>
+
             <div v-if="isUsageAutoBomType && !loadingStockCutItems" class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
               <i class="fa-solid fa-circle-info mr-2"></i>
               Tipe <strong>Usage</strong>: isi <strong>stock fisik</strong> hanya untuk barang yang dihitung. Barang yang dikosongkan tidak disimpan dan stok tidak dipotong. Sistem menampilkan <strong>stock on hand</strong> dan menghitung <strong>qty usage</strong> = selisih keduanya (yang dipotong saat simpan).
@@ -203,14 +207,17 @@
                   <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
                   <multiselect
                     v-model="item.selectedItem"
-                    :options="items"
+                    :options="item.itemOptions || []"
                     :searchable="true"
+                    :internal-search="false"
+                    :loading="item.loadingItemSearch"
                     :close-on-select="true"
                     :show-labels="false"
-                    placeholder="Cari dan pilih item..."
+                    placeholder="Ketik nama item (min. 2 huruf)..."
                     label="name"
                     track-by="id"
-                    :disabled="!form.warehouse_outlet_id || isUsageAutoBomType"
+                    :disabled="!form.warehouse_outlet_id || !form.outlet_id || isUsageAutoBomType"
+                    @search-change="(q) => searchCategoryCostItems(q, idx)"
                     @select="(selectedItem) => onItemSelect(selectedItem, idx)"
                     @remove="() => onItemRemove(idx)"
                     class="multiselect-custom"
@@ -218,11 +225,18 @@
                     <template #option="{ option }">
                       <div class="flex items-center justify-between">
                         <div>
-                          <div class="font-medium text-gray-900">{{ option.name }}</div>
+                          <div class="font-medium text-gray-900">
+                            {{ option.name }}
+                            <span
+                              v-if="option.is_wip || option.type === 'WIP'"
+                              class="ml-1 text-xs font-semibold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded"
+                            >WIP</span>
+                          </div>
                           <div class="text-sm text-gray-500">
-                            <span v-if="option.small_unit_name">Small: {{ option.small_unit_name }}</span>
-                            <span v-if="option.medium_unit_name"> | Medium: {{ option.medium_unit_name }}</span>
-                            <span v-if="option.large_unit_name"> | Large: {{ option.large_unit_name }}</span>
+                            <span v-if="option.stock?.qty_small != null">
+                              Stok: {{ formatNumber(option.stock.qty_small) }} {{ option.stock.unit_small || option.small_unit_name || '' }}
+                            </span>
+                            <span v-else-if="option.small_unit_name">Small: {{ option.small_unit_name }}</span>
                           </div>
                         </div>
                       </div>
@@ -242,6 +256,9 @@
                   </multiselect>
                   <div v-if="!form.warehouse_outlet_id" class="text-xs text-yellow-600 mt-1">
                     Pilih warehouse outlet terlebih dahulu untuk melihat stok.
+                  </div>
+                  <div v-if="item.selectedItem?.is_wip || item.selectedItem?.type === 'WIP'" class="text-xs text-purple-700 mt-1">
+                    Pemotongan stok: langsung dari stok WIP hasil produksi (bukan bahan baku).
                   </div>
                   <div v-if="item.stock" class="text-xs mt-1" :class="Number(item.stock.qty_small || 0) <= 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
                     Stok: {{ formatStockDisplay(item) }}
@@ -459,6 +476,8 @@ function newItem() {
     item_id: '',
     item_name: '',
     selectedItem: null,
+    itemOptions: [],
+    loadingItemSearch: false,
     qty: '',
     physical_qty: '',
     stock_on_hand: null,
@@ -483,11 +502,21 @@ const form = ref({
   items: props.details && props.details.length > 0 
     ? props.details.map(detail => {
         const selectedItem = props.items.find(item => item.id == detail.item_id) || null
+        const editSelected = selectedItem
+          ? {
+              ...selectedItem,
+              is_wip: String(selectedItem.type || '').toUpperCase() === 'WIP',
+            }
+          : detail.item_id
+            ? { id: detail.item_id, name: detail.item_name || '', is_wip: false }
+            : null
         return {
           id: Date.now() + Math.random(), // Unique ID for each item
           item_id: detail.item_id,
           item_name: detail.item_name || '',
-          selectedItem: selectedItem,
+          selectedItem: editSelected,
+          itemOptions: editSelected ? [editSelected] : [],
+          loadingItemSearch: false,
           qty: detail.qty,
           physical_qty: detail.physical_qty ?? '',
           stock_on_hand: detail.stock_on_hand ?? null,
@@ -804,16 +833,59 @@ async function fetchItemSuggestions(idx, q) {
   }
 }
 
+async function searchCategoryCostItems(query, idx) {
+  const row = form.value.items[idx]
+  if (!row || isUsageAutoBomType.value) return
+  if (!form.value.outlet_id || !form.value.warehouse_outlet_id) {
+    row.itemOptions = row.selectedItem ? [row.selectedItem] : []
+    return
+  }
+
+  const q = (query || '').trim()
+  if (q.length < 2) {
+    row.itemOptions = row.selectedItem ? [row.selectedItem] : []
+    return
+  }
+
+  row.loadingItemSearch = true
+  try {
+    const res = await axios.get(route('outlet-internal-use-waste.search-items-with-stock'), {
+      params: {
+        outlet_id: form.value.outlet_id,
+        warehouse_outlet_id: form.value.warehouse_outlet_id,
+        q,
+      },
+    })
+    const found = Array.isArray(res.data?.items) ? res.data.items : []
+    if (row.selectedItem && !found.some((it) => it.id === row.selectedItem.id)) {
+      row.itemOptions = [row.selectedItem, ...found]
+    } else {
+      row.itemOptions = found
+    }
+  } catch (error) {
+    console.error('Error searching category cost items:', error)
+    row.itemOptions = row.selectedItem ? [row.selectedItem] : []
+  } finally {
+    row.loadingItemSearch = false
+  }
+}
+
 function onItemSelect(item, idx) {
   if (!item || !item.id) return
   
   form.value.items[idx].item_id = item.id
   form.value.items[idx].item_name = item.name
   form.value.items[idx].selectedItem = item
+  if (!form.value.items[idx].itemOptions?.length) {
+    form.value.items[idx].itemOptions = [item]
+  }
+  if (item.stock) {
+    form.value.items[idx].stock = item.stock
+  }
   // Set small unit directly
   setSmallUnit(idx, item.id)
   // Fetch stock untuk item yang dipilih
-  if (form.value.warehouse_outlet_id && form.value.outlet_id) {
+  if (form.value.warehouse_outlet_id && form.value.outlet_id && !item.stock) {
     fetchStock(idx)
   }
 }
@@ -822,6 +894,7 @@ function onItemRemove(idx) {
   form.value.items[idx].item_id = ''
   form.value.items[idx].item_name = ''
   form.value.items[idx].selectedItem = null
+  form.value.items[idx].itemOptions = []
   form.value.items[idx].unit_id = ''
   form.value.items[idx].unit_name = ''
   form.value.items[idx].stock = null

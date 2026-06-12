@@ -2,6 +2,7 @@
 
 namespace App\Exports;
 
+use App\Support\CategoryCostMacResolver;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -91,7 +92,7 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                 ->join('outlet_internal_use_waste_headers as h', 'd.header_id', '=', 'h.id')
                 ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
                 ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
-                ->select('d.*', 'h.type as header_type', 'h.date as header_date', 'h.outlet_id as header_outlet_id', 'h.warehouse_outlet_id as header_warehouse_outlet_id', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
+                ->select('d.*', 'h.type as header_type', 'h.date as header_date', 'h.outlet_id as header_outlet_id', 'h.warehouse_outlet_id as header_warehouse_outlet_id', 'i.type as item_type', 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id', 'i.small_conversion_qty', 'i.medium_conversion_qty')
                 ->whereIn('d.header_id', $headerIds)
                 ->get();
             
@@ -155,16 +156,14 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                     }
                 }
                 
-                $mac_converted = null;
-                if ($mac !== null) {
-                    $mac_converted = $mac;
-                    if ($item->unit_id == $item->medium_unit_id && $item->small_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty;
-                    } elseif ($item->unit_id == $item->large_unit_id && $item->small_conversion_qty > 0 && $item->medium_conversion_qty > 0) {
-                        $mac_converted = $mac * $item->small_conversion_qty * $item->medium_conversion_qty;
-                    }
-                }
-                $subtotal_mac = ($mac_converted !== null) ? ($mac_converted * $item->qty) : 0;
+                $lineMac = self::categoryCostLineMac(
+                    $item,
+                    $mac,
+                    (int) ($item->header_outlet_id ?? 0),
+                    (int) ($item->header_warehouse_outlet_id ?? 0),
+                    (string) ($item->header_date ?? '')
+                );
+                $subtotal_mac = $lineMac['subtotal_mac'];
                 
                 if (!isset($subtotalPerHeader[$item->header_id])) {
                     $subtotalPerHeader[$item->header_id] = 0;
@@ -194,6 +193,7 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                 ->select(
                     'd.*',
                     'i.name as item_name',
+                    'i.type as item_type',
                     'i.small_unit_id',
                     'i.medium_unit_id',
                     'i.large_unit_id',
@@ -248,17 +248,16 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                     $no++;
                     
                     $mac = $macHistories[$detail->item_id] ?? null;
-                    $mac_converted = null;
-                    if ($mac !== null) {
-                        $mac_converted = $mac;
-                        if ($detail->unit_id == $detail->medium_unit_id && $detail->small_conversion_qty > 0) {
-                            $mac_converted = $mac * $detail->small_conversion_qty;
-                        } elseif ($detail->unit_id == $detail->large_unit_id && $detail->small_conversion_qty > 0 && $detail->medium_conversion_qty > 0) {
-                            $mac_converted = $mac * $detail->small_conversion_qty * $detail->medium_conversion_qty;
-                        }
-                    }
-                    $qtyTimesMac = ($mac_converted !== null) ? ($mac_converted * $detail->qty) : 0;
-                    $subtotalMac = ($mac_converted !== null) ? ($mac_converted * $detail->qty) : 0;
+                    $lineMac = self::categoryCostLineMac(
+                        $detail,
+                        $mac,
+                        (int) $header->outlet_id,
+                        (int) $header->warehouse_outlet_id,
+                        (string) $header->date
+                    );
+                    $mac_converted = $lineMac['mac_converted'] ?? 0;
+                    $qtyTimesMac = $lineMac['subtotal_mac'];
+                    $subtotalMac = $lineMac['subtotal_mac'];
                     
                     $exportData[] = (object) [
                         'no' => $no,
@@ -376,6 +375,49 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
             'L' => 18,
             'M' => 20,
             'N' => 30,
+        ];
+    }
+
+    /**
+     * @return array{mac_converted: ?float, subtotal_mac: float}
+     */
+    private static function categoryCostLineMac(
+        object $detailRow,
+        ?float $historyMac,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): array {
+        if ($historyMac === null) {
+            return ['mac_converted' => null, 'subtotal_mac' => 0.0];
+        }
+
+        $itemMaster = (object) [
+            'id' => $detailRow->item_id,
+            'type' => $detailRow->item_type ?? null,
+            'small_unit_id' => $detailRow->small_unit_id,
+            'medium_unit_id' => $detailRow->medium_unit_id,
+            'large_unit_id' => $detailRow->large_unit_id,
+            'small_conversion_qty' => $detailRow->small_conversion_qty,
+            'medium_conversion_qty' => $detailRow->medium_conversion_qty,
+        ];
+
+        $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+            $itemMaster,
+            $historyMac,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate
+        );
+        $macConverted = CategoryCostMacResolver::convertMacToUnit(
+            $macPerSmall,
+            $itemMaster,
+            (int) $detailRow->unit_id
+        );
+
+        return [
+            'mac_converted' => $macConverted,
+            'subtotal_mac' => $macConverted * (float) ($detailRow->qty ?? 0),
         ];
     }
 

@@ -886,6 +886,7 @@ class CostReportDataService
                 'd.item_id',
                 'd.unit_id',
                 'd.qty',
+                'i.type as item_type',
                 'i.small_unit_id',
                 'i.medium_unit_id',
                 'i.large_unit_id',
@@ -996,16 +997,27 @@ class CostReportDataService
                 continue;
             }
 
-            $macConverted = $mac;
-            if ((int) $detail->unit_id === (int) $detail->medium_unit_id && (float) $detail->small_conversion_qty > 0) {
-                $macConverted = $mac * (float) $detail->small_conversion_qty;
-            } elseif (
-                (int) $detail->unit_id === (int) $detail->large_unit_id
-                && (float) $detail->small_conversion_qty > 0
-                && (float) $detail->medium_conversion_qty > 0
-            ) {
-                $macConverted = $mac * (float) $detail->small_conversion_qty * (float) $detail->medium_conversion_qty;
-            }
+            $itemMaster = (object) [
+                'id' => $detail->item_id,
+                'type' => $detail->item_type ?? null,
+                'small_unit_id' => $detail->small_unit_id,
+                'medium_unit_id' => $detail->medium_unit_id,
+                'large_unit_id' => $detail->large_unit_id,
+                'small_conversion_qty' => $detail->small_conversion_qty,
+                'medium_conversion_qty' => $detail->medium_conversion_qty,
+            ];
+            $macPerSmall = \App\Support\CategoryCostMacResolver::resolveMacPerSmallUnit(
+                $itemMaster,
+                $mac,
+                (int) $header->outlet_id,
+                (int) $header->warehouse_outlet_id,
+                (string) $header->date
+            );
+            $macConverted = \App\Support\CategoryCostMacResolver::convertMacToUnit(
+                $macPerSmall,
+                $itemMaster,
+                (int) $detail->unit_id
+            );
 
             $subtotalMac = $macConverted * (float) ($detail->qty ?? 0);
             $headerType = $header->type ?? null;
