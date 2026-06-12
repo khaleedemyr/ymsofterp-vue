@@ -1286,4 +1286,99 @@ class CostReportDataService
             )
         );
     }
+
+    /**
+     * Ringkasan COGS satu outlet per bulan — selaras tab COGS di Cost Report.
+     *
+     * @return array{
+     *     cogs: float,
+     *     cogs_aktual: float,
+     *     cogs_pembanding: float,
+     *     category_cost: float,
+     *     meal_employees: float,
+     *     deviasi: float,
+     *     sales_before_discount: float,
+     *     sales_after_discount: float,
+     *     pct_cogs_pembanding: float|null,
+     *     pct_cogs_actual_before_disc: float|null,
+     *     pct_cogs_actual_after_disc: float|null,
+     *     pct_cogs_foods: float|null,
+     *     pct_deviasi: float|null
+     * }
+     */
+    public function outletCogsSummary(int $outletId, string $bulan): array
+    {
+        if ($outletId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $bulan)) {
+            return $this->emptyOutletCogsSummary();
+        }
+
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet as name')
+            ->first();
+
+        if (! $outlet) {
+            return $this->emptyOutletCogsSummary();
+        }
+
+        $bulanCarbon = Carbon::parse($bulan.'-01');
+        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
+        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
+        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
+        $tanggalAwalBulan = $bulanCarbon->format('Y-m-01');
+        $tanggalAkhirBulan = $bulanCarbon->format('Y-m-t');
+
+        $outlets = collect([$outlet]);
+        $reportRows = $this->buildCostInventoryRows(
+            $outlets,
+            $bulanSebelumnya,
+            $tanggalAkhirBulanSebelumnya,
+            $tanggal1BulanIni,
+            $tanggalAwalBulan,
+            $tanggalAkhirBulan
+        );
+        $cogsRows = $this->buildCogsRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
+
+        $report = $reportRows[0] ?? [];
+        $cogsRow = $cogsRows[0] ?? [];
+
+        return [
+            'cogs' => (float) ($cogsRow['cogs'] ?? 0),
+            'cogs_aktual' => (float) ($report['cogs_aktual'] ?? 0),
+            'cogs_pembanding' => (float) ($cogsRow['cogs_pembanding'] ?? 0),
+            'category_cost' => (float) ($cogsRow['category_cost'] ?? 0),
+            'meal_employees' => (float) ($cogsRow['meal_employees'] ?? 0),
+            'deviasi' => (float) ($cogsRow['deviasi'] ?? 0),
+            'sales_before_discount' => (float) ($report['sales_before_discount'] ?? 0),
+            'sales_after_discount' => (float) ($report['sales_after_discount'] ?? 0),
+            'pct_cogs_pembanding' => $cogsRow['pct_cogs_pembanding'] ?? null,
+            'pct_cogs_actual_before_disc' => $cogsRow['pct_cogs_actual_before_disc'] ?? null,
+            'pct_cogs_actual_after_disc' => $cogsRow['pct_cogs_actual_after_disc'] ?? null,
+            'pct_cogs_foods' => $cogsRow['pct_cogs_foods'] ?? null,
+            'pct_deviasi' => $cogsRow['pct_deviasi'] ?? null,
+        ];
+    }
+
+    /**
+     * @return array<string, float|null>
+     */
+    private function emptyOutletCogsSummary(): array
+    {
+        return [
+            'cogs' => 0.0,
+            'cogs_aktual' => 0.0,
+            'cogs_pembanding' => 0.0,
+            'category_cost' => 0.0,
+            'meal_employees' => 0.0,
+            'deviasi' => 0.0,
+            'sales_before_discount' => 0.0,
+            'sales_after_discount' => 0.0,
+            'pct_cogs_pembanding' => null,
+            'pct_cogs_actual_before_disc' => null,
+            'pct_cogs_actual_after_disc' => null,
+            'pct_cogs_foods' => null,
+            'pct_deviasi' => null,
+        ];
+    }
 }

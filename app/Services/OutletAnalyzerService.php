@@ -29,6 +29,7 @@ class OutletAnalyzerService
         private RegionalVisitAnalyticsService $regionalVisits,
         private AttendanceReportController $attendanceReport,
         private ModalEngineeringService $modalEngineering,
+        private CostReportDataService $costReport,
     ) {}
 
     /**
@@ -133,6 +134,7 @@ class OutletAnalyzerService
                 $end,
                 (string) ($outlet->qr_code ?? ''),
             ),
+            'cogs' => $this->costReport->outletCogsSummary((int) $outlet->id_outlet, $month),
             'employee_attendance' => $this->getEmployeeAttendance(
                 (int) $outlet->id_outlet,
                 $payrollPeriod['start_date'],

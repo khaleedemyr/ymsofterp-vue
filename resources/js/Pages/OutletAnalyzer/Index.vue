@@ -918,28 +918,55 @@ function visitorArea(userId) {
           </button>
         </section>
 
-        <!-- Modal x Engineering -->
-        <section class="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-5">
-          <div class="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 class="text-base font-semibold text-indigo-900">Modal x Engineering</h2>
-              <p class="text-xs text-indigo-700/80 mt-0.5">
-                Total periode — (Stock cut + Category cost usage) ÷ Engineering
-                <span class="text-indigo-500">· Sumber sama dengan laporan Modal x Engineering</span>
-              </p>
+        <!-- Modal x Engineering & COGS -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-5">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 class="text-base font-semibold text-indigo-900">Modal x Engineering</h2>
+                <p class="text-xs text-indigo-700/80 mt-0.5">
+                  Total periode — (Stock cut + Category cost usage) ÷ Engineering
+                  <span class="text-indigo-500">· Laporan Modal x Engineering</span>
+                </p>
+              </div>
+              <div class="text-right">
+                <p class="text-3xl font-bold tabular-nums text-indigo-900">
+                  {{ pct(analysis.modal_x_engineering?.modal_x_engineering_pct) }}
+                </p>
+                <p
+                  v-if="analysis.modal_x_engineering?.engineering > 0"
+                  class="text-xs text-indigo-600 mt-1"
+                >
+                  Modal {{ formatRupiah(analysis.modal_x_engineering?.total_modal) }}
+                  · Engineering {{ formatRupiah(analysis.modal_x_engineering?.engineering) }}
+                </p>
+                <p v-else class="text-xs text-slate-500 mt-1">Tidak ada data engineering pada periode ini</p>
+              </div>
             </div>
-            <div class="text-right">
-              <p class="text-3xl font-bold tabular-nums text-indigo-900">
-                {{ pct(analysis.modal_x_engineering?.modal_x_engineering_pct) }}
-              </p>
-              <p
-                v-if="analysis.modal_x_engineering?.engineering > 0"
-                class="text-xs text-indigo-600 mt-1"
-              >
-                Modal {{ formatRupiah(analysis.modal_x_engineering?.total_modal) }}
-                · Engineering {{ formatRupiah(analysis.modal_x_engineering?.engineering) }}
-              </p>
-              <p v-else class="text-xs text-slate-500 mt-1">Tidak ada data engineering pada periode ini</p>
+          </div>
+
+          <div class="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-5">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 class="text-base font-semibold text-amber-900">COGS</h2>
+                <p class="text-xs text-amber-800/80 mt-0.5">
+                  Total periode — % COGS aktual terhadap penjualan sebelum diskon
+                  <span class="text-amber-600">· Cost Report tab COGS</span>
+                </p>
+              </div>
+              <div class="text-right">
+                <p class="text-3xl font-bold tabular-nums text-amber-900">
+                  {{ pct(analysis.cogs?.pct_cogs_actual_before_disc) }}
+                </p>
+                <p
+                  v-if="analysis.cogs?.sales_before_discount > 0"
+                  class="text-xs text-amber-700 mt-1"
+                >
+                  COGS Aktual {{ formatRupiah(analysis.cogs?.cogs_aktual) }}
+                  · Pembanding {{ formatRupiah(analysis.cogs?.cogs_pembanding) }}
+                </p>
+                <p v-else class="text-xs text-slate-500 mt-1">Tidak ada data penjualan pada periode ini</p>
+              </div>
             </div>
           </div>
         </section>
