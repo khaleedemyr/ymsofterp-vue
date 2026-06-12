@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use App\Models\WarehouseOutlet;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
+use App\Support\FloorOrderItemPriceResolver;
 
 class FoodFloorOrderController extends Controller
 {
@@ -41,9 +42,61 @@ class FoodFloorOrderController extends Controller
         ]);
     }
 
+    /**
+     * Item kategori asset tidak boleh masuk RO (kecuali RO Supplier — alur item terpisah).
+     */
+    private function shouldBlockAssetItemsForFloorOrder(?string $foMode): bool
+    {
+        return $foMode !== 'RO Supplier';
+    }
+
+    private function assertNoAssetItemsForFloorOrder(array $items, ?string $foMode = null): void
+    {
+        if (! $this->shouldBlockAssetItemsForFloorOrder($foMode)) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if (empty($item['item_id'])) {
+                continue;
+            }
+            if (FloorOrderItemPriceResolver::isAssetItem((int) $item['item_id'])) {
+                $name = $item['item_name'] ?? 'Item asset';
+                $modeLabel = $foMode ?: 'Request Order';
+                throw new \Exception("Item \"{$name}\" adalah kategori asset dan tidak boleh dipakai di {$modeLabel}. Pilih item groceries/perishable yang sesuai.");
+            }
+        }
+    }
+
+    private function applyServerFloorOrderPrices(array $items, $outletId): array
+    {
+        $regionId = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('region_id');
+        $regionId = $regionId ? (int) $regionId : null;
+        $outletKey = $outletId ? (string) $outletId : null;
+
+        foreach ($items as &$item) {
+            if (empty($item['item_id'])) {
+                continue;
+            }
+            $price = FloorOrderItemPriceResolver::resolveMediumUnitPrice(
+                (int) $item['item_id'],
+                $regionId,
+                $outletKey,
+            );
+            $qty = (float) ($item['qty'] ?? 0);
+            $item['price'] = $price;
+            $item['subtotal'] = round($qty * $price, 2);
+        }
+        unset($item);
+
+        return $items;
+    }
+
     // Method untuk memproses item tanpa validasi supplier
     private function validateAndGroupItemsBySupplier($items, $outletId, $foMode = null)
     {
+        $this->assertNoAssetItemsForFloorOrder($items, $foMode);
+        $items = $this->applyServerFloorOrderPrices($items, $outletId);
         $processedItems = [];
 
         foreach ($items as $item) {

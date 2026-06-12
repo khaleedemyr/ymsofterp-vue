@@ -27,6 +27,7 @@ use App\Exports\BomImportTemplateExport;
 use App\Imports\BomImport;
 use Illuminate\Validation\Rule;
 use App\Support\FoodGrLastPurchaseForItem;
+use App\Support\FloorOrderItemPriceResolver;
 use App\Exports\NonPosPricingTemplateExport;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -40,6 +41,23 @@ class ItemController extends Controller
      * @param  array<string,mixed>  $price
      * @return array<string,mixed>
      */
+    private function floorOrderPriceForItem($item, ?int $regionId, ?string $outletId): float
+    {
+        $itemId = (int) ($item->id ?? $item['id'] ?? 0);
+        if ($itemId <= 0) {
+            return 0.0;
+        }
+
+        $master = $item instanceof Item ? $item : DB::table('items')->where('id', $itemId)->first();
+
+        return FloorOrderItemPriceResolver::resolveMediumUnitPrice(
+            $itemId,
+            $regionId,
+            $outletId,
+            $master,
+        );
+    }
+
     private function buildItemPriceRow(Item $item, array $price): array
     {
         $type = 'all';
@@ -1567,33 +1585,10 @@ class ItemController extends Controller
             })
             ->with(['category', 'mediumUnit', 'smallUnit', 'largeUnit'])
             ->get()
-            ->map(function($item) use ($region_id, $outlet_id) {
-                // Ambil harga prioritas: outlet > region > all
-                $price = \DB::table('item_prices')
-                    ->where('item_id', $item->id)
-                    ->where(function($q) use ($region_id, $outlet_id) {
-                        $q->where('availability_price_type', 'all');
-                        if ($region_id) {
-                            $q->orWhere(function($q2) use ($region_id) {
-                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
-                            });
-                        }
-                        if ($outlet_id) {
-                            $q->orWhere(function($q2) use ($outlet_id) {
-                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
-                            });
-                        }
-                    })
-                    ->orderByRaw("CASE 
-                        WHEN availability_price_type = 'outlet' THEN 1
-                        WHEN availability_price_type = 'region' THEN 2
-                        ELSE 3 END")
-                    ->orderByDesc('id')
-                    ->first();
-                $finalPrice = $price ? $price->price : 0;
-                // Round up to nearest 100
-                $roundedPrice = ceil($finalPrice / 100) * 100;
-                
+            ->map(function ($item) use ($region_id, $outlet_id) {
+                $regionId = $region_id ? (int) $region_id : null;
+                $roundedPrice = $this->floorOrderPriceForItem($item, $regionId, $outlet_id ? (string) $outlet_id : null);
+
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
@@ -1649,35 +1644,14 @@ class ItemController extends Controller
             ->where('status', 'active')
             ->whereNotNull('warehouse_division_id')
             ->whereHas('category', function ($q) {
-                $q->where('show_pos', '0');
+                $q->where('show_pos', '0')->where('is_asset', '0');
             })
             ->with(['category', 'mediumUnit'])
             ->get()
-            ->map(function($item) use ($region_id, $outlet_id) {
-                $price = \DB::table('item_prices')
-                    ->where('item_id', $item->id)
-                    ->where(function($q) use ($region_id, $outlet_id) {
-                        $q->where('availability_price_type', 'all');
-                        if ($region_id) {
-                            $q->orWhere(function($q2) use ($region_id) {
-                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
-                            });
-                        }
-                        if ($outlet_id) {
-                            $q->orWhere(function($q2) use ($outlet_id) {
-                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
-                            });
-                        }
-                    })
-                    ->orderByRaw("CASE 
-                        WHEN availability_price_type = 'outlet' THEN 1
-                        WHEN availability_price_type = 'region' THEN 2
-                        ELSE 3 END")
-                    ->orderByDesc('id')
-                    ->first();
-                $finalPrice = $price ? $price->price : 0;
-                // Round up to nearest 100
-                $roundedPrice = ceil($finalPrice / 100) * 100;
+            ->map(function ($item) use ($region_id, $outlet_id) {
+                $regionId = $region_id ? (int) $region_id : null;
+                $roundedPrice = $this->floorOrderPriceForItem($item, $regionId, $outlet_id ? (string) $outlet_id : null);
+
                 return array_merge($item->toArray(), [
                     'category_name' => $item->category ? $item->category->name : '-',
                     'unit_medium_name' => $item->mediumUnit ? $item->mediumUnit->name : '-',
@@ -2254,33 +2228,13 @@ class ItemController extends Controller
             )
             ->get();
         
-        $items = $items->map(function($item) use ($region_id, $outletId) {
-            // Ambil harga dari item_prices dengan prioritas outlet > region > all (sama seperti RO utama)
-            $price = \DB::table('item_prices')
-                ->where('item_id', $item->id)
-                ->where(function($q) use ($region_id, $outletId) {
-                    $q->where('availability_price_type', 'all');
-                    if ($region_id) {
-                        $q->orWhere(function($q2) use ($region_id) {
-                            $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
-                        });
-                    }
-                    if ($outletId) {
-                        $q->orWhere(function($q2) use ($outletId) {
-                            $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outletId);
-                        });
-                    }
-                })
-                ->orderByRaw("CASE 
-                    WHEN availability_price_type = 'outlet' THEN 1
-                    WHEN availability_price_type = 'region' THEN 2
-                    ELSE 3 END")
-                ->orderByDesc('id')
-                ->first();
-            
-            $finalPrice = $price ? $price->price : 0;
-            // Round up to nearest 100
-            $roundedPrice = ceil($finalPrice / 100) * 100;
+        $items = $items->map(function ($item) use ($region_id, $outletId) {
+            $regionId = $region_id ? (int) $region_id : null;
+            $roundedPrice = $this->floorOrderPriceForItem(
+                $item,
+                $regionId,
+                $outletId ? (string) $outletId : null,
+            );
             
             // Tambahkan unit names untuk konsistensi dengan RO utama
             $unit_small = DB::table('units')->where('id', $item->small_unit_id)->value('name');
@@ -2319,12 +2273,21 @@ class ItemController extends Controller
             $q = $request->get('q');
             $outletId = $request->get('outlet_id');
             $excludeSupplier = $request->get('exclude_supplier', false);
+            $forFloorOrder = filter_var($request->get('for_floor_order', false), FILTER_VALIDATE_BOOLEAN);
+            $excludeAsset = filter_var($request->get('exclude_asset', $forFloorOrder), FILTER_VALIDATE_BOOLEAN);
 
             $query = Item::with(['category', 'smallUnit', 'mediumUnit', 'largeUnit'])
+                ->where('status', 'active')
                 ->where(function($query) use ($q) {
                     $query->where('name', 'like', "%{$q}%")
                           ->orWhere('sku', 'like', "%{$q}%");
                 });
+
+            if ($excludeAsset) {
+                $query->whereHas('category', function ($q) {
+                    $q->where('is_asset', '0');
+                });
+            }
 
             if ($excludeSupplier) {
                 $query->whereNotExists(function($sub) {
@@ -2337,34 +2300,14 @@ class ItemController extends Controller
             $region_id = $request->get('region_id');
             $outlet_id = $request->get('outlet_id');
             
-            $items = $query->limit(10)->get()->map(function($item) use ($region_id, $outlet_id) {
-                // Ambil harga medium (prioritas: outlet > region > all)
-                $price = \DB::table('item_prices')
-                    ->where('item_id', $item->id)
-                    ->where(function($q) use ($region_id, $outlet_id) {
-                        $q->where('availability_price_type', 'all');
-                        if ($region_id) {
-                            $q->orWhere(function($q2) use ($region_id) {
-                                $q2->where('availability_price_type', 'region')->where('region_id', $region_id);
-                            });
-                        }
-                        if ($outlet_id) {
-                            $q->orWhere(function($q2) use ($outlet_id) {
-                                $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outlet_id);
-                            });
-                        }
-                    })
-                    ->orderByRaw("CASE 
-                        WHEN availability_price_type = 'outlet' THEN 1
-                        WHEN availability_price_type = 'region' THEN 2
-                        ELSE 3 END")
-                    ->orderByDesc('id')
-                    ->first();
-                    
-                $finalPrice = $price ? $price->price : 0;
-                // Round up to nearest 100
-                $roundedPrice = ceil($finalPrice / 100) * 100;
-                
+            $items = $query->limit(15)->get()->map(function ($item) use ($region_id, $outlet_id) {
+                $regionId = $region_id ? (int) $region_id : null;
+                $roundedPrice = $this->floorOrderPriceForItem(
+                    $item,
+                    $regionId,
+                    $outlet_id ? (string) $outlet_id : null,
+                );
+
                 return [
                     'id' => $item->id,
                     'name' => $item->name,

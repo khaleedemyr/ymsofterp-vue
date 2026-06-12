@@ -149,7 +149,10 @@ function fetchItemSuggestions(idx, q) {
   const searchParams = {
     q: q,
     outlet_id: outlet_id.value,
-    region_id: region_id.value
+    region_id: region_id.value,
+    for_floor_order: true,
+    exclude_asset: true,
+    exclude_supplier: true,
   };
   
   axios.get(`/api/items/search`, {
@@ -1350,10 +1353,13 @@ watch(selectedWarehouseOutlet, (val) => {
                             >
                               <div v-for="(s, sidx) in item.suggestions" :key="s.id"
                                 @mousedown.prevent="selectItem(idx, s)"
-                                :class="['px-3 py-2 flex justify-between items-center cursor-pointer', item.highlightedIndex === sidx ? 'bg-blue-100' : 'hover:bg-blue-50']"
+                                :class="['px-3 py-2 cursor-pointer', item.highlightedIndex === sidx ? 'bg-blue-100' : 'hover:bg-blue-50']"
                               >
-                                <div class="font-medium">{{ s.name }}</div>
-                                <div class="text-sm text-gray-600">{{ s.unit }}</div>
+                                <div class="font-medium leading-tight">{{ s.name }}</div>
+                                <div class="text-xs text-gray-500 mt-0.5 flex justify-between gap-2">
+                                  <span class="truncate">{{ s.category_name || '-' }} · {{ s.sku || '-' }}</span>
+                                  <span class="shrink-0">{{ s.unit_medium_name || s.unit }}</span>
+                                </div>
                               </div>
                             </div>
                           </Teleport>
