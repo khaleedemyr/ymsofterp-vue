@@ -21,6 +21,7 @@ const idOutlet = ref(
 );
 
 const activeModal = ref(null);
+const pettyCashActiveTab = ref('retail_food');
 const expandedPettyCashKeys = ref(new Set());
 const expandedPrOpsKeys = ref(new Set());
 const expandedCatCostKeys = ref(new Set());
@@ -119,6 +120,28 @@ function openModal(key) {
   activeModal.value = key;
 }
 
+function openCashflowDrilldown(outflowKey) {
+  const map = {
+    fj_inventory: 'fj_inventory',
+    petty_cash: 'petty_cash',
+    pr_ops: 'pr_ops',
+    payroll: 'payroll',
+  };
+  const modalKey = map[outflowKey];
+  if (modalKey) {
+    openModal(modalKey);
+  }
+}
+
+function handleCashflowOutPieSelect(_event, _chartContext, config) {
+  const idx = config?.dataPointIndex;
+  if (idx == null || idx < 0) return;
+  const item = cashflowOutflows.value[idx];
+  if (item?.key) {
+    openCashflowDrilldown(item.key);
+  }
+}
+
 function closeModal() {
   activeModal.value = null;
 }
@@ -131,6 +154,7 @@ watch(activeModal, (val) => {
   document.body.style.overflow = val ? 'hidden' : '';
   if (val !== 'petty_cash') {
     expandedPettyCashKeys.value = new Set();
+    pettyCashActiveTab.value = 'retail_food';
   }
   if (val !== 'pr_ops') {
     expandedPrOpsKeys.value = new Set();
@@ -500,6 +524,34 @@ const pettyCashAllTransactions = computed(() => {
   );
 });
 
+const pettyCashNonFoodCategories = computed(() =>
+  (props.analysis?.petty_cash?.retail_non_food_categories || []).filter((c) => Number(c.amount) > 0),
+);
+const pettyCashNonFoodPieSeries = computed(() => pettyCashNonFoodCategories.value.map((c) => Number(c.amount)));
+const pettyCashNonFoodPieLabels = computed(() => pettyCashNonFoodCategories.value.map((c) => c.label));
+const pettyCashNonFoodPieOptions = computed(() => ({
+  ...chartBase,
+  chart: { ...chartBase.chart, type: 'pie' },
+  labels: pettyCashNonFoodPieLabels.value,
+  colors: ['#6366F1', '#8B5CF6', '#A855F7', '#EC4899', '#F43F5E', '#F97316', '#14B8A6', '#64748B'],
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+}));
+
+const pettyCashTabTransactions = computed(() => {
+  const pc = props.analysis?.petty_cash?.transactions || {};
+  const list = pettyCashActiveTab.value === 'retail_food'
+    ? (pc.retail_food || [])
+    : (pc.retail_non_food || []);
+  return [...list].sort((a, b) => String(b.transaction_date || '').localeCompare(String(a.transaction_date || '')));
+});
+
+const payrollEmployeesSorted = computed(() =>
+  [...(payrollSummary.value.employees || [])].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'id'),
+  ),
+);
+
 const prOpsCategories = computed(() =>
   (props.analysis?.pr_ops_expenditure?.categories || []).filter((c) => Number(c.amount) > 0),
 );
@@ -620,11 +672,27 @@ const cashflowOutPieSeries = computed(() => cashflowOutflows.value.map((item) =>
 const cashflowOutPieLabels = computed(() => cashflowOutflows.value.map((item) => item.label));
 const cashflowOutPieOptions = computed(() => ({
   ...chartBase,
-  chart: { ...chartBase.chart, type: 'pie' },
+  chart: {
+    ...chartBase.chart,
+    type: 'pie',
+    selection: { enabled: true },
+    events: {
+      dataPointSelection: handleCashflowOutPieSelect,
+      click: handleCashflowOutPieSelect,
+    },
+  },
   labels: cashflowOutPieLabels.value,
   colors: ['#F97316', '#F43F5E', '#06B6D4', '#A855F7'],
   tooltip: { y: { formatter: (val) => formatRupiah(val) } },
   dataLabels: { enabled: true, formatter: (val) => `${Math.round(val)}%` },
+  plotOptions: {
+    pie: {
+      expandOnClick: true,
+    },
+  },
+  states: {
+    active: { filter: { type: 'darken', value: 0.25 } },
+  },
 }));
 
 const payrollSummary = computed(() => props.analysis?.payroll || {});
@@ -937,7 +1005,8 @@ function visitorArea(userId) {
           </div>
 
           <div v-if="cashflowOutflows.length" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div>
+            <div class="cursor-pointer">
+              <p class="text-xs text-slate-500 mb-2 text-center">Klik slice chart untuk detail per komponen</p>
               <apexchart type="pie" height="280" :options="cashflowOutPieOptions" :series="cashflowOutPieSeries" />
             </div>
             <div class="overflow-x-auto">
@@ -953,7 +1022,8 @@ function visitorArea(userId) {
                   <tr
                     v-for="item in cashflowSummary.outflows || []"
                     :key="item.key"
-                    class="border-b border-slate-100"
+                    class="border-b border-slate-100 cursor-pointer hover:bg-slate-50"
+                    @click="openCashflowDrilldown(item.key)"
                   >
                     <td class="py-2 pr-4">{{ item.label }}</td>
                     <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
@@ -2241,8 +2311,9 @@ function visitorArea(userId) {
                   </div>
 
                   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div v-if="cashflowOutflows.length">
-                      <h3 class="text-sm font-semibold text-slate-900 mb-3">Breakdown Cash Out</h3>
+                    <div v-if="cashflowOutflows.length" class="cursor-pointer">
+                      <h3 class="text-sm font-semibold text-slate-900 mb-1">Breakdown Cash Out</h3>
+                      <p class="text-xs text-slate-500 mb-3">Klik slice untuk buka detail komponen</p>
                       <apexchart type="pie" height="300" :options="cashflowOutPieOptions" :series="cashflowOutPieSeries" />
                     </div>
                     <div class="overflow-x-auto">
@@ -2259,7 +2330,8 @@ function visitorArea(userId) {
                           <tr
                             v-for="item in cashflowSummary.outflows || []"
                             :key="item.key"
-                            class="border-b border-slate-100"
+                            class="border-b border-slate-100 cursor-pointer hover:bg-slate-50"
+                            @click="openCashflowDrilldown(item.key)"
                           >
                             <td class="py-2 pr-4">{{ item.label }}</td>
                             <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
@@ -2417,42 +2489,45 @@ function visitorArea(userId) {
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                    <div v-if="pettyCashSources.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi Sumber</h3>
-                      <apexchart type="pie" height="280" :options="pettyCashPieOptions" :series="pettyCashPieSeries" />
-                    </div>
-                    <div class="space-y-4">
-                      <div v-if="analysis.petty_cash?.retail_food_categories?.length" class="rounded-xl border border-slate-200 p-4">
-                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Retail Food per Kategori Gudang</h3>
-                        <div class="space-y-2">
-                          <div
-                            v-for="cat in analysis.petty_cash.retail_food_categories"
-                            :key="cat.key"
-                            class="flex items-center justify-between text-sm"
-                          >
-                            <span class="text-slate-700">{{ cat.label }}</span>
-                            <span class="font-semibold">{{ formatRupiah(cat.amount) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div v-if="analysis.petty_cash?.retail_non_food_categories?.length" class="rounded-xl border border-slate-200 p-4">
-                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Retail Non Food per Kategori Budget</h3>
-                        <div class="space-y-2">
-                          <div
-                            v-for="cat in analysis.petty_cash.retail_non_food_categories"
-                            :key="cat.label"
-                            class="flex items-center justify-between text-sm"
-                          >
-                            <span class="text-slate-700">{{ cat.label }}</span>
-                            <span class="font-semibold">{{ formatRupiah(cat.amount) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                  <div v-if="pettyCashSources.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <h3 class="text-sm font-semibold text-slate-800 mb-2">Retail Food vs Retail Non Food</h3>
+                    <apexchart type="pie" height="280" :options="pettyCashPieOptions" :series="pettyCashPieSeries" />
                   </div>
 
-                  <div class="overflow-x-auto rounded-xl border border-slate-200">
+                  <div
+                    v-if="pettyCashNonFoodCategories.length"
+                    class="bg-slate-50 rounded-xl p-4 border border-slate-200"
+                  >
+                    <h3 class="text-sm font-semibold text-slate-800 mb-2">Kategori Retail Non Food</h3>
+                    <apexchart type="pie" height="280" :options="pettyCashNonFoodPieOptions" :series="pettyCashNonFoodPieSeries" />
+                  </div>
+
+                  <div class="rounded-xl border border-slate-200 overflow-hidden">
+                    <div class="flex border-b border-slate-200 bg-slate-50">
+                      <button
+                        type="button"
+                        class="flex-1 px-4 py-3 text-sm font-semibold transition-colors"
+                        :class="pettyCashActiveTab === 'retail_food'
+                          ? 'text-orange-800 bg-white border-b-2 border-orange-500'
+                          : 'text-slate-500 hover:text-slate-700'"
+                        @click="pettyCashActiveTab = 'retail_food'"
+                      >
+                        Retail Food
+                        <span class="ml-1 text-xs font-normal text-slate-500">({{ analysis.petty_cash?.retail_food_count ?? 0 }})</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="flex-1 px-4 py-3 text-sm font-semibold transition-colors"
+                        :class="pettyCashActiveTab === 'retail_non_food'
+                          ? 'text-indigo-800 bg-white border-b-2 border-indigo-500'
+                          : 'text-slate-500 hover:text-slate-700'"
+                        @click="pettyCashActiveTab = 'retail_non_food'"
+                      >
+                        Retail Non Food
+                        <span class="ml-1 text-xs font-normal text-slate-500">({{ analysis.petty_cash?.retail_non_food_count ?? 0 }})</span>
+                      </button>
+                    </div>
+                    <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                       <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                         <tr>
@@ -2468,7 +2543,7 @@ function visitorArea(userId) {
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-slate-100">
-                        <template v-for="row in pettyCashAllTransactions" :key="pettyCashRowKey(row)">
+                        <template v-for="row in pettyCashTabTransactions" :key="pettyCashRowKey(row)">
                           <tr
                             class="hover:bg-rose-50/30 cursor-pointer"
                             @click="togglePettyCashRow(row)"
@@ -2516,11 +2591,14 @@ function visitorArea(userId) {
                             </td>
                           </tr>
                         </template>
-                        <tr v-if="!pettyCashAllTransactions.length">
-                          <td colspan="9" class="px-4 py-8 text-center text-slate-400">Tidak ada transaksi petty cash pada periode ini.</td>
+                        <tr v-if="!pettyCashTabTransactions.length">
+                          <td colspan="9" class="px-4 py-8 text-center text-slate-400">
+                            Tidak ada transaksi {{ pettyCashActiveTab === 'retail_food' ? 'retail food' : 'retail non food' }} pada periode ini.
+                          </td>
                         </tr>
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 </template>
 
@@ -2537,39 +2615,9 @@ function visitorArea(userId) {
                     </div>
                   </div>
 
-                  <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                    <div v-if="prOpsCategories.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                      <h3 class="text-sm font-semibold text-slate-800 mb-2">Distribusi per Kategori</h3>
-                      <apexchart type="pie" height="300" :options="prOpsPieOptions" :series="prOpsPieSeries" />
-                    </div>
-                    <div class="rounded-xl border border-slate-200 p-4">
-                      <h3 class="text-sm font-semibold text-slate-800 mb-3">Ringkasan Kategori</h3>
-                      <div class="space-y-2 max-h-[320px] overflow-y-auto">
-                        <div
-                          v-for="cat in analysis.pr_ops_expenditure?.categories || []"
-                          :key="cat.category_id"
-                          class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0"
-                        >
-                          <div>
-                            <span v-if="cat.division" class="text-xs text-slate-400 block">{{ cat.division }}</span>
-                            <span class="text-slate-800 font-medium">{{ cat.label }}</span>
-                          </div>
-                          <div class="text-right shrink-0">
-                            <p class="font-semibold">{{ formatRupiah(cat.amount) }}</p>
-                            <p class="text-xs text-slate-500">
-                              {{
-                                analysis.pr_ops_expenditure?.total > 0
-                                  ? `${((cat.amount / analysis.pr_ops_expenditure.total) * 100).toFixed(1)}%`
-                                  : '-'
-                              }}
-                            </p>
-                          </div>
-                        </div>
-                        <p v-if="!(analysis.pr_ops_expenditure?.categories?.length)" class="text-sm text-slate-400 text-center py-6">
-                          Tidak ada data kategori.
-                        </p>
-                      </div>
-                    </div>
+                  <div v-if="prOpsCategories.length" class="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                    <h3 class="text-sm font-semibold text-slate-800 mb-2">Distribusi per Kategori</h3>
+                    <apexchart type="pie" height="300" :options="prOpsPieOptions" :series="prOpsPieSeries" />
                   </div>
 
                   <div class="overflow-x-auto rounded-xl border border-slate-200">
@@ -2673,86 +2721,34 @@ function visitorArea(userId) {
                 <!-- Payroll -->
                 <template v-else-if="activeModal === 'payroll'">
                   <div v-if="analysis.payroll?.has_generated" class="space-y-5">
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div class="rounded-xl bg-purple-50 border border-purple-100 p-4 lg:col-span-2">
-                        <p class="text-xs text-purple-700 font-semibold uppercase">Total Gaji</p>
+                    <div class="rounded-xl bg-purple-50 border border-purple-100 p-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p class="text-xs text-purple-700 font-semibold uppercase">Total Payroll</p>
                         <p class="text-2xl font-bold text-purple-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji) }}</p>
                         <p class="text-xs text-purple-600 mt-1">{{ analysis.payroll?.employee_count ?? 0 }} karyawan</p>
                       </div>
-                      <div class="rounded-xl bg-violet-50 border border-violet-100 p-4">
-                        <p class="text-xs text-violet-700 font-semibold uppercase">Gajian 1</p>
-                        <p class="text-xl font-bold text-violet-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_akhir_bulan) }}</p>
-                        <p class="text-xs text-violet-600 mt-1">
-                          {{ analysis.payroll?.gajian1_paid_at ? `Dibayar ${analysis.payroll.gajian1_paid_at}` : 'Belum dibayar' }}
-                        </p>
-                      </div>
-                      <div class="rounded-xl bg-fuchsia-50 border border-fuchsia-100 p-4">
-                        <p class="text-xs text-fuchsia-700 font-semibold uppercase">Gajian 2</p>
-                        <p class="text-xl font-bold text-fuchsia-900 mt-1">{{ formatRupiah(analysis.payroll?.total_gaji_tanggal_8) }}</p>
-                        <p class="text-xs text-fuchsia-600 mt-1">
-                          {{ analysis.payroll?.gajian2_paid_at ? `Dibayar ${analysis.payroll.gajian2_paid_at}` : 'Belum dibayar' }}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p class="text-xs font-semibold uppercase text-indigo-700">BPJS Perusahaan</p>
-                        <p class="text-lg font-bold text-indigo-900">{{ formatRupiah(analysis.payroll?.total_bpjs_perusahaan) }}</p>
-                      </div>
-                      <p class="text-xs text-indigo-600">Periode payroll: {{ analysis.payroll?.period_label }}</p>
-                    </div>
-
-                    <div v-if="payrollSplits.length" class="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                      <div class="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                        <h3 class="text-sm font-semibold text-slate-800 mb-2">Komposisi Gaji</h3>
-                        <apexchart type="pie" height="280" :options="payrollPieOptions" :series="payrollPieSeries" />
-                      </div>
-                      <div class="rounded-xl border border-slate-200 p-4">
-                        <h3 class="text-sm font-semibold text-slate-800 mb-3">Ringkasan Gajian</h3>
-                        <div class="space-y-2">
-                          <div
-                            v-for="split in payrollSplits"
-                            :key="split.key"
-                            class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-100 last:border-0"
-                          >
-                            <span class="text-slate-800 font-medium">{{ split.label }}</span>
-                            <span class="font-semibold">{{ formatRupiah(split.amount) }}</span>
-                          </div>
-                        </div>
-                      </div>
+                      <p class="text-xs text-purple-600">Periode: {{ analysis.payroll?.period_label }}</p>
                     </div>
 
                     <div class="overflow-x-auto rounded-xl border border-slate-200">
                       <table class="min-w-full text-sm">
                         <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                           <tr>
-                            <th class="px-4 py-3 text-left">Karyawan</th>
-                            <th class="px-4 py-3 text-left">Jabatan</th>
-                            <th class="px-4 py-3 text-right">Gajian 1</th>
-                            <th class="px-4 py-3 text-right">Gajian 2</th>
-                            <th class="px-4 py-3 text-right">Total Gaji</th>
-                            <th class="px-4 py-3 text-right">BPJS Perusahaan</th>
+                            <th class="px-4 py-3 text-left">Nama Karyawan</th>
+                            <th class="px-4 py-3 text-right">Payroll</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100">
-                          <template v-for="group in payrollEmployeesByDivision" :key="group.division">
-                            <tr class="bg-purple-50/70">
-                              <td colspan="6" class="px-4 py-2 text-xs font-bold uppercase tracking-wide text-purple-800">
-                                {{ group.division }}
-                              </td>
-                            </tr>
-                            <tr v-for="emp in group.employees" :key="emp.user_id" class="hover:bg-purple-50/30">
-                              <td class="px-4 py-2.5 font-medium">{{ emp.name }}</td>
-                              <td class="px-4 py-2.5 text-slate-600">{{ emp.jabatan || '-' }}</td>
-                              <td class="px-4 py-2.5 text-right">{{ formatRupiah(emp.total_gaji_akhir_bulan) }}</td>
-                              <td class="px-4 py-2.5 text-right">{{ formatRupiah(emp.total_gaji_tanggal_8) }}</td>
-                              <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(emp.total_gaji) }}</td>
-                              <td class="px-4 py-2.5 text-right text-slate-600">{{ formatRupiah(emp.bpjs_perusahaan) }}</td>
-                            </tr>
-                          </template>
-                          <tr v-if="!(analysis.payroll?.employees?.length)">
-                            <td colspan="6" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
+                          <tr
+                            v-for="emp in payrollEmployeesSorted"
+                            :key="emp.user_id"
+                            class="hover:bg-purple-50/30"
+                          >
+                            <td class="px-4 py-2.5 font-medium">{{ emp.name }}</td>
+                            <td class="px-4 py-2.5 text-right font-semibold">{{ formatRupiah(emp.total_gaji) }}</td>
+                          </tr>
+                          <tr v-if="!payrollEmployeesSorted.length">
+                            <td colspan="2" class="px-4 py-8 text-center text-slate-400">Tidak ada data karyawan.</td>
                           </tr>
                         </tbody>
                       </table>
