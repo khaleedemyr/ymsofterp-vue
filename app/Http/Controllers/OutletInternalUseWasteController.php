@@ -2254,7 +2254,7 @@ class OutletInternalUseWasteController extends Controller
                         ->first();
                     if ($macRow) {
                         $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
-                        $macHistories[$macKey] = $macRow->new_cost;
+                        $macHistories[$macKey] = CategoryCostMacResolver::historyMacPerSmall($macRow);
                     }
                 }
             }
@@ -2455,7 +2455,7 @@ class OutletInternalUseWasteController extends Controller
                         ->orderByDesc('id')
                         ->first();
                     if ($macRow) {
-                        $mac = $macRow->new_cost;
+                        $mac = CategoryCostMacResolver::historyMacPerSmall($macRow);
                     }
                 }
                 \Log::debug('DETAILS: MAC for item_id ' . $item->item_id . ': ' . ($mac !== null ? $mac : 'NOT FOUND'));

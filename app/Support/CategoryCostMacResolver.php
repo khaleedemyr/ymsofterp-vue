@@ -6,8 +6,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * MAC khusus modul Category Cost (Biaya Kategori Outlet).
- * Item WIP: MAC per satuan kecil = biaya BOM 1 resep / yield (small_conversion_qty).
- * Item non-WIP: tidak diubah (pakai MAC histori seperti biasa).
+ * Item WIP: utamakan MAC riwayat outlet (per gram/satuan kecil dari opname/produksi).
+ * Jika MAC histori masih level 1 resep, normalisasi dengan small_conversion_qty.
+ * Item non-WIP: pakai MAC histori seperti biasa.
  */
 final class CategoryCostMacResolver
 {
@@ -15,6 +16,28 @@ final class CategoryCostMacResolver
     {
         return $itemMaster !== null
             && strtoupper(trim((string) ($itemMaster->type ?? ''))) === 'WIP';
+    }
+
+    /**
+     * Ambil MAC per satuan kecil dari baris outlet_food_inventory_cost_histories.
+     */
+    public static function historyMacPerSmall(?object $costHistoryRow): ?float
+    {
+        if (!$costHistoryRow) {
+            return null;
+        }
+
+        $mac = $costHistoryRow->mac ?? null;
+        if ($mac !== null && (float) $mac > 0) {
+            return (float) $mac;
+        }
+
+        $newCost = $costHistoryRow->new_cost ?? null;
+        if ($newCost !== null && (float) $newCost > 0) {
+            return (float) $newCost;
+        }
+
+        return null;
     }
 
     /**
@@ -40,16 +63,35 @@ final class CategoryCostMacResolver
             1.0
         );
 
+        // Riwayat MAC outlet = sumber utama (sudah per satuan kecil setelah opname/produksi).
+        if ($historyMac !== null && $historyMac > 0) {
+            if (self::wipHistoryMacLooksRecipeLevel($historyMac, $recipeCost, $yield)) {
+                $divisor = $yield > 0 ? $yield : 1.0;
+
+                return $historyMac / $divisor;
+            }
+
+            return $historyMac;
+        }
+
         if ($recipeCost > 0 && $yield > 0) {
             return $recipeCost / $yield;
         }
 
-        // Fallback: MAC tersimpan sering level 1 resep, normalisasi ke satuan kecil.
-        if ($historyMac !== null && $historyMac > 0 && $yield > 0) {
-            return $historyMac / $yield;
+        return 0.0;
+    }
+
+    /**
+     * MAC histori WIP dianggap level 1 resep jika mendekati total BOM resep.
+     */
+    private static function wipHistoryMacLooksRecipeLevel(float $historyMac, float $recipeCost, float $yield): bool
+    {
+        if ($recipeCost > 0 && $historyMac >= $recipeCost * 0.5) {
+            return true;
         }
 
-        return (float) ($historyMac ?? 0);
+        // Tanpa BOM: nilai sangat besar kemungkinan biaya 1 resep, bukan per gram.
+        return $yield > 0 && $historyMac > 10_000;
     }
 
     public static function convertMacToUnit(float $macPerSmall, object $itemMaster, int $unitId): float
