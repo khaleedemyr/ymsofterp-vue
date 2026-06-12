@@ -38,11 +38,9 @@ const canApproveSSD = computed(() => {
       && props.prFood.status === 'draft'
       && !props.prFood.ssd_manager_approved_at;
   } else {
-    // For other warehouses, SSD Manager (id_jabatan=161) can approve
-    // Tapi harus sudah di-approve asisten SSD manager terlebih dahulu
+    // SSD Manager (161) boleh approve meski tahap Asisten belum — backend auto-lengkapi
     return ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value)
       && props.prFood.status === 'draft'
-      && props.prFood.assistant_ssd_manager_approved_at
       && !props.prFood.ssd_manager_approved_at;
   }
 });
@@ -184,6 +182,9 @@ async function approveSSD(approved) {
         <div v-if="canApproveSSD">
           <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve ({{ getApproverTitle }})</button>
           <button @click="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
+          <p v-if="!isMKWarehouse && !prFood.assistant_ssd_manager_approved_at" class="text-xs text-gray-500 mt-2">
+            Approve SSD Manager akan sekaligus menyelesaikan tahap Asisten SSD Manager jika belum di-approve.
+          </p>
         </div>
       </div>
     </div>

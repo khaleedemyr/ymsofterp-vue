@@ -462,8 +462,11 @@ class PrFoodController extends Controller
         $isMKWarehouse = in_array($prFood->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         $approverTitle = $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
         
-        // Untuk PR non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
-        if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
+        // Untuk PR non-MK: Asisten SSD Manager harus approve dulu,
+        // kecuali SSD Manager (161) / superadmin yang boleh final approve sekaligus.
+        $userJabatan = (int) Auth::user()->id_jabatan;
+        $isSsdManager = $userJabatan === 161 || Auth::user()->id_role === '5af56935b011a';
+        if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at && !$isSsdManager) {
             if (($request->expectsJson() || $request->ajax()) && !$request->header('X-Inertia')) {
                 return response()->json([
                     'success' => false,
@@ -486,6 +489,17 @@ class PrFoodController extends Controller
             'ssd_manager_approved_by' => Auth::id(),
             'ssd_manager_note' => $note,
         ];
+
+        // SSD Manager final approve: auto-lengkapi tahap Asisten jika belum ada
+        $delegatedAssistantStep = false;
+        if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at && $isApproved) {
+            $delegatedAssistantStep = true;
+            $updateData['assistant_ssd_manager_approved_at'] = now();
+            $updateData['assistant_ssd_manager_approved_by'] = Auth::id();
+            $updateData['assistant_ssd_manager_note'] = $note
+                ?: 'Disetujui oleh SSD Manager (delegasi tahap Asisten SSD Manager)';
+        }
+
         $updateData['status'] = $isApproved ? 'approved' : 'rejected';
         $prFood->update($updateData);
         
@@ -493,7 +507,8 @@ class PrFoodController extends Controller
             'user_id' => Auth::id(),
             'activity_type' => $isApproved ? 'approve' : 'reject',
             'module' => 'pr_foods',
-            'description' => ($isApproved ? 'Approve' : 'Reject') . " PR Foods ($approverTitle): " . $prFood->pr_number,
+            'description' => ($isApproved ? 'Approve' : 'Reject') . " PR Foods ($approverTitle): " . $prFood->pr_number
+                . ($delegatedAssistantStep ? ' [termasuk tahap Asisten SSD Manager]' : ''),
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
@@ -645,7 +660,7 @@ class PrFoodController extends Controller
             $userJabatan = (int) $user->id_jabatan;
             
             // Asisten SSD Manager approvals (id_jabatan == 172) - untuk non-MK warehouse yang belum di-approve asisten
-            if (($userJabatan == 172 && $user->status == 'A') || $isSuperadmin) {
+            if ($userJabatan == 172 && $user->status == 'A') {
                 $assistantSsdApprovals = (clone $query)
                     ->whereNull('assistant_ssd_manager_approved_at')
                     ->get()
@@ -685,34 +700,58 @@ class PrFoodController extends Controller
                 }
             }
             
-            // SSD Manager approvals
-            // Untuk id_jabatan=161: hanya PR yang sudah di-approve asisten
-            // Untuk id_jabatan=172: PR yang sudah di-approve asisten tapi belum di-approve SSD Manager
-            if ((in_array($userJabatan, [161, 172]) && $user->status == 'A') || $isSuperadmin) {
+            // SSD Manager approvals (id_jabatan=161 / superadmin)
+            // Termasuk PR yang belum di-approve Asisten (SSD Manager boleh approve sekaligus)
+            if (($userJabatan == 161 && $user->status == 'A') || $isSuperadmin) {
                 $ssdManagerApprovals = (clone $query)
-                    ->whereNotNull('assistant_ssd_manager_approved_at')
                     ->whereNull('ssd_manager_approved_at')
                     ->get()
-                    ->filter(function($pr) {
-                        // Filter non-MK warehouse
+                    ->filter(function ($pr) {
                         return !in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                     });
-                
-                \Log::info('SSD Manager approvals check', [
-                    'user_id' => $user->id,
-                    'user_jabatan' => $userJabatan,
-                    'user_status' => $user->status,
-                    'count' => $ssdManagerApprovals->count()
-                ]);
-                
-                // Get approver name for this level
+
                 $approver = DB::table('users')
                     ->where('id_jabatan', 161)
                     ->where('status', 'A')
                     ->select('nama_lengkap')
                     ->first();
-                
+
                 foreach ($ssdManagerApprovals as $pr) {
+                    $pendingApprovals[] = [
+                        'id' => $pr->id,
+                        'pr_number' => $pr->pr_number,
+                        'tanggal' => $pr->tanggal,
+                        'warehouse' => $pr->warehouse ? ['name' => $pr->warehouse->name] : null,
+                        'requester' => $pr->requester ? ['nama_lengkap' => $pr->requester->nama_lengkap] : null,
+                        'items_count' => $pr->items->count(),
+                        'description' => $pr->description,
+                        'approval_level' => 'ssd_manager',
+                        'approval_level_display' => $pr->assistant_ssd_manager_approved_at
+                            ? 'SSD Manager'
+                            : 'SSD Manager (termasuk tahap Asisten)',
+                        'approver_name' => $approver ? $approver->nama_lengkap : 'SSD Manager',
+                        'created_at' => $pr->created_at,
+                    ];
+                }
+            }
+
+            // Asisten SSD Manager tahap SSD Manager (setelah asisten approve) — id_jabatan=172
+            if ($userJabatan == 172 && $user->status == 'A') {
+                $assistantAsSsdApprovals = (clone $query)
+                    ->whereNotNull('assistant_ssd_manager_approved_at')
+                    ->whereNull('ssd_manager_approved_at')
+                    ->get()
+                    ->filter(function ($pr) {
+                        return !in_array($pr->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+                    });
+
+                $approver = DB::table('users')
+                    ->where('id_jabatan', 161)
+                    ->where('status', 'A')
+                    ->select('nama_lengkap')
+                    ->first();
+
+                foreach ($assistantAsSsdApprovals as $pr) {
                     $pendingApprovals[] = [
                         'id' => $pr->id,
                         'pr_number' => $pr->pr_number,
@@ -724,7 +763,7 @@ class PrFoodController extends Controller
                         'approval_level' => 'ssd_manager',
                         'approval_level_display' => 'SSD Manager',
                         'approver_name' => $approver ? $approver->nama_lengkap : 'SSD Manager',
-                        'created_at' => $pr->created_at
+                        'created_at' => $pr->created_at,
                     ];
                 }
             }
@@ -803,15 +842,23 @@ class PrFoodController extends Controller
             $isMKWarehouse = in_array($prFood->warehouse->name ?? '', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
             
             // Check which approval level is pending and if current user can approve
+            $userJabatan = (int) $user->id_jabatan;
+            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+
             if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
-                // Assistant SSD Manager approval pending
-                if ($user->id_jabatan == 160) { // Asisten SSD Manager
+                if (in_array($userJabatan, [172, 160], true)) {
                     $currentApprovalLevel = 'assistant_ssd_manager';
+                    $currentApproverId = $user->id;
+                } elseif ($userJabatan === 161 || $isSuperadmin) {
+                    // SSD Manager boleh approve langsung (termasuk tahap asisten)
+                    $currentApprovalLevel = 'ssd_manager';
                     $currentApproverId = $user->id;
                 }
             } elseif (!$prFood->ssd_manager_approved_at) {
-                // SSD Manager approval pending
-                if ($user->id_jabatan == 161 || ($isMKWarehouse && $user->id_jabatan == 162)) { // SSD Manager or Sous Chef MK
+                if ($userJabatan === 161 || $isSuperadmin || ($isMKWarehouse && $userJabatan === 179)) {
+                    $currentApprovalLevel = $isMKWarehouse ? 'sous_chef_mk' : 'ssd_manager';
+                    $currentApproverId = $user->id;
+                } elseif ($userJabatan === 172) {
                     $currentApprovalLevel = 'ssd_manager';
                     $currentApproverId = $user->id;
                 }
