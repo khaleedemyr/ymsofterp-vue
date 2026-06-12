@@ -28,6 +28,7 @@ class OutletAnalyzerService
     public function __construct(
         private RegionalVisitAnalyticsService $regionalVisits,
         private AttendanceReportController $attendanceReport,
+        private ModalEngineeringService $modalEngineering,
     ) {}
 
     /**
@@ -126,6 +127,12 @@ class OutletAnalyzerService
             'pr_ops_expenditure' => $prOps,
             'payroll' => $payroll,
             'category_cost_outlet' => $categoryCost,
+            'modal_x_engineering' => $this->modalEngineering->totalsForPeriod(
+                (int) $outlet->id_outlet,
+                $start,
+                $end,
+                (string) ($outlet->qr_code ?? ''),
+            ),
             'employee_attendance' => $this->getEmployeeAttendance(
                 (int) $outlet->id_outlet,
                 $payrollPeriod['start_date'],

@@ -918,6 +918,32 @@ function visitorArea(userId) {
           </button>
         </section>
 
+        <!-- Modal x Engineering -->
+        <section class="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-5">
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 class="text-base font-semibold text-indigo-900">Modal x Engineering</h2>
+              <p class="text-xs text-indigo-700/80 mt-0.5">
+                Total periode — (Stock cut + Category cost usage) ÷ Engineering
+                <span class="text-indigo-500">· Sumber sama dengan laporan Modal x Engineering</span>
+              </p>
+            </div>
+            <div class="text-right">
+              <p class="text-3xl font-bold tabular-nums text-indigo-900">
+                {{ pct(analysis.modal_x_engineering?.modal_x_engineering_pct) }}
+              </p>
+              <p
+                v-if="analysis.modal_x_engineering?.engineering > 0"
+                class="text-xs text-indigo-600 mt-1"
+              >
+                Modal {{ formatRupiah(analysis.modal_x_engineering?.total_modal) }}
+                · Engineering {{ formatRupiah(analysis.modal_x_engineering?.engineering) }}
+              </p>
+              <p v-else class="text-xs text-slate-500 mt-1">Tidak ada data engineering pada periode ini</p>
+            </div>
+          </div>
+        </section>
+
         <!-- Cashflow Summary -->
         <section class="bg-white rounded-xl border border-slate-200 p-5">
           <div class="flex flex-wrap items-start justify-between gap-3 mb-4">

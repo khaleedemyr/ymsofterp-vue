@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\ModalEngineeringExport;
+use App\Services\ModalEngineeringService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,9 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class ModalEngineeringReportController extends Controller
 {
+    public function __construct(
+        private ModalEngineeringService $modalEngineering,
+    ) {}
     public function index(Request $request)
     {
         return Inertia::render('Reports/ModalEngineering', $this->buildReportPayload($request));
@@ -70,6 +74,7 @@ class ModalEngineeringReportController extends Controller
         $stockCutByDate = [];
         $categoryCostUsageByDate = [];
         $engineeringByDate = [];
+        $outletQr = null;
 
         if ($selectedOutletId > 0) {
             $stockCutRows = DB::table('stock_cut_details as scd')
@@ -153,13 +158,13 @@ class ModalEngineeringReportController extends Controller
             $cursor->addDay();
         }
 
-        $totals['stock_cut'] = round($totals['stock_cut'], 2);
-        $totals['category_cost_usage'] = round($totals['category_cost_usage'], 2);
-        $totals['total_modal'] = round($totals['total_modal'], 2);
-        $totals['engineering'] = round($totals['engineering'], 2);
-        $totals['modal_x_engineering_pct'] = $totals['engineering'] > 0
-            ? round(($totals['total_modal'] / $totals['engineering']) * 100, 2)
-            : null;
+        $periodTotals = $this->modalEngineering->totalsForPeriod(
+            $selectedOutletId,
+            $rangeStart,
+            $rangeEnd,
+            $outletQr ? (string) $outletQr : null,
+        );
+        $totals = array_merge($totals, $periodTotals);
 
         return [
             'outlets' => $outlets,
