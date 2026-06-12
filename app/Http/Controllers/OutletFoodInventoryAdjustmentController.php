@@ -1611,10 +1611,9 @@ class OutletFoodInventoryAdjustmentController extends Controller
         $nilai_lama = $qty_lama * $mac_lama;
 
         if ($isIn) {
-            $nilai_baru = $qty_small * $mac_lama;
             $total_qty = $qty_lama + $qty_small;
-            $total_nilai = $nilai_lama + $nilai_baru;
-            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $mac_lama;
+            $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_small, $mac_lama);
+            $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
             $stock->qty_small = $total_qty;
             $stock->qty_medium += $qty_medium;
             $stock->qty_large += $qty_large;

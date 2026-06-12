@@ -9,6 +9,16 @@ use Illuminate\Support\Facades\DB;
  */
 final class OutletInventoryCostResolver
 {
+    /** MAC lama dianggap korup jika menyimpang >5x dari biaya masuk / anchor terpercaya. */
+    private const MAC_SPIKE_MULTIPLIER = 5.0;
+
+    /** Referensi transaksi masuk yang new_cost-nya dianggap andal untuk anchor MAC. */
+    private const TRUSTED_INBOUND_REFERENCE_TYPES = [
+        'serial_receive',
+        'good_receive_outlet',
+        'outlet_food_good_receive',
+        'mac_correction',
+    ];
     /**
      * new_cost positif terbaru untuk outlet + warehouse + inventory item (urut tanggal lalu id).
      */
@@ -96,10 +106,82 @@ final class OutletInventoryCostResolver
         return self::scaledCostsMediumLargeFromStockRow($small, $stockFrom);
     }
 
+    public static function macLooksAnomalousVsAnchor(float $mac, float $anchor): bool
+    {
+        if ($mac <= 0 || $anchor <= 0) {
+            return false;
+        }
+
+        $ratio = $mac / $anchor;
+
+        return $ratio > self::MAC_SPIKE_MULTIPLIER || $ratio < (1.0 / self::MAC_SPIKE_MULTIPLIER);
+    }
+
+    /**
+     * new_cost terbaru dari transaksi masuk terpercaya (GR/serial receive/koreksi MAC).
+     */
+    public static function latestTrustedNewCostPerSmallUnit(
+        int $outletId,
+        int $warehouseOutletId,
+        int $inventoryItemId
+    ): ?float {
+        $row = DB::table('outlet_food_inventory_cost_histories')
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->where('inventory_item_id', $inventoryItemId)
+            ->whereIn('reference_type', self::TRUSTED_INBOUND_REFERENCE_TYPES)
+            ->whereNotNull('new_cost')
+            ->where('new_cost', '>', 0)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first(['new_cost']);
+
+        return $row ? (float) $row->new_cost : null;
+    }
+
+    /**
+     * Koreksi MAC lama sebelum rata-rata tertimbang agar nilai korup tidak menular.
+     */
+    public static function sanitizeMacForWeightedAverage(float $macLama, float $costInbound): float
+    {
+        if ($macLama <= 0) {
+            return $costInbound > 0 ? $costInbound : 0.0;
+        }
+        if ($costInbound <= 0) {
+            return $macLama;
+        }
+        if (self::macLooksAnomalousVsAnchor($macLama, $costInbound)) {
+            return $costInbound;
+        }
+
+        return $macLama;
+    }
+
+    /**
+     * MAC rata-rata tertimbang per unit kecil setelah sanitasi MAC lama.
+     */
+    public static function weightedAverageMacPerSmall(
+        float $qtyLama,
+        float $macLama,
+        float $qtyBaru,
+        float $costInbound
+    ): float {
+        $macLamaEffective = self::sanitizeMacForWeightedAverage($macLama, $costInbound);
+        $totalQty = $qtyLama + $qtyBaru;
+        if ($totalQty <= 0) {
+            return $costInbound > 0 ? $costInbound : $macLamaEffective;
+        }
+
+        $totalNilai = ($qtyLama * $macLamaEffective) + ($qtyBaru * $costInbound);
+
+        return $totalNilai / $totalQty;
+    }
+
     /**
      * MAC per unit kecil dari baris stok outlet.
      * Jika value/qty tidak selaras dengan last_cost_small (>5%), pakai last_cost_small
      * agar tidak memperparah anomali dari field value yang stale.
+     * Jika last_cost_small menyimpang dari anchor terpercaya, pakai anchor.
      */
     public static function resolveMacFromStockRow(?object $stock): float
     {
@@ -109,6 +191,23 @@ final class OutletInventoryCostResolver
 
         $qty = (float) ($stock->qty_small ?? 0);
         $lastCost = (float) ($stock->last_cost_small ?? 0);
+
+        $trustedAnchor = null;
+        if (
+            isset($stock->id_outlet, $stock->warehouse_outlet_id, $stock->inventory_item_id)
+            && (int) $stock->warehouse_outlet_id > 0
+        ) {
+            $trustedAnchor = self::latestTrustedNewCostPerSmallUnit(
+                (int) $stock->id_outlet,
+                (int) $stock->warehouse_outlet_id,
+                (int) $stock->inventory_item_id
+            );
+        }
+
+        if ($trustedAnchor !== null && $lastCost > 0 && self::macLooksAnomalousVsAnchor($lastCost, $trustedAnchor)) {
+            $lastCost = $trustedAnchor;
+        }
+
         if ($qty <= 0) {
             return $lastCost;
         }
@@ -122,7 +221,28 @@ final class OutletInventoryCostResolver
             }
         }
 
-        return $implied > 0 ? $implied : $lastCost;
+        $resolved = $implied > 0 ? $implied : $lastCost;
+        if ($trustedAnchor !== null && $resolved > 0 && self::macLooksAnomalousVsAnchor($resolved, $trustedAnchor)) {
+            return $trustedAnchor;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Sanitasi MAC hasil resolve (opname / fallback histori) terhadap anchor pembelian.
+     */
+    public static function sanitizeResolvedMac(float $mac, ?float $anchorFromBatch, ?float $trustedAnchor): float
+    {
+        $anchor = ($anchorFromBatch !== null && $anchorFromBatch > 0)
+            ? $anchorFromBatch
+            : (($trustedAnchor !== null && $trustedAnchor > 0) ? $trustedAnchor : null);
+
+        if ($anchor === null || $mac <= 0) {
+            return $mac;
+        }
+
+        return self::macLooksAnomalousVsAnchor($mac, $anchor) ? $anchor : $mac;
     }
 
     public static function stockTotalValue(float $qtySmall, float $macPerSmall): float

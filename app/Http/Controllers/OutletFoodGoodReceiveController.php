@@ -8,6 +8,7 @@ use App\Models\Outlet;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Support\OutletFoodInventorySaldo;
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Support\Facades\DB;
 
 class OutletFoodGoodReceiveController extends Controller
@@ -509,13 +510,12 @@ class OutletFoodGoodReceiveController extends Controller
                 $stockKey = $inventoryItemId;
                 $stock = $stocks[$stockKey] ?? null;
                 $qty_lama = $stock ? $stock->qty_small : 0;
-                $mac_lama = $stock ? (float) ($stock->last_cost_small ?? 0) : 0;
-                $nilai_lama = $qty_lama * $mac_lama;
+                $mac_lama = $stock ? OutletInventoryCostResolver::resolveMacFromStockRow($stock) : 0.0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small_for_value * $cost_small;
                 $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
+                $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
                 if ($stock) {
                     $stockUpdates[] = [
                         'id' => $stock->id,

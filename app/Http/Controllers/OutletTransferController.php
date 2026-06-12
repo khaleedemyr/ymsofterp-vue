@@ -738,13 +738,11 @@ class OutletTransferController extends Controller
                 }
 
                 // Hitung MAC (Moving Average Cost) untuk warehouse outlet tujuan
-                $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+                $qty_lama = (float) $stockTo->qty_small;
+                $mac_lama = OutletInventoryCostResolver::resolveMacFromStockRow($stockTo);
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $costSmall;
                 $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
+                $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $costSmall);
 
             // Ambil data konversi dari tabel items
             $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
@@ -918,11 +916,10 @@ class OutletTransferController extends Controller
             }
 
             // MAC calculation
-            $qty_lama = $stockTo->qty_small;
-            $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+            $qty_lama = (float) $stockTo->qty_small;
+            $mac_lama = OutletInventoryCostResolver::resolveMacFromStockRow($stockTo);
             $total_qty = $qty_lama + $qty_small;
-            $total_nilai = $nilai_lama + ($qty_small * $costSmall);
-            $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
+            $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_small, $costSmall);
 
             $itemMaster = DB::table('items')->where('id', $si->item_id)->first();
             $smallConv = $itemMaster->small_conversion_qty ?: 1;
@@ -1770,13 +1767,11 @@ class OutletTransferController extends Controller
                 }
                 
                 // Hitung MAC untuk warehouse outlet tujuan
-                $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->qty_small * $stockTo->last_cost_small;
+                $qty_lama = (float) $stockTo->qty_small;
+                $mac_lama = OutletInventoryCostResolver::resolveMacFromStockRow($stockTo);
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small * $costSmall;
                 $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $costSmall;
+                $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $costSmall);
                 
                 // Update MAC di stok warehouse outlet tujuan
                 DB::table('outlet_food_inventory_stocks')

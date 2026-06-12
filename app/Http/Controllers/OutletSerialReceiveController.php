@@ -1133,11 +1133,9 @@ class OutletSerialReceiveController extends Controller
         // Nilai masuk GR = harga jual gudang (costSmall), bukan MAC lama outlet.
         $nilaiBaru = $qtySmall * $costSmall;
         $qtyLama = $stock ? (float) $stock->qty_small : 0;
-        $macLama = $stock ? (float) ($stock->last_cost_small ?? 0) : 0.0;
-        $nilaiLama = $qtyLama * $macLama;
+        $macLama = $stock ? OutletInventoryCostResolver::resolveMacFromStockRow($stock) : 0.0;
         $totalQty = $qtyLama + $qtySmall;
-        $totalNilai = $nilaiLama + $nilaiBaru;
-        $mac = $totalQty > 0 ? $totalNilai / $totalQty : $costSmall;
+        $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qtyLama, $macLama, $qtySmall, $costSmall);
         $syncedValue = OutletInventoryCostResolver::stockTotalValue($totalQty, $mac);
 
         if ($stock) {

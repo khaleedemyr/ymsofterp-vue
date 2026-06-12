@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use App\Models\ActivityLog;
+use App\Support\OutletInventoryCostResolver;
 use Carbon\Carbon;
 use Inertia\Inertia;
 
@@ -563,13 +564,13 @@ class GoodReceiveOutletSupplierController extends Controller
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $outletId)
                     ->first();
-                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_lama = $existingStock ? (float) $existingStock->qty_small : 0;
+                $mac_lama = $existingStock ? OutletInventoryCostResolver::resolveMacFromStockRow($existingStock) : 0.0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small_for_value * $cost_small;
                 $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
+                $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
                 if ($existingStock) {
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $existingStock->id)

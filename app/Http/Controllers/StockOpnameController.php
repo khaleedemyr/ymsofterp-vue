@@ -1847,14 +1847,22 @@ class StockOpnameController extends Controller
      */
     private function resolveStockOpnameMac(?float $anchorFromBatch, int $outletId, ?int $warehouseOutletId, int $inventoryItemId, float $stockLastCostSmall): float
     {
+        $trustedAnchor = ($warehouseOutletId !== null && $warehouseOutletId > 0)
+            ? OutletInventoryCostResolver::latestTrustedNewCostPerSmallUnit($outletId, $warehouseOutletId, $inventoryItemId)
+            : null;
+
         if ($anchorFromBatch !== null && $anchorFromBatch > 0) {
-            return $anchorFromBatch;
-        }
-        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
-            return OutletInventoryCostResolver::latestNewCostPerSmallUnitOrStockFallback($outletId, $warehouseOutletId, $inventoryItemId);
+            return OutletInventoryCostResolver::sanitizeResolvedMac($anchorFromBatch, null, $trustedAnchor);
         }
 
-        return $stockLastCostSmall;
+        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
+            $mac = $trustedAnchor
+                ?? OutletInventoryCostResolver::latestNewCostPerSmallUnitOrStockFallback($outletId, $warehouseOutletId, $inventoryItemId);
+
+            return OutletInventoryCostResolver::sanitizeResolvedMac($mac, null, $trustedAnchor);
+        }
+
+        return OutletInventoryCostResolver::sanitizeResolvedMac($stockLastCostSmall, null, $trustedAnchor);
     }
 
     /**
@@ -1881,9 +1889,29 @@ class StockOpnameController extends Controller
             $q->where('warehouse_outlet_id', $warehouseOutletId);
         }
 
-        $rows = $q->orderByDesc('date')->orderByDesc('id')->get(['inventory_item_id', 'new_cost']);
+        $trustedRefs = [
+            'serial_receive',
+            'good_receive_outlet',
+            'outlet_food_good_receive',
+            'mac_correction',
+        ];
+
+        $trustedQ = clone $q;
+        $trustedRows = $trustedQ
+            ->whereIn('reference_type', $trustedRefs)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->get(['inventory_item_id', 'new_cost']);
 
         $map = [];
+        foreach ($trustedRows as $row) {
+            $iid = (int) $row->inventory_item_id;
+            if (! isset($map[$iid])) {
+                $map[$iid] = (float) $row->new_cost;
+            }
+        }
+
+        $rows = $q->orderByDesc('date')->orderByDesc('id')->get(['inventory_item_id', 'new_cost']);
         foreach ($rows as $row) {
             $iid = (int) $row->inventory_item_id;
             if (! isset($map[$iid])) {
