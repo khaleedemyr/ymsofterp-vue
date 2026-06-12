@@ -53,7 +53,7 @@ class MemberAppsSettingsController extends Controller
                 'outlets' => DB::table('tbl_data_outlet')
                     ->where('status', 'A')
                     ->where('is_outlet', 1)
-                    ->where('is_fc', 0)
+                    ->whereIn('is_fc', [0, 1])
                     ->select('id_outlet as id', 'nama_outlet as name', 'id_brand')
                     ->orderBy('nama_outlet')
                     ->get(),
