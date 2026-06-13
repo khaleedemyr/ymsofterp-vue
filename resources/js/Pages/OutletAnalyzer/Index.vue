@@ -188,6 +188,13 @@ function pct(value) {
   return `${Number(value).toFixed(2)}%`;
 }
 
+function pctOfBase(amount, base, digits = 1) {
+  const num = Number(amount || 0);
+  const denom = Number(base || 0);
+  if (denom <= 0) return '-';
+  return `${((num / denom) * 100).toFixed(digits)}%`;
+}
+
 function pettyCashRowKey(row) {
   return `${row.source}-${row.id}`;
 }
@@ -1050,7 +1057,12 @@ function visitorArea(userId) {
                   class="flex items-center justify-between gap-2 text-xs"
                 >
                   <span class="text-slate-600 truncate">{{ item.label }}</span>
-                  <span class="font-semibold text-slate-800 shrink-0">{{ formatRupiah(item.amount) }}</span>
+                  <span class="font-semibold text-slate-800 shrink-0 text-right">
+                    {{ formatRupiah(item.amount) }}
+                    <span class="block text-[10px] font-normal text-slate-500">
+                      {{ pctOfBase(item.amount, cashflowSummary.cash_in) }} revenue
+                    </span>
+                  </span>
                 </div>
               </div>
               <p v-else class="text-sm text-slate-400 mt-2">Tidak ada pengeluaran.</p>
@@ -1068,7 +1080,8 @@ function visitorArea(userId) {
                   <tr class="text-left text-slate-500 border-b border-slate-200">
                     <th class="py-2 pr-4">Komponen</th>
                     <th class="py-2 text-right">Nominal</th>
-                    <th class="py-2 text-right">%</th>
+                    <th class="py-2 text-right">% Cash Out</th>
+                    <th class="py-2 text-right">% Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1081,17 +1094,19 @@ function visitorArea(userId) {
                     <td class="py-2 pr-4">{{ item.label }}</td>
                     <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
                     <td class="py-2 text-right text-slate-500">
-                      {{
-                        cashflowSummary.cash_out > 0
-                          ? `${((item.amount / cashflowSummary.cash_out) * 100).toFixed(1)}%`
-                          : '-'
-                      }}
+                      {{ pctOfBase(item.amount, cashflowSummary.cash_out) }}
+                    </td>
+                    <td class="py-2 text-right font-medium text-emerald-700">
+                      {{ pctOfBase(item.amount, cashflowSummary.cash_in) }}
                     </td>
                   </tr>
                   <tr class="font-bold bg-slate-50">
                     <td class="py-2 pr-4">Total Cash Out</td>
                     <td class="py-2 text-right">{{ formatRupiah(cashflowSummary.cash_out) }}</td>
                     <td class="py-2 text-right">100%</td>
+                    <td class="py-2 text-right text-emerald-700">
+                      {{ pctOfBase(cashflowSummary.cash_out, cashflowSummary.cash_in) }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -2389,25 +2404,17 @@ function visitorArea(userId) {
                             <td class="py-2 pr-4">{{ item.label }}</td>
                             <td class="py-2 text-right font-medium">{{ formatRupiah(item.amount) }}</td>
                             <td class="py-2 text-right text-slate-500">
-                              {{
-                                cashflowSummary.cash_out > 0
-                                  ? `${((item.amount / cashflowSummary.cash_out) * 100).toFixed(1)}%`
-                                  : '-'
-                              }}
+                              {{ pctOfBase(item.amount, cashflowSummary.cash_out) }}
                             </td>
                             <td class="py-2 text-right text-slate-500">
-                              {{
-                                cashflowSummary.cash_in > 0
-                                  ? `${((item.amount / cashflowSummary.cash_in) * 100).toFixed(1)}%`
-                                  : '-'
-                              }}
+                              {{ pctOfBase(item.amount, cashflowSummary.cash_in) }}
                             </td>
                           </tr>
                           <tr class="font-bold bg-slate-50">
                             <td class="py-2 pr-4">Total</td>
                             <td class="py-2 text-right">{{ formatRupiah(cashflowSummary.cash_out) }}</td>
                             <td class="py-2 text-right">100%</td>
-                            <td class="py-2 text-right">{{ cashflowSummary.cash_out_percentage ?? 0 }}%</td>
+                            <td class="py-2 text-right">{{ pctOfBase(cashflowSummary.cash_out, cashflowSummary.cash_in) }}</td>
                           </tr>
                         </tbody>
                       </table>
