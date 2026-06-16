@@ -24,24 +24,135 @@ const form = ref({
 
 const errors = ref({});
 const saving = ref(false);
+const search = ref('');
+const draggingParamId = ref(null);
+const draggingSelectedIndex = ref(null);
 
-function toggleParam(id) {
-  const idx = form.value.parameter_ids.indexOf(id);
-  if (idx >= 0) form.value.parameter_ids.splice(idx, 1);
-  else form.value.parameter_ids.push(id);
-}
+const parameterMap = computed(() => {
+  const map = {};
+  (props.categories || []).forEach((cat) => {
+    (cat.subcategories || []).forEach((sub) => {
+      (sub.parameters || []).forEach((param) => {
+        map[param.id] = {
+          ...param,
+          category_code: cat.code,
+          category_name: cat.name,
+          subcategory_code: sub.code,
+          subcategory_name: sub.name,
+          search_index: `${param.code} ${param.text} ${cat.code} ${cat.name} ${sub.code} ${sub.name}`.toLowerCase(),
+        };
+      });
+    });
+  });
 
-function isChecked(id) {
-  return form.value.parameter_ids.includes(id);
-}
+  return map;
+});
 
-function selectSubcategory(params, checked) {
-  const ids = params.map(p => p.id);
-  if (checked) {
-    ids.forEach(id => { if (!form.value.parameter_ids.includes(id)) form.value.parameter_ids.push(id); });
-  } else {
-    form.value.parameter_ids = form.value.parameter_ids.filter(id => !ids.includes(id));
+const allParameters = computed(() => {
+  return Object.values(parameterMap.value).sort((a, b) => {
+    const aCode = a.code || '';
+    const bCode = b.code || '';
+    return aCode.localeCompare(bCode);
+  });
+});
+
+const selectedSet = computed(() => new Set(form.value.parameter_ids));
+
+const selectedParams = computed(() => {
+  return form.value.parameter_ids
+    .map((id) => parameterMap.value[id])
+    .filter(Boolean);
+});
+
+const availableParams = computed(() => {
+  const keyword = search.value.trim().toLowerCase();
+
+  return allParameters.value.filter((p) => {
+    if (selectedSet.value.has(p.id)) return false;
+    if (!keyword) return true;
+    return p.search_index.includes(keyword);
+  });
+});
+
+function addParam(id) {
+  if (!form.value.parameter_ids.includes(id)) {
+    form.value.parameter_ids.push(id);
   }
+}
+
+function removeParam(id) {
+  form.value.parameter_ids = form.value.parameter_ids.filter((x) => x !== id);
+}
+
+function moveParamToIndex(id, targetIndex) {
+  const list = [...form.value.parameter_ids];
+  const fromIndex = list.indexOf(id);
+  if (fromIndex === -1) return;
+
+  list.splice(fromIndex, 1);
+
+  const safeIndex = Math.max(0, Math.min(targetIndex, list.length));
+  list.splice(safeIndex, 0, id);
+
+  form.value.parameter_ids = list;
+}
+
+function insertParamAtIndex(id, targetIndex) {
+  const list = [...form.value.parameter_ids];
+  const existingIndex = list.indexOf(id);
+
+  if (existingIndex >= 0) {
+    list.splice(existingIndex, 1);
+  }
+
+  const safeIndex = Math.max(0, Math.min(targetIndex, list.length));
+  list.splice(safeIndex, 0, id);
+  form.value.parameter_ids = list;
+}
+
+function startDragFromAvailable(id) {
+  draggingParamId.value = id;
+  draggingSelectedIndex.value = null;
+}
+
+function startDragFromSelected(id, index) {
+  draggingParamId.value = id;
+  draggingSelectedIndex.value = index;
+}
+
+function allowDrop(event) {
+  event.preventDefault();
+}
+
+function dropToSelectedAt(index) {
+  const id = draggingParamId.value;
+  if (!id) return;
+
+  if (draggingSelectedIndex.value !== null) {
+    moveParamToIndex(id, index);
+  } else {
+    insertParamAtIndex(id, index);
+  }
+
+  clearDragState();
+}
+
+function dropToSelectedEnd() {
+  const id = draggingParamId.value;
+  if (!id) return;
+
+  if (draggingSelectedIndex.value !== null) {
+    moveParamToIndex(id, form.value.parameter_ids.length);
+  } else {
+    addParam(id);
+  }
+
+  clearDragState();
+}
+
+function clearDragState() {
+  draggingParamId.value = null;
+  draggingSelectedIndex.value = null;
 }
 
 function submit() {
@@ -122,32 +233,98 @@ function back() {
         </div>
 
         <div class="lg:col-span-2 bg-white rounded-2xl shadow p-5">
-          <h2 class="text-lg font-bold mb-4">Pilih Parameter Template</h2>
-          <div class="space-y-5 max-h-[75vh] overflow-auto pr-2">
-            <div v-for="cat in categories" :key="cat.id" class="border rounded-xl p-4">
-              <h3 class="font-bold text-blue-800 mb-3">{{ cat.code }} - {{ cat.name }}</h3>
+          <h2 class="text-lg font-bold mb-4">Builder Parameter Template</h2>
 
-              <div class="space-y-3">
-                <div v-for="sub in cat.subcategories" :key="sub.id" class="border rounded-lg p-3 bg-gray-50">
-                  <div class="flex items-center justify-between mb-2">
-                    <p class="font-semibold text-gray-700">{{ sub.code }} - {{ sub.name }}</p>
-                    <div class="space-x-2">
-                      <button class="text-xs px-2 py-1 rounded bg-green-100 text-green-700" @click="selectSubcategory(sub.parameters, true)">Pilih Semua</button>
-                      <button class="text-xs px-2 py-1 rounded bg-red-100 text-red-700" @click="selectSubcategory(sub.parameters, false)">Clear</button>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="border rounded-xl p-3 bg-gray-50">
+              <div class="mb-3">
+                <label class="block text-sm mb-1">Cari Parameter</label>
+                <input
+                  v-model="search"
+                  placeholder="Cari code, isi parameter, kategori, subkategori..."
+                  class="w-full border rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+
+              <p class="text-xs text-gray-600 mb-2">
+                Hasil: <strong>{{ availableParams.length }}</strong> parameter (drag ke area kanan)
+              </p>
+
+              <div class="space-y-2 max-h-[66vh] overflow-auto pr-1">
+                <div
+                  v-for="p in availableParams"
+                  :key="p.id"
+                  class="bg-white border rounded-lg p-2 cursor-grab active:cursor-grabbing"
+                  draggable="true"
+                  @dragstart="startDragFromAvailable(p.id)"
+                  @dragend="clearDragState"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <p class="text-sm font-semibold text-gray-800">
+                        {{ p.code }}
+                        <span class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
+                      </p>
+                      <p class="text-xs text-gray-600">{{ p.text }}</p>
+                      <p class="text-[11px] text-gray-500 mt-1">
+                        {{ p.category_code }} / {{ p.subcategory_code }}
+                      </p>
                     </div>
-                  </div>
-
-                  <div class="space-y-2">
-                    <label v-for="p in sub.parameters" :key="p.id" class="flex items-start gap-2 bg-white rounded p-2 border hover:border-blue-300">
-                      <input type="checkbox" :checked="isChecked(p.id)" @change="toggleParam(p.id)" class="mt-1" />
-                      <div>
-                        <p class="text-sm font-medium">{{ p.code }} <span class="text-blue-700">(bobot {{ p.weight }})</span></p>
-                        <p class="text-xs text-gray-600">{{ p.text }}</p>
-                      </div>
-                    </label>
-                    <p v-if="!sub.parameters?.length" class="text-xs text-gray-400">Tidak ada parameter aktif.</p>
+                    <button
+                      type="button"
+                      class="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700"
+                      @click="addParam(p.id)"
+                    >
+                      Tambah
+                    </button>
                   </div>
                 </div>
+                <p v-if="availableParams.length === 0" class="text-xs text-gray-500 py-2">
+                  Tidak ada parameter yang cocok.
+                </p>
+              </div>
+            </div>
+
+            <div
+              class="border-2 border-dashed rounded-xl p-3 min-h-[18rem]"
+              @dragover="allowDrop"
+              @drop="dropToSelectedEnd"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <p class="text-sm font-semibold text-gray-800">Area Template Terpilih</p>
+                <p class="text-xs text-gray-600">{{ form.parameter_ids.length }} parameter</p>
+              </div>
+
+              <div class="space-y-2 max-h-[66vh] overflow-auto pr-1">
+                <div
+                  v-for="(p, index) in selectedParams"
+                  :key="`${p.id}-${index}`"
+                  class="bg-blue-50 border border-blue-200 rounded-lg p-2"
+                  draggable="true"
+                  @dragstart="startDragFromSelected(p.id, index)"
+                  @dragend="clearDragState"
+                  @dragover="allowDrop"
+                  @drop="dropToSelectedAt(index)"
+                >
+                  <div class="flex items-start justify-between gap-2">
+                    <div>
+                      <p class="text-xs text-blue-800 font-semibold">#{{ index + 1 }} {{ p.code }}</p>
+                      <p class="text-xs text-gray-700">{{ p.text }}</p>
+                      <p class="text-[11px] text-gray-500 mt-1">{{ p.category_code }} / {{ p.subcategory_code }}</p>
+                    </div>
+                    <button
+                      type="button"
+                      class="text-xs px-2 py-1 rounded bg-red-100 text-red-700"
+                      @click="removeParam(p.id)"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+
+                <p v-if="selectedParams.length === 0" class="text-xs text-gray-500 py-8 text-center">
+                  Drop parameter ke area ini untuk menambahkan ke template.
+                </p>
               </div>
             </div>
           </div>
