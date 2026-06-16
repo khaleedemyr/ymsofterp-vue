@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
 
 const props = defineProps({
@@ -79,6 +80,30 @@ function sourceLabel(type) {
         asset_good_receive: 'Good Receive',
     };
     return map[type] || type || '-';
+}
+
+function canDeleteRow(row) {
+    return row.status === 'available';
+}
+
+function deleteSerial(row) {
+    Swal.fire({
+        title: 'Hapus Nomor Seri?',
+        html: `Nomor seri <b>${row.serial_number}</b> akan dihapus permanen.<br><small class="text-gray-500">Hanya serial Available yang belum dipakai transaksi lain.</small>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Ya, hapus',
+        cancelButtonText: 'Batal',
+    }).then((result) => {
+        if (result.isConfirmed) {
+            router.delete(`/asset-serials/${row.id}`, {
+                onSuccess: () => Swal.fire('Terhapus', 'Nomor seri berhasil dihapus.', 'success'),
+                onError: (errors) => Swal.fire('Gagal', errors.message || 'Tidak dapat menghapus nomor seri ini.', 'error'),
+            });
+        }
+    });
 }
 </script>
 
@@ -171,7 +196,15 @@ function sourceLabel(type) {
                                     <td class="px-4 py-3 text-xs">{{ sourceLabel(row.source_type) }}</td>
                                     <td class="px-4 py-3 text-xs text-gray-500">{{ row.tagged_at ? new Date(row.tagged_at).toLocaleString('id-ID') : '-' }}</td>
                                     <td class="px-4 py-3">
-                                        <Link :href="`/asset-serials/${row.id}`" class="text-teal-600 hover:underline font-medium">Lihat</Link>
+                                        <div class="flex items-center gap-3">
+                                            <Link :href="`/asset-serials/${row.id}`" class="text-teal-600 hover:underline font-medium">Lihat</Link>
+                                            <button
+                                                v-if="canDeleteRow(row)"
+                                                type="button"
+                                                @click.stop="deleteSerial(row)"
+                                                class="text-red-600 hover:underline font-medium text-sm"
+                                            >Hapus</button>
+                                        </div>
                                     </td>
                                 </tr>
                             </tbody>

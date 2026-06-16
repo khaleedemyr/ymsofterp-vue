@@ -1454,6 +1454,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/asset-serials', [\App\Http\Controllers\AssetSerialController::class, 'apiIndex']);
         Route::get('/asset-serials/items-with-stock', [\App\Http\Controllers\AssetSerialController::class, 'apiItemsWithStock']);
         Route::get('/asset-serials/lookup', [\App\Http\Controllers\AssetSerialController::class, 'apiLookup']);
+        Route::get('/asset-serials/{id}', [\App\Http\Controllers\AssetSerialController::class, 'apiShow']);
+        Route::delete('/asset-serials/{id}', [\App\Http\Controllers\AssetSerialController::class, 'apiDestroy']);
         Route::post('/asset-serials/enable-tracking', [\App\Http\Controllers\AssetSerialController::class, 'apiEnableTracking']);
         Route::post('/asset-serials/prepare-tag', [\App\Http\Controllers\AssetSerialController::class, 'apiPrepareTag']);
         Route::post('/asset-serials/confirm-tag', [\App\Http\Controllers\AssetSerialController::class, 'apiConfirmTag']);

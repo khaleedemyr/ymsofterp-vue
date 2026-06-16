@@ -707,6 +707,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-serials', [\App\Http\Controllers\AssetSerialController::class, 'store'])->name('asset-serials.store');
     Route::get('/asset-serials/items-with-stock', [\App\Http\Controllers\AssetSerialController::class, 'itemsWithStock'])->name('asset-serials.items-with-stock');
     Route::get('/asset-serials/{id}', [\App\Http\Controllers\AssetSerialController::class, 'show'])->name('asset-serials.show');
+    Route::delete('/asset-serials/{id}', [\App\Http\Controllers\AssetSerialController::class, 'destroy'])->name('asset-serials.destroy');
 
     // Saldo Awal Stock Asset
     Route::get('/asset-stock-balances', [\App\Http\Controllers\AssetStockBalanceController::class, 'index'])->name('asset-stock-balances.index');

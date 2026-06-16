@@ -74,7 +74,7 @@ class AssetSerialController extends Controller
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 'ai.track_serial',
-                'u.name as tagged_by_name'
+                'u.nama_lengkap as tagged_by_name'
             );
 
         AssetInventoryStockService::applyOwnerVisibilityForUser($query, $user, 's.owner_outlet_id');
@@ -87,13 +87,14 @@ class AssetSerialController extends Controller
         $movements = DB::table('asset_serial_movements as m')
             ->leftJoin('users as u', 'm.moved_by', '=', 'u.id')
             ->where('m.serial_id', $id)
-            ->select('m.*', 'u.name as moved_by_name')
+            ->select('m.*', 'u.nama_lengkap as moved_by_name')
             ->orderByDesc('m.id')
             ->get();
 
         return Inertia::render('AssetSerial/Show', [
             'serial' => $serial,
             'movements' => $movements,
+            'canDelete' => $this->canDeleteSerial($serial),
         ]);
     }
 
@@ -175,6 +176,17 @@ class AssetSerialController extends Controller
         return back()->with('success', 'Pelacakan serial diaktifkan untuk item ini.');
     }
 
+    public function destroy(int $id)
+    {
+        $result = $this->deleteSerialRecord($id);
+        if (!$result['success']) {
+            return back()->withErrors(['message' => $result['message']]);
+        }
+
+        return redirect()->route('asset-serials.index')
+            ->with('success', 'Nomor seri berhasil dihapus.');
+    }
+
     // ─── API (mobile) ────────────────────────────────────────────────
 
     public function apiMeta(Request $request)
@@ -199,7 +211,7 @@ class AssetSerialController extends Controller
             'user' => [
                 'id' => $user->id ?? null,
                 'id_outlet' => $user->id_outlet ?? null,
-                'name' => $user->name ?? null,
+                'name' => $user->nama_lengkap ?? null,
             ],
             'ndef_prefix' => self::NDEF_PREFIX,
         ]);
@@ -394,6 +406,63 @@ class AssetSerialController extends Controller
             'serial' => $serial,
             'movements' => $movements,
         ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        if (!Schema::hasTable('asset_inventory_serials')) {
+            return response()->json(['success' => false, 'message' => 'Tabel asset serial belum tersedia.'], 503);
+        }
+
+        $user = auth()->user();
+        $query = DB::table('asset_inventory_serials as s')
+            ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
+            ->join('items as i', 's.item_id', '=', 'i.id')
+            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 's.tagged_by', '=', 'u.id')
+            ->where('s.id', $id)
+            ->select(
+                's.*',
+                'i.name as item_name',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
+                'wo.name as warehouse_name',
+                'ai.track_serial',
+                'u.nama_lengkap as tagged_by_name'
+            );
+
+        AssetInventoryStockService::applyOwnerVisibilityForUser($query, $user, 's.owner_outlet_id');
+
+        $serial = $query->first();
+        if (!$serial) {
+            return response()->json(['success' => false, 'message' => 'Nomor seri tidak ditemukan'], 404);
+        }
+
+        $movements = DB::table('asset_serial_movements as m')
+            ->leftJoin('users as u', 'm.moved_by', '=', 'u.id')
+            ->where('m.serial_id', $id)
+            ->select('m.*', 'u.nama_lengkap as moved_by_name')
+            ->orderByDesc('m.id')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'serial' => $serial,
+            'movements' => $movements,
+            'can_delete' => $this->canDeleteSerial($serial),
+        ]);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $result = $this->deleteSerialRecord($id);
+        if (!$result['success']) {
+            return response()->json(['success' => false, 'message' => $result['message']], $result['status'] ?? 422);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Nomor seri berhasil dihapus.']);
     }
 
     private function buildSerialListQuery(Request $request, $user)
@@ -635,6 +704,48 @@ class AssetSerialController extends Controller
             DB::rollBack();
             return ['success' => false, 'message' => 'Gagal menyimpan: ' . $e->getMessage(), 'status' => 500];
         }
+    }
+
+    private function deleteSerialRecord(int $id): array
+    {
+        if (!Schema::hasTable('asset_inventory_serials')) {
+            return ['success' => false, 'message' => 'Tabel asset serial belum tersedia.', 'status' => 503];
+        }
+
+        $user = auth()->user();
+        $serial = DB::table('asset_inventory_serials')->where('id', $id)->first();
+
+        if (!$serial) {
+            return ['success' => false, 'message' => 'Nomor seri tidak ditemukan', 'status' => 404];
+        }
+
+        if ($user && (int) $user->id_outlet !== 1 && (int) $user->id_outlet !== (int) $serial->owner_outlet_id) {
+            return ['success' => false, 'message' => 'Tidak berhak menghapus nomor seri ini', 'status' => 403];
+        }
+
+        if (!$this->canDeleteSerial($serial)) {
+            return [
+                'success' => false,
+                'message' => 'Nomor seri hanya bisa dihapus jika status Available dan belum dipakai transaksi lain.',
+                'status' => 422,
+            ];
+        }
+
+        DB::table('asset_inventory_serials')->where('id', $id)->delete();
+
+        return ['success' => true];
+    }
+
+    private function canDeleteSerial(object $serial): bool
+    {
+        if (($serial->status ?? '') !== 'available') {
+            return false;
+        }
+
+        return !DB::table('asset_serial_movements')
+            ->where('serial_id', $serial->id)
+            ->where('movement_type', '!=', 'tagged')
+            ->exists();
     }
 
     private function lookupSerialById(int $id): ?object

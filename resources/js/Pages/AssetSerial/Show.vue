@@ -1,10 +1,12 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
     serial: Object,
     movements: Array,
+    canDelete: { type: Boolean, default: false },
 });
 
 function statusBadge(status) {
@@ -35,6 +37,26 @@ function movementLabel(type) {
     const map = { tagged: 'Terdaftar / Di-tag' };
     return map[type] || type;
 }
+
+function deleteSerial() {
+    Swal.fire({
+        title: 'Hapus Nomor Seri?',
+        html: `Nomor seri <b>${props.serial.serial_number}</b> akan dihapus permanen.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Ya, hapus',
+        cancelButtonText: 'Batal',
+    }).then((result) => {
+        if (result.isConfirmed) {
+            router.delete(`/asset-serials/${props.serial.id}`, {
+                onSuccess: () => Swal.fire('Terhapus', 'Nomor seri berhasil dihapus.', 'success'),
+                onError: (errors) => Swal.fire('Gagal', errors.message || 'Tidak dapat menghapus.', 'error'),
+            });
+        }
+    });
+}
 </script>
 
 <template>
@@ -52,9 +74,19 @@ function movementLabel(type) {
                         <h1 class="text-2xl font-bold text-teal-700 font-mono">{{ serial.serial_number }}</h1>
                         <p class="text-gray-600 mt-1">{{ serial.item_name }}</p>
                     </div>
-                    <span class="px-3 py-1 rounded-full text-sm font-semibold" :class="statusBadge(serial.status)">
-                        {{ statusLabel(serial.status) }}
-                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="px-3 py-1 rounded-full text-sm font-semibold" :class="statusBadge(serial.status)">
+                            {{ statusLabel(serial.status) }}
+                        </span>
+                        <button
+                            v-if="canDelete"
+                            type="button"
+                            @click="deleteSerial"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 text-sm font-medium transition"
+                        >
+                            <i class="fa-solid fa-trash"></i> Hapus
+                        </button>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
