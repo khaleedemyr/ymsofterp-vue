@@ -55,6 +55,43 @@ function canCap(audit) {
   return audit.status === 'submitted' && Number(audit.count_nc || 0) > 0 && Number(audit.count_nc_pending_cap || 0) > 0;
 }
 
+function auditScore(audit) {
+  const compliant = Number(audit.count_c || 0);
+  const nonCompliant = Number(audit.count_nc || 0);
+  const denominator = compliant + nonCompliant;
+  if (denominator <= 0) {
+    return 0;
+  }
+  return (compliant / denominator) * 100;
+}
+
+function formatScore(value) {
+  return `${Number(value || 0).toFixed(0)}%`;
+}
+
+function auditResult(audit) {
+  const score = auditScore(audit);
+  if (score >= 91) {
+    return {
+      label: 'EXCELLENT',
+      className: 'bg-emerald-100 text-emerald-700',
+      score,
+    };
+  }
+  if (score >= 85) {
+    return {
+      label: 'SATISFACTORY',
+      className: 'bg-yellow-100 text-yellow-700',
+      score,
+    };
+  }
+  return {
+    label: 'TO IMPROVE',
+    className: 'bg-rose-100 text-rose-700',
+    score,
+  };
+}
+
 function openCap(id) {
   router.visit(route('qa2-audits.edit', id));
 }
@@ -149,6 +186,7 @@ async function removeAudit(id) {
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Outlet</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Template</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">C / NC / NA</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Audit Result</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Status</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Aksi</th>
               </tr>
@@ -167,6 +205,12 @@ async function removeAudit(id) {
                   <span class="font-semibold text-rose-600">{{ audit.count_nc || 0 }}</span>
                   /
                   <span class="font-semibold text-slate-600">{{ audit.count_na || 0 }}</span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700">
+                  <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="auditResult(audit).className">
+                    {{ auditResult(audit).label }}
+                  </span>
+                  <div class="mt-1 text-xs font-medium text-gray-500">{{ formatScore(auditResult(audit).score) }}</div>
                 </td>
                 <td class="px-4 py-3 text-sm">
                   <span
@@ -212,7 +256,7 @@ async function removeAudit(id) {
                 </td>
               </tr>
               <tr v-if="!audits.data.length">
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-gray-500">
+                <td colspan="7" class="px-4 py-10 text-center text-sm text-gray-500">
                   Data QA Audit belum ada.
                 </td>
               </tr>

@@ -102,6 +102,95 @@ const groupedItems = computed(() => {
   }));
 });
 
+const categorySummaryRows = computed(() => {
+  const map = new Map();
+
+  for (const item of items.value) {
+    const key = item.category_id || 0;
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        name: item.category_name || 'Tanpa Kategori',
+        compliant: 0,
+        non_compliant: 0,
+        non_applicable: 0,
+      });
+    }
+
+    const row = map.get(key);
+    if (item.result === 'C') {
+      row.compliant += 1;
+    } else if (item.result === 'NC') {
+      row.non_compliant += 1;
+    } else if (item.result === 'NA') {
+      row.non_applicable += 1;
+    }
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .map((row, index) => {
+      const denominator = row.compliant + row.non_compliant;
+      const score = denominator > 0 ? (row.compliant / denominator) * 100 : 0;
+      return {
+        ...row,
+        no: index + 1,
+        score,
+      };
+    });
+});
+
+const summaryTotal = computed(() => {
+  const total = {
+    compliant: 0,
+    non_compliant: 0,
+    non_applicable: 0,
+  };
+
+  for (const row of categorySummaryRows.value) {
+    total.compliant += row.compliant;
+    total.non_compliant += row.non_compliant;
+    total.non_applicable += row.non_applicable;
+  }
+
+  const denominator = total.compliant + total.non_compliant;
+  const score = denominator > 0 ? (total.compliant / denominator) * 100 : 0;
+
+  return {
+    ...total,
+    score,
+  };
+});
+
+function formatScore(value) {
+  return `${Number(value || 0).toFixed(0)}%`;
+}
+
+function resolveAuditResult(score) {
+  const numeric = Number(score || 0);
+  if (numeric >= 91) {
+    return {
+      label: 'EXCELLENT',
+      range: '91 - 100%',
+      className: 'bg-emerald-500 text-white',
+    };
+  }
+  if (numeric >= 85) {
+    return {
+      label: 'SATISFACTORY',
+      range: '85 - 90%',
+      className: 'bg-yellow-300 text-gray-900',
+    };
+  }
+  return {
+    label: 'TO IMPROVE',
+    range: '<85%',
+    className: 'bg-red-600 text-white',
+  };
+}
+
+const overallAuditResult = computed(() => resolveAuditResult(summaryTotal.value.score));
+
 const draftPayload = computed(() => ({
   outlet_id: selectedOutlet.value?.id_outlet || null,
   auditor_ids: selectedAuditors.value.map((u) => u.id),
@@ -579,6 +668,89 @@ async function uploadCapMedia(item, event) {
 
           <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
             Tidak ada parameter yang cocok dengan pencarian.
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!isCreate" class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">QA Audit Detail Summary</h2>
+
+        <div class="overflow-hidden rounded-lg border border-gray-200">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-amber-900 text-white">
+                <tr>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">No</th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Category</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Compliant</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Compliant</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Applicable</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Score</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <tr v-for="row in categorySummaryRows" :key="row.id">
+                  <td class="px-3 py-2 text-center text-sm font-semibold text-gray-900">{{ row.no }}</td>
+                  <td class="px-3 py-2 text-sm font-semibold uppercase text-gray-900">{{ row.name }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                </tr>
+
+                <tr v-if="!categorySummaryRows.length">
+                  <td colspan="6" class="px-3 py-6 text-center text-sm text-gray-500">
+                    Belum ada data parameter untuk dirangkum.
+                  </td>
+                </tr>
+              </tbody>
+              <tfoot class="bg-amber-900 text-white">
+                <tr>
+                  <td class="px-3 py-2 text-center text-sm font-semibold" colspan="2">TOTAL</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_applicable }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(summaryTotal.score) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-hidden rounded-lg border border-gray-200">
+          <div class="bg-gray-100 px-4 py-2 text-lg font-bold text-gray-900">AUDIT RESULT % :</div>
+          <div class="divide-y divide-gray-200">
+            <div class="grid grid-cols-12 items-center">
+              <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+                EXCELLENT
+                <span class="float-right">:</span>
+              </div>
+              <div class="col-span-4 bg-emerald-500 px-4 py-2 text-right text-2xl font-bold text-white">91 - 100%</div>
+            </div>
+
+            <div class="grid grid-cols-12 items-center">
+              <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+                SATISFACTORY
+                <span class="float-right">:</span>
+              </div>
+              <div class="col-span-4 bg-yellow-300 px-4 py-2 text-right text-2xl font-bold text-gray-900">85-90%</div>
+            </div>
+
+            <div class="grid grid-cols-12 items-center">
+              <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+                TO IMPROVE
+                <span class="float-right">:</span>
+              </div>
+              <div class="col-span-4 bg-red-600 px-4 py-2 text-right text-2xl font-bold text-white">&lt;85%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+          <div class="text-sm font-semibold text-gray-500">Overall Audit Result</div>
+          <div class="mt-2 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold" :class="overallAuditResult.className">
+            <span>{{ overallAuditResult.label }}</span>
+            <span>({{ formatScore(summaryTotal.score) }})</span>
           </div>
         </div>
       </div>
