@@ -950,8 +950,8 @@ class OutletSerialReceiveController extends Controller
 
     /**
      * Harga per satuan kecil untuk GR Nomor Seri.
-     * - pricing_mode auto: Food GR pusat terakhir + 12% (selaras item_prices auto)
-     * - pricing_mode manual: item_prices (outlet > region > all), basis large → kecil
+     * - pricing_mode manual: item_prices outlet/region/all (bukan cost_small serial)
+     * - pricing_mode auto: cost_small serial, lalu FGR pusat + 12%
      *
      * @return array{0: float, 1: string, 2: string} [cost_small, cost_source_db, cost_source_label]
      */
@@ -979,40 +979,45 @@ class OutletSerialReceiveController extends Controller
         $outletId = $serial->out_outlet_id ?? null;
         $itemMaster = DB::table('items')->where('id', $itemId)->first();
 
-        // Harga jual gudang tercatat saat serial di-generate/dispatch — sumber utama GR receive outlet.
-        if ((float) ($serial->cost_small ?? 0) > 0) {
-            return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga jual gudang (serial)'];
-        }
-
         $priceRow = $this->resolveItemPriceRowForOutlet($itemId, $outletId);
         $mode = 'manual';
         if ($priceRow && Schema::hasColumn('item_prices', 'pricing_mode')) {
             $mode = ($priceRow->pricing_mode === 'auto') ? 'auto' : 'manual';
         }
 
-        if ($mode === 'auto') {
-            $costSmall = $this->costSmallFromCentralFoodGrMarkup($itemId, $itemMaster);
-            if ($costSmall > 0) {
-                return [$costSmall, 'auto_fgr_12pct', 'FGR Pusat +12%'];
-            }
-            if ($serial->source_type === 'good_receive' && (float) ($serial->cost_small ?? 0) > 0) {
-                return [
-                    round((float) $serial->cost_small * 1.12, 4),
-                    'fgr_modal_12pct',
-                    'FGR (Modal+12%)',
-                ];
+        // Manual: selalu ikut item_prices (master), bukan cost_small batch serial.
+        if ($mode === 'manual') {
+            if ($priceRow && (float) $priceRow->price > 0) {
+                $costSmall = $this->itemPriceLargeToCostSmall((float) $priceRow->price, $itemMaster);
+
+                return [$costSmall, 'item_prices', 'Item Price (manual)'];
             }
 
-            return [0.0, 'auto_fgr_12pct', 'FGR Pusat +12%'];
+            if ((float) ($serial->cost_small ?? 0) > 0) {
+                return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga serial (fallback, item price kosong)'];
+            }
+
+            return [0.0, 'item_prices', 'Item Price (manual)'];
         }
 
-        if ($priceRow && (float) $priceRow->price > 0) {
-            $costSmall = $this->itemPriceLargeToCostSmall((float) $priceRow->price, $itemMaster);
-
-            return [$costSmall, 'item_prices', 'Item Price (manual)'];
+        // Auto (+12%): cost batch serial / FGR pusat — bukan harga manual master.
+        if ((float) ($serial->cost_small ?? 0) > 0) {
+            return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga jual gudang (serial)'];
         }
 
-        return [0.0, 'item_prices', 'Item Price (manual)'];
+        $costSmall = $this->costSmallFromCentralFoodGrMarkup($itemId, $itemMaster);
+        if ($costSmall > 0) {
+            return [$costSmall, 'auto_fgr_12pct', 'FGR Pusat +12%'];
+        }
+        if ($serial->source_type === 'good_receive' && (float) ($serial->cost_small ?? 0) > 0) {
+            return [
+                round((float) $serial->cost_small * 1.12, 4),
+                'fgr_modal_12pct',
+                'FGR (Modal+12%)',
+            ];
+        }
+
+        return [0.0, 'auto_fgr_12pct', 'FGR Pusat +12%'];
     }
 
     private function determineCost(object $serial): float
