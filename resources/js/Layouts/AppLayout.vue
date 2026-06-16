@@ -198,6 +198,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.qa_categories'), icon: 'fa-solid fa-clipboard-list', route: '/qa-categories', code: 'qa_categories' },
             { name: () => t('sidebar.menus.qa_parameters'), icon: 'fa-solid fa-cogs', route: '/qa-parameters', code: 'qa_parameters' },
             { name: () => t('sidebar.menus.qa_guidance'), icon: 'fa-solid fa-clipboard-check', route: '/qa-guidances', code: 'qa_guidances' },
+            { name: () => 'QA2 Templates', icon: 'fa-solid fa-layer-group', route: '/qa2-templates', code: 'qa2_templates' },
             { name: () => t('sidebar.menus.inspections'), icon: 'fa-solid fa-camera', route: '/inspections', code: 'inspections' },
         ],
     },

@@ -2383,6 +2383,15 @@ Route::patch('qa-parameters/{qaParameter}/toggle-status', [\App\Http\Controllers
 Route::resource('qa-guidances', \App\Http\Controllers\QaGuidanceController::class);
 Route::patch('qa-guidances/{qaGuidance}/toggle-status', [\App\Http\Controllers\QaGuidanceController::class, 'toggleStatus'])->name('qa-guidances.toggle-status');
 
+// QA2 Template Routes
+Route::get('qa2-templates', [\App\Http\Controllers\Qa2TemplateController::class, 'index'])->name('qa2-templates.index');
+Route::get('qa2-templates/create', [\App\Http\Controllers\Qa2TemplateController::class, 'create'])->name('qa2-templates.create');
+Route::post('qa2-templates', [\App\Http\Controllers\Qa2TemplateController::class, 'store'])->name('qa2-templates.store');
+Route::get('qa2-templates/{id}/edit', [\App\Http\Controllers\Qa2TemplateController::class, 'edit'])->name('qa2-templates.edit');
+Route::put('qa2-templates/{id}', [\App\Http\Controllers\Qa2TemplateController::class, 'update'])->name('qa2-templates.update');
+Route::delete('qa2-templates/{id}', [\App\Http\Controllers\Qa2TemplateController::class, 'destroy'])->name('qa2-templates.destroy');
+Route::patch('qa2-templates/{id}/toggle-status', [\App\Http\Controllers\Qa2TemplateController::class, 'toggleStatus'])->name('qa2-templates.toggle-status');
+
 // Inspection Routes
 Route::resource('inspections', \App\Http\Controllers\InspectionController::class);
 Route::get('inspections/{inspection}/add-finding', [\App\Http\Controllers\InspectionController::class, 'addFinding'])->name('inspections.add-finding');
