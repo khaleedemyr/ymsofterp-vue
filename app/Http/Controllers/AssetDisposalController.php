@@ -510,6 +510,9 @@ class AssetDisposalController extends Controller
         if ($request->type) {
             $query->where('d.type', $request->type);
         }
+        if ($request->outlet_id) {
+            $query->where('d.id_outlet', $request->outlet_id);
+        }
 
         $page = $request->get('page', 1);
         $perPage = $request->get('per_page', 15);

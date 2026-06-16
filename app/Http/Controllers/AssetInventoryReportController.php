@@ -339,6 +339,7 @@ class AssetInventoryReportController extends Controller
         $labels = [
             'asset_good_receive' => 'Good Receive',
             'asset_inventory_transfer' => 'Transfer',
+            'asset_owner_transfer' => 'Transfer Kepemilikan',
             'asset_stock_adjustment' => 'Stock Adjustment',
             'asset_service_order' => 'Service Order',
             'asset_disposal' => 'Disposal',
@@ -355,6 +356,10 @@ class AssetInventoryReportController extends Controller
                 break;
             case 'asset_inventory_transfer':
                 $rec = DB::table('asset_inventory_transfers')->where('id', $referenceId)->value('transfer_number');
+                $number = $rec;
+                break;
+            case 'asset_owner_transfer':
+                $rec = DB::table('asset_owner_transfers')->where('id', $referenceId)->value('transfer_number');
                 $number = $rec;
                 break;
             case 'asset_stock_adjustment':

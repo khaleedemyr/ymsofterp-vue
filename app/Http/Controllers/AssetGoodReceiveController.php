@@ -915,6 +915,7 @@ class AssetGoodReceiveController extends Controller
         $query = DB::table('asset_good_receives as gr')
             ->leftJoin('purchase_order_ops as po', 'gr.po_id', '=', 'po.id')
             ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 'gr.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 'gr.received_by', '=', 'u.id')
             ->leftJoin('suppliers as s', 'po.supplier_id', '=', 's.id')
@@ -922,6 +923,7 @@ class AssetGoodReceiveController extends Controller
                 'gr.id',
                 'gr.gr_number',
                 'gr.po_id',
+                'gr.owner_outlet_id',
                 'gr.outlet_id',
                 'gr.warehouse_outlet_id',
                 'gr.receive_date',
@@ -931,6 +933,8 @@ class AssetGoodReceiveController extends Controller
                 'gr.created_at',
                 'gr.updated_at',
                 'po.number as po_number',
+                'oo.nama_outlet as owner_outlet_name',
+                'o.nama_outlet as location_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name',
@@ -939,7 +943,7 @@ class AssetGoodReceiveController extends Controller
             ->addSelect(DB::raw('(SELECT COALESCE(SUM(gri.total), 0) FROM asset_good_receive_items gri WHERE gri.asset_good_receive_id = gr.id) as total'));
 
         if ($user->id_outlet != 1) {
-            $query->where('gr.outlet_id', $user->id_outlet);
+            $query->where('gr.owner_outlet_id', $user->id_outlet);
         }
 
         if ($request->search) {
@@ -955,6 +959,15 @@ class AssetGoodReceiveController extends Controller
         }
         if ($request->to) {
             $query->whereDate('gr.receive_date', '<=', $request->to);
+        }
+        if ($request->status) {
+            $query->where('gr.status', $request->status);
+        }
+        if ($request->owner_outlet_id) {
+            $query->where('gr.owner_outlet_id', $request->owner_outlet_id);
+        }
+        if ($request->outlet_id) {
+            $query->where('gr.outlet_id', $request->outlet_id);
         }
 
         $perPage = $request->per_page ?? 20;
@@ -1184,6 +1197,129 @@ class AssetGoodReceiveController extends Controller
         }
     }
 
+    public function apiUpdate(Request $request, $id)
+    {
+        $request->validate([
+            'owner_outlet_id' => 'required|integer',
+            'outlet_id' => 'required|integer',
+            'warehouse_outlet_id' => 'nullable|integer',
+            'receive_date' => 'required|date',
+            'notes' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'nullable|integer',
+            'items.*.po_item_id' => 'required|integer',
+            'items.*.item_id' => 'required|integer',
+            'items.*.unit_id' => 'required|integer',
+            'items.*.qty_ordered' => 'required|numeric|min:0',
+            'items.*.qty_received' => 'required|numeric|min:0.01',
+            'items.*.price' => 'required|numeric|min:0',
+            'items.*.notes' => 'nullable|string',
+        ]);
+
+        if ($request->warehouse_outlet_id) {
+            AssetInventoryStockService::assertWarehouseBelongsToOutlet(
+                (int) $request->warehouse_outlet_id,
+                (int) $request->outlet_id
+            );
+        }
+
+        $locationOutletId = AssetInventoryStockService::resolveLocationOutletId(
+            (int) $request->outlet_id,
+            $request->warehouse_outlet_id ? (int) $request->warehouse_outlet_id : null
+        );
+
+        DB::beginTransaction();
+        try {
+            $gr = AssetGoodReceive::findOrFail($id);
+
+            if ($gr->status !== 'draft') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hanya GR dengan status draft yang dapat diedit.',
+                ], 422);
+            }
+
+            $oldItems = AssetGoodReceiveItem::where('asset_good_receive_id', $id)->get();
+            foreach ($oldItems as $oldItem) {
+                $this->rollbackInventory(
+                    $oldItem->item_id,
+                    $oldItem->unit_id,
+                    (float) $oldItem->qty_received,
+                    (int) $gr->owner_outlet_id,
+                    (int) $gr->outlet_id,
+                    $gr->warehouse_outlet_id,
+                    $gr->id
+                );
+            }
+
+            AssetGoodReceiveItem::where('asset_good_receive_id', $id)->delete();
+
+            $gr->update([
+                'owner_outlet_id' => $request->owner_outlet_id,
+                'outlet_id' => $locationOutletId,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                'receive_date' => $request->receive_date,
+                'notes' => $request->notes,
+            ]);
+
+            foreach ($request->items as $itemData) {
+                $qtyReceived = (float) $itemData['qty_received'];
+                $price = (float) $itemData['price'];
+                $total = $qtyReceived * $price;
+
+                $grItem = AssetGoodReceiveItem::create([
+                    'asset_good_receive_id' => $gr->id,
+                    'po_item_id' => $itemData['po_item_id'],
+                    'item_id' => $itemData['item_id'],
+                    'unit_id' => $itemData['unit_id'],
+                    'qty_ordered' => $itemData['qty_ordered'],
+                    'qty_received' => $qtyReceived,
+                    'price' => $price,
+                    'total' => $total,
+                    'notes' => $itemData['notes'] ?? null,
+                ]);
+
+                $this->processInventoryIn(
+                    $itemData['item_id'],
+                    $itemData['unit_id'],
+                    $qtyReceived,
+                    $price,
+                    (int) $request->owner_outlet_id,
+                    $locationOutletId,
+                    $request->warehouse_outlet_id,
+                    $request->receive_date,
+                    $gr->id,
+                    $itemData['po_item_id']
+                );
+
+                app(LostBreakageReplacementService::class)->recordReplacementFromGrItem(
+                    (int) $gr->id,
+                    (int) $grItem->id,
+                    (int) $itemData['po_item_id'],
+                    $qtyReceived,
+                    (int) $itemData['unit_id'],
+                    (int) $itemData['item_id']
+                );
+            }
+
+            DB::commit();
+            return response()->json([
+                'success' => true,
+                'message' => 'Asset Good Receive berhasil diupdate.',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('API Error updating Asset Good Receive: ' . $e->getMessage(), [
+                'gr_id' => $id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal update: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function apiDestroy($id)
     {
         DB::beginTransaction();
@@ -1230,6 +1366,36 @@ class AssetGoodReceiveController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menghapus: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiComplete($id)
+    {
+        try {
+            $gr = AssetGoodReceive::findOrFail($id);
+
+            if ($gr->status !== 'draft') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hanya GR draft yang dapat di-complete.',
+                ], 422);
+            }
+
+            $gr->update(['status' => 'completed']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Asset Good Receive berhasil di-complete.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('API Error completing Asset Good Receive: ' . $e->getMessage(), [
+                'gr_id' => $id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal complete: ' . $e->getMessage(),
             ], 500);
         }
     }

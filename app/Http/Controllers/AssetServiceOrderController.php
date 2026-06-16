@@ -571,6 +571,9 @@ class AssetServiceOrderController extends Controller
         if ($request->status) {
             $query->where('s.status', $request->status);
         }
+        if ($request->outlet_id) {
+            $query->where('s.outlet_id', $request->outlet_id);
+        }
         if (Schema::hasColumn('asset_service_orders', 'service_type') && $request->filled('service_type')) {
             $query->where('s.service_type', $request->service_type);
         }
@@ -640,6 +643,24 @@ class AssetServiceOrderController extends Controller
 
         $canReceiveReturn = in_array($order->status, ['in_service', 'partially_returned']);
 
+        $vendorInvoicePath = Schema::hasColumn('asset_service_orders', 'vendor_invoice_path')
+            ? $order->vendor_invoice_path
+            : null;
+
+        $linkedNonFoodPayment = null;
+        if (Schema::hasColumn('non_food_payments', 'asset_service_order_id')) {
+            $linkedNonFoodPayment = DB::table('non_food_payments')
+                ->where('asset_service_order_id', $order->id)
+                ->whereNotIn('status', ['cancelled', 'rejected'])
+                ->select('id', 'payment_number', 'status', 'amount')
+                ->first();
+        }
+
+        $canCreateNonFoodPayment = Schema::hasColumn('non_food_payments', 'asset_service_order_id')
+            && in_array($order->status, ['in_service', 'partially_returned', 'returned'], true)
+            && !$linkedNonFoodPayment
+            && (!Schema::hasColumn('asset_service_orders', 'service_type') || ($order->service_type ?? 'external') === 'external');
+
         return response()->json([
             'id' => $order->id,
             'number' => $order->number,
@@ -650,6 +671,7 @@ class AssetServiceOrderController extends Controller
                 : 'external',
             'estimated_cost' => $order->estimated_cost,
             'actual_cost' => $order->actual_cost,
+            'vendor_invoice_path' => $vendorInvoicePath,
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
@@ -660,6 +682,8 @@ class AssetServiceOrderController extends Controller
             'creator_name' => optional($order->creator)->nama_lengkap,
             'can_approve' => $canApprove,
             'can_receive_return' => $canReceiveReturn,
+            'can_create_non_food_payment' => $canCreateNonFoodPayment,
+            'linked_non_food_payment' => $linkedNonFoodPayment,
             'items' => $order->items->map(function ($item) {
                 return [
                     'id' => $item->id,
@@ -690,6 +714,11 @@ class AssetServiceOrderController extends Controller
                 ];
             }),
         ]);
+    }
+
+    public function apiUploadVendorInvoice(Request $request, $id)
+    {
+        return $this->uploadVendorInvoice($request, $id);
     }
 
     public function apiStore(Request $request)

@@ -1378,6 +1378,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-good-receives/fetch-po', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiFetchPO']);
         Route::post('/asset-good-receives', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiStore']);
         Route::get('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiShow']);
+        Route::put('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiUpdate']);
+        Route::post('/asset-good-receives/{id}/complete', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiComplete']);
         Route::delete('/asset-good-receives/{id}', [\App\Http\Controllers\AssetGoodReceiveController::class, 'apiDestroy']);
 
         // Asset Inventory Transfer routes
@@ -1419,6 +1421,7 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiDestroy']);
         Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve']);
         Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn']);
+        Route::post('/asset-service-orders/{id}/vendor-invoice', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiUploadVendorInvoice']);
 
         // Asset Disposals
         Route::get('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'apiIndex']);
@@ -1445,6 +1448,15 @@ Route::prefix('approval-app')->group(function () {
         // Asset Inventory Report
         Route::get('/asset-inventory-report/stock-position', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockPosition']);
         Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'apiStockCardDetail']);
+
+        // Asset Serial / RFID NTAG
+        Route::get('/asset-serials/meta', [\App\Http\Controllers\AssetSerialController::class, 'apiMeta']);
+        Route::get('/asset-serials', [\App\Http\Controllers\AssetSerialController::class, 'apiIndex']);
+        Route::get('/asset-serials/items-with-stock', [\App\Http\Controllers\AssetSerialController::class, 'apiItemsWithStock']);
+        Route::get('/asset-serials/lookup', [\App\Http\Controllers\AssetSerialController::class, 'apiLookup']);
+        Route::post('/asset-serials/enable-tracking', [\App\Http\Controllers\AssetSerialController::class, 'apiEnableTracking']);
+        Route::post('/asset-serials/prepare-tag', [\App\Http\Controllers\AssetSerialController::class, 'apiPrepareTag']);
+        Route::post('/asset-serials/confirm-tag', [\App\Http\Controllers\AssetSerialController::class, 'apiConfirmTag']);
 
         // Member History routes
         Route::get('/member-history/info', [\App\Http\Controllers\Api\MemberHistoryController::class, 'getMemberInfo']);
