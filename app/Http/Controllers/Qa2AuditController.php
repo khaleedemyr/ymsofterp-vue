@@ -59,11 +59,32 @@ class Qa2AuditController extends Controller
                 $q->where('a.audit_number', 'like', "%{$search}%")
                     ->orWhere('o.nama_outlet', 'like', "%{$search}%")
                     ->orWhere('t.name', 'like', "%{$search}%")
-                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhereExists(function ($sub) use ($search) {
+                        $sub->from('qa2_audit_auditors as aa')
+                            ->join('users as au', 'au.id', '=', 'aa.user_id')
+                            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'au.id_jabatan')
+                            ->whereColumn('aa.audit_id', 'a.id')
+                            ->where(function ($people) use ($search) {
+                                $people->where('au.nama_lengkap', 'like', "%{$search}%")
+                                    ->orWhere('aj.nama_jabatan', 'like', "%{$search}%");
+                            });
+                    })
+                    ->orWhereExists(function ($sub) use ($search) {
+                        $sub->from('qa2_audit_auditees as ae')
+                            ->join('users as au', 'au.id', '=', 'ae.user_id')
+                            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'au.id_jabatan')
+                            ->whereColumn('ae.audit_id', 'a.id')
+                            ->where(function ($people) use ($search) {
+                                $people->where('au.nama_lengkap', 'like', "%{$search}%")
+                                    ->orWhere('aj.nama_jabatan', 'like', "%{$search}%");
+                            });
+                    });
             });
         }
 
         $audits = $query->paginate(15)->withQueryString();
+        $this->attachAuditPeople($audits);
 
         $statsQuery = DB::table('qa2_audits');
         if (!$isHo) {
@@ -364,12 +385,14 @@ class Qa2AuditController extends Controller
         $validated = $request->validate([
             'caps' => 'required|array|min:1',
             'caps.*.audit_item_id' => 'required|integer|exists:qa2_audit_items,id',
-            'caps.*.action_plan' => 'required|string',
+            'caps.*.action_plan' => 'nullable|string',
             'caps.*.target_date' => 'nullable|date',
             'caps.*.status' => 'nullable|in:open,progress,done',
         ]);
 
-        DB::transaction(function () use ($id, $validated, $user) {
+        $savedCaps = [];
+
+        DB::transaction(function () use ($id, $validated, $user, &$savedCaps) {
             foreach ($validated['caps'] as $cap) {
                 $item = DB::table('qa2_audit_items')
                     ->where('id', (int) $cap['audit_item_id'])
@@ -381,21 +404,38 @@ class Qa2AuditController extends Controller
                     continue;
                 }
 
-                DB::table('qa2_audit_caps')->updateOrInsert(
-                    ['audit_item_id' => (int) $cap['audit_item_id']],
-                    [
+                $auditItemId = (int) $cap['audit_item_id'];
+                $existingCap = DB::table('qa2_audit_caps')->where('audit_item_id', $auditItemId)->first();
+
+                if ($existingCap) {
+                    DB::table('qa2_audit_caps')->where('id', $existingCap->id)->update([
                         'filled_by' => (int) $user->id,
-                        'action_plan' => $cap['action_plan'],
+                        'action_plan' => $cap['action_plan'] ?? null,
                         'target_date' => $cap['target_date'] ?? null,
                         'status' => $cap['status'] ?? 'open',
                         'updated_at' => now(),
+                    ]);
+                    $capId = (int) $existingCap->id;
+                } else {
+                    $capId = (int) DB::table('qa2_audit_caps')->insertGetId([
+                        'audit_item_id' => $auditItemId,
+                        'filled_by' => (int) $user->id,
+                        'action_plan' => $cap['action_plan'] ?? null,
+                        'target_date' => $cap['target_date'] ?? null,
+                        'status' => $cap['status'] ?? 'open',
                         'created_at' => now(),
-                    ]
-                );
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                $savedCaps[] = [
+                    'audit_item_id' => $auditItemId,
+                    'cap_id' => $capId,
+                ];
             }
         });
 
-        return response()->json(['success' => true]);
+        return response()->json(['success' => true, 'caps' => $savedCaps]);
     }
 
     public function uploadCapMedia(Request $request, int $id, int $capId)
@@ -655,12 +695,56 @@ class Qa2AuditController extends Controller
 
     private function usersForSelector()
     {
-        return DB::table('users')
-            ->select(['id', 'nama_lengkap', 'id_outlet'])
-            ->where('status', 'A')
-            ->whereNotNull('id_outlet')
-            ->orderBy('nama_lengkap')
+        return DB::table('users as u')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->select([
+                'u.id',
+                'u.nama_lengkap',
+                'u.id_outlet',
+                'j.nama_jabatan as jabatan',
+            ])
+            ->where('u.status', 'A')
+            ->whereNotNull('u.id_outlet')
+            ->orderBy('u.nama_lengkap')
             ->get();
+    }
+
+    private function attachAuditPeople($paginator): void
+    {
+        $ids = collect($paginator->items())->pluck('id')->map(fn ($x) => (int) $x)->all();
+        if (empty($ids)) {
+            return;
+        }
+
+        $auditors = DB::table('qa2_audit_auditors as aa')
+            ->join('users as u', 'u.id', '=', 'aa.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->whereIn('aa.audit_id', $ids)
+            ->orderBy('u.nama_lengkap')
+            ->get(['aa.audit_id', 'u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->groupBy('audit_id');
+
+        $auditees = DB::table('qa2_audit_auditees as ae')
+            ->join('users as u', 'u.id', '=', 'ae.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->whereIn('ae.audit_id', $ids)
+            ->orderBy('u.nama_lengkap')
+            ->get(['ae.audit_id', 'u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->groupBy('audit_id');
+
+        foreach ($paginator->items() as $audit) {
+            $auditId = (int) $audit->id;
+            $audit->auditors = ($auditors[$auditId] ?? collect())->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->nama_lengkap,
+                'jabatan' => $row->jabatan,
+            ])->values()->all();
+            $audit->auditees = ($auditees[$auditId] ?? collect())->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->nama_lengkap,
+                'jabatan' => $row->jabatan,
+            ])->values()->all();
+        }
     }
 
     private function auditPayload(int $id): array

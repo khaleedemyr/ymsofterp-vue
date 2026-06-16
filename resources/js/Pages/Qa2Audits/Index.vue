@@ -155,7 +155,7 @@ async function removeAudit(id) {
             v-model="search"
             type="text"
             class="w-full rounded-lg border-gray-300 text-sm"
-            placeholder="Cari nomor audit, outlet, template..."
+            placeholder="Cari nomor audit, outlet, template, auditor, auditee..."
           >
 
           <select v-model="status" class="w-full rounded-lg border-gray-300 text-sm">
@@ -185,6 +185,8 @@ async function removeAudit(id) {
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Audit</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Outlet</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Template</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Auditor</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Auditee</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">C / NC / NA</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Audit Result</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Status</th>
@@ -199,6 +201,24 @@ async function removeAudit(id) {
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700">{{ audit.outlet_name || '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700">{{ audit.template_name || '-' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700">
+                  <div v-if="audit.auditors?.length" class="space-y-1">
+                    <div v-for="person in audit.auditors" :key="`auditor-${audit.id}-${person.id}`" class="text-xs leading-relaxed">
+                      <span class="font-medium text-gray-900">{{ person.name }}</span>
+                      <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                    </div>
+                  </div>
+                  <span v-else class="text-xs text-gray-400">-</span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700">
+                  <div v-if="audit.auditees?.length" class="space-y-1">
+                    <div v-for="person in audit.auditees" :key="`auditee-${audit.id}-${person.id}`" class="text-xs leading-relaxed">
+                      <span class="font-medium text-gray-900">{{ person.name }}</span>
+                      <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                    </div>
+                  </div>
+                  <span v-else class="text-xs text-gray-400">-</span>
+                </td>
                 <td class="px-4 py-3 text-sm text-gray-700">
                   <span class="font-semibold text-emerald-600">{{ audit.count_c || 0 }}</span>
                   /
@@ -256,7 +276,7 @@ async function removeAudit(id) {
                 </td>
               </tr>
               <tr v-if="!audits.data.length">
-                <td colspan="7" class="px-4 py-10 text-center text-sm text-gray-500">
+                <td colspan="9" class="px-4 py-10 text-center text-sm text-gray-500">
                   Data QA Audit belum ada.
                 </td>
               </tr>

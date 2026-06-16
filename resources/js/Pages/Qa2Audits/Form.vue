@@ -8,6 +8,7 @@ import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import CameraModal from '@/Components/CameraModal.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   mode: String,
@@ -31,6 +32,8 @@ const notes = ref('');
 const search = ref('');
 const saving = ref(false);
 const lastSavedAt = ref('');
+const capSaving = ref(false);
+const capLastSavedAt = ref('');
 
 const collapseCategory = ref({});
 const collapseSubcategory = ref({});
@@ -61,7 +64,13 @@ function hydrateFromAudit() {
   selectedAuditors.value = props.users.filter((u) => (props.audit.auditor_ids || []).includes(u.id));
   selectedAuditees.value = props.users.filter((u) => (props.audit.auditee_ids || []).includes(u.id));
   notes.value = props.audit.notes || '';
-  items.value = (props.audit.items || []).map(mapAuditItem);
+  items.value = (props.audit.items || []).map((row) => {
+    const item = mapAuditItem(row);
+    if (item.result === 'NC') {
+      ensureCap(item);
+    }
+    return item;
+  });
 }
 
 hydrateFromAudit();
@@ -70,11 +79,14 @@ watch(() => [props.mode, props.audit?.id], () => {
   hydrateFromAudit();
 });
 
-const groupedItems = computed(() => {
+const groupedItems = computed(() => buildGroupedItems(items.value));
+const groupedCapItems = computed(() => buildGroupedItems(items.value.filter((item) => item.result === 'NC')));
+
+function buildGroupedItems(sourceItems) {
   const keyword = (search.value || '').toLowerCase().trim();
   const map = new Map();
 
-  for (const item of items.value) {
+  for (const item of sourceItems) {
     const haystack = [
       item.parameter_code,
       item.parameter_text,
@@ -115,7 +127,7 @@ const groupedItems = computed(() => {
     ...cat,
     subcategories: Array.from(cat.subcategories.values()),
   }));
-});
+}
 
 const categorySummaryRows = computed(() => {
   const map = new Map();
@@ -239,6 +251,42 @@ watch(draftPayload, () => {
   autoSave();
 }, { deep: true });
 
+const capPayload = computed(() => ({
+  caps: items.value
+    .filter((item) => item.result === 'NC')
+    .map((item) => ({
+      audit_item_id: item.id,
+      action_plan: item.cap?.action_plan || '',
+      target_date: item.cap?.target_date || null,
+      status: item.cap?.status || 'open',
+    })),
+}));
+
+const autoSaveCap = debounce(async () => {
+  if (isCreate.value || !canFillCap.value) {
+    return;
+  }
+
+  if (!capPayload.value.caps.length) {
+    return;
+  }
+
+  capSaving.value = true;
+  try {
+    const { data } = await axios.post(route('qa2-audits.save-cap', props.audit.id), capPayload.value);
+    applyCapIds(data.caps || []);
+    capLastSavedAt.value = new Date().toLocaleTimeString();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    capSaving.value = false;
+  }
+}, 1200);
+
+watch(capPayload, () => {
+  autoSaveCap();
+}, { deep: true });
+
 function toggleCategory(key) {
   collapseCategory.value[key] = !collapseCategory.value[key];
 }
@@ -304,6 +352,26 @@ const itemFileInputs = ref({});
 const capFileInputs = ref({});
 const uploadingItemMedia = ref({});
 const uploadingCapMedia = ref({});
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
+
+function mapMediaForLightbox(media) {
+  if (media.media_type === 'video') {
+    return { src: media.url, type: 'video' };
+  }
+  return media.url;
+}
+
+function openMediaLightbox(mediaList, index) {
+  if (!mediaList?.length) {
+    return;
+  }
+
+  lightboxImages.value = mediaList.map(mapMediaForLightbox);
+  lightboxIndex.value = index;
+  lightboxVisible.value = true;
+}
 
 function setItemFileInput(itemId, el) {
   if (el) {
@@ -431,40 +499,47 @@ function ensureCap(item) {
   }
 }
 
-async function saveCap() {
-  if (!canFillCap.value) {
-    return;
-  }
-
-  const ncItems = items.value.filter((x) => x.result === 'NC');
-  const payload = [];
-
-  for (const item of ncItems) {
-    ensureCap(item);
-    if (!item.cap.action_plan) {
-      await Swal.fire('Validasi', 'Semua item NC wajib isi corrective action plan.', 'warning');
-      return;
+function applyCapIds(capRows = []) {
+  for (const row of capRows) {
+    const item = items.value.find((x) => Number(x.id) === Number(row.audit_item_id));
+    if (item) {
+      ensureCap(item);
+      item.cap.id = row.cap_id;
     }
-
-    payload.push({
-      audit_item_id: item.id,
-      action_plan: item.cap.action_plan,
-      target_date: item.cap.target_date || null,
-      status: item.cap.status || 'open',
-    });
-  }
-
-  try {
-    await axios.post(route('qa2-audits.save-cap', props.audit.id), { caps: payload });
-    await Swal.fire('Berhasil', 'CAP berhasil disimpan.', 'success');
-    router.reload();
-  } catch (error) {
-    await Swal.fire('Error', 'Gagal simpan CAP.', 'error');
   }
 }
 
+async function ensureCapRecord(item) {
+  ensureCap(item);
+  if (item.cap.id) {
+    return;
+  }
+
+  const { data } = await axios.post(route('qa2-audits.save-cap', props.audit.id), {
+    caps: [{
+      audit_item_id: item.id,
+      action_plan: item.cap.action_plan || '',
+      target_date: item.cap.target_date || null,
+      status: item.cap.status || 'open',
+    }],
+  });
+
+  applyCapIds(data.caps || []);
+}
+
 async function uploadCapMediaFiles(item, files) {
-  if (!canFillCap.value || !item.cap?.id || !files.length) {
+  if (!canFillCap.value || !files.length) {
+    return;
+  }
+
+  try {
+    await ensureCapRecord(item);
+  } catch (error) {
+    await Swal.fire('Error', 'Gagal menyiapkan CAP sebelum upload media.', 'error');
+    return;
+  }
+
+  if (!item.cap?.id) {
     return;
   }
 
@@ -497,6 +572,13 @@ async function uploadCapMedia(item, event) {
 function goBackToIndex() {
   router.visit(route('qa2-audits.index'));
 }
+
+function formatUserLabel(user) {
+  if (!user) {
+    return '';
+  }
+  return user.jabatan ? `${user.nama_lengkap} (${user.jabatan})` : user.nama_lengkap;
+}
 </script>
 
 <template>
@@ -527,6 +609,8 @@ function goBackToIndex() {
             <div>Time End: {{ audit.audit_time_end || '-' }}</div>
             <div v-if="saving" class="font-medium text-amber-600">Autosave draft...</div>
             <div v-else-if="lastSavedAt" class="font-medium text-emerald-600">Tersimpan {{ lastSavedAt }}</div>
+            <div v-if="canFillCap && capSaving" class="font-medium text-rose-600">Autosave CAP...</div>
+            <div v-else-if="canFillCap && capLastSavedAt" class="font-medium text-emerald-600">CAP tersimpan {{ capLastSavedAt }}</div>
             </div>
           </div>
         </div>
@@ -566,9 +650,19 @@ function goBackToIndex() {
               :multiple="true"
               :disabled="!isCreate && !canManage"
               track-by="id"
-              label="nama_lengkap"
+              :custom-label="formatUserLabel"
               placeholder="Pilih auditor"
-            />
+            >
+              <template #option="{ option }">
+                <div>
+                  <div class="font-medium text-gray-900">{{ option.nama_lengkap }}</div>
+                  <div v-if="option.jabatan" class="text-xs text-indigo-600">{{ option.jabatan }}</div>
+                </div>
+              </template>
+              <template #tag="{ option }">
+                <span>{{ formatUserLabel(option) }}</span>
+              </template>
+            </Multiselect>
           </div>
 
           <div>
@@ -579,9 +673,19 @@ function goBackToIndex() {
               :multiple="true"
               :disabled="!isCreate && !canManage"
               track-by="id"
-              label="nama_lengkap"
+              :custom-label="formatUserLabel"
               placeholder="Pilih auditee"
-            />
+            >
+              <template #option="{ option }">
+                <div>
+                  <div class="font-medium text-gray-900">{{ option.nama_lengkap }}</div>
+                  <div v-if="option.jabatan" class="text-xs text-indigo-600">{{ option.jabatan }}</div>
+                </div>
+              </template>
+              <template #tag="{ option }">
+                <span>{{ formatUserLabel(option) }}</span>
+              </template>
+            </Multiselect>
           </div>
 
           <div class="md:col-span-2">
@@ -614,19 +718,208 @@ function goBackToIndex() {
           >
             Submit Audit
           </button>
-
-          <button
-            v-if="!isCreate && canFillCap"
-            type="button"
-            class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
-            @click="saveCap"
-          >
-            Simpan CAP NC
-          </button>
         </div>
       </div>
 
-      <div v-if="!isCreate" class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+      <div v-if="!isCreate && canFillCap" class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-900">Pengisian CAP (NC)</h2>
+            <p class="text-sm text-gray-500">Hanya parameter Non-Compliant. Perubahan disimpan otomatis.</p>
+          </div>
+          <input
+            v-model="search"
+            type="text"
+            class="w-full rounded-lg border-gray-300 text-sm md:w-96"
+            placeholder="Cari parameter NC..."
+          >
+        </div>
+
+        <div class="space-y-4">
+          <div
+            v-for="cat in groupedCapItems"
+            :key="cat.key"
+            class="overflow-hidden rounded-xl border border-rose-200"
+          >
+            <button
+              type="button"
+              class="flex w-full items-center justify-between bg-rose-50 px-4 py-3 text-left"
+              @click="toggleCategory(cat.key)"
+            >
+              <span class="font-semibold text-rose-900">{{ cat.name }}</span>
+              <span class="text-xs text-rose-600">{{ isCategoryCollapsed(cat.key) ? 'Show' : 'Hide' }}</span>
+            </button>
+
+            <div v-show="!isCategoryCollapsed(cat.key)" class="space-y-3 p-3">
+              <div
+                v-for="sub in cat.subcategories"
+                :key="sub.key"
+                class="overflow-hidden rounded-lg border border-rose-100"
+              >
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between bg-white px-3 py-2 text-left"
+                  @click="toggleSubcategory(sub.key)"
+                >
+                  <span class="font-medium text-gray-800">{{ sub.name }}</span>
+                  <span class="text-xs text-gray-500">{{ isSubcategoryCollapsed(sub.key) ? 'Show' : 'Hide' }}</span>
+                </button>
+
+                <div v-show="!isSubcategoryCollapsed(sub.key)" class="space-y-3 border-t border-rose-100 p-3">
+                  <div
+                    v-for="item in sub.items"
+                    :key="item.id"
+                    class="rounded-lg border border-rose-200 bg-rose-50/40 p-3"
+                  >
+                    <div class="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ item.parameter_code || '-' }}</p>
+                        <p class="text-sm font-medium text-gray-900">{{ item.parameter_text }}</p>
+                      </div>
+                      <span class="rounded-full bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white">NC</span>
+                    </div>
+
+                    <div v-if="item.comment" class="mb-3 rounded-lg border border-gray-200 bg-white p-3">
+                      <p class="mb-1 text-xs font-semibold text-gray-500">Komentar Auditor</p>
+                      <p class="text-sm text-gray-700">{{ item.comment }}</p>
+                    </div>
+
+                    <div v-if="item.media?.length" class="mb-3">
+                      <p class="mb-2 text-xs font-semibold text-gray-500">Bukti dari Auditor ({{ item.media.length }})</p>
+                      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <div v-for="(media, mediaIndex) in item.media" :key="`auditor-${media.id}`" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                          <img
+                            v-if="media.media_type === 'photo'"
+                            :src="media.url"
+                            class="h-28 w-full cursor-pointer object-cover transition hover:opacity-90"
+                            @click="openMediaLightbox(item.media, mediaIndex)"
+                          >
+                          <div
+                            v-else
+                            class="relative h-28 w-full cursor-pointer bg-gray-900"
+                            @click="openMediaLightbox(item.media, mediaIndex)"
+                          >
+                            <video :src="media.url" class="pointer-events-none h-28 w-full object-cover" muted />
+                            <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <i class="fas fa-play-circle text-3xl text-white" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="rounded-lg border border-rose-200 bg-white p-3">
+                      <p class="mb-2 text-sm font-semibold text-rose-700">Corrective Action Plan</p>
+
+                      <div class="grid gap-3 md:grid-cols-2">
+                        <div class="md:col-span-2">
+                          <label class="mb-1 block text-xs font-semibold text-rose-700">Action Plan</label>
+                          <textarea
+                            v-model="item.cap.action_plan"
+                            rows="2"
+                            class="w-full rounded-lg border-rose-300 text-sm"
+                            placeholder="Tindakan perbaikan..."
+                          />
+                        </div>
+
+                        <div>
+                          <label class="mb-1 block text-xs font-semibold text-rose-700">Target Date</label>
+                          <input v-model="item.cap.target_date" type="date" class="w-full rounded-lg border-rose-300 text-sm">
+                        </div>
+
+                        <div>
+                          <label class="mb-1 block text-xs font-semibold text-rose-700">Status CAP</label>
+                          <select v-model="item.cap.status" class="w-full rounded-lg border-rose-300 text-sm">
+                            <option value="open">Open</option>
+                            <option value="progress">Progress</option>
+                            <option value="done">Done</option>
+                          </select>
+                        </div>
+
+                        <div class="md:col-span-2">
+                          <label class="mb-1 block text-xs font-semibold text-rose-700">Media CAP (per parameter)</label>
+                          <div class="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="openCapCamera(item, 'photo')"
+                            >
+                              <i class="fas fa-camera" />
+                              Ambil Foto
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="openCapCamera(item, 'video')"
+                            >
+                              <i class="fas fa-video" />
+                              Rekam Video
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-100 px-2.5 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="triggerCapFilePicker(item)"
+                            >
+                              <i class="fas fa-images" />
+                              Pilih File
+                            </button>
+                            <input
+                              :ref="(el) => setCapFileInput(item.id, el)"
+                              type="file"
+                              multiple
+                              accept="image/*,video/*"
+                              class="hidden"
+                              @change="uploadCapMedia(item, $event)"
+                            >
+                          </div>
+                          <p v-if="uploadingCapMedia[item.id]" class="mt-1 text-xs text-rose-600">Mengunggah media CAP...</p>
+                        </div>
+                      </div>
+
+                      <div v-if="item.cap?.media?.length" class="mt-3">
+                        <p class="mb-2 text-xs font-semibold text-rose-700">Media CAP ({{ item.cap.media.length }})</p>
+                        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div
+                            v-for="(media, mediaIndex) in item.cap.media"
+                            :key="media.id"
+                            class="overflow-hidden rounded-lg border border-rose-200 bg-white"
+                          >
+                            <img
+                              v-if="media.media_type === 'photo'"
+                              :src="media.url"
+                              class="h-24 w-full cursor-pointer object-cover transition hover:opacity-90"
+                              @click="openMediaLightbox(item.cap.media, mediaIndex)"
+                            >
+                            <div
+                              v-else
+                              class="relative h-24 w-full cursor-pointer bg-gray-900"
+                              @click="openMediaLightbox(item.cap.media, mediaIndex)"
+                            >
+                              <video :src="media.url" class="pointer-events-none h-24 w-full object-cover" muted />
+                              <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                                <i class="fas fa-play-circle text-2xl text-white" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="!groupedCapItems.length" class="rounded-lg border border-dashed border-rose-200 p-8 text-center text-sm text-gray-500">
+            {{ search.trim() ? 'Tidak ada parameter NC yang cocok dengan pencarian.' : 'Tidak ada parameter NC untuk diisi CAP.' }}
+          </div>
+        </div>
+      </div>
+
+      <div v-if="!isCreate && !canFillCap" class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
         <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Parameter Audit</h2>
           <input
@@ -750,15 +1043,29 @@ function goBackToIndex() {
                     <div v-if="item.media?.length" class="mt-3">
                       <p class="mb-2 text-xs font-semibold text-gray-500">Media terlampir ({{ item.media.length }})</p>
                       <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        <div v-for="media in item.media" :key="media.id" class="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-                          <img v-if="media.media_type === 'photo'" :src="media.url" class="h-28 w-full object-cover">
-                          <video v-else :src="media.url" class="h-28 w-full object-cover" controls />
+                        <div v-for="(media, mediaIndex) in item.media" :key="media.id" class="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                          <img
+                            v-if="media.media_type === 'photo'"
+                            :src="media.url"
+                            class="h-28 w-full cursor-pointer object-cover transition hover:opacity-90"
+                            @click="openMediaLightbox(item.media, mediaIndex)"
+                          >
+                          <div
+                            v-else
+                            class="relative h-28 w-full cursor-pointer bg-gray-900"
+                            @click="openMediaLightbox(item.media, mediaIndex)"
+                          >
+                            <video :src="media.url" class="pointer-events-none h-28 w-full object-cover" muted />
+                            <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <i class="fas fa-play-circle text-3xl text-white" />
+                            </div>
+                          </div>
                           <button
                             v-if="canManage && audit.status === 'draft'"
                             type="button"
-                            class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white shadow hover:bg-red-700"
+                            class="absolute right-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white shadow hover:bg-red-700"
                             title="Hapus"
-                            @click="removeItemMedia(item, media)"
+                            @click.stop="removeItemMedia(item, media)"
                           >
                             <i class="fas fa-times text-xs" />
                           </button>
@@ -771,83 +1078,37 @@ function goBackToIndex() {
                       <textarea v-model="item.comment" rows="2" class="w-full rounded-lg border-gray-300 text-sm" :disabled="!canManage || audit.status !== 'draft'" />
                     </div>
 
-                    <div v-if="item.result === 'NC' && canFillCap" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <div v-if="item.result === 'NC' && !canFillCap && (item.cap?.action_plan || item.cap?.media?.length)" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
                       <p class="mb-2 text-sm font-semibold text-rose-700">Corrective Action Plan</p>
-
-                      <div class="grid gap-3 md:grid-cols-2">
-                        <div class="md:col-span-2">
-                          <label class="mb-1 block text-xs font-semibold text-rose-700">Action Plan</label>
-                          <textarea
-                            v-model="item.cap.action_plan"
-                            rows="2"
-                            class="w-full rounded-lg border-rose-300 text-sm"
-                          />
-                        </div>
-
-                        <div>
-                          <label class="mb-1 block text-xs font-semibold text-rose-700">Target Date</label>
-                          <input v-model="item.cap.target_date" type="date" class="w-full rounded-lg border-rose-300 text-sm">
-                        </div>
-
-                        <div>
-                          <label class="mb-1 block text-xs font-semibold text-rose-700">Status CAP</label>
-                          <select v-model="item.cap.status" class="w-full rounded-lg border-rose-300 text-sm">
-                            <option value="open">Open</option>
-                            <option value="progress">Progress</option>
-                            <option value="done">Done</option>
-                          </select>
-                        </div>
-
-                        <div class="md:col-span-2">
-                          <label class="mb-1 block text-xs font-semibold text-rose-700">Media CAP</label>
-                          <div v-if="item.cap?.id" class="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
-                              @click="openCapCamera(item, 'photo')"
-                            >
-                              <i class="fas fa-camera" />
-                              Ambil Foto
-                            </button>
-                            <button
-                              type="button"
-                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
-                              @click="openCapCamera(item, 'video')"
-                            >
-                              <i class="fas fa-video" />
-                              Rekam Video
-                            </button>
-                            <button
-                              type="button"
-                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-100 px-2.5 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
-                              @click="triggerCapFilePicker(item)"
-                            >
-                              <i class="fas fa-images" />
-                              Pilih File
-                            </button>
-                            <input
-                              :ref="(el) => setCapFileInput(item.id, el)"
-                              type="file"
-                              multiple
-                              accept="image/*,video/*"
-                              class="hidden"
-                              @change="uploadCapMedia(item, $event)"
-                            >
-                          </div>
-                          <p v-else class="text-xs text-rose-600">Simpan CAP dulu untuk upload media.</p>
-                          <p v-if="uploadingCapMedia[item.id]" class="mt-1 text-xs text-rose-600">Mengunggah media...</p>
-                        </div>
+                      <p v-if="item.cap?.action_plan" class="mb-2 whitespace-pre-wrap text-sm text-gray-800">{{ item.cap.action_plan }}</p>
+                      <div class="grid gap-2 text-xs text-gray-600 md:grid-cols-2">
+                        <div v-if="item.cap?.target_date">Target: {{ item.cap.target_date }}</div>
+                        <div v-if="item.cap?.status">Status: {{ item.cap.status }}</div>
                       </div>
-
                       <div v-if="item.cap?.media?.length" class="mt-3">
                         <p class="mb-2 text-xs font-semibold text-rose-700">Media CAP ({{ item.cap.media.length }})</p>
                         <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                          <div v-for="media in item.cap.media" :key="media.id" class="overflow-hidden rounded-lg border border-rose-200 bg-white">
-                            <img v-if="media.media_type === 'photo'" :src="media.url" class="h-24 w-full object-cover">
-                            <video v-else :src="media.url" class="h-24 w-full object-cover" controls />
+                          <div
+                            v-for="(media, mediaIndex) in item.cap.media"
+                            :key="media.id"
+                            class="overflow-hidden rounded-lg border border-rose-200 bg-white"
+                          >
+                            <img
+                              v-if="media.media_type === 'photo'"
+                              :src="media.url"
+                              class="h-24 w-full cursor-pointer object-cover transition hover:opacity-90"
+                              @click="openMediaLightbox(item.cap.media, mediaIndex)"
+                            >
+                            <div
+                              v-else
+                              class="relative h-24 w-full cursor-pointer bg-gray-900"
+                              @click="openMediaLightbox(item.cap.media, mediaIndex)"
+                            >
+                              <video :src="media.url" class="pointer-events-none h-24 w-full object-cover" muted />
+                              <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                                <i class="fas fa-play-circle text-2xl text-white" />
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -947,6 +1208,13 @@ function goBackToIndex() {
         </div>
       </div>
     </div>
+
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImages"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
 
     <CameraModal
       v-if="showCameraModal"
