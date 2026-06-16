@@ -380,6 +380,10 @@ async function uploadCapMedia(item, event) {
     await Swal.fire('Error', 'Upload CAP media gagal.', 'error');
   }
 }
+
+function goBackToIndex() {
+  router.visit(route('qa2-audits.index'));
+}
 </script>
 
 <template>
@@ -395,12 +399,22 @@ async function uploadCapMedia(item, event) {
               {{ isCreate ? 'Buat draft audit baru berdasarkan template QA2.' : `Status: ${audit.status}` }}
             </p>
           </div>
-          <div v-if="!isCreate" class="text-xs text-gray-500">
+          <div class="flex items-start gap-3">
+            <button
+              type="button"
+              class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              @click="goBackToIndex"
+            >
+              Back to Index
+            </button>
+
+            <div v-if="!isCreate" class="text-xs text-gray-500">
             <div>Audit Date: {{ audit.audit_datetime }}</div>
             <div>Time Start: {{ audit.audit_time_start || '-' }}</div>
             <div>Time End: {{ audit.audit_time_end || '-' }}</div>
             <div v-if="saving" class="font-medium text-amber-600">Autosave draft...</div>
             <div v-else-if="lastSavedAt" class="font-medium text-emerald-600">Tersimpan {{ lastSavedAt }}</div>
+            </div>
           </div>
         </div>
       </div>

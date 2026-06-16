@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class Qa2AuditController extends Controller
@@ -100,6 +101,11 @@ class Qa2AuditController extends Controller
 
         $templates = DB::table('qa2_templates')
             ->where('status', 'A')
+            ->whereExists(function ($q) {
+                $q->from('qa2_template_items as ti')
+                    ->selectRaw('1')
+                    ->whereColumn('ti.template_id', 'qa2_templates.id');
+            })
             ->orderBy('name')
             ->get(['id', 'code', 'name']);
 
@@ -148,7 +154,13 @@ class Qa2AuditController extends Controller
             ]);
 
             $this->syncPeople($auditId, $validated['auditor_ids'] ?? [], $validated['auditee_ids'] ?? []);
-            $this->seedItemsFromTemplate($auditId, (int) $validated['template_id']);
+            $inserted = $this->seedItemsFromTemplate($auditId, (int) $validated['template_id']);
+
+            if ($inserted === 0) {
+                throw ValidationException::withMessages([
+                    'template_id' => 'Template tidak memiliki parameter audit. Cek QA2 Template Items.',
+                ]);
+            }
 
             return $auditId;
         });
@@ -168,6 +180,8 @@ class Qa2AuditController extends Controller
             abort(403);
         }
 
+        $this->ensureAuditItems((int) $id, (int) $audit->template_id);
+
         $canFillCap = DB::table('qa2_audit_auditees')
             ->where('audit_id', $id)
             ->where('user_id', (int) $user->id)
@@ -178,7 +192,15 @@ class Qa2AuditController extends Controller
             'audit' => $this->auditPayload($id),
             'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
             'users' => $this->usersForSelector(),
-            'templates' => DB::table('qa2_templates')->where('status', 'A')->orderBy('name')->get(['id', 'code', 'name']),
+            'templates' => DB::table('qa2_templates')
+                ->where('status', 'A')
+                ->whereExists(function ($q) {
+                    $q->from('qa2_template_items as ti')
+                        ->selectRaw('1')
+                        ->whereColumn('ti.template_id', 'qa2_templates.id');
+                })
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
             'tree' => $this->auditTree($id),
             'permissions' => [
                 'can_manage' => $isHo && $audit->status === 'draft',
@@ -541,7 +563,7 @@ class Qa2AuditController extends Controller
         }
     }
 
-    private function seedItemsFromTemplate(int $auditId, int $templateId): void
+    private function seedItemsFromTemplate(int $auditId, int $templateId): int
     {
         $items = DB::table('qa2_template_items as ti')
             ->join('qa2_parameters as p', 'p.id', '=', 'ti.parameter_id')
@@ -581,6 +603,18 @@ class Qa2AuditController extends Controller
         if (!empty($rows)) {
             DB::table('qa2_audit_items')->insert($rows);
         }
+
+        return count($rows);
+    }
+
+    private function ensureAuditItems(int $auditId, int $templateId): void
+    {
+        $exists = DB::table('qa2_audit_items')->where('audit_id', $auditId)->exists();
+        if ($exists) {
+            return;
+        }
+
+        $this->seedItemsFromTemplate($auditId, $templateId);
     }
 
     private function allowedOutlets(bool $isHo, int $userOutletId)
