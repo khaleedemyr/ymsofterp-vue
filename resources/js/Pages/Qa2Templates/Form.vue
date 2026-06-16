@@ -454,12 +454,16 @@ function back() {
                         <span class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
                       </p>
                       <p class="text-xs text-gray-600">{{ p.text }}</p>
-                      <div class="mt-1 flex flex-wrap gap-1">
-                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">
-                          {{ p.category_code }} - {{ p.category_name }}
+                      <div class="mt-2 flex flex-wrap gap-1.5">
+                        <span class="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border border-sky-300 bg-sky-50 text-sky-800 font-semibold tracking-wide uppercase shadow-sm">
+                          <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                          Cat
+                          <span class="normal-case tracking-normal">{{ p.category_code }} - {{ p.category_name }}</span>
                         </span>
-                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
-                          {{ p.subcategory_code }} - {{ p.subcategory_name }}
+                        <span class="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border border-indigo-300 bg-indigo-50 text-indigo-800 font-semibold tracking-wide uppercase shadow-sm">
+                          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                          Sub
+                          <span class="normal-case tracking-normal">{{ p.subcategory_code }} - {{ p.subcategory_name }}</span>
                         </span>
                       </div>
                     </div>
@@ -558,12 +562,16 @@ function back() {
                     <div>
                       <p class="text-xs text-blue-800 font-semibold">#{{ item.originalIndex + 1 }} {{ item.param.code }}</p>
                       <p class="text-xs text-gray-700">{{ item.param.text }}</p>
-                      <div class="mt-1 flex flex-wrap gap-1">
-                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">
-                          {{ item.param.category_code }} - {{ item.param.category_name }}
+                      <div class="mt-2 flex flex-wrap gap-1.5">
+                        <span class="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border border-sky-300 bg-sky-50 text-sky-800 font-semibold tracking-wide uppercase shadow-sm">
+                          <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                          Cat
+                          <span class="normal-case tracking-normal">{{ item.param.category_code }} - {{ item.param.category_name }}</span>
                         </span>
-                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
-                          {{ item.param.subcategory_code }} - {{ item.param.subcategory_name }}
+                        <span class="inline-flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border border-indigo-300 bg-indigo-50 text-indigo-800 font-semibold tracking-wide uppercase shadow-sm">
+                          <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                          Sub
+                          <span class="normal-case tracking-normal">{{ item.param.subcategory_code }} - {{ item.param.subcategory_name }}</span>
                         </span>
                       </div>
                     </div>

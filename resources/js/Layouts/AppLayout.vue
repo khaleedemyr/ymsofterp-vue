@@ -202,6 +202,7 @@ const menuGroups = [
             { name: () => 'QA2 Subcategories', icon: 'fa-solid fa-sitemap', route: '/qa2-subcategories', code: 'qa2_subcategories' },
             { name: () => 'QA2 Parameters', icon: 'fa-solid fa-sliders', route: '/qa2-parameters', code: 'qa2_parameters' },
             { name: () => 'QA2 Templates', icon: 'fa-solid fa-layer-group', route: '/qa2-templates', code: 'qa2_templates' },
+            { name: () => 'QA2 Audits', icon: 'fa-solid fa-clipboard-check', route: '/qa2-audits', code: 'qa2_audits' },
             { name: () => t('sidebar.menus.inspections'), icon: 'fa-solid fa-camera', route: '/inspections', code: 'inspections' },
         ],
     },
