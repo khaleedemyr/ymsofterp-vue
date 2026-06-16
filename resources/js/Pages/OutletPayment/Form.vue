@@ -313,6 +313,91 @@
           </div>
         </div>
         
+        <!-- Transaksi Sudah Dibayar (rekonsiliasi Rekap FJ) -->
+        <div v-if="paidListLoaded" class="mt-6">
+          <button
+            type="button"
+            @click="showPaidSection = !showPaidSection"
+            class="w-full flex items-center justify-between px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+          >
+            <span class="text-sm font-semibold text-amber-900">
+              <i class="fas fa-check-circle mr-2"></i>
+              Transaksi Sudah Dibayar
+              <span class="font-normal text-amber-700">({{ paidSummary.count }} transaksi)</span>
+            </span>
+            <span class="flex items-center gap-3">
+              <span class="text-sm font-bold text-amber-800">{{ formatCurrency(paidSummary.total_amount) }}</span>
+              <i class="fas" :class="showPaidSection ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
+            </span>
+          </button>
+
+          <div v-if="showPaidSection" class="mt-2 border border-amber-200 rounded-lg bg-white overflow-hidden">
+            <p class="px-4 py-2 text-xs text-amber-800 bg-amber-50 border-b border-amber-100">
+              Transaksi ini sudah masuk <strong>Rekap FJ</strong> tetapi tidak bisa dipilih lagi di payment baru.
+            </p>
+
+            <div v-if="paidList.length > 0" class="max-h-72 overflow-y-auto divide-y divide-gray-100">
+              <div
+                v-for="row in paidList"
+                :key="`${row.type}-${row.id}`"
+                class="px-4 py-3 flex items-start justify-between gap-4 hover:bg-gray-50"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span
+                      class="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded"
+                      :class="paidTypeBadgeClass(row.type)"
+                    >{{ row.type_label }}</span>
+                    <span class="text-sm font-medium text-gray-900">{{ row.number }}</span>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-1">
+                    {{ formatDate(row.transaction_date) }}
+                    <span v-if="row.warehouse_name"> • {{ row.warehouse_name }}</span>
+                    <span v-if="row.customer_name"> • {{ row.customer_name }}</span>
+                  </p>
+                  <p class="text-xs text-gray-500 mt-1">
+                    Payment:
+                    <a
+                      :href="`/outlet-payments/${row.payment_id}`"
+                      target="_blank"
+                      class="text-blue-600 hover:underline font-medium"
+                    >{{ row.payment_number || `#${row.payment_id}` }}</a>
+                    <span class="mx-1">•</span>
+                    <span class="capitalize">{{ row.payment_status }}</span>
+                    <span v-if="row.payment_date"> • {{ formatDate(row.payment_date) }}</span>
+                  </p>
+                </div>
+                <div class="text-right shrink-0">
+                  <p class="text-sm font-semibold text-amber-700">{{ formatCurrency(row.total_amount) }}</p>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="px-4 py-6 text-center text-sm text-gray-500">
+              Tidak ada transaksi paid pada rentang tanggal ini.
+            </div>
+
+            <div v-if="paidList.length > 0" class="px-4 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-600 space-y-1">
+              <div class="flex justify-between">
+                <span>Food GR paid</span>
+                <span>{{ paidSummary.food_gr_count }} • {{ formatCurrency(paidSummary.food_gr_total) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>GSR paid</span>
+                <span>{{ paidSummary.gsr_count }} • {{ formatCurrency(paidSummary.gsr_total) }}</span>
+              </div>
+              <div class="flex justify-between">
+                <span>Retail paid</span>
+                <span>{{ paidSummary.retail_count }} • {{ formatCurrency(paidSummary.retail_total) }}</span>
+              </div>
+              <div class="flex justify-between font-semibold text-gray-800 pt-1 border-t border-gray-200">
+                <span>GR+GSR paid (≈ selisih Rekap FJ)</span>
+                <span>{{ formatCurrency(paidGrGsrTotal) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Total Amount Section -->
         <div class="mt-6">
           <div>
@@ -320,8 +405,11 @@
             <div class="w-full border border-blue-200 rounded-lg px-4 py-3 bg-gray-50 font-bold text-blue-700 text-lg select-none">
               {{ formatCurrency(totalAmountFromSelectedTransactions) }}
             </div>
-            <p v-if="selectedGRs.length > 0 || selectedRetailSales.length > 0" class="text-xs text-gray-500 mt-1">
-              Total dari {{ selectedGRs.length }} GR dan {{ selectedRetailSales.length }} Retail Sales yang dipilih
+            <p v-if="selectedGRs.length > 0 || selectedGSRs.length > 0 || selectedRetailSales.length > 0" class="text-xs text-gray-500 mt-1">
+              Total dari {{ selectedGRs.length + selectedGSRs.length }} GR/GSR dan {{ selectedRetailSales.length }} Retail Sales yang dipilih
+            </p>
+            <p v-if="paidListLoaded && paidGrGsrTotal > 0" class="text-xs text-amber-700 mt-1">
+              + {{ formatCurrency(paidGrGsrTotal) }} sudah dibayar (lihat daftar di atas) → GR+GSR unpaid + paid ≈ Rekap FJ
             </p>
           </div>
           
@@ -488,6 +576,33 @@ const selectAllRetailSales = ref(false);
 const expandedRetailSales = ref(new Set());
 const retailSalesItems = ref({});
 const loadingRetailSalesItems = ref({});
+
+// Paid transactions (read-only, rekonsiliasi Rekap FJ)
+const paidList = ref([]);
+const paidSummary = ref({
+  count: 0,
+  total_amount: 0,
+  food_gr_count: 0,
+  gsr_count: 0,
+  retail_count: 0,
+  food_gr_total: 0,
+  gsr_total: 0,
+  retail_total: 0,
+});
+const paidListLoaded = ref(false);
+const showPaidSection = ref(true);
+const loadingPaidList = ref(false);
+
+const paidGrGsrTotal = computed(() => {
+  return (parseFloat(paidSummary.value.food_gr_total) || 0)
+    + (parseFloat(paidSummary.value.gsr_total) || 0);
+});
+
+function paidTypeBadgeClass(type) {
+  if (type === 'gsr') return 'bg-purple-100 text-purple-700';
+  if (type === 'retail') return 'bg-green-100 text-green-700';
+  return 'bg-blue-100 text-blue-700';
+}
 
 const isEditing = computed(() => props.mode === 'edit');
 
@@ -1038,6 +1153,8 @@ async function refreshGRList() {
       grItems.value = {};
       loadingGRItems.value = {};
       
+      await refreshPaidList();
+
       // Show success message
       const Swal = (await import('sweetalert2')).default;
       Swal.fire({
@@ -1066,6 +1183,51 @@ async function refreshGRList() {
   }
 }
 
+async function refreshPaidList() {
+  if (!canLoadData.value) {
+    paidList.value = [];
+    paidListLoaded.value = false;
+    return;
+  }
+
+  loadingPaidList.value = true;
+
+  try {
+    const params = new URLSearchParams();
+    params.append('outlet_id', form.value.outlet_id);
+    params.append('date_from', form.value.date_from);
+    params.append('date_to', form.value.date_to);
+
+    const response = await fetch(`/outlet-payments/paid-list?${params.toString()}`);
+    const data = await response.json();
+
+    if (data.success) {
+      paidList.value = data.paidList || [];
+      paidSummary.value = data.summary || {
+        count: 0,
+        total_amount: 0,
+        food_gr_count: 0,
+        gsr_count: 0,
+        retail_count: 0,
+        food_gr_total: 0,
+        gsr_total: 0,
+        retail_total: 0,
+      };
+      paidListLoaded.value = true;
+      showPaidSection.value = paidList.value.length > 0;
+    } else {
+      paidList.value = [];
+      paidListLoaded.value = true;
+    }
+  } catch (error) {
+    console.error('Error loading paid list:', error);
+    paidList.value = [];
+    paidListLoaded.value = true;
+  } finally {
+    loadingPaidList.value = false;
+  }
+}
+
 // Function to load data for both GR and Retail Sales
 async function loadData() {
   if (!canLoadData.value) return;
@@ -1073,10 +1235,10 @@ async function loadData() {
   loadingData.value = true;
   
   try {
-    // Load both GR and Retail Sales data
     await Promise.all([
       refreshGRList(),
-      refreshRetailSalesList()
+      refreshRetailSalesList(),
+      refreshPaidList(),
     ]);
   } catch (error) {
     console.error('Error loading data:', error);

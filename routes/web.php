@@ -1745,6 +1745,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/outlet-payments/gr-items/{grId}', [\App\Http\Controllers\OutletPaymentController::class, 'getGrItems'])->name('outlet-payments.gr-items');
     Route::get('/outlet-payments/gsr-items/{gsrId}', [\App\Http\Controllers\OutletPaymentController::class, 'getGsrItems'])->name('outlet-payments.gsr-items');
     Route::get('/outlet-payments/gr-list', [\App\Http\Controllers\OutletPaymentController::class, 'getGrList'])->name('outlet-payments.gr-list');
+    Route::get('/outlet-payments/paid-list', [\App\Http\Controllers\OutletPaymentController::class, 'getPaidList'])->name('outlet-payments.paid-list');
     Route::get('/outlet-payments/retail-sales-list', [\App\Http\Controllers\OutletPaymentController::class, 'getRetailSalesList'])->name('outlet-payments.retail-sales-list');
     Route::get('/outlet-payments/retail-sales-items/{retailId}', [\App\Http\Controllers\OutletPaymentController::class, 'getRetailSalesItems'])->name('outlet-payments.retail-sales-items');
     Route::get('/outlet-payments/debug', [\App\Http\Controllers\OutletPaymentController::class, 'debug'])->name('outlet-payments.debug');

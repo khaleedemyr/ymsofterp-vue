@@ -168,7 +168,6 @@ class OutletPaymentController extends Controller
         }
 
         $grList = $grQuery->orderBy('gr.receive_date', 'desc')
-            ->limit(50) // Limit to 50 for better performance
             ->get();
 
         // Simple grouping without heavy calculations
@@ -898,7 +897,6 @@ class OutletPaymentController extends Controller
         }
 
         $grList = $grQuery->orderBy('gr.receive_date', 'desc')
-            ->limit(50) // Reduced to 50 for faster loading
             ->get();
 
         // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
@@ -1045,7 +1043,6 @@ class OutletPaymentController extends Controller
         }
 
         $grList = $grQuery->orderBy('gr.receive_date', 'desc')
-            ->limit(50)
             ->get();
 
         // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
@@ -1086,6 +1083,40 @@ class OutletPaymentController extends Controller
         return response()->json([
             'success' => true,
             'grList' => $groupedGrList,
+        ]);
+    }
+
+    /**
+     * Daftar transaksi yang sudah punya outlet payment (read-only, untuk rekonsiliasi Rekap FJ).
+     */
+    public function getPaidList(Request $request)
+    {
+        $outletId = $request->input('outlet_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        if (!$outletId || !$dateFrom || !$dateTo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'outlet_id, date_from, dan date_to wajib diisi.',
+            ], 422);
+        }
+
+        $paidList = $this->fetchPaidTransactionsForPayment((int) $outletId, $dateFrom, $dateTo);
+
+        return response()->json([
+            'success' => true,
+            'paidList' => $paidList,
+            'summary' => [
+                'count' => count($paidList),
+                'total_amount' => round(collect($paidList)->sum('total_amount'), 2),
+                'food_gr_count' => collect($paidList)->where('type', 'gr')->count(),
+                'gsr_count' => collect($paidList)->where('type', 'gsr')->count(),
+                'retail_count' => collect($paidList)->where('type', 'retail')->count(),
+                'food_gr_total' => round(collect($paidList)->where('type', 'gr')->sum('total_amount'), 2),
+                'gsr_total' => round(collect($paidList)->where('type', 'gsr')->sum('total_amount'), 2),
+                'retail_total' => round(collect($paidList)->where('type', 'retail')->sum('total_amount'), 2),
+            ],
         ]);
     }
 
@@ -2431,7 +2462,6 @@ class OutletPaymentController extends Controller
         }
 
         return $query->orderBy('h.receive_date', 'desc')
-            ->limit(50)
             ->get()
             ->map(function ($gsr) {
                 $warehouseId = $this->resolveGsrWarehouseId($gsr->id);
@@ -2467,6 +2497,181 @@ class OutletPaymentController extends Controller
             ->leftJoin('warehouse_division as wd', 'i.warehouse_division_id', '=', 'wd.id')
             ->where('si.header_id', $gsrId)
             ->value('wd.warehouse_id');
+    }
+
+    protected function sumFoodGrTotalAmount(int $grId): float
+    {
+        return (float) DB::table('outlet_food_good_receive_items as gri')
+            ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as foi', function ($join) {
+                $join->on('gri.item_id', '=', 'foi.item_id')
+                    ->on('do.floor_order_id', '=', 'foi.floor_order_id');
+            })
+            ->where('gri.outlet_food_good_receive_id', $grId)
+            ->whereNull('gr.deleted_at')
+            ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
+    }
+
+    /**
+     * Transaksi GR / GSR / Retail yang sudah dibayar pada rentang tanggal (receive_date / created_at retail).
+     *
+     * @return array<int, object>
+     */
+    protected function fetchPaidTransactionsForPayment(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $rows = collect();
+
+        $foodRows = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_payments as op', function ($join) {
+                $join->on('gr.id', '=', 'op.gr_id')->where('op.status', '!=', 'cancelled');
+            })
+            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->leftJoin('warehouse_division as wd_pl', 'pl.warehouse_division_id', '=', 'wd_pl.id')
+            ->leftJoin('warehouses as w_pl', 'wd_pl.warehouse_id', '=', 'w_pl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->where('gr.outlet_id', $outletId)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->whereNull('gr.deleted_at')
+            ->select(
+                'gr.id',
+                'gr.number',
+                'gr.receive_date',
+                'op.id as payment_id',
+                'op.payment_number',
+                'op.status as payment_status',
+                'op.date as payment_date',
+                'op.total_amount as payment_record_amount',
+                DB::raw('COALESCE(
+                    w_pl.name,
+                    (SELECT w.name
+                     FROM food_floor_order_items ffoi
+                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
+                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
+                     WHERE ffoi.floor_order_id = ffo.id
+                     LIMIT 1)
+                ) as warehouse_name')
+            )
+            ->orderBy('gr.receive_date', 'desc')
+            ->get();
+
+        foreach ($foodRows as $gr) {
+            $rows->push((object) [
+                'id' => $gr->id,
+                'number' => $gr->number,
+                'transaction_date' => $gr->receive_date,
+                'type' => 'gr',
+                'type_label' => 'Food GR',
+                'warehouse_name' => $gr->warehouse_name,
+                'total_amount' => $this->sumFoodGrTotalAmount((int) $gr->id),
+                'payment_id' => $gr->payment_id,
+                'payment_number' => $gr->payment_number,
+                'payment_status' => $gr->payment_status,
+                'payment_date' => $gr->payment_date,
+                'payment_record_amount' => (float) $gr->payment_record_amount,
+            ]);
+        }
+
+        if ($this->outletPaymentSupportsGsr()) {
+            $gsrRows = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_payments as op', function ($join) {
+                    $join->on('h.id', '=', 'op.gsr_id')->where('op.status', '!=', 'cancelled');
+                })
+                ->where('h.outlet_id', $outletId)
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->whereNull('h.deleted_at')
+                ->select(
+                    'h.id',
+                    'h.number',
+                    'h.receive_date',
+                    'h.status as gsr_status',
+                    'op.id as payment_id',
+                    'op.payment_number',
+                    'op.status as payment_status',
+                    'op.date as payment_date',
+                    'op.total_amount as payment_record_amount'
+                )
+                ->orderBy('h.receive_date', 'desc')
+                ->get();
+
+            foreach ($gsrRows as $gsr) {
+                $warehouseId = $this->resolveGsrWarehouseId((int) $gsr->id);
+                $warehouseName = $warehouseId
+                    ? DB::table('warehouses')->where('id', $warehouseId)->value('name')
+                    : null;
+
+                $rows->push((object) [
+                    'id' => $gsr->id,
+                    'number' => $gsr->number,
+                    'transaction_date' => $gsr->receive_date,
+                    'type' => 'gsr',
+                    'type_label' => 'GSR',
+                    'warehouse_name' => $warehouseName,
+                    'total_amount' => $this->sumInvoiceReportGsrTotal($gsr->id),
+                    'payment_id' => $gsr->payment_id,
+                    'payment_number' => $gsr->payment_number,
+                    'payment_status' => $gsr->payment_status,
+                    'payment_date' => $gsr->payment_date,
+                    'payment_record_amount' => (float) $gsr->payment_record_amount,
+                    'gsr_status' => $gsr->gsr_status,
+                ]);
+            }
+        }
+
+        $retailRows = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('outlet_payments as op', function ($join) {
+                $join->on('rws.id', '=', 'op.retail_sales_id')->where('op.status', '!=', 'cancelled');
+            })
+            ->leftJoin('warehouses as w', 'rws.warehouse_id', '=', 'w.id')
+            ->where('c.id_outlet', (string) $outletId)
+            ->where('c.type', 'branch')
+            ->where('rws.status', 'completed')
+            ->whereDate('rws.created_at', '>=', $dateFrom)
+            ->whereDate('rws.created_at', '<=', $dateTo)
+            ->select(
+                'rws.id',
+                'rws.number',
+                'rws.sale_date',
+                'rws.created_at',
+                'rws.total_amount',
+                'c.name as customer_name',
+                'w.name as warehouse_name',
+                'op.id as payment_id',
+                'op.payment_number',
+                'op.status as payment_status',
+                'op.date as payment_date',
+                'op.total_amount as payment_record_amount'
+            )
+            ->orderBy('rws.sale_date', 'desc')
+            ->get();
+
+        foreach ($retailRows as $retail) {
+            $rows->push((object) [
+                'id' => $retail->id,
+                'number' => $retail->number,
+                'transaction_date' => $retail->sale_date,
+                'type' => 'retail',
+                'type_label' => 'Retail',
+                'warehouse_name' => $retail->warehouse_name,
+                'customer_name' => $retail->customer_name,
+                'total_amount' => (float) $retail->total_amount,
+                'payment_id' => $retail->payment_id,
+                'payment_number' => $retail->payment_number,
+                'payment_status' => $retail->payment_status,
+                'payment_date' => $retail->payment_date,
+                'payment_record_amount' => (float) $retail->payment_record_amount,
+            ]);
+        }
+
+        return $rows
+            ->sortByDesc(fn ($row) => $row->transaction_date)
+            ->values()
+            ->all();
     }
 
     protected function enrichInvoiceReportPaymentInfo(array $rows): array
