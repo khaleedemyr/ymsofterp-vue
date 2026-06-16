@@ -36,13 +36,8 @@ const collapseSubcategory = ref({});
 
 const items = ref([]);
 
-if (!isCreate.value && props.audit) {
-  selectedOutlet.value = props.outlets.find((x) => Number(x.id_outlet) === Number(props.audit.outlet_id)) || null;
-  selectedTemplate.value = props.templates.find((x) => Number(x.id) === Number(props.audit.template_id)) || null;
-  selectedAuditors.value = props.users.filter((u) => (props.audit.auditor_ids || []).includes(u.id));
-  selectedAuditees.value = props.users.filter((u) => (props.audit.auditee_ids || []).includes(u.id));
-  notes.value = props.audit.notes || '';
-  items.value = (props.audit.items || []).map((row) => ({
+function mapAuditItem(row) {
+  return {
     ...row,
     media: row.media || [],
     cap: row.cap || {
@@ -52,8 +47,27 @@ if (!isCreate.value && props.audit) {
       status: 'open',
       media: [],
     },
-  }));
+  };
 }
+
+function hydrateFromAudit() {
+  if (isCreate.value || !props.audit) {
+    return;
+  }
+
+  selectedOutlet.value = props.outlets.find((x) => Number(x.id_outlet) === Number(props.audit.outlet_id)) || null;
+  selectedTemplate.value = props.templates.find((x) => Number(x.id) === Number(props.audit.template_id)) || null;
+  selectedAuditors.value = props.users.filter((u) => (props.audit.auditor_ids || []).includes(u.id));
+  selectedAuditees.value = props.users.filter((u) => (props.audit.auditee_ids || []).includes(u.id));
+  notes.value = props.audit.notes || '';
+  items.value = (props.audit.items || []).map(mapAuditItem);
+}
+
+hydrateFromAudit();
+
+watch(() => [props.mode, props.audit?.id], () => {
+  hydrateFromAudit();
+});
 
 const groupedItems = computed(() => {
   const keyword = (search.value || '').toLowerCase().trim();
@@ -681,7 +695,7 @@ function goBackToIndex() {
           </div>
 
           <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-            Tidak ada parameter yang cocok dengan pencarian.
+            {{ search.trim() ? 'Tidak ada parameter yang cocok dengan pencarian.' : 'Belum ada parameter audit dari template.' }}
           </div>
         </div>
       </div>
