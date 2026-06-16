@@ -139,7 +139,15 @@ class Qa2AuditController extends Controller
 
         $user = auth()->user();
 
-        $auditId = DB::transaction(function () use ($validated, $user) {
+        // Tarik dulu data template dan pastikan ada item sebelum membuat draft audit.
+        $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
+        if (empty($templateRows)) {
+            throw ValidationException::withMessages([
+                'template_id' => 'Template tidak memiliki parameter audit. Cek QA2 Template Items.',
+            ]);
+        }
+
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
@@ -154,13 +162,7 @@ class Qa2AuditController extends Controller
             ]);
 
             $this->syncPeople($auditId, $validated['auditor_ids'] ?? [], $validated['auditee_ids'] ?? []);
-            $inserted = $this->seedItemsFromTemplate($auditId, (int) $validated['template_id']);
-
-            if ($inserted === 0) {
-                throw ValidationException::withMessages([
-                    'template_id' => 'Template tidak memiliki parameter audit. Cek QA2 Template Items.',
-                ]);
-            }
+            $this->seedAuditItemsFromTemplateRows($auditId, $templateRows);
 
             return $auditId;
         });
@@ -563,7 +565,7 @@ class Qa2AuditController extends Controller
         }
     }
 
-    private function seedItemsFromTemplate(int $auditId, int $templateId): int
+    private function getTemplateSeedRows(int $templateId): array
     {
         $items = DB::table('qa2_template_items as ti')
             ->join('qa2_parameters as p', 'p.id', '=', 'ti.parameter_id')
@@ -587,7 +589,6 @@ class Qa2AuditController extends Controller
         $rows = [];
         foreach ($items as $item) {
             $rows[] = [
-                'audit_id' => $auditId,
                 'template_item_id' => (int) $item->template_item_id,
                 'category_id' => $item->category_id ? (int) $item->category_id : null,
                 'subcategory_id' => $item->subcategory_id ? (int) $item->subcategory_id : null,
@@ -595,6 +596,25 @@ class Qa2AuditController extends Controller
                 'parameter_code' => $item->parameter_code,
                 'parameter_text' => $item->parameter_text,
                 'sort_order' => (int) $item->sort_order,
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function seedAuditItemsFromTemplateRows(int $auditId, array $templateRows): int
+    {
+        $rows = [];
+        foreach ($templateRows as $item) {
+            $rows[] = [
+                'audit_id' => $auditId,
+                'template_item_id' => $item['template_item_id'],
+                'category_id' => $item['category_id'],
+                'subcategory_id' => $item['subcategory_id'],
+                'parameter_id' => $item['parameter_id'],
+                'parameter_code' => $item['parameter_code'],
+                'parameter_text' => $item['parameter_text'],
+                'sort_order' => $item['sort_order'],
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -614,7 +634,10 @@ class Qa2AuditController extends Controller
             return;
         }
 
-        $this->seedItemsFromTemplate($auditId, $templateId);
+        $templateRows = $this->getTemplateSeedRows($templateId);
+        if (!empty($templateRows)) {
+            $this->seedAuditItemsFromTemplateRows($auditId, $templateRows);
+        }
     }
 
     private function allowedOutlets(bool $isHo, int $userOutletId)
