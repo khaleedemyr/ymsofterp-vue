@@ -29,6 +29,11 @@ const categorySearch = ref('');
 const subcategorySearch = ref('');
 const selectedCategory = ref('');
 const selectedSubcategory = ref('');
+const selectedSearch = ref('');
+const selectedCategorySearch = ref('');
+const selectedSubcategorySearch = ref('');
+const selectedAreaCategory = ref('');
+const selectedAreaSubcategory = ref('');
 const draggingParamId = ref(null);
 const draggingSelectedIndex = ref(null);
 
@@ -102,6 +107,15 @@ const selectedParams = computed(() => {
     .filter(Boolean);
 });
 
+const selectedParamsWithIndex = computed(() => {
+  return form.value.parameter_ids
+    .map((id, index) => ({
+      originalIndex: index,
+      param: parameterMap.value[id],
+    }))
+    .filter((item) => !!item.param);
+});
+
 const availableParams = computed(() => {
   const keyword = search.value.trim().toLowerCase();
   const categoryKeyword = categorySearch.value.trim().toLowerCase();
@@ -128,12 +142,78 @@ const availableParams = computed(() => {
   });
 });
 
+const selectedCategoryOptions = computed(() => {
+  const map = new Map();
+  selectedParams.value.forEach((p) => {
+    if (!map.has(p.category_key)) {
+      map.set(p.category_key, {
+        key: p.category_key,
+        code: p.category_code,
+        name: p.category_name,
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
+});
+
+const selectedSubcategoryOptions = computed(() => {
+  const map = new Map();
+  selectedParams.value.forEach((p) => {
+    if (selectedAreaCategory.value && p.category_key !== selectedAreaCategory.value) return;
+
+    if (!map.has(p.subcategory_key)) {
+      map.set(p.subcategory_key, {
+        key: p.subcategory_key,
+        code: p.subcategory_code,
+        name: p.subcategory_name,
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
+});
+
+const filteredSelectedParams = computed(() => {
+  const keyword = selectedSearch.value.trim().toLowerCase();
+  const categoryKeyword = selectedCategorySearch.value.trim().toLowerCase();
+  const subcategoryKeyword = selectedSubcategorySearch.value.trim().toLowerCase();
+
+  return selectedParamsWithIndex.value.filter((item) => {
+    const p = item.param;
+
+    if (selectedAreaCategory.value && p.category_key !== selectedAreaCategory.value) return false;
+    if (selectedAreaSubcategory.value && p.subcategory_key !== selectedAreaSubcategory.value) return false;
+
+    if (categoryKeyword) {
+      const source = `${p.category_code} ${p.category_name}`.toLowerCase();
+      if (!source.includes(categoryKeyword)) return false;
+    }
+
+    if (subcategoryKeyword) {
+      const source = `${p.subcategory_code} ${p.subcategory_name}`.toLowerCase();
+      if (!source.includes(subcategoryKeyword)) return false;
+    }
+
+    if (!keyword) return true;
+    return p.search_index.includes(keyword);
+  });
+});
+
 function clearFilters() {
   search.value = '';
   categorySearch.value = '';
   subcategorySearch.value = '';
   selectedCategory.value = '';
   selectedSubcategory.value = '';
+}
+
+function clearSelectedFilters() {
+  selectedSearch.value = '';
+  selectedCategorySearch.value = '';
+  selectedSubcategorySearch.value = '';
+  selectedAreaCategory.value = '';
+  selectedAreaSubcategory.value = '';
 }
 
 function addParam(id) {
@@ -374,8 +454,14 @@ function back() {
                         <span class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
                       </p>
                       <p class="text-xs text-gray-600">{{ p.text }}</p>
-                      <p class="text-[11px] text-gray-500 mt-1">Kategori: {{ p.category_code }} - {{ p.category_name }}</p>
-                      <p class="text-[11px] text-gray-500">Subkategori: {{ p.subcategory_code }} - {{ p.subcategory_name }}</p>
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">
+                          {{ p.category_code }} - {{ p.category_name }}
+                        </span>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
+                          {{ p.subcategory_code }} - {{ p.subcategory_name }}
+                        </span>
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -402,28 +488,89 @@ function back() {
                 <p class="text-xs text-gray-600">{{ form.parameter_ids.length }} parameter</p>
               </div>
 
+              <div class="mb-3">
+                <label class="block text-sm mb-1">Cari Parameter</label>
+                <input
+                  v-model="selectedSearch"
+                  placeholder="Cari code, isi parameter, kategori, subkategori..."
+                  class="w-full border rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Search Kategori</label>
+                  <input
+                    v-model="selectedCategorySearch"
+                    placeholder="Contoh: INFRASTRUCTURE"
+                    class="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Search Subkategori</label>
+                  <input
+                    v-model="selectedSubcategorySearch"
+                    placeholder="Contoh: FACADE"
+                    class="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Filter Kategori</label>
+                  <select v-model="selectedAreaCategory" class="w-full border rounded-lg px-3 py-2 bg-white text-sm">
+                    <option value="">Semua kategori</option>
+                    <option v-for="opt in selectedCategoryOptions" :key="opt.key" :value="opt.key">
+                      {{ opt.code }} - {{ opt.name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Filter Subkategori</label>
+                  <select v-model="selectedAreaSubcategory" class="w-full border rounded-lg px-3 py-2 bg-white text-sm">
+                    <option value="">Semua subkategori</option>
+                    <option v-for="opt in selectedSubcategoryOptions" :key="opt.key" :value="opt.key">
+                      {{ opt.code }} - {{ opt.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700" @click="clearSelectedFilters">
+                  Reset Filter
+                </button>
+              </div>
+
               <div class="space-y-2 max-h-[66vh] overflow-auto pr-1">
                 <div
-                  v-for="(p, index) in selectedParams"
-                  :key="`${p.id}-${index}`"
+                  v-for="item in filteredSelectedParams"
+                  :key="`${item.param.id}-${item.originalIndex}`"
                   class="bg-blue-50 border border-blue-200 rounded-lg p-2"
                   draggable="true"
-                  @dragstart="startDragFromSelected(p.id, index)"
+                  @dragstart="startDragFromSelected(item.param.id, item.originalIndex)"
                   @dragend="clearDragState"
                   @dragover="allowDrop"
-                  @drop="dropToSelectedAt(index)"
+                  @drop="dropToSelectedAt(item.originalIndex)"
                 >
                   <div class="flex items-start justify-between gap-2">
                     <div>
-                      <p class="text-xs text-blue-800 font-semibold">#{{ index + 1 }} {{ p.code }}</p>
-                      <p class="text-xs text-gray-700">{{ p.text }}</p>
-                      <p class="text-[11px] text-gray-500 mt-1">Kategori: {{ p.category_code }} - {{ p.category_name }}</p>
-                      <p class="text-[11px] text-gray-500">Subkategori: {{ p.subcategory_code }} - {{ p.subcategory_name }}</p>
+                      <p class="text-xs text-blue-800 font-semibold">#{{ item.originalIndex + 1 }} {{ item.param.code }}</p>
+                      <p class="text-xs text-gray-700">{{ item.param.text }}</p>
+                      <div class="mt-1 flex flex-wrap gap-1">
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 font-medium">
+                          {{ item.param.category_code }} - {{ item.param.category_name }}
+                        </span>
+                        <span class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">
+                          {{ item.param.subcategory_code }} - {{ item.param.subcategory_name }}
+                        </span>
+                      </div>
                     </div>
                     <button
                       type="button"
                       class="text-xs px-2 py-1 rounded bg-red-100 text-red-700"
-                      @click="removeParam(p.id)"
+                      @click="removeParam(item.param.id)"
                     >
                       Hapus
                     </button>
@@ -432,6 +579,9 @@ function back() {
 
                 <p v-if="selectedParams.length === 0" class="text-xs text-gray-500 py-8 text-center">
                   Drop parameter ke area ini untuk menambahkan ke template.
+                </p>
+                <p v-else-if="filteredSelectedParams.length === 0" class="text-xs text-gray-500 py-8 text-center">
+                  Tidak ada parameter terpilih yang cocok dengan filter.
                 </p>
               </div>
             </div>
