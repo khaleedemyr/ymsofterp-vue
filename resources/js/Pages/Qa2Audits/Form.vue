@@ -7,6 +7,7 @@ import Swal from 'sweetalert2';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import CameraModal from '@/Components/CameraModal.vue';
 
 const props = defineProps({
   mode: String,
@@ -296,16 +297,68 @@ async function submitAudit() {
   router.post(route('qa2-audits.submit', props.audit.id));
 }
 
-async function uploadItemMedia(item, event) {
-  if (!canManage.value) {
+const showCameraModal = ref(false);
+const cameraMode = ref('photo');
+const cameraContext = ref(null);
+const itemFileInputs = ref({});
+const capFileInputs = ref({});
+const uploadingItemMedia = ref({});
+const uploadingCapMedia = ref({});
+
+function setItemFileInput(itemId, el) {
+  if (el) {
+    itemFileInputs.value[itemId] = el;
+  }
+}
+
+function setCapFileInput(itemId, el) {
+  if (el) {
+    capFileInputs.value[itemId] = el;
+  }
+}
+
+function triggerItemFilePicker(item) {
+  itemFileInputs.value[item.id]?.click();
+}
+
+function triggerCapFilePicker(item) {
+  capFileInputs.value[item.id]?.click();
+}
+
+function openItemCamera(item, mode) {
+  cameraContext.value = { type: 'item', item };
+  cameraMode.value = mode;
+  showCameraModal.value = true;
+}
+
+function openCapCamera(item, mode) {
+  cameraContext.value = { type: 'cap', item };
+  cameraMode.value = mode;
+  showCameraModal.value = true;
+}
+
+function closeCamera() {
+  showCameraModal.value = false;
+  cameraContext.value = null;
+}
+
+function dataURLtoFile(dataUrl, filename) {
+  const [header, data] = dataUrl.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new File([bytes], filename, { type: mime });
+}
+
+async function uploadItemMediaFiles(item, files) {
+  if (!canManage.value || !files.length) {
     return;
   }
 
-  const files = Array.from(event.target.files || []);
-  if (!files.length) {
-    return;
-  }
-
+  uploadingItemMedia.value[item.id] = true;
   const formData = new FormData();
   files.forEach((file) => formData.append('files[]', file));
 
@@ -316,6 +369,44 @@ async function uploadItemMedia(item, event) {
     item.media = [...(item.media || []), ...(data.items || [])];
   } catch (error) {
     await Swal.fire('Error', 'Upload media gagal.', 'error');
+  } finally {
+    uploadingItemMedia.value[item.id] = false;
+  }
+}
+
+async function uploadItemMedia(item, event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) {
+    return;
+  }
+
+  await uploadItemMediaFiles(item, files);
+  event.target.value = '';
+}
+
+async function onCameraCapture(payload) {
+  const ctx = cameraContext.value;
+  closeCamera();
+
+  if (!ctx) {
+    return;
+  }
+
+  let file = null;
+  if (typeof payload === 'string') {
+    file = dataURLtoFile(payload, `capture-${Date.now()}.jpg`);
+  } else if (payload instanceof Blob) {
+    file = new File([payload], `video-${Date.now()}.webm`, { type: payload.type || 'video/webm' });
+  }
+
+  if (!file) {
+    return;
+  }
+
+  if (ctx.type === 'item') {
+    await uploadItemMediaFiles(ctx.item, [file]);
+  } else if (ctx.type === 'cap') {
+    await uploadCapMediaFiles(ctx.item, [file]);
   }
 }
 
@@ -372,16 +463,12 @@ async function saveCap() {
   }
 }
 
-async function uploadCapMedia(item, event) {
-  if (!canFillCap.value || !item.cap?.id) {
+async function uploadCapMediaFiles(item, files) {
+  if (!canFillCap.value || !item.cap?.id || !files.length) {
     return;
   }
 
-  const files = Array.from(event.target.files || []);
-  if (!files.length) {
-    return;
-  }
-
+  uploadingCapMedia.value[item.id] = true;
   const formData = new FormData();
   files.forEach((file) => formData.append('files[]', file));
 
@@ -392,7 +479,19 @@ async function uploadCapMedia(item, event) {
     item.cap.media = [...(item.cap.media || []), ...(data.items || [])];
   } catch (error) {
     await Swal.fire('Error', 'Upload CAP media gagal.', 'error');
+  } finally {
+    uploadingCapMedia.value[item.id] = false;
   }
+}
+
+async function uploadCapMedia(item, event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) {
+    return;
+  }
+
+  await uploadCapMediaFiles(item, files);
+  event.target.value = '';
 }
 
 function goBackToIndex() {
@@ -607,36 +706,69 @@ function goBackToIndex() {
 
                       <div>
                         <label class="mb-1 block text-xs font-semibold text-gray-500">Upload Foto / Video</label>
-                        <input
-                          v-if="canManage && audit.status === 'draft'"
-                          type="file"
-                          multiple
-                          accept="image/*,video/*"
-                          capture="environment"
-                          class="w-full text-xs"
-                          @change="uploadItemMedia(item, $event)"
-                        >
+                        <div v-if="canManage && audit.status === 'draft'" class="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="uploadingItemMedia[item.id]"
+                            @click="openItemCamera(item, 'photo')"
+                          >
+                            <i class="fas fa-camera" />
+                            Ambil Foto
+                          </button>
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            :disabled="uploadingItemMedia[item.id]"
+                            @click="openItemCamera(item, 'video')"
+                          >
+                            <i class="fas fa-video" />
+                            Rekam Video
+                          </button>
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                            :disabled="uploadingItemMedia[item.id]"
+                            @click="triggerItemFilePicker(item)"
+                          >
+                            <i class="fas fa-images" />
+                            Pilih File
+                          </button>
+                          <input
+                            :ref="(el) => setItemFileInput(item.id, el)"
+                            type="file"
+                            multiple
+                            accept="image/*,video/*"
+                            class="hidden"
+                            @change="uploadItemMedia(item, $event)"
+                          >
+                        </div>
+                        <p v-if="uploadingItemMedia[item.id]" class="mt-1 text-xs text-indigo-600">Mengunggah media...</p>
+                      </div>
+                    </div>
+
+                    <div v-if="item.media?.length" class="mt-3">
+                      <p class="mb-2 text-xs font-semibold text-gray-500">Media terlampir ({{ item.media.length }})</p>
+                      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        <div v-for="media in item.media" :key="media.id" class="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                          <img v-if="media.media_type === 'photo'" :src="media.url" class="h-28 w-full object-cover">
+                          <video v-else :src="media.url" class="h-28 w-full object-cover" controls />
+                          <button
+                            v-if="canManage && audit.status === 'draft'"
+                            type="button"
+                            class="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white shadow hover:bg-red-700"
+                            title="Hapus"
+                            @click="removeItemMedia(item, media)"
+                          >
+                            <i class="fas fa-times text-xs" />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     <div class="mt-3">
                       <label class="mb-1 block text-xs font-semibold text-gray-500">Comment (optional)</label>
                       <textarea v-model="item.comment" rows="2" class="w-full rounded-lg border-gray-300 text-sm" :disabled="!canManage || audit.status !== 'draft'" />
-                    </div>
-
-                    <div v-if="item.media?.length" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                      <div v-for="media in item.media" :key="media.id" class="relative overflow-hidden rounded border border-gray-200 bg-gray-50 p-1">
-                        <img v-if="media.media_type === 'photo'" :src="media.url" class="h-28 w-full rounded object-cover">
-                        <video v-else :src="media.url" class="h-28 w-full rounded object-cover" controls />
-                        <button
-                          v-if="canManage && audit.status === 'draft'"
-                          type="button"
-                          class="absolute right-1 top-1 rounded bg-red-600 px-1.5 py-0.5 text-[10px] text-white"
-                          @click="removeItemMedia(item, media)"
-                        >
-                          Hapus
-                        </button>
-                      </div>
                     </div>
 
                     <div v-if="item.result === 'NC' && canFillCap" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
@@ -668,23 +800,55 @@ function goBackToIndex() {
 
                         <div class="md:col-span-2">
                           <label class="mb-1 block text-xs font-semibold text-rose-700">Media CAP</label>
-                          <input
-                            v-if="item.cap?.id"
-                            type="file"
-                            multiple
-                            accept="image/*,video/*"
-                            capture="environment"
-                            class="w-full text-xs"
-                            @change="uploadCapMedia(item, $event)"
-                          >
+                          <div v-if="item.cap?.id" class="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="openCapCamera(item, 'photo')"
+                            >
+                              <i class="fas fa-camera" />
+                              Ambil Foto
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="openCapCamera(item, 'video')"
+                            >
+                              <i class="fas fa-video" />
+                              Rekam Video
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-100 px-2.5 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-50"
+                              :disabled="uploadingCapMedia[item.id]"
+                              @click="triggerCapFilePicker(item)"
+                            >
+                              <i class="fas fa-images" />
+                              Pilih File
+                            </button>
+                            <input
+                              :ref="(el) => setCapFileInput(item.id, el)"
+                              type="file"
+                              multiple
+                              accept="image/*,video/*"
+                              class="hidden"
+                              @change="uploadCapMedia(item, $event)"
+                            >
+                          </div>
                           <p v-else class="text-xs text-rose-600">Simpan CAP dulu untuk upload media.</p>
+                          <p v-if="uploadingCapMedia[item.id]" class="mt-1 text-xs text-rose-600">Mengunggah media...</p>
                         </div>
                       </div>
 
-                      <div v-if="item.cap?.media?.length" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        <div v-for="media in item.cap.media" :key="media.id" class="overflow-hidden rounded border border-rose-200 p-1">
-                          <img v-if="media.media_type === 'photo'" :src="media.url" class="h-24 w-full rounded object-cover">
-                          <video v-else :src="media.url" class="h-24 w-full rounded object-cover" controls />
+                      <div v-if="item.cap?.media?.length" class="mt-3">
+                        <p class="mb-2 text-xs font-semibold text-rose-700">Media CAP ({{ item.cap.media.length }})</p>
+                        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                          <div v-for="media in item.cap.media" :key="media.id" class="overflow-hidden rounded-lg border border-rose-200 bg-white">
+                            <img v-if="media.media_type === 'photo'" :src="media.url" class="h-24 w-full object-cover">
+                            <video v-else :src="media.url" class="h-24 w-full object-cover" controls />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -783,5 +947,12 @@ function goBackToIndex() {
         </div>
       </div>
     </div>
+
+    <CameraModal
+      v-if="showCameraModal"
+      :mode="cameraMode"
+      @close="closeCamera"
+      @capture="onCameraCapture"
+    />
   </AppLayout>
 </template>
