@@ -701,6 +701,13 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/asset-inventory-report/stock-card/detail', [\App\Http\Controllers\AssetInventoryReportController::class, 'stockCardDetail'])->name('asset-inventory-report.stock-card.detail');
     Route::get('/asset-inventory-report/stock-position/export', [\App\Http\Controllers\AssetInventoryReportController::class, 'exportStockPosition'])->name('asset-inventory-report.stock-position.export');
 
+    // Asset Serial / Nomor Seri
+    Route::get('/asset-serials', [\App\Http\Controllers\AssetSerialController::class, 'index'])->name('asset-serials.index');
+    Route::get('/asset-serials/create', [\App\Http\Controllers\AssetSerialController::class, 'create'])->name('asset-serials.create');
+    Route::post('/asset-serials', [\App\Http\Controllers\AssetSerialController::class, 'store'])->name('asset-serials.store');
+    Route::get('/asset-serials/items-with-stock', [\App\Http\Controllers\AssetSerialController::class, 'itemsWithStock'])->name('asset-serials.items-with-stock');
+    Route::get('/asset-serials/{id}', [\App\Http\Controllers\AssetSerialController::class, 'show'])->name('asset-serials.show');
+
     // Saldo Awal Stock Asset
     Route::get('/asset-stock-balances', [\App\Http\Controllers\AssetStockBalanceController::class, 'index'])->name('asset-stock-balances.index');
     Route::post('/asset-stock-balances', [\App\Http\Controllers\AssetStockBalanceController::class, 'store'])->name('asset-stock-balances.store');

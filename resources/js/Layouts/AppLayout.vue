@@ -149,6 +149,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.asset_service'), icon: 'fa-solid fa-screwdriver-wrench', route: '/asset-service-orders', code: 'asset_service_order' },
             { name: () => t('sidebar.menus.asset_disposal'), icon: 'fa-solid fa-dumpster', route: '/asset-disposals', code: 'asset_disposal' },
             { name: () => t('sidebar.menus.asset_inventory_report'), icon: 'fa-solid fa-chart-line', route: '/asset-inventory-report/stock-position', code: 'asset_inventory_report' },
+            { name: () => t('sidebar.menus.asset_serial'), icon: 'fa-solid fa-barcode', route: '/asset-serials', code: 'asset_serial' },
             { name: () => t('sidebar.menus.saldo_awal_stock_asset'), icon: 'fa-solid fa-scale-balanced', route: '/asset-stock-balances', code: 'asset_stock_balance' },
         ],
     },

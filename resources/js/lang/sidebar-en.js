@@ -61,6 +61,7 @@ export default {
     "asset_service": "Asset Repair & Maintenance",
     "asset_disposal": "Asset Disposal",
     "asset_inventory_report": "Asset Inventory Report",
+    "asset_serial": "Asset Serial Number",
     "saldo_awal_stock_asset": "Saldo Awal Stock Asset",
     "categories": "Categories",
     "sub_category": "Sub Category",

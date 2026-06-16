@@ -61,6 +61,7 @@ export default {
     "asset_service": "Asset Perbaikan & Pemeliharaan",
     "asset_disposal": "Pembuangan Aset",
     "asset_inventory_report": "Laporan Inventori Aset",
+    "asset_serial": "Nomor Seri Aset",
     "saldo_awal_stock_asset": "Saldo Awal Stok Aset",
     "categories": "Kategori",
     "sub_category": "Sub Kategori",
