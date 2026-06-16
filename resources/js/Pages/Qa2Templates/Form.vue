@@ -25,6 +25,10 @@ const form = ref({
 const errors = ref({});
 const saving = ref(false);
 const search = ref('');
+const categorySearch = ref('');
+const subcategorySearch = ref('');
+const selectedCategory = ref('');
+const selectedSubcategory = ref('');
 const draggingParamId = ref(null);
 const draggingSelectedIndex = ref(null);
 
@@ -35,6 +39,8 @@ const parameterMap = computed(() => {
       (sub.parameters || []).forEach((param) => {
         map[param.id] = {
           ...param,
+          category_key: `${cat.code}__${cat.name}`,
+          subcategory_key: `${sub.code}__${sub.name}`,
           category_code: cat.code,
           category_name: cat.name,
           subcategory_code: sub.code,
@@ -58,6 +64,38 @@ const allParameters = computed(() => {
 
 const selectedSet = computed(() => new Set(form.value.parameter_ids));
 
+const categoryOptions = computed(() => {
+  const map = new Map();
+  allParameters.value.forEach((p) => {
+    if (!map.has(p.category_key)) {
+      map.set(p.category_key, {
+        key: p.category_key,
+        code: p.category_code,
+        name: p.category_name,
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
+});
+
+const subcategoryOptions = computed(() => {
+  const map = new Map();
+  allParameters.value.forEach((p) => {
+    if (selectedCategory.value && p.category_key !== selectedCategory.value) return;
+
+    if (!map.has(p.subcategory_key)) {
+      map.set(p.subcategory_key, {
+        key: p.subcategory_key,
+        code: p.subcategory_code,
+        name: p.subcategory_name,
+      });
+    }
+  });
+
+  return Array.from(map.values()).sort((a, b) => `${a.code} ${a.name}`.localeCompare(`${b.code} ${b.name}`));
+});
+
 const selectedParams = computed(() => {
   return form.value.parameter_ids
     .map((id) => parameterMap.value[id])
@@ -66,13 +104,37 @@ const selectedParams = computed(() => {
 
 const availableParams = computed(() => {
   const keyword = search.value.trim().toLowerCase();
+  const categoryKeyword = categorySearch.value.trim().toLowerCase();
+  const subcategoryKeyword = subcategorySearch.value.trim().toLowerCase();
 
   return allParameters.value.filter((p) => {
     if (selectedSet.value.has(p.id)) return false;
+
+    if (selectedCategory.value && p.category_key !== selectedCategory.value) return false;
+    if (selectedSubcategory.value && p.subcategory_key !== selectedSubcategory.value) return false;
+
+    if (categoryKeyword) {
+      const source = `${p.category_code} ${p.category_name}`.toLowerCase();
+      if (!source.includes(categoryKeyword)) return false;
+    }
+
+    if (subcategoryKeyword) {
+      const source = `${p.subcategory_code} ${p.subcategory_name}`.toLowerCase();
+      if (!source.includes(subcategoryKeyword)) return false;
+    }
+
     if (!keyword) return true;
     return p.search_index.includes(keyword);
   });
 });
+
+function clearFilters() {
+  search.value = '';
+  categorySearch.value = '';
+  subcategorySearch.value = '';
+  selectedCategory.value = '';
+  selectedSubcategory.value = '';
+}
 
 function addParam(id) {
   if (!form.value.parameter_ids.includes(id)) {
@@ -246,6 +308,52 @@ function back() {
                 />
               </div>
 
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Search Kategori</label>
+                  <input
+                    v-model="categorySearch"
+                    placeholder="Contoh: CLEANING"
+                    class="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Search Subkategori</label>
+                  <input
+                    v-model="subcategorySearch"
+                    placeholder="Contoh: SERVING"
+                    class="w-full border rounded-lg px-3 py-2 bg-white text-sm"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Filter Kategori</label>
+                  <select v-model="selectedCategory" class="w-full border rounded-lg px-3 py-2 bg-white text-sm">
+                    <option value="">Semua kategori</option>
+                    <option v-for="opt in categoryOptions" :key="opt.key" :value="opt.key">
+                      {{ opt.code }} - {{ opt.name }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs mb-1 text-gray-600">Filter Subkategori</label>
+                  <select v-model="selectedSubcategory" class="w-full border rounded-lg px-3 py-2 bg-white text-sm">
+                    <option value="">Semua subkategori</option>
+                    <option v-for="opt in subcategoryOptions" :key="opt.key" :value="opt.key">
+                      {{ opt.code }} - {{ opt.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="mb-3">
+                <button type="button" class="text-xs px-2 py-1 rounded bg-gray-200 text-gray-700" @click="clearFilters">
+                  Reset Filter
+                </button>
+              </div>
+
               <p class="text-xs text-gray-600 mb-2">
                 Hasil: <strong>{{ availableParams.length }}</strong> parameter (drag ke area kanan)
               </p>
@@ -266,9 +374,8 @@ function back() {
                         <span class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
                       </p>
                       <p class="text-xs text-gray-600">{{ p.text }}</p>
-                      <p class="text-[11px] text-gray-500 mt-1">
-                        {{ p.category_code }} / {{ p.subcategory_code }}
-                      </p>
+                      <p class="text-[11px] text-gray-500 mt-1">Kategori: {{ p.category_code }} - {{ p.category_name }}</p>
+                      <p class="text-[11px] text-gray-500">Subkategori: {{ p.subcategory_code }} - {{ p.subcategory_name }}</p>
                     </div>
                     <button
                       type="button"
@@ -310,7 +417,8 @@ function back() {
                     <div>
                       <p class="text-xs text-blue-800 font-semibold">#{{ index + 1 }} {{ p.code }}</p>
                       <p class="text-xs text-gray-700">{{ p.text }}</p>
-                      <p class="text-[11px] text-gray-500 mt-1">{{ p.category_code }} / {{ p.subcategory_code }}</p>
+                      <p class="text-[11px] text-gray-500 mt-1">Kategori: {{ p.category_code }} - {{ p.category_name }}</p>
+                      <p class="text-[11px] text-gray-500">Subkategori: {{ p.subcategory_code }} - {{ p.subcategory_name }}</p>
                     </div>
                     <button
                       type="button"
