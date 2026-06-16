@@ -97,4 +97,10 @@ return [
         'auto_grammar_min_chars' => (int) env('OMNI_AUTO_GRAMMAR_MIN_CHARS', 4),
     ],
 
+    /*
+    | Deteksi kata kunci komplain di pesan masuk (hanya flag di inbox, BUKAN kirim ke CVCC).
+    | CVCC tetap manual lewat tombol "Kirim ke CVCC".
+    */
+    'complaint_auto_detect' => filter_var(env('OMNI_COMPLAINT_AUTO_DETECT', true), FILTER_VALIDATE_BOOLEAN),
+
 ];

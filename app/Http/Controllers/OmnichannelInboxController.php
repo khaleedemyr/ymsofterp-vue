@@ -1139,7 +1139,7 @@ class OmnichannelInboxController extends Controller
             return false;
         }
 
-        return in_array((string) ($conversation->complaint_severity ?? ''), ['minor', 'major', 'critical'], true);
+        return in_array((string) ($conversation->complaint_severity ?? ''), ['major', 'critical'], true);
     }
 
     /**

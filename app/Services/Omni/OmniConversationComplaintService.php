@@ -22,6 +22,10 @@ class OmniConversationComplaintService
      */
     public function analyzeText(string $text): ?array
     {
+        if (! filter_var(config('omnichannel.complaint_auto_detect', true), FILTER_VALIDATE_BOOLEAN)) {
+            return null;
+        }
+
         $normalized = mb_strtolower(trim($text));
         if ($normalized === '' || mb_strlen($normalized) < 4) {
             return null;
@@ -29,35 +33,41 @@ class OmniConversationComplaintService
 
         $critical = [
             'racun', 'keracunan', 'muntah', 'sakit perut', 'busuk', 'basi', 'tikus', 'kecoa', 'serangga',
-            'tidak higienis', 'kotor', 'berkarat', 'palsu', 'hoax', 'viral', 'polisi', 'pengaduan', 'lapor polisi',
+            'tidak higienis', 'kotor', 'berkarat', 'palsu', 'lapor polisi',
             'bikin sakit', 'alergi', 'darurat',
         ];
         $major = [
-            'kecewa', 'mengecewakan', 'komplain', 'komplen', 'buruk', 'jelek', 'tidak puas', 'tidak puas',
-            'refund', 'kompensasi', 'ganti rugi', 'minta maaf', 'lambat', 'lama banget', 'mahal', 'tipu',
-            'menipu', 'parah', 'kesal', 'marah', 'kecewa banget', 'worst', 'terburuk', 'disappoint',
-        ];
-        $minor = [
-            'kurang', 'agak', 'sedikit', 'biasa aja', 'lumayan', 'kurang puas', 'kurang enak', 'kurang bagus',
+            'kecewa', 'mengecewakan', 'komplain', 'komplen', 'tidak puas',
+            'refund', 'kompensasi', 'ganti rugi', 'menipu', 'parah', 'kesal', 'marah',
+            'kecewa banget', 'worst', 'terburuk', 'disappoint',
         ];
 
         foreach ($critical as $kw) {
-            if (str_contains($normalized, $kw)) {
+            if ($this->textContainsKeyword($normalized, $kw)) {
                 return ['severity' => 'critical', 'snippet' => $this->snippet($text)];
             }
         }
         foreach ($major as $kw) {
-            if (str_contains($normalized, $kw)) {
+            if ($this->textContainsKeyword($normalized, $kw)) {
                 return ['severity' => 'major', 'snippet' => $this->snippet($text)];
-            }
-        }
-        foreach ($minor as $kw) {
-            if (str_contains($normalized, $kw)) {
-                return ['severity' => 'minor', 'snippet' => $this->snippet($text)];
             }
         }
 
         return null;
+    }
+
+    private function textContainsKeyword(string $normalized, string $keyword): bool
+    {
+        $keyword = mb_strtolower(trim($keyword));
+        if ($keyword === '') {
+            return false;
+        }
+
+        if (mb_strlen($keyword) <= 4) {
+            return (bool) preg_match('/\b'.preg_quote($keyword, '/').'\b/u', $normalized);
+        }
+
+        return str_contains($normalized, $keyword);
     }
 
     public function supportsComplaintColumns(): bool

@@ -1207,6 +1207,14 @@ const inboxPartialReloadKeys = [
   'messageTemplates',
 ]
 
+/** Buka chat: jangan reload daftar sidebar (pertahankan scroll + halaman lama yang sudah dimuat). */
+const conversationOpenPartialReloadKeys = [
+  'selectedConversation',
+  'messages',
+  'messagesHasMoreOlder',
+  'messagesOldestId',
+]
+
 function sortMessages(msgs) {
   const list = Array.isArray(msgs) ? [...msgs] : []
   return list.sort((a, b) => {
@@ -1410,8 +1418,12 @@ const loadedExtraConversations = ref(false)
 watch(
   () => props.conversations,
   (v) => {
-    liveConversations.value = v ?? []
-    loadedExtraConversations.value = false
+    const incoming = v ?? []
+    if (loadedExtraConversations.value) {
+      liveConversations.value = patchConversationsFromPoll(incoming, liveConversations.value, true)
+      return
+    }
+    liveConversations.value = incoming
     hasMoreConversations.value = !!props.conversationsHasMore
     oldestConversationId.value = props.conversationsOldestId ?? null
   },
@@ -1853,7 +1865,12 @@ function listQuery(extra = {}) {
   return q
 }
 
+function resetConversationListPagination() {
+  loadedExtraConversations.value = false
+}
+
 function setInbox(val) {
+  resetConversationListPagination()
   router.get('/crm/omnichannel-inbox', listQuery({ inbox: val }), {
     preserveState: true,
     preserveScroll: true,
@@ -1862,6 +1879,7 @@ function setInbox(val) {
 }
 
 function setLeadStage(val) {
+  resetConversationListPagination()
   router.get('/crm/omnichannel-inbox', listQuery({ lead_stage: val }), {
     preserveState: true,
     preserveScroll: true,
@@ -1870,6 +1888,7 @@ function setLeadStage(val) {
 }
 
 function setChannelFilter(val) {
+  resetConversationListPagination()
   router.get('/crm/omnichannel-inbox', listQuery({ channel: val }), {
     preserveState: true,
     preserveScroll: true,
@@ -1886,6 +1905,16 @@ function isStaleConversationProps(convId) {
   return convId !== selectedId.value
 }
 
+function markConversationReadInList(id) {
+  const idx = liveConversations.value.findIndex((c) => c.id === id)
+  if (idx < 0 || !liveConversations.value[idx].unread_count) {
+    return
+  }
+  const next = [...liveConversations.value]
+  next[idx] = { ...next[idx], unread_count: 0 }
+  liveConversations.value = next
+}
+
 function selectConversation(id) {
   pendingConversationId.value = id
   mobilePanel.value = 'chat'
@@ -1899,12 +1928,13 @@ function selectConversation(id) {
   aiMenuOpen.value = false
   sendError.value = ''
   aiError.value = ''
+  markConversationReadInList(id)
 
   router.get('/crm/omnichannel-inbox', listQuery({ conversation: id }), {
     preserveState: true,
     preserveScroll: true,
     replace: true,
-    only: inboxPartialReloadKeys,
+    only: conversationOpenPartialReloadKeys,
     onFinish: () => {
       if (pendingConversationId.value === id) {
         pendingConversationId.value = null
@@ -2049,16 +2079,12 @@ watch(
     if (isStaleConversationProps(convId)) {
       return
     }
+    if (loadingOlder.value) {
+      return
+    }
     const prev = localMessages.value
     const merged = mergeMessagesFromProps(val, convId)
-    const prevLastId = prev[prev.length - 1]?.id
-    const nextLastId = merged[merged.length - 1]?.id
-    localMessages.value = merged
-    const newTail = nextLastId !== prevLastId || merged.length > prev.length
-    if (stickScrollBottom.value || (shouldStickToBottom() && newTail)) {
-      scrollToBottom()
-      stickScrollBottom.value = false
-    }
+    applyMergedMessages(merged, prev)
     nextTick(() => autoResolvePendingMedia())
   },
   { deep: true }
@@ -2763,7 +2789,7 @@ function complaintBadgeLabel(conv) {
 function complaintBadgeTitle(conv) {
   if (conv.feedback_case_id) return 'Sudah di Customer Voice Command Center — klik untuk buka'
   const snippet = conv.complaint_snippet ? `\n"${conv.complaint_snippet}"` : ''
-  return `Komplain terdeteksi (${complaintSeverityLabel(conv.complaint_severity)}) — klik untuk kirim ke Customer Voice${snippet}`
+  return `Komplain terdeteksi (${complaintSeverityLabel(conv.complaint_severity)}) — buka chat lalu klik "Kirim ke CVCC" jika perlu${snippet}`
 }
 
 function patchConversationVoiceState(conversation) {
@@ -2789,6 +2815,19 @@ async function escalateToCustomerVoice(conv = null) {
   }
   if (!conv && selectedConversation.value?.feedback_case_id && selectedConversation.value?.voice_case_url) {
     window.open(selectedConversation.value.voice_case_url, '_blank', 'noopener')
+    return
+  }
+
+  const confirm = await Swal.fire({
+    icon: 'question',
+    title: 'Kirim ke Customer Voice?',
+    text: 'Chat ini akan dibuat sebagai kasus di CVCC. Lanjutkan?',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, kirim',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#4f46e5',
+  })
+  if (!confirm.isConfirmed) {
     return
   }
 
@@ -2829,7 +2868,6 @@ function handleComplaintBadgeClick(conv) {
     return
   }
   selectConversation(conv.id)
-  escalateToCustomerVoice(conv)
 }
 
 async function pauseAutomation() {
@@ -2888,6 +2926,77 @@ function mergePolledConversations(head, existing) {
   return [...head, ...tail]
 }
 
+/** User sedang gulir daftar chat lama — jangan reorder sidebar (hindari "loncat" ke atas). */
+function shouldPreserveConversationListOrder() {
+  if (loadedExtraConversations.value || loadingMoreConversations.value) {
+    return true
+  }
+  const el = conversationsListEl.value
+  return el != null && el.scrollTop > 48
+}
+
+function patchConversationsFromPoll(head, existing, preserveOrder) {
+  if (!preserveOrder) {
+    return mergePolledConversations(head, existing)
+  }
+  const headById = new Map(head.map((c) => [c.id, c]))
+  const existingIds = new Set(existing.map((c) => c.id))
+  const patched = existing.map((c) => {
+    const fresh = headById.get(c.id)
+    return fresh ? { ...c, ...fresh } : c
+  })
+  const brandNew = head.filter((c) => !existingIds.has(c.id))
+  return brandNew.length > 0 ? [...brandNew, ...patched] : patched
+}
+
+function applyPolledConversations(head) {
+  const preserve = shouldPreserveConversationListOrder()
+  const el = conversationsListEl.value
+  const prevHeight = el?.scrollHeight ?? 0
+  const prevTop = el?.scrollTop ?? 0
+
+  liveConversations.value = patchConversationsFromPoll(head, liveConversations.value, preserve)
+
+  if (preserve && el) {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        const box = conversationsListEl.value
+        if (!box) {
+          return
+        }
+        box.scrollTop = box.scrollHeight - prevHeight + prevTop
+      })
+    })
+  }
+}
+
+function applyMergedMessages(merged, prev) {
+  const el = messagesEl.value
+  const preserve = el && !shouldStickToBottom() && !stickScrollBottom.value && !loadingOlder.value
+  const prevHeight = el?.scrollHeight ?? 0
+  const prevTop = el?.scrollTop ?? 0
+  const prevLastId = prev[prev.length - 1]?.id
+  const nextLastId = merged[merged.length - 1]?.id
+  const newTail = nextLastId !== prevLastId || merged.length > prev.length
+
+  localMessages.value = merged
+
+  if (preserve && el) {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        const box = messagesEl.value
+        if (!box) {
+          return
+        }
+        box.scrollTop = box.scrollHeight - prevHeight + prevTop
+      })
+    })
+  } else if (stickScrollBottom.value || (shouldStickToBottom() && newTail)) {
+    scrollToBottom()
+    stickScrollBottom.value = false
+  }
+}
+
 async function loadMoreConversations() {
   if (loadingMoreConversations.value || !hasMoreConversations.value || search.value.trim()) {
     return
@@ -2941,7 +3050,7 @@ async function pollInbox() {
   try {
     const { data } = await axios.get('/crm/omnichannel-inbox/poll', { params: listQuery() })
     const head = data.conversations ?? []
-    liveConversations.value = mergePolledConversations(head, liveConversations.value)
+    applyPolledConversations(head)
     if (!loadedExtraConversations.value) {
       hasMoreConversations.value = !!data.has_more_conversations
       oldestConversationId.value = data.oldest_conversation_id ?? null
@@ -2954,11 +3063,11 @@ async function pollInbox() {
     const convId = sel?.id ?? null
     if (sel && convId === selectedId.value && !isStaleConversationProps(convId)) {
       liveSelectedConversation.value = sel
-      const prev = localMessages.value
-      const merged = mergeMessagesFromProps(data.messages, convId)
-      const prevLastId = prev[prev.length - 1]?.id
-      const nextLastId = merged[merged.length - 1]?.id
-      localMessages.value = merged
+      if (!loadingOlder.value) {
+        const prev = localMessages.value
+        const merged = mergeMessagesFromProps(data.messages, convId)
+        applyMergedMessages(merged, prev)
+      }
       if (data.has_more_older != null) {
         hasMoreOlder.value = !!data.has_more_older
       }
@@ -2970,12 +3079,8 @@ async function pollInbox() {
         ) {
           oldestMessageId.value = polledOldest
         }
-      } else if (merged.length > 0 && oldestMessageId.value == null) {
-        oldestMessageId.value = merged[0]?.id ?? null
-      }
-      const newTail = nextLastId !== prevLastId || merged.length > prev.length
-      if (shouldStickToBottom() && newTail) {
-        scrollToBottom()
+      } else if (localMessages.value.length > 0 && oldestMessageId.value == null) {
+        oldestMessageId.value = localMessages.value[0]?.id ?? null
       }
     }
   } catch {

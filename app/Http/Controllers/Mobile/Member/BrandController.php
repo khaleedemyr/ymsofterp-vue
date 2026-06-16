@@ -10,16 +10,21 @@ use Illuminate\Support\Facades\DB;
 class BrandController extends Controller
 {
     /**
-     * Get all active brands/outlets
+     * Get all active brands/outlets.
+     * Default excludes franchise (is_fc=1) for member app; pass include_fc=1 for company web profile.
      */
-    public function index()
+    public function index(Request $request)
     {
         try {
-            // Query dari tbl_data_outlet dengan kondisi status='A', is_outlet=1, dan is_fc=0 (exclude franchise outlets)
-            $brands = DB::table('tbl_data_outlet')
+            $query = DB::table('tbl_data_outlet')
                 ->where('status', 'A')
-                ->where('is_outlet', 1)
-                ->where('is_fc', 0)
+                ->where('is_outlet', 1);
+
+            if (! $request->boolean('include_fc')) {
+                $query->where('is_fc', 0);
+            }
+
+            $brands = $query
                 ->orderBy('nama_outlet', 'asc')
                 ->get()
                 ->map(function ($brand) {
@@ -137,7 +142,6 @@ class BrandController extends Controller
                 ->where('id_outlet', $id)
                 ->where('status', 'A')
                 ->where('is_outlet', 1)
-                ->where('is_fc', 0)
                 ->first();
 
             if (!$outlet) {
