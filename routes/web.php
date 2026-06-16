@@ -2392,6 +2392,33 @@ Route::put('qa2-templates/{id}', [\App\Http\Controllers\Qa2TemplateController::c
 Route::delete('qa2-templates/{id}', [\App\Http\Controllers\Qa2TemplateController::class, 'destroy'])->name('qa2-templates.destroy');
 Route::patch('qa2-templates/{id}/toggle-status', [\App\Http\Controllers\Qa2TemplateController::class, 'toggleStatus'])->name('qa2-templates.toggle-status');
 
+// QA2 Category Routes
+Route::get('qa2-categories', [\App\Http\Controllers\Qa2CategoryController::class, 'index'])->name('qa2-categories.index');
+Route::get('qa2-categories/create', [\App\Http\Controllers\Qa2CategoryController::class, 'create'])->name('qa2-categories.create');
+Route::post('qa2-categories', [\App\Http\Controllers\Qa2CategoryController::class, 'store'])->name('qa2-categories.store');
+Route::get('qa2-categories/{id}/edit', [\App\Http\Controllers\Qa2CategoryController::class, 'edit'])->name('qa2-categories.edit');
+Route::put('qa2-categories/{id}', [\App\Http\Controllers\Qa2CategoryController::class, 'update'])->name('qa2-categories.update');
+Route::delete('qa2-categories/{id}', [\App\Http\Controllers\Qa2CategoryController::class, 'destroy'])->name('qa2-categories.destroy');
+Route::patch('qa2-categories/{id}/toggle-status', [\App\Http\Controllers\Qa2CategoryController::class, 'toggleStatus'])->name('qa2-categories.toggle-status');
+
+// QA2 Subcategory Routes
+Route::get('qa2-subcategories', [\App\Http\Controllers\Qa2SubcategoryController::class, 'index'])->name('qa2-subcategories.index');
+Route::get('qa2-subcategories/create', [\App\Http\Controllers\Qa2SubcategoryController::class, 'create'])->name('qa2-subcategories.create');
+Route::post('qa2-subcategories', [\App\Http\Controllers\Qa2SubcategoryController::class, 'store'])->name('qa2-subcategories.store');
+Route::get('qa2-subcategories/{id}/edit', [\App\Http\Controllers\Qa2SubcategoryController::class, 'edit'])->name('qa2-subcategories.edit');
+Route::put('qa2-subcategories/{id}', [\App\Http\Controllers\Qa2SubcategoryController::class, 'update'])->name('qa2-subcategories.update');
+Route::delete('qa2-subcategories/{id}', [\App\Http\Controllers\Qa2SubcategoryController::class, 'destroy'])->name('qa2-subcategories.destroy');
+Route::patch('qa2-subcategories/{id}/toggle-status', [\App\Http\Controllers\Qa2SubcategoryController::class, 'toggleStatus'])->name('qa2-subcategories.toggle-status');
+
+// QA2 Parameter Routes
+Route::get('qa2-parameters', [\App\Http\Controllers\Qa2ParameterController::class, 'index'])->name('qa2-parameters.index');
+Route::get('qa2-parameters/create', [\App\Http\Controllers\Qa2ParameterController::class, 'create'])->name('qa2-parameters.create');
+Route::post('qa2-parameters', [\App\Http\Controllers\Qa2ParameterController::class, 'store'])->name('qa2-parameters.store');
+Route::get('qa2-parameters/{id}/edit', [\App\Http\Controllers\Qa2ParameterController::class, 'edit'])->name('qa2-parameters.edit');
+Route::put('qa2-parameters/{id}', [\App\Http\Controllers\Qa2ParameterController::class, 'update'])->name('qa2-parameters.update');
+Route::delete('qa2-parameters/{id}', [\App\Http\Controllers\Qa2ParameterController::class, 'destroy'])->name('qa2-parameters.destroy');
+Route::patch('qa2-parameters/{id}/toggle-status', [\App\Http\Controllers\Qa2ParameterController::class, 'toggleStatus'])->name('qa2-parameters.toggle-status');
+
 // Inspection Routes
 Route::resource('inspections', \App\Http\Controllers\InspectionController::class);
 Route::get('inspections/{inspection}/add-finding', [\App\Http\Controllers\InspectionController::class, 'addFinding'])->name('inspections.add-finding');
