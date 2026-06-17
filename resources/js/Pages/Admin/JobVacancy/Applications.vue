@@ -1,6 +1,6 @@
 <template>
   <AppLayout title="Data Pelamar Job Vacancy">
-    <div class="max-w-[1400px] w-full mx-auto py-8 px-2">
+    <div class="max-w-[1800px] w-full mx-auto py-8 px-2">
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 class="text-2xl font-bold flex items-center gap-2">
           <i class="fa-solid fa-file-circle-check"></i> Data Pelamar Job Vacancy
@@ -21,17 +21,16 @@
         </div>
       </div>
 
+      <p class="mb-4 text-sm text-gray-600">
+        Setiap tahap rekrutmen diinput terpisah: <strong>Screening CV</strong>, <strong>HR Interview</strong>, <strong>User Interview</strong>, dan <strong>LOI</strong>.
+        Sourcing di dashboard = total pelamar posisi tersebut (otomatis).
+      </p>
+
       <div class="flex flex-wrap gap-2 mb-4">
         <select v-model="filterScope" class="rounded border px-2 py-1.5 text-sm">
           <option value="">Semua Kategori</option>
           <option value="outlet">Outlet</option>
           <option value="head_office">Head Office</option>
-        </select>
-        <select v-model="filterStatus" class="rounded border px-2 py-1.5 text-sm">
-          <option value="">Semua Status</option>
-          <option v-for="status in statusOptions" :key="status" :value="status">
-            {{ formatStatus(status) }}
-          </option>
         </select>
         <input
           v-model="search"
@@ -56,7 +55,11 @@
               <th class="px-3 py-2.5">Posisi / Lokasi</th>
               <th class="px-3 py-2.5">Kontak</th>
               <th class="px-3 py-2.5">CV</th>
-              <th class="px-3 py-2.5">Progress</th>
+              <th class="px-2 py-2.5">Screening CV</th>
+              <th class="px-2 py-2.5">HR Interview</th>
+              <th class="px-2 py-2.5">User Interview</th>
+              <th class="px-2 py-2.5">LOI</th>
+              <th class="px-2 py-2.5">Tgl Join</th>
               <th class="px-3 py-2.5">Dilamar</th>
               <th class="px-3 py-2.5 w-24"></th>
             </tr>
@@ -121,16 +124,25 @@
                 </a>
                 <span v-else class="text-gray-400">-</span>
               </td>
-              <td class="px-3 py-3">
-                <select
-                  :value="row.recruitment_stage || 'sourcing'"
-                  class="rounded border px-2 py-1 text-xs min-w-[140px]"
-                  @change="(e) => updateRecruitmentStage(row.id, e.target.value)"
-                >
-                  <option v-for="stage in recruitmentStages" :key="stage" :value="stage">
-                    {{ stageLabel(stage) }}
-                  </option>
-                </select>
+              <td class="px-2 py-2">
+                <StepSelect :model-value="row.screening_status" @update:model-value="(v) => updateStep(row.id, 'screening_status', v)" />
+              </td>
+              <td class="px-2 py-2">
+                <StepSelect :model-value="row.hr_interview_status" @update:model-value="(v) => updateStep(row.id, 'hr_interview_status', v)" />
+              </td>
+              <td class="px-2 py-2">
+                <StepSelect :model-value="row.user_interview_status" @update:model-value="(v) => updateStep(row.id, 'user_interview_status', v)" />
+              </td>
+              <td class="px-2 py-2">
+                <StepSelect :model-value="row.loi_status" @update:model-value="(v) => updateStep(row.id, 'loi_status', v)" />
+              </td>
+              <td class="px-2 py-2">
+                <input
+                  type="date"
+                  :value="toDateInput(row.joined_at)"
+                  class="rounded border px-1 py-1 text-xs w-[118px]"
+                  @change="(e) => updateStep(row.id, 'joined_at', e.target.value || null)"
+                />
               </td>
               <td class="px-3 py-3 text-gray-600 whitespace-nowrap">{{ formatDate(row.created_at) }}</td>
               <td class="px-3 py-3">
@@ -144,7 +156,7 @@
               </td>
             </tr>
             <tr v-if="rows.data.length === 0">
-              <td colspan="12" class="text-center py-10 text-gray-400">Belum ada data pelamar</td>
+              <td colspan="16" class="text-center py-10 text-gray-400">Belum ada data pelamar</td>
             </tr>
           </tbody>
         </table>
@@ -228,27 +240,48 @@
                 <DetailItem label="Lokasi Lowongan" :value="selected.job_vacancy?.location" />
               </div>
 
-              <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Progress Rekrutmen</div>
-                <select
-                  :value="selected.recruitment_stage || 'sourcing'"
-                  class="rounded border px-3 py-1.5 text-sm w-full"
-                  @change="(e) => updateRecruitmentStage(selected.id, e.target.value, true)"
-                >
-                  <option v-for="stage in recruitmentStages" :key="stage" :value="stage">
-                    {{ stageLabel(stage) }}
-                  </option>
-                </select>
-              </div>
-
-              <div v-if="selected.recruitment_stage === 'joined'">
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Tanggal Join</div>
-                <input
-                  type="date"
-                  :value="toDateInput(selected.joined_at)"
-                  class="rounded border px-3 py-1.5 text-sm w-full"
-                  @change="(e) => updateRecruitmentStage(selected.id, 'joined', true, { joined_at: e.target.value })"
-                />
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Screening CV</div>
+                  <StepSelect
+                    :model-value="selected.screening_status"
+                    full-width
+                    @update:model-value="(v) => updateStep(selected.id, 'screening_status', v, true)"
+                  />
+                </div>
+                <div>
+                  <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">HR Interview</div>
+                  <StepSelect
+                    :model-value="selected.hr_interview_status"
+                    full-width
+                    @update:model-value="(v) => updateStep(selected.id, 'hr_interview_status', v, true)"
+                  />
+                </div>
+                <div>
+                  <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">User Interview</div>
+                  <StepSelect
+                    :model-value="selected.user_interview_status"
+                    full-width
+                    @update:model-value="(v) => updateStep(selected.id, 'user_interview_status', v, true)"
+                  />
+                </div>
+                <div>
+                  <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">LOI</div>
+                  <StepSelect
+                    :model-value="selected.loi_status"
+                    full-width
+                    @update:model-value="(v) => updateStep(selected.id, 'loi_status', v, true)"
+                  />
+                </div>
+                <div>
+                  <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Tanggal Join</div>
+                  <input
+                    type="date"
+                    :value="toDateInput(selected.joined_at)"
+                    class="rounded border px-3 py-1.5 text-sm w-full"
+                    @change="(e) => updateStep(selected.id, 'joined_at', e.target.value || null, true)"
+                  />
+                </div>
               </div>
 
               <div>
@@ -315,23 +348,53 @@ const DetailItem = defineComponent({
   },
 });
 
+const STEP_OPTIONS = ['pending', 'ok', 'nok'];
+const STEP_LABELS = { pending: 'Pending', ok: 'Lolos', nok: 'Tidak Lolos' };
+
+const StepSelect = defineComponent({
+  name: 'StepSelect',
+  props: {
+    modelValue: { type: String, default: 'pending' },
+    fullWidth: { type: Boolean, default: false },
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () =>
+      h(
+        'select',
+        {
+          class: [
+            'rounded border px-1 py-1 text-xs',
+            props.fullWidth ? 'w-full text-sm px-3 py-1.5' : 'min-w-[88px]',
+            stepClass(props.modelValue),
+          ],
+          value: props.modelValue || 'pending',
+          onChange: (e) => emit('update:modelValue', e.target.value),
+        },
+        STEP_OPTIONS.map((opt) => h('option', { value: opt }, STEP_LABELS[opt] || opt)),
+      );
+  },
+});
+
+function stepClass(value) {
+  if (value === 'ok') return 'border-green-300 bg-green-50';
+  if (value === 'nok') return 'border-red-300 bg-red-50';
+  return 'border-gray-300 bg-white';
+}
+
 const props = defineProps({
   applications: Object,
   filters: Object,
-  statusOptions: Array,
-  recruitmentStages: { type: Array, default: () => [] },
-  recruitmentStageLabels: { type: Object, default: () => ({}) },
+  stepOptions: { type: Array, default: () => ['pending', 'ok', 'nok'] },
+  stepLabels: { type: Object, default: () => ({ pending: 'Pending', ok: 'Lolos', nok: 'Tidak Lolos' }) },
 });
 
 const rows = ref(props.applications);
 const search = ref(props.filters?.search || '');
 const filterScope = ref(props.filters?.scope || '');
-const filterStatus = ref(props.filters?.status || '');
-const recruitmentStages = ref(props.recruitmentStages?.length ? props.recruitmentStages : [
-  'sourcing', 'screening_cv_ok', 'screening_cv_nok', 'hr_interview_ok', 'hr_interview_nok',
-  'user_interview_ok', 'user_interview_nok', 'loi', 'joined',
-]);
-const recruitmentStageLabels = ref(props.recruitmentStageLabels || {});
+const filterVacancyId = ref(props.filters?.job_vacancy_id || '');
+const stepOptions = ref(props.stepOptions);
+const stepLabels = ref(props.stepLabels);
 const selected = ref(null);
 
 watch(
@@ -351,14 +414,14 @@ function fetchApplications(page = 1) {
     {
       search: search.value,
       scope: filterScope.value,
-      status: filterStatus.value,
+      job_vacancy_id: filterVacancyId.value,
       page,
     },
     { preserveState: true, replace: true },
   );
 }
 
-watch([search, filterScope, filterStatus], () => {
+watch([search, filterScope], () => {
   fetchApplications(1);
 });
 
@@ -378,9 +441,48 @@ function scopeBadgeClass(scope) {
     : 'bg-emerald-100 text-emerald-700';
 }
 
-function formatStatus(status) {
-  if (!status) return '-';
-  return status.replace('_', ' ').replace(/\b\w/g, (s) => s.toUpperCase());
+function stepLabel(step) {
+  return stepLabels.value[step] || step;
+}
+
+function toDateInput(value) {
+  if (!value) return '';
+  if (typeof value === 'string' && value.length >= 10) return value.slice(0, 10);
+  return '';
+}
+
+function updateStep(id, field, value, fromModal = false) {
+  router.patch(
+    `/admin/job-vacancy/applications/${id}/progress`,
+    { [field]: value },
+    {
+      preserveScroll: true,
+      onSuccess: () => {
+        fetchApplications(rows.value.current_page || 1);
+        if (fromModal && selected.value?.id === id) {
+          selected.value = { ...selected.value, [field]: value };
+        }
+      },
+    },
+  );
+}
+
+function saveStageNotes(id, stageNotes) {
+  const row = rows.value?.data?.find((r) => r.id === id);
+  if (row && (row.stage_notes || '') === (stageNotes || '')) return;
+  router.patch(
+    `/admin/job-vacancy/applications/${id}/progress`,
+    { stage_notes: stageNotes },
+    { preserveScroll: true, onSuccess: () => fetchApplications(rows.value.current_page || 1) },
+  );
+}
+
+function openDetail(row) {
+  selected.value = row;
+}
+
+function closeDetail() {
+  selected.value = null;
 }
 
 function formatDate(value) {
@@ -410,65 +512,5 @@ function formatBirthDate(value) {
     return `${d}/${m}/${y}`;
   }
   return formatDate(value);
-}
-
-function openDetail(row) {
-  selected.value = row;
-}
-
-function closeDetail() {
-  selected.value = null;
-}
-
-function stageLabel(stage) {
-  return recruitmentStageLabels.value[stage] || stage?.replace(/_/g, ' ').replace(/\b\w/g, (s) => s.toUpperCase());
-}
-
-function toDateInput(value) {
-  if (!value) return '';
-  if (typeof value === 'string' && value.length >= 10) return value.slice(0, 10);
-  return '';
-}
-
-function updateRecruitmentStage(id, recruitmentStage, fromModal = false, extra = {}) {
-  router.patch(
-    `/admin/job-vacancy/applications/${id}/recruitment-stage`,
-    { recruitment_stage: recruitmentStage, ...extra },
-    {
-      preserveScroll: true,
-      onSuccess: () => {
-        fetchApplications(rows.value.current_page || 1);
-        if (fromModal && selected.value?.id === id) {
-          selected.value = { ...selected.value, recruitment_stage: recruitmentStage, ...extra };
-        }
-      },
-    },
-  );
-}
-
-function saveStageNotes(id, stageNotes) {
-  const row = rows.value?.data?.find((r) => r.id === id);
-  if (row && (row.stage_notes || '') === (stageNotes || '')) return;
-  router.patch(
-    `/admin/job-vacancy/applications/${id}/recruitment-stage`,
-    { recruitment_stage: row?.recruitment_stage || selected.value?.recruitment_stage || 'sourcing', stage_notes: stageNotes },
-    { preserveScroll: true, onSuccess: () => fetchApplications(rows.value.current_page || 1) },
-  );
-}
-
-function updateStatus(id, status, fromModal = false) {
-  router.patch(
-    `/admin/job-vacancy/applications/${id}/status`,
-    { status },
-    {
-      preserveScroll: true,
-      onSuccess: () => {
-        fetchApplications(rows.value.current_page || 1);
-        if (fromModal && selected.value?.id === id) {
-          selected.value = { ...selected.value, status };
-        }
-      },
-    },
-  );
 }
 </script>

@@ -44,7 +44,7 @@
             <td class="border border-gray-300 px-2 py-2">{{ branchLabel(row.job_scope) }}</td>
             <td class="border border-gray-300 px-2 py-2 font-semibold">{{ row.position }}</td>
             <td class="border border-gray-300 px-2 py-2">{{ row.location }}</td>
-            <td class="border border-gray-300 px-2 py-2">{{ row.recruitment_config?.pic || '-' }}</td>
+            <td class="border border-gray-300 px-2 py-2">{{ picLabel(row) }}</td>
             <td class="border border-gray-300 px-2 py-2 text-center font-bold">
               {{ row.recruitment_config?.is_hold ? 'HOLD' : (row.recruitment_config?.headcount_needed ?? '-') }}
             </td>
@@ -63,7 +63,7 @@
             <td class="border border-gray-300 px-2 py-2 text-center whitespace-nowrap">{{ fmtDate(row.join_date) }}</td>
             <td class="border border-gray-300 px-2 py-1 text-[10px] align-top">{{ row.recruitment_config?.final_notes || '' }}</td>
             <td class="border border-gray-300 px-2 py-2 whitespace-nowrap">
-              <button type="button" class="text-blue-600 hover:underline mr-2" @click="$emit('edit-config', row)">Config</button>
+              <button type="button" class="text-blue-600 hover:underline mr-2" @click="$emit('edit-config', row)">Keterangan</button>
               <button type="button" class="text-indigo-600 hover:underline" @click="$emit('view-applicants', row)">Pelamar</button>
             </td>
           </tr>
@@ -83,6 +83,11 @@ defineProps({
 });
 
 defineEmits(['edit-config', 'view-applicants']);
+
+function picLabel(row) {
+  const names = (row.pics || []).map((u) => u.nama_lengkap).filter(Boolean);
+  return names.length ? names.join(', ') : '-';
+}
 
 function branchLabel(scope) {
   return scope === 'head_office' ? 'Head Office' : 'Outlet';

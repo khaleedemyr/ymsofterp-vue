@@ -11,7 +11,6 @@ class JobVacancyRecruitmentConfig extends Model
 
     protected $fillable = [
         'job_vacancy_id',
-        'pic',
         'headcount_needed',
         'is_hold',
         'search_start_date',

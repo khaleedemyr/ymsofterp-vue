@@ -16,8 +16,8 @@
       </div>
 
       <p class="mb-4 text-sm text-gray-600">
-        Angka funnel di bawah dihitung otomatis dari <strong>stage tiap pelamar</strong> di menu Data Pelamar.
-        Config posisi (PIC, kebutuhan, tanggal, keterangan) bisa diedit per baris.
+        <strong>Sourcing</strong> = jumlah pelamar per posisi (otomatis).
+        Screening / HR / User / LOI diinput terpisah per pelamar di menu Data Pelamar.
       </p>
 
       <div class="flex flex-wrap gap-2 mb-4">
@@ -98,8 +98,7 @@ function openConfig(vacancy) {
 
 function goApplicants(vacancy) {
   router.get('/admin/job-vacancy/applications', {
-    search: vacancy.position,
-    scope: vacancy.job_scope,
+    job_vacancy_id: vacancy.id,
   });
 }
 </script>

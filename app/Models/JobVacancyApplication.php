@@ -21,7 +21,10 @@ class JobVacancyApplication extends Model
         'cv_file',
         'photo_file',
         'status',
-        'recruitment_stage',
+        'screening_status',
+        'hr_interview_status',
+        'user_interview_status',
+        'loi_status',
         'stage_notes',
         'joined_at',
     ];

@@ -2,24 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\JobVacancy;
 use App\Models\JobVacancyApplication;
 use App\Models\JobVacancyRecruitmentConfig;
-use App\Support\RecruitmentStage;
+use App\Models\User;
+use App\Support\ApplicantRecruitment;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class JobVacancyController extends Controller
 {
-    // List untuk admin panel (semua)
     public function index(Request $request)
     {
-        $query = JobVacancy::query();
+        $query = JobVacancy::query()
+            ->with(['recruitmentConfig', 'pics:id,nama_lengkap,email'])
+            ->withCount('applications');
+
         if ($request->has('search') && $request->search) {
-            $q = '%' . $request->search . '%';
-            $query->where(function($sub) use ($q) {
+            $q = '%'.$request->search.'%';
+            $query->where(function ($sub) use ($q) {
                 $sub->where('position', 'like', $q)
                     ->orWhere('location', 'like', $q)
                     ->orWhere('description', 'like', $q);
@@ -32,12 +35,11 @@ class JobVacancyController extends Controller
             $query->where('job_scope', $request->job_scope);
         }
         $jobs = $query->orderByDesc('created_at')->paginate(20);
-        
-        // Hybrid: jika request expects JSON (AJAX/axios), return JSON
+
         if ($request->wantsJson()) {
             return response()->json($jobs);
         }
-        // Jika bukan, return Inertia
+
         return \Inertia\Inertia::render('Admin/JobVacancy/Index', [
             'vacancies' => $jobs,
             'filters' => [
@@ -48,12 +50,10 @@ class JobVacancyController extends Controller
         ]);
     }
 
-    // List untuk landing page (hanya aktif & belum tutup)
     public function publicList(Request $request)
     {
         $jobs = JobVacancy::query()
             ->where(function ($q) {
-                // Be tolerant across schema variants (tinyint/enum/string) on server DB.
                 $q->where('is_active', 1)
                     ->orWhere('is_active', '1')
                     ->orWhere('is_active', true)
@@ -70,79 +70,101 @@ class JobVacancyController extends Controller
             })
             ->orderByDesc('created_at')
             ->get();
+
         return response()->json($jobs);
     }
 
-    // Simpan/tambah lowongan
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'position' => 'required',
-            'description' => 'required',
-            'requirements' => 'nullable',
-            'location' => 'required',
-            'job_scope' => 'required|in:outlet,head_office',
-            'closing_date' => 'required|date',
-            'is_active' => 'required|boolean',
-            'banner' => 'nullable|image|max:2048',
-        ]);
+        $data = $this->validateVacancy($request);
         if ($request->hasFile('banner')) {
             $data['banner'] = $request->file('banner')->store('job_banners', 'public');
         }
-        $job = JobVacancy::create($data);
-        JobVacancyRecruitmentConfig::create(['job_vacancy_id' => $job->id]);
-        return response()->json($job);
+
+        $job = DB::transaction(function () use ($data) {
+            $job = JobVacancy::create($data);
+            $this->syncVacancyRecruitment($job, $data);
+
+            return $job;
+        });
+
+        return response()->json($job->load(['recruitmentConfig', 'pics:id,nama_lengkap,email']));
     }
 
-    // Update lowongan
     public function update(Request $request, $id)
     {
         $job = JobVacancy::findOrFail($id);
-        $data = $request->validate([
-            'position' => 'required',
-            'description' => 'required',
-            'requirements' => 'nullable',
-            'location' => 'required',
-            'job_scope' => 'required|in:outlet,head_office',
-            'closing_date' => 'required|date',
-            'is_active' => 'required|boolean',
-            'banner' => 'nullable|image|max:2048',
-        ]);
+        $data = $this->validateVacancy($request);
         if ($request->hasFile('banner')) {
-            // Hapus banner lama jika ada
-            if ($job->banner) Storage::disk('public')->delete($job->banner);
+            if ($job->banner) {
+                Storage::disk('public')->delete($job->banner);
+            }
             $data['banner'] = $request->file('banner')->store('job_banners', 'public');
         }
-        $job->update($data);
-        return response()->json($job);
+
+        DB::transaction(function () use ($job, $data) {
+            $job->update($data);
+            $this->syncVacancyRecruitment($job, $data);
+        });
+
+        return response()->json($job->fresh()->load(['recruitmentConfig', 'pics:id,nama_lengkap,email']));
     }
 
-    // Hapus lowongan
     public function destroy($id)
     {
         $job = JobVacancy::findOrFail($id);
-        if ($job->banner) Storage::disk('public')->delete($job->banner);
+        if ($job->banner) {
+            Storage::disk('public')->delete($job->banner);
+        }
         $job->delete();
+
         return response()->json(['success' => true]);
     }
 
-    // Set aktif/nonaktif
     public function setActive($id, Request $request)
     {
         $job = JobVacancy::findOrFail($id);
         $job->is_active = $request->input('is_active', 1);
         $job->save();
+
         return response()->json($job);
     }
 
-    // Detail
     public function show($id)
     {
-        $job = JobVacancy::findOrFail($id);
+        $job = JobVacancy::with(['recruitmentConfig', 'pics:id,nama_lengkap,email'])
+            ->withCount('applications')
+            ->findOrFail($id);
+
         return response()->json($job);
     }
 
-    // Public apply endpoint
+    public function searchUsers(Request $request)
+    {
+        $search = $request->get('q', $request->get('search', ''));
+
+        $users = User::query()
+            ->select('id', 'nama_lengkap', 'email')
+            ->where('status', 'A')
+            ->when($search, function ($query) use ($search) {
+                $query->where(function ($sub) use ($search) {
+                    $sub->where('nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('nama_lengkap')
+            ->limit(20)
+            ->get()
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'nama_lengkap' => $user->nama_lengkap,
+                'email' => $user->email,
+                'label' => trim($user->nama_lengkap.' ('.$user->email.')'),
+            ]);
+
+        return response()->json($users);
+    }
+
     public function applyPublic(Request $request, $id)
     {
         $job = JobVacancy::findOrFail($id);
@@ -185,7 +207,10 @@ class JobVacancyController extends Controller
             'cv_file' => $cvPath,
             'photo_file' => $photoPath,
             'status' => 'submitted',
-            'recruitment_stage' => 'sourcing',
+            'screening_status' => ApplicantRecruitment::PENDING,
+            'hr_interview_status' => ApplicantRecruitment::PENDING,
+            'user_interview_status' => ApplicantRecruitment::PENDING,
+            'loi_status' => ApplicantRecruitment::PENDING,
         ]);
 
         return response()->json([
@@ -194,7 +219,6 @@ class JobVacancyController extends Controller
         ]);
     }
 
-    // Admin list applications
     public function applicationsIndex(Request $request)
     {
         $query = JobVacancyApplication::with([
@@ -217,14 +241,14 @@ class JobVacancyController extends Controller
             });
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
         if ($request->filled('scope') && in_array($request->scope, ['outlet', 'head_office'], true)) {
             $query->whereHas('jobVacancy', function ($job) use ($request) {
                 $job->where('job_scope', $request->scope);
             });
+        }
+
+        if ($request->filled('job_vacancy_id')) {
+            $query->where('job_vacancy_id', $request->job_vacancy_id);
         }
 
         $applications = $query->orderByDesc('created_at')->paginate(20);
@@ -240,34 +264,38 @@ class JobVacancyController extends Controller
             'applications' => $applications,
             'filters' => [
                 'search' => $request->search ?? '',
-                'status' => $request->status ?? '',
                 'scope' => $request->scope ?? '',
+                'job_vacancy_id' => $request->job_vacancy_id ?? '',
             ],
-            'statusOptions' => ['submitted', 'reviewed', 'interview', 'hired', 'rejected'],
-            'recruitmentStages' => RecruitmentStage::STAGES,
-            'recruitmentStageLabels' => RecruitmentStage::LABELS,
+            'stepOptions' => ApplicantRecruitment::STEP_OPTIONS,
+            'stepLabels' => ApplicantRecruitment::STEP_LABELS,
         ]);
     }
 
-    public function applicationSetRecruitmentStage(Request $request, $id)
+    public function applicationUpdateProgress(Request $request, $id)
     {
         $data = $request->validate([
-            'recruitment_stage' => 'required|in:'.implode(',', RecruitmentStage::STAGES),
+            'screening_status' => 'nullable|in:'.implode(',', ApplicantRecruitment::STEP_OPTIONS),
+            'hr_interview_status' => 'nullable|in:'.implode(',', ApplicantRecruitment::STEP_OPTIONS),
+            'user_interview_status' => 'nullable|in:'.implode(',', ApplicantRecruitment::STEP_OPTIONS),
+            'loi_status' => 'nullable|in:'.implode(',', ApplicantRecruitment::STEP_OPTIONS),
             'stage_notes' => 'nullable|string',
             'joined_at' => 'nullable|date',
         ]);
 
         $application = JobVacancyApplication::findOrFail($id);
-        $application->recruitment_stage = $data['recruitment_stage'];
-        $application->stage_notes = $data['stage_notes'] ?? $application->stage_notes;
-        $application->status = RecruitmentStage::legacyStatusForStage($data['recruitment_stage']);
 
-        if ($data['recruitment_stage'] === 'joined') {
-            $application->joined_at = $data['joined_at'] ?? now()->toDateString();
-        } else {
-            $application->joined_at = $data['joined_at'] ?? null;
+        foreach (['screening_status', 'hr_interview_status', 'user_interview_status', 'loi_status', 'stage_notes'] as $field) {
+            if (array_key_exists($field, $data)) {
+                $application->{$field} = $data[$field];
+            }
         }
 
+        if (array_key_exists('joined_at', $data)) {
+            $application->joined_at = $data['joined_at'];
+        }
+
+        ApplicantRecruitment::syncLegacyStatus($application);
         $application->save();
 
         if ($request->header('X-Inertia')) {
@@ -281,30 +309,11 @@ class JobVacancyController extends Controller
         ]);
     }
 
-    public function applicationSetStatus(Request $request, $id)
-    {
-        $data = $request->validate([
-            'status' => 'required|in:submitted,reviewed,interview,hired,rejected',
-        ]);
-
-        $application = JobVacancyApplication::findOrFail($id);
-        $application->status = $data['status'];
-        $application->save();
-
-        if ($request->header('X-Inertia')) {
-            return redirect()->back();
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Status pelamar berhasil diperbarui.',
-            'application' => $application,
-        ]);
-    }
-
     public function recruitmentDashboard(Request $request)
     {
-        $query = JobVacancy::query()->with(['recruitmentConfig']);
+        $query = JobVacancy::query()
+            ->with(['recruitmentConfig', 'pics:id,nama_lengkap,email'])
+            ->withCount('applications');
 
         if ($request->filled('scope') && in_array($request->scope, ['outlet', 'head_office'], true)) {
             $query->where('job_scope', $request->scope);
@@ -327,41 +336,27 @@ class JobVacancyController extends Controller
             $query->where(function ($sub) use ($q) {
                 $sub->where('position', 'like', $q)
                     ->orWhere('location', 'like', $q)
+                    ->orWhereHas('pics', function ($pic) use ($q) {
+                        $pic->where('nama_lengkap', 'like', $q)
+                            ->orWhere('email', 'like', $q);
+                    })
                     ->orWhereHas('recruitmentConfig', function ($cfg) use ($q) {
-                        $cfg->where('pic', 'like', $q)
-                            ->orWhere('final_notes', 'like', $q);
+                        $cfg->where('final_notes', 'like', $q);
                     });
             });
         }
 
         $vacancies = $query->orderByDesc('created_at')->get();
 
-        $vacancyIds = $vacancies->pluck('id');
-        $stageCounts = JobVacancyApplication::query()
-            ->whereIn('job_vacancy_id', $vacancyIds)
-            ->select('job_vacancy_id', 'recruitment_stage', DB::raw('COUNT(*) as total'))
-            ->groupBy('job_vacancy_id', 'recruitment_stage')
-            ->get()
-            ->groupBy('job_vacancy_id');
-
-        $vacancies->each(function (JobVacancy $vacancy) use ($stageCounts) {
+        $vacancies->each(function (JobVacancy $vacancy) {
             if (! $vacancy->recruitmentConfig) {
                 $vacancy->recruitmentConfig()->create([]);
                 $vacancy->load('recruitmentConfig');
             }
 
-            $counts = RecruitmentStage::emptyCounts();
-            foreach ($stageCounts->get($vacancy->id, collect()) as $row) {
-                $stage = $row->recruitment_stage;
-                if (array_key_exists($stage, $counts)) {
-                    $counts[$stage] = (int) $row->total;
-                }
-            }
-
-            $vacancy->stage_counts = $counts;
+            $vacancy->stage_counts = ApplicantRecruitment::aggregateCounts($vacancy->id);
             $vacancy->join_date = JobVacancyApplication::query()
                 ->where('job_vacancy_id', $vacancy->id)
-                ->where('recruitment_stage', 'joined')
                 ->whereNotNull('joined_at')
                 ->orderByDesc('joined_at')
                 ->value('joined_at');
@@ -388,11 +383,6 @@ class JobVacancyController extends Controller
         $job = JobVacancy::findOrFail($id);
 
         $data = $request->validate([
-            'pic' => 'nullable|string|max:100',
-            'headcount_needed' => 'nullable|integer|min:0|max:999',
-            'is_hold' => 'boolean',
-            'search_start_date' => 'nullable|date',
-            'target_fulfill_date' => 'nullable|date',
             'hr_interview_notes' => 'nullable|string',
             'user_interview_notes' => 'nullable|string',
             'final_notes' => 'nullable|string',
@@ -408,8 +398,53 @@ class JobVacancyController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Config rekrutmen posisi berhasil disimpan.',
+            'message' => 'Keterangan rekrutmen berhasil disimpan.',
             'config' => $config->fresh(),
         ]);
     }
-} 
+
+    private function validateVacancy(Request $request): array
+    {
+        $data = $request->validate([
+            'position' => 'required',
+            'description' => 'required',
+            'requirements' => 'nullable',
+            'location' => 'required',
+            'job_scope' => 'required|in:outlet,head_office',
+            'closing_date' => 'required|date',
+            'is_active' => 'required|boolean',
+            'banner' => 'nullable|image|max:2048',
+            'headcount_needed' => 'nullable|integer|min:0|max:999',
+            'is_hold' => 'nullable|boolean',
+            'search_start_date' => 'nullable|date',
+            'target_fulfill_date' => 'nullable|date',
+            'pic_user_ids' => 'nullable|array',
+            'pic_user_ids.*' => 'integer|exists:users,id',
+            'hr_interview_notes' => 'nullable|string',
+            'user_interview_notes' => 'nullable|string',
+            'final_notes' => 'nullable|string',
+        ]);
+
+        $data['is_hold'] = filter_var($data['is_hold'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        return $data;
+    }
+
+    private function syncVacancyRecruitment(JobVacancy $job, array $data): void
+    {
+        $config = $job->recruitmentConfig()->firstOrCreate([]);
+        $config->update([
+            'headcount_needed' => $data['headcount_needed'] ?? null,
+            'is_hold' => $data['is_hold'] ?? false,
+            'search_start_date' => $data['search_start_date'] ?? null,
+            'target_fulfill_date' => $data['target_fulfill_date'] ?? null,
+            'hr_interview_notes' => $data['hr_interview_notes'] ?? null,
+            'user_interview_notes' => $data['user_interview_notes'] ?? null,
+            'final_notes' => $data['final_notes'] ?? null,
+        ]);
+
+        if (array_key_exists('pic_user_ids', $data)) {
+            $job->pics()->sync($data['pic_user_ids'] ?? []);
+        }
+    }
+}

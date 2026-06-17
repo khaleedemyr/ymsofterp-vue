@@ -2973,8 +2973,8 @@ Route::prefix('admin/job-vacancy')->middleware(['auth'])->group(function () {
     Route::get('/', [\App\Http\Controllers\JobVacancyController::class, 'index']);
     Route::get('/applications', [\App\Http\Controllers\JobVacancyController::class, 'applicationsIndex']);
     Route::get('/recruitment-dashboard', [\App\Http\Controllers\JobVacancyController::class, 'recruitmentDashboard']);
-    Route::patch('/applications/{id}/status', [\App\Http\Controllers\JobVacancyController::class, 'applicationSetStatus']);
-    Route::patch('/applications/{id}/recruitment-stage', [\App\Http\Controllers\JobVacancyController::class, 'applicationSetRecruitmentStage']);
+    Route::get('/users/search', [\App\Http\Controllers\JobVacancyController::class, 'searchUsers']);
+    Route::patch('/applications/{id}/progress', [\App\Http\Controllers\JobVacancyController::class, 'applicationUpdateProgress']);
     Route::patch('/{id}/recruitment-config', [\App\Http\Controllers\JobVacancyController::class, 'updateRecruitmentConfig']);
     Route::post('/', [\App\Http\Controllers\JobVacancyController::class, 'store']);
     Route::put('/{id}', [\App\Http\Controllers\JobVacancyController::class, 'update']);
