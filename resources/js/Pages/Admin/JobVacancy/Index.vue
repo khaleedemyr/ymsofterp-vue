@@ -9,6 +9,9 @@
           <a href="/job-vacancies" target="_blank" class="bg-gradient-to-r from-green-500 to-green-700 text-white px-4 py-2 rounded shadow hover:from-green-600 hover:to-green-800 transition flex items-center gap-2" title="Lihat Halaman Landing">
             <i class="fa-solid fa-globe"></i> Lihat Landing Page
           </a>
+          <a href="/admin/job-vacancy/recruitment-dashboard" class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded shadow hover:from-orange-600 hover:to-orange-800 transition flex items-center gap-2">
+            <i class="fa-solid fa-chart-line"></i> Dashboard Rekrutmen
+          </a>
           <a href="/admin/job-vacancy/applications" class="bg-gradient-to-r from-indigo-500 to-indigo-700 text-white px-4 py-2 rounded shadow hover:from-indigo-600 hover:to-indigo-800 transition flex items-center gap-2">
             <i class="fa-solid fa-file-circle-check"></i> Data Pelamar
           </a>

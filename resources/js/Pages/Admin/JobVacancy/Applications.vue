@@ -5,12 +5,20 @@
         <h2 class="text-2xl font-bold flex items-center gap-2">
           <i class="fa-solid fa-file-circle-check"></i> Data Pelamar Job Vacancy
         </h2>
-        <a
-          href="/admin/job-vacancy"
-          class="bg-gray-600 text-white px-4 py-2 rounded shadow hover:bg-gray-700 transition"
-        >
-          Kembali ke Lowongan
-        </a>
+        <div class="flex flex-wrap gap-2">
+          <a
+            href="/admin/job-vacancy/recruitment-dashboard"
+            class="bg-gradient-to-r from-orange-500 to-orange-700 text-white px-4 py-2 rounded shadow hover:from-orange-600 hover:to-orange-800 transition"
+          >
+            Dashboard Rekrutmen
+          </a>
+          <a
+            href="/admin/job-vacancy"
+            class="bg-gray-600 text-white px-4 py-2 rounded shadow hover:bg-gray-700 transition"
+          >
+            Kembali ke Lowongan
+          </a>
+        </div>
       </div>
 
       <div class="flex flex-wrap gap-2 mb-4">
@@ -48,7 +56,7 @@
               <th class="px-3 py-2.5">Posisi / Lokasi</th>
               <th class="px-3 py-2.5">Kontak</th>
               <th class="px-3 py-2.5">CV</th>
-              <th class="px-3 py-2.5">Status</th>
+              <th class="px-3 py-2.5">Progress</th>
               <th class="px-3 py-2.5">Dilamar</th>
               <th class="px-3 py-2.5 w-24"></th>
             </tr>
@@ -115,12 +123,12 @@
               </td>
               <td class="px-3 py-3">
                 <select
-                  :value="row.status"
-                  class="rounded border px-2 py-1 text-xs"
-                  @change="(e) => updateStatus(row.id, e.target.value)"
+                  :value="row.recruitment_stage || 'sourcing'"
+                  class="rounded border px-2 py-1 text-xs min-w-[140px]"
+                  @change="(e) => updateRecruitmentStage(row.id, e.target.value)"
                 >
-                  <option v-for="status in statusOptions" :key="status" :value="status">
-                    {{ formatStatus(status) }}
+                  <option v-for="stage in recruitmentStages" :key="stage" :value="stage">
+                    {{ stageLabel(stage) }}
                   </option>
                 </select>
               </td>
@@ -221,16 +229,37 @@
               </div>
 
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Status</div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Progress Rekrutmen</div>
                 <select
-                  :value="selected.status"
-                  class="rounded border px-3 py-1.5 text-sm"
-                  @change="(e) => updateStatus(selected.id, e.target.value, true)"
+                  :value="selected.recruitment_stage || 'sourcing'"
+                  class="rounded border px-3 py-1.5 text-sm w-full"
+                  @change="(e) => updateRecruitmentStage(selected.id, e.target.value, true)"
                 >
-                  <option v-for="status in statusOptions" :key="status" :value="status">
-                    {{ formatStatus(status) }}
+                  <option v-for="stage in recruitmentStages" :key="stage" :value="stage">
+                    {{ stageLabel(stage) }}
                   </option>
                 </select>
+              </div>
+
+              <div v-if="selected.recruitment_stage === 'joined'">
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Tanggal Join</div>
+                <input
+                  type="date"
+                  :value="toDateInput(selected.joined_at)"
+                  class="rounded border px-3 py-1.5 text-sm w-full"
+                  @change="(e) => updateRecruitmentStage(selected.id, 'joined', true, { joined_at: e.target.value })"
+                />
+              </div>
+
+              <div>
+                <div class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">Catatan Progress</div>
+                <textarea
+                  :value="selected.stage_notes || ''"
+                  rows="2"
+                  class="w-full rounded border px-3 py-1.5 text-sm"
+                  placeholder="Catatan untuk pelamar ini..."
+                  @blur="(e) => saveStageNotes(selected.id, e.target.value)"
+                />
               </div>
 
               <div>
@@ -290,13 +319,19 @@ const props = defineProps({
   applications: Object,
   filters: Object,
   statusOptions: Array,
+  recruitmentStages: { type: Array, default: () => [] },
+  recruitmentStageLabels: { type: Object, default: () => ({}) },
 });
 
 const rows = ref(props.applications);
 const search = ref(props.filters?.search || '');
 const filterScope = ref(props.filters?.scope || '');
 const filterStatus = ref(props.filters?.status || '');
-const statusOptions = ref(props.statusOptions || []);
+const recruitmentStages = ref(props.recruitmentStages?.length ? props.recruitmentStages : [
+  'sourcing', 'screening_cv_ok', 'screening_cv_nok', 'hr_interview_ok', 'hr_interview_nok',
+  'user_interview_ok', 'user_interview_nok', 'loi', 'joined',
+]);
+const recruitmentStageLabels = ref(props.recruitmentStageLabels || {});
 const selected = ref(null);
 
 watch(
@@ -383,6 +418,42 @@ function openDetail(row) {
 
 function closeDetail() {
   selected.value = null;
+}
+
+function stageLabel(stage) {
+  return recruitmentStageLabels.value[stage] || stage?.replace(/_/g, ' ').replace(/\b\w/g, (s) => s.toUpperCase());
+}
+
+function toDateInput(value) {
+  if (!value) return '';
+  if (typeof value === 'string' && value.length >= 10) return value.slice(0, 10);
+  return '';
+}
+
+function updateRecruitmentStage(id, recruitmentStage, fromModal = false, extra = {}) {
+  router.patch(
+    `/admin/job-vacancy/applications/${id}/recruitment-stage`,
+    { recruitment_stage: recruitmentStage, ...extra },
+    {
+      preserveScroll: true,
+      onSuccess: () => {
+        fetchApplications(rows.value.current_page || 1);
+        if (fromModal && selected.value?.id === id) {
+          selected.value = { ...selected.value, recruitment_stage: recruitmentStage, ...extra };
+        }
+      },
+    },
+  );
+}
+
+function saveStageNotes(id, stageNotes) {
+  const row = rows.value?.data?.find((r) => r.id === id);
+  if (row && (row.stage_notes || '') === (stageNotes || '')) return;
+  router.patch(
+    `/admin/job-vacancy/applications/${id}/recruitment-stage`,
+    { recruitment_stage: row?.recruitment_stage || selected.value?.recruitment_stage || 'sourcing', stage_notes: stageNotes },
+    { preserveScroll: true, onSuccess: () => fetchApplications(rows.value.current_page || 1) },
+  );
 }
 
 function updateStatus(id, status, fromModal = false) {

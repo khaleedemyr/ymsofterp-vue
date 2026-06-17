@@ -21,10 +21,14 @@ class JobVacancyApplication extends Model
         'cv_file',
         'photo_file',
         'status',
+        'recruitment_stage',
+        'stage_notes',
+        'joined_at',
     ];
 
     protected $casts = [
         'birth_date' => 'date',
+        'joined_at' => 'date',
     ];
 
     public function jobVacancy(): BelongsTo
