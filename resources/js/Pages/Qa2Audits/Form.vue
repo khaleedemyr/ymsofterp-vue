@@ -291,6 +291,42 @@ function toggleCategory(key) {
   collapseCategory.value[key] = !collapseCategory.value[key];
 }
 
+function parameterItemClass(item) {
+  const result = item?.result;
+  if (result === 'C') {
+    return 'border-emerald-300 bg-emerald-50 ring-1 ring-emerald-200';
+  }
+  if (result === 'NC') {
+    return 'border-rose-300 bg-rose-50 ring-1 ring-rose-200';
+  }
+  if (result === 'NA') {
+    return 'border-slate-300 bg-slate-50 ring-1 ring-slate-200';
+  }
+  return 'border-amber-300 bg-amber-50/70 ring-1 ring-amber-200 border-dashed';
+}
+
+function parameterStatusLabel(item) {
+  const result = item?.result;
+  if (result === 'C' || result === 'NC' || result === 'NA') {
+    return result;
+  }
+  return 'Belum diisi';
+}
+
+function parameterStatusBadgeClass(item) {
+  const result = item?.result;
+  if (result === 'C') {
+    return 'bg-emerald-100 text-emerald-700';
+  }
+  if (result === 'NC') {
+    return 'bg-rose-100 text-rose-700';
+  }
+  if (result === 'NA') {
+    return 'bg-slate-200 text-slate-700';
+  }
+  return 'bg-amber-100 text-amber-700';
+}
+
 function toggleSubcategory(key) {
   collapseSubcategory.value[key] = !collapseSubcategory.value[key];
 }
@@ -779,31 +815,40 @@ function formatUserLabel(user) {
                       <span class="rounded-full bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white">NC</span>
                     </div>
 
-                    <div v-if="item.comment" class="mb-3 rounded-lg border border-gray-200 bg-white p-3">
-                      <p class="mb-1 text-xs font-semibold text-gray-500">Komentar Auditor</p>
-                      <p class="text-sm text-gray-700">{{ item.comment }}</p>
-                    </div>
-
-                    <div v-if="item.media?.length" class="mb-3">
-                      <p class="mb-2 text-xs font-semibold text-gray-500">Bukti dari Auditor ({{ item.media.length }})</p>
-                      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        <div v-for="(media, mediaIndex) in item.media" :key="`auditor-${media.id}`" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                          <img
-                            v-if="media.media_type === 'photo'"
-                            :src="media.url"
-                            class="h-28 w-full cursor-pointer object-cover transition hover:opacity-90"
-                            @click="openMediaLightbox(item.media, mediaIndex)"
-                          >
-                          <div
-                            v-else
-                            class="relative h-28 w-full cursor-pointer bg-gray-900"
-                            @click="openMediaLightbox(item.media, mediaIndex)"
-                          >
-                            <video :src="media.url" class="pointer-events-none h-28 w-full object-cover" muted />
-                            <div class="absolute inset-0 flex items-center justify-center bg-black/30">
-                              <i class="fas fa-play-circle text-3xl text-white" />
+                    <div class="mb-3 rounded-lg border border-slate-200 bg-white p-3">
+                      <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Temuan Auditor</p>
+                      <div class="space-y-3">
+                        <div>
+                          <p class="text-xs font-semibold text-gray-500">Komentar</p>
+                          <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ item.comment || '-' }}</p>
+                        </div>
+                        <div>
+                          <p class="text-xs font-semibold text-gray-500">Due Date</p>
+                          <p class="text-sm text-gray-700">{{ item.due_date || '-' }}</p>
+                        </div>
+                        <div>
+                          <p class="mb-2 text-xs font-semibold text-gray-500">Bukti Media</p>
+                          <div v-if="item.media?.length" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                            <div v-for="(media, mediaIndex) in item.media" :key="`auditor-${media.id}`" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                              <img
+                                v-if="media.media_type === 'photo'"
+                                :src="media.url"
+                                class="h-28 w-full cursor-pointer object-cover transition hover:opacity-90"
+                                @click="openMediaLightbox(item.media, mediaIndex)"
+                              >
+                              <div
+                                v-else
+                                class="relative h-28 w-full cursor-pointer bg-gray-900"
+                                @click="openMediaLightbox(item.media, mediaIndex)"
+                              >
+                                <video :src="media.url" class="pointer-events-none h-28 w-full object-cover" muted />
+                                <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                                  <i class="fas fa-play-circle text-3xl text-white" />
+                                </div>
+                              </div>
                             </div>
                           </div>
+                          <p v-else class="text-xs text-gray-400">Tidak ada lampiran</p>
                         </div>
                       </div>
                     </div>
@@ -930,6 +975,13 @@ function formatUserLabel(user) {
           >
         </div>
 
+        <div v-if="canManage && audit.status === 'draft'" class="mb-4 flex flex-wrap gap-2 text-xs">
+          <span class="inline-flex items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Belum diisi</span>
+          <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">C</span>
+          <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 font-semibold text-rose-700">NC</span>
+          <span class="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 font-semibold text-slate-700">NA</span>
+        </div>
+
         <div class="space-y-4">
           <div
             v-for="cat in groupedItems"
@@ -964,13 +1016,20 @@ function formatUserLabel(user) {
                   <div
                     v-for="item in sub.items"
                     :key="item.id"
-                    class="rounded-lg border border-gray-200 p-3"
+                    class="rounded-lg border p-3 transition-colors"
+                    :class="parameterItemClass(item)"
                   >
                     <div class="mb-2 flex items-start justify-between gap-3">
                       <div>
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ item.parameter_code || '-' }}</p>
                         <p class="text-sm font-medium text-gray-900">{{ item.parameter_text }}</p>
                       </div>
+                      <span
+                        class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+                        :class="parameterStatusBadgeClass(item)"
+                      >
+                        {{ parameterStatusLabel(item) }}
+                      </span>
                     </div>
 
                     <div class="grid gap-3 md:grid-cols-3">
@@ -1078,7 +1137,46 @@ function formatUserLabel(user) {
                       <textarea v-model="item.comment" rows="2" class="w-full rounded-lg border-gray-300 text-sm" :disabled="!canManage || audit.status !== 'draft'" />
                     </div>
 
-                    <div v-if="item.result === 'NC' && !canFillCap && (item.cap?.action_plan || item.cap?.media?.length)" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                    <div v-if="item.result === 'NC' && !canFillCap" class="mt-3 space-y-3">
+                      <div class="rounded-lg border border-slate-200 bg-white p-3">
+                        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Temuan Auditor</p>
+                        <div class="space-y-3">
+                          <div>
+                            <p class="text-xs font-semibold text-gray-500">Komentar</p>
+                            <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ item.comment || '-' }}</p>
+                          </div>
+                          <div>
+                            <p class="text-xs font-semibold text-gray-500">Due Date</p>
+                            <p class="text-sm text-gray-700">{{ item.due_date || '-' }}</p>
+                          </div>
+                          <div>
+                            <p class="mb-2 text-xs font-semibold text-gray-500">Bukti Media</p>
+                            <div v-if="item.media?.length" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                              <div v-for="(media, mediaIndex) in item.media" :key="`view-auditor-${media.id}`" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                                <img
+                                  v-if="media.media_type === 'photo'"
+                                  :src="media.url"
+                                  class="h-24 w-full cursor-pointer object-cover transition hover:opacity-90"
+                                  @click="openMediaLightbox(item.media, mediaIndex)"
+                                >
+                                <div
+                                  v-else
+                                  class="relative h-24 w-full cursor-pointer bg-gray-900"
+                                  @click="openMediaLightbox(item.media, mediaIndex)"
+                                >
+                                  <video :src="media.url" class="pointer-events-none h-24 w-full object-cover" muted />
+                                  <div class="absolute inset-0 flex items-center justify-center bg-black/30">
+                                    <i class="fas fa-play-circle text-2xl text-white" />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <p v-else class="text-xs text-gray-400">Tidak ada lampiran</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-if="item.cap?.action_plan || item.cap?.media?.length" class="rounded-lg border border-rose-200 bg-rose-50 p-3">
                       <p class="mb-2 text-sm font-semibold text-rose-700">Corrective Action Plan</p>
                       <p v-if="item.cap?.action_plan" class="mb-2 whitespace-pre-wrap text-sm text-gray-800">{{ item.cap.action_plan }}</p>
                       <div class="grid gap-2 text-xs text-gray-600 md:grid-cols-2">
@@ -1111,6 +1209,7 @@ function formatUserLabel(user) {
                             </div>
                           </div>
                         </div>
+                      </div>
                       </div>
                     </div>
                   </div>

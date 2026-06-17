@@ -899,4 +899,311 @@ class Qa2AuditController extends Controller
 
         return $result;
     }
+
+    // ==================== Approval App API (ymsoftapp) ====================
+
+    public function apiIndex(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $search = $request->input('search');
+        $status = $request->input('status');
+        $outletId = $request->input('outlet_id');
+
+        $query = DB::table('qa2_audits as a')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
+            ->leftJoin('users as u', 'u.id', '=', 'a.created_by')
+            ->select([
+                'a.id',
+                'a.audit_number',
+                'a.audit_datetime',
+                'a.status',
+                'a.outlet_id',
+                'a.audit_time_start',
+                'a.audit_time_end',
+                'o.nama_outlet as outlet_name',
+                't.name as template_name',
+                'u.nama_lengkap as created_by_name',
+            ])
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC' and not exists (select 1 from qa2_audit_caps c where c.audit_item_id = i.id and c.action_plan is not null and c.action_plan <> '')) as count_nc_pending_cap")
+            ->orderByDesc('a.id');
+
+        if (!$isHo) {
+            $query->where('a.outlet_id', (int) $user->id_outlet);
+        }
+
+        if ($outletId) {
+            $query->where('a.outlet_id', (int) $outletId);
+        }
+
+        if ($status && in_array($status, ['draft', 'submitted'], true)) {
+            $query->where('a.status', $status);
+        }
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('a.audit_number', 'like', "%{$search}%")
+                    ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('t.name', 'like', "%{$search}%")
+                    ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhereExists(function ($sub) use ($search) {
+                        $sub->from('qa2_audit_auditors as aa')
+                            ->join('users as au', 'au.id', '=', 'aa.user_id')
+                            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'au.id_jabatan')
+                            ->whereColumn('aa.audit_id', 'a.id')
+                            ->where(function ($people) use ($search) {
+                                $people->where('au.nama_lengkap', 'like', "%{$search}%")
+                                    ->orWhere('aj.nama_jabatan', 'like', "%{$search}%");
+                            });
+                    })
+                    ->orWhereExists(function ($sub) use ($search) {
+                        $sub->from('qa2_audit_auditees as ae')
+                            ->join('users as au', 'au.id', '=', 'ae.user_id')
+                            ->leftJoin('tbl_data_jabatan as aj', 'aj.id_jabatan', '=', 'au.id_jabatan')
+                            ->whereColumn('ae.audit_id', 'a.id')
+                            ->where(function ($people) use ($search) {
+                                $people->where('au.nama_lengkap', 'like', "%{$search}%")
+                                    ->orWhere('aj.nama_jabatan', 'like', "%{$search}%");
+                            });
+                    });
+            });
+        }
+
+        $perPage = min(50, max(1, (int) $request->input('per_page', 15)));
+        $audits = $query->paginate($perPage);
+        $this->attachAuditPeople($audits);
+
+        $statsQuery = DB::table('qa2_audits');
+        if (!$isHo) {
+            $statsQuery->where('outlet_id', (int) $user->id_outlet);
+        }
+
+        return response()->json([
+            'success' => true,
+            'audits' => collect($audits->items())->map(fn ($row) => (array) $row)->values(),
+            'pagination' => [
+                'current_page' => $audits->currentPage(),
+                'last_page' => $audits->lastPage(),
+                'per_page' => $audits->perPage(),
+                'total' => $audits->total(),
+            ],
+            'statistics' => [
+                'total' => (clone $statsQuery)->count(),
+                'draft' => (clone $statsQuery)->where('status', 'draft')->count(),
+                'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
+            ],
+            'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'outlet_id' => $outletId,
+            ],
+            'permissions' => [
+                'can_manage' => $isHo,
+            ],
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $this->ensureHo();
+
+        $user = auth()->user();
+
+        return response()->json([
+            'success' => true,
+            'outlets' => $this->allowedOutlets(true, (int) $user->id_outlet),
+            'users' => $this->usersForSelector(),
+            'templates' => DB::table('qa2_templates')
+                ->where('status', 'A')
+                ->whereExists(function ($q) {
+                    $q->from('qa2_template_items as ti')
+                        ->selectRaw('1')
+                        ->whereColumn('ti.template_id', 'qa2_templates.id');
+                })
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        $this->ensureHo();
+
+        $validated = $request->validate([
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'template_id' => 'required|exists:qa2_templates,id',
+            'auditor_ids' => 'nullable|array',
+            'auditor_ids.*' => 'integer|exists:users,id',
+            'auditee_ids' => 'nullable|array',
+            'auditee_ids.*' => 'integer|exists:users,id',
+            'notes' => 'nullable|string',
+        ]);
+
+        $user = auth()->user();
+        $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
+        if (empty($templateRows)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Template tidak memiliki parameter audit.',
+            ], 422);
+        }
+
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows) {
+            $auditId = DB::table('qa2_audits')->insertGetId([
+                'audit_number' => $this->generateAuditNumber(),
+                'audit_datetime' => now(),
+                'outlet_id' => (int) $validated['outlet_id'],
+                'template_id' => (int) $validated['template_id'],
+                'created_by' => (int) $user->id,
+                'audit_time_start' => now(),
+                'status' => 'draft',
+                'notes' => $validated['notes'] ?? null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $this->syncPeople($auditId, $validated['auditor_ids'] ?? [], $validated['auditee_ids'] ?? []);
+            $this->seedAuditItemsFromTemplateRows($auditId, $templateRows);
+
+            return $auditId;
+        });
+
+        return response()->json([
+            'success' => true,
+            'audit_id' => (int) $auditId,
+            'message' => 'QA Audit draft berhasil dibuat.',
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        if (!$isHo && (int) $audit->outlet_id !== (int) $user->id_outlet) {
+            abort(403);
+        }
+
+        $this->ensureAuditItems((int) $id, (int) $audit->template_id);
+
+        $canFillCap = DB::table('qa2_audit_auditees')
+            ->where('audit_id', $id)
+            ->where('user_id', (int) $user->id)
+            ->exists();
+
+        return response()->json([
+            'success' => true,
+            'mode' => 'edit',
+            'audit' => $this->auditPayload($id),
+            'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'users' => $this->usersForSelector(),
+            'templates' => DB::table('qa2_templates')
+                ->where('status', 'A')
+                ->whereExists(function ($q) {
+                    $q->from('qa2_template_items as ti')
+                        ->selectRaw('1')
+                        ->whereColumn('ti.template_id', 'qa2_templates.id');
+                })
+                ->orderBy('name')
+                ->get(['id', 'code', 'name']),
+            'tree' => $this->auditTree($id),
+            'permissions' => [
+                'can_manage' => $isHo && $audit->status === 'draft',
+                'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
+            ],
+        ]);
+    }
+
+    public function apiSubmit(int $id)
+    {
+        $this->ensureHo();
+
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+        abort_if($audit->status !== 'draft', 422, 'Audit sudah disubmit.');
+
+        $missing = DB::table('qa2_audit_items')
+            ->where('audit_id', $id)
+            ->whereNull('result')
+            ->count();
+
+        if ($missing > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Semua parameter harus diisi C/NC/NA sebelum submit.',
+            ], 422);
+        }
+
+        DB::table('qa2_audits')->where('id', $id)->update([
+            'status' => 'submitted',
+            'audit_time_end' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'QA Audit berhasil disubmit.',
+        ]);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $this->ensureHo();
+
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+
+        DB::transaction(function () use ($id) {
+            $itemMedia = DB::table('qa2_audit_item_media as m')
+                ->join('qa2_audit_items as i', 'i.id', '=', 'm.audit_item_id')
+                ->where('i.audit_id', $id)
+                ->pluck('m.file_path');
+
+            $capMedia = DB::table('qa2_audit_cap_media as m')
+                ->join('qa2_audit_caps as c', 'c.id', '=', 'm.cap_id')
+                ->join('qa2_audit_items as i', 'i.id', '=', 'c.audit_item_id')
+                ->where('i.audit_id', $id)
+                ->pluck('m.file_path');
+
+            DB::table('qa2_audit_cap_media')->whereIn('cap_id', function ($q) use ($id) {
+                $q->from('qa2_audit_caps as c')
+                    ->join('qa2_audit_items as i', 'i.id', '=', 'c.audit_item_id')
+                    ->select('c.id')
+                    ->where('i.audit_id', $id);
+            })->delete();
+
+            DB::table('qa2_audit_caps')->whereIn('audit_item_id', function ($q) use ($id) {
+                $q->from('qa2_audit_items')->select('id')->where('audit_id', $id);
+            })->delete();
+
+            DB::table('qa2_audit_item_media')->whereIn('audit_item_id', function ($q) use ($id) {
+                $q->from('qa2_audit_items')->select('id')->where('audit_id', $id);
+            })->delete();
+
+            DB::table('qa2_audit_items')->where('audit_id', $id)->delete();
+            DB::table('qa2_audit_auditors')->where('audit_id', $id)->delete();
+            DB::table('qa2_audit_auditees')->where('audit_id', $id)->delete();
+            DB::table('qa2_audits')->where('id', $id)->delete();
+
+            foreach ($itemMedia as $path) {
+                Storage::disk('public')->delete((string) $path);
+            }
+            foreach ($capMedia as $path) {
+                Storage::disk('public')->delete((string) $path);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'QA Audit berhasil dihapus.',
+        ]);
+    }
 }
