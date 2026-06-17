@@ -14,9 +14,17 @@ class JobVacancyApplication extends Model
         'full_name',
         'email',
         'phone',
+        'domicile',
+        'last_education',
+        'birth_date',
         'cover_letter',
         'cv_file',
+        'photo_file',
         'status',
+    ];
+
+    protected $casts = [
+        'birth_date' => 'date',
     ];
 
     public function jobVacancy(): BelongsTo

@@ -147,8 +147,12 @@ class JobVacancyController extends Controller
             'full_name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
             'phone' => 'required|string|max:30',
+            'domicile' => 'required|string|max:255',
+            'last_education' => 'required|string|max:255',
+            'birth_date' => 'required|date|before:today',
             'cover_letter' => 'nullable|string',
             'cv_file' => 'required|file|mimes:pdf,doc,docx|max:5120',
+            'photo_file' => 'required|image|mimes:jpeg,jpg,png,webp|max:5120',
         ]);
 
         $cvPath = null;
@@ -158,13 +162,24 @@ class JobVacancyController extends Controller
             $cvPath = $file->storeAs('job_applications/cv', $fileName, 'public');
         }
 
+        $photoPath = null;
+        if ($request->hasFile('photo_file')) {
+            $file = $request->file('photo_file');
+            $fileName = time().'_photo_'.$job->id.'_'.Str::random(8).'.'.$file->getClientOriginalExtension();
+            $photoPath = $file->storeAs('job_applications/photos', $fileName, 'public');
+        }
+
         JobVacancyApplication::create([
             'job_vacancy_id' => $job->id,
             'full_name' => $data['full_name'],
             'email' => $data['email'],
             'phone' => $data['phone'],
+            'domicile' => $data['domicile'],
+            'last_education' => $data['last_education'],
+            'birth_date' => $data['birth_date'],
             'cover_letter' => $data['cover_letter'] ?? null,
             'cv_file' => $cvPath,
+            'photo_file' => $photoPath,
             'status' => 'submitted',
         ]);
 
@@ -187,6 +202,9 @@ class JobVacancyController extends Controller
                 $sub->where('full_name', 'like', $q)
                     ->orWhere('email', 'like', $q)
                     ->orWhere('phone', 'like', $q)
+                    ->orWhere('domicile', 'like', $q)
+                    ->orWhere('last_education', 'like', $q)
+                    ->orWhere('cover_letter', 'like', $q)
                     ->orWhereHas('jobVacancy', function ($job) use ($q) {
                         $job->where('position', 'like', $q)
                             ->orWhere('location', 'like', $q);
@@ -205,6 +223,13 @@ class JobVacancyController extends Controller
         }
 
         $applications = $query->orderByDesc('created_at')->paginate(20);
+
+        $applications->through(function (JobVacancyApplication $app) {
+            $app->photo_url = $app->photo_file ? Storage::url($app->photo_file) : null;
+            $app->cv_url = $app->cv_file ? Storage::url($app->cv_file) : null;
+
+            return $app;
+        });
 
         return \Inertia\Inertia::render('Admin/JobVacancy/Applications', [
             'applications' => $applications,
@@ -226,6 +251,10 @@ class JobVacancyController extends Controller
         $application = JobVacancyApplication::findOrFail($id);
         $application->status = $data['status'];
         $application->save();
+
+        if ($request->header('X-Inertia')) {
+            return redirect()->back();
+        }
 
         return response()->json([
             'success' => true,
