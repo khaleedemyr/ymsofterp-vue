@@ -17,6 +17,9 @@ use Inertia\Inertia;
 
 class RetailFoodController extends Controller
 {
+    /** Sementara nonaktif — guard hanya peringatan di UI, tidak memblokir simpan. */
+    private const ENFORCE_RETAIL_FOOD_PRICE_GUARD = false;
+
     private function generateRetailNumber()
     {
         $prefix = 'RF';
@@ -266,16 +269,18 @@ class RetailFoodController extends Controller
             ], 422);
         }
 
-        $priceGuardError = $this->validateRetailFoodItemPrices(
-            (int) $request->outlet_id,
-            (int) $request->warehouse_outlet_id,
-            $request->items
-        );
-        if ($priceGuardError !== null) {
-            return response()->json([
-                'message' => $priceGuardError,
-                'error_type' => 'price_guard',
-            ], 422);
+        if (self::ENFORCE_RETAIL_FOOD_PRICE_GUARD) {
+            $priceGuardError = $this->validateRetailFoodItemPrices(
+                (int) $request->outlet_id,
+                (int) $request->warehouse_outlet_id,
+                $request->items
+            );
+            if ($priceGuardError !== null) {
+                return response()->json([
+                    'message' => $priceGuardError,
+                    'error_type' => 'price_guard',
+                ], 422);
+            }
         }
 
         try {

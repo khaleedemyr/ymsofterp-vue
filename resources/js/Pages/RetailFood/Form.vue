@@ -673,15 +673,19 @@ async function submit() {
   await fetchPriceGuard()
   if (priceViolations.value.length > 0) {
     const detail = priceViolations.value.map(v => `• ${v.item_name}:\n${v.message}`).join('\n\n')
-    await Swal.fire({
-      icon: 'error',
+    const proceedDespiteGuard = await Swal.fire({
+      icon: 'warning',
       title: 'Harga Tidak Wajar',
-      html: `<div class="text-left text-sm whitespace-pre-line">${detail.replace(/\n/g, '<br>')}</div>`,
-      confirmButtonText: 'Perbaiki Harga',
-      confirmButtonColor: '#DC2626',
+      html: `<div class="text-left text-sm whitespace-pre-line">${detail.replace(/\n/g, '<br>')}<br><br><span class="text-gray-600">Sementara Anda tetap bisa menyimpan. Pastikan harga dan unit sudah benar.</span></div>`,
+      showCancelButton: true,
+      confirmButtonText: 'Lanjutkan Simpan',
+      cancelButtonText: 'Perbaiki Harga',
+      confirmButtonColor: '#2563eb',
+      cancelButtonColor: '#6b7280',
+      reverseButtons: true,
       width: 640
     })
-    return
+    if (!proceedDespiteGuard.isConfirmed) return
   }
 
   const confirm = await Swal.fire({
