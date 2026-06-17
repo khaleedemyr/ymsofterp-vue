@@ -771,6 +771,34 @@ class Qa2AuditController extends Controller
         $auditorIds = DB::table('qa2_audit_auditors')->where('audit_id', $id)->pluck('user_id')->map(fn ($x) => (int) $x)->values()->all();
         $auditeeIds = DB::table('qa2_audit_auditees')->where('audit_id', $id)->pluck('user_id')->map(fn ($x) => (int) $x)->values()->all();
 
+        $auditors = DB::table('qa2_audit_auditors as aa')
+            ->join('users as u', 'u.id', '=', 'aa.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->where('aa.audit_id', $id)
+            ->orderBy('u.nama_lengkap')
+            ->get(['u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->nama_lengkap,
+                'jabatan' => $row->jabatan,
+            ])
+            ->values()
+            ->all();
+
+        $auditees = DB::table('qa2_audit_auditees as ae')
+            ->join('users as u', 'u.id', '=', 'ae.user_id')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->where('ae.audit_id', $id)
+            ->orderBy('u.nama_lengkap')
+            ->get(['u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->nama_lengkap,
+                'jabatan' => $row->jabatan,
+            ])
+            ->values()
+            ->all();
+
         $items = DB::table('qa2_audit_items as i')
             ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
             ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
@@ -851,6 +879,8 @@ class Qa2AuditController extends Controller
             'template_name' => $audit->template_name,
             'auditor_ids' => $auditorIds,
             'auditee_ids' => $auditeeIds,
+            'auditors' => $auditors,
+            'auditees' => $auditees,
             'items' => $items,
         ];
     }
