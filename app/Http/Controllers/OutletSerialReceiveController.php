@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Traits\WritesActivityLogTrait;
-use App\Support\FoodGrLastPurchaseForItem;
 use App\Support\InventorySerialEffectiveQty;
 use App\Support\ItemUnitCost;
 use App\Support\OutletInventoryCostResolver;
+use App\Support\SerialReceiveItemPriceResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -181,7 +181,12 @@ class OutletSerialReceiveController extends Controller
         $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
         $repackLabel = $this->serialRepackLabel($serial, $effectiveQty);
 
-        [$costSmall, $costSourceDb, $costSourceLabel] = $this->resolveSerialReceiveCost($serial);
+        [$costSmall, $costSourceDb, $costSourceLabel] = SerialReceiveItemPriceResolver::resolveCostSmall(
+            (int) $serial->item_id,
+            $serial,
+            $serial,
+            $serial->out_outlet_id ?? $userOutletId,
+        );
         $unitPrice = ItemUnitCost::priceForUnit($costSmall, $serial, $serial->unit_id);
 
         return response()->json([
@@ -295,7 +300,12 @@ class OutletSerialReceiveController extends Controller
 
                     $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
-                    [$costSmall, $costSourceDb] = $this->resolveSerialReceiveCost($serial);
+                    [$costSmall, $costSourceDb] = SerialReceiveItemPriceResolver::resolveCostSmall(
+                        (int) $serial->item_id,
+                        $itemMaster,
+                        $serial,
+                        $outletId,
+                    );
 
                     DB::table('outlet_serial_receive_items')->insert([
                         'header_id' => $headerId,
@@ -700,7 +710,12 @@ class OutletSerialReceiveController extends Controller
 
                     $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
-                    [$costSmall, $costSourceDb] = $this->resolveSerialReceiveCost($serial);
+                    [$costSmall, $costSourceDb] = SerialReceiveItemPriceResolver::resolveCostSmall(
+                        (int) $serial->item_id,
+                        $itemMaster,
+                        $serial,
+                        $outletId,
+                    );
 
                     DB::table('outlet_serial_receive_items')->insert([
                         'header_id' => $headerId,
@@ -973,115 +988,14 @@ class OutletSerialReceiveController extends Controller
         return $row;
     }
 
-    private function resolveSerialReceiveCost(object $serial): array
+    private function determineCost(object $serial, ?string $receiveOutletId = null): float
     {
-        $itemId = (int) $serial->item_id;
-        $outletId = $serial->out_outlet_id ?? null;
-        $itemMaster = DB::table('items')->where('id', $itemId)->first();
-
-        $priceRow = $this->resolveItemPriceRowForOutlet($itemId, $outletId);
-        $mode = 'manual';
-        if ($priceRow && Schema::hasColumn('item_prices', 'pricing_mode')) {
-            $mode = ($priceRow->pricing_mode === 'auto') ? 'auto' : 'manual';
-        }
-
-        // Manual: selalu ikut item_prices (master), bukan cost_small batch serial.
-        if ($mode === 'manual') {
-            if ($priceRow && (float) $priceRow->price > 0) {
-                $costSmall = $this->itemPriceLargeToCostSmall((float) $priceRow->price, $itemMaster);
-
-                return [$costSmall, 'item_prices', 'Item Price (manual)'];
-            }
-
-            if ((float) ($serial->cost_small ?? 0) > 0) {
-                return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga serial (fallback, item price kosong)'];
-            }
-
-            return [0.0, 'item_prices', 'Item Price (manual)'];
-        }
-
-        // Auto (+12%): cost batch serial / FGR pusat — bukan harga manual master.
-        if ((float) ($serial->cost_small ?? 0) > 0) {
-            return [(float) $serial->cost_small, 'serial_warehouse_sale', 'Harga jual gudang (serial)'];
-        }
-
-        $costSmall = $this->costSmallFromCentralFoodGrMarkup($itemId, $itemMaster);
-        if ($costSmall > 0) {
-            return [$costSmall, 'auto_fgr_12pct', 'FGR Pusat +12%'];
-        }
-        if ($serial->source_type === 'good_receive' && (float) ($serial->cost_small ?? 0) > 0) {
-            return [
-                round((float) $serial->cost_small * 1.12, 4),
-                'fgr_modal_12pct',
-                'FGR (Modal+12%)',
-            ];
-        }
-
-        return [0.0, 'auto_fgr_12pct', 'FGR Pusat +12%'];
-    }
-
-    private function determineCost(object $serial): float
-    {
-        return $this->resolveSerialReceiveCost($serial)[0];
-    }
-
-    private function resolveItemPriceRowForOutlet(int $itemId, ?string $outletId): ?object
-    {
-        $regionId = null;
-        if ($outletId) {
-            $regionId = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('region_id');
-        }
-
-        return DB::table('item_prices')
-            ->where('item_id', $itemId)
-            ->where(function ($q) use ($regionId, $outletId) {
-                $q->where('availability_price_type', 'all');
-                if ($regionId) {
-                    $q->orWhere(function ($q2) use ($regionId) {
-                        $q2->where('availability_price_type', 'region')->where('region_id', $regionId);
-                    });
-                }
-                if ($outletId) {
-                    $q->orWhere(function ($q2) use ($outletId) {
-                        $q2->where('availability_price_type', 'outlet')->where('outlet_id', $outletId);
-                    });
-                }
-            })
-            ->orderByRaw("CASE
-                WHEN availability_price_type = 'outlet' THEN 1
-                WHEN availability_price_type = 'region' THEN 2
-                ELSE 3 END")
-            ->orderByDesc('id')
-            ->first();
-    }
-
-    /**
-     * Harga jual large dari GR pusat + 12%, dikonversi ke cost_small.
-     */
-    private function costSmallFromCentralFoodGrMarkup(int $itemId, ?object $itemMaster): float
-    {
-        $priceLarge = FoodGrLastPurchaseForItem::suggestedSellingPrice($itemId);
-        if ($priceLarge === null || $priceLarge <= 0) {
-            return 0.0;
-        }
-
-        return $this->itemPriceLargeToCostSmall($priceLarge, $itemMaster);
-    }
-
-    /**
-     * item_prices menyimpan harga per satuan large.
-     */
-    private function itemPriceLargeToCostSmall(float $priceLarge, ?object $itemMaster): float
-    {
-        if ($priceLarge <= 0) {
-            return 0.0;
-        }
-
-        $smallConv = (float) ($itemMaster->small_conversion_qty ?? 1) ?: 1;
-        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?? 1) ?: 1;
-        $divisor = ($smallConv > 0 && $mediumConv > 0) ? ($smallConv * $mediumConv) : 1;
-
-        return round($priceLarge / $divisor, 4);
+        return SerialReceiveItemPriceResolver::resolveCostSmall(
+            (int) $serial->item_id,
+            null,
+            $serial,
+            $receiveOutletId ?? $serial->out_outlet_id ?? null,
+        )[0];
     }
 
     private function processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $outletId, $warehouseOutletId, $headerId)

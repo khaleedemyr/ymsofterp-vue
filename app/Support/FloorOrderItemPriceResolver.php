@@ -34,7 +34,7 @@ final class FloorOrderItemPriceResolver
             $regionId = $regionId ? (int) $regionId : null;
         }
 
-        return DB::table('item_prices')
+        $rows = DB::table('item_prices')
             ->where('item_id', $itemId)
             ->where(function ($q) use ($regionId, $outletId) {
                 $q->where('availability_price_type', 'all');
@@ -49,12 +49,34 @@ final class FloorOrderItemPriceResolver
                     });
                 }
             })
-            ->orderByRaw("CASE
-                WHEN availability_price_type = 'outlet' THEN 1
-                WHEN availability_price_type = 'region' THEN 2
-                ELSE 3 END")
             ->orderByDesc('id')
-            ->first();
+            ->get();
+
+        $pick = static function (string $type, ?int $region = null, ?string $outlet = null, bool $pricedOnly = true) use ($rows): ?object {
+            return $rows->first(function ($row) use ($type, $region, $outlet, $pricedOnly) {
+                if (($row->availability_price_type ?? '') !== $type) {
+                    return false;
+                }
+                if ($type === 'region' && (int) ($row->region_id ?? 0) !== (int) $region) {
+                    return false;
+                }
+                if ($type === 'outlet' && (string) ($row->outlet_id ?? '') !== (string) $outlet) {
+                    return false;
+                }
+                if ($pricedOnly && (float) ($row->price ?? 0) <= 0) {
+                    return false;
+                }
+
+                return true;
+            });
+        };
+
+        return $pick('outlet', null, $outletId)
+            ?? $pick('region', $regionId, null)
+            ?? $pick('all')
+            ?? $pick('outlet', null, $outletId, false)
+            ?? $pick('region', $regionId, null, false)
+            ?? $pick('all', null, null, false);
     }
 
     public static function resolvePriceLarge(int $itemId, ?object $priceRow): float
