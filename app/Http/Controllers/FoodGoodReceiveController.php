@@ -1153,7 +1153,7 @@ class FoodGoodReceiveController extends Controller
         $repackQty = (float) $request->input('repack_qty', 0);
 
         if ($repackUnitId && $repackQty > 0) {
-            $serialCount = (int) ceil($convertedQty / $repackQty);
+            $serialCount = \App\Support\InventorySerialRepackChunk::serialCount($convertedQty, $repackQty);
         } else {
             $repackUnitId = null;
             $repackQty = null;
@@ -1222,6 +1222,10 @@ class FoodGoodReceiveController extends Controller
             $now = now();
             $rows = [];
             for ($i = 0; $i < $serialCount; $i++) {
+                $serialRepackQty = ($repackUnitId && $repackQty > 0)
+                    ? \App\Support\InventorySerialRepackChunk::qtyForIndex($convertedQty, $repackQty, $i)
+                    : $repackQty;
+
                 $rows[] = [
                     'source_type' => 'good_receive',
                     'source_id' => $grItem->good_receive_id,
@@ -1241,7 +1245,7 @@ class FoodGoodReceiveController extends Controller
                     'ref_po_number' => $grItem->po_number,
                     'ref_pr_number' => $grItem->pr_number,
                     'repack_unit_id' => $repackUnitId,
-                    'repack_qty' => $repackQty,
+                    'repack_qty' => $serialRepackQty,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,

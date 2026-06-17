@@ -31,6 +31,39 @@ class InventorySerialEffectiveQty
     }
 
     /**
+     * Qty + unit untuk response scan (WT, ORJ, IWT, penjualan, dll).
+     * Qty fisik dalam unit serial (unit_id), bukan repack_unit — selaras DO / Outlet GR.
+     *
+     * @return array{qty: float, unit_id: int, unit_name: string, qty_small: float, repack_unit_id: ?int, repack_qty: ?float, repack_unit_name: ?string, physical_qty: float}
+     */
+    public static function resolveForScan(object $serial): array
+    {
+        $qty = self::resolve($serial);
+        $unitId = (int) ($serial->unit_id ?? 0);
+        $itemUom = self::itemUomFromRow($serial);
+        $qtySmall = $unitId > 0 ? self::toSmallQty($qty, $unitId, $itemUom) : $qty;
+
+        $repackQty = (float) ($serial->repack_qty ?? 0);
+        $hasRepack = ! empty($serial->repack_unit_id) && $repackQty > 0;
+
+        return [
+            'qty' => $qty,
+            'unit_id' => $unitId,
+            'unit_name' => (string) ($serial->unit_name ?? ''),
+            'qty_small' => $qtySmall,
+            'repack_unit_id' => $hasRepack ? (int) $serial->repack_unit_id : null,
+            'repack_qty' => $hasRepack ? $repackQty : null,
+            'repack_unit_name' => $hasRepack ? trim((string) ($serial->repack_unit_name ?? '')) : null,
+            'physical_qty' => $qty,
+        ];
+    }
+
+    public static function qtyToSmall(float $qty, int $unitId, object $itemUom): float
+    {
+        return self::toSmallQty($qty, $unitId, $itemUom);
+    }
+
+    /**
      * Qty untuk dokumen (packing list DO, dll) dalam unit baris dokumen.
      *
      * - "1 Pack = 10 Roll" (unit serial Roll, label Pack): 1 SN chunk = repack_qty Roll → dikonversi ke Pack via master item.

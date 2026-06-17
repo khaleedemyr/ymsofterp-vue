@@ -699,7 +699,7 @@ class ButcherProcessController extends Controller
         $repackQty = (float) $request->input('repack_qty', 0);
 
         if ($repackUnitId && $repackQty > 0) {
-            $serialCount = (int) ceil($qtyPcs / $repackQty);
+            $serialCount = \App\Support\InventorySerialRepackChunk::serialCount($qtyPcs, $repackQty);
         } else {
             $repackUnitId = null;
             $repackQty = null;
@@ -750,6 +750,10 @@ class ButcherProcessController extends Controller
             $now = now();
             $rows = [];
             for ($i = 0; $i < $serialCount; $i++) {
+                $serialRepackQty = ($repackUnitId && $repackQty > 0)
+                    ? \App\Support\InventorySerialRepackChunk::qtyForIndex($qtyPcs, $repackQty, $i)
+                    : $repackQty;
+
                 $rows[] = [
                     'source_type' => 'butcher_process',
                     'source_id' => $butcherItem->butcher_process_id,
@@ -767,7 +771,7 @@ class ButcherProcessController extends Controller
                     'cost_large' => $costLarge,
                     'ref_po_number' => $butcherItem->butcher_number,
                     'repack_unit_id' => $repackUnitId,
-                    'repack_qty' => $repackQty,
+                    'repack_qty' => $serialRepackQty,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,

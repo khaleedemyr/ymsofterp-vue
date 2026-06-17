@@ -1014,6 +1014,9 @@ class RetailWarehouseSaleController extends Controller
                 's.repack_unit_id',
                 's.repack_qty',
                 's.unit_id',
+                's.source_type',
+                's.source_qty',
+                's.generated_qty_unit',
                 'i.name as item_name',
                 'i.sku',
                 'i.small_unit_id',
@@ -1047,27 +1050,11 @@ class RetailWarehouseSaleController extends Controller
             ]);
         }
 
-        $qty = 1.0;
-        $unitId = $serial->unit_id;
-        $unitName = $serial->unit_name ?? '';
-        if ($serial->repack_qty && $serial->repack_unit_id) {
-            $qty = (float) $serial->repack_qty;
-            $unitId = $serial->repack_unit_id;
-            $unitName = $serial->repack_unit_name ?? $unitName;
-        }
-
-        $smallConv = $serial->small_conversion_qty ?: 1;
-        $mediumConv = $serial->medium_conversion_qty ?: 1;
-        $qty_small = $qty;
-        if ($unitId == $serial->medium_unit_id) {
-            $qty_small = $qty * $smallConv;
-        } elseif ($unitId == $serial->large_unit_id) {
-            $qty_small = $qty * $smallConv * $mediumConv;
-        }
+        $scanQty = \App\Support\InventorySerialEffectiveQty::resolveForScan($serial);
 
         $price = $this->resolveRetailWarehouseSaleUnitPrice(
             (int) $serial->item_id,
-            $unitId ? (int) $unitId : null
+            $scanQty['unit_id'] > 0 ? $scanQty['unit_id'] : null
         );
 
         return response()->json([
@@ -1078,12 +1065,16 @@ class RetailWarehouseSaleController extends Controller
                 'item_id' => $serial->item_id,
                 'item_name' => $serial->item_name,
                 'sku' => $serial->sku,
-                'qty' => $qty,
-                'qty_small' => $qty_small,
-                'unit_id' => $unitId,
-                'unit_name' => $unitName,
+                'qty' => $scanQty['qty'],
+                'qty_small' => $scanQty['qty_small'],
+                'unit_id' => $scanQty['unit_id'],
+                'unit_name' => $scanQty['unit_name'],
+                'repack_unit_id' => $scanQty['repack_unit_id'],
+                'repack_qty' => $scanQty['repack_qty'],
+                'repack_unit_name' => $scanQty['repack_unit_name'],
+                'physical_qty' => $scanQty['physical_qty'],
                 'price' => $price,
-                'subtotal' => $price * $qty,
+                'subtotal' => $price * $scanQty['qty'],
             ],
         ]);
     }

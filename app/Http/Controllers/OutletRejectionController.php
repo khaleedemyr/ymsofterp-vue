@@ -147,8 +147,16 @@ class OutletRejectionController extends Controller
                 's.out_delivery_order_id',
                 's.repack_unit_id',
                 's.repack_qty',
+                's.source_type',
+                's.source_qty',
+                's.generated_qty_unit',
                 's.cost_small',
                 'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
                 'u.name as unit_name',
                 'ru.name as repack_unit_name',
                 'do_tbl.number as do_number'
@@ -177,21 +185,14 @@ class OutletRejectionController extends Controller
             return response()->json(['valid' => false, 'message' => 'Nomor seri sedang dipakai di dokumen rejection lain yang belum selesai.']);
         }
 
-        $qty = 1.0;
-        $unitId = $serial->unit_id;
-        $unitName = $serial->unit_name ?? '';
-        if ($serial->repack_qty && $serial->repack_unit_id) {
-            $qty = (float) $serial->repack_qty;
-            $unitId = $serial->repack_unit_id;
-            $unitName = $serial->repack_unit_name ?? $unitName;
-        }
+        $scanQty = \App\Support\InventorySerialEffectiveQty::resolveForScan($serial);
 
         $itemMaster = DB::table('items')->where('id', $serial->item_id)->first();
         $inventoryItem = DB::table('food_inventory_items')->where('item_id', $serial->item_id)->first();
         $macSmall = $inventoryItem
             ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
             : (float) ($serial->cost_small ?? 0);
-        $macLine = $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $unitId);
+        $macLine = $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $scanQty['unit_id']);
 
         return response()->json([
             'valid' => true,
@@ -201,9 +202,14 @@ class OutletRejectionController extends Controller
                 'serial_number' => $serial->serial_number,
                 'item_id' => $serial->item_id,
                 'item_name' => $serial->item_name,
-                'unit_id' => $unitId,
-                'unit_name' => $unitName,
-                'qty' => $qty,
+                'unit_id' => $scanQty['unit_id'],
+                'unit_name' => $scanQty['unit_name'],
+                'qty' => $scanQty['qty'],
+                'qty_small' => $scanQty['qty_small'],
+                'repack_unit_id' => $scanQty['repack_unit_id'],
+                'repack_qty' => $scanQty['repack_qty'],
+                'repack_unit_name' => $scanQty['repack_unit_name'],
+                'physical_qty' => $scanQty['physical_qty'],
                 'do_id' => $serial->out_delivery_order_id,
                 'do_number' => $serial->do_number ?? '',
                 'mac_cost' => round($macLine, 4),

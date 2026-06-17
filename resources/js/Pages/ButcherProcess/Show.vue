@@ -606,16 +606,18 @@ const showSerials = async (item) => {
         if (downloadAllBtn) {
           downloadAllBtn.addEventListener('click', () => {
             downloadSerialPDF(
-              data.map((row) => row.serial_number),
+              data.map((row) => ({
+                serial: row.serial_number,
+                repackQty: row.repack_qty,
+                repackUnitName: row.repack_unit_name,
+                unitName: row.unit_name,
+              })),
               {
                 itemName: item.pcsItem?.name || item.pcs_item_name || '',
                 batch: item.details?.[0]?.batch_est || props.butcherProcess?.number || '-',
                 slaughterDate: labelSlaughterDate(item),
                 packingDate: labelPackagingDate(item),
                 expDays: Number(item.pcs_item_exp || 0),
-                repackUnitName: data[0]?.repack_unit_name || null,
-                repackQty: data[0]?.repack_qty || null,
-                unitName: data[0]?.unit_name || '',
               }
             )
           })
@@ -653,6 +655,24 @@ const showSerials = async (item) => {
 const downloadSerialPDF = (serials, meta) => {
   if (!serials?.length) return
 
+  const entries = serials.map((entry) => {
+    if (typeof entry === 'string') {
+      return {
+        serial: entry,
+        repackQty: meta?.repackQty ?? null,
+        repackUnitName: meta?.repackUnitName ?? null,
+        unitName: meta?.unitName ?? '',
+      }
+    }
+
+    return {
+      serial: entry.serial,
+      repackQty: entry.repackQty ?? meta?.repackQty ?? null,
+      repackUnitName: entry.repackUnitName ?? meta?.repackUnitName ?? null,
+      unitName: entry.unitName ?? meta?.unitName ?? '',
+    }
+  })
+
   const labelWidth = 100 // 10cm
   const labelHeight = 50 // 5cm
   const gap = 5 // 0.5cm
@@ -666,7 +686,8 @@ const downloadSerialPDF = (serials, meta) => {
   const usableHeight = pdfHeight - (marginTop * 2)
   const rowsPerPage = Math.max(1, Math.floor(usableHeight / rowHeight))
 
-  serials.forEach((serial, idx) => {
+  entries.forEach((entry, idx) => {
+    const serial = entry.serial
     const itemsPerPage = columnsPerRow * rowsPerPage
     const indexInPage = idx % itemsPerPage
     if (idx > 0 && indexInPage === 0) {
@@ -703,11 +724,11 @@ const downloadSerialPDF = (serials, meta) => {
     doc.text(`${meta?.itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' })
     currentY += 3.2
 
-    if (meta?.repackUnitName && meta?.repackQty) {
+    if (entry.repackUnitName && entry.repackQty) {
       doc.setFontSize(7)
       doc.setFont(undefined, 'bold')
-      const fmtRepackQty = parseFloat(Number(meta.repackQty).toFixed(4)).toString()
-      doc.text(`1 ${meta.repackUnitName.toUpperCase()} = ${fmtRepackQty} ${(meta.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' })
+      const fmtRepackQty = parseFloat(Number(entry.repackQty).toFixed(4)).toString()
+      doc.text(`1 ${entry.repackUnitName.toUpperCase()} = ${fmtRepackQty} ${(entry.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' })
       currentY += 3
     }
 
@@ -722,7 +743,7 @@ const downloadSerialPDF = (serials, meta) => {
     doc.text(`EXP: ${calculateExpDate(meta?.packingDate, meta?.expDays)}`, x + labelWidth / 2, currentY, { align: 'center' })
   })
 
-  const firstSerial = serials[0] || 'serial'
+  const firstSerial = entries[0]?.serial || 'serial'
   doc.save(`${firstSerial}_butcher_labels_10x5cm.pdf`)
 }
 

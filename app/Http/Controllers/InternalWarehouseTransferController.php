@@ -107,17 +107,20 @@ class InternalWarehouseTransferController extends Controller
 
         $serial = DB::table('inventory_item_serials as s')
             ->join('items as i', 's.item_id', '=', 'i.id')
-            ->leftJoin('units as u', 's.repack_unit_id', '=', 'u.id')
+            ->leftJoin('units as u', 's.unit_id', '=', 'u.id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
             ->where('s.serial_number', $serialNumber)
             ->select(
                 's.id', 's.serial_number', 's.item_id', 's.qty_per_pack',
-                's.repack_unit_id', 's.repack_qty',
+                's.repack_unit_id', 's.repack_qty', 's.unit_id',
+                's.source_type', 's.source_qty', 's.generated_qty_unit',
                 's.is_out', 's.is_received', 's.is_transferred',
                 's.out_outlet_id', 's.out_warehouse_outlet_id',
                 'i.name as item_name', 'i.sku',
                 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id',
                 'i.small_conversion_qty', 'i.medium_conversion_qty',
-                'u.name as repack_unit_name'
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
             )
             ->first();
 
@@ -147,23 +150,7 @@ class InternalWarehouseTransferController extends Controller
             return response()->json(['valid' => false, 'message' => "Serial ini ada di departemen {$whName}, bukan departemen asal yang dipilih."]);
         }
 
-        $qty = 1;
-        $unitId = $serial->small_unit_id;
-        $unitName = DB::table('units')->where('id', $serial->small_unit_id)->value('name') ?? '';
-        if ($serial->repack_qty && $serial->repack_unit_id) {
-            $qty = $serial->repack_qty;
-            $unitId = $serial->repack_unit_id;
-            $unitName = $serial->repack_unit_name ?? '';
-        }
-
-        $smallConv = $serial->small_conversion_qty ?: 1;
-        $mediumConv = $serial->medium_conversion_qty ?: 1;
-        $qty_small = $qty;
-        if ($unitId == $serial->medium_unit_id) {
-            $qty_small = $qty * $smallConv;
-        } elseif ($unitId == $serial->large_unit_id) {
-            $qty_small = $qty * $smallConv * $mediumConv;
-        }
+        $scanQty = \App\Support\InventorySerialEffectiveQty::resolveForScan($serial);
 
         return response()->json([
             'valid' => true,
@@ -173,10 +160,14 @@ class InternalWarehouseTransferController extends Controller
                 'item_id' => $serial->item_id,
                 'item_name' => $serial->item_name,
                 'sku' => $serial->sku,
-                'qty' => $qty,
-                'qty_small' => $qty_small,
-                'unit_id' => $unitId,
-                'unit_name' => $unitName,
+                'qty' => $scanQty['qty'],
+                'qty_small' => $scanQty['qty_small'],
+                'unit_id' => $scanQty['unit_id'],
+                'unit_name' => $scanQty['unit_name'],
+                'repack_unit_id' => $scanQty['repack_unit_id'],
+                'repack_qty' => $scanQty['repack_qty'],
+                'repack_unit_name' => $scanQty['repack_unit_name'],
+                'physical_qty' => $scanQty['physical_qty'],
             ],
         ]);
     }
