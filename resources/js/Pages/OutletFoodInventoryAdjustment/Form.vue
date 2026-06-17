@@ -34,6 +34,10 @@
                   <option value="in">Stock In</option>
                   <option value="out">Stock Out</option>
                 </select>
+                <div v-if="form.type === 'in'" class="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-900">
+                  <strong>Stock In:</strong> item harus sudah pernah diterima (GR / Retail Food / transfer masuk)
+                  di outlet + warehouse outlet yang dipilih agar ada harga referensi MAC.
+                </div>
               </div>
 
               <div class="mb-6">
@@ -108,6 +112,9 @@
                             <div v-if="item.loading" class="absolute right-2 top-2">
                               <i class="fa fa-spinner fa-spin text-blue-400"></i>
                             </div>
+                            <p v-if="form.type === 'in' && referenceViolationFor(idx)" class="mt-1 text-xs text-red-600 leading-snug whitespace-pre-line">
+                              {{ referenceViolationFor(idx).message }}
+                            </p>
                           </div>
                         </td>
                         <td class="px-3 py-2 min-w-[100px]">
@@ -327,6 +334,45 @@ function newItem() {
 }
 
 const loading = ref(false);
+const referenceViolations = ref([])
+
+function referenceViolationFor(idx) {
+  const item = form.items[idx]
+  if (!item?.item_id) return null
+  return referenceViolations.value.find(v => Number(v.item_id) === Number(item.item_id)) || null
+}
+
+async function fetchReferenceGuard() {
+  if (form.type !== 'in' || !form.outlet_id || !form.warehouse_outlet_id) {
+    referenceViolations.value = []
+    return
+  }
+
+  const items = form.items.filter(item => item.item_id)
+  if (items.length === 0) {
+    referenceViolations.value = []
+    return
+  }
+
+  try {
+    const res = await axios.post('/api/outlet-food-inventory-adjustment/validate-items', {
+      outlet_id: form.outlet_id,
+      warehouse_outlet_id: form.warehouse_outlet_id,
+      type: form.type,
+      items: items.map(item => ({
+        item_id: item.item_id,
+        item_name: item.item_name
+      }))
+    })
+    referenceViolations.value = (res.data.violations || []).map(v => ({
+      ...v,
+      item_id: v.item_id
+    }))
+  } catch (error) {
+    console.error('Error validating adjustment reference:', error)
+    referenceViolations.value = []
+  }
+}
 
 // Approvers
 const approverSearch = ref('')
@@ -385,7 +431,14 @@ watch(() => form.outlet_id, async (newOutletId) => {
     warehouse_outlets.value = [];
     form.warehouse_outlet_id = '';
   }
+  fetchReferenceGuard()
 });
+
+watch([
+  () => form.type,
+  () => form.warehouse_outlet_id,
+  () => form.items.map(i => [i.item_id, i.item_name])
+], fetchReferenceGuard, { deep: true })
 
 async function loadWarehouseOutlets(outletId) {
   try {
@@ -488,6 +541,7 @@ function selectItem(idx, item) {
   form.items[idx].suggestions = [];
   form.items[idx].showDropdown = false;
   form.items[idx].highlightedIndex = -1;
+  fetchReferenceGuard()
 }
 
 function onItemInput(idx, e) {
@@ -600,6 +654,8 @@ function validateAndSubmit() {
     });
     return;
   }
+
+  const runSubmit = () => {
   Swal.fire({
     title: 'Konfirmasi Simpan',
     text: 'Apakah Anda yakin ingin menyimpan outlet stock adjustment ini?',
@@ -657,6 +713,28 @@ function validateAndSubmit() {
     },
     allowOutsideClick: () => !Swal.isLoading()
   });
+  }
+
+  if (form.type === 'in') {
+    fetchReferenceGuard().then(() => {
+      if (referenceViolations.value.length > 0) {
+        const detail = referenceViolations.value.map(v => v.message).join('\n\n---\n\n')
+        Swal.fire({
+          icon: 'error',
+          title: 'Belum Ada Harga Referensi',
+          html: `<div class="text-left text-sm whitespace-pre-line">${detail.replace(/\n/g, '<br>')}</div>`,
+          confirmButtonText: 'Perbaiki Item',
+          confirmButtonColor: '#DC2626',
+          width: 640
+        })
+        return
+      }
+      runSubmit()
+    })
+    return
+  }
+
+  runSubmit()
 }
 
 // Handle flash messages from backend

@@ -56,27 +56,70 @@ final class SerialReceiveItemPriceResolver
         }
 
         if ($serial && (float) ($serial->cost_small ?? 0) > 0) {
-            return [
+            return self::finalizeAutoResult(
                 (float) $serial->cost_small,
+                $item,
+                $serial,
                 'serial_warehouse_sale',
                 'Harga jual gudang (serial)',
-            ];
+            );
         }
 
         $costSmall = self::costSmallFromCentralFoodGrMarkup($itemId, $item);
         if ($costSmall > 0) {
-            return [$costSmall, 'auto_fgr_12pct', 'FGR Pusat +12%'];
+            return self::finalizeAutoResult($costSmall, $item, $serial, 'auto_fgr_12pct', 'FGR Pusat +12%');
         }
 
         if ($serial && $serial->source_type === 'good_receive' && (float) ($serial->cost_small ?? 0) > 0) {
-            return [
+            return self::finalizeAutoResult(
                 round((float) $serial->cost_small * 1.12, 4),
+                $item,
+                $serial,
                 'fgr_modal_12pct',
                 'FGR (Modal+12%)',
-            ];
+            );
         }
 
         return [0.0, 'auto_fgr_12pct', 'FGR Pusat +12%'];
+    }
+
+    /**
+     * Mode auto: bulatkan harga per satuan tampilan ke atas kelipatan Rp 100.
+     *
+     * @return array{0: float, 1: string, 2: string}
+     */
+    private static function finalizeAutoResult(
+        float $costSmall,
+        object $item,
+        ?object $serial,
+        string $sourceKey,
+        string $sourceLabel,
+    ): array {
+        return [
+            self::applyAutoUnitPriceRoundUp($costSmall, $item, $serial),
+            $sourceKey,
+            $sourceLabel,
+        ];
+    }
+
+    private static function applyAutoUnitPriceRoundUp(float $costSmall, object $item, ?object $serial): float
+    {
+        if ($costSmall <= 0) {
+            return 0.0;
+        }
+
+        $unitId = (int) ($serial->unit_id ?? $item->small_unit_id ?? 0);
+        if ($unitId <= 0) {
+            return $costSmall;
+        }
+
+        $unitPrice = ItemUnitCost::priceForUnit($costSmall, $item, $unitId);
+        $roundedUnitPrice = FloorOrderItemPriceResolver::roundUpToHundred($unitPrice);
+        if ($roundedUnitPrice <= 0) {
+            return $costSmall;
+        }
+
+        return ItemUnitCost::costSmallFromUnitPrice($roundedUnitPrice, $item, $unitId);
     }
 
     /**

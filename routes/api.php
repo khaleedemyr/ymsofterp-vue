@@ -438,6 +438,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/retail-food/get-item-units/{itemId}', [\App\Http\Controllers\RetailFoodController::class, 'getItemUnits']);
         Route::get('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'apiShow']);
         Route::post('/retail-food', [\App\Http\Controllers\RetailFoodController::class, 'apiStore']);
+        Route::post('/retail-food/validate-item-prices', [\App\Http\Controllers\RetailFoodController::class, 'validateItemPrices']);
         Route::delete('/retail-food/{id}', [\App\Http\Controllers\RetailFoodController::class, 'destroy']);
 
         // Retail Non Food (Approval App - Outlet Retail Non Food)
@@ -767,6 +768,10 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/outlet-food-inventory-adjustments', [
             \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
             'apiStore'
+        ]);
+        Route::post('/outlet-food-inventory-adjustment/validate-items', [
+            \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,
+            'validateAdjustmentItems'
         ]);
         Route::get('/outlet-food-inventory-adjustment/warehouse-outlets', [
             \App\Http\Controllers\OutletFoodInventoryAdjustmentController::class,

@@ -20,6 +20,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Support\OutletFoodInventorySaldo;
+use App\Support\OutletInventoryCostGuard;
 use App\Support\OutletInventoryCostResolver;
 
 class StockOpnameController extends Controller
@@ -1207,6 +1208,11 @@ class StockOpnameController extends Controller
 
         $oldData = $stockOpname->toArray();
 
+        $macGuardError = $this->validateStockOpnameMacBeforeProcess($stockOpname);
+        if ($macGuardError !== null) {
+            return back()->withErrors(['error' => $macGuardError]);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -1806,6 +1812,12 @@ class StockOpnameController extends Controller
         if (!$isEligible) {
             return response()->json(['success' => false, 'message' => 'Process hanya untuk tanggal opname akhir bulan atau tanggal 1'], 422);
         }
+
+        $macGuardError = $this->validateStockOpnameMacBeforeProcess($stockOpname);
+        if ($macGuardError !== null) {
+            return response()->json(['success' => false, 'message' => $macGuardError], 422);
+        }
+
         try {
             DB::beginTransaction();
             foreach ($stockOpname->items as $item) {
@@ -2513,7 +2525,38 @@ class StockOpnameController extends Controller
             return;
         }
 
-        $mac = (float) $item->mac_before;
+        $anchorMap = $this->outletOpnameLatestPurchaseCostMap(
+            (int) $stockOpname->outlet_id,
+            $warehouseOutletId,
+            [$inventoryItemId]
+        );
+        $mac = $this->resolveStockOpnameMac(
+            $anchorMap[$inventoryItemId] ?? null,
+            $outletId,
+            $warehouseOutletId,
+            $inventoryItemId,
+            OutletInventoryCostResolver::resolveMacFromStockRow($stock)
+        );
+
+        $anchor = OutletInventoryCostGuard::resolveAnchorMacPerSmall(
+            $outletId,
+            $warehouseOutletId,
+            $inventoryItemId,
+            $stock
+        );
+        if ($anchor !== null && OutletInventoryCostResolver::macLooksAnomalousVsAnchor($mac, $anchor)) {
+            $itemName = DB::table('outlet_food_inventory_items as oi')
+                ->join('items as i', 'oi.item_id', '=', 'i.id')
+                ->where('oi.id', $inventoryItemId)
+                ->value('i.name') ?? ('item #' . $inventoryItemId);
+            throw new \Exception(
+                'MAC tidak wajar untuk item "' . $itemName . '" saat proses opname. '
+                . 'MAC terpakai: Rp ' . OutletInventoryCostGuard::formatRupiah($mac)
+                . ', referensi: Rp ' . OutletInventoryCostGuard::formatRupiah($anchor)
+                . '. Hubungi admin untuk koreksi MAC sebelum proses opname.'
+            );
+        }
+
         $liveQtySmall = (float) $stock->qty_small;
         $liveQtyMedium = (float) $stock->qty_medium;
         $liveQtyLarge = (float) $stock->qty_large;
@@ -2606,6 +2649,57 @@ class StockOpnameController extends Controller
             'processed_at' => now(),
             'processed_by' => $userId,
         ]);
+    }
+
+    /**
+     * Cegah proses opname jika MAC yang akan dipakai masih menyimpang dari anchor pembelian.
+     */
+    private function validateStockOpnameMacBeforeProcess(StockOpname $stockOpname): ?string
+    {
+        $outletId = (int) $stockOpname->outlet_id;
+        $warehouseOutletId = (int) $stockOpname->warehouse_outlet_id;
+
+        $issues = [];
+        foreach ($stockOpname->items as $item) {
+            $inventoryItemId = (int) $item->inventory_item_id;
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->first();
+
+            if (! $stock) {
+                continue;
+            }
+
+            $rawMac = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
+            $anchor = OutletInventoryCostGuard::resolveAnchorMacPerSmall(
+                $outletId,
+                $warehouseOutletId,
+                $inventoryItemId,
+                $stock
+            );
+
+            if ($anchor === null || $anchor <= 0 || ! OutletInventoryCostResolver::macLooksAnomalousVsAnchor($rawMac, $anchor)) {
+                continue;
+            }
+
+            $itemName = DB::table('outlet_food_inventory_items as oi')
+                ->join('items as i', 'oi.item_id', '=', 'i.id')
+                ->where('oi.id', $inventoryItemId)
+                ->value('i.name') ?? ('item #' . $inventoryItemId);
+
+            $issues[] = '• ' . $itemName . ': MAC stok Rp ' . OutletInventoryCostGuard::formatRupiah($rawMac)
+                . ' vs referensi Rp ' . OutletInventoryCostGuard::formatRupiah($anchor);
+        }
+
+        if ($issues === []) {
+            return null;
+        }
+
+        return "Proses stock opname ditahan karena ada MAC yang tidak wajar:\n\n"
+            . implode("\n", $issues)
+            . "\n\nLakukan koreksi MAC atau perbaiki data pembelian terlebih dahulu.";
     }
 }
 

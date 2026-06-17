@@ -16,6 +16,8 @@ use App\Models\Item;
 use App\Models\User;
 use App\Exports\OutletStockAdjustmentDetailExport;
 use App\Services\NotificationService;
+use App\Support\ItemUnitQtyConverter;
+use App\Support\OutletInventoryCostGuard;
 use App\Support\OutletInventoryCostResolver;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -157,6 +159,138 @@ class OutletFoodInventoryAdjustmentController extends Controller
                 );
             }
         }
+    }
+
+    /**
+     * Adjustment IN: wajib ada harga referensi pembelian/penerimaan di outlet + warehouse.
+     *
+     * @throws \Exception
+     */
+    private function validateAdjustmentInCostReference(Request $request): void
+    {
+        if ($request->type !== 'in') {
+            return;
+        }
+
+        $error = $this->buildAdjustmentInCostReferenceError(
+            (int) $request->outlet_id,
+            (int) $request->warehouse_outlet_id,
+            $request->items
+        );
+
+        if ($error !== null) {
+            throw new \Exception($error);
+        }
+    }
+
+    private function validateAdjustmentInCostReferenceByAdjustment(int $adjustmentId): void
+    {
+        $header = DB::table('outlet_food_inventory_adjustments')->where('id', $adjustmentId)->first();
+        if (! $header || $header->type !== 'in') {
+            return;
+        }
+
+        $items = DB::table('outlet_food_inventory_adjustment_items')
+            ->join('items as i', 'outlet_food_inventory_adjustment_items.item_id', '=', 'i.id')
+            ->where('adjustment_id', $adjustmentId)
+            ->get([
+                'outlet_food_inventory_adjustment_items.item_id',
+                'i.name as item_name',
+            ]);
+
+        $payload = $items->map(fn ($row) => [
+            'item_id' => $row->item_id,
+            'item_name' => $row->item_name,
+        ])->all();
+
+        $error = $this->buildAdjustmentInCostReferenceError(
+            (int) $header->id_outlet,
+            (int) $header->warehouse_outlet_id,
+            $payload
+        );
+
+        if ($error !== null) {
+            throw new \Exception($error);
+        }
+    }
+
+    /**
+     * @param  array<int, array{item_id: mixed, item_name?: string}>  $items
+     */
+    private function buildAdjustmentInCostReferenceError(int $outletId, int $warehouseOutletId, array $items): ?string
+    {
+        $violations = [];
+
+        foreach ($items as $index => $item) {
+            $itemId = (int) ($item['item_id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            $itemName = trim((string) ($item['item_name'] ?? ''));
+            if ($itemName === '') {
+                $itemName = DB::table('items')->where('id', $itemId)->value('name') ?? ('item #' . $itemId);
+            }
+
+            $check = OutletInventoryCostGuard::checkAdjustmentInCostReference(
+                $outletId,
+                $warehouseOutletId,
+                $itemId,
+                $itemName
+            );
+
+            if (! $check['ok']) {
+                $violations[] = ($index + 1) . '. ' . $check['message'];
+            }
+        }
+
+        if ($violations === []) {
+            return null;
+        }
+
+        return "Adjustment IN tidak dapat diproses karena belum ada harga referensi:\n\n"
+            . implode("\n\n---\n\n", $violations);
+    }
+
+    public function validateAdjustmentItems(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
+            'type' => 'required|in:in,out',
+            'items' => 'required|array|min:1',
+            'items.*.item_id' => 'required|integer|exists:items,id',
+            'items.*.item_name' => 'nullable|string',
+        ]);
+
+        if ($request->type !== 'in') {
+            return response()->json(['ok' => true, 'violations' => []]);
+        }
+
+        $violations = [];
+        foreach ($request->items as $item) {
+            $itemId = (int) $item['item_id'];
+            $itemName = trim((string) ($item['item_name'] ?? ''));
+            if ($itemName === '') {
+                $itemName = DB::table('items')->where('id', $itemId)->value('name') ?? ('item #' . $itemId);
+            }
+
+            $check = OutletInventoryCostGuard::checkAdjustmentInCostReference(
+                (int) $request->outlet_id,
+                (int) $request->warehouse_outlet_id,
+                $itemId,
+                $itemName
+            );
+
+            if (! $check['ok']) {
+                $violations[] = array_merge(['item_id' => $itemId], $check);
+            }
+        }
+
+        return response()->json([
+            'ok' => $violations === [],
+            'violations' => $violations,
+        ]);
     }
 
     public function index(Request $request)
@@ -420,6 +554,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
             }
 
             $this->validateOutStockAvailability($request);
+            $this->validateAdjustmentInCostReference($request);
 
             DB::beginTransaction();
 
@@ -562,6 +697,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
             }
 
             $this->validateOutStockAvailability($request);
+            $this->validateAdjustmentInCostReference($request);
             
             DB::beginTransaction();
             
@@ -1181,6 +1317,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                         ]);
 
                     $this->validateOutStockAvailabilityByAdjustment((int) $id);
+                    $this->validateAdjustmentInCostReferenceByAdjustment((int) $id);
                     $this->processInventory($id);
                     DB::commit();
                     
@@ -1246,6 +1383,7 @@ class OutletFoodInventoryAdjustmentController extends Controller
                     ($user->id_jabatan == 167 && $adj->status == 'waiting_cost_control')
                 ) {
                     $this->validateOutStockAvailabilityByAdjustment((int) $id);
+                    $this->validateAdjustmentInCostReferenceByAdjustment((int) $id);
                     $this->processInventory($id);
                 }
                 DB::commit();
@@ -1514,31 +1652,17 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
     private function convertAdjustmentQty($itemMaster, string $unit, float $qty_input): array
     {
-        $qty_small = 0;
-        $qty_medium = 0;
-        $qty_large = 0;
-        $unitSmall = optional($itemMaster->smallUnit)->name;
-        $unitMedium = optional($itemMaster->mediumUnit)->name;
-        $unitLarge = optional($itemMaster->largeUnit)->name;
+        $layers = ItemUnitQtyConverter::toQtyLayers($itemMaster, $unit, $qty_input, $itemMaster->name ?? 'item');
         $smallConv = $itemMaster->small_conversion_qty ?: 1;
         $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-        if ($unit === $unitSmall) {
-            $qty_small = $qty_input;
-            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-        } elseif ($unit === $unitMedium) {
-            $qty_medium = $qty_input;
-            $qty_small = $qty_medium * $smallConv;
-            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-        } elseif ($unit === $unitLarge) {
-            $qty_large = $qty_input;
-            $qty_medium = $qty_large * $mediumConv;
-            $qty_small = $qty_medium * $smallConv;
-        } else {
-            $qty_small = $qty_input;
-        }
 
-        return compact('qty_small', 'qty_medium', 'qty_large', 'smallConv', 'mediumConv');
+        return [
+            'qty_small' => $layers['qty_small'],
+            'qty_medium' => $layers['qty_medium'],
+            'qty_large' => $layers['qty_large'],
+            'smallConv' => $smallConv,
+            'mediumConv' => $mediumConv,
+        ];
     }
 
     private function resolveMacFromOutletStock($stock): float
@@ -1612,7 +1736,13 @@ class OutletFoodInventoryAdjustmentController extends Controller
 
         if ($isIn) {
             $total_qty = $qty_lama + $qty_small;
-            $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_small, $mac_lama);
+            // Adjustment IN: tambah stok pada MAC yang sudah ada (bukan harga beli baru)
+            $mac = $mac_lama > 0 ? $mac_lama : OutletInventoryCostResolver::resolveInboundUnitSmallCost(
+                (int) $adj->id_outlet,
+                (int) $warehouseOutletId,
+                $inventoryItemId,
+                $stock
+            );
             $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
             $stock->qty_small = $total_qty;
             $stock->qty_medium += $qty_medium;

@@ -233,11 +233,14 @@
                     </td>
                     <td class="px-3 py-2 min-w-[150px]">
                       <div class="relative">
-                        <input type="number" min="0" step="0.01" v-model.number="item.price" @input="calculateSubtotal(idx)" class="input input-bordered w-full" required />
+                        <input type="number" min="0" step="0.01" v-model.number="item.price" @input="onPriceInput(idx)" class="input input-bordered w-full" :class="priceViolationFor(idx) ? 'border-red-500 ring-1 ring-red-300' : ''" required />
                         <div v-if="form.payment_method === 'contra_bon' && item.price > 0" 
                              class="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded-full">
                           Auto
                         </div>
+                        <p v-if="priceViolationFor(idx)" class="mt-1 text-xs text-red-600 leading-snug whitespace-pre-line">
+                          {{ priceViolationFor(idx).message }}
+                        </p>
                       </div>
                     </td>
                     <td class="px-3 py-2 min-w-[150px] text-right">
@@ -350,6 +353,7 @@ const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
 const budgetInfo = ref([])
+const priceViolations = ref([])
 const showLimitAlert = computed(() => {
   // Hanya tampilkan alert jika metode pembayaran adalah cash
   if (form.value.payment_method !== 'cash') return false
@@ -370,6 +374,48 @@ function removeItem(idx) {
 function calculateSubtotal(idx) {
   const item = form.value.items[idx]
   item.subtotal = (item.qty || 0) * (item.price || 0)
+}
+
+function priceViolationFor(idx) {
+  const item = form.value.items[idx]
+  if (!item?.item_name) return null
+  return priceViolations.value.find(v => v.item_name === item.item_name) || null
+}
+
+function onPriceInput(idx) {
+  calculateSubtotal(idx)
+  fetchPriceGuard()
+}
+
+async function fetchPriceGuard() {
+  if (!form.value.outlet_id || !form.value.warehouse_outlet_id) {
+    priceViolations.value = []
+    return
+  }
+
+  const items = form.value.items.filter(
+    item => item.item_name && item.unit_id && item.price > 0
+  )
+  if (items.length === 0) {
+    priceViolations.value = []
+    return
+  }
+
+  try {
+    const res = await axios.post('/retail-food/validate-item-prices', {
+      outlet_id: form.value.outlet_id,
+      warehouse_outlet_id: form.value.warehouse_outlet_id,
+      items: items.map(item => ({
+        item_name: item.item_name,
+        unit_id: item.unit_id,
+        price: item.price
+      }))
+    })
+    priceViolations.value = res.data.violations || []
+  } catch (error) {
+    console.error('Error validating item prices:', error)
+    priceViolations.value = []
+  }
 }
 
 const totalAmount = computed(() => {
@@ -548,6 +594,12 @@ async function fetchBudgetInfo() {
 
 watch([
   () => form.value.outlet_id,
+  () => form.value.warehouse_outlet_id,
+  () => form.value.items.map(i => [i.item_name, i.unit_id, i.qty, i.price])
+], fetchPriceGuard, { immediate: true, deep: true })
+
+watch([
+  () => form.value.outlet_id,
   () => form.value.transaction_date,
   () => form.value.payment_method,
   () => form.value.items.map(i => [i.qty, i.price])
@@ -618,6 +670,20 @@ async function submit() {
     return
   }
 
+  await fetchPriceGuard()
+  if (priceViolations.value.length > 0) {
+    const detail = priceViolations.value.map(v => `• ${v.item_name}:\n${v.message}`).join('\n\n')
+    await Swal.fire({
+      icon: 'error',
+      title: 'Harga Tidak Wajar',
+      html: `<div class="text-left text-sm whitespace-pre-line">${detail.replace(/\n/g, '<br>')}</div>`,
+      confirmButtonText: 'Perbaiki Harga',
+      confirmButtonColor: '#DC2626',
+      width: 640
+    })
+    return
+  }
+
   const confirm = await Swal.fire({
     title: 'Simpan Data?',
     text: 'Apakah Anda yakin ingin menyimpan transaksi ini?',
@@ -663,10 +729,13 @@ async function submit() {
       router.visit('/retail-food')
     }
   } catch (e) {
+    const msg = e.response?.data?.message || 'Gagal menyimpan transaksi'
     Swal.fire({
       icon: 'error',
-      title: 'Gagal',
-      text: e.response?.data?.message || 'Gagal menyimpan transaksi'
+      title: e.response?.data?.error_type === 'price_guard' ? 'Harga Tidak Wajar' : 'Gagal',
+      html: `<div class="text-left text-sm whitespace-pre-line">${String(msg).replace(/\n/g, '<br>')}</div>`,
+      confirmButtonColor: '#DC2626',
+      width: 640
     })
   } finally {
     loading.value = false

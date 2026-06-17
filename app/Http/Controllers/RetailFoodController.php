@@ -7,6 +7,10 @@ use App\Models\RetailFoodItem;
 use App\Models\Outlet;
 use App\Exports\RetailFoodExport;
 use App\Exports\RetailFoodSupplierReportExport;
+use App\Support\ItemUnitCost;
+use App\Support\ItemUnitQtyConverter;
+use App\Support\OutletInventoryCostGuard;
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -262,6 +266,18 @@ class RetailFoodController extends Controller
             ], 422);
         }
 
+        $priceGuardError = $this->validateRetailFoodItemPrices(
+            (int) $request->outlet_id,
+            (int) $request->warehouse_outlet_id,
+            $request->items
+        );
+        if ($priceGuardError !== null) {
+            return response()->json([
+                'message' => $priceGuardError,
+                'error_type' => 'price_guard',
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -396,51 +412,46 @@ class RetailFoodController extends Controller
                 } else {
                     $inventoryItemId = $inventoryItem->id;
                 }
-                // 3. Konversi qty ke small, medium, large
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                $qty_small = 0; $qty_medium = 0; $qty_large = 0; $qty_small_for_value = 0;
-                if ($item['unit_id'] == $itemMaster->large_unit_id) {
-                    $qty_large = (float) $item['qty'];
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_small_for_value = $qty_small;
-                } elseif ($item['unit_id'] == $itemMaster->medium_unit_id) {
-                    $qty_medium = (float) $item['qty'];
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_small_for_value = $qty_small;
-                } elseif ($item['unit_id'] == $itemMaster->small_unit_id) {
-                    $qty_small = (float) $item['qty'];
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    $qty_small_for_value = $qty_small;
+                // 3. Konversi qty & harga ke unit kecil (strict — tolak satuan tidak dikenal)
+                try {
+                    $qtyLayers = ItemUnitQtyConverter::toQtyLayers(
+                        $itemMaster,
+                        $item['unit_id'],
+                        (float) $item['qty'],
+                        $item['item_name']
+                    );
+                } catch (\InvalidArgumentException $e) {
+                    throw new \Exception($e->getMessage());
                 }
-                
-                // 4. Hitung cost
-                $cost = $item['price'];
-                $cost_small = $cost;
-                if ($item['unit_id'] == $itemMaster->large_unit_id) {
-                    $cost_small = $cost / (($itemMaster->small_conversion_qty ?: 1) * ($itemMaster->medium_conversion_qty ?: 1));
-                } elseif ($item['unit_id'] == $itemMaster->medium_unit_id) {
-                    $cost_small = $cost / ($itemMaster->small_conversion_qty ?: 1);
-                }
-                $cost_medium = $cost_small * ($itemMaster->small_conversion_qty ?: 1);
-                $cost_large = $cost_medium * ($itemMaster->medium_conversion_qty ?: 1);
-                
-                // 5. Insert/update outlet_food_inventory_stocks (MAC) - Mengikuti pola Good Receive Outlet Food
+                $qty_small = $qtyLayers['qty_small'];
+                $qty_medium = $qtyLayers['qty_medium'];
+                $qty_large = $qtyLayers['qty_large'];
+
+                $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+                $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+                $cost_small = ItemUnitCost::costSmallFromUnitPrice(
+                    (float) $item['price'],
+                    $itemMaster,
+                    $item['unit_id']
+                );
+                $cost_medium = $cost_small * $smallConv;
+                $cost_large = $cost_medium * $mediumConv;
+
+                // 5. Insert/update outlet_food_inventory_stocks (MAC)
                 $existingStock = DB::table('outlet_food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $request->outlet_id)
                     ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
                     ->first();
-                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_lama = $existingStock ? (float) $existingStock->qty_small : 0;
                 $qty_baru = $qty_small;
-                $nilai_baru = $qty_small_for_value * $cost_small;
+                $mac_lama = $existingStock
+                    ? OutletInventoryCostResolver::resolveMacFromStockRow($existingStock)
+                    : 0.0;
                 $total_qty = $qty_lama + $qty_baru;
-                $total_nilai = $nilai_lama + $nilai_baru;
-                $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
+                $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
+                $nilai_baru = $qty_baru * $cost_small;
                 if ($existingStock) {
                     \Log::info('RETAIL_FOOD_STORE: Update existing stock', ['stock_id' => $existingStock->id]);
                     DB::table('outlet_food_inventory_stocks')
@@ -507,7 +518,7 @@ class RetailFoodController extends Controller
                     'cost_per_small' => $mac,
                     'cost_per_medium' => $cost_medium,
                     'cost_per_large' => $cost_large,
-                    'value_in' => $qty_small_for_value * $cost_small,
+                    'value_in' => $nilai_baru,
                     'value_out' => 0,
                     'saldo_qty_small' => $saldo_qty_small,
                     'saldo_qty_medium' => $saldo_qty_medium,
@@ -1676,6 +1687,105 @@ class RetailFoodController extends Controller
                 ];
             })->values()->all(),
         ];
+    }
+
+    /**
+     * Pre-check harga retail food vs MAC referensi outlet (untuk alert frontend).
+     */
+    public function validateItemPrices(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'warehouse_outlet_id' => 'required|integer|exists:warehouse_outlets,id',
+            'items' => 'required|array|min:1',
+            'items.*.item_name' => 'required|string',
+            'items.*.unit_id' => 'required',
+            'items.*.price' => 'required|numeric|min:0',
+        ]);
+
+        $violations = $this->collectRetailFoodPriceViolations(
+            (int) $request->outlet_id,
+            (int) $request->warehouse_outlet_id,
+            $request->items
+        );
+
+        return response()->json([
+            'ok' => $violations === [],
+            'violations' => $violations,
+        ]);
+    }
+
+    /**
+     * @return string|null Pesan error gabungan jika ada pelanggaran guard
+     */
+    private function validateRetailFoodItemPrices(int $outletId, int $warehouseOutletId, array $items): ?string
+    {
+        $violations = $this->collectRetailFoodPriceViolations($outletId, $warehouseOutletId, $items);
+        if ($violations === []) {
+            return null;
+        }
+
+        $messages = array_map(fn (array $v) => $v['message'], $violations);
+
+        return "Transaksi ditolak karena ada harga yang tidak wajar:\n\n" . implode("\n\n---\n\n", $messages);
+    }
+
+    /**
+     * @return list<array{item_name: string, message: string, entered_cost_small: float, anchor_mac: ?float, ratio: ?float, min_allowed: ?float, max_allowed: ?float}>
+     */
+    private function collectRetailFoodPriceViolations(int $outletId, int $warehouseOutletId, array $items): array
+    {
+        $violations = [];
+
+        foreach ($items as $item) {
+            $itemMaster = DB::table('items')->where('name', $item['item_name'])->first();
+            if (! $itemMaster) {
+                continue;
+            }
+
+            $inventoryItem = DB::table('outlet_food_inventory_items')
+                ->where('item_id', $itemMaster->id)
+                ->first();
+
+            $stockRow = null;
+            if ($inventoryItem) {
+                $stockRow = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItem->id)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->first();
+            }
+
+            $costSmall = ItemUnitCost::costSmallFromUnitPrice(
+                (float) $item['price'],
+                $itemMaster,
+                $item['unit_id']
+            );
+
+            $anchor = OutletInventoryCostGuard::resolveAnchorMacPerSmall(
+                $outletId,
+                $warehouseOutletId,
+                $inventoryItem ? (int) $inventoryItem->id : 0,
+                $stockRow
+            );
+
+            if (! $inventoryItem) {
+                continue;
+            }
+
+            $check = OutletInventoryCostGuard::checkCostSmall(
+                $costSmall,
+                $anchor,
+                $item['item_name'],
+                'Harga beli retail food'
+            );
+
+            if (! $check['ok']) {
+                $violations[] = array_merge(['item_name' => $item['item_name']], $check);
+            }
+        }
+
+        return $violations;
     }
 
     private function writeRetailFoodActivityLog(

@@ -78,7 +78,9 @@ final class FoodGrLastPurchaseForItem
             return null;
         }
 
-        return round($last['cost_large'] * (1 + ($markupPct / 100.0)), 2);
+        $raw = $last['cost_large'] * (1 + ($markupPct / 100.0));
+
+        return FloorOrderItemPriceResolver::roundUpToHundred($raw);
     }
 
     /**

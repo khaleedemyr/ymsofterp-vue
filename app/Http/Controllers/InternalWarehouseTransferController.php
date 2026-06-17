@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use App\Models\InternalWarehouseTransfer;
 use App\Models\InternalWarehouseTransferItem;
+use App\Support\ItemUnitQtyConverter;
 use App\Support\OutletInventoryCostResolver;
 use Illuminate\Support\Facades\Log;
 
@@ -286,44 +287,25 @@ class InternalWarehouseTransferController extends Controller
                 }
                 $inventory_item_id = $inventoryItem->id;
 
-                // Ambil data konversi dari tabel items
-                $itemMaster = \App\Models\Item::find($item['item_id']);
-                $unit = $item['unit']; // Nama unit dari input user (misal: 'Pack', 'Gram', 'Kilogram')
-                $qty_input = $item['qty'];
-                $qty_small = 0;
-                $qty_medium = 0;
-                $qty_large = 0;
-
-                // Ambil nama unit dari master
-                $unitSmall = optional($itemMaster->smallUnit)->name;
-                $unitMedium = optional($itemMaster->mediumUnit)->name;
-                $unitLarge = optional($itemMaster->largeUnit)->name;
+                $itemMaster = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($item['item_id']);
+                $qtyLayers = ItemUnitQtyConverter::toQtyLayers(
+                    $itemMaster,
+                    $item['unit'],
+                    (float) $item['qty'],
+                    $itemMaster->name ?? ('item #' . $item['item_id'])
+                );
+                $qty_small = $qtyLayers['qty_small'];
+                $qty_medium = $qtyLayers['qty_medium'];
+                $qty_large = $qtyLayers['qty_large'];
                 $smallConv = $itemMaster->small_conversion_qty ?: 1;
                 $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-
-                if ($unit === $unitSmall) {
-                    $qty_small = $qty_input;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unit === $unitMedium) {
-                    $qty_medium = $qty_input;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unit === $unitLarge) {
-                    $qty_large = $qty_input;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    // fallback: treat as small
-                    $qty_small = $qty_input;
-                }
 
                 // Simpan detail transfer
                 InternalWarehouseTransferItem::create([
                     'internal_warehouse_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
                     'quantity' => $item['qty'],
-                    'unit_id' => $inventoryItem->small_unit_id, // asumsikan unit small
+                    'unit_id' => $this->resolveTransferUnitId($itemMaster, $item['unit'], $inventoryItem->small_unit_id),
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
                     'qty_large' => $qty_large,
@@ -951,36 +933,24 @@ class InternalWarehouseTransferController extends Controller
                 $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $item['item_id'])->first();
                 if (!$inventoryItem) throw new \Exception('Inventory item not found for item_id: ' . $item['item_id']);
                 $inventory_item_id = $inventoryItem->id;
-                $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                $unit = $item['unit'];
-                $qty_input = $item['qty'];
-                $qty_small = 0; $qty_medium = 0; $qty_large = 0;
-                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+                $itemMaster = \App\Models\Item::with(['smallUnit', 'mediumUnit', 'largeUnit'])->find($item['item_id']);
+                $qtyLayers = ItemUnitQtyConverter::toQtyLayers(
+                    $itemMaster,
+                    $item['unit'],
+                    (float) $item['qty'],
+                    $itemMaster->name ?? ('item #' . $item['item_id'])
+                );
+                $qty_small = $qtyLayers['qty_small'];
+                $qty_medium = $qtyLayers['qty_medium'];
+                $qty_large = $qtyLayers['qty_large'];
                 $smallConv = $itemMaster->small_conversion_qty ?: 1;
                 $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                if ($unit === $unitSmall) {
-                    $qty_small = $qty_input;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unit === $unitMedium) {
-                    $qty_medium = $qty_input;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unit === $unitLarge) {
-                    $qty_large = $qty_input;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    $qty_small = $qty_input;
-                }
-                
+
                 InternalWarehouseTransferItem::create([
                     'internal_warehouse_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
                     'quantity' => $item['qty'],
-                    'unit_id' => $inventoryItem->small_unit_id,
+                    'unit_id' => $this->resolveTransferUnitId($itemMaster, $item['unit'], $inventoryItem->small_unit_id),
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
                     'qty_large' => $qty_large,
@@ -1297,9 +1267,16 @@ class InternalWarehouseTransferController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            $costSmall = $stockFrom->last_cost_small ?? 0;
-            $costMedium = $costSmall * $smallConv;
-            $costLarge = $costSmall * $smallConv * $mediumConv;
+            if (! $stockFrom) {
+                throw new \Exception('Stok tidak ditemukan di warehouse outlet asal untuk serial ' . ($si['serial_number'] ?? ''));
+            }
+
+            [$costSmall, $costMedium, $costLarge] = OutletInventoryCostResolver::transferInboundCostRates(
+                $stockFrom,
+                (int) $outletId,
+                (int) $warehouseFromId,
+                $inventory_item_id
+            );
 
             // Save serial item record
             DB::table('internal_warehouse_transfer_serial_items')->insert([
@@ -1597,5 +1574,20 @@ class InternalWarehouseTransferController extends Controller
     public function apiStore(Request $request)
     {
         return $this->store($request);
+    }
+
+    private function resolveTransferUnitId($itemMaster, string $unitHint, $fallbackUnitId)
+    {
+        if (ItemUnitQtyConverter::unitMatches($unitHint, $itemMaster->small_unit_id ?? 0, optional($itemMaster->smallUnit)->name)) {
+            return $itemMaster->small_unit_id;
+        }
+        if (ItemUnitQtyConverter::unitMatches($unitHint, $itemMaster->medium_unit_id ?? 0, optional($itemMaster->mediumUnit)->name)) {
+            return $itemMaster->medium_unit_id;
+        }
+        if (ItemUnitQtyConverter::unitMatches($unitHint, $itemMaster->large_unit_id ?? 0, optional($itemMaster->largeUnit)->name)) {
+            return $itemMaster->large_unit_id;
+        }
+
+        return $fallbackUnitId;
     }
 } 
