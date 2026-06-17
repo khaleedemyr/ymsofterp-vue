@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -912,9 +913,8 @@ class OutletWIPController extends Controller
                     $qty_small = $qty_jadi;
                 }
                 
-                // Calculate cost
+                // Calculate cost (total BOM ÷ qty hasil produksi WIP, bukan jumlah bahan)
                 $total_cost = 0;
-                $total_qty_small = 0;
                 foreach ($bom as $b) {
                     $bomInventory = DB::table('outlet_food_inventory_items')->where('item_id', $b->material_item_id)->first();
                     if ($bomInventory) {
@@ -942,15 +942,13 @@ class OutletWIPController extends Controller
                                 $qty_small_bahan = $qty_input;
                             }
                             
-                            $total_cost += $qty_small_bahan * $stock->last_cost_small;
-                            $total_qty_small += $qty_small_bahan;
+                            $macBahan = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
+                            $total_cost += $qty_small_bahan * $macBahan;
                         }
                     }
                 }
                 
-                $last_cost_small = $total_qty_small > 0 ? $total_cost / $total_qty_small : 0;
-                $last_cost_medium = $smallConv > 0 ? $last_cost_small / $smallConv : 0;
-                $last_cost_large = ($smallConv > 0 && $mediumConv > 0) ? $last_cost_small / ($smallConv * $mediumConv) : 0;
+                $batchMacPerSmall = $qty_small > 0 ? $total_cost / $qty_small : 0;
                 
                 // Update or insert production result stock
                 $existingStock = DB::table('outlet_food_inventory_stocks')
@@ -960,10 +958,21 @@ class OutletWIPController extends Controller
                     ->first();
                 
                 if ($existingStock) {
-                    $qty_baru_small = $existingStock->qty_small + $qty_small;
+                    $oldQtySmall = (float) $existingStock->qty_small;
+                    $last_cost_small = OutletInventoryCostResolver::weightedAverageMacPerSmall(
+                        $oldQtySmall,
+                        OutletInventoryCostResolver::resolveMacFromStockRow($existingStock),
+                        $qty_small,
+                        $batchMacPerSmall
+                    );
+                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
+                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
+                        ? $last_cost_small * $smallConv * $mediumConv
+                        : $last_cost_small;
+                    $qty_baru_small = $oldQtySmall + $qty_small;
                     $qty_baru_medium = $existingStock->qty_medium + $qty_medium;
                     $qty_baru_large = $existingStock->qty_large + $qty_large;
-                    $nilai_baru = $qty_baru_small * $last_cost_small;
+                    $nilai_baru = OutletInventoryCostResolver::stockTotalValue($qty_baru_small, $last_cost_small);
                     
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $existingStock->id)
@@ -978,6 +987,11 @@ class OutletWIPController extends Controller
                             'updated_at' => now(),
                         ]);
                 } else {
+                    $last_cost_small = $batchMacPerSmall;
+                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
+                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
+                        ? $last_cost_small * $smallConv * $mediumConv
+                        : $last_cost_small;
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $prodInventoryItemId,
                         'id_outlet' => $outlet_id,
@@ -1020,6 +1034,15 @@ class OutletWIPController extends Controller
                     'description' => "Hasil produksi WIP",
                     'created_at' => now(),
                 ]);
+
+                $this->insertWipProductionCostHistory(
+                    $prodInventoryItemId,
+                    $outlet_id,
+                    $warehouse_outlet_id,
+                    $production_date,
+                    $last_cost_small,
+                    (int) $id
+                );
             }
             }
             
@@ -1357,7 +1380,6 @@ class OutletWIPController extends Controller
                 
                 // Calculate cost from BOM
                 $total_cost = 0;
-                $total_qty_small = 0;
                 foreach ($bom as $b) {
                     $bomInventory = DB::table('outlet_food_inventory_items')->where('item_id', $b->material_item_id)->first();
                     if ($bomInventory) {
@@ -1389,15 +1411,13 @@ class OutletWIPController extends Controller
                                 $qty_small_bahan = $qty_input;
                             }
                             
-                            $total_cost += $qty_small_bahan * $stock->last_cost_small;
-                            $total_qty_small += $qty_small_bahan;
+                            $macBahan = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
+                            $total_cost += $qty_small_bahan * $macBahan;
                         }
                     }
                 }
                 
-                $last_cost_small = $total_qty_small > 0 ? $total_cost / $total_qty_small : 0;
-                $last_cost_medium = $smallConv > 0 ? $last_cost_small / $smallConv : 0;
-                $last_cost_large = ($smallConv > 0 && $mediumConv > 0) ? $last_cost_small / ($smallConv * $mediumConv) : 0;
+                $batchMacPerSmall = $qty_small > 0 ? $total_cost / $qty_small : 0;
                 
                 // Update or insert production result stock
                 $existingStock = DB::table('outlet_food_inventory_stocks')
@@ -1407,10 +1427,21 @@ class OutletWIPController extends Controller
                     ->first();
                 
                 if ($existingStock) {
-                    $qty_baru_small = $existingStock->qty_small + $qty_small;
+                    $oldQtySmall = (float) $existingStock->qty_small;
+                    $last_cost_small = OutletInventoryCostResolver::weightedAverageMacPerSmall(
+                        $oldQtySmall,
+                        OutletInventoryCostResolver::resolveMacFromStockRow($existingStock),
+                        $qty_small,
+                        $batchMacPerSmall
+                    );
+                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
+                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
+                        ? $last_cost_small * $smallConv * $mediumConv
+                        : $last_cost_small;
+                    $qty_baru_small = $oldQtySmall + $qty_small;
                     $qty_baru_medium = $existingStock->qty_medium + $qty_medium;
                     $qty_baru_large = $existingStock->qty_large + $qty_large;
-                    $nilai_baru = $qty_baru_small * $last_cost_small;
+                    $nilai_baru = OutletInventoryCostResolver::stockTotalValue($qty_baru_small, $last_cost_small);
                     
                     $saldo_qty_small = $qty_baru_small;
                     $saldo_qty_medium = $qty_baru_medium;
@@ -1430,10 +1461,15 @@ class OutletWIPController extends Controller
                             'updated_at' => now(),
                         ]);
                 } else {
+                    $last_cost_small = $batchMacPerSmall;
+                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
+                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
+                        ? $last_cost_small * $smallConv * $mediumConv
+                        : $last_cost_small;
                     $saldo_qty_small = $qty_small;
                     $saldo_qty_medium = $qty_medium;
                     $saldo_qty_large = $qty_large;
-                    $saldo_value = $qty_small * $last_cost_small;
+                    $saldo_value = OutletInventoryCostResolver::stockTotalValue($qty_small, $last_cost_small);
                     
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $prodInventoryItemId,
@@ -1473,6 +1509,15 @@ class OutletWIPController extends Controller
                     'description' => 'Hasil produksi WIP ' . $qty_produksi . ' x ' . $item_id,
                     'created_at' => now(),
                 ]);
+
+                $this->insertWipProductionCostHistory(
+                    $prodInventoryItemId,
+                    $outlet_id,
+                    $warehouse_outlet_id,
+                    $production_date,
+                    $last_cost_small,
+                    (int) $headerId
+                );
             }
             
             DB::commit();
@@ -2297,6 +2342,43 @@ class OutletWIPController extends Controller
             'productions' => $productions,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
+        ]);
+    }
+
+    private function insertWipProductionCostHistory(
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $productionDate,
+        float $newMacPerSmall,
+        int $referenceId
+    ): void {
+        $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first();
+
+        $oldCost = 0.0;
+        if ($lastCostHistory) {
+            $oldCost = (float) ($lastCostHistory->mac ?? $lastCostHistory->new_cost ?? 0);
+        }
+
+        DB::table('outlet_food_inventory_cost_histories')->insert([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $outletId,
+            'warehouse_outlet_id' => $warehouseOutletId,
+            'date' => $productionDate,
+            'old_cost' => $oldCost,
+            'new_cost' => $newMacPerSmall,
+            'mac' => $newMacPerSmall,
+            'type' => 'outlet_wip_production',
+            'reference_type' => 'outlet_wip_production',
+            'reference_id' => $referenceId,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 }

@@ -747,12 +747,13 @@ class OutletInternalUseWasteController extends Controller
                     throw new \Exception("Quantity item '{$itemName}' melebihi stok yang tersedia. Stok tersedia: " . number_format($stock->qty_small, 2) . " {$unitSmall}");
                 }
 
-                $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+                $macPerSmall = $this->resolveCategoryCostMacPerSmall(
                     $itemMaster,
-                    (float) ($stock->last_cost_small ?? 0),
+                    (int) $inventoryItem->id,
                     (int) $header->outlet_id,
                     (int) $header->warehouse_outlet_id,
-                    (string) $header->date
+                    (string) $header->date,
+                    $stock
                 );
                 [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
                     $itemMaster,
@@ -1154,12 +1155,13 @@ class OutletInternalUseWasteController extends Controller
                         throw new \Exception("Stok item '{$itemName}' tidak cukup. Stok tersedia: " . number_format($stock->qty_small, 2) . ", dibutuhkan: " . number_format($qty_small, 2));
                     }
 
-                    $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+                    $macPerSmall = $this->resolveCategoryCostMacPerSmall(
                         $itemMaster,
-                        (float) ($stock->last_cost_small ?? 0),
+                        (int) $inventoryItem->id,
                         (int) $request->outlet_id,
                         (int) $request->warehouse_outlet_id,
-                        (string) $request->date
+                        (string) $request->date,
+                        $stock
                     );
                     [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
                         $itemMaster,
@@ -2962,12 +2964,13 @@ class OutletInternalUseWasteController extends Controller
                 continue;
             }
             
-            $macPerSmall = CategoryCostMacResolver::resolveMacPerSmallUnit(
+            $macPerSmall = $this->resolveCategoryCostMacPerSmall(
                 $itemMaster,
-                (float) ($stock->last_cost_small ?? 0),
+                (int) $inventoryItem->id,
                 (int) $header->outlet_id,
                 (int) $header->warehouse_outlet_id,
-                (string) $header->date
+                (string) $header->date,
+                $stock
             );
             [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
                 $itemMaster,
@@ -3327,5 +3330,37 @@ class OutletInternalUseWasteController extends Controller
             'mac_converted' => $macConverted,
             'subtotal_mac' => $macConverted * (float) ($detailRow->qty ?? 0),
         ];
+    }
+
+    /**
+     * MAC per satuan kecil untuk transaksi category cost (spoil/waste/dll).
+     * Pakai histori MAC per tanggal — sama dengan laporan, bukan last_cost_small mentah.
+     */
+    private function resolveCategoryCostMacPerSmall(
+        object $itemMaster,
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate,
+        ?object $stock = null
+    ): float {
+        $historyMac = CategoryCostMacResolver::resolveHistoryMacAtDate(
+            $inventoryItemId,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate
+        );
+
+        if ($historyMac === null && $stock) {
+            $historyMac = (float) ($stock->last_cost_small ?? 0);
+        }
+
+        return CategoryCostMacResolver::resolveMacPerSmallUnit(
+            $itemMaster,
+            $historyMac,
+            $outletId,
+            $warehouseOutletId,
+            $asOfDate
+        );
     }
 } 

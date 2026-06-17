@@ -41,8 +41,40 @@ final class CategoryCostMacResolver
     }
 
     /**
-     * MAC per unit kecil untuk perhitungan category cost.
+     * MAC histori per satuan kecil pada/before tanggal transaksi (fallback ke stok).
      */
+    public static function resolveHistoryMacAtDate(
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $asOfDate
+    ): ?float {
+        $row = DB::table('outlet_food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->where('date', '<=', $asOfDate)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($row) {
+            return self::historyMacPerSmall($row);
+        }
+
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->first(['last_cost_small']);
+
+        if ($stock && (float) ($stock->last_cost_small ?? 0) > 0) {
+            return (float) $stock->last_cost_small;
+        }
+
+        return null;
+    }
+
     public static function resolveMacPerSmallUnit(
         object $itemMaster,
         ?float $historyMac,
@@ -224,31 +256,7 @@ final class CategoryCostMacResolver
         int $warehouseOutletId,
         string $asOfDate
     ): float {
-        $row = DB::table('outlet_food_inventory_cost_histories')
-            ->where('inventory_item_id', $inventoryItemId)
-            ->where('id_outlet', $outletId)
-            ->where('warehouse_outlet_id', $warehouseOutletId)
-            ->where('date', '<=', $asOfDate)
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->first(['mac', 'new_cost']);
-
-        if (!$row) {
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('id_outlet', $outletId)
-                ->where('warehouse_outlet_id', $warehouseOutletId)
-                ->first(['last_cost_small']);
-
-            return (float) ($stock->last_cost_small ?? 0);
-        }
-
-        $mac = $row->mac ?? null;
-        if ($mac !== null && (float) $mac > 0) {
-            return (float) $mac;
-        }
-
-        return (float) ($row->new_cost ?? 0);
+        return (float) (self::resolveHistoryMacAtDate($inventoryItemId, $outletId, $warehouseOutletId, $asOfDate) ?? 0);
     }
 
     /**
