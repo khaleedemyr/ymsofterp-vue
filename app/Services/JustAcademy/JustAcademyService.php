@@ -22,6 +22,16 @@ use Illuminate\Validation\ValidationException;
 
 class JustAcademyService
 {
+    /** Status jadwal yang boleh dilihat peserta (bukan draft/cancelled). */
+    public const PARTICIPANT_VISIBLE_STATUSES = ['published', 'ongoing', 'completed'];
+
+    public function participantSchedulesForUser(int $userId)
+    {
+        return JaSchedule::query()
+            ->whereHas('participants', fn ($q) => $q->where('user_id', $userId))
+            ->whereIn('status', self::PARTICIPANT_VISIBLE_STATUSES);
+    }
+
     public function resolveUserIds(array $userIds = [], array $jabatanIds = [], array $outletIds = []): Collection
     {
         $ids = collect($userIds)->filter()->map(fn ($id) => (int) $id);

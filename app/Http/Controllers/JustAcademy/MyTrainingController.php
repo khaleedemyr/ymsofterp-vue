@@ -18,17 +18,17 @@ class MyTrainingController extends Controller
 
     public function index(Request $request)
     {
-        $userId = $request->user()->id;
+        $userId = (int) $request->user()->id;
         $tab = $request->input('tab', 'upcoming');
 
-        $query = JaSchedule::with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
-            ->whereHas('participants', fn ($q) => $q->where('user_id', $userId))
+        $query = $this->service->participantSchedulesForUser($userId)
+            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
             ->orderBy('start_at');
 
         if ($tab === 'past') {
             $query->where('end_at', '<', now());
         } else {
-            $query->where('end_at', '>=', now()->subDay());
+            $query->where('end_at', '>=', now());
         }
 
         return Inertia::render('JustAcademy/MyTraining/Index', [
