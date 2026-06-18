@@ -3634,21 +3634,21 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/categories', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'index'])->name('categories.index');
     Route::post('/categories', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'store'])->name('categories.store');
     Route::put('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'update'])->name('categories.update');
-    Route::delete('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'destroy'])->name('categories.destroy');
+    Route::delete('/categories/{id}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'destroy'])->whereNumber('id')->name('categories.destroy');
 
     Route::get('/materials', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'index'])->name('materials.index');
     Route::get('/materials/create', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'create'])->name('materials.create');
     Route::post('/materials', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'store'])->name('materials.store');
     Route::get('/materials/{material}/edit', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'edit'])->name('materials.edit');
     Route::put('/materials/{material}', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'update'])->name('materials.update');
-    Route::delete('/materials/{material}', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'destroy'])->name('materials.destroy');
+    Route::delete('/materials/{id}', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'destroy'])->whereNumber('id')->name('materials.destroy');
 
     Route::get('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'index'])->name('quizzes.index');
     Route::get('/quizzes/create', [\App\Http\Controllers\JustAcademy\QuizController::class, 'create'])->name('quizzes.create');
     Route::post('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'store'])->name('quizzes.store');
     Route::get('/quizzes/{quiz}/edit', [\App\Http\Controllers\JustAcademy\QuizController::class, 'edit'])->name('quizzes.edit');
     Route::put('/quizzes/{quiz}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'update'])->name('quizzes.update');
-    Route::delete('/quizzes/{quiz}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'destroy'])->name('quizzes.destroy');
+    Route::delete('/quizzes/{id}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'destroy'])->whereNumber('id')->name('quizzes.destroy');
 
     Route::get('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'index'])->name('programs.index');
     Route::get('/programs/create', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'create'])->name('programs.create');
@@ -3656,7 +3656,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/programs/{program}/edit', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'edit'])->name('programs.edit');
     Route::put('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'update'])->name('programs.update');
     Route::put('/programs/{program}/curriculum', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'syncCurriculum'])->name('programs.curriculum.sync');
-    Route::delete('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroy'])->name('programs.destroy');
+    Route::delete('/programs/{id}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroy'])->whereNumber('id')->name('programs.destroy');
 
     Route::get('/schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'index'])->name('schedules.index');
     Route::get('/schedules/create', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'create'])->name('schedules.create');
@@ -3664,7 +3664,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'show'])->name('schedules.show');
     Route::get('/schedules/{schedule}/edit', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'edit'])->name('schedules.edit');
     Route::put('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'update'])->name('schedules.update');
-    Route::delete('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'destroy'])->name('schedules.destroy');
+    Route::delete('/schedules/{id}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'destroy'])->whereNumber('id')->name('schedules.destroy');
     Route::post('/schedules/{schedule}/invite', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'invite'])->name('schedules.invite');
     Route::delete('/schedules/{schedule}/participants/{participantId}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'removeParticipant'])->name('schedules.participants.destroy');
     Route::post('/schedules/{schedule}/trainers', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'assignTrainer'])->name('schedules.trainers.store');

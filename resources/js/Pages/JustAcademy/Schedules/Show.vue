@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi, jaConfirmDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ schedule: Object, qrUrl: String });
 
@@ -70,7 +70,7 @@ async function removeParticipant(id) {
     confirmText: 'Ya, hapus',
   });
   if (!result.isConfirmed) return;
-  useForm({}).delete(route('just-academy.schedules.participants.destroy', [props.schedule.id, id]));
+  jaDelete(route('just-academy.schedules.participants.destroy', [props.schedule.id, id]));
 }
 </script>
 

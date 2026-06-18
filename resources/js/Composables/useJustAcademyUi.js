@@ -1,5 +1,5 @@
 import Swal from 'sweetalert2';
-import { usePage } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { onMounted, watch } from 'vue';
 
 const swalDefaults = {
@@ -110,6 +110,20 @@ export function jaFormErrors(errors) {
   if (message) jaToastError(message);
 }
 
+/** Hapus record via Inertia — pakai ini, jangan useForm().delete() di dalam callback */
+export function jaDelete(url, options = {}) {
+  const { successMessage, onSuccess } = options;
+
+  return router.delete(url, {
+    preserveScroll: true,
+    onSuccess: () => {
+      if (successMessage) jaToastSuccess(successMessage);
+      onSuccess?.();
+    },
+    onError: (errors) => jaFormErrors(errors),
+  });
+}
+
 export function useJustAcademyFlash() {
   const page = usePage();
 
@@ -119,6 +133,17 @@ export function useJustAcademyFlash() {
     if (flash.error) jaToastError(flash.error);
   };
 
-  onMounted(() => handleFlash(page.props.flash));
+  const handleErrors = (errors) => {
+    if (errors && Object.keys(errors).length > 0) {
+      jaFormErrors(errors);
+    }
+  };
+
+  onMounted(() => {
+    handleFlash(page.props.flash);
+    handleErrors(page.props.errors);
+  });
+
   watch(() => page.props.flash, handleFlash, { deep: true });
+  watch(() => page.props.errors, handleErrors, { deep: true });
 }

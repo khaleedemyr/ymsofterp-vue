@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi, jaConfirmDelete } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ quizzes: Object, filters: Object });
 const search = ref(props.filters?.search || '');
@@ -20,7 +20,7 @@ async function remove(q) {
     text: `"${q.title}" akan dihapus dari pustaka.`,
   });
   if (!result.isConfirmed) return;
-  router.delete(route('just-academy.quizzes.destroy', q.id));
+  jaDelete(route('just-academy.quizzes.destroy', q.id));
 }
 </script>
 

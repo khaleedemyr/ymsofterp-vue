@@ -125,10 +125,12 @@ class ProgramController extends Controller
         return back()->with('success', 'Urutan curriculum program berhasil disimpan.');
     }
 
-    public function destroy(JaProgram $program)
+    public function destroy(int $id)
     {
+        $program = JaProgram::findOrFail($id);
+
         if ($program->schedules()->exists()) {
-            return back()->withErrors(['program' => 'Program tidak dapat dihapus karena sudah memiliki jadwal.']);
+            return back()->with('error', 'Program tidak dapat dihapus karena sudah memiliki jadwal.');
         }
 
         $program->delete();

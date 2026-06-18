@@ -123,8 +123,9 @@ class ScheduleController extends Controller
             ->with('success', 'Jadwal training berhasil diperbarui.');
     }
 
-    public function destroy(JaSchedule $schedule)
+    public function destroy(int $id)
     {
+        $schedule = JaSchedule::findOrFail($id);
         $schedule->delete();
 
         return redirect()

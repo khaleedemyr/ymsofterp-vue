@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi, jaConfirmDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ categories: Object, filters: Object });
 const search = ref(props.filters?.search || '');
@@ -58,7 +58,7 @@ async function remove(cat) {
     html: `Kategori <strong>${cat.name}</strong> akan dihapus permanen.`,
   });
   if (!result.isConfirmed) return;
-  useForm({}).delete(route('just-academy.categories.destroy', cat.id));
+  jaDelete(route('just-academy.categories.destroy', cat.id));
 }
 </script>
 

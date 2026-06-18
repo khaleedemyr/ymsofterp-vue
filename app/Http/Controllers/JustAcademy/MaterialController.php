@@ -76,10 +76,12 @@ class MaterialController extends Controller
             ->with('success', 'Materi berhasil diperbarui.');
     }
 
-    public function destroy(JaMaterial $material)
+    public function destroy(int $id)
     {
+        $material = JaMaterial::findOrFail($id);
+
         if ($material->programItems()->exists()) {
-            return back()->withErrors(['material' => 'Materi masih dipakai di program. Hapus dari curriculum program terlebih dahulu.']);
+            return back()->with('error', 'Materi masih dipakai di program. Hapus dari curriculum program terlebih dahulu.');
         }
 
         if ($material->file_path) {
@@ -88,7 +90,9 @@ class MaterialController extends Controller
 
         $material->delete();
 
-        return back()->with('success', 'Materi berhasil dihapus.');
+        return redirect()
+            ->route('just-academy.materials.index')
+            ->with('success', 'Materi berhasil dihapus.');
     }
 
     private function validateMaterial(Request $request, ?int $ignoreId = null): array

@@ -63,14 +63,18 @@ class CategoryController extends Controller
         return back()->with('success', 'Kategori berhasil diperbarui.');
     }
 
-    public function destroy(JaCategory $category)
+    public function destroy(int $id)
     {
+        $category = JaCategory::findOrFail($id);
+
         if ($category->programs()->exists()) {
-            return back()->withErrors(['category' => 'Kategori tidak dapat dihapus karena masih dipakai program.']);
+            return back()->with('error', 'Kategori tidak dapat dihapus karena masih dipakai program.');
         }
 
         $category->delete();
 
-        return back()->with('success', 'Kategori berhasil dihapus.');
+        return redirect()
+            ->route('just-academy.categories.index')
+            ->with('success', 'Kategori berhasil dihapus.');
     }
 }

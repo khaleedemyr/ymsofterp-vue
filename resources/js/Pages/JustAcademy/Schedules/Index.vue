@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ schedules: Object, filters: Object });
 const search = ref(props.filters?.search || '');
@@ -17,6 +17,15 @@ const debounced = debounce(() => {
 }, 400);
 
 watch(status, debounced);
+
+async function remove(s) {
+  const result = await jaConfirmDelete({
+    title: 'Hapus jadwal?',
+    text: `"${s.title}" akan dihapus permanen.`,
+  });
+  if (!result.isConfirmed) return;
+  jaDelete(route('just-academy.schedules.destroy', s.id));
+}
 </script>
 
 <template>
@@ -58,8 +67,9 @@ watch(status, debounced);
             <td :class="jaUi.td">{{ s.start_at }}</td>
             <td :class="jaUi.td">{{ s.participants_count }}</td>
             <td :class="jaUi.td"><span class="capitalize">{{ s.status }}</span></td>
-            <td :class="[jaUi.td, 'text-right']">
+            <td :class="[jaUi.td, 'text-right space-x-4']">
               <Link :href="route('just-academy.schedules.show', s.id)" :class="jaUi.btnLink">Detail</Link>
+              <button type="button" :class="jaUi.btnDanger" @click="remove(s)">Hapus</button>
             </td>
           </tr>
         </tbody>

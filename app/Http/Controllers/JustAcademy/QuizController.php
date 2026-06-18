@@ -84,15 +84,19 @@ class QuizController extends Controller
             ->with('success', 'Quiz berhasil diperbarui.');
     }
 
-    public function destroy(JaQuiz $quiz)
+    public function destroy(int $id)
     {
+        $quiz = JaQuiz::findOrFail($id);
+
         if ($quiz->programItems()->exists()) {
-            return back()->withErrors(['quiz' => 'Quiz masih dipakai di program. Hapus dari curriculum program terlebih dahulu.']);
+            return back()->with('error', 'Quiz masih dipakai di program. Hapus dari curriculum program terlebih dahulu.');
         }
 
         $quiz->delete();
 
-        return back()->with('success', 'Quiz berhasil dihapus.');
+        return redirect()
+            ->route('just-academy.quizzes.index')
+            ->with('success', 'Quiz berhasil dihapus.');
     }
 
     private function validateQuiz(Request $request): array
