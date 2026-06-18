@@ -12,9 +12,6 @@
           <Link :href="route('stock-cut.menu-cost')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
             <i class="fa-solid fa-calculator mr-1"></i> Report Cost Menu
           </Link>
-          <Link :href="route('stock-cut.variance-report')" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 transition">
-            <i class="fa-solid fa-minus-circle mr-1"></i> Laporan Minus
-          </Link>
         </div>
       </div>
       <div class="bg-white rounded-xl shadow-xl p-6">
