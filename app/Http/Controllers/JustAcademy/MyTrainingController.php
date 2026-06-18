@@ -49,12 +49,15 @@ class MyTrainingController extends Controller
         ]);
 
         $attendance = $schedule->attendances()->where('user_id', $userId)->first();
-        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId);
+        $trainingStarted = $this->service->trainingHasStarted($schedule);
+        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted);
 
         return Inertia::render('JustAcademy/MyTraining/Show', [
             'schedule' => $schedule,
             'attendance' => $attendance,
             'curriculum' => $curriculum,
+            'trainingStarted' => $trainingStarted,
+            'trainingStartsAt' => $schedule->start_at?->toIso8601String(),
         ]);
     }
 
@@ -99,6 +102,7 @@ class MyTrainingController extends Controller
     {
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
+        $this->service->ensureTrainingStarted($schedule);
 
         $validated = $request->validate([
             'rating' => 'required|integer|min:1|max:5',

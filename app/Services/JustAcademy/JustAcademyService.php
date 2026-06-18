@@ -209,6 +209,28 @@ class JustAcademyService
         return $participant;
     }
 
+    public function trainingHasStarted(JaSchedule $schedule): bool
+    {
+        if (!$schedule->start_at) {
+            return true;
+        }
+
+        return now()->gte($schedule->start_at);
+    }
+
+    public function ensureTrainingStarted(JaSchedule $schedule): void
+    {
+        if ($this->trainingHasStarted($schedule)) {
+            return;
+        }
+
+        $startsAt = $schedule->start_at->timezone(config('app.timezone'))->format('d/m/Y H:i');
+
+        throw ValidationException::withMessages([
+            'schedule' => "Training belum dimulai. Materi dapat dibuka mulai {$startsAt}.",
+        ]);
+    }
+
     public function ensureQrToken(JaSchedule $schedule): string
     {
         if ($schedule->qr_token) {
@@ -352,9 +374,11 @@ class JustAcademyService
         });
     }
 
-    public function buildParticipantCurriculum(JaSchedule $schedule, int $userId): \Illuminate\Support\Collection
+    public function buildParticipantCurriculum(JaSchedule $schedule, int $userId, ?bool $trainingStarted = null): \Illuminate\Support\Collection
     {
-        return $this->getProgramCurriculum($schedule->program)->map(function (JaProgramItem $item) use ($schedule, $userId) {
+        $trainingStarted ??= $this->trainingHasStarted($schedule);
+
+        return $this->getProgramCurriculum($schedule->program)->map(function (JaProgramItem $item) use ($schedule, $userId, $trainingStarted) {
             if ($item->item_type === 'material' && $item->material) {
                 $m = $item->material;
                 $completed = JaMaterialProgress::where([
@@ -368,15 +392,32 @@ class JustAcademyService
                     'id' => $m->id,
                     'title' => $m->title,
                     'type' => $m->type,
-                    'file_path' => $m->file_path ? asset('storage/' . $m->file_path) : null,
-                    'url' => $m->url,
+                    'file_path' => $trainingStarted && $m->file_path ? asset('storage/' . $m->file_path) : null,
+                    'url' => $trainingStarted ? $m->url : null,
                     'is_required' => $item->is_required,
                     'completed' => $completed,
+                    'locked' => !$trainingStarted,
                 ];
             }
 
             if ($item->item_type === 'quiz' && $item->quiz) {
                 $quiz = $item->quiz;
+                $poolSize = $quiz->questions->count();
+
+                if (!$trainingStarted) {
+                    return [
+                        'item_type' => 'quiz',
+                        'id' => $quiz->id,
+                        'title' => $quiz->title,
+                        'pass_score' => $quiz->pass_score,
+                        'is_required' => $item->is_required,
+                        'question_pool_size' => $poolSize,
+                        'locked' => true,
+                        'questions' => [],
+                        'attempt' => null,
+                    ];
+                }
+
                 $submittedAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
                     ->where('quiz_id', $quiz->id)
                     ->where('user_id', $userId)
@@ -437,6 +478,7 @@ class JustAcademyService
     public function markMaterialComplete(JaSchedule $schedule, int $userId, int $materialId): JaMaterialProgress
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureTrainingStarted($schedule);
 
         if (!$this->programHasMaterial($schedule->program, $materialId)) {
             throw ValidationException::withMessages(['material' => 'Materi tidak ditemukan pada program ini.']);
@@ -455,6 +497,7 @@ class JustAcademyService
     public function submitQuiz(JaSchedule $schedule, JaQuiz $quiz, int $userId, array $answers): JaQuizAttempt
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureTrainingStarted($schedule);
 
         if (!$this->programHasQuiz($schedule->program, $quiz->id)) {
             throw ValidationException::withMessages(['quiz' => 'Quiz tidak sesuai program jadwal.']);
@@ -546,6 +589,8 @@ class JustAcademyService
 
     public function ensureOpenQuizAttempt(JaSchedule $schedule, JaQuiz $quiz, int $userId): JaQuizAttempt
     {
+        $this->ensureTrainingStarted($schedule);
+
         $existing = JaQuizAttempt::where('schedule_id', $schedule->id)
             ->where('quiz_id', $quiz->id)
             ->where('user_id', $userId)
@@ -597,6 +642,7 @@ class JustAcademyService
     public function syncQuizProgress(JaSchedule $schedule, JaQuiz $quiz, int $userId, int $currentIndex): JaQuizAttempt
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureTrainingStarted($schedule);
 
         if ($quiz->effectiveTimeLimitMode() !== 'question') {
             throw ValidationException::withMessages(['quiz' => 'Quiz ini tidak memakai mode waktu per soal.']);

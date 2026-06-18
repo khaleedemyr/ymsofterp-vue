@@ -86,9 +86,17 @@ class ApiController extends Controller
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
 
-        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId);
+        $trainingStarted = $this->service->trainingHasStarted($schedule);
+        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted);
 
-        return response()->json(['success' => true, 'data' => $curriculum]);
+        return response()->json([
+            'success' => true,
+            'data' => $curriculum,
+            'meta' => [
+                'training_started' => $trainingStarted,
+                'training_starts_at' => $schedule->start_at?->toIso8601String(),
+            ],
+        ]);
     }
 
     public function completeMaterial(Request $request, JaSchedule $schedule, int $materialId)
@@ -149,6 +157,7 @@ class ApiController extends Controller
     {
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
+        $this->service->ensureTrainingStarted($schedule);
 
         $validated = $request->validate([
             'rating' => 'required|integer|min:1|max:5',
