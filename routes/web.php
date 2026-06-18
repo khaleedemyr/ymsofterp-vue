@@ -3682,6 +3682,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::prefix('api')->name('api.')->group(function () {
         Route::get('/users/search', [\App\Http\Controllers\JustAcademy\LookupController::class, 'searchUsers'])->name('users.search');
         Route::get('/jabatan', [\App\Http\Controllers\JustAcademy\LookupController::class, 'jabatan'])->name('jabatan');
+        Route::get('/divisi', [\App\Http\Controllers\JustAcademy\LookupController::class, 'divisi'])->name('divisi');
         Route::get('/outlets', [\App\Http\Controllers\JustAcademy\LookupController::class, 'outlets'])->name('outlets');
     });
 });

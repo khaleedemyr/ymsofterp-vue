@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\JustAcademy;
 
 use App\Http\Controllers\Controller;
+use App\Models\Divisi;
+use App\Models\Jabatan;
 use App\Models\JustAcademy\JaProgram;
 use App\Models\JustAcademy\JaSchedule;
 use App\Models\JustAcademy\JaScheduleTrainer;
@@ -97,6 +99,8 @@ class ScheduleController extends Controller
             'programs' => JaProgram::where('status', 'published')->orderBy('title')->get(['id', 'title']),
             'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
             'regions' => Region::orderBy('name')->get(['id', 'name']),
+            'jabatanList' => Jabatan::orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan']),
+            'divisions' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
             'initialStartAt' => $initialStartAt,
             'initialEndAt' => $initialEndAt,
         ]);
@@ -159,8 +163,12 @@ class ScheduleController extends Controller
     public function edit(JaSchedule $schedule)
     {
         $schedule->load([
-            'participants.user:id,name,email',
-            'trainers.user:id,name,email',
+            'participants.user.jabatan:id_jabatan,nama_jabatan',
+            'participants.user.divisi:id,nama_divisi',
+            'participants.user.outlet:id_outlet,nama_outlet',
+            'trainers.user.jabatan:id_jabatan,nama_jabatan',
+            'trainers.user.divisi:id,nama_divisi',
+            'trainers.user.outlet:id_outlet,nama_outlet',
         ]);
 
         return Inertia::render('JustAcademy/Schedules/Form', [
@@ -168,6 +176,8 @@ class ScheduleController extends Controller
             'programs' => JaProgram::whereIn('status', ['published', 'draft'])->orderBy('title')->get(['id', 'title']),
             'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
             'regions' => Region::orderBy('name')->get(['id', 'name']),
+            'jabatanList' => Jabatan::orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan']),
+            'divisions' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
         ]);
     }
 
