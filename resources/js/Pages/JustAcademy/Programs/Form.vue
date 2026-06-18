@@ -82,6 +82,11 @@ function addQuestion() {
               <option value="">— Pilih —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
+            <p v-if="!categories?.length" class="text-xs text-amber-700 mt-1">
+              Belum ada kategori.
+              <a :href="route('just-academy.categories.index')" class="underline">Tambah kategori</a>
+              terlebih dahulu.
+            </p>
           </div>
         </div>
         <div>
@@ -104,6 +109,10 @@ function addQuestion() {
         </div>
         <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-xl" :disabled="form.processing">Simpan</button>
       </form>
+
+      <div v-if="!program" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+        Setelah program disimpan, halaman ini akan menampilkan form <strong>Materi</strong> dan <strong>Quiz</strong> di bawah data program.
+      </div>
 
       <template v-if="program">
         <div class="bg-white rounded-2xl shadow p-6">

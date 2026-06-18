@@ -3631,6 +3631,11 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/dashboard', [\App\Http\Controllers\JustAcademy\DashboardController::class, 'index'])->name('dashboard');
     Route::get('/check-in', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'checkInPage'])->name('check-in');
 
+    Route::get('/categories', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'index'])->name('categories.index');
+    Route::post('/categories', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'store'])->name('categories.store');
+    Route::put('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'update'])->name('categories.update');
+    Route::delete('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'destroy'])->name('categories.destroy');
+
     Route::get('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'index'])->name('programs.index');
     Route::get('/programs/create', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'create'])->name('programs.create');
     Route::post('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'store'])->name('programs.store');

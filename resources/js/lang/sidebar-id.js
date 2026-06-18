@@ -301,6 +301,7 @@ export default {
     "training_report": "Laporan Pelatihan",
     "quiz_report": "Laporan Kuis",
     "just_academy_dashboard": "Dashboard",
+    "just_academy_categories": "Kategori",
     "just_academy_programs": "Programs",
     "just_academy_schedules": "Jadwal Training",
     "just_academy_my_training": "Training Saya",
