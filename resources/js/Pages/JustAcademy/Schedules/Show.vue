@@ -7,6 +7,7 @@ import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors } from '@/composables/use
 
 const props = defineProps({ schedule: Object, qrUrl: String });
 
+const showBulkInvite = ref(false);
 const userSearch = ref('');
 const userResults = ref([]);
 const selectedUsers = ref([]);
@@ -16,8 +17,10 @@ const selectedJabatan = ref([]);
 const selectedOutlets = ref([]);
 
 const inviteForm = useForm({ user_ids: [], jabatan_ids: [], outlet_ids: [] });
-const trainerForm = useForm({ user_id: '', role: 'assistant', hours: '' });
 const attendanceForm = useForm({ user_id: '', notes: '' });
+
+const participantCount = () => props.schedule.participants?.length || 0;
+const trainerCount = () => props.schedule.trainers?.length || 0;
 
 onMounted(async () => {
   const [jRes, oRes] = await Promise.all([
@@ -35,23 +38,22 @@ async function searchUsers() {
 }
 
 function addUser(u) {
-  if (!selectedUsers.value.find(x => x.id === u.id)) selectedUsers.value.push(u);
+  if (!selectedUsers.value.find((x) => x.id === u.id)) selectedUsers.value.push(u);
   userSearch.value = '';
   userResults.value = [];
 }
 
 function submitInvite() {
-  inviteForm.user_ids = selectedUsers.value.map(u => u.id);
+  inviteForm.user_ids = selectedUsers.value.map((u) => u.id);
   inviteForm.jabatan_ids = selectedJabatan.value;
   inviteForm.outlet_ids = selectedOutlets.value;
   inviteForm.post(route('just-academy.schedules.invite', props.schedule.id), {
-    onError: (e) => jaFormErrors(e),
-  });
-}
-
-function submitTrainer() {
-  trainerForm.post(route('just-academy.schedules.trainers.store', props.schedule.id), {
-    onSuccess: () => trainerForm.reset(),
+    onSuccess: () => {
+      selectedUsers.value = [];
+      selectedJabatan.value = [];
+      selectedOutlets.value = [];
+      showBulkInvite.value = false;
+    },
     onError: (e) => jaFormErrors(e),
   });
 }
@@ -72,17 +74,26 @@ async function removeParticipant(id) {
   if (!result.isConfirmed) return;
   jaDelete(route('just-academy.schedules.participants.destroy', [props.schedule.id, id]));
 }
+
+function userLabel(user) {
+  return user?.nama_lengkap || user?.name || '—';
+}
 </script>
 
 <template>
-  <JaLayout :title="schedule.title" subtitle="Kelola peserta, trainer, dan kehadiran" icon="fa-solid fa-calendar-check">
+  <JaLayout :title="schedule.title" subtitle="Detail training plan" icon="fa-solid fa-calendar-check">
     <template #actions>
-      <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnSecondary">Edit Training Plan</Link>
+      <Link :href="route('just-academy.schedules.index')" :class="jaUi.btnSecondary">Kalender</Link>
+      <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnPrimary">Edit Training Plan</Link>
     </template>
 
     <div class="mb-6 text-sm text-slate-600">
       <p>{{ schedule.program?.title }} · {{ schedule.start_at }} — {{ schedule.end_at }}</p>
-      <p class="text-slate-500">{{ schedule.location }} <span v-if="schedule.outlet">· {{ schedule.outlet.nama_outlet }}</span></p>
+      <p class="text-slate-500">
+        {{ schedule.location || '—' }}
+        <span v-if="schedule.outlet"> · {{ schedule.outlet.nama_outlet }}</span>
+        <span class="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs capitalize text-slate-600">{{ schedule.status }}</span>
+      </p>
     </div>
 
     <div class="space-y-6">
@@ -92,44 +103,76 @@ async function removeParticipant(id) {
       </div>
 
       <div :class="[jaUi.card, jaUi.cardBody]">
-        <h2 class="mb-4 font-semibold text-slate-800">Undang Peserta</h2>
-        <div class="space-y-4">
-          <div>
-            <input v-model="userSearch" type="text" placeholder="Cari nama user..." :class="[jaUi.input, 'max-w-md']" @input="searchUsers" />
-            <ul v-if="userResults.length" class="mt-1 max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-              <li v-for="u in userResults" :key="u.id" class="cursor-pointer px-3 py-2 text-sm hover:bg-indigo-50" @click="addUser(u)">{{ u.name }} — {{ u.email }}</li>
-            </ul>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <span v-for="u in selectedUsers" :key="u.id" class="rounded-lg bg-indigo-50 px-2.5 py-1 text-sm text-indigo-800">{{ u.name }}</span>
-            </div>
-          </div>
-          <div class="grid gap-4 md:grid-cols-2">
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">By Jabatan</p>
-              <label v-for="j in jabatanList" :key="j.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
-                <input v-model="selectedJabatan" type="checkbox" :value="j.id" class="rounded border-slate-300 text-indigo-600" /> {{ j.name }}
-              </label>
-            </div>
-            <div>
-              <p class="mb-2 text-sm font-medium text-slate-700">By Outlet</p>
-              <label v-for="o in outletList" :key="o.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
-                <input v-model="selectedOutlets" type="checkbox" :value="o.id" class="rounded border-slate-300 text-indigo-600" /> {{ o.name }}
-              </label>
-            </div>
-          </div>
-          <button type="button" :class="jaUi.btnPrimary" @click="submitInvite">Kirim Undangan</button>
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="font-semibold text-slate-800">Peserta ({{ participantCount() }})</h2>
+          <button type="button" :class="jaUi.btnLink" class="!text-xs" @click="showBulkInvite = !showBulkInvite">
+            {{ showBulkInvite ? 'Tutup tambah peserta' : '+ Tambah peserta massal' }}
+          </button>
         </div>
-      </div>
 
-      <div :class="[jaUi.card, jaUi.cardBody]">
-        <h2 class="mb-4 font-semibold text-slate-800">Peserta ({{ schedule.participants?.length || 0 }})</h2>
-        <ul class="mb-4 space-y-2">
-          <li v-for="p in schedule.participants" :key="p.id" class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2">
-            <span class="text-sm">{{ p.user?.nama_lengkap || p.user?.name }} <span class="text-xs text-slate-400">({{ p.invite_source }})</span></span>
+        <ul v-if="participantCount()" class="mb-4 space-y-2">
+          <li
+            v-for="p in schedule.participants"
+            :key="p.id"
+            class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2"
+          >
+            <span class="text-sm">
+              {{ userLabel(p.user) }}
+              <span class="text-xs text-slate-400">({{ p.invite_source }})</span>
+            </span>
             <button type="button" :class="jaUi.btnDanger" @click="removeParticipant(p.id)">Hapus</button>
           </li>
         </ul>
-        <form class="flex flex-wrap items-end gap-2" @submit.prevent="submitAttendance">
+        <p v-else class="mb-4 text-sm text-slate-500">Belum ada peserta. Tambahkan lewat Edit Training Plan atau undang massal di bawah.</p>
+
+        <div v-if="showBulkInvite" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4">
+          <p class="mb-3 text-xs text-slate-500">Opsional: undang tambahan per user, jabatan, atau outlet.</p>
+          <div class="space-y-4">
+            <div>
+              <input
+                v-model="userSearch"
+                type="text"
+                placeholder="Cari nama user..."
+                :class="[jaUi.input, 'max-w-md']"
+                @input="searchUsers"
+              />
+              <ul v-if="userResults.length" class="mt-1 max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                <li
+                  v-for="u in userResults"
+                  :key="u.id"
+                  class="cursor-pointer px-3 py-2 text-sm hover:bg-indigo-50"
+                  @click="addUser(u)"
+                >
+                  {{ u.nama_lengkap || u.name }} — {{ u.email }}
+                </li>
+              </ul>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <span v-for="u in selectedUsers" :key="u.id" class="rounded-lg bg-indigo-50 px-2.5 py-1 text-sm text-indigo-800">
+                  {{ u.nama_lengkap || u.name }}
+                </span>
+              </div>
+            </div>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div>
+                <p class="mb-2 text-sm font-medium text-slate-700">By Jabatan</p>
+                <label v-for="j in jabatanList" :key="j.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
+                  <input v-model="selectedJabatan" type="checkbox" :value="j.id" class="rounded border-slate-300 text-indigo-600" />
+                  {{ j.name }}
+                </label>
+              </div>
+              <div>
+                <p class="mb-2 text-sm font-medium text-slate-700">By Outlet</p>
+                <label v-for="o in outletList" :key="o.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
+                  <input v-model="selectedOutlets" type="checkbox" :value="o.id" class="rounded border-slate-300 text-indigo-600" />
+                  {{ o.name }}
+                </label>
+              </div>
+            </div>
+            <button type="button" :class="jaUi.btnPrimary" @click="submitInvite">Kirim Undangan Tambahan</button>
+          </div>
+        </div>
+
+        <form class="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4" @submit.prevent="submitAttendance">
           <div>
             <label class="text-sm text-slate-600">Mark hadir (user ID)</label>
             <input v-model="attendanceForm.user_id" type="number" :class="jaUi.input" placeholder="User ID" />
@@ -139,22 +182,24 @@ async function removeParticipant(id) {
       </div>
 
       <div :class="[jaUi.card, jaUi.cardBody]">
-        <h2 class="mb-4 font-semibold text-slate-800">Trainer</h2>
-        <ul class="mb-4 space-y-1 text-sm text-slate-700">
-          <li v-for="t in schedule.trainers" :key="t.id">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="font-semibold text-slate-800">Trainer ({{ trainerCount() }})</h2>
+          <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnLink" class="!text-xs">
+            Edit trainer
+          </Link>
+        </div>
+        <ul v-if="trainerCount()" class="space-y-2 text-sm text-slate-700">
+          <li
+            v-for="t in schedule.trainers"
+            :key="t.id"
+            class="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2"
+          >
             <span v-if="t.trainer_type === 'external'">{{ t.external_name }}</span>
-            <span v-else>{{ t.user?.nama_lengkap || t.user?.name }}</span>
+            <span v-else>{{ userLabel(t.user) }}</span>
             <span class="text-slate-400"> · {{ t.trainer_type === 'external' ? 'Eksternal' : 'Internal' }} ({{ t.role }})</span>
           </li>
         </ul>
-        <form class="flex flex-wrap gap-2" @submit.prevent="submitTrainer">
-          <input v-model="trainerForm.user_id" type="number" placeholder="User ID trainer" :class="jaUi.input" required />
-          <select v-model="trainerForm.role" :class="jaUi.select">
-            <option value="primary">Primary</option>
-            <option value="assistant">Assistant</option>
-          </select>
-          <button type="submit" :class="jaUi.btnPrimary">Tambah</button>
-        </form>
+        <p v-else class="text-sm text-slate-500">Belum ada trainer. Atur lewat Edit Training Plan.</p>
       </div>
     </div>
   </JaLayout>

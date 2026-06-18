@@ -131,7 +131,10 @@ class ScheduleController extends Controller
         }
 
         return redirect()
-            ->route('just-academy.schedules.show', $schedule->id)
+            ->route('just-academy.schedules.index', [
+                'year' => $schedule->start_at->year,
+                'month' => $schedule->start_at->month,
+            ])
             ->with('success', 'Training plan berhasil dibuat.');
     }
 
@@ -206,7 +209,10 @@ class ScheduleController extends Controller
         }
 
         return redirect()
-            ->route('just-academy.schedules.show', $schedule->id)
+            ->route('just-academy.schedules.index', [
+                'year' => $schedule->start_at->year,
+                'month' => $schedule->start_at->month,
+            ])
             ->with('success', 'Training plan berhasil diperbarui.');
     }
 
