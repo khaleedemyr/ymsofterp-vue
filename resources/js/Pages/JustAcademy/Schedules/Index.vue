@@ -88,27 +88,23 @@ function mountDayCellExtras(info) {
   if (!frame || frame.querySelector('.ja-fc-add-btn')) return;
 
   const dateStr = formatDateYmd(info.date);
+  const holidayName = holidayMap.value[dateStr];
+  if (holidayName) {
+    frame.title = holidayName;
+  }
 
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ja-fc-add-btn';
   btn.title = 'Tambah training plan';
-  btn.innerHTML = '<i class="fa-solid fa-plus"></i>';
+  btn.setAttribute('aria-label', `Tambah training plan ${dateStr}`);
+  btn.textContent = '+';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     goCreateTraining(dateStr);
   });
   frame.appendChild(btn);
-
-  const holidayName = holidayMap.value[dateStr];
-  if (holidayName) {
-    const label = document.createElement('div');
-    label.className = 'ja-fc-holiday-label';
-    label.textContent = holidayName;
-    label.title = holidayName;
-    frame.appendChild(label);
-  }
 }
 
 function syncCalendar() {
@@ -257,7 +253,7 @@ onBeforeUnmount(() => {
 
     <div class="mb-4 flex flex-wrap gap-2 text-xs">
       <span class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
-        <span class="h-3 w-3 rounded-sm border border-red-400 bg-red-50" /> Libur nasional
+        <span class="h-3 w-3 rounded-sm bg-red-400" /> Libur nasional
       </span>
       <span class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
         <span class="h-3 w-3 rounded-sm border border-slate-500 bg-slate-50" /> Draft
@@ -316,52 +312,45 @@ onBeforeUnmount(() => {
   background-color: rgb(238 242 255 / 0.35);
 }
 .ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-frame {
-  background-color: #fef2f2;
+  background-color: #f87171 !important;
 }
 .ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-frame:hover {
-  background-color: #fee2e2;
+  background-color: #ef4444 !important;
+}
+.ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-number {
+  color: #fff;
+  font-weight: 700;
 }
 .ja-training-fc .ja-fc-add-btn {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  top: 6px;
+  left: 6px;
   z-index: 6;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  border: 1px solid rgb(199 210 254);
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: #4f46e5;
   color: #fff;
-  font-size: 11px;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1;
-  box-shadow: 0 1px 3px rgb(99 102 241 / 0.35);
-  opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.ja-training-fc .fc .fc-daygrid-day-frame:hover .ja-fc-add-btn,
-.ja-training-fc .ja-fc-add-btn:focus-visible {
-  opacity: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 .ja-training-fc .ja-fc-add-btn:hover {
-  transform: scale(1.06);
+  background: #4338ca;
+  transform: scale(1.08);
 }
-.ja-training-fc .ja-fc-holiday-label {
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-  z-index: 4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.62rem;
-  font-weight: 600;
-  line-height: 1.2;
+.ja-training-fc .fc .ja-fc-holiday-day .ja-fc-add-btn {
+  background: #fff;
   color: #dc2626;
-  pointer-events: none;
+}
+.ja-training-fc .fc .ja-fc-holiday-day .ja-fc-add-btn:hover {
+  background: #fef2f2;
 }
 .ja-training-fc .fc .fc-event {
   font-size: 0.72rem;
