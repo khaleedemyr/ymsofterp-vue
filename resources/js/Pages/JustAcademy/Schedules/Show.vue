@@ -141,7 +141,11 @@ async function removeParticipant(id) {
       <div :class="[jaUi.card, jaUi.cardBody]">
         <h2 class="mb-4 font-semibold text-slate-800">Trainer</h2>
         <ul class="mb-4 space-y-1 text-sm text-slate-700">
-          <li v-for="t in schedule.trainers" :key="t.id">{{ t.user?.name }} ({{ t.role }})</li>
+          <li v-for="t in schedule.trainers" :key="t.id">
+            <span v-if="t.trainer_type === 'external'">{{ t.external_name }}</span>
+            <span v-else>{{ t.user?.name }}</span>
+            <span class="text-slate-400"> · {{ t.trainer_type === 'external' ? 'Eksternal' : 'Internal' }} ({{ t.role }})</span>
+          </li>
         </ul>
         <form class="flex flex-wrap gap-2" @submit.prevent="submitTrainer">
           <input v-model="trainerForm.user_id" type="number" placeholder="User ID trainer" :class="jaUi.input" required />

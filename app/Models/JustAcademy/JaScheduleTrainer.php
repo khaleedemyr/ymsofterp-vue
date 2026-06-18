@@ -12,7 +12,9 @@ class JaScheduleTrainer extends Model
 
     protected $fillable = [
         'schedule_id',
+        'trainer_type',
         'user_id',
+        'external_name',
         'role',
         'hours',
     ];

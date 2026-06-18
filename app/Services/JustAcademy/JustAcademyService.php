@@ -13,6 +13,7 @@ use App\Models\JustAcademy\JaQuizAttempt;
 use App\Models\JustAcademy\JaSchedule;
 use App\Models\JustAcademy\JaScheduleInviteLog;
 use App\Models\JustAcademy\JaScheduleParticipant;
+use App\Models\JustAcademy\JaScheduleTrainer;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -100,6 +101,82 @@ class JustAcademyService
         });
 
         return $added;
+    }
+
+    public function syncParticipants(JaSchedule $schedule, array $userIds, int $invitedBy): void
+    {
+        $userIds = collect($userIds)->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $existing = $schedule->participants()->pluck('user_id');
+
+        $toRemove = $existing->diff($userIds);
+        if ($toRemove->isNotEmpty()) {
+            $schedule->participants()->whereIn('user_id', $toRemove)->delete();
+        }
+
+        foreach ($userIds->diff($existing) as $userId) {
+            JaScheduleParticipant::create([
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'invite_source' => 'manual',
+                'status' => 'invited',
+                'invited_at' => now(),
+                'invited_by' => $invitedBy,
+            ]);
+        }
+    }
+
+    public function syncTrainers(JaSchedule $schedule, array $internalUserIds, array $externalNames): void
+    {
+        $internalUserIds = collect($internalUserIds)->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $externalNames = collect($externalNames)
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->unique()
+            ->values();
+
+        DB::transaction(function () use ($schedule, $internalUserIds, $externalNames) {
+            $schedule->trainers()
+                ->where(function ($query) use ($internalUserIds, $externalNames) {
+                    $query->where(function ($internal) use ($internalUserIds) {
+                        $internal->where('trainer_type', 'internal')
+                            ->whereNotIn('user_id', $internalUserIds->isEmpty() ? [-1] : $internalUserIds);
+                    })->orWhere(function ($external) use ($externalNames) {
+                        $external->where('trainer_type', 'external')
+                            ->whereNotIn('external_name', $externalNames->isEmpty() ? [''] : $externalNames);
+                    });
+                })
+                ->delete();
+
+            $isFirst = true;
+            foreach ($internalUserIds as $userId) {
+                JaScheduleTrainer::updateOrCreate(
+                    [
+                        'schedule_id' => $schedule->id,
+                        'trainer_type' => 'internal',
+                        'user_id' => $userId,
+                    ],
+                    [
+                        'external_name' => null,
+                        'role' => $isFirst ? 'primary' : 'assistant',
+                    ]
+                );
+                $isFirst = false;
+            }
+
+            foreach ($externalNames as $name) {
+                JaScheduleTrainer::firstOrCreate(
+                    [
+                        'schedule_id' => $schedule->id,
+                        'trainer_type' => 'external',
+                        'external_name' => $name,
+                    ],
+                    [
+                        'user_id' => null,
+                        'role' => 'assistant',
+                    ]
+                );
+            }
+        });
     }
 
     public function ensureParticipant(JaSchedule $schedule, int $userId): JaScheduleParticipant

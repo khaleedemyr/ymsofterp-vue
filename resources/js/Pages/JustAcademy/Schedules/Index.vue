@@ -24,11 +24,22 @@ const detail = reactive({ open: false, event: null });
 const holidayMap = computed(() => {
   const map = {};
   holidays.value.forEach((h) => {
-    const key = String(h.tgl_libur || '').slice(0, 10);
+    const key = normalizeHolidayDate(h.tgl_libur);
     if (key) map[key] = h.keterangan || 'Libur nasional';
   });
   return map;
 });
+
+function normalizeHolidayDate(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : raw.slice(0, 10);
+}
+
+function isHolidayDate(dateStr) {
+  return Boolean(holidayMap.value[dateStr]);
+}
 
 const monthTitle = computed(() => {
   const d = new Date(props.year, props.month - 1, 1);
@@ -83,15 +94,38 @@ function loadCalendarCss() {
   document.head.appendChild(grid);
 }
 
+function applyHolidayClass(el, dateStr) {
+  const frame = el.querySelector('.fc-daygrid-day-frame');
+  const holidayName = holidayMap.value[dateStr];
+  const isHoliday = Boolean(holidayName);
+
+  el.classList.toggle('ja-fc-holiday-day', isHoliday);
+  if (frame) {
+    frame.classList.toggle('ja-fc-holiday-frame', isHoliday);
+    if (isHoliday) {
+      frame.title = holidayName;
+    } else {
+      frame.removeAttribute('title');
+    }
+  }
+}
+
+function applyHolidayClassesToDom() {
+  if (!calendarEl.value) return;
+  calendarEl.value.querySelectorAll('.fc-daygrid-day').forEach((el) => {
+    const dateStr = el.getAttribute('data-date') || '';
+    if (dateStr) applyHolidayClass(el, dateStr);
+  });
+}
+
 function mountDayCellExtras(info) {
   const frame = info.el.querySelector('.fc-daygrid-day-frame');
-  if (!frame || frame.querySelector('.ja-fc-add-btn')) return;
+  if (!frame) return;
 
-  const dateStr = formatDateYmd(info.date);
-  const holidayName = holidayMap.value[dateStr];
-  if (holidayName) {
-    frame.title = holidayName;
-  }
+  const dateStr = info.el.getAttribute('data-date') || formatDateYmd(info.date);
+  applyHolidayClass(info.el, dateStr);
+
+  if (frame.querySelector('.ja-fc-add-btn')) return;
 
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -118,6 +152,7 @@ function syncCalendar() {
   calendarApi.removeAllEvents();
   calendarApi.addEventSource(props.calendarEvents || []);
   calendarApi.render();
+  nextTick(applyHolidayClassesToDom);
 }
 
 function buildCalendar() {
@@ -136,8 +171,8 @@ function buildCalendar() {
     moreLinkText: (n) => `+${n} lagi`,
     events: props.calendarEvents || [],
     dayCellClassNames(arg) {
-      const key = formatDateYmd(arg.date);
-      return holidayMap.value[key] ? ['ja-fc-holiday-day'] : [];
+      const key = arg.dateStr || formatDateYmd(arg.date);
+      return isHolidayDate(key) ? ['ja-fc-holiday-day'] : [];
     },
     dayCellDidMount: mountDayCellExtras,
     dateClick(info) {
@@ -160,6 +195,7 @@ function buildCalendar() {
     },
   });
   calendarApi.render();
+  nextTick(applyHolidayClassesToDom);
 }
 
 function navigateMonth(delta) {
@@ -210,9 +246,12 @@ watch(
   { deep: true },
 );
 
-watch(holidayMap, () => {
-  nextTick(() => calendarApi?.render());
-});
+watch(holidays, () => {
+  nextTick(() => {
+    calendarApi?.render();
+    applyHolidayClassesToDom();
+  });
+}, { deep: true });
 
 onBeforeUnmount(() => {
   if (calendarApi) {
@@ -308,17 +347,21 @@ onBeforeUnmount(() => {
   min-height: 6.5rem;
   cursor: pointer;
 }
-.ja-training-fc .fc .fc-daygrid-day-frame:hover {
+.ja-training-fc .fc .fc-daygrid-day-frame:not(.ja-fc-holiday-frame):hover {
   background-color: rgb(238 242 255 / 0.35);
 }
-.ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-frame {
+.ja-training-fc .fc .fc-daygrid-day.ja-fc-holiday-day,
+.ja-training-fc .fc .fc-daygrid-day.ja-fc-holiday-day .fc-daygrid-day-frame,
+.ja-training-fc .fc .fc-daygrid-day-frame.ja-fc-holiday-frame {
   background-color: #f87171 !important;
 }
-.ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-frame:hover {
+.ja-training-fc .fc .fc-daygrid-day.ja-fc-holiday-day .fc-daygrid-day-frame:hover,
+.ja-training-fc .fc .fc-daygrid-day-frame.ja-fc-holiday-frame:hover {
   background-color: #ef4444 !important;
 }
-.ja-training-fc .fc .ja-fc-holiday-day .fc-daygrid-day-number {
-  color: #fff;
+.ja-training-fc .fc .fc-daygrid-day.ja-fc-holiday-day .fc-daygrid-day-number,
+.ja-training-fc .fc .fc-daygrid-day-frame.ja-fc-holiday-frame .fc-daygrid-day-number {
+  color: #fff !important;
   font-weight: 700;
 }
 .ja-training-fc .ja-fc-add-btn {

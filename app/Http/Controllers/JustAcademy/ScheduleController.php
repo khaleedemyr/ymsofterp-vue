@@ -107,9 +107,20 @@ class ScheduleController extends Controller
         $validated = $this->validateSchedule($request);
 
         $schedule = JaSchedule::create([
-            ...$validated,
+            ...$this->schedulePayload($validated),
             'created_by' => $request->user()->id,
         ]);
+
+        $this->service->syncParticipants(
+            $schedule,
+            $validated['participant_ids'] ?? [],
+            (int) $request->user()->id,
+        );
+        $this->service->syncTrainers(
+            $schedule,
+            $validated['internal_trainer_ids'] ?? [],
+            $validated['external_trainers'] ?? [],
+        );
 
         if ($schedule->status === 'published') {
             $this->service->ensureQrToken($schedule);
@@ -147,6 +158,11 @@ class ScheduleController extends Controller
 
     public function edit(JaSchedule $schedule)
     {
+        $schedule->load([
+            'participants.user:id,name,email',
+            'trainers.user:id,name,email',
+        ]);
+
         return Inertia::render('JustAcademy/Schedules/Form', [
             'schedule' => $schedule,
             'programs' => JaProgram::whereIn('status', ['published', 'draft'])->orderBy('title')->get(['id', 'title']),
@@ -160,7 +176,18 @@ class ScheduleController extends Controller
         $validated = $this->validateSchedule($request);
         $wasPublished = $schedule->status === 'published';
 
-        $schedule->update($validated);
+        $schedule->update($this->schedulePayload($validated));
+
+        $this->service->syncParticipants(
+            $schedule,
+            $validated['participant_ids'] ?? [],
+            (int) $request->user()->id,
+        );
+        $this->service->syncTrainers(
+            $schedule,
+            $validated['internal_trainer_ids'] ?? [],
+            $validated['external_trainers'] ?? [],
+        );
 
         if ($schedule->status === 'published' && (!$wasPublished || !$schedule->qr_token)) {
             $this->service->ensureQrToken($schedule);
@@ -221,15 +248,40 @@ class ScheduleController extends Controller
     public function assignTrainer(Request $request, JaSchedule $schedule)
     {
         $validated = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
+            'trainer_type' => 'required|in:internal,external',
+            'user_id' => 'required_if:trainer_type,internal|nullable|integer|exists:users,id',
+            'external_name' => 'required_if:trainer_type,external|nullable|string|max:255',
             'role' => 'required|in:primary,assistant',
             'hours' => 'nullable|numeric|min:0',
         ]);
 
-        JaScheduleTrainer::updateOrCreate(
-            ['schedule_id' => $schedule->id, 'user_id' => $validated['user_id']],
-            ['role' => $validated['role'], 'hours' => $validated['hours'] ?? null]
-        );
+        if ($validated['trainer_type'] === 'internal') {
+            JaScheduleTrainer::updateOrCreate(
+                [
+                    'schedule_id' => $schedule->id,
+                    'trainer_type' => 'internal',
+                    'user_id' => $validated['user_id'],
+                ],
+                [
+                    'external_name' => null,
+                    'role' => $validated['role'],
+                    'hours' => $validated['hours'] ?? null,
+                ]
+            );
+        } else {
+            JaScheduleTrainer::firstOrCreate(
+                [
+                    'schedule_id' => $schedule->id,
+                    'trainer_type' => 'external',
+                    'external_name' => trim($validated['external_name']),
+                ],
+                [
+                    'user_id' => null,
+                    'role' => $validated['role'],
+                    'hours' => $validated['hours'] ?? null,
+                ]
+            );
+        }
 
         return back()->with('success', 'Trainer berhasil ditambahkan.');
     }
@@ -288,6 +340,28 @@ class ScheduleController extends Controller
             'capacity' => 'nullable|integer|min:1',
             'status' => 'required|in:draft,published,ongoing,completed,cancelled',
             'notes' => 'nullable|string',
+            'participant_ids' => 'nullable|array',
+            'participant_ids.*' => 'integer|exists:users,id',
+            'internal_trainer_ids' => 'nullable|array',
+            'internal_trainer_ids.*' => 'integer|exists:users,id',
+            'external_trainers' => 'nullable|array',
+            'external_trainers.*' => 'string|max:255',
         ]);
+    }
+
+    protected function schedulePayload(array $validated): array
+    {
+        return collect($validated)->only([
+            'program_id',
+            'title',
+            'start_at',
+            'end_at',
+            'location',
+            'outlet_id',
+            'region_id',
+            'capacity',
+            'status',
+            'notes',
+        ])->all();
     }
 }

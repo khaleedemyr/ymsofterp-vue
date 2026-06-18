@@ -193,7 +193,9 @@ CREATE TABLE IF NOT EXISTS `ja_schedule_participants` (
 CREATE TABLE IF NOT EXISTS `ja_schedule_trainers` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `schedule_id` BIGINT UNSIGNED NOT NULL,
-    `user_id` BIGINT UNSIGNED NOT NULL,
+    `trainer_type` ENUM('internal', 'external') NOT NULL DEFAULT 'internal',
+    `user_id` BIGINT UNSIGNED NULL,
+    `external_name` VARCHAR(255) NULL,
     `role` ENUM('primary', 'assistant') NOT NULL DEFAULT 'assistant',
     `hours` DECIMAL(8, 2) NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -201,6 +203,7 @@ CREATE TABLE IF NOT EXISTS `ja_schedule_trainers` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `ja_schedule_trainers_schedule_user_unique` (`schedule_id`, `user_id`),
     KEY `ja_schedule_trainers_user_id_idx` (`user_id`),
+    KEY `ja_schedule_trainers_type_idx` (`schedule_id`, `trainer_type`),
     CONSTRAINT `ja_schedule_trainers_schedule_id_foreign`
         FOREIGN KEY (`schedule_id`) REFERENCES `ja_schedules` (`id`) ON DELETE CASCADE,
     CONSTRAINT `ja_schedule_trainers_user_id_foreign`
