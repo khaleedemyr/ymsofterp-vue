@@ -71,7 +71,7 @@ class JustAcademyService
         };
 
         $added = 0;
-        DB::transaction(function () use ($schedule, $resolved, $inviteSource, $invitedBy, $userIds, $jabatanIds, $outletIds, &$added) {
+        DB::transaction(function () use ($schedule, $resolved, $inviteSource, $filterType, $invitedBy, $userIds, $jabatanIds, $outletIds, &$added) {
             foreach ($resolved as $userId) {
                 $participant = JaScheduleParticipant::firstOrCreate(
                     [
