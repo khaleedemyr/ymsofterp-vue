@@ -301,11 +301,11 @@ export default {
     "training_report": "Training Report",
     "quiz_report": "Quiz Report",
     "just_academy_dashboard": "Dashboard",
-    "just_academy_categories": "Categories",
+    "just_academy_categories": "Method",
     "just_academy_materials": "Materials",
     "just_academy_quizzes": "Quizzes",
     "just_academy_programs": "Programs",
-    "just_academy_schedules": "Schedules",
+    "just_academy_schedules": "Training Plan",
     "just_academy_my_training": "My Training",
     "just_academy_reports": "Reports"
   }

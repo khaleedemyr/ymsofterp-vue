@@ -54,8 +54,8 @@ function submit() {
 
 async function remove(cat) {
   const result = await jaConfirmDelete({
-    title: 'Hapus kategori?',
-    html: `Kategori <strong>${cat.name}</strong> akan dihapus permanen.`,
+    title: 'Hapus method?',
+    html: `Method <strong>${cat.name}</strong> akan dihapus permanen.`,
   });
   if (!result.isConfirmed) return;
   jaDelete(route('just-academy.categories.destroy', cat.id));
@@ -63,14 +63,14 @@ async function remove(cat) {
 </script>
 
 <template>
-  <JaLayout title="Kategori Program" subtitle="Kelompokkan program training" icon="fa-solid fa-folder-tree">
+  <JaLayout title="Method" subtitle="Kelola metode / kategori program training" icon="fa-solid fa-folder-tree">
     <template #actions>
       <button type="button" :class="jaUi.btnPrimary" @click="openCreate">
-        <i class="fa-solid fa-plus text-xs" /> Kategori Baru
+        <i class="fa-solid fa-plus text-xs" /> Method Baru
       </button>
     </template>
 
-    <input v-model="search" type="text" placeholder="Cari kategori..." :class="[jaUi.search, 'mb-5']" @input="debounced" />
+    <input v-model="search" type="text" placeholder="Cari method..." :class="[jaUi.search, 'mb-5']" @input="debounced" />
 
     <div :class="jaUi.tableWrap">
       <table :class="jaUi.table">
@@ -99,7 +99,7 @@ async function remove(cat) {
             </td>
           </tr>
           <tr v-if="!categories.data?.length">
-            <td colspan="6" :class="jaUi.empty">Belum ada kategori.</td>
+            <td colspan="6" :class="jaUi.empty">Belum ada method.</td>
           </tr>
         </tbody>
       </table>
@@ -107,7 +107,7 @@ async function remove(cat) {
 
     <div v-if="showModal" :class="jaUi.modalOverlay" @click.self="showModal = false">
       <form :class="jaUi.modal" @submit.prevent="submit">
-        <h2 class="text-lg font-bold text-slate-800">{{ editing ? 'Edit Kategori' : 'Kategori Baru' }}</h2>
+        <h2 class="text-lg font-bold text-slate-800">{{ editing ? 'Edit Method' : 'Method Baru' }}</h2>
         <div>
           <label :class="jaUi.label">Nama</label>
           <input v-model="form.name" :class="jaUi.input" required />

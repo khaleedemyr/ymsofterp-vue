@@ -77,7 +77,7 @@ async function removeParticipant(id) {
 <template>
   <JaLayout :title="schedule.title" subtitle="Kelola peserta, trainer, dan kehadiran" icon="fa-solid fa-calendar-check">
     <template #actions>
-      <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnSecondary">Edit Jadwal</Link>
+      <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnSecondary">Edit Training Plan</Link>
     </template>
 
     <div class="mb-6 text-sm text-slate-600">

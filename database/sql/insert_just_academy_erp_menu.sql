@@ -30,11 +30,11 @@ SET @ja_parent_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy' 
 -- Child menus
 INSERT INTO `erp_menu` (`name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`) VALUES
 ('Dashboard',        'just_academy_dashboard',    @ja_parent_id, '/just-academy/dashboard',     'fa-solid fa-gauge-high',      NOW(), NOW()),
-('Categories',       'just_academy_categories',   @ja_parent_id, '/just-academy/categories',    'fa-solid fa-folder-tree',     NOW(), NOW()),
+('Method',           'just_academy_categories',   @ja_parent_id, '/just-academy/categories',    'fa-solid fa-folder-tree',     NOW(), NOW()),
 ('Materials',        'just_academy_materials',    @ja_parent_id, '/just-academy/materials',     'fa-solid fa-file-lines',      NOW(), NOW()),
 ('Quizzes',          'just_academy_quizzes',      @ja_parent_id, '/just-academy/quizzes',       'fa-solid fa-circle-question', NOW(), NOW()),
 ('Programs',         'just_academy_programs',     @ja_parent_id, '/just-academy/programs',      'fa-solid fa-book-open',       NOW(), NOW()),
-('Schedules',        'just_academy_schedules',    @ja_parent_id, '/just-academy/schedules',     'fa-solid fa-calendar-days',   NOW(), NOW()),
+('Training Plan',    'just_academy_schedules',    @ja_parent_id, '/just-academy/schedules',     'fa-solid fa-calendar-days',   NOW(), NOW()),
 ('My Training',      'just_academy_my_training',  @ja_parent_id, '/just-academy/my-training',   'fa-solid fa-user-graduate',   NOW(), NOW()),
 ('Reports',          'just_academy_reports',      @ja_parent_id, '/just-academy/reports',       'fa-solid fa-chart-column',    NOW(), NOW())
 ON DUPLICATE KEY UPDATE

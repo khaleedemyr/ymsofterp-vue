@@ -52,7 +52,7 @@ async function remove(p) {
           <tr>
             <th :class="jaUi.th">Kode</th>
             <th :class="jaUi.th">Judul</th>
-            <th :class="jaUi.th">Kategori</th>
+            <th :class="jaUi.th">Method</th>
             <th :class="jaUi.th">Status</th>
             <th :class="jaUi.th">Item</th>
             <th :class="[jaUi.th, 'text-right']">Aksi</th>

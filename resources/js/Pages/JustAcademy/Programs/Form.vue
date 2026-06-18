@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import { jaUi } from '@/composables/useJustAcademyUi';
@@ -22,10 +22,25 @@ const form = useForm({
 });
 
 const curriculumItems = ref([...(props.curriculum || [])]);
+const materialSearch = ref('');
+const quizSearch = ref('');
 const dragPayload = ref(null);
 const dropTargetIndex = ref(null);
 const isDropZoneActive = ref(false);
 const curriculumForm = useForm({ items: [] });
+
+function filterLibrary(items, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return items ?? [];
+  return (items ?? []).filter((item) => {
+    const title = (item.title || '').toLowerCase();
+    const type = (item.type || '').toLowerCase();
+    return title.includes(q) || type.includes(q);
+  });
+}
+
+const filteredMaterials = computed(() => filterLibrary(props.libraryMaterials, materialSearch.value));
+const filteredQuizzes = computed(() => filterLibrary(props.libraryQuizzes, quizSearch.value));
 
 function submit() {
   if (props.program) {
@@ -177,7 +192,7 @@ function saveCurriculum() {
             <input v-model="form.code" :class="jaUi.input" />
           </div>
           <div>
-            <label :class="jaUi.label">Kategori</label>
+            <label :class="jaUi.label">Method</label>
             <select v-model="form.category_id" :class="jaUi.input">
               <option value="">— Pilih —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -215,10 +230,19 @@ function saveCurriculum() {
             <h2 class="font-semibold text-slate-800">Pustaka</h2>
             <p class="text-xs text-slate-500">Drag item ke kolom kanan, atau klik +</p>
             <div>
-              <h3 class="text-sm font-medium text-gray-600 mb-2">Materi</h3>
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <h3 class="text-sm font-medium text-gray-600">Materi</h3>
+                <span v-if="materialSearch" class="text-xs text-slate-400">{{ filteredMaterials.length }} hasil</span>
+              </div>
+              <input
+                v-model="materialSearch"
+                type="search"
+                placeholder="Cari materi..."
+                :class="[jaUi.input, 'mb-2 text-sm py-2']"
+              />
               <ul class="space-y-2 max-h-48 overflow-y-auto">
                 <li
-                  v-for="m in libraryMaterials"
+                  v-for="m in filteredMaterials"
                   :key="'m'+m.id"
                   draggable="true"
                   class="flex cursor-grab items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 active:cursor-grabbing"
@@ -234,13 +258,25 @@ function saveCurriculum() {
                 <li v-if="!libraryMaterials?.length" class="text-sm text-gray-500">
                   Belum ada materi. <a :href="route('just-academy.materials.create')" class="underline">Buat materi</a>
                 </li>
+                <li v-else-if="!filteredMaterials.length" class="text-sm text-gray-500 py-2 text-center">
+                  Tidak ada materi cocok dengan "{{ materialSearch }}"
+                </li>
               </ul>
             </div>
             <div>
-              <h3 class="text-sm font-medium text-gray-600 mb-2">Quiz</h3>
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <h3 class="text-sm font-medium text-gray-600">Quiz</h3>
+                <span v-if="quizSearch" class="text-xs text-slate-400">{{ filteredQuizzes.length }} hasil</span>
+              </div>
+              <input
+                v-model="quizSearch"
+                type="search"
+                placeholder="Cari quiz..."
+                :class="[jaUi.input, 'mb-2 text-sm py-2']"
+              />
               <ul class="space-y-2 max-h-48 overflow-y-auto">
                 <li
-                  v-for="q in libraryQuizzes"
+                  v-for="q in filteredQuizzes"
                   :key="'q'+q.id"
                   draggable="true"
                   class="flex cursor-grab items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 active:cursor-grabbing"
@@ -255,6 +291,9 @@ function saveCurriculum() {
                 </li>
                 <li v-if="!libraryQuizzes?.length" class="text-sm text-gray-500">
                   Belum ada quiz. <a :href="route('just-academy.quizzes.create')" class="underline">Buat quiz</a>
+                </li>
+                <li v-else-if="!filteredQuizzes.length" class="text-sm text-gray-500 py-2 text-center">
+                  Tidak ada quiz cocok dengan "{{ quizSearch }}"
                 </li>
               </ul>
             </div>

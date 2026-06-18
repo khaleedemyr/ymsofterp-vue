@@ -18,7 +18,7 @@ defineProps({
         <p class="mt-1 text-3xl font-bold text-indigo-600">{{ stats?.programs_published ?? 0 }}</p>
       </div>
       <div :class="[jaUi.card, jaUi.cardBody]">
-        <p class="text-sm text-slate-500">Jadwal mendatang</p>
+        <p class="text-sm text-slate-500">Training plan mendatang</p>
         <p class="mt-1 text-3xl font-bold text-emerald-600">{{ stats?.schedules_upcoming ?? 0 }}</p>
       </div>
       <div :class="[jaUi.card, jaUi.cardBody]">
@@ -30,10 +30,10 @@ defineProps({
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div :class="[jaUi.card, jaUi.cardBody]">
         <div class="mb-4 flex items-center justify-between">
-          <h2 class="font-semibold text-slate-800">Jadwal mendatang</h2>
-          <Link :href="route('just-academy.schedules.index')" :class="jaUi.btnLink">Lihat semua</Link>
+          <h2 class="font-semibold text-slate-800">Training plan mendatang</h2>
+          <Link :href="route('just-academy.schedules.index')" :class="jaUi.btnLink">Lihat kalender</Link>
         </div>
-        <div v-if="!upcomingSchedules?.length" class="text-sm text-slate-500">Belum ada jadwal.</div>
+        <div v-if="!upcomingSchedules?.length" class="text-sm text-slate-500">Belum ada training plan.</div>
         <ul v-else class="space-y-3">
           <li v-for="s in upcomingSchedules" :key="s.id" class="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
             <p class="font-medium text-slate-800">{{ s.title }}</p>

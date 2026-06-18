@@ -20,37 +20,85 @@ class ScheduleController extends Controller
 
     public function index(Request $request)
     {
-        $search = $request->input('search');
+        $year = (int) $request->input('year', now()->year);
+        $month = (int) $request->input('month', now()->month);
         $status = $request->input('status');
 
-        $query = JaSchedule::with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
-            ->withCount('participants')
-            ->orderByDesc('start_at');
-
-        if ($search) {
-            $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                    ->orWhereHas('program', fn ($p) => $p->where('title', 'like', "%{$search}%"));
-            });
+        if ($month < 1 || $month > 12) {
+            $month = (int) now()->month;
         }
+
+        $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        $query = JaSchedule::with(['program:id,title'])
+            ->withCount('participants')
+            ->where('start_at', '<=', $rangeEnd)
+            ->where('end_at', '>=', $rangeStart)
+            ->orderBy('start_at');
 
         if ($status) {
             $query->where('status', $status);
         }
 
+        $schedules = $query->get();
+
+        $calendarEvents = $schedules->map(function (JaSchedule $schedule) {
+            $colors = [
+                'draft' => ['#64748b', '#f8fafc'],
+                'published' => ['#4f46e5', '#eef2ff'],
+                'ongoing' => ['#059669', '#ecfdf5'],
+                'completed' => ['#6b7280', '#f3f4f6'],
+                'cancelled' => ['#dc2626', '#fef2f2'],
+            ];
+            [$border, $bg] = $colors[$schedule->status] ?? ['#4f46e5', '#eef2ff'];
+
+            return [
+                'id' => (string) $schedule->id,
+                'title' => $schedule->title,
+                'start' => $schedule->start_at?->toIso8601String(),
+                'end' => $schedule->end_at?->toIso8601String(),
+                'backgroundColor' => $bg,
+                'borderColor' => $border,
+                'textColor' => '#1e293b',
+                'extendedProps' => [
+                    'schedule_id' => $schedule->id,
+                    'status' => $schedule->status,
+                    'program' => $schedule->program?->title,
+                    'location' => $schedule->location,
+                    'participants_count' => $schedule->participants_count,
+                    'start_label' => $schedule->start_at?->format('d M Y H:i'),
+                    'end_label' => $schedule->end_at?->format('d M Y H:i'),
+                ],
+            ];
+        })->values();
+
         return Inertia::render('JustAcademy/Schedules/Index', [
-            'schedules' => $query->paginate(15)->withQueryString(),
-            'filters' => ['search' => $search, 'status' => $status],
+            'calendarEvents' => $calendarEvents,
+            'year' => $year,
+            'month' => $month,
+            'filters' => ['status' => $status],
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
+        $startDate = $request->input('start');
+        $initialStartAt = null;
+        $initialEndAt = null;
+
+        if ($startDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+            $initialStartAt = $startDate . 'T09:00';
+            $initialEndAt = $startDate . 'T17:00';
+        }
+
         return Inertia::render('JustAcademy/Schedules/Form', [
             'schedule' => null,
             'programs' => JaProgram::where('status', 'published')->orderBy('title')->get(['id', 'title']),
             'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
             'regions' => Region::orderBy('name')->get(['id', 'name']),
+            'initialStartAt' => $initialStartAt,
+            'initialEndAt' => $initialEndAt,
         ]);
     }
 
@@ -69,7 +117,7 @@ class ScheduleController extends Controller
 
         return redirect()
             ->route('just-academy.schedules.show', $schedule->id)
-            ->with('success', 'Jadwal training berhasil dibuat.');
+            ->with('success', 'Training plan berhasil dibuat.');
     }
 
     public function show(JaSchedule $schedule)
@@ -120,7 +168,7 @@ class ScheduleController extends Controller
 
         return redirect()
             ->route('just-academy.schedules.show', $schedule->id)
-            ->with('success', 'Jadwal training berhasil diperbarui.');
+            ->with('success', 'Training plan berhasil diperbarui.');
     }
 
     public function destroy(int $id)
@@ -130,7 +178,7 @@ class ScheduleController extends Controller
 
         return redirect()
             ->route('just-academy.schedules.index')
-            ->with('success', 'Jadwal training berhasil dihapus.');
+            ->with('success', 'Training plan berhasil dihapus.');
     }
 
     public function invite(Request $request, JaSchedule $schedule)

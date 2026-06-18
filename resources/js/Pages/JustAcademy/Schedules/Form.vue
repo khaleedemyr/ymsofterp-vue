@@ -3,13 +3,20 @@ import { useForm } from '@inertiajs/vue3';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import { jaUi, jaFormErrors } from '@/composables/useJustAcademyUi';
 
-const props = defineProps({ schedule: Object, programs: Array, outlets: Array, regions: Array });
+const props = defineProps({
+  schedule: Object,
+  programs: Array,
+  outlets: Array,
+  regions: Array,
+  initialStartAt: String,
+  initialEndAt: String,
+});
 
 const form = useForm({
   program_id: props.schedule?.program_id || '',
   title: props.schedule?.title || '',
-  start_at: props.schedule?.start_at?.slice(0, 16) || '',
-  end_at: props.schedule?.end_at?.slice(0, 16) || '',
+  start_at: props.schedule?.start_at?.slice(0, 16) || props.initialStartAt || '',
+  end_at: props.schedule?.end_at?.slice(0, 16) || props.initialEndAt || '',
   location: props.schedule?.location || '',
   outlet_id: props.schedule?.outlet_id || '',
   region_id: props.schedule?.region_id || '',
@@ -30,7 +37,7 @@ function submit() {
 
 <template>
   <JaLayout
-    :title="schedule ? 'Edit Jadwal' : 'Jadwal Baru'"
+    :title="schedule ? 'Edit Training Plan' : 'Training Plan Baru'"
     subtitle="Atur waktu, lokasi, dan program training"
     icon="fa-solid fa-calendar-days"
     narrow
@@ -44,7 +51,7 @@ function submit() {
         </select>
       </div>
       <div>
-        <label :class="jaUi.label">Judul jadwal</label>
+        <label :class="jaUi.label">Judul training plan</label>
         <input v-model="form.title" :class="jaUi.input" required />
       </div>
       <div class="grid grid-cols-2 gap-4">

@@ -301,11 +301,11 @@ export default {
     "training_report": "Laporan Pelatihan",
     "quiz_report": "Laporan Kuis",
     "just_academy_dashboard": "Dashboard",
-    "just_academy_categories": "Kategori",
+    "just_academy_categories": "Method",
     "just_academy_materials": "Materi",
     "just_academy_quizzes": "Quiz",
     "just_academy_programs": "Programs",
-    "just_academy_schedules": "Jadwal Training",
+    "just_academy_schedules": "Training Plan",
     "just_academy_my_training": "Training Saya",
     "just_academy_reports": "Laporan"
   }
