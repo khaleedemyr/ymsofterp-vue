@@ -1,13 +1,16 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
+import QRCode from 'qrcode';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors, jaToastSuccess } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ schedule: Object, qrUrl: String });
 
 const showBulkInvite = ref(false);
+const qrCodeDataUrl = ref('');
+const markingUserId = ref(null);
 const userSearch = ref('');
 const userResults = ref([]);
 const selectedUsers = ref([]);
@@ -22,7 +25,48 @@ const attendanceForm = useForm({ user_id: '', notes: '' });
 const participantCount = () => props.schedule.participants?.length || 0;
 const trainerCount = () => props.schedule.trainers?.length || 0;
 
+const attendedUserIds = computed(() => {
+  const ids = new Set();
+  (props.schedule.attendances || []).forEach((a) => {
+    if (a.user_id) ids.add(a.user_id);
+  });
+  return ids;
+});
+
+const schedulePeriod = computed(() => {
+  const start = formatDateTime(props.schedule.start_at);
+  const end = formatDateTime(props.schedule.end_at);
+  return start && end ? `${start} — ${end}` : '—';
+});
+
+function formatDateTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+async function generateQrCode() {
+  if (!props.qrUrl) return;
+  try {
+    qrCodeDataUrl.value = await QRCode.toDataURL(props.qrUrl, {
+      width: 280,
+      margin: 2,
+      color: { dark: '#1e293b', light: '#ffffff' },
+    });
+  } catch (error) {
+    console.error('QR generation failed', error);
+  }
+}
+
 onMounted(async () => {
+  await generateQrCode();
   const [jRes, oRes] = await Promise.all([
     axios.get(route('just-academy.api.jabatan')),
     axios.get(route('just-academy.api.outlets')),
@@ -58,10 +102,27 @@ function submitInvite() {
   });
 }
 
-function submitAttendance() {
+function hasAttendance(userId) {
+  return userId && attendedUserIds.value.has(userId);
+}
+
+function markParticipantPresent(participant) {
+  const userId = participant?.user?.id;
+  if (!userId || hasAttendance(userId) || markingUserId.value) return;
+
+  markingUserId.value = userId;
+  attendanceForm.user_id = userId;
+  attendanceForm.notes = '';
   attendanceForm.post(route('just-academy.schedules.attendance.manual', props.schedule.id), {
-    onSuccess: () => attendanceForm.reset(),
+    preserveScroll: true,
+    onSuccess: () => {
+      jaToastSuccess(`${userLabel(participant.user)} ditandai hadir.`);
+    },
     onError: (e) => jaFormErrors(e),
+    onFinish: () => {
+      markingUserId.value = null;
+      attendanceForm.reset();
+    },
   });
 }
 
@@ -99,7 +160,7 @@ function userLabel(user) {
     </template>
 
     <div class="mb-6 text-sm text-slate-600">
-      <p>{{ schedule.program?.title }} · {{ schedule.start_at }} — {{ schedule.end_at }}</p>
+      <p>{{ schedule.program?.title }} · {{ schedulePeriod }}</p>
       <p class="text-slate-500">
         {{ schedule.location || '—' }}
         <span v-if="schedule.outlet"> · {{ schedule.outlet.nama_outlet }}</span>
@@ -109,8 +170,24 @@ function userLabel(user) {
 
     <div class="space-y-6">
       <div v-if="qrUrl" :class="[jaUi.card, jaUi.cardBody]">
-        <p class="mb-2 font-medium text-slate-800">QR Check-in</p>
-        <p class="break-all text-xs text-slate-500">{{ qrUrl }}</p>
+        <p class="mb-4 font-medium text-slate-800">QR Check-in</p>
+        <div class="flex flex-col items-center gap-4 md:flex-row md:items-start">
+          <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <img
+              v-if="qrCodeDataUrl"
+              :src="qrCodeDataUrl"
+              :alt="`QR Check-in ${schedule.title}`"
+              class="h-64 w-64"
+            />
+            <div v-else class="flex h-64 w-64 items-center justify-center text-sm text-slate-400">
+              Memuat QR code...
+            </div>
+          </div>
+          <div class="flex-1 space-y-2 text-sm text-slate-600">
+            <p class="font-medium text-slate-800">Peserta scan QR ini untuk check-in</p>
+            <p class="text-xs text-slate-500 break-all">{{ qrUrl }}</p>
+          </div>
+        </div>
       </div>
 
       <div :class="[jaUi.card, jaUi.cardBody]">
@@ -121,17 +198,44 @@ function userLabel(user) {
           </button>
         </div>
 
+        <p class="mb-3 text-xs text-slate-500">Klik nama peserta untuk tandai hadir manual.</p>
+
         <ul v-if="participantCount()" class="mb-4 space-y-2">
           <li
             v-for="p in schedule.participants"
             :key="p.id"
             class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2"
           >
-            <span class="text-sm">
+            <button
+              type="button"
+              class="min-w-0 flex-1 text-left text-sm transition"
+              :class="[
+                hasAttendance(p.user?.id)
+                  ? 'cursor-default text-emerald-700'
+                  : 'cursor-pointer text-indigo-700 hover:underline',
+                markingUserId === p.user?.id ? 'opacity-60' : '',
+              ]"
+              :disabled="hasAttendance(p.user?.id) || markingUserId === p.user?.id"
+              @click="markParticipantPresent(p)"
+            >
               {{ userLabel(p.user) }}
               <span class="text-xs text-slate-400">({{ p.invite_source }})</span>
-            </span>
-            <button type="button" :class="jaUi.btnDanger" @click="removeParticipant(p.id)">Hapus</button>
+              <span
+                v-if="hasAttendance(p.user?.id)"
+                class="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700"
+              >
+                Hadir
+              </span>
+              <span
+                v-else-if="markingUserId === p.user?.id"
+                class="ml-2 text-xs text-slate-400"
+              >
+                Memproses...
+              </span>
+            </button>
+            <button type="button" :class="jaUi.btnDanger" class="ml-3 shrink-0" @click="removeParticipant(p.id)">
+              Hapus
+            </button>
           </li>
         </ul>
         <p v-else class="mb-4 text-sm text-slate-500">Belum ada peserta. Tambahkan lewat Edit Training Plan atau undang massal di bawah.</p>
@@ -182,14 +286,6 @@ function userLabel(user) {
             <button type="button" :class="jaUi.btnPrimary" @click="submitInvite">Kirim Undangan Tambahan</button>
           </div>
         </div>
-
-        <form class="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4" @submit.prevent="submitAttendance">
-          <div>
-            <label class="text-sm text-slate-600">Mark hadir (user ID)</label>
-            <input v-model="attendanceForm.user_id" type="number" :class="jaUi.input" placeholder="User ID" />
-          </div>
-          <button type="submit" :class="jaUi.btnSuccess">Mark Manual</button>
-        </form>
       </div>
 
       <div :class="[jaUi.card, jaUi.cardBody]">
