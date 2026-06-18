@@ -63,7 +63,12 @@ class JustAcademyService
             $filterType = 'outlet';
         }
 
-        $inviteSource = $filterType === 'mixed' ? 'mixed' : $filterType;
+        $inviteSource = match ($filterType) {
+            'jabatan' => 'jabatan',
+            'outlet' => 'outlet',
+            'mixed' => 'mixed',
+            default => 'manual',
+        };
 
         $added = 0;
         DB::transaction(function () use ($schedule, $resolved, $inviteSource, $invitedBy, $userIds, $jabatanIds, $outletIds, &$added) {
