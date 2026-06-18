@@ -270,6 +270,41 @@ class JustAcademyService
             ->values();
     }
 
+    public function buildScheduleCurriculumOverview(JaProgram $program): \Illuminate\Support\Collection
+    {
+        return $this->getProgramCurriculum($program)->map(function (JaProgramItem $item) {
+            if ($item->item_type === 'material' && $item->material) {
+                $material = $item->material;
+
+                return [
+                    'item_type' => 'material',
+                    'id' => $material->id,
+                    'title' => $material->title,
+                    'type' => $material->type,
+                    'description' => $material->description,
+                    'file_path' => $material->file_path ? asset('storage/' . $material->file_path) : null,
+                    'url' => $material->url,
+                    'is_required' => $item->is_required,
+                ];
+            }
+
+            if ($item->item_type === 'quiz' && $item->quiz) {
+                $quiz = $item->quiz;
+
+                return [
+                    'item_type' => 'quiz',
+                    'id' => $quiz->id,
+                    'title' => $quiz->title,
+                    'pass_score' => $quiz->pass_score,
+                    'question_count' => $quiz->questions?->count() ?? 0,
+                    'is_required' => $item->is_required,
+                ];
+            }
+
+            return null;
+        })->filter()->values();
+    }
+
     public function syncProgramCurriculum(JaProgram $program, array $items): void
     {
         DB::transaction(function () use ($program, $items) {

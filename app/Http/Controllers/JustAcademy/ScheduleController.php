@@ -12,6 +12,7 @@ use App\Models\Outlet;
 use App\Models\Region;
 use App\Services\JustAcademy\JustAcademyService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class ScheduleController extends Controller
@@ -80,6 +81,7 @@ class ScheduleController extends Controller
             'year' => $year,
             'month' => $month,
             'filters' => ['status' => $status],
+            'holidays' => $this->companyHolidays(),
         ]);
     }
 
@@ -155,8 +157,13 @@ class ScheduleController extends Controller
             $schedule->refresh();
         }
 
+        $curriculum = $schedule->program
+            ? $this->service->buildScheduleCurriculumOverview($schedule->program)
+            : collect();
+
         return Inertia::render('JustAcademy/Schedules/Show', [
             'schedule' => $schedule,
+            'curriculum' => $curriculum,
             'qrUrl' => $schedule->qr_token
                 ? url('/just-academy/check-in?token=' . $schedule->qr_token . '&schedule_id=' . $schedule->id)
                 : null,
@@ -390,5 +397,19 @@ class ScheduleController extends Controller
             'status',
             'notes',
         ])->all();
+    }
+
+    protected function companyHolidays()
+    {
+        return DB::table('tbl_kalender_perusahaan')
+            ->select('id', 'tgl_libur', 'keterangan')
+            ->orderBy('tgl_libur')
+            ->get()
+            ->map(fn ($holiday) => [
+                'id' => $holiday->id,
+                'tgl_libur' => substr((string) $holiday->tgl_libur, 0, 10),
+                'keterangan' => $holiday->keterangan,
+            ])
+            ->values();
     }
 }

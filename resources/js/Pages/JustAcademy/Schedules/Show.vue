@@ -2,12 +2,14 @@
 import { computed, ref, onMounted } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import QRCode from 'qrcode';
+import VueEasyLightbox from 'vue-easy-lightbox';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import JaUserMultiselect from '@/Components/JustAcademy/JaUserMultiselect.vue';
 import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors, jaToastSuccess } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
   schedule: Object,
+  curriculum: { type: Array, default: () => [] },
   qrUrl: String,
   jabatanList: { type: Array, default: () => [] },
   divisions: { type: Array, default: () => [] },
@@ -16,6 +18,7 @@ const props = defineProps({
 
 const showAddParticipants = ref(false);
 const qrCodeDataUrl = ref('');
+const qrLightboxVisible = ref(false);
 const markingUserId = ref(null);
 const selectedInviteUsers = ref([]);
 
@@ -40,6 +43,8 @@ const existingParticipantIds = computed(() => {
   });
   return ids;
 });
+
+const qrLightboxImages = computed(() => (qrCodeDataUrl.value ? [qrCodeDataUrl.value] : []));
 
 const schedulePeriod = computed(() => {
   const start = formatDateTime(props.schedule.start_at);
@@ -71,6 +76,11 @@ async function generateQrCode() {
   } catch (error) {
     console.error('QR generation failed', error);
   }
+}
+
+function openQrLightbox() {
+  if (!qrCodeDataUrl.value) return;
+  qrLightboxVisible.value = true;
 }
 
 onMounted(() => {
@@ -146,6 +156,20 @@ async function removeSchedule() {
 function userLabel(user) {
   return user?.nama_lengkap || user?.name || '—';
 }
+
+function materialTypeLabel(type) {
+  const map = {
+    pdf: 'PDF',
+    video: 'Video',
+    link: 'Link',
+    document: 'Dokumen',
+  };
+  return map[type] || type || 'Materi';
+}
+
+function materialLink(item) {
+  return item.file_path || item.url || null;
+}
 </script>
 
 <template>
@@ -166,22 +190,80 @@ function userLabel(user) {
     </div>
 
     <div class="space-y-6">
+      <div v-if="curriculum.length" :class="[jaUi.card, jaUi.cardBody]">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="font-semibold text-slate-800">Materi & Quiz Program</h2>
+          <Link
+            v-if="schedule.program?.id"
+            :href="route('just-academy.programs.edit', schedule.program.id)"
+            :class="jaUi.btnLink"
+            class="!text-xs"
+          >
+            Edit curriculum
+          </Link>
+        </div>
+
+        <ul class="space-y-2">
+          <li
+            v-for="(item, index) in curriculum"
+            :key="`${item.item_type}-${item.id}`"
+            class="rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2 text-sm text-slate-700"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Langkah {{ index + 1 }} · {{ item.item_type === 'material' ? 'Materi' : 'Quiz' }}
+                </p>
+                <p class="font-medium text-slate-800">{{ item.title }}</p>
+                <p v-if="item.item_type === 'material'" class="text-xs text-slate-500">
+                  {{ materialTypeLabel(item.type) }}
+                  <span v-if="item.is_required"> · Wajib</span>
+                </p>
+                <p v-else class="text-xs text-slate-500">
+                  Pass score {{ item.pass_score }}%
+                  <span v-if="item.question_count"> · {{ item.question_count }} soal</span>
+                  <span v-if="item.is_required"> · Wajib</span>
+                </p>
+                <p v-if="item.description" class="mt-1 text-xs text-slate-500">{{ item.description }}</p>
+              </div>
+              <a
+                v-if="item.item_type === 'material' && materialLink(item)"
+                :href="materialLink(item)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :class="jaUi.btnLink"
+                class="shrink-0 !text-xs"
+              >
+                Buka
+              </a>
+            </div>
+          </li>
+        </ul>
+      </div>
+
       <div v-if="qrUrl" :class="[jaUi.card, jaUi.cardBody]">
         <p class="mb-4 font-medium text-slate-800">QR Check-in</p>
         <div class="flex flex-col items-center gap-4 md:flex-row md:items-start">
-          <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-indigo-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            :disabled="!qrCodeDataUrl"
+            title="Klik untuk perbesar"
+            @click="openQrLightbox"
+          >
             <img
               v-if="qrCodeDataUrl"
               :src="qrCodeDataUrl"
               :alt="`QR Check-in ${schedule.title}`"
-              class="h-64 w-64"
+              class="h-64 w-64 cursor-zoom-in"
             />
             <div v-else class="flex h-64 w-64 items-center justify-center text-sm text-slate-400">
               Memuat QR code...
             </div>
-          </div>
+          </button>
           <div class="flex-1 space-y-2 text-sm text-slate-600">
             <p class="font-medium text-slate-800">Peserta scan QR ini untuk check-in</p>
+            <p class="text-xs text-slate-500">Klik QR untuk memperbesar.</p>
             <p class="text-xs text-slate-500 break-all">{{ qrUrl }}</p>
           </div>
         </div>
@@ -281,5 +363,14 @@ function userLabel(user) {
         <p v-else class="text-sm text-slate-500">Belum ada trainer. Atur lewat Edit Training Plan.</p>
       </div>
     </div>
+
+    <VueEasyLightbox
+      :visible="qrLightboxVisible"
+      :imgs="qrLightboxImages"
+      :index="0"
+      :move-disabled="false"
+      :rotate-disabled="true"
+      @hide="qrLightboxVisible = false"
+    />
   </JaLayout>
 </template>

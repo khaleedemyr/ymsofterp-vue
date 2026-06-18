@@ -12,10 +12,11 @@ const props = defineProps({
   year: { type: Number, required: true },
   month: { type: Number, required: true },
   filters: { type: Object, default: () => ({}) },
+  holidays: { type: Array, default: () => [] },
 });
 
 const status = ref(props.filters?.status || '');
-const holidays = ref([]);
+const holidays = ref([...(props.holidays || [])]);
 const calendarEl = ref(null);
 let calendarApi = null;
 
@@ -73,12 +74,51 @@ function goCreateTraining(dateStr) {
 }
 
 async function fetchHolidays() {
+  if (props.holidays?.length) {
+    holidays.value = props.holidays.map((h) => ({
+      ...h,
+      tgl_libur: normalizeHolidayDate(h.tgl_libur),
+    }));
+    return;
+  }
+
   try {
     const { data } = await axios.get('/api/holidays');
-    holidays.value = Array.isArray(data) ? data : [];
+    const rows = Array.isArray(data) ? data : [];
+    holidays.value = rows.map((h) => ({
+      ...h,
+      tgl_libur: normalizeHolidayDate(h.tgl_libur),
+    }));
   } catch {
     holidays.value = [];
   }
+}
+
+function getDayCellDateStr(el, fallbackDate) {
+  const fromAttr = el.getAttribute('data-date') || el.dataset?.date || '';
+  if (fromAttr) return fromAttr;
+  if (fallbackDate) return formatDateYmd(fallbackDate);
+  return '';
+}
+
+function upsertHolidayLabel(frame, dateStr) {
+  const holidayName = holidayMap.value[dateStr];
+  const existing = frame.querySelector('.ja-fc-holiday-label');
+
+  if (!holidayName) {
+    existing?.remove();
+    return;
+  }
+
+  if (existing) {
+    existing.textContent = holidayName;
+    return;
+  }
+
+  const label = document.createElement('div');
+  label.className = 'ja-fc-holiday-label';
+  label.textContent = holidayName;
+  frame.appendChild(label);
 }
 
 function loadCalendarCss() {
@@ -104,8 +144,10 @@ function applyHolidayClass(el, dateStr) {
     frame.classList.toggle('ja-fc-holiday-frame', isHoliday);
     if (isHoliday) {
       frame.title = holidayName;
+      upsertHolidayLabel(frame, dateStr);
     } else {
       frame.removeAttribute('title');
+      frame.querySelector('.ja-fc-holiday-label')?.remove();
     }
   }
 }
@@ -113,16 +155,43 @@ function applyHolidayClass(el, dateStr) {
 function applyHolidayClassesToDom() {
   if (!calendarEl.value) return;
   calendarEl.value.querySelectorAll('.fc-daygrid-day').forEach((el) => {
-    const dateStr = el.getAttribute('data-date') || '';
+    const dateStr = getDayCellDateStr(el);
     if (dateStr) applyHolidayClass(el, dateStr);
   });
+}
+
+function buildHolidayEvents() {
+  return holidays.value
+    .map((h) => {
+      const date = normalizeHolidayDate(h.tgl_libur);
+      if (!date) return null;
+
+      return {
+        id: `ja-holiday-${h.id || date}`,
+        start: date,
+        allDay: true,
+        display: 'background',
+        backgroundColor: '#f87171',
+        borderColor: '#ef4444',
+        classNames: ['ja-fc-holiday-event'],
+        extendedProps: {
+          isHoliday: true,
+          keterangan: h.keterangan || 'Libur nasional',
+        },
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildCalendarEvents() {
+  return [...(props.calendarEvents || []), ...buildHolidayEvents()];
 }
 
 function mountDayCellExtras(info) {
   const frame = info.el.querySelector('.fc-daygrid-day-frame');
   if (!frame) return;
 
-  const dateStr = info.el.getAttribute('data-date') || formatDateYmd(info.date);
+  const dateStr = getDayCellDateStr(info.el, info.date);
   applyHolidayClass(info.el, dateStr);
 
   if (frame.querySelector('.ja-fc-add-btn')) return;
@@ -145,7 +214,7 @@ function resetCalendarEvents() {
   if (!calendarApi) return;
   calendarApi.getEventSources().forEach((source) => source.remove());
   calendarApi.removeAllEvents();
-  const events = props.calendarEvents || [];
+  const events = buildCalendarEvents();
   if (events.length) {
     calendarApi.addEventSource(events);
   }
@@ -188,6 +257,7 @@ function buildCalendar() {
       goCreateTraining(info.dateStr);
     },
     eventClick(info) {
+      if (info.event.extendedProps?.isHoliday) return;
       info.jsEvent.preventDefault();
       detail.event = {
         title: info.event.title,
@@ -272,9 +342,24 @@ watch(
   { deep: true },
 );
 
+watch(
+  () => props.holidays,
+  (rows) => {
+    if (!rows?.length) return;
+    holidays.value = rows.map((h) => ({
+      ...h,
+      tgl_libur: normalizeHolidayDate(h.tgl_libur),
+    }));
+  },
+  { deep: true },
+);
+
 watch(holidays, () => {
   nextTick(() => {
-    calendarApi?.render();
+    if (calendarApi) {
+      resetCalendarEvents();
+      calendarApi.render();
+    }
     applyHolidayClassesToDom();
   });
 }, { deep: true });
@@ -434,5 +519,26 @@ onBeforeUnmount(() => {
 .ja-training-fc .fc .fc-daygrid-day-number {
   margin-top: 2px;
   margin-right: 4px;
+}
+.ja-training-fc .ja-fc-holiday-label {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.92);
+  padding: 2px 4px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #b91c1c;
+  pointer-events: none;
+}
+.ja-training-fc .fc .ja-fc-holiday-event {
+  opacity: 1 !important;
 }
 </style>
