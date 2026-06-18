@@ -124,6 +124,54 @@ export function jaDelete(url, options = {}) {
   });
 }
 
+/** Dialog progress (kompresi / upload) — kembalikan { setProgress, setMessage, close } */
+export function jaOpenProgressDialog(title, subtitle = 'Mohon tunggu…') {
+  const uid = `ja-progress-${Date.now()}`;
+  Swal.fire({
+    ...swalDefaults,
+    title,
+    html: `
+      <p id="${uid}-msg" class="text-sm text-slate-600 mb-3">${subtitle}</p>
+      <div class="w-full rounded-full bg-slate-200 h-2.5 overflow-hidden">
+        <div id="${uid}-bar" class="h-2.5 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 transition-all duration-200" style="width:0%"></div>
+      </div>
+      <p id="${uid}-pct" class="mt-2 text-xs font-medium text-slate-500">0%</p>
+    `,
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    showConfirmButton: false,
+  });
+
+  return {
+    setProgress(percent, message) {
+      const bar = document.getElementById(`${uid}-bar`);
+      const pct = document.getElementById(`${uid}-pct`);
+      const msg = document.getElementById(`${uid}-msg`);
+      const p = Math.min(100, Math.max(0, Math.round(percent)));
+      if (bar) bar.style.width = `${p}%`;
+      if (pct) pct.textContent = `${p}%`;
+      if (message && msg) msg.textContent = message;
+    },
+    close: () => Swal.close(),
+  };
+}
+
+export function jaHandleUploadError(error) {
+  const status = error?.response?.status;
+  if (status === 413) {
+    jaToastError(
+      'File terlalu besar untuk server (413). Untuk video, sistem akan mengompres otomatis — pastikan hasil kompresi di bawah 100 MB, atau gunakan field URL.',
+      'Upload gagal',
+    );
+    return;
+  }
+  if (status === 422 && error.response?.data?.errors) {
+    jaFormErrors(error.response.data.errors);
+    return;
+  }
+  jaToastError(error?.response?.data?.message || error?.message || 'Upload gagal');
+}
+
 export function useJustAcademyFlash() {
   const page = usePage();
 
