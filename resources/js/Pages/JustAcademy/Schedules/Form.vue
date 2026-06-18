@@ -1,10 +1,8 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
-import axios from 'axios';
-import Multiselect from 'vue-multiselect';
-import 'vue-multiselect/dist/vue-multiselect.min.css';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import JaUserMultiselect from '@/Components/JustAcademy/JaUserMultiselect.vue';
 import { jaUi, jaFormErrors } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
@@ -18,74 +16,52 @@ const props = defineProps({
   initialEndAt: String,
 });
 
-function userFromRelation(user) {
+function mapUserFromParticipant(p) {
+  const user = p?.user;
   if (!user) return null;
   return {
     id: user.id,
     name: user.nama_lengkap || user.name,
-    nama_lengkap: user.nama_lengkap || user.name,
     email: user.email,
-    jabatan: user.jabatan?.nama_jabatan || user.jabatan,
-    divisi: user.divisi?.nama_divisi || user.divisi,
-    outlet: user.outlet?.nama_outlet || user.outlet,
+    jabatan: user.jabatan?.nama_jabatan || '—',
+    divisi: user.divisi?.nama_divisi || '—',
+    outlet: user.outlet?.nama_outlet || '—',
+    label: user.nama_lengkap || user.name,
   };
 }
 
-function toUserOption(user) {
-  const normalized = userFromRelation(user) || user;
-  if (!normalized?.id) return null;
-
-  const name = normalized.name || normalized.nama_lengkap || `User #${normalized.id}`;
-  const jabatan = normalized.jabatan || '—';
-  const divisi = normalized.divisi || '—';
-  const outlet = normalized.outlet || '—';
-
+function mapUserFromTrainer(t) {
+  const user = t?.user;
+  if (!user) return null;
   return {
-    id: normalized.id,
-    name,
-    email: normalized.email || '',
-    jabatan,
-    divisi,
-    outlet,
-    label: name,
-    meta: [jabatan, divisi, outlet].filter((v) => v && v !== '—').join(' · '),
+    id: user.id,
+    name: user.nama_lengkap || user.name,
+    email: user.email,
+    jabatan: user.jabatan?.nama_jabatan || '—',
+    divisi: user.divisi?.nama_divisi || '—',
+    outlet: user.outlet?.nama_outlet || '—',
+    label: user.nama_lengkap || user.name,
   };
 }
 
-function initialParticipants() {
-  return (props.schedule?.participants || [])
-    .map((p) => toUserOption(p.user))
-    .filter(Boolean);
-}
-
-function initialInternalTrainers() {
-  return (props.schedule?.trainers || [])
+const selectedParticipants = ref(
+  (props.schedule?.participants || []).map(mapUserFromParticipant).filter(Boolean),
+);
+const selectedInternalTrainers = ref(
+  (props.schedule?.trainers || [])
     .filter((t) => (t.trainer_type || 'internal') === 'internal' && t.user)
-    .map((t) => toUserOption(t.user))
-    .filter(Boolean);
-}
+    .map(mapUserFromTrainer)
+    .filter(Boolean),
+);
 
-function initialExternalTrainers() {
-  const names = (props.schedule?.trainers || [])
-    .filter((t) => t.trainer_type === 'external' && t.external_name)
-    .map((t) => t.external_name);
-  return names.length ? names : [''];
-}
-
-const selectedParticipants = ref(initialParticipants());
-const selectedInternalTrainers = ref(initialInternalTrainers());
-const externalTrainerNames = ref(initialExternalTrainers());
-const participantOptions = ref([]);
-const trainerOptions = ref([]);
-const participantSearchLoading = ref(false);
-const trainerSearchLoading = ref(false);
-const participantSearchQuery = ref('');
-const trainerSearchQuery = ref('');
-
-const participantFilterJabatan = ref('');
-const participantFilterDivisi = ref('');
-const participantFilterOutlet = ref('');
-const participantSortBy = ref('name');
+const externalTrainerNames = ref(
+  (() => {
+    const names = (props.schedule?.trainers || [])
+      .filter((t) => t.trainer_type === 'external' && t.external_name)
+      .map((t) => t.external_name);
+    return names.length ? names : [''];
+  })(),
+);
 
 const form = useForm({
   program_id: props.schedule?.program_id || '',
@@ -103,62 +79,6 @@ const form = useForm({
   external_trainers: [],
 });
 
-function mergeUserOptions(target, users) {
-  const map = new Map(target.map((u) => [u.id, u]));
-  users.forEach((user) => {
-    const option = toUserOption(user);
-    if (option) map.set(option.id, option);
-  });
-  return Array.from(map.values());
-}
-
-async function fetchUsers({ query, targetRef, loadingRef, extraParams = {} }) {
-  const q = String(query || '').trim();
-  const hasFilter = extraParams.jabatan_id || extraParams.division_id || extraParams.outlet_id;
-  if (q.length < 1 && !hasFilter) {
-    return;
-  }
-
-  loadingRef.value = true;
-  try {
-    const { data } = await axios.get(route('just-academy.api.users.search'), {
-      params: { q, ...extraParams },
-    });
-    targetRef.value = mergeUserOptions(targetRef.value, data.users || []);
-  } finally {
-    loadingRef.value = false;
-  }
-}
-
-function searchParticipants(query) {
-  participantSearchQuery.value = query || '';
-  return fetchUsers({
-    query,
-    targetRef: participantOptions,
-    loadingRef: participantSearchLoading,
-    extraParams: {
-      jabatan_id: participantFilterJabatan.value || undefined,
-      division_id: participantFilterDivisi.value || undefined,
-      outlet_id: participantFilterOutlet.value || undefined,
-      sort_by: participantSortBy.value,
-    },
-  });
-}
-
-function searchTrainers(query) {
-  trainerSearchQuery.value = query || '';
-  return fetchUsers({
-    query,
-    targetRef: trainerOptions,
-    loadingRef: trainerSearchLoading,
-    extraParams: { sort_by: 'name' },
-  });
-}
-
-function refreshParticipantOptions() {
-  return searchParticipants(participantSearchQuery.value);
-}
-
 function addExternalTrainer() {
   externalTrainerNames.value.push('');
 }
@@ -170,26 +90,6 @@ function removeExternalTrainer(index) {
   }
   externalTrainerNames.value.splice(index, 1);
 }
-
-watch(
-  selectedParticipants,
-  (list) => {
-    participantOptions.value = mergeUserOptions(participantOptions.value, list);
-  },
-  { immediate: true, deep: true },
-);
-
-watch(
-  selectedInternalTrainers,
-  (list) => {
-    trainerOptions.value = mergeUserOptions(trainerOptions.value, list);
-  },
-  { immediate: true, deep: true },
-);
-
-watch([participantFilterJabatan, participantFilterDivisi, participantFilterOutlet, participantSortBy], () => {
-  refreshParticipantOptions();
-});
 
 function submit() {
   form.participant_ids = selectedParticipants.value.map((u) => u.id);
@@ -276,97 +176,24 @@ function submit() {
 
         <div>
           <label :class="jaUi.label">Peserta</label>
-          <div class="mb-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-            <select v-model="participantFilterJabatan" :class="jaUi.select" class="!text-xs">
-              <option value="">Semua jabatan</option>
-              <option v-for="j in jabatanList" :key="j.id_jabatan" :value="j.id_jabatan">{{ j.nama_jabatan }}</option>
-            </select>
-            <select v-model="participantFilterDivisi" :class="jaUi.select" class="!text-xs">
-              <option value="">Semua divisi</option>
-              <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
-            </select>
-            <select v-model="participantFilterOutlet" :class="jaUi.select" class="!text-xs">
-              <option value="">Semua outlet</option>
-              <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
-            </select>
-            <select v-model="participantSortBy" :class="jaUi.select" class="!text-xs">
-              <option value="name">Urut: Nama</option>
-              <option value="jabatan">Urut: Jabatan</option>
-              <option value="divisi">Urut: Divisi</option>
-              <option value="outlet">Urut: Outlet</option>
-            </select>
-          </div>
-          <Multiselect
+          <JaUserMultiselect
             v-model="selectedParticipants"
-            :options="participantOptions"
-            :multiple="true"
-            :searchable="true"
-            :internal-search="false"
-            :loading="participantSearchLoading"
-            :close-on-select="false"
-            :clear-on-select="false"
-            label="label"
-            track-by="id"
+            :jabatan-list="jabatanList"
+            :divisions="divisions"
+            :outlets="outlets"
+            show-filters
             placeholder="Cari nama, jabatan, divisi, atau outlet..."
-            select-label=""
-            deselect-label=""
-            selected-label=""
-            class="ja-multiselect"
-            @search-change="searchParticipants"
-          >
-            <template #option="{ option }">
-              <div class="py-0.5">
-                <div class="font-medium text-slate-800">{{ option.name }}</div>
-                <div class="text-xs text-slate-500">
-                  {{ option.jabatan || '—' }} · {{ option.divisi || '—' }} · {{ option.outlet || '—' }}
-                </div>
-              </div>
-            </template>
-            <template #noOptions>
-              <span class="px-2 py-1 text-xs text-slate-500">Ketik nama atau pilih filter di atas</span>
-            </template>
-            <template #noResult>
-              <span class="px-2 py-1 text-xs text-slate-500">Tidak ada user ditemukan</span>
-            </template>
-          </Multiselect>
+          />
           <p class="mt-1 text-xs text-slate-500">Filter by jabatan/divisi/outlet, atau ketik nama untuk mencari.</p>
         </div>
 
         <div>
           <label :class="jaUi.label">Trainer internal</label>
-          <Multiselect
+          <JaUserMultiselect
             v-model="selectedInternalTrainers"
-            :options="trainerOptions"
-            :multiple="true"
-            :searchable="true"
-            :internal-search="false"
-            :loading="trainerSearchLoading"
-            :close-on-select="false"
-            :clear-on-select="false"
-            label="label"
-            track-by="id"
             placeholder="Cari nama trainer internal..."
-            select-label=""
-            deselect-label=""
-            selected-label=""
-            class="ja-multiselect"
-            @search-change="searchTrainers"
-          >
-            <template #option="{ option }">
-              <div class="py-0.5">
-                <div class="font-medium text-slate-800">{{ option.name }}</div>
-                <div class="text-xs text-slate-500">
-                  {{ option.jabatan || '—' }} · {{ option.divisi || '—' }} · {{ option.outlet || '—' }}
-                </div>
-              </div>
-            </template>
-            <template #noOptions>
-              <span class="px-2 py-1 text-xs text-slate-500">Ketik nama trainer untuk mencari</span>
-            </template>
-            <template #noResult>
-              <span class="px-2 py-1 text-xs text-slate-500">Tidak ada trainer ditemukan</span>
-            </template>
-          </Multiselect>
+          />
+          <p class="mt-1 text-xs text-slate-500">Ketik nama trainer untuk mencari.</p>
         </div>
 
         <div>
@@ -406,28 +233,3 @@ function submit() {
     </form>
   </JaLayout>
 </template>
-
-<style>
-.ja-multiselect .multiselect__tags {
-  min-height: 42px;
-  border-radius: 0.75rem;
-  border-color: rgb(226 232 240);
-  padding-top: 8px;
-}
-.ja-multiselect .multiselect__input,
-.ja-multiselect .multiselect__single {
-  font-size: 0.875rem;
-}
-.ja-multiselect .multiselect__option {
-  padding-top: 8px;
-  padding-bottom: 8px;
-  line-height: 1.3;
-  white-space: normal;
-}
-.ja-multiselect .multiselect__option--highlight {
-  background: #6366f1;
-}
-.ja-multiselect .multiselect__tag {
-  background: #6366f1;
-}
-</style>
