@@ -15,6 +15,9 @@ class JaQuizAttempt extends Model
         'schedule_id',
         'quiz_id',
         'user_id',
+        'question_ids',
+        'option_orders',
+        'quiz_progress',
         'score',
         'passed',
         'started_at',
@@ -22,6 +25,9 @@ class JaQuizAttempt extends Model
     ];
 
     protected $casts = [
+        'question_ids' => 'array',
+        'option_orders' => 'array',
+        'quiz_progress' => 'array',
         'score' => 'decimal:2',
         'passed' => 'boolean',
         'started_at' => 'datetime',

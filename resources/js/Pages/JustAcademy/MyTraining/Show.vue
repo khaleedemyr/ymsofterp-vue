@@ -1,6 +1,7 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import JaQuizTaking from '@/Components/JustAcademy/JaQuizTaking.vue';
 import { jaUi, jaFormErrors } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
@@ -10,16 +11,9 @@ const props = defineProps({
 });
 
 const feedbackForm = useForm({ rating: 5, comment: '', trainer_id: '' });
-const quizAnswers = useForm({ answers: {} });
 
 function completeMaterial(materialId) {
   useForm({}).post(route('just-academy.my-training.materials.complete', [props.schedule.id, materialId]), {
-    onError: (e) => jaFormErrors(e),
-  });
-}
-
-function submitQuiz(quizId) {
-  quizAnswers.post(route('just-academy.my-training.quizzes.submit', [props.schedule.id, quizId]), {
     onError: (e) => jaFormErrors(e),
   });
 }
@@ -28,10 +22,6 @@ function submitFeedback() {
   feedbackForm.post(route('just-academy.my-training.feedback', props.schedule.id), {
     onError: (e) => jaFormErrors(e),
   });
-}
-
-function setAnswer(questionId, optionId) {
-  quizAnswers.answers[questionId] = optionId;
 }
 </script>
 
@@ -60,16 +50,14 @@ function setAnswer(questionId, optionId) {
         <div v-else-if="item.item_type === 'quiz'" :class="[jaUi.card, jaUi.cardBody]">
           <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Langkah {{ index + 1 }} · Quiz</p>
           <h2 class="mb-2 font-semibold text-slate-800">{{ item.title }}</h2>
+          <p v-if="item.time_limit?.mode === 'quiz'" class="mb-2 text-xs text-amber-700">
+            Batas waktu: {{ item.time_limit.quiz_minutes }} menit (total quiz)
+          </p>
+          <p v-else-if="item.time_limit?.mode === 'question'" class="mb-2 text-xs text-amber-700">
+            Batas waktu: {{ item.time_limit.question_seconds }} detik per soal
+          </p>
           <p v-if="item.attempt" class="mb-4 text-sm text-slate-600">Nilai: {{ item.attempt.score }} — {{ item.attempt.passed ? 'Lulus' : 'Belum lulus' }}</p>
-          <template v-else>
-            <div v-for="q in item.questions" :key="q.id" class="mb-4">
-              <p class="mb-2 font-medium text-slate-800">{{ q.question }}</p>
-              <label v-for="opt in q.options" :key="opt.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
-                <input type="radio" :name="'q'+q.id" class="text-indigo-600" @change="setAnswer(q.id, opt.id)" /> {{ opt.option_text }}
-              </label>
-            </div>
-            <button type="button" :class="jaUi.btnPrimary" @click="submitQuiz(item.id)">Kirim Quiz</button>
-          </template>
+          <JaQuizTaking v-else :item="item" :schedule-id="schedule.id" />
         </div>
       </template>
     </div>

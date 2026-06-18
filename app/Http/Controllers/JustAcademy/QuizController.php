@@ -8,6 +8,7 @@ use App\Models\JustAcademy\JaQuizOption;
 use App\Models\JustAcademy\JaQuizQuestion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class QuizController extends Controller
@@ -40,7 +41,10 @@ class QuizController extends Controller
             $quiz = JaQuiz::create([
                 'title' => $validated['title'],
                 'pass_score' => $validated['pass_score'],
-                'time_limit_min' => $validated['time_limit_min'] ?? null,
+                ...$this->timeLimitAttributes($validated),
+                'questions_per_attempt' => $validated['questions_per_attempt'] ?? null,
+                'randomize_questions' => $request->boolean('randomize_questions'),
+                'randomize_options' => $request->boolean('randomize_options'),
                 'is_active' => $request->boolean('is_active', true),
                 'created_by' => $request->user()->id,
             ]);
@@ -68,7 +72,10 @@ class QuizController extends Controller
             $quiz->update([
                 'title' => $validated['title'],
                 'pass_score' => $validated['pass_score'],
-                'time_limit_min' => $validated['time_limit_min'] ?? null,
+                ...$this->timeLimitAttributes($validated),
+                'questions_per_attempt' => $validated['questions_per_attempt'] ?? null,
+                'randomize_questions' => $request->boolean('randomize_questions'),
+                'randomize_options' => $request->boolean('randomize_options'),
                 'is_active' => $request->boolean('is_active', true),
             ]);
 
@@ -101,10 +108,15 @@ class QuizController extends Controller
 
     private function validateQuiz(Request $request): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'title' => 'required|string|max:255',
             'pass_score' => 'required|numeric|min:0|max:100',
-            'time_limit_min' => 'nullable|integer|min:1',
+            'time_limit_mode' => 'required|in:none,quiz,question',
+            'time_limit_min' => 'nullable|integer|min:1|required_if:time_limit_mode,quiz',
+            'time_limit_question_sec' => 'nullable|integer|min:5|max:3600|required_if:time_limit_mode,question',
+            'questions_per_attempt' => 'nullable|integer|min:1',
+            'randomize_questions' => 'boolean',
+            'randomize_options' => 'boolean',
             'is_active' => 'boolean',
             'questions' => 'required|array|min:1',
             'questions.*.question' => 'required|string',
@@ -114,6 +126,28 @@ class QuizController extends Controller
             'questions.*.options.*.option_text' => 'required_with:questions.*.options|string|max:500',
             'questions.*.options.*.is_correct' => 'boolean',
         ]);
+
+        if (
+            !empty($validated['questions_per_attempt'])
+            && $validated['questions_per_attempt'] > count($validated['questions'])
+        ) {
+            throw ValidationException::withMessages([
+                'questions_per_attempt' => 'Jumlah soal per tes tidak boleh melebihi total pertanyaan di bank (' . count($validated['questions']) . ').',
+            ]);
+        }
+
+        return $validated;
+    }
+
+    private function timeLimitAttributes(array $validated): array
+    {
+        $mode = $validated['time_limit_mode'] ?? 'none';
+
+        return [
+            'time_limit_mode' => $mode,
+            'time_limit_min' => $mode === 'quiz' ? ($validated['time_limit_min'] ?? null) : null,
+            'time_limit_question_sec' => $mode === 'question' ? ($validated['time_limit_question_sec'] ?? null) : null,
+        ];
     }
 
     private function syncQuestions(JaQuiz $quiz, array $questions): void

@@ -15,6 +15,11 @@ class JaQuiz extends Model
         'title',
         'pass_score',
         'time_limit_min',
+        'time_limit_mode',
+        'time_limit_question_sec',
+        'questions_per_attempt',
+        'randomize_questions',
+        'randomize_options',
         'is_active',
         'created_by',
     ];
@@ -22,6 +27,10 @@ class JaQuiz extends Model
     protected $casts = [
         'pass_score' => 'decimal:2',
         'time_limit_min' => 'integer',
+        'time_limit_question_sec' => 'integer',
+        'questions_per_attempt' => 'integer',
+        'randomize_questions' => 'boolean',
+        'randomize_options' => 'boolean',
         'is_active' => 'boolean',
     ];
 
@@ -38,5 +47,14 @@ class JaQuiz extends Model
     public function programItems(): HasMany
     {
         return $this->hasMany(JaProgramItem::class, 'quiz_id');
+    }
+
+    public function effectiveTimeLimitMode(): string
+    {
+        if (!empty($this->time_limit_mode) && $this->time_limit_mode !== 'none') {
+            return $this->time_limit_mode;
+        }
+
+        return $this->time_limit_min ? 'quiz' : 'none';
     }
 }

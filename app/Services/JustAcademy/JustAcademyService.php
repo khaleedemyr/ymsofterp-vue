@@ -250,11 +250,38 @@ class JustAcademyService
 
             if ($item->item_type === 'quiz' && $item->quiz) {
                 $quiz = $item->quiz;
-                $attempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+                $submittedAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
                     ->where('quiz_id', $quiz->id)
                     ->where('user_id', $userId)
+                    ->whereNotNull('submitted_at')
                     ->latest('id')
                     ->first();
+
+                $poolSize = $quiz->questions->count();
+
+                if ($submittedAttempt) {
+                    return [
+                        'item_type' => 'quiz',
+                        'id' => $quiz->id,
+                        'title' => $quiz->title,
+                        'pass_score' => $quiz->pass_score,
+                        'is_required' => $item->is_required,
+                        'question_pool_size' => $poolSize,
+                        'questions_shown' => count($submittedAttempt->question_ids ?? []),
+                        'randomize_questions' => $quiz->randomize_questions,
+                        'randomize_options' => $quiz->randomize_options,
+                        'time_limit' => $this->buildQuizTimePayload($quiz),
+                        'attempt' => [
+                            'score' => $submittedAttempt->score,
+                            'passed' => $submittedAttempt->passed,
+                            'submitted_at' => $submittedAttempt->submitted_at,
+                        ],
+                        'questions' => [],
+                    ];
+                }
+
+                $openAttempt = $this->ensureOpenQuizAttempt($schedule, $quiz, $userId);
+                $questions = $this->resolveQuestionsByIds($quiz, $openAttempt->question_ids ?? []);
 
                 return [
                     'item_type' => 'quiz',
@@ -262,12 +289,17 @@ class JustAcademyService
                     'title' => $quiz->title,
                     'pass_score' => $quiz->pass_score,
                     'is_required' => $item->is_required,
-                    'attempt' => $attempt ? [
-                        'score' => $attempt->score,
-                        'passed' => $attempt->passed,
-                        'submitted_at' => $attempt->submitted_at,
-                    ] : null,
-                    'questions' => $quiz->questions,
+                    'question_pool_size' => $poolSize,
+                    'questions_shown' => count($questions),
+                    'randomize_questions' => $quiz->randomize_questions,
+                    'randomize_options' => $quiz->randomize_options,
+                    'time_limit' => $this->buildQuizTimePayload($quiz),
+                    'session' => [
+                        'started_at' => $openAttempt->started_at?->toIso8601String(),
+                        'quiz_progress' => $openAttempt->quiz_progress,
+                    ],
+                    'attempt' => null,
+                    'questions' => $this->formatQuestionsForParticipant($questions, $openAttempt->option_orders ?? []),
                 ];
             }
 
@@ -301,19 +333,24 @@ class JustAcademyService
             throw ValidationException::withMessages(['quiz' => 'Quiz tidak sesuai program jadwal.']);
         }
 
-        $questions = $quiz->questions()->with('options')->get();
+        $attempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if (!$attempt) {
+            throw ValidationException::withMessages(['quiz' => 'Sesi quiz tidak aktif. Muat ulang halaman training.']);
+        }
+
+        $questionIds = $attempt->question_ids ?? [];
+        $questions = $this->resolveQuestionsByIds($quiz, $questionIds);
+        $this->assertAttemptWithinTimeLimit($quiz, $attempt, $questions->count());
         $totalPoints = max(1, (float) $questions->sum('points'));
         $earned = 0.0;
 
-        return DB::transaction(function () use ($schedule, $quiz, $userId, $answers, $questions, $totalPoints, &$earned) {
-            $attempt = JaQuizAttempt::create([
-                'schedule_id' => $schedule->id,
-                'quiz_id' => $quiz->id,
-                'user_id' => $userId,
-                'started_at' => now(),
-                'submitted_at' => now(),
-            ]);
-
+        return DB::transaction(function () use ($attempt, $answers, $questions, $totalPoints, $quiz, &$earned) {
             foreach ($questions as $question) {
                 $payload = $answers[$question->id] ?? $answers[(string) $question->id] ?? null;
                 $optionId = null;
@@ -347,11 +384,230 @@ class JustAcademyService
             $passed = $score >= (float) $quiz->pass_score;
 
             $attempt->update([
+                'submitted_at' => now(),
                 'score' => $score,
                 'passed' => $passed,
             ]);
 
             return $attempt->fresh('answers');
         });
+    }
+
+    public function pickQuestionIds(JaQuiz $quiz): array
+    {
+        $ordered = $quiz->questions()->orderBy('sort_order')->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if ($ordered === []) {
+            return [];
+        }
+
+        $perAttempt = $quiz->questions_per_attempt;
+        $want = ($perAttempt !== null && $perAttempt > 0)
+            ? min((int) $perAttempt, count($ordered))
+            : count($ordered);
+
+        if ($quiz->randomize_questions) {
+            $pool = $ordered;
+            shuffle($pool);
+            $ids = array_slice($pool, 0, $want);
+            shuffle($ids);
+        } else {
+            $ids = array_slice($ordered, 0, $want);
+        }
+
+        return array_values($ids);
+    }
+
+    public function ensureOpenQuizAttempt(JaSchedule $schedule, JaQuiz $quiz, int $userId): JaQuizAttempt
+    {
+        $existing = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if ($existing) {
+            $updates = [];
+
+            if (empty($existing->question_ids)) {
+                $updates['question_ids'] = $this->pickQuestionIds($quiz);
+            }
+
+            if ($quiz->randomize_options && empty($existing->option_orders)) {
+                $questionIds = $updates['question_ids'] ?? $existing->question_ids ?? [];
+                $questions = $this->resolveQuestionsByIds($quiz, $questionIds);
+                $updates['option_orders'] = $this->pickOptionOrders($quiz, $questions);
+            }
+
+            if ($quiz->effectiveTimeLimitMode() === 'question' && empty($existing->quiz_progress)) {
+                $updates['quiz_progress'] = $this->initialQuizProgress();
+            }
+
+            if ($updates !== []) {
+                $existing->update($updates);
+                $existing->refresh();
+            }
+
+            return $existing;
+        }
+
+        $questionIds = $this->pickQuestionIds($quiz);
+        $questions = $this->resolveQuestionsByIds($quiz, $questionIds);
+
+        return JaQuizAttempt::create([
+            'schedule_id' => $schedule->id,
+            'quiz_id' => $quiz->id,
+            'user_id' => $userId,
+            'started_at' => now(),
+            'question_ids' => $questionIds,
+            'option_orders' => $this->pickOptionOrders($quiz, $questions) ?: null,
+            'quiz_progress' => $quiz->effectiveTimeLimitMode() === 'question'
+                ? $this->initialQuizProgress()
+                : null,
+        ]);
+    }
+
+    public function syncQuizProgress(JaSchedule $schedule, JaQuiz $quiz, int $userId, int $currentIndex): JaQuizAttempt
+    {
+        $this->ensureParticipant($schedule, $userId);
+
+        if ($quiz->effectiveTimeLimitMode() !== 'question') {
+            throw ValidationException::withMessages(['quiz' => 'Quiz ini tidak memakai mode waktu per soal.']);
+        }
+
+        $attempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if (!$attempt) {
+            throw ValidationException::withMessages(['quiz' => 'Sesi quiz tidak aktif.']);
+        }
+
+        $maxIndex = max(0, count($attempt->question_ids ?? []) - 1);
+        $currentIndex = min(max(0, $currentIndex), $maxIndex);
+
+        $attempt->update([
+            'quiz_progress' => [
+                'current_index' => $currentIndex,
+                'question_started_at' => now()->toIso8601String(),
+            ],
+        ]);
+
+        return $attempt->fresh();
+    }
+
+    private function initialQuizProgress(): array
+    {
+        return [
+            'current_index' => 0,
+            'question_started_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function buildQuizTimePayload(JaQuiz $quiz): array
+    {
+        $mode = $quiz->effectiveTimeLimitMode();
+
+        return [
+            'mode' => $mode,
+            'quiz_minutes' => $mode === 'quiz' ? $quiz->time_limit_min : null,
+            'question_seconds' => $mode === 'question' ? $quiz->time_limit_question_sec : null,
+        ];
+    }
+
+    private function assertAttemptWithinTimeLimit(JaQuiz $quiz, JaQuizAttempt $attempt, int $questionCount): void
+    {
+        if (!$attempt->started_at) {
+            return;
+        }
+
+        $mode = $quiz->effectiveTimeLimitMode();
+        $elapsed = $attempt->started_at->diffInSeconds(now());
+
+        if ($mode === 'quiz' && $quiz->time_limit_min) {
+            $maxSeconds = ((int) $quiz->time_limit_min * 60) + 15;
+            if ($elapsed > $maxSeconds) {
+                throw ValidationException::withMessages(['quiz' => 'Waktu quiz sudah habis.']);
+            }
+
+            return;
+        }
+
+        if ($mode === 'question' && $quiz->time_limit_question_sec && $questionCount > 0) {
+            $maxSeconds = ((int) $quiz->time_limit_question_sec * $questionCount) + 30;
+            if ($elapsed > $maxSeconds) {
+                throw ValidationException::withMessages(['quiz' => 'Waktu quiz sudah habis.']);
+            }
+        }
+    }
+
+    public function pickOptionOrders(JaQuiz $quiz, Collection $questions): array
+    {
+        if (!$quiz->randomize_options) {
+            return [];
+        }
+
+        $orders = [];
+        foreach ($questions as $question) {
+            if ($question->type !== 'mcq') {
+                continue;
+            }
+
+            $optionIds = $question->options->sortBy('sort_order')->pluck('id')->map(fn ($id) => (int) $id)->all();
+            if (count($optionIds) < 2) {
+                continue;
+            }
+
+            shuffle($optionIds);
+            $orders[(string) $question->id] = $optionIds;
+        }
+
+        return $orders;
+    }
+
+    private function resolveQuestionsByIds(JaQuiz $quiz, array $questionIds): Collection
+    {
+        if ($questionIds === []) {
+            return collect();
+        }
+
+        $loaded = $quiz->relationLoaded('questions')
+            ? $quiz->questions
+            : $quiz->questions()->with('options')->get();
+
+        return collect($questionIds)
+            ->map(fn ($id) => $loaded->firstWhere('id', (int) $id))
+            ->filter()
+            ->values();
+    }
+
+    private function formatQuestionsForParticipant(Collection $questions, array $optionOrders = []): array
+    {
+        return $questions->map(function ($question) use ($optionOrders) {
+            $options = $question->options;
+            $order = $optionOrders[(string) $question->id] ?? $optionOrders[$question->id] ?? null;
+
+            if (is_array($order) && $order !== []) {
+                $options = collect($order)
+                    ->map(fn ($optionId) => $options->firstWhere('id', (int) $optionId))
+                    ->filter();
+            } else {
+                $options = $options->sortBy('sort_order');
+            }
+
+            return [
+                'id' => $question->id,
+                'question' => $question->question,
+                'type' => $question->type,
+                'points' => $question->points,
+                'options' => $options->map(fn ($option) => [
+                    'id' => $option->id,
+                    'option_text' => $option->option_text,
+                ])->values()->all(),
+            ];
+        })->values()->all();
     }
 }

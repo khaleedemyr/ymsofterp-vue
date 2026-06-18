@@ -80,6 +80,21 @@ class MyTrainingController extends Controller
         return back()->with('success', 'Quiz berhasil dikirim. Nilai: ' . $attempt->score);
     }
 
+    public function syncQuizProgress(Request $request, JaSchedule $schedule, int $quizId)
+    {
+        $quiz = JaQuiz::findOrFail($quizId);
+        $validated = $request->validate(['current_index' => 'required|integer|min:0']);
+
+        $this->service->syncQuizProgress(
+            $schedule,
+            $quiz,
+            (int) $request->user()->id,
+            (int) $validated['current_index'],
+        );
+
+        return back();
+    }
+
     public function submitFeedback(Request $request, JaSchedule $schedule)
     {
         $userId = (int) $request->user()->id;

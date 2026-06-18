@@ -40,7 +40,8 @@ async function remove(q) {
           <tr>
             <th :class="jaUi.th">Judul</th>
             <th :class="jaUi.th">Pass Score</th>
-            <th :class="jaUi.th">Pertanyaan</th>
+            <th :class="jaUi.th">Waktu</th>
+            <th :class="jaUi.th">Bank / Tes</th>
             <th :class="jaUi.th"></th>
           </tr>
         </thead>
@@ -48,14 +49,26 @@ async function remove(q) {
           <tr v-for="q in quizzes.data" :key="q.id" :class="jaUi.tr">
             <td :class="[jaUi.td, 'font-semibold text-slate-800']">{{ q.title }}</td>
             <td :class="jaUi.td">{{ q.pass_score }}%</td>
-            <td :class="jaUi.td">{{ q.questions_count }}</td>
+            <td :class="jaUi.td">
+              <span v-if="q.time_limit_mode === 'quiz' || (!q.time_limit_mode && q.time_limit_min)">{{ q.time_limit_min }} mnt</span>
+              <span v-else-if="q.time_limit_mode === 'question'">{{ q.time_limit_question_sec }} dtk/soal</span>
+              <span v-else class="text-slate-400">—</span>
+            </td>
+            <td :class="jaUi.td">
+              <span>{{ q.questions_count }} soal</span>
+              <span v-if="q.questions_per_attempt" class="text-slate-500">
+                · tampil {{ q.questions_per_attempt }}/tes
+              </span>
+              <span v-if="q.randomize_questions" class="ml-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">Acak soal</span>
+              <span v-if="q.randomize_options" class="ml-1 inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Acak opsi</span>
+            </td>
             <td :class="[jaUi.td, 'text-right space-x-4']">
               <Link :href="route('just-academy.quizzes.edit', q.id)" :class="jaUi.btnLink">Edit</Link>
               <button type="button" :class="jaUi.btnDanger" @click="remove(q)">Hapus</button>
             </td>
           </tr>
           <tr v-if="!quizzes.data?.length">
-            <td colspan="4" :class="jaUi.empty">Belum ada quiz.</td>
+            <td colspan="5" :class="jaUi.empty">Belum ada quiz.</td>
           </tr>
         </tbody>
       </table>
