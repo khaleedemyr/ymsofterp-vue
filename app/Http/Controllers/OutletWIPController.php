@@ -1035,6 +1035,14 @@ class OutletWIPController extends Controller
                     'created_at' => now(),
                 ]);
 
+                app(\App\Services\StockCutVarianceService::class)->closeAfterOutletWipItemIn(
+                    (int) $item_id,
+                    (int) $prodInventoryItemId,
+                    (int) $outlet_id,
+                    (int) $warehouse_outlet_id,
+                    (int) $id
+                );
+
                 $this->insertWipProductionCostHistory(
                     $prodInventoryItemId,
                     $outlet_id,
@@ -1509,6 +1517,14 @@ class OutletWIPController extends Controller
                     'description' => 'Hasil produksi WIP ' . $qty_produksi . ' x ' . $item_id,
                     'created_at' => now(),
                 ]);
+
+                app(\App\Services\StockCutVarianceService::class)->closeAfterOutletWipItemIn(
+                    (int) $item_id,
+                    (int) $prodInventoryItemId,
+                    (int) $outlet_id,
+                    (int) $warehouse_outlet_id,
+                    (int) $headerId
+                );
 
                 $this->insertWipProductionCostHistory(
                     $prodInventoryItemId,

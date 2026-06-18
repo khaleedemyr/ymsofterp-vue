@@ -2250,7 +2250,12 @@ Route::get('/stock-cut/menu-cost', function () {
     return Inertia::render('StockCut/MenuCost');
 })->middleware(['auth', 'verified'])->name('stock-cut.menu-cost');
 
+Route::get('/stock-cut/variance-report', function () {
+    return Inertia::render('StockCut/VarianceReport');
+})->middleware(['auth', 'verified'])->name('stock-cut.variance-report');
+
 Route::get('/api/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
+Route::get('/api/stock-cut/variance-report', [\App\Http\Controllers\StockCutController::class, 'getVarianceReport']);
 Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
 Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
 Route::get('/stock-cut/recipe-checker', [\App\Http\Controllers\RecipeCheckerController::class, 'index'])

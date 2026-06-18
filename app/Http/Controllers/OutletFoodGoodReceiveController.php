@@ -1356,6 +1356,15 @@ class OutletFoodGoodReceiveController extends Controller
                     ]);
                 }
 
+                app(\App\Services\StockCutVarianceService::class)->closeOpenIfStockNonNegative(
+                    (int) $inventoryItemId,
+                    (int) $gr->outlet_id,
+                    (int) $gr->warehouse_outlet_id,
+                    'grn',
+                    'good_receive_outlet',
+                    (int) $gr->id
+                );
+
                 $saldo = OutletFoodInventorySaldo::fromStockQty($newQtySmall, $newQtyMedium, $newQtyLarge, $newValue);
 
                 // Insert kartu stok (stock in)

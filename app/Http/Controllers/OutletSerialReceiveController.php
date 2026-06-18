@@ -1087,6 +1087,13 @@ class OutletSerialReceiveController extends Controller
             ]);
         }
 
+        app(\App\Services\StockCutVarianceService::class)->closeAfterSerialReceiveIn(
+            (int) $inventoryItemId,
+            (int) $outletId,
+            (int) $warehouseOutletId,
+            (int) $headerId
+        );
+
         $lastCard = DB::table('outlet_food_inventory_cards')
             ->where('inventory_item_id', $inventoryItemId)
             ->where('id_outlet', $outletId)

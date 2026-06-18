@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use App\Models\StockCutLog;
 use App\Models\Outlet;
+use App\Services\StockCutVarianceService;
 
 class StockCutController extends Controller
 {
@@ -449,30 +450,13 @@ class StockCutController extends Controller
                 );
             }
         }
-        if (count($kurang) > 0) {
-            // Catat log error stock cut
-            // Normalize type_filter: 'all' atau null berarti "Semua" (disimpan sebagai null)
-            $normalizedTypeFilterForSave = ($type_filter && $type_filter !== 'all') ? $type_filter : null;
-            
-            StockCutLog::updateOrCreate(
-                [
-                    'outlet_id' => $id_outlet,
-                    'tanggal' => $tanggal,
-                    'type_filter' => $normalizedTypeFilterForSave
-                ],
-                [
-                    'total_items_cut' => 0,
-                    'total_modifiers_cut' => 0,
-                    'status' => 'failed',
-                    'error_message' => 'Stock tidak cukup untuk beberapa item',
-                    'created_by' => auth()->id()
-                ]
-            );
-            
-            $this->putStockCutProgress($progressKey, 'failed', 'Stock tidak cukup untuk beberapa item', 100, [
-                'total_kurang' => count($kurang),
+        $shortfallPreview = count($kurang);
+        if ($shortfallPreview > 0) {
+            $this->putStockCutProgress($progressKey, 'running', "Ada {$shortfallPreview} item kurang — akan dipotong dengan qty minus", 55, [
+                'phase' => 'stock_validation',
+                'total_kurang' => $shortfallPreview,
+                'allow_negative' => true,
             ]);
-            return response()->json(['status' => 'error', 'kurang' => $kurang]);
         }
 
         // Debug: Log struktur kebutuhanBahan
@@ -506,8 +490,10 @@ class StockCutController extends Controller
         ]);
         // Simpan detail stock cut untuk insert ke stock_cut_details
         $stockCutDetails = [];
+        $varianceRows = [];
         $totalKebutuhan = count($kebutuhanBahan);
         $processedKebutuhan = 0;
+        $varianceService = app(StockCutVarianceService::class);
 
         foreach ($kebutuhanBahan as $key => $data) {
             // Handle struktur data baru dengan unit
@@ -561,33 +547,19 @@ class StockCutController extends Controller
             $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
             $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
             
-            // Cek stock sebelum dipotong
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $id_outlet)
-                ->where('warehouse_outlet_id', $warehouse_id)
-                ->first();
-                
-            if (!$stock) {
-                \Log::warning('Stock tidak ditemukan', [
+            $stock = $this->ensureOutletStockRowForCut($inventory_item_id, $id_outlet, $warehouse_id);
+            if (! $stock) {
+                \Log::warning('Stock row tidak dapat dibuat', [
                     'inventory_item_id' => $inventory_item_id,
                     'outlet_id' => $id_outlet,
-                    'warehouse_id' => $warehouse_id
+                    'warehouse_id' => $warehouse_id,
                 ]);
                 continue;
             }
-            
-            // Cek apakah stock cukup
-            if ($qty_small > $stock->qty_small) {
-                \Log::error("Qty melebihi stok yang tersedia", [
-                    'item_id' => $item_id,
-                    'qty_needed' => $qty_small,
-                    'stock_available' => $stock->qty_small,
-                    'unit' => $unitSmall
-                ]);
-                continue;
-            }
-                
+
+            $qty_available_before = (float) $stock->qty_small;
+            $qty_shortfall = max(0, $qty_small - $qty_available_before);
+
             \Log::info('Stock sebelum dipotong', [
                 'inventory_item_id' => $inventory_item_id,
                 'stock_before_small' => $stock->qty_small,
@@ -650,9 +622,31 @@ class StockCutController extends Controller
                 'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
                 'saldo_qty_large' => $stock->qty_large - $qty_large,
                 'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
-                'description' => 'Stock Out - Potong stock otomatis dari order_items',
+                'description' => $qty_shortfall > 0
+                    ? 'Stock Out - Potong stock otomatis (qty minus ' . $qty_shortfall . ')'
+                    : 'Stock Out - Potong stock otomatis dari order_items',
                 'created_at' => now(),
             ]);
+
+            if ($qty_shortfall > 0) {
+                $varianceRows[] = [
+                    'stock_cut_log_id' => $stockCutLog->id,
+                    'outlet_id' => $id_outlet,
+                    'warehouse_outlet_id' => $warehouse_id,
+                    'inventory_item_id' => $inventory_item_id,
+                    'item_id' => $item_id,
+                    'tanggal' => $tanggal,
+                    'type_filter' => $normalizedTypeFilterForSave,
+                    'qty_needed' => $qty_small,
+                    'qty_available_before' => $qty_available_before,
+                    'qty_shortfall' => $qty_shortfall,
+                    'qty_after' => $new_qty_small,
+                    'cost_per_small' => (float) $stock->last_cost_small,
+                    'value_booked' => $qty_small * (float) $stock->last_cost_small,
+                    'shortfall_value_info' => $qty_shortfall * (float) $stock->last_cost_small,
+                    'executed_by' => auth()->id(),
+                ];
+            }
             
             // Simpan detail untuk insert ke stock_cut_details
             $stockCutDetails[] = [
@@ -759,12 +753,28 @@ class StockCutController extends Controller
             DB::table('stock_cut_details')->insert($stockCutDetails);
         }
 
+        foreach ($varianceRows as $varianceRow) {
+            $varianceService->recordVariance($varianceRow);
+        }
+
         $this->putStockCutProgress($progressKey, 'success', 'Potong stock berhasil', 100, [
             'phase' => 'completed',
             'total_items_cut' => $totalItemsCut,
             'total_modifiers_cut' => $totalModifiersCut,
+            'total_variance_items' => count($varianceRows),
         ]);
-        return response()->json(['status' => 'success', 'message' => 'Potong stock berhasil']);
+
+        $message = 'Potong stock berhasil';
+        if (count($varianceRows) > 0) {
+            $message .= ' (' . count($varianceRows) . ' item dengan qty minus — tercatat di laporan minus)';
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $message,
+            'total_variance_items' => count($varianceRows),
+            'had_negative_stock' => count($varianceRows) > 0,
+        ]);
     }
 
     /**
@@ -1275,7 +1285,8 @@ class StockCutController extends Controller
                 'kebutuhan' => $kebutuhanSmall,
                 'stock_tersedia' => $stockTersediaSmall,
                 'selisih' => $selisihSmall,
-                'status' => $selisihSmall > 0 ? 'kurang' : 'cukup',
+                'status' => $selisihSmall > 0 ? 'minus' : 'cukup',
+                'will_go_negative' => $selisihSmall > 0,
                 'contributing_menus' => $aggregatedData['contributing_menus'],
                 // Konversi unit - Small
                 'kebutuhan_small' => $kebutuhanSmall,
@@ -1311,7 +1322,10 @@ class StockCutController extends Controller
             'laporan_stock' => $laporanStock,
             'total_item_dicek' => count($laporanStock),
             'total_kurang' => $totalKurang,
-            'total_cukup' => count($laporanStock) - $totalKurang
+            'total_minus' => $totalKurang,
+            'total_cukup' => count($laporanStock) - $totalKurang,
+            'allow_negative' => true,
+            'can_cut' => count($laporanStock) > 0,
         ]);
     }
 
@@ -1738,6 +1752,7 @@ class StockCutController extends Controller
 
             // Hapus detail stock cut untuk menjaga konsistensi data
             DB::table('stock_cut_details')->where('stock_cut_log_id', $id)->delete();
+            app(StockCutVarianceService::class)->deleteByStockCutLogId((int) $id);
 
             // Ambil qr_code dari tbl_data_outlet untuk rollback
             $qr_code = DB::table('tbl_data_outlet')->where('id_outlet', $id_outlet)->value('qr_code');
@@ -2517,6 +2532,160 @@ class StockCutController extends Controller
             'outlet_id' => $id_outlet
         ]);
     }
+    /**
+     * API: Laporan qty minus stock cut
+     */
+    public function getVarianceReport(Request $request)
+    {
+        if (! \Schema::hasTable('stock_cut_variances')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tabel stock_cut_variances belum ada. Jalankan database/sql/create_stock_cut_variances.sql',
+            ], 503);
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        $perPage = max(1, min(100, (int) $request->input('per_page', 25)));
+        $page = max(1, (int) $request->input('page', 1));
+        $status = $request->input('status');
+        $outletId = $request->input('outlet_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        $query = DB::table('stock_cut_variances as scv')
+            ->join('tbl_data_outlet as o', 'scv.outlet_id', '=', 'o.id_outlet')
+            ->join('items as i', 'scv.item_id', '=', 'i.id')
+            ->join('warehouse_outlets as w', 'scv.warehouse_outlet_id', '=', 'w.id')
+            ->leftJoin('users as u', 'scv.executed_by', '=', 'u.id')
+            ->leftJoin('stock_cut_logs as scl', 'scv.stock_cut_log_id', '=', 'scl.id')
+            ->leftJoin('users as uc', 'scv.closed_by', '=', 'uc.id')
+            ->select(
+                'scv.*',
+                'o.nama_outlet as outlet_name',
+                'i.name as item_name',
+                'w.name as warehouse_name',
+                'u.nama_lengkap as executed_by_name',
+                'uc.nama_lengkap as closed_by_name',
+                'scl.created_at as stock_cut_executed_at'
+            );
+
+        if ($user->id_outlet && (int) $user->id_outlet !== 1) {
+            $query->where('scv.outlet_id', $user->id_outlet);
+        } elseif ($outletId) {
+            $query->where('scv.outlet_id', $outletId);
+        }
+
+        if ($status && in_array($status, ['open', 'closed'], true)) {
+            $query->where('scv.status', $status);
+        }
+        if ($dateFrom) {
+            $query->whereDate('scv.tanggal', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('scv.tanggal', '<=', $dateTo);
+        }
+
+        $summaryOpen = (clone $query)->where('scv.status', 'open');
+        $summary = [
+            'total_open' => (clone $summaryOpen)->count(),
+            'total_open_shortfall_qty' => (float) ((clone $summaryOpen)->sum('scv.qty_shortfall') ?? 0),
+            'total_open_shortfall_value' => (float) ((clone $summaryOpen)->sum('scv.shortfall_value_info') ?? 0),
+        ];
+
+        $total = (clone $query)->count();
+        $rows = $query->orderByDesc('scv.created_at')
+            ->skip(($page - 1) * $perPage)
+            ->take($perPage)
+            ->get()
+            ->map(function ($row) {
+                $created = $row->created_at ? \Carbon\Carbon::parse($row->created_at) : null;
+                $row->age_hours = $created && $row->status === 'open'
+                    ? $created->diffInHours(now())
+                    : null;
+                $row->type_filter_label = $this->stockCutTypeFilterLabel($row->type_filter);
+                $row->closed_via_label = $this->stockCutVarianceClosedViaLabel($row->closed_via);
+                return $row;
+            });
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $rows,
+            'summary' => $summary,
+            'current_page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'last_page' => (int) ceil($total / $perPage),
+        ]);
+    }
+
+    private function stockCutTypeFilterLabel($typeFilter): string
+    {
+        if (! $typeFilter || $typeFilter === 'all') {
+            return 'Semua Type';
+        }
+        if ($typeFilter === 'food') {
+            return 'Food';
+        }
+        if ($typeFilter === 'beverages') {
+            return 'Beverages';
+        }
+
+        return (string) $typeFilter;
+    }
+
+    private function stockCutVarianceClosedViaLabel(?string $via): ?string
+    {
+        return match ($via) {
+            'grn' => 'Good Receive',
+            'serial_receive' => 'GR Nomor Seri',
+            'transfer_in' => 'Transfer Masuk',
+            'retail_food' => 'Retail Food',
+            'wip_production' => 'Produksi WIP',
+            'adjustment' => 'Adjustment',
+            'weekly_opname' => 'Stock Opname',
+            'rollback' => 'Rollback Stock Cut',
+            'other' => 'Lainnya',
+            default => $via,
+        };
+    }
+
+    /**
+     * Pastikan baris stok outlet ada (qty 0) agar bisa minus saat stock cut.
+     */
+    private function ensureOutletStockRowForCut(int $inventoryItemId, int $outletId, int $warehouseId): ?object
+    {
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseId)
+            ->first();
+
+        if ($stock) {
+            return $stock;
+        }
+
+        $id = DB::table('outlet_food_inventory_stocks')->insertGetId([
+            'inventory_item_id' => $inventoryItemId,
+            'id_outlet' => $outletId,
+            'warehouse_outlet_id' => $warehouseId,
+            'qty_small' => 0,
+            'qty_medium' => 0,
+            'qty_large' => 0,
+            'value' => 0,
+            'last_cost_small' => 0,
+            'last_cost_medium' => 0,
+            'last_cost_large' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return DB::table('outlet_food_inventory_stocks')->where('id', $id)->first();
+    }
+
     /**
      * Lookup item bahan baku kategori asset (is_asset=1) — tidak ikut stock cut food inventory.
      */

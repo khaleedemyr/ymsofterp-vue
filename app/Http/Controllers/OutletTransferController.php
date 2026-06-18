@@ -794,6 +794,13 @@ class OutletTransferController extends Controller
                     'created_at' => now(),
                 ]);
 
+                app(\App\Services\StockCutVarianceService::class)->closeAfterOutletTransferIn(
+                    (int) $inventory_item_id,
+                    (int) $warehouseTo->outlet_id,
+                    (int) $transfer->warehouse_outlet_to_id,
+                    (int) $transfer->id
+                );
+
                 // Insert cost history untuk warehouse outlet tujuan
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventory_item_id)
@@ -968,6 +975,13 @@ class OutletTransferController extends Controller
                 'description' => 'Stock In - Outlet Transfer (Serial: ' . $si->serial_number . ')',
                 'created_at' => now(),
             ]);
+
+            app(\App\Services\StockCutVarianceService::class)->closeAfterOutletTransferIn(
+                (int) $inventory_item_id,
+                (int) $warehouseTo->outlet_id,
+                (int) $transfer->warehouse_outlet_to_id,
+                (int) $transfer->id
+            );
 
             // Cost history
             $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
@@ -1817,6 +1831,13 @@ class OutletTransferController extends Controller
                     'description' => 'Stock In - Outlet Transfer',
                     'created_at' => now(),
                 ]);
+
+                app(\App\Services\StockCutVarianceService::class)->closeAfterOutletTransferIn(
+                    (int) $inventory_item_id,
+                    (int) $warehouseTo->outlet_id,
+                    (int) $validated['warehouse_outlet_to_id'],
+                    (int) $transfer->id
+                );
                 
                 // Insert cost history untuk warehouse outlet tujuan
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')

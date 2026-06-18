@@ -631,6 +631,7 @@ Route::prefix('approval-app')->group(function () {
         // Stock Cut (Approval App - Potong Stock)
         Route::get('/stock-cut/form-data', [\App\Http\Controllers\StockCutController::class, 'apiFormData']);
         Route::get('/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
+        Route::get('/stock-cut/variance-report', [\App\Http\Controllers\StockCutController::class, 'getVarianceReport']);
         Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
         Route::post('/stock-cut/status', [\App\Http\Controllers\StockCutController::class, 'status']);
         Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);

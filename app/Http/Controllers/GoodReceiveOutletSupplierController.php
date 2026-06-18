@@ -1127,6 +1127,15 @@ class GoodReceiveOutletSupplierController extends Controller
                                 'updated_at' => now(),
                             ]);
                         }
+
+                        app(\App\Services\StockCutVarianceService::class)->closeOpenIfStockNonNegative(
+                            (int) $inventoryItemId,
+                            (int) $floorOrder->id_outlet,
+                            (int) $floorOrder->warehouse_outlet_id,
+                            'grn',
+                            'good_receive_supplier',
+                            (int) $floorOrder->id
+                        );
                         
                         // Insert kartu stok
                         $lastCard = DB::table('outlet_food_inventory_cards')

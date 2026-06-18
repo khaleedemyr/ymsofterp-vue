@@ -9,6 +9,9 @@
           <Link :href="route('stock-cut.menu-cost')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
             <i class="fa-solid fa-calculator mr-1"></i> Report Cost Menu
           </Link>
+          <Link :href="route('stock-cut.variance-report')" class="bg-amber-600 text-white px-4 py-2 rounded hover:bg-amber-700 transition">
+            <i class="fa-solid fa-minus-circle mr-1"></i> Laporan Minus
+          </Link>
           <Link :href="route('stock-cut.index')" class="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
             <i class="fa-solid fa-list mr-1"></i> Log Stock Cut
           </Link>
@@ -220,7 +223,7 @@
               </button>
               <button v-if="bolehPotong && !isAlreadyCut" @click="potongStockAsync" :disabled="loadingPotong" class="ml-2 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
                 <span v-if="loadingPotong" class="animate-spin mr-2">⏳</span>
-                Potong Stock Sekarang (Queue)
+                Potong Stock Sekarang
               </button>
             </div>
           </div>
@@ -331,7 +334,10 @@
                                     <span v-if="item.status === 'cukup'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                       Cukup
                                     </span>
-                                    <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                    <span v-else-if="item.status === 'minus'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title="Akan dipotong dengan qty minus">
+                                      Minus
+                                    </span>
+                                    <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                       Kurang
                                     </span>
                                   </td>
@@ -426,8 +432,8 @@
                   <div class="text-2xl font-bold text-green-900">{{ laporanStock.filter(item => item.status === 'cukup').length }}</div>
                 </div>
                 <div class="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <div class="text-sm font-medium text-red-800">Stock Kurang</div>
-                  <div class="text-2xl font-bold text-red-900">{{ laporanStock.filter(item => item.status === 'kurang').length }}</div>
+                  <div class="text-sm font-medium text-red-800">Akan Minus (Qty)</div>
+                  <div class="text-2xl font-bold text-red-900">{{ laporanStock.filter(item => item.status === 'minus' || item.status === 'kurang').length }}</div>
                 </div>
               </div>
               
@@ -852,38 +858,32 @@ async function cekKebutuhan() {
       // Hanya tampilkan laporan stock jika ada data
       showLaporanStock.value = laporanStock.value.length > 0
 
-      const adaYangKurang = res.data.total_kurang > 0
+      const adaYangKurang = res.data.total_kurang > 0 || res.data.total_minus > 0
 
       if (laporanStock.value.length === 0) {
-        // Tidak ada laporan stock
         bolehPotong.value = false
         
-        // Cek apakah ada engineering data
         const hasEngineeringData = engineeringChecked.value && (
           Object.keys(engineering.value).length > 0 || 
           modifiers.value.length > 0
         )
         
         if (hasEngineeringData) {
-          // Ada engineering data tapi tidak ada laporan stock
-          // Kemungkinan semua order_items sudah dipotong (stock_cut = 1) atau tidak ada BOM
           if (missingBom.value.length > 0 || missingModifierBom.value.length > 0) {
             errorMsg.value = 'Tidak ada kebutuhan stock karena ada item/modifier yang belum punya BOM. Silakan lengkapi BOM terlebih dahulu sebelum melakukan stock cut.'
           } else {
-            errorMsg.value = 'Tidak ada order_items yang perlu dipotong stock. Kemungkinan semua item untuk type yang dipilih sudah dipotong sebelumnya. Silakan cek log stock cut atau coba dengan type yang berbeda.'
+            errorMsg.value = 'Tidak ada order_items yang perlu dipotong stock. Kemungkinan semua item untuk type yang dipilih sudah dipotong sebelumnya.'
           }
         } else {
-          // Tidak ada engineering data
-          errorMsg.value = res.data.message || 'Tidak ada kebutuhan stock untuk tanggal dan outlet yang dipilih. Silakan klik "Cek Engineering" terlebih dahulu untuk melihat data transaksi.'
+          errorMsg.value = res.data.message || 'Tidak ada kebutuhan stock untuk tanggal dan outlet yang dipilih. Silakan klik "Cek Engineering" terlebih dahulu.'
         }
-      } else if (!adaYangKurang) {
-        // Ada laporan stock dan stock cukup
-        bolehPotong.value = true
-        successMsg.value = 'Stock cukup, siap untuk potong stock!'
       } else {
-        // Ada laporan stock tapi stock kurang
-        bolehPotong.value = false
-        errorMsg.value = 'Stock kurang, tidak bisa potong stock!'
+        bolehPotong.value = true
+        if (adaYangKurang) {
+          successMsg.value = `Siap potong stock. ${res.data.total_minus || res.data.total_kurang} item akan qty minus (cost tetap full BOM, tercatat di Laporan Minus).`
+        } else {
+          successMsg.value = 'Stock cukup, siap untuk potong stock!'
+        }
       }
     } else {
       errorMsg.value = res.data.message || 'Terjadi kesalahan saat memeriksa kebutuhan stock.'
@@ -933,6 +933,9 @@ async function potongStockAsync() {
     })
     if (res.data.status === 'success') {
       successMsg.value = res.data.message || 'Potong stock berhasil.'
+      if (res.data.had_negative_stock) {
+        successMsg.value += ' Lihat Laporan Minus untuk detail qty minus.'
+      }
       bolehPotong.value = false
       // Refresh stock cut status setelah berhasil
       await cekStockCutStatus()

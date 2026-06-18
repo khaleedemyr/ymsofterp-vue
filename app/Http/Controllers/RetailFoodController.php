@@ -487,6 +487,13 @@ class RetailFoodController extends Controller
                         'updated_at' => now(),
                     ]);
                 }
+
+                app(\App\Services\StockCutVarianceService::class)->closeAfterRetailFoodIn(
+                    (int) $inventoryItemId,
+                    (int) $request->outlet_id,
+                    (int) $request->warehouse_outlet_id,
+                    (int) $retailFood->id
+                );
                 
                 // 6. Hitung saldo kartu stok (stock card) - Mengikuti pola Good Receive Outlet Food
                 $lastCard = DB::table('outlet_food_inventory_cards')

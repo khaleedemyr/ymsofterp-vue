@@ -167,6 +167,7 @@ export default {
     "stock_opname": "Stock Opname",
     "report_invoice_outlet": "Laporan Invoice Outlet",
     "stock_cut": "Stock Cut",
+    "stock_cut_variance_report": "Laporan Minus Stock Cut",
     "outlet_wip_production": "Produksi WIP Outlet",
     "laporan_outlet_wip": "Laporan WIP Outlet",
     "sales_report": "Laporan Penjualan",

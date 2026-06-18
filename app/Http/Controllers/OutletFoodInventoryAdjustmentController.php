@@ -1765,6 +1765,17 @@ class OutletFoodInventoryAdjustmentController extends Controller
         }
         $stock->save();
 
+        if ($isIn && ! $reverse) {
+            app(\App\Services\StockCutVarianceService::class)->closeOpenIfStockNonNegative(
+                $inventoryItemId,
+                (int) $adj->id_outlet,
+                (int) $warehouseOutletId,
+                'adjustment',
+                'inventory_adjustment',
+                (int) $adj->id
+            );
+        }
+
         if (!$reverse) {
             $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                 ->where('inventory_item_id', $inventoryItemId)

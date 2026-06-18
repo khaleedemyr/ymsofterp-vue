@@ -535,6 +535,12 @@ const menuGroups = [
                 code: 'recipe_checker',
             },
             {
+                name: () => t('sidebar.menus.stock_cut_variance_report'),
+                icon: 'fa-solid fa-minus-circle',
+                route: '/stock-cut/variance-report',
+                code: 'stock_cut_variance_report',
+            },
+            {
                 name: () => t('sidebar.menus.report_rekap_diskon'),
                 icon: 'fa-solid fa-tags',
                 route: '/report-rekap-diskon',

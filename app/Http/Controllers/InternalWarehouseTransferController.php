@@ -441,6 +441,13 @@ class InternalWarehouseTransferController extends Controller
                     'created_at' => now(),
                 ]);
 
+                app(\App\Services\StockCutVarianceService::class)->closeAfterInternalWarehouseTransferIn(
+                    (int) $inventory_item_id,
+                    (int) $validated['outlet_id'],
+                    (int) $validated['warehouse_outlet_to_id'],
+                    (int) $transfer->id
+                );
+
                 // Insert cost history untuk warehouse outlet tujuan
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventory_item_id)
@@ -1079,6 +1086,13 @@ class InternalWarehouseTransferController extends Controller
                     'description' => 'Stock In - Internal Warehouse Transfer',
                     'created_at' => now(),
                 ]);
+
+                app(\App\Services\StockCutVarianceService::class)->closeAfterInternalWarehouseTransferIn(
+                    (int) $inventory_item_id,
+                    (int) $warehouseTo->outlet_id,
+                    (int) $validated['warehouse_outlet_to_id'],
+                    (int) $transfer->id
+                );
                 
                 // Insert cost history untuk warehouse outlet tujuan
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
@@ -1397,6 +1411,13 @@ class InternalWarehouseTransferController extends Controller
                 'description' => 'Stock In - IWT Serial: ' . $si['serial_number'],
                 'created_at' => now(),
             ]);
+
+            app(\App\Services\StockCutVarianceService::class)->closeAfterInternalWarehouseTransferIn(
+                (int) $inventory_item_id,
+                (int) $outletId,
+                (int) $warehouseToId,
+                (int) $transfer->id
+            );
 
             // Cost history for destination
             DB::table('outlet_food_inventory_cost_histories')->insert([

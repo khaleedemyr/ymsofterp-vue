@@ -2589,6 +2589,15 @@ class StockOpnameController extends Controller
                 'updated_at' => now(),
             ]);
 
+        app(\App\Services\StockCutVarianceService::class)->closeOpenIfStockNonNegative(
+            $inventoryItemId,
+            $outletId,
+            $warehouseOutletId,
+            'weekly_opname',
+            'stock_opname',
+            (int) $stockOpname->id
+        );
+
         $saldo = OutletFoodInventorySaldo::fromStockQty($newQtySmall, $newQtyMedium, $newQtyLarge, $newValue);
 
         DB::table('outlet_food_inventory_cards')->insert([
