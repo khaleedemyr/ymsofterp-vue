@@ -2,7 +2,8 @@
 import { ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
-import AppLayout from '@/Layouts/AppLayout.vue';
+import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import { jaUi } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ programs: Object, filters: Object });
 const search = ref(props.filters?.search || '');
@@ -19,49 +20,48 @@ watch(status, debounced);
 </script>
 
 <template>
-  <AppLayout title="Programs — Just Academy">
-    <div class="max-w-[100rem] w-full mx-auto py-8 px-2">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Programs</h1>
-        <Link :href="route('just-academy.programs.create')" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold">+ Program Baru</Link>
-      </div>
+  <JaLayout title="Programs" subtitle="Susun curriculum dari materi & quiz" icon="fa-solid fa-book-open">
+    <template #actions>
+      <Link :href="route('just-academy.programs.create')" :class="jaUi.btnPrimary">
+        <i class="fa-solid fa-plus text-xs" /> Program Baru
+      </Link>
+    </template>
 
-      <div class="flex gap-3 mb-4">
-        <input v-model="search" type="text" placeholder="Cari program..." class="px-4 py-2 rounded-xl border max-w-md" @input="debounced" />
-        <select v-model="status" class="px-3 py-2 rounded-xl border">
-          <option value="">Semua status</option>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="archived">Archived</option>
-        </select>
-      </div>
-
-      <div class="bg-white rounded-2xl shadow overflow-hidden">
-        <table class="min-w-full text-sm">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 text-left">Kode</th>
-              <th class="px-4 py-3 text-left">Judul</th>
-              <th class="px-4 py-3 text-left">Kategori</th>
-              <th class="px-4 py-3 text-left">Status</th>
-              <th class="px-4 py-3 text-left">Item</th>
-              <th class="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="p in programs.data" :key="p.id" class="border-t">
-              <td class="px-4 py-3">{{ p.code || '-' }}</td>
-              <td class="px-4 py-3 font-medium">{{ p.title }}</td>
-              <td class="px-4 py-3">{{ p.category?.name || '-' }}</td>
-              <td class="px-4 py-3 capitalize">{{ p.status }}</td>
-              <td class="px-4 py-3">{{ p.items_count ?? 0 }} item</td>
-              <td class="px-4 py-3 text-right">
-                <Link :href="route('just-academy.programs.edit', p.id)" class="text-indigo-600">Edit</Link>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div class="mb-5 flex flex-wrap gap-3">
+      <input v-model="search" type="text" placeholder="Cari program..." :class="jaUi.search" @input="debounced" />
+      <select v-model="status" :class="jaUi.select">
+        <option value="">Semua status</option>
+        <option value="draft">Draft</option>
+        <option value="published">Published</option>
+        <option value="archived">Archived</option>
+      </select>
     </div>
-  </AppLayout>
+
+    <div :class="jaUi.tableWrap">
+      <table :class="jaUi.table">
+        <thead :class="jaUi.thead">
+          <tr>
+            <th :class="jaUi.th">Kode</th>
+            <th :class="jaUi.th">Judul</th>
+            <th :class="jaUi.th">Kategori</th>
+            <th :class="jaUi.th">Status</th>
+            <th :class="jaUi.th">Item</th>
+            <th :class="jaUi.th"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in programs.data" :key="p.id" :class="jaUi.tr">
+            <td :class="jaUi.td">{{ p.code || '—' }}</td>
+            <td :class="[jaUi.td, 'font-semibold text-slate-800']">{{ p.title }}</td>
+            <td :class="jaUi.td">{{ p.category?.name || '—' }}</td>
+            <td :class="jaUi.td"><span class="capitalize">{{ p.status }}</span></td>
+            <td :class="jaUi.td">{{ p.items_count ?? 0 }} item</td>
+            <td :class="[jaUi.td, 'text-right']">
+              <Link :href="route('just-academy.programs.edit', p.id)" :class="jaUi.btnLink">Edit</Link>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </JaLayout>
 </template>

@@ -1,18 +1,22 @@
 <script setup>
-import AppLayout from '@/Layouts/AppLayout.vue';
+import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import { jaUi } from '@/composables/useJustAcademyUi';
 
 defineProps({ schedule: Object, success: Boolean, message: String });
 </script>
 
 <template>
-  <AppLayout title="Check-in">
-    <div class="max-w-md mx-auto py-16 px-4 text-center">
-      <div class="bg-white rounded-2xl shadow p-8">
-        <i class="fa-solid fa-qr-code text-4xl mb-4" :class="success ? 'text-emerald-600' : 'text-red-600'"></i>
-        <h1 class="text-xl font-bold mb-2">{{ success ? 'Check-in Berhasil' : 'Check-in Gagal' }}</h1>
-        <p class="text-gray-600 mb-4">{{ message }}</p>
-        <p v-if="schedule" class="text-sm font-medium">{{ schedule.title }}</p>
+  <JaLayout title="Check-in" icon="fa-solid fa-qrcode" narrow>
+    <div :class="[jaUi.card, jaUi.cardBody, 'text-center']">
+      <div
+        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
+        :class="success ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'"
+      >
+        <i class="fa-solid text-3xl" :class="success ? 'fa-circle-check' : 'fa-circle-xmark'" />
       </div>
+      <h1 class="mb-2 text-xl font-bold text-slate-800">{{ success ? 'Check-in Berhasil' : 'Check-in Gagal' }}</h1>
+      <p class="mb-4 text-slate-600">{{ message }}</p>
+      <p v-if="schedule" class="text-sm font-medium text-slate-800">{{ schedule.title }}</p>
     </div>
-  </AppLayout>
+  </JaLayout>
 </template>

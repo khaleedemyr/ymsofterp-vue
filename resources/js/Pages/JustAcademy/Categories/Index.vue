@@ -2,10 +2,10 @@
 import { ref, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
-import AppLayout from '@/Layouts/AppLayout.vue';
+import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import { jaUi, jaConfirmDelete, jaFormErrors } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({ categories: Object, filters: Object });
-
 const search = ref(props.filters?.search || '');
 const showModal = ref(false);
 const editing = ref(null);
@@ -18,9 +18,7 @@ const form = useForm({
 });
 
 const debounced = debounce(() => {
-  router.get(route('just-academy.categories.index'), {
-    search: search.value || undefined,
-  }, { preserveState: true, replace: true });
+  router.get(route('just-academy.categories.index'), { search: search.value || undefined }, { preserveState: true, replace: true });
 }, 400);
 
 watch(search, debounced);
@@ -43,90 +41,93 @@ function openEdit(cat) {
 }
 
 function submit() {
+  const opts = {
+    onSuccess: () => { showModal.value = false; },
+    onError: (errors) => jaFormErrors(errors),
+  };
   if (editing.value) {
-    form.put(route('just-academy.categories.update', editing.value.id), {
-      onSuccess: () => { showModal.value = false; },
-    });
+    form.put(route('just-academy.categories.update', editing.value.id), opts);
   } else {
-    form.post(route('just-academy.categories.store'), {
-      onSuccess: () => { showModal.value = false; form.reset(); },
-    });
+    form.post(route('just-academy.categories.store'), { ...opts, onSuccess: () => { showModal.value = false; form.reset(); } });
   }
 }
 
-function remove(cat) {
-  if (!confirm(`Hapus kategori "${cat.name}"?`)) return;
+async function remove(cat) {
+  const result = await jaConfirmDelete({
+    title: 'Hapus kategori?',
+    html: `Kategori <strong>${cat.name}</strong> akan dihapus permanen.`,
+  });
+  if (!result.isConfirmed) return;
   useForm({}).delete(route('just-academy.categories.destroy', cat.id));
 }
 </script>
 
 <template>
-  <AppLayout title="Kategori — Just Academy">
-    <div class="max-w-[100rem] w-full mx-auto py-8 px-2">
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Kategori Program</h1>
-        <button type="button" class="bg-indigo-600 text-white px-4 py-2 rounded-xl font-semibold" @click="openCreate">+ Kategori Baru</button>
-      </div>
+  <JaLayout title="Kategori Program" subtitle="Kelompokkan program training" icon="fa-solid fa-folder-tree">
+    <template #actions>
+      <button type="button" :class="jaUi.btnPrimary" @click="openCreate">
+        <i class="fa-solid fa-plus text-xs" /> Kategori Baru
+      </button>
+    </template>
 
-      <input v-model="search" type="text" placeholder="Cari kategori..." class="px-4 py-2 rounded-xl border max-w-md mb-4" />
+    <input v-model="search" type="text" placeholder="Cari kategori..." :class="[jaUi.search, 'mb-5']" @input="debounced" />
 
-      <div class="bg-white rounded-2xl shadow overflow-hidden">
-        <table class="min-w-full text-sm">
-          <thead class="bg-gray-50">
-            <tr>
-              <th class="px-4 py-3 text-left">Nama</th>
-              <th class="px-4 py-3 text-left">Deskripsi</th>
-              <th class="px-4 py-3 text-left">Urutan</th>
-              <th class="px-4 py-3 text-left">Program</th>
-              <th class="px-4 py-3 text-left">Status</th>
-              <th class="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="c in categories.data" :key="c.id" class="border-t">
-              <td class="px-4 py-3 font-medium">{{ c.name }}</td>
-              <td class="px-4 py-3 text-gray-600">{{ c.description || '—' }}</td>
-              <td class="px-4 py-3">{{ c.sort_order }}</td>
-              <td class="px-4 py-3">{{ c.programs_count }}</td>
-              <td class="px-4 py-3">
-                <span :class="c.is_active ? 'text-emerald-600' : 'text-gray-400'">{{ c.is_active ? 'Aktif' : 'Nonaktif' }}</span>
-              </td>
-              <td class="px-4 py-3 text-right space-x-3">
-                <button type="button" class="text-indigo-600" @click="openEdit(c)">Edit</button>
-                <button type="button" class="text-red-600" @click="remove(c)">Hapus</button>
-              </td>
-            </tr>
-            <tr v-if="!categories.data.length">
-              <td colspan="6" class="px-4 py-8 text-center text-gray-500">Belum ada kategori. Tambahkan kategori sebelum membuat program.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+    <div :class="jaUi.tableWrap">
+      <table :class="jaUi.table">
+        <thead :class="jaUi.thead">
+          <tr>
+            <th :class="jaUi.th">Nama</th>
+            <th :class="jaUi.th">Deskripsi</th>
+            <th :class="jaUi.th">Urutan</th>
+            <th :class="jaUi.th">Program</th>
+            <th :class="jaUi.th">Status</th>
+            <th :class="jaUi.th"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="c in categories.data" :key="c.id" :class="jaUi.tr">
+            <td :class="[jaUi.td, 'font-semibold text-slate-800']">{{ c.name }}</td>
+            <td :class="jaUi.td">{{ c.description || '—' }}</td>
+            <td :class="jaUi.td">{{ c.sort_order }}</td>
+            <td :class="jaUi.td">{{ c.programs_count }}</td>
+            <td :class="jaUi.td">
+              <span :class="c.is_active ? jaUi.badgeActive : jaUi.badgeInactive">{{ c.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+            </td>
+            <td :class="[jaUi.td, 'text-right space-x-4']">
+              <button type="button" :class="jaUi.btnLink" @click="openEdit(c)">Edit</button>
+              <button type="button" :class="jaUi.btnDanger" @click="remove(c)">Hapus</button>
+            </td>
+          </tr>
+          <tr v-if="!categories.data?.length">
+            <td colspan="6" :class="jaUi.empty">Belum ada kategori.</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
-    <div v-if="showModal" class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" @click.self="showModal = false">
-      <form class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4" @submit.prevent="submit">
-        <h2 class="text-lg font-semibold">{{ editing ? 'Edit Kategori' : 'Kategori Baru' }}</h2>
+    <div v-if="showModal" :class="jaUi.modalOverlay" @click.self="showModal = false">
+      <form :class="jaUi.modal" @submit.prevent="submit">
+        <h2 class="text-lg font-bold text-slate-800">{{ editing ? 'Edit Kategori' : 'Kategori Baru' }}</h2>
         <div>
-          <label class="block text-sm font-medium mb-1">Nama</label>
-          <input v-model="form.name" class="w-full border rounded-xl px-3 py-2" required />
+          <label :class="jaUi.label">Nama</label>
+          <input v-model="form.name" :class="jaUi.input" required />
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Deskripsi</label>
-          <textarea v-model="form.description" rows="2" class="w-full border rounded-xl px-3 py-2"></textarea>
+          <label :class="jaUi.label">Deskripsi</label>
+          <textarea v-model="form.description" rows="2" :class="jaUi.input" />
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Urutan</label>
-          <input v-model="form.sort_order" type="number" min="0" class="w-full border rounded-xl px-3 py-2" />
+          <label :class="jaUi.label">Urutan</label>
+          <input v-model="form.sort_order" type="number" min="0" :class="jaUi.input" />
         </div>
-        <label class="flex items-center gap-2 text-sm">
-          <input v-model="form.is_active" type="checkbox" /> Aktif
+        <label class="flex items-center gap-2 text-sm text-slate-600">
+          <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 text-indigo-600" /> Aktif
         </label>
-        <div class="flex gap-2 justify-end">
-          <button type="button" class="px-4 py-2 rounded-xl border" @click="showModal = false">Batal</button>
-          <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-xl" :disabled="form.processing">Simpan</button>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" :class="jaUi.btnSecondary" @click="showModal = false">Batal</button>
+          <button type="submit" :class="jaUi.btnPrimary" :disabled="form.processing">Simpan</button>
         </div>
       </form>
     </div>
-  </AppLayout>
+  </JaLayout>
 </template>

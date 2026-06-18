@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
-import AppLayout from '@/Layouts/AppLayout.vue';
+import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import { jaUi } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
   program: Object,
@@ -159,58 +160,60 @@ function saveCurriculum() {
 </script>
 
 <template>
-  <AppLayout :title="program ? 'Edit Program' : 'Program Baru'">
-    <div class="max-w-6xl mx-auto py-8 px-2 space-y-8">
-      <h1 class="text-2xl font-bold">{{ program ? 'Edit Program' : 'Program Baru' }}</h1>
-
-      <form class="bg-white rounded-2xl shadow p-6 space-y-4" @submit.prevent="submit">
+  <JaLayout
+    :title="program ? 'Edit Program' : 'Program Baru'"
+    :subtitle="program ? 'Atur data program dan urutan curriculum' : 'Buat program training baru'"
+    icon="fa-solid fa-book-open"
+  >
+    <div class="space-y-8">
+      <form :class="[jaUi.card, jaUi.cardBody, 'space-y-4']" @submit.prevent="submit">
         <div>
-          <label class="block text-sm font-medium mb-1">Judul</label>
-          <input v-model="form.title" class="w-full border rounded-xl px-3 py-2" required />
+          <label :class="jaUi.label">Judul</label>
+          <input v-model="form.title" :class="jaUi.input" required />
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium mb-1">Kode</label>
-            <input v-model="form.code" class="w-full border rounded-xl px-3 py-2" />
+            <label :class="jaUi.label">Kode</label>
+            <input v-model="form.code" :class="jaUi.input" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Kategori</label>
-            <select v-model="form.category_id" class="w-full border rounded-xl px-3 py-2">
+            <label :class="jaUi.label">Kategori</label>
+            <select v-model="form.category_id" :class="jaUi.input">
               <option value="">— Pilih —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium mb-1">Deskripsi</label>
-          <textarea v-model="form.description" rows="3" class="w-full border rounded-xl px-3 py-2"></textarea>
+          <label :class="jaUi.label">Deskripsi</label>
+          <textarea v-model="form.description" rows="3" :class="jaUi.input" />
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium mb-1">Durasi (jam)</label>
-            <input v-model="form.duration_hours" type="number" step="0.5" class="w-full border rounded-xl px-3 py-2" />
+            <label :class="jaUi.label">Durasi (jam)</label>
+            <input v-model="form.duration_hours" type="number" step="0.5" :class="jaUi.input" />
           </div>
           <div>
-            <label class="block text-sm font-medium mb-1">Status</label>
-            <select v-model="form.status" class="w-full border rounded-xl px-3 py-2">
+            <label :class="jaUi.label">Status</label>
+            <select v-model="form.status" :class="jaUi.input">
               <option value="draft">Draft</option>
               <option value="published">Published</option>
               <option value="archived">Archived</option>
             </select>
           </div>
         </div>
-        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-xl" :disabled="form.processing">Simpan Program</button>
+        <button type="submit" :class="jaUi.btnPrimary" :disabled="form.processing">Simpan Program</button>
       </form>
 
-      <div v-if="!program" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+      <div v-if="!program" class="rounded-2xl border border-amber-200/80 bg-amber-50/80 p-4 text-sm text-amber-900">
         Simpan program dulu, lalu atur urutan materi & quiz dengan drag-and-drop di bawah.
       </div>
 
       <template v-if="program">
-        <div class="grid lg:grid-cols-2 gap-6">
-          <div class="bg-white rounded-2xl shadow p-6 space-y-4">
-            <h2 class="font-semibold">Pustaka</h2>
-            <p class="text-xs text-gray-500">Drag item ke kolom kanan, atau klik +</p>
+        <div class="grid gap-6 lg:grid-cols-2">
+          <div :class="[jaUi.card, jaUi.cardBody, 'space-y-4']">
+            <h2 class="font-semibold text-slate-800">Pustaka</h2>
+            <p class="text-xs text-slate-500">Drag item ke kolom kanan, atau klik +</p>
             <div>
               <h3 class="text-sm font-medium text-gray-600 mb-2">Materi</h3>
               <ul class="space-y-2 max-h-48 overflow-y-auto">
@@ -218,7 +221,7 @@ function saveCurriculum() {
                   v-for="m in libraryMaterials"
                   :key="'m'+m.id"
                   draggable="true"
-                  class="flex justify-between items-center border rounded-lg px-3 py-2 text-sm cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:bg-indigo-50/50"
+                  class="flex cursor-grab items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 active:cursor-grabbing"
                   @dragstart="onLibraryDragStart($event, 'material', m)"
                   @dragend="resetDragState"
                 >
@@ -226,7 +229,7 @@ function saveCurriculum() {
                     <span class="text-gray-400 shrink-0">⠿</span>
                     <span class="truncate">{{ m.title }} <span class="text-gray-400">({{ m.type }})</span></span>
                   </span>
-                  <button type="button" class="text-indigo-600 font-semibold shrink-0 ml-2" @click="addMaterial(m)">+</button>
+                  <button type="button" class="ml-2 shrink-0 font-semibold text-indigo-600" @click="addMaterial(m)">+</button>
                 </li>
                 <li v-if="!libraryMaterials?.length" class="text-sm text-gray-500">
                   Belum ada materi. <a :href="route('just-academy.materials.create')" class="underline">Buat materi</a>
@@ -240,7 +243,7 @@ function saveCurriculum() {
                   v-for="q in libraryQuizzes"
                   :key="'q'+q.id"
                   draggable="true"
-                  class="flex justify-between items-center border rounded-lg px-3 py-2 text-sm cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:bg-indigo-50/50"
+                  class="flex cursor-grab items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 active:cursor-grabbing"
                   @dragstart="onLibraryDragStart($event, 'quiz', q)"
                   @dragend="resetDragState"
                 >
@@ -248,7 +251,7 @@ function saveCurriculum() {
                     <span class="text-gray-400 shrink-0">⠿</span>
                     <span class="truncate">{{ q.title }}</span>
                   </span>
-                  <button type="button" class="text-indigo-600 font-semibold shrink-0 ml-2" @click="addQuiz(q)">+</button>
+                  <button type="button" class="ml-2 shrink-0 font-semibold text-indigo-600" @click="addQuiz(q)">+</button>
                 </li>
                 <li v-if="!libraryQuizzes?.length" class="text-sm text-gray-500">
                   Belum ada quiz. <a :href="route('just-academy.quizzes.create')" class="underline">Buat quiz</a>
@@ -257,9 +260,9 @@ function saveCurriculum() {
             </div>
           </div>
 
-          <div class="bg-white rounded-2xl shadow p-6">
-            <h2 class="font-semibold mb-2">Urutan Program</h2>
-            <p class="text-xs text-gray-500 mb-4">Drop dari pustaka atau drag item untuk ubah urutan.</p>
+          <div :class="[jaUi.card, jaUi.cardBody]">
+            <h2 class="mb-2 font-semibold text-slate-800">Urutan Program</h2>
+            <p class="mb-4 text-xs text-slate-500">Drop dari pustaka atau drag item untuk ubah urutan.</p>
 
             <ul class="space-y-2 min-h-[12rem]">
               <li
@@ -277,7 +280,7 @@ function saveCurriculum() {
                 v-for="(item, index) in curriculumItems"
                 :key="index + '-' + item.item_type + '-' + item.ref_id"
                 draggable="true"
-                class="flex items-center gap-3 border rounded-xl px-3 py-2 cursor-grab active:cursor-grabbing bg-gray-50 transition-colors"
+                class="flex cursor-grab items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5 transition-colors active:cursor-grabbing"
                 :class="dropTargetIndex === index ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : ''"
                 @dragstart="onCurriculumDragStart($event, index)"
                 @dragover="onDragOver($event, index)"
@@ -294,7 +297,7 @@ function saveCurriculum() {
                 <label class="text-xs flex items-center gap-1 shrink-0" @click.stop>
                   <input v-model="item.is_required" type="checkbox" /> Wajib
                 </label>
-                <button type="button" class="text-red-600 text-sm" @click="removeItem(index)">×</button>
+                <button type="button" class="text-sm text-rose-600" @click="removeItem(index)">×</button>
               </li>
 
               <li
@@ -309,17 +312,12 @@ function saveCurriculum() {
               </li>
             </ul>
 
-            <button
-              type="button"
-              class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl w-full"
-              :disabled="curriculumForm.processing"
-              @click="saveCurriculum"
-            >
+            <button type="button" class="mt-4 w-full" :class="jaUi.btnSuccess" :disabled="curriculumForm.processing" @click="saveCurriculum">
               Simpan Urutan Curriculum
             </button>
           </div>
         </div>
       </template>
     </div>
-  </AppLayout>
+  </JaLayout>
 </template>
