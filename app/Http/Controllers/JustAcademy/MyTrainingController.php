@@ -21,7 +21,14 @@ class MyTrainingController extends Controller
         $userId = (int) $request->user()->id;
         $tab = $request->input('tab', 'upcoming');
 
-        $query = $this->service->participantSchedulesForUser($userId)
+        $participantQuery = $this->service->participantSchedulesForUser($userId);
+
+        $stats = [
+            'upcoming' => (clone $participantQuery)->where('end_at', '>=', now())->count(),
+            'total' => (clone $participantQuery)->count(),
+        ];
+
+        $query = (clone $participantQuery)
             ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
             ->orderBy('start_at');
 
@@ -34,6 +41,7 @@ class MyTrainingController extends Controller
         return Inertia::render('JustAcademy/MyTraining/Index', [
             'schedules' => $query->paginate(12)->withQueryString(),
             'tab' => $tab,
+            'stats' => $stats,
         ]);
     }
 

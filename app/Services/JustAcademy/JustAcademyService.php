@@ -783,4 +783,190 @@ class JustAcademyService
             ];
         })->values()->all();
     }
+
+    public function buildDepartmentalTrainingReport(int $year, int $month, ?int $divisionId = null): Collection
+    {
+        $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        $schedules = JaSchedule::query()
+            ->with([
+                'program.category:id,name',
+                'outlet:id_outlet,nama_outlet',
+                'trainers.user:id,nama_lengkap',
+                'program.items' => fn ($q) => $q->where('item_type', 'quiz')->orderBy('sort_order'),
+                'program.items.quiz:id,title',
+            ])
+            ->whereIn('status', ['published', 'ongoing', 'completed'])
+            ->where('start_at', '>=', $rangeStart)
+            ->where('start_at', '<=', $rangeEnd)
+            ->orderBy('start_at')
+            ->get();
+
+        return $schedules
+            ->map(fn (JaSchedule $schedule) => $this->mapDepartmentalReportRow($schedule, $divisionId))
+            ->filter()
+            ->values()
+            ->map(fn (array $row, int $index) => array_merge($row, ['no' => $index + 1]));
+    }
+
+    private function mapDepartmentalReportRow(JaSchedule $schedule, ?int $divisionId): ?array
+    {
+        $participantUserIds = $this->scheduleParticipantUserIds($schedule, $divisionId);
+        if ($divisionId && $participantUserIds->isEmpty()) {
+            return null;
+        }
+
+        $registered = $participantUserIds->count();
+        $attendees = $registered > 0
+            ? JaAttendance::query()
+                ->where('schedule_id', $schedule->id)
+                ->whereIn('user_id', $participantUserIds)
+                ->whereNotNull('check_in_at')
+                ->distinct()
+                ->count('user_id')
+            : 0;
+
+        [$preQuizId, $postQuizId] = $this->resolvePrePostQuizIds($schedule);
+        $preScore = $this->averageQuizScore($schedule->id, $preQuizId, $participantUserIds);
+        $postScore = $this->averageQuizScore($schedule->id, $postQuizId, $participantUserIds);
+        $improvement = ($preScore !== null && $postScore !== null && $preScore > 0)
+            ? round((($postScore - $preScore) / $preScore) * 100, 1)
+            : null;
+
+        return [
+            'training_subject' => $schedule->title,
+            'objective' => $schedule->program?->description ?: '—',
+            'method' => $schedule->program?->category?->name ?: '—',
+            'duration' => $this->formatScheduleDuration($schedule),
+            'total_registered' => $registered,
+            'total_attendees' => $attendees,
+            'attendance_rate' => $registered > 0 ? round(($attendees / $registered) * 100, 1) : null,
+            'training_date' => $schedule->start_at?->timezone(config('app.timezone'))->format('d/m/Y'),
+            'venue' => $schedule->location ?: $schedule->outlet?->nama_outlet ?: '—',
+            'pre_test' => $preScore !== null ? round($preScore, 1) : null,
+            'post_test' => $postScore !== null ? round($postScore, 1) : null,
+            'improvement_pct' => $improvement,
+            'trainer' => $this->formatScheduleTrainers($schedule),
+        ];
+    }
+
+    private function scheduleParticipantUserIds(JaSchedule $schedule, ?int $divisionId): Collection
+    {
+        $userIds = $schedule->participants()->pluck('user_id');
+        if (!$divisionId) {
+            return $userIds->values();
+        }
+
+        return User::query()
+            ->whereIn('id', $userIds)
+            ->where('division_id', $divisionId)
+            ->pluck('id')
+            ->values();
+    }
+
+    private function resolvePrePostQuizIds(JaSchedule $schedule): array
+    {
+        $quizzes = $schedule->program?->items
+            ?->where('item_type', 'quiz')
+            ->map(fn (JaProgramItem $item) => $item->quiz)
+            ->filter()
+            ->values() ?? collect();
+
+        $preId = null;
+        $postId = null;
+
+        foreach ($quizzes as $quiz) {
+            $role = $this->classifyQuizEvaluationRole($quiz->title);
+            if ($role === 'pre') {
+                $preId ??= $quiz->id;
+            }
+            if ($role === 'post') {
+                $postId = $quiz->id;
+            }
+        }
+
+        if (!$preId && $quizzes->isNotEmpty()) {
+            $preId = $quizzes->first()->id;
+        }
+        if (!$postId && $quizzes->count() > 1) {
+            $postId = $quizzes->last()->id;
+        }
+
+        return [$preId, $postId];
+    }
+
+    private function classifyQuizEvaluationRole(string $title): ?string
+    {
+        $normalized = strtolower($title);
+        if (preg_match('/pre[\s-]?test|pretest/', $normalized)) {
+            return 'pre';
+        }
+        if (preg_match('/post[\s-]?test|posttest/', $normalized)) {
+            return 'post';
+        }
+
+        return null;
+    }
+
+    private function averageQuizScore(int $scheduleId, ?int $quizId, Collection $userIds): ?float
+    {
+        if (!$quizId || $userIds->isEmpty()) {
+            return null;
+        }
+
+        $avg = JaQuizAttempt::query()
+            ->where('schedule_id', $scheduleId)
+            ->where('quiz_id', $quizId)
+            ->whereIn('user_id', $userIds)
+            ->whereNotNull('submitted_at')
+            ->avg('score');
+
+        return $avg !== null ? (float) $avg : null;
+    }
+
+    private function formatScheduleDuration(JaSchedule $schedule): string
+    {
+        if ($schedule->program?->duration_hours) {
+            $hours = (float) $schedule->program->duration_hours;
+            if ($hours > 0) {
+                return rtrim(rtrim(number_format($hours, 2, '.', ''), '0'), '.') . ' jam';
+            }
+        }
+
+        if ($schedule->start_at && $schedule->end_at) {
+            $minutes = $schedule->start_at->diffInMinutes($schedule->end_at);
+            if ($minutes > 0) {
+                $hours = intdiv($minutes, 60);
+                $mins = $minutes % 60;
+                if ($hours && $mins) {
+                    return "{$hours} jam {$mins} menit";
+                }
+                if ($hours) {
+                    return "{$hours} jam";
+                }
+
+                return "{$mins} menit";
+            }
+        }
+
+        return '—';
+    }
+
+    private function formatScheduleTrainers(JaSchedule $schedule): string
+    {
+        $names = $schedule->trainers
+            ->map(function ($trainer) {
+                if (($trainer->trainer_type ?? 'internal') === 'external') {
+                    return $trainer->external_name;
+                }
+
+                return $trainer->user?->nama_lengkap;
+            })
+            ->filter()
+            ->unique()
+            ->values();
+
+        return $names->isNotEmpty() ? $names->join(', ') : '—';
+    }
 }

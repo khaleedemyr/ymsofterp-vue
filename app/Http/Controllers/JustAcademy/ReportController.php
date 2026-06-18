@@ -3,58 +3,47 @@
 namespace App\Http\Controllers\JustAcademy;
 
 use App\Http\Controllers\Controller;
-use App\Models\JustAcademy\JaAttendance;
-use App\Models\JustAcademy\JaQuizAttempt;
-use App\Models\JustAcademy\JaSchedule;
+use App\Models\Divisi;
+use App\Services\JustAcademy\JustAcademyService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class ReportController extends Controller
 {
+    public function __construct(
+        protected JustAcademyService $service,
+    ) {}
+
     public function index(Request $request)
     {
-        $scheduleId = $request->input('schedule_id');
-        $from = $request->input('from');
-        $to = $request->input('to');
-
-        $schedules = JaSchedule::with('program:id,title')
-            ->orderByDesc('start_at')
-            ->limit(100)
-            ->get(['id', 'title', 'program_id', 'start_at', 'status']);
-
-        $attendanceQuery = JaAttendance::with([
-            'user:id,nama_lengkap,email',
-            'schedule.program:id,title',
-        ])->orderByDesc('check_in_at');
-
-        if ($scheduleId) {
-            $attendanceQuery->where('schedule_id', $scheduleId);
-        }
-        if ($from) {
-            $attendanceQuery->whereDate('check_in_at', '>=', $from);
-        }
-        if ($to) {
-            $attendanceQuery->whereDate('check_in_at', '<=', $to);
+        $year = (int) $request->input('year', now()->year);
+        $month = (int) $request->input('month', now()->month);
+        if ($month < 1 || $month > 12) {
+            $month = (int) now()->month;
         }
 
-        $completionQuery = JaQuizAttempt::with([
-            'user:id,nama_lengkap',
-            'quiz:id,title,type',
-            'schedule.program:id,title',
-        ])->whereNotNull('submitted_at')->orderByDesc('submitted_at');
+        $divisionId = $request->filled('division_id') ? (int) $request->input('division_id') : null;
 
-        if ($scheduleId) {
-            $completionQuery->where('schedule_id', $scheduleId);
-        }
+        $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
+        $selectedDivision = $divisionId
+            ? $divisions->firstWhere('id', $divisionId)
+            : null;
+
+        $rows = $this->service->buildDepartmentalTrainingReport($year, $month, $divisionId);
+
+        $monthLabel = sprintf('%02d/%04d', $month, $year);
 
         return Inertia::render('JustAcademy/Reports/Index', [
-            'schedules' => $schedules,
-            'attendance' => $attendanceQuery->paginate(20, ['*'], 'attendance_page')->withQueryString(),
-            'completions' => $completionQuery->paginate(20, ['*'], 'completion_page')->withQueryString(),
+            'rows' => $rows,
+            'divisions' => $divisions,
             'filters' => [
-                'schedule_id' => $scheduleId,
-                'from' => $from,
-                'to' => $to,
+                'year' => $year,
+                'month' => $month,
+                'division_id' => $divisionId,
+            ],
+            'reportMeta' => [
+                'month_label' => $monthLabel,
+                'department_label' => $selectedDivision?->nama_divisi ?? 'Semua Departemen',
             ],
         ]);
     }
