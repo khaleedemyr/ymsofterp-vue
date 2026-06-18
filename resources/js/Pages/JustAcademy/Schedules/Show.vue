@@ -75,6 +75,16 @@ async function removeParticipant(id) {
   jaDelete(route('just-academy.schedules.participants.destroy', [props.schedule.id, id]));
 }
 
+async function removeSchedule() {
+  const result = await jaConfirmDelete({
+    title: 'Hapus training plan?',
+    html: `Training plan <strong>${props.schedule.title}</strong> akan dihapus permanen.`,
+    confirmText: 'Ya, hapus',
+  });
+  if (!result.isConfirmed) return;
+  jaDelete(route('just-academy.schedules.destroy', props.schedule.id));
+}
+
 function userLabel(user) {
   return user?.nama_lengkap || user?.name || '—';
 }
@@ -83,6 +93,7 @@ function userLabel(user) {
 <template>
   <JaLayout :title="schedule.title" subtitle="Detail training plan" icon="fa-solid fa-calendar-check">
     <template #actions>
+      <button type="button" :class="jaUi.btnDanger" @click="removeSchedule">Hapus</button>
       <Link :href="route('just-academy.schedules.index')" :class="jaUi.btnSecondary">Kalender</Link>
       <Link :href="route('just-academy.schedules.edit', schedule.id)" :class="jaUi.btnPrimary">Edit Training Plan</Link>
     </template>

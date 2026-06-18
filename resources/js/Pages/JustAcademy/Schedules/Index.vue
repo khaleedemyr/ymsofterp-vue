@@ -5,7 +5,7 @@ import axios from 'axios';
 import { Calendar } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
-import { jaUi } from '@/composables/useJustAcademyUi';
+import { jaUi, jaConfirmDelete, jaDelete } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
   calendarEvents: { type: Array, default: () => [] },
@@ -141,6 +141,16 @@ function mountDayCellExtras(info) {
   frame.appendChild(btn);
 }
 
+function resetCalendarEvents() {
+  if (!calendarApi) return;
+  calendarApi.getEventSources().forEach((source) => source.remove());
+  calendarApi.removeAllEvents();
+  const events = props.calendarEvents || [];
+  if (events.length) {
+    calendarApi.addEventSource(events);
+  }
+}
+
 function syncCalendar() {
   if (!calendarApi) return;
   const target = initialDateStr();
@@ -149,8 +159,7 @@ function syncCalendar() {
   if (curStr !== target) {
     calendarApi.gotoDate(target);
   }
-  calendarApi.removeAllEvents();
-  calendarApi.addEventSource(props.calendarEvents || []);
+  resetCalendarEvents();
   calendarApi.render();
   nextTick(applyHolidayClassesToDom);
 }
@@ -169,7 +178,7 @@ function buildCalendar() {
     fixedWeekCount: false,
     dayMaxEvents: 3,
     moreLinkText: (n) => `+${n} lagi`,
-    events: props.calendarEvents || [],
+    events: [],
     dayCellClassNames(arg) {
       const key = arg.dateStr || formatDateYmd(arg.date);
       return isHolidayDate(key) ? ['ja-fc-holiday-day'] : [];
@@ -195,6 +204,7 @@ function buildCalendar() {
     },
   });
   calendarApi.render();
+  resetCalendarEvents();
   nextTick(applyHolidayClassesToDom);
 }
 
@@ -232,6 +242,22 @@ function goThisMonth() {
 function closeDetail() {
   detail.open = false;
   detail.event = null;
+}
+
+async function deleteSchedule() {
+  const scheduleId = detail.event?.schedule_id;
+  if (!scheduleId) return;
+
+  const result = await jaConfirmDelete({
+    title: 'Hapus training plan?',
+    html: `Training plan <strong>${detail.event?.title || ''}</strong> akan dihapus permanen.`,
+    confirmText: 'Ya, hapus',
+  });
+  if (!result.isConfirmed) return;
+
+  jaDelete(route('just-academy.schedules.destroy', scheduleId), {
+    onSuccess: () => closeDetail(),
+  });
 }
 
 onMounted(async () => {
@@ -326,15 +352,18 @@ onBeforeUnmount(() => {
           <div><dt class="font-medium text-slate-500">Peserta</dt><dd>{{ detail.event?.participants_count ?? 0 }}</dd></div>
           <div><dt class="font-medium text-slate-500">Status</dt><dd class="capitalize">{{ statusLabel(detail.event?.status) }}</dd></div>
         </dl>
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" :class="jaUi.btnSecondary" @click="closeDetail">Tutup</button>
-          <Link
-            v-if="detail.event?.schedule_id"
-            :href="route('just-academy.schedules.show', detail.event.schedule_id)"
-            :class="jaUi.btnPrimary"
-          >
-            Buka Detail
-          </Link>
+        <div class="flex justify-between gap-2 pt-2">
+          <button type="button" :class="jaUi.btnDanger" @click="deleteSchedule">Hapus</button>
+          <div class="flex gap-2">
+            <button type="button" :class="jaUi.btnSecondary" @click="closeDetail">Tutup</button>
+            <Link
+              v-if="detail.event?.schedule_id"
+              :href="route('just-academy.schedules.show', detail.event.schedule_id)"
+              :class="jaUi.btnPrimary"
+            >
+              Buka Detail
+            </Link>
+          </div>
         </div>
       </div>
     </div>

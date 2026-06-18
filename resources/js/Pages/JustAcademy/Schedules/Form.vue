@@ -3,7 +3,7 @@ import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import JaUserMultiselect from '@/Components/JustAcademy/JaUserMultiselect.vue';
-import { jaUi, jaFormErrors } from '@/composables/useJustAcademyUi';
+import { jaUi, jaFormErrors, jaConfirmDelete, jaDelete } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
   schedule: Object,
@@ -102,6 +102,18 @@ function submit() {
   } else {
     form.post(route('just-academy.schedules.store'), opts);
   }
+}
+
+async function removeSchedule() {
+  if (!props.schedule?.id) return;
+
+  const result = await jaConfirmDelete({
+    title: 'Hapus training plan?',
+    html: `Training plan <strong>${props.schedule.title}</strong> akan dihapus permanen.`,
+    confirmText: 'Ya, hapus',
+  });
+  if (!result.isConfirmed) return;
+  jaDelete(route('just-academy.schedules.destroy', props.schedule.id));
 }
 </script>
 
@@ -229,7 +241,18 @@ function submit() {
         <label :class="jaUi.label">Catatan</label>
         <textarea v-model="form.notes" rows="2" :class="jaUi.input" />
       </div>
-      <button type="submit" :class="jaUi.btnPrimary" :disabled="form.processing">Simpan</button>
+      <div class="flex items-center justify-between gap-3">
+        <button
+          v-if="schedule"
+          type="button"
+          :class="jaUi.btnDanger"
+          @click="removeSchedule"
+        >
+          Hapus Training Plan
+        </button>
+        <div v-else />
+        <button type="submit" :class="jaUi.btnPrimary" :disabled="form.processing">Simpan</button>
+      </div>
     </form>
   </JaLayout>
 </template>

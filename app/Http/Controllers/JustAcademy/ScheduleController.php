@@ -219,10 +219,16 @@ class ScheduleController extends Controller
     public function destroy(int $id)
     {
         $schedule = JaSchedule::findOrFail($id);
+        $year = $schedule->start_at->year;
+        $month = $schedule->start_at->month;
+
         $schedule->delete();
 
         return redirect()
-            ->route('just-academy.schedules.index')
+            ->route('just-academy.schedules.index', [
+                'year' => $year,
+                'month' => $month,
+            ])
             ->with('success', 'Training plan berhasil dihapus.');
     }
 
