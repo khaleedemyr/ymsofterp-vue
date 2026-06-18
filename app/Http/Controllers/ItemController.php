@@ -2283,7 +2283,11 @@ class ItemController extends Controller
                           ->orWhere('sku', 'like', "%{$q}%");
                 });
 
-            if ($excludeAsset) {
+            if ($forFloorOrder) {
+                $query->whereHas('category', function ($q) {
+                    $q->where('show_pos', '0')->where('is_asset', '0');
+                });
+            } elseif ($excludeAsset) {
                 $query->whereHas('category', function ($q) {
                     $q->where('is_asset', '0');
                 });
