@@ -142,9 +142,9 @@ class ScheduleController extends Controller
             'program.items.material',
             'program.items.quiz.questions.options',
             'outlet:id_outlet,nama_outlet',
-            'participants.user:id,name,email',
-            'trainers.user:id,name',
-            'attendances.user:id,name',
+            'participants.user:id,nama_lengkap,email',
+            'trainers.user:id,nama_lengkap,email',
+            'attendances.user:id,nama_lengkap,email',
         ]);
 
         if ($schedule->status === 'published' && !$schedule->qr_token) {
@@ -163,9 +163,11 @@ class ScheduleController extends Controller
     public function edit(JaSchedule $schedule)
     {
         $schedule->load([
+            'participants.user:id,nama_lengkap,email',
             'participants.user.jabatan:id_jabatan,nama_jabatan',
             'participants.user.divisi:id,nama_divisi',
             'participants.user.outlet:id_outlet,nama_outlet',
+            'trainers.user:id,nama_lengkap,email',
             'trainers.user.jabatan:id_jabatan,nama_jabatan',
             'trainers.user.divisi:id,nama_divisi',
             'trainers.user.outlet:id_outlet,nama_outlet',

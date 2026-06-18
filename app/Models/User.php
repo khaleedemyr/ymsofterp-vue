@@ -56,6 +56,11 @@ class User extends Authenticatable
         return $query->where('status', 'A');
     }
 
+    public function getNameAttribute(): ?string
+    {
+        return $this->attributes['nama_lengkap'] ?? null;
+    }
+
     public function jabatan() {
         return $this->belongsTo(\App\Models\Jabatan::class, 'id_jabatan', 'id_jabatan');
     }

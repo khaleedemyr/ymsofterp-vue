@@ -125,7 +125,7 @@ async function removeParticipant(id) {
         <h2 class="mb-4 font-semibold text-slate-800">Peserta ({{ schedule.participants?.length || 0 }})</h2>
         <ul class="mb-4 space-y-2">
           <li v-for="p in schedule.participants" :key="p.id" class="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 px-3 py-2">
-            <span class="text-sm">{{ p.user?.name }} <span class="text-xs text-slate-400">({{ p.invite_source }})</span></span>
+            <span class="text-sm">{{ p.user?.nama_lengkap || p.user?.name }} <span class="text-xs text-slate-400">({{ p.invite_source }})</span></span>
             <button type="button" :class="jaUi.btnDanger" @click="removeParticipant(p.id)">Hapus</button>
           </li>
         </ul>
@@ -143,7 +143,7 @@ async function removeParticipant(id) {
         <ul class="mb-4 space-y-1 text-sm text-slate-700">
           <li v-for="t in schedule.trainers" :key="t.id">
             <span v-if="t.trainer_type === 'external'">{{ t.external_name }}</span>
-            <span v-else>{{ t.user?.name }}</span>
+            <span v-else>{{ t.user?.nama_lengkap || t.user?.name }}</span>
             <span class="text-slate-400"> · {{ t.trainer_type === 'external' ? 'Eksternal' : 'Internal' }} ({{ t.role }})</span>
           </li>
         </ul>

@@ -23,7 +23,7 @@ class ReportController extends Controller
             ->get(['id', 'title', 'program_id', 'start_at', 'status']);
 
         $attendanceQuery = JaAttendance::with([
-            'user:id,name,email',
+            'user:id,nama_lengkap,email',
             'schedule.program:id,title',
         ])->orderByDesc('check_in_at');
 
@@ -38,7 +38,7 @@ class ReportController extends Controller
         }
 
         $completionQuery = JaQuizAttempt::with([
-            'user:id,name',
+            'user:id,nama_lengkap',
             'quiz:id,title,type',
             'schedule.program:id,title',
         ])->whereNotNull('submitted_at')->orderByDesc('submitted_at');

@@ -44,7 +44,7 @@ function applyFilters() {
         </thead>
         <tbody>
           <tr v-for="a in attendance.data" :key="a.id" :class="jaUi.tr">
-            <td :class="jaUi.td">{{ a.user?.name }}</td>
+            <td :class="jaUi.td">{{ a.user?.nama_lengkap || a.user?.name }}</td>
             <td :class="jaUi.td">{{ a.schedule?.title }}</td>
             <td :class="jaUi.td">{{ a.check_in_at }}</td>
             <td :class="jaUi.td">{{ a.method }}</td>
@@ -66,7 +66,7 @@ function applyFilters() {
         </thead>
         <tbody>
           <tr v-for="c in completions.data" :key="c.id" :class="jaUi.tr">
-            <td :class="jaUi.td">{{ c.user?.name }}</td>
+            <td :class="jaUi.td">{{ c.user?.nama_lengkap || c.user?.name }}</td>
             <td :class="jaUi.td">{{ c.quiz?.title }}</td>
             <td :class="jaUi.td">{{ c.score }}</td>
             <td :class="jaUi.td">{{ c.passed ? 'Ya' : 'Tidak' }}</td>

@@ -67,7 +67,7 @@ class ApiController extends Controller
         $schedule->load([
             'program:id,title',
             'outlet:id_outlet,nama_outlet',
-            'trainers.user:id,name',
+            'trainers.user:id,nama_lengkap,email',
         ]);
 
         $attendance = $schedule->attendances()->where('user_id', $userId)->first();
