@@ -152,7 +152,6 @@ function fetchItemSuggestions(idx, q) {
     region_id: region_id.value,
     for_floor_order: true,
     exclude_asset: true,
-    exclude_supplier: true,
   };
   
   axios.get(`/api/items/search`, {

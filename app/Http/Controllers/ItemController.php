@@ -2284,9 +2284,36 @@ class ItemController extends Controller
                 });
 
             if ($forFloorOrder) {
+                $region_id = $request->get('region_id');
+                $outlet_id = $request->get('outlet_id');
+
                 $query->whereHas('category', function ($q) {
                     $q->where('show_pos', '0')->where('is_asset', '0');
-                });
+                })
+                    ->whereNotNull('warehouse_division_id');
+
+                if ($region_id || $outlet_id) {
+                    $query->whereExists(function ($sub) use ($region_id, $outlet_id) {
+                        $sub->select(\DB::raw(1))
+                            ->from('item_availabilities')
+                            ->whereRaw('items.id = item_availabilities.item_id')
+                            ->where(function ($q) use ($region_id, $outlet_id) {
+                                $q->where('availability_type', 'all');
+                                if ($region_id) {
+                                    $q->orWhere(function ($q2) use ($region_id) {
+                                        $q2->where('availability_type', 'region')
+                                            ->where('region_id', $region_id);
+                                    });
+                                }
+                                if ($outlet_id) {
+                                    $q->orWhere(function ($q2) use ($outlet_id) {
+                                        $q2->where('availability_type', 'outlet')
+                                            ->where('outlet_id', $outlet_id);
+                                    });
+                                }
+                            });
+                    });
+                }
             } elseif ($excludeAsset) {
                 $query->whereHas('category', function ($q) {
                     $q->where('is_asset', '0');
