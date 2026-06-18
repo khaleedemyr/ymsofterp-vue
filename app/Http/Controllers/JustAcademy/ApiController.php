@@ -65,8 +65,7 @@ class ApiController extends Controller
         $this->service->ensureParticipant($schedule, $userId);
 
         $schedule->load([
-            'program.materials' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order'),
-            'program.quizzes' => fn ($q) => $q->where('is_active', true),
+            'program:id,title',
             'outlet:id_outlet,nama_outlet',
             'trainers.user:id,name',
         ]);
@@ -87,29 +86,9 @@ class ApiController extends Controller
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
 
-        $materials = $schedule->program->materials()
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get()
-            ->map(function ($m) use ($schedule, $userId) {
-                $completed = \App\Models\JustAcademy\JaMaterialProgress::where([
-                    'schedule_id' => $schedule->id,
-                    'user_id' => $userId,
-                    'material_id' => $m->id,
-                ])->exists();
+        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId);
 
-                return [
-                    'id' => $m->id,
-                    'title' => $m->title,
-                    'type' => $m->type,
-                    'file_url' => $m->file_path ? asset('storage/' . $m->file_path) : null,
-                    'url' => $m->url,
-                    'is_pre_read' => $m->is_pre_read,
-                    'completed' => $completed,
-                ];
-            });
-
-        return response()->json(['success' => true, 'data' => $materials]);
+        return response()->json(['success' => true, 'data' => $curriculum]);
     }
 
     public function completeMaterial(Request $request, JaSchedule $schedule, int $materialId)

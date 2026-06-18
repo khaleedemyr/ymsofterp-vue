@@ -3636,15 +3636,27 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::put('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'update'])->name('categories.update');
     Route::delete('/categories/{category}', [\App\Http\Controllers\JustAcademy\CategoryController::class, 'destroy'])->name('categories.destroy');
 
+    Route::get('/materials', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'index'])->name('materials.index');
+    Route::get('/materials/create', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'create'])->name('materials.create');
+    Route::post('/materials', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'store'])->name('materials.store');
+    Route::get('/materials/{material}/edit', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'edit'])->name('materials.edit');
+    Route::put('/materials/{material}', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'update'])->name('materials.update');
+    Route::delete('/materials/{material}', [\App\Http\Controllers\JustAcademy\MaterialController::class, 'destroy'])->name('materials.destroy');
+
+    Route::get('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'index'])->name('quizzes.index');
+    Route::get('/quizzes/create', [\App\Http\Controllers\JustAcademy\QuizController::class, 'create'])->name('quizzes.create');
+    Route::post('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'store'])->name('quizzes.store');
+    Route::get('/quizzes/{quiz}/edit', [\App\Http\Controllers\JustAcademy\QuizController::class, 'edit'])->name('quizzes.edit');
+    Route::put('/quizzes/{quiz}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'update'])->name('quizzes.update');
+    Route::delete('/quizzes/{quiz}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'destroy'])->name('quizzes.destroy');
+
     Route::get('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'index'])->name('programs.index');
     Route::get('/programs/create', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'create'])->name('programs.create');
     Route::post('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'store'])->name('programs.store');
     Route::get('/programs/{program}/edit', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'edit'])->name('programs.edit');
     Route::put('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'update'])->name('programs.update');
+    Route::put('/programs/{program}/curriculum', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'syncCurriculum'])->name('programs.curriculum.sync');
     Route::delete('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroy'])->name('programs.destroy');
-    Route::post('/programs/{program}/materials', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'storeMaterial'])->name('programs.materials.store');
-    Route::delete('/programs/{program}/materials/{material}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroyMaterial'])->name('programs.materials.destroy');
-    Route::post('/programs/{program}/quizzes', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'storeQuiz'])->name('programs.quizzes.store');
 
     Route::get('/schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'index'])->name('schedules.index');
     Route::get('/schedules/create', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'create'])->name('schedules.create');

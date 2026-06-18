@@ -33,6 +33,6 @@ class JaMaterialProgress extends Model
 
     public function material(): BelongsTo
     {
-        return $this->belongsTo(JaProgramMaterial::class, 'material_id');
+        return $this->belongsTo(JaMaterial::class, 'material_id');
     }
 }

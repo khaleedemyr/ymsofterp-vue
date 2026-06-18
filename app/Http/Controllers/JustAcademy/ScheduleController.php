@@ -75,8 +75,9 @@ class ScheduleController extends Controller
     public function show(JaSchedule $schedule)
     {
         $schedule->load([
-            'program.materials',
-            'program.quizzes.questions.options',
+            'program:id,title',
+            'program.items.material',
+            'program.items.quiz.questions.options',
             'outlet:id_outlet,nama_outlet',
             'participants.user:id,name,email',
             'trainers.user:id,name',

@@ -35,14 +35,9 @@ class JaProgram extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function materials(): HasMany
+    public function items(): HasMany
     {
-        return $this->hasMany(JaProgramMaterial::class, 'program_id')->orderBy('sort_order');
-    }
-
-    public function quizzes(): HasMany
-    {
-        return $this->hasMany(JaQuiz::class, 'program_id');
+        return $this->hasMany(JaProgramItem::class, 'program_id')->orderBy('sort_order');
     }
 
     public function schedules(): HasMany

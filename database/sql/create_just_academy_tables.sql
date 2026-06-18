@@ -45,43 +45,60 @@ CREATE TABLE IF NOT EXISTS `ja_programs` (
         FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `ja_program_materials` (
+CREATE TABLE IF NOT EXISTS `ja_materials` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `program_id` BIGINT UNSIGNED NOT NULL,
     `title` VARCHAR(255) NOT NULL,
     `type` ENUM('pdf', 'video', 'link', 'doc', 'other') NOT NULL DEFAULT 'pdf',
     `file_path` VARCHAR(500) NULL,
     `url` VARCHAR(500) NULL,
-    `sort_order` INT UNSIGNED NOT NULL DEFAULT 0,
-    `is_pre_read` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = wajib dibaca sebelum training',
+    `description` TEXT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by` BIGINT UNSIGNED NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `ja_program_materials_program_id_idx` (`program_id`),
-    KEY `ja_program_materials_sort_idx` (`program_id`, `sort_order`),
-    CONSTRAINT `ja_program_materials_program_id_foreign`
-        FOREIGN KEY (`program_id`) REFERENCES `ja_programs` (`id`) ON DELETE CASCADE
+    KEY `ja_materials_is_active_idx` (`is_active`),
+    KEY `ja_materials_created_by_idx` (`created_by`),
+    CONSTRAINT `ja_materials_created_by_foreign`
+        FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ja_program_items` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `program_id` BIGINT UNSIGNED NOT NULL,
+    `item_type` ENUM('material', 'quiz') NOT NULL,
+    `material_id` BIGINT UNSIGNED NULL,
+    `quiz_id` BIGINT UNSIGNED NULL,
+    `sort_order` INT UNSIGNED NOT NULL DEFAULT 0,
+    `is_required` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = wajib selesai',
+    `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `ja_program_items_program_sort_idx` (`program_id`, `sort_order`),
+    CONSTRAINT `ja_program_items_program_id_foreign`
+        FOREIGN KEY (`program_id`) REFERENCES `ja_programs` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `ja_program_items_material_id_foreign`
+        FOREIGN KEY (`material_id`) REFERENCES `ja_materials` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `ja_program_items_quiz_id_foreign`
+        FOREIGN KEY (`quiz_id`) REFERENCES `ja_quizzes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------
--- Quiz (pre / post) per program
+-- Quiz (library, urutan diatur via ja_program_items)
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `ja_quizzes` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `program_id` BIGINT UNSIGNED NOT NULL,
     `title` VARCHAR(255) NOT NULL,
-    `type` ENUM('pre', 'post') NOT NULL DEFAULT 'post',
     `pass_score` DECIMAL(5, 2) NOT NULL DEFAULT 70.00 COMMENT 'Nilai lulus (persen)',
     `time_limit_min` INT UNSIGNED NULL COMMENT 'NULL = tanpa batas waktu',
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_by` BIGINT UNSIGNED NULL,
     `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `ja_quizzes_program_id_idx` (`program_id`),
-    KEY `ja_quizzes_type_idx` (`program_id`, `type`),
-    CONSTRAINT `ja_quizzes_program_id_foreign`
-        FOREIGN KEY (`program_id`) REFERENCES `ja_programs` (`id`) ON DELETE CASCADE
+    KEY `ja_quizzes_is_active_idx` (`is_active`),
+    CONSTRAINT `ja_quizzes_created_by_foreign`
+        FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ja_quiz_questions` (
@@ -244,7 +261,7 @@ CREATE TABLE IF NOT EXISTS `ja_material_progress` (
     CONSTRAINT `ja_material_progress_user_id_foreign`
         FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `ja_material_progress_material_id_foreign`
-        FOREIGN KEY (`material_id`) REFERENCES `ja_program_materials` (`id`) ON DELETE CASCADE
+        FOREIGN KEY (`material_id`) REFERENCES `ja_materials` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ja_quiz_attempts` (

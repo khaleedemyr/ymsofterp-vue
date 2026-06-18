@@ -44,6 +44,7 @@ watch(status, debounced);
               <th class="px-4 py-3 text-left">Judul</th>
               <th class="px-4 py-3 text-left">Kategori</th>
               <th class="px-4 py-3 text-left">Status</th>
+              <th class="px-4 py-3 text-left">Item</th>
               <th class="px-4 py-3"></th>
             </tr>
           </thead>
@@ -53,6 +54,7 @@ watch(status, debounced);
               <td class="px-4 py-3 font-medium">{{ p.title }}</td>
               <td class="px-4 py-3">{{ p.category?.name || '-' }}</td>
               <td class="px-4 py-3 capitalize">{{ p.status }}</td>
+              <td class="px-4 py-3">{{ p.items_count ?? 0 }} item</td>
               <td class="px-4 py-3 text-right">
                 <Link :href="route('just-academy.programs.edit', p.id)" class="text-indigo-600">Edit</Link>
               </td>

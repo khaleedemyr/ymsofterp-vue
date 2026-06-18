@@ -31,6 +31,8 @@ SET @ja_parent_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy' 
 INSERT INTO `erp_menu` (`name`, `code`, `parent_id`, `route`, `icon`, `created_at`, `updated_at`) VALUES
 ('Dashboard',        'just_academy_dashboard',    @ja_parent_id, '/just-academy/dashboard',     'fa-solid fa-gauge-high',      NOW(), NOW()),
 ('Categories',       'just_academy_categories',   @ja_parent_id, '/just-academy/categories',    'fa-solid fa-folder-tree',     NOW(), NOW()),
+('Materials',        'just_academy_materials',    @ja_parent_id, '/just-academy/materials',     'fa-solid fa-file-lines',      NOW(), NOW()),
+('Quizzes',          'just_academy_quizzes',      @ja_parent_id, '/just-academy/quizzes',       'fa-solid fa-circle-question', NOW(), NOW()),
 ('Programs',         'just_academy_programs',     @ja_parent_id, '/just-academy/programs',      'fa-solid fa-book-open',       NOW(), NOW()),
 ('Schedules',        'just_academy_schedules',    @ja_parent_id, '/just-academy/schedules',     'fa-solid fa-calendar-days',   NOW(), NOW()),
 ('My Training',      'just_academy_my_training',  @ja_parent_id, '/just-academy/my-training',   'fa-solid fa-user-graduate',   NOW(), NOW()),
@@ -48,6 +50,8 @@ SET `parent_id` = @ja_parent_id
 WHERE `code` IN (
     'just_academy_dashboard',
     'just_academy_categories',
+    'just_academy_materials',
+    'just_academy_quizzes',
     'just_academy_programs',
     'just_academy_schedules',
     'just_academy_my_training',
@@ -65,6 +69,24 @@ INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `update
 (@menu_id, 'create', 'just_academy_categories_create', NOW(), NOW()),
 (@menu_id, 'update', 'just_academy_categories_edit',   NOW(), NOW()),
 (@menu_id, 'delete', 'just_academy_categories_delete', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
+
+-- Permissions: Materials
+SET @menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy_materials' LIMIT 1);
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@menu_id, 'view',   'just_academy_materials_view',   NOW(), NOW()),
+(@menu_id, 'create', 'just_academy_materials_create', NOW(), NOW()),
+(@menu_id, 'update', 'just_academy_materials_edit',   NOW(), NOW()),
+(@menu_id, 'delete', 'just_academy_materials_delete', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
+
+-- Permissions: Quizzes
+SET @menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy_quizzes' LIMIT 1);
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@menu_id, 'view',   'just_academy_quizzes_view',   NOW(), NOW()),
+(@menu_id, 'create', 'just_academy_quizzes_create', NOW(), NOW()),
+(@menu_id, 'update', 'just_academy_quizzes_edit',   NOW(), NOW()),
+(@menu_id, 'delete', 'just_academy_quizzes_delete', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
 
 -- Permissions: Programs

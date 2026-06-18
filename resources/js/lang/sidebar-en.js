@@ -302,6 +302,8 @@ export default {
     "quiz_report": "Quiz Report",
     "just_academy_dashboard": "Dashboard",
     "just_academy_categories": "Categories",
+    "just_academy_materials": "Materials",
+    "just_academy_quizzes": "Quizzes",
     "just_academy_programs": "Programs",
     "just_academy_schedules": "Schedules",
     "just_academy_my_training": "My Training",

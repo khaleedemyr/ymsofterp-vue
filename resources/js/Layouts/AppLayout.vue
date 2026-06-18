@@ -677,6 +677,8 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.menus.just_academy_dashboard'), icon: 'fa-solid fa-gauge-high', route: '/just-academy/dashboard', code: 'just_academy_dashboard' },
             { name: () => t('sidebar.menus.just_academy_categories'), icon: 'fa-solid fa-folder-tree', route: '/just-academy/categories', code: 'just_academy_categories' },
+            { name: () => t('sidebar.menus.just_academy_materials'), icon: 'fa-solid fa-file-lines', route: '/just-academy/materials', code: 'just_academy_materials' },
+            { name: () => t('sidebar.menus.just_academy_quizzes'), icon: 'fa-solid fa-circle-question', route: '/just-academy/quizzes', code: 'just_academy_quizzes' },
             { name: () => t('sidebar.menus.just_academy_programs'), icon: 'fa-solid fa-book-open', route: '/just-academy/programs', code: 'just_academy_programs' },
             { name: () => t('sidebar.menus.just_academy_schedules'), icon: 'fa-solid fa-calendar-days', route: '/just-academy/schedules', code: 'just_academy_schedules' },
             { name: () => t('sidebar.menus.just_academy_my_training'), icon: 'fa-solid fa-user-graduate', route: '/just-academy/my-training', code: 'just_academy_my_training' },

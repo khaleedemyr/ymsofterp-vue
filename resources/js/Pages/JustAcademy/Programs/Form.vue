@@ -1,8 +1,15 @@
 <script setup>
+import { ref } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
-const props = defineProps({ program: Object, categories: Array });
+const props = defineProps({
+  program: Object,
+  categories: Array,
+  libraryMaterials: Array,
+  libraryQuizzes: Array,
+  curriculum: Array,
+});
 
 const form = useForm({
   category_id: props.program?.category_id || '',
@@ -13,22 +20,11 @@ const form = useForm({
   status: props.program?.status || 'draft',
 });
 
-const materialForm = useForm({
-  title: '',
-  type: 'pdf',
-  url: '',
-  file: null,
-  sort_order: 0,
-  is_pre_read: false,
-});
-
-const quizForm = useForm({
-  title: '',
-  type: 'post',
-  pass_score: 70,
-  time_limit_min: '',
-  questions: [{ question: '', type: 'mcq', points: 1, options: [{ option_text: '', is_correct: true }, { option_text: '', is_correct: false }] }],
-});
+const curriculumItems = ref([...(props.curriculum || [])]);
+const dragPayload = ref(null);
+const dropTargetIndex = ref(null);
+const isDropZoneActive = ref(false);
+const curriculumForm = useForm({ items: [] });
 
 function submit() {
   if (props.program) {
@@ -38,32 +34,133 @@ function submit() {
   }
 }
 
-function submitMaterial() {
-  materialForm.post(route('just-academy.programs.materials.store', props.program.id), {
-    forceFormData: true,
-    onSuccess: () => materialForm.reset('title', 'url', 'file'),
-  });
+function libraryItem(itemType, refItem) {
+  return {
+    item_type: itemType,
+    ref_id: refItem.id,
+    title: refItem.title,
+    is_required: false,
+  };
 }
 
-function submitQuiz() {
-  quizForm.post(route('just-academy.programs.quizzes.store', props.program.id), {
-    onSuccess: () => quizForm.reset(),
-  });
+function addMaterial(m) {
+  curriculumItems.value.push(libraryItem('material', m));
 }
 
-function removeMaterial(id) {
-  if (!confirm('Hapus materi?')) return;
-  useForm({}).delete(route('just-academy.programs.materials.destroy', [props.program.id, id]));
+function addQuiz(q) {
+  curriculumItems.value.push(libraryItem('quiz', q));
 }
 
-function addQuestion() {
-  quizForm.questions.push({ question: '', type: 'mcq', points: 1, options: [{ option_text: '', is_correct: false }, { option_text: '', is_correct: false }] });
+function removeItem(index) {
+  curriculumItems.value.splice(index, 1);
+}
+
+function parseDragData(e) {
+  try {
+    return dragPayload.value || JSON.parse(e.dataTransfer.getData('text/plain') || 'null');
+  } catch {
+    return dragPayload.value;
+  }
+}
+
+function onLibraryDragStart(e, itemType, refItem) {
+  const payload = { source: 'library', item: libraryItem(itemType, refItem) };
+  dragPayload.value = payload;
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+}
+
+function onCurriculumDragStart(e, index) {
+  const payload = { source: 'curriculum', index };
+  dragPayload.value = payload;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', JSON.stringify(payload));
+}
+
+function onDragOver(e, targetIndex = null) {
+  e.preventDefault();
+  dropTargetIndex.value = targetIndex;
+  isDropZoneActive.value = targetIndex === null;
+  e.dataTransfer.dropEffect = dragPayload.value?.source === 'library' ? 'copy' : 'move';
+}
+
+function onDragLeave(e, targetIndex = null) {
+  if (targetIndex === dropTargetIndex.value) {
+    dropTargetIndex.value = null;
+  }
+  if (targetIndex === null) {
+    isDropZoneActive.value = false;
+  }
+}
+
+function insertLibraryItem(item, index) {
+  curriculumItems.value.splice(index, 0, { ...item });
+}
+
+function moveCurriculumItem(from, to) {
+  if (from === to) return;
+  const list = [...curriculumItems.value];
+  const [moved] = list.splice(from, 1);
+  list.splice(to, 0, moved);
+  curriculumItems.value = list;
+}
+
+function onDropAt(e, targetIndex) {
+  e.preventDefault();
+  const payload = parseDragData(e);
+  if (!payload) return;
+
+  if (payload.source === 'library' && payload.item) {
+    insertLibraryItem(payload.item, targetIndex);
+  } else if (payload.source === 'curriculum' && payload.index !== undefined) {
+    moveCurriculumItem(payload.index, targetIndex);
+  }
+
+  resetDragState();
+}
+
+function onDropAtEnd(e) {
+  e.preventDefault();
+  const payload = parseDragData(e);
+  if (!payload) return;
+
+  if (payload.source === 'library' && payload.item) {
+    curriculumItems.value.push({ ...payload.item });
+  } else if (payload.source === 'curriculum' && payload.index !== undefined) {
+    moveCurriculumItem(payload.index, curriculumItems.value.length - 1);
+  }
+
+  resetDragState();
+}
+
+function onDropEmpty(e) {
+  e.preventDefault();
+  const payload = parseDragData(e);
+  if (payload?.source === 'library' && payload.item) {
+    curriculumItems.value.push({ ...payload.item });
+  }
+  resetDragState();
+}
+
+function resetDragState() {
+  dragPayload.value = null;
+  dropTargetIndex.value = null;
+  isDropZoneActive.value = false;
+}
+
+function saveCurriculum() {
+  curriculumForm.items = curriculumItems.value.map(i => ({
+    item_type: i.item_type,
+    ref_id: i.ref_id,
+    is_required: !!i.is_required,
+  }));
+  curriculumForm.put(route('just-academy.programs.curriculum.sync', props.program.id));
 }
 </script>
 
 <template>
   <AppLayout :title="program ? 'Edit Program' : 'Program Baru'">
-    <div class="max-w-4xl mx-auto py-8 px-2 space-y-8">
+    <div class="max-w-6xl mx-auto py-8 px-2 space-y-8">
       <h1 class="text-2xl font-bold">{{ program ? 'Edit Program' : 'Program Baru' }}</h1>
 
       <form class="bg-white rounded-2xl shadow p-6 space-y-4" @submit.prevent="submit">
@@ -82,11 +179,6 @@ function addQuestion() {
               <option value="">— Pilih —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
             </select>
-            <p v-if="!categories?.length" class="text-xs text-amber-700 mt-1">
-              Belum ada kategori.
-              <a :href="route('just-academy.categories.index')" class="underline">Tambah kategori</a>
-              terlebih dahulu.
-            </p>
           </div>
         </div>
         <div>
@@ -107,59 +199,125 @@ function addQuestion() {
             </select>
           </div>
         </div>
-        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-xl" :disabled="form.processing">Simpan</button>
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-xl" :disabled="form.processing">Simpan Program</button>
       </form>
 
       <div v-if="!program" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
-        Setelah program disimpan, halaman ini akan menampilkan form <strong>Materi</strong> dan <strong>Quiz</strong> di bawah data program.
+        Simpan program dulu, lalu atur urutan materi & quiz dengan drag-and-drop di bawah.
       </div>
 
       <template v-if="program">
-        <div class="bg-white rounded-2xl shadow p-6">
-          <h2 class="font-semibold mb-4">Materi</h2>
-          <ul class="mb-4 space-y-2">
-            <li v-for="m in program.materials" :key="m.id" class="flex justify-between border rounded-lg px-3 py-2">
-              <span>{{ m.title }} <span class="text-xs text-gray-500">({{ m.type }})</span></span>
-              <button type="button" class="text-red-600 text-sm" @click="removeMaterial(m.id)">Hapus</button>
-            </li>
-          </ul>
-          <form class="grid gap-3" @submit.prevent="submitMaterial">
-            <input v-model="materialForm.title" placeholder="Judul materi" class="border rounded-xl px-3 py-2" required />
-            <select v-model="materialForm.type" class="border rounded-xl px-3 py-2">
-              <option value="pdf">PDF</option>
-              <option value="video">Video</option>
-              <option value="link">Link</option>
-              <option value="doc">Dokumen</option>
-            </select>
-            <input type="file" class="border rounded-xl px-3 py-2" @change="e => materialForm.file = e.target.files[0]" />
-            <input v-model="materialForm.url" placeholder="URL (opsional)" class="border rounded-xl px-3 py-2" />
-            <label class="flex items-center gap-2 text-sm"><input v-model="materialForm.is_pre_read" type="checkbox" /> Pre-read wajib</label>
-            <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded-xl w-fit">Tambah Materi</button>
-          </form>
-        </div>
-
-        <div class="bg-white rounded-2xl shadow p-6">
-          <h2 class="font-semibold mb-4">Quiz</h2>
-          <ul class="mb-4 space-y-2">
-            <li v-for="q in program.quizzes" :key="q.id" class="border rounded-lg px-3 py-2">{{ q.title }} ({{ q.type }})</li>
-          </ul>
-          <form class="space-y-4" @submit.prevent="submitQuiz">
-            <input v-model="quizForm.title" placeholder="Judul quiz" class="w-full border rounded-xl px-3 py-2" required />
-            <select v-model="quizForm.type" class="border rounded-xl px-3 py-2">
-              <option value="pre">Pre-test</option>
-              <option value="post">Post-test</option>
-            </select>
-            <input v-model="quizForm.pass_score" type="number" placeholder="Pass score %" class="border rounded-xl px-3 py-2" />
-            <div v-for="(q, qi) in quizForm.questions" :key="qi" class="border rounded-xl p-4 space-y-2">
-              <input v-model="q.question" placeholder="Pertanyaan" class="w-full border rounded-xl px-3 py-2" required />
-              <div v-for="(opt, oi) in q.options" :key="oi" class="flex gap-2">
-                <input v-model="opt.option_text" class="flex-1 border rounded-xl px-3 py-2" placeholder="Opsi" />
-                <label class="text-sm flex items-center gap-1"><input v-model="opt.is_correct" type="checkbox" /> Benar</label>
-              </div>
+        <div class="grid lg:grid-cols-2 gap-6">
+          <div class="bg-white rounded-2xl shadow p-6 space-y-4">
+            <h2 class="font-semibold">Pustaka</h2>
+            <p class="text-xs text-gray-500">Drag item ke kolom kanan, atau klik +</p>
+            <div>
+              <h3 class="text-sm font-medium text-gray-600 mb-2">Materi</h3>
+              <ul class="space-y-2 max-h-48 overflow-y-auto">
+                <li
+                  v-for="m in libraryMaterials"
+                  :key="'m'+m.id"
+                  draggable="true"
+                  class="flex justify-between items-center border rounded-lg px-3 py-2 text-sm cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:bg-indigo-50/50"
+                  @dragstart="onLibraryDragStart($event, 'material', m)"
+                  @dragend="resetDragState"
+                >
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="text-gray-400 shrink-0">⠿</span>
+                    <span class="truncate">{{ m.title }} <span class="text-gray-400">({{ m.type }})</span></span>
+                  </span>
+                  <button type="button" class="text-indigo-600 font-semibold shrink-0 ml-2" @click="addMaterial(m)">+</button>
+                </li>
+                <li v-if="!libraryMaterials?.length" class="text-sm text-gray-500">
+                  Belum ada materi. <a :href="route('just-academy.materials.create')" class="underline">Buat materi</a>
+                </li>
+              </ul>
             </div>
-            <button type="button" class="text-indigo-600 text-sm" @click="addQuestion">+ Pertanyaan</button>
-            <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded-xl block">Tambah Quiz</button>
-          </form>
+            <div>
+              <h3 class="text-sm font-medium text-gray-600 mb-2">Quiz</h3>
+              <ul class="space-y-2 max-h-48 overflow-y-auto">
+                <li
+                  v-for="q in libraryQuizzes"
+                  :key="'q'+q.id"
+                  draggable="true"
+                  class="flex justify-between items-center border rounded-lg px-3 py-2 text-sm cursor-grab active:cursor-grabbing hover:border-indigo-300 hover:bg-indigo-50/50"
+                  @dragstart="onLibraryDragStart($event, 'quiz', q)"
+                  @dragend="resetDragState"
+                >
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span class="text-gray-400 shrink-0">⠿</span>
+                    <span class="truncate">{{ q.title }}</span>
+                  </span>
+                  <button type="button" class="text-indigo-600 font-semibold shrink-0 ml-2" @click="addQuiz(q)">+</button>
+                </li>
+                <li v-if="!libraryQuizzes?.length" class="text-sm text-gray-500">
+                  Belum ada quiz. <a :href="route('just-academy.quizzes.create')" class="underline">Buat quiz</a>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow p-6">
+            <h2 class="font-semibold mb-2">Urutan Program</h2>
+            <p class="text-xs text-gray-500 mb-4">Drop dari pustaka atau drag item untuk ubah urutan.</p>
+
+            <ul class="space-y-2 min-h-[12rem]">
+              <li
+                v-if="!curriculumItems.length"
+                class="text-sm text-gray-400 text-center py-8 border border-dashed rounded-xl transition-colors"
+                :class="isDropZoneActive ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : ''"
+                @dragover="onDragOver($event, null)"
+                @dragleave="onDragLeave($event, null)"
+                @drop="onDropEmpty"
+              >
+                Drag materi atau quiz ke sini
+              </li>
+
+              <li
+                v-for="(item, index) in curriculumItems"
+                :key="index + '-' + item.item_type + '-' + item.ref_id"
+                draggable="true"
+                class="flex items-center gap-3 border rounded-xl px-3 py-2 cursor-grab active:cursor-grabbing bg-gray-50 transition-colors"
+                :class="dropTargetIndex === index ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : ''"
+                @dragstart="onCurriculumDragStart($event, index)"
+                @dragover="onDragOver($event, index)"
+                @dragleave="onDragLeave($event, index)"
+                @drop="onDropAt($event, index)"
+                @dragend="resetDragState"
+              >
+                <span class="text-gray-400 text-xs w-5">{{ index + 1 }}</span>
+                <span class="text-lg">{{ item.item_type === 'material' ? '📄' : '❓' }}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="font-medium text-sm truncate">{{ item.title }}</p>
+                  <p class="text-xs text-gray-500 capitalize">{{ item.item_type }}</p>
+                </div>
+                <label class="text-xs flex items-center gap-1 shrink-0" @click.stop>
+                  <input v-model="item.is_required" type="checkbox" /> Wajib
+                </label>
+                <button type="button" class="text-red-600 text-sm" @click="removeItem(index)">×</button>
+              </li>
+
+              <li
+                v-if="curriculumItems.length"
+                class="text-xs text-center py-3 border border-dashed rounded-xl text-gray-400 transition-colors"
+                :class="isDropZoneActive ? 'border-indigo-400 bg-indigo-50 text-indigo-600' : ''"
+                @dragover="onDragOver($event, null)"
+                @dragleave="onDragLeave($event, null)"
+                @drop="onDropAtEnd"
+              >
+                Drop di sini untuk tambah di akhir
+              </li>
+            </ul>
+
+            <button
+              type="button"
+              class="mt-4 bg-emerald-600 text-white px-4 py-2 rounded-xl w-full"
+              :disabled="curriculumForm.processing"
+              @click="saveCurriculum"
+            >
+              Simpan Urutan Curriculum
+            </button>
+          </div>
         </div>
       </template>
     </div>

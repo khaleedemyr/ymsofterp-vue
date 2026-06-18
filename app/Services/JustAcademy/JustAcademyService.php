@@ -3,7 +3,10 @@
 namespace App\Services\JustAcademy;
 
 use App\Models\JustAcademy\JaAttendance;
+use App\Models\JustAcademy\JaMaterial;
 use App\Models\JustAcademy\JaMaterialProgress;
+use App\Models\JustAcademy\JaProgram;
+use App\Models\JustAcademy\JaProgramItem;
 use App\Models\JustAcademy\JaQuiz;
 use App\Models\JustAcademy\JaQuizAnswer;
 use App\Models\JustAcademy\JaQuizAttempt;
@@ -161,12 +164,122 @@ class JustAcademyService
         return $attendance->fresh();
     }
 
+    public function programHasMaterial(JaProgram $program, int $materialId): bool
+    {
+        return JaProgramItem::where('program_id', $program->id)
+            ->where('item_type', 'material')
+            ->where('material_id', $materialId)
+            ->exists();
+    }
+
+    public function programHasQuiz(JaProgram $program, int $quizId): bool
+    {
+        return JaProgramItem::where('program_id', $program->id)
+            ->where('item_type', 'quiz')
+            ->where('quiz_id', $quizId)
+            ->exists();
+    }
+
+    public function getProgramCurriculum(JaProgram $program): \Illuminate\Support\Collection
+    {
+        return $program->items()
+            ->with([
+                'material' => fn ($q) => $q->where('is_active', true),
+                'quiz' => fn ($q) => $q->where('is_active', true)->with('questions.options'),
+            ])
+            ->orderBy('sort_order')
+            ->get()
+            ->filter(fn (JaProgramItem $item) => $item->material || $item->quiz)
+            ->values();
+    }
+
+    public function syncProgramCurriculum(JaProgram $program, array $items): void
+    {
+        DB::transaction(function () use ($program, $items) {
+            $program->items()->delete();
+
+            foreach ($items as $i => $row) {
+                $type = $row['item_type'];
+                $refId = (int) $row['ref_id'];
+
+                if ($type === 'material') {
+                    JaMaterial::where('id', $refId)->where('is_active', true)->firstOrFail();
+                    JaProgramItem::create([
+                        'program_id' => $program->id,
+                        'item_type' => 'material',
+                        'material_id' => $refId,
+                        'sort_order' => $i,
+                        'is_required' => !empty($row['is_required']),
+                    ]);
+                } else {
+                    JaQuiz::where('id', $refId)->where('is_active', true)->firstOrFail();
+                    JaProgramItem::create([
+                        'program_id' => $program->id,
+                        'item_type' => 'quiz',
+                        'quiz_id' => $refId,
+                        'sort_order' => $i,
+                        'is_required' => !empty($row['is_required']),
+                    ]);
+                }
+            }
+        });
+    }
+
+    public function buildParticipantCurriculum(JaSchedule $schedule, int $userId): \Illuminate\Support\Collection
+    {
+        return $this->getProgramCurriculum($schedule->program)->map(function (JaProgramItem $item) use ($schedule, $userId) {
+            if ($item->item_type === 'material' && $item->material) {
+                $m = $item->material;
+                $completed = JaMaterialProgress::where([
+                    'schedule_id' => $schedule->id,
+                    'user_id' => $userId,
+                    'material_id' => $m->id,
+                ])->exists();
+
+                return [
+                    'item_type' => 'material',
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'type' => $m->type,
+                    'file_path' => $m->file_path ? asset('storage/' . $m->file_path) : null,
+                    'url' => $m->url,
+                    'is_required' => $item->is_required,
+                    'completed' => $completed,
+                ];
+            }
+
+            if ($item->item_type === 'quiz' && $item->quiz) {
+                $quiz = $item->quiz;
+                $attempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+                    ->where('quiz_id', $quiz->id)
+                    ->where('user_id', $userId)
+                    ->latest('id')
+                    ->first();
+
+                return [
+                    'item_type' => 'quiz',
+                    'id' => $quiz->id,
+                    'title' => $quiz->title,
+                    'pass_score' => $quiz->pass_score,
+                    'is_required' => $item->is_required,
+                    'attempt' => $attempt ? [
+                        'score' => $attempt->score,
+                        'passed' => $attempt->passed,
+                        'submitted_at' => $attempt->submitted_at,
+                    ] : null,
+                    'questions' => $quiz->questions,
+                ];
+            }
+
+            return null;
+        })->filter()->values();
+    }
+
     public function markMaterialComplete(JaSchedule $schedule, int $userId, int $materialId): JaMaterialProgress
     {
         $this->ensureParticipant($schedule, $userId);
 
-        $materialBelongs = $schedule->program->materials()->where('id', $materialId)->exists();
-        if (!$materialBelongs) {
+        if (!$this->programHasMaterial($schedule->program, $materialId)) {
             throw ValidationException::withMessages(['material' => 'Materi tidak ditemukan pada program ini.']);
         }
 
@@ -184,7 +297,7 @@ class JustAcademyService
     {
         $this->ensureParticipant($schedule, $userId);
 
-        if ($quiz->program_id !== $schedule->program_id) {
+        if (!$this->programHasQuiz($schedule->program, $quiz->id)) {
             throw ValidationException::withMessages(['quiz' => 'Quiz tidak sesuai program jadwal.']);
         }
 

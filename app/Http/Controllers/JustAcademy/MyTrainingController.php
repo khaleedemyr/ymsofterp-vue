@@ -4,6 +4,7 @@ namespace App\Http\Controllers\JustAcademy;
 
 use App\Http\Controllers\Controller;
 use App\Models\JustAcademy\JaFeedback;
+use App\Models\JustAcademy\JaQuiz;
 use App\Models\JustAcademy\JaSchedule;
 use App\Services\JustAcademy\JustAcademyService;
 use Illuminate\Http\Request;
@@ -42,58 +43,18 @@ class MyTrainingController extends Controller
         $this->service->ensureParticipant($schedule, $userId);
 
         $schedule->load([
-            'program.materials' => fn ($q) => $q->where('is_active', true)->orderBy('sort_order'),
-            'program.quizzes' => fn ($q) => $q->where('is_active', true)->with('questions.options'),
+            'program:id,title',
             'outlet:id_outlet,nama_outlet',
             'trainers.user:id,name',
         ]);
 
         $attendance = $schedule->attendances()->where('user_id', $userId)->first();
-        $materialProgress = $schedule->program->materials->map(function ($material) use ($schedule, $userId) {
-            $done = $material->program_id
-                ? \App\Models\JustAcademy\JaMaterialProgress::where('schedule_id', $schedule->id)
-                    ->where('user_id', $userId)
-                    ->where('material_id', $material->id)
-                    ->exists()
-                : false;
-
-            return [
-                'id' => $material->id,
-                'title' => $material->title,
-                'type' => $material->type,
-                'file_path' => $material->file_path ? asset('storage/' . $material->file_path) : null,
-                'url' => $material->url,
-                'is_pre_read' => $material->is_pre_read,
-                'completed' => $done,
-            ];
-        });
-
-        $quizAttempts = $schedule->program->quizzes->map(function ($quiz) use ($schedule, $userId) {
-            $attempt = \App\Models\JustAcademy\JaQuizAttempt::where('schedule_id', $schedule->id)
-                ->where('quiz_id', $quiz->id)
-                ->where('user_id', $userId)
-                ->latest('id')
-                ->first();
-
-            return [
-                'id' => $quiz->id,
-                'title' => $quiz->title,
-                'type' => $quiz->type,
-                'pass_score' => $quiz->pass_score,
-                'attempt' => $attempt ? [
-                    'score' => $attempt->score,
-                    'passed' => $attempt->passed,
-                    'submitted_at' => $attempt->submitted_at,
-                ] : null,
-                'questions' => $quiz->questions,
-            ];
-        });
+        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId);
 
         return Inertia::render('JustAcademy/MyTraining/Show', [
             'schedule' => $schedule,
             'attendance' => $attendance,
-            'materials' => $materialProgress,
-            'quizzes' => $quizAttempts,
+            'curriculum' => $curriculum,
         ]);
     }
 
@@ -106,7 +67,7 @@ class MyTrainingController extends Controller
 
     public function submitQuiz(Request $request, JaSchedule $schedule, int $quizId)
     {
-        $quiz = \App\Models\JustAcademy\JaQuiz::findOrFail($quizId);
+        $quiz = JaQuiz::findOrFail($quizId);
         $validated = $request->validate(['answers' => 'required|array']);
 
         $attempt = $this->service->submitQuiz(
