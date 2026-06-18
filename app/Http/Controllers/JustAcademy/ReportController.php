@@ -23,23 +23,31 @@ class ReportController extends Controller
         }
 
         $divisionId = $request->filled('division_id') ? (int) $request->input('division_id') : null;
+        $type = $request->input('type', 'report');
+        if (!in_array($type, ['report', 'plan'], true)) {
+            $type = 'report';
+        }
 
         $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
         $selectedDivision = $divisionId
             ? $divisions->firstWhere('id', $divisionId)
             : null;
 
-        $rows = $this->service->buildDepartmentalTrainingReport($year, $month, $divisionId);
+        $rows = $type === 'plan'
+            ? $this->service->buildDepartmentalTrainingPlan($year, $month, $divisionId)
+            : $this->service->buildDepartmentalTrainingReport($year, $month, $divisionId);
 
         $monthLabel = sprintf('%02d/%04d', $month, $year);
 
         return Inertia::render('JustAcademy/Reports/Index', [
             'rows' => $rows,
+            'reportType' => $type,
             'divisions' => $divisions,
             'filters' => [
                 'year' => $year,
                 'month' => $month,
                 'division_id' => $divisionId,
+                'type' => $type,
             ],
             'reportMeta' => [
                 'month_label' => $monthLabel,

@@ -784,6 +784,30 @@ class JustAcademyService
         })->values()->all();
     }
 
+    public function buildDepartmentalTrainingPlan(int $year, int $month, ?int $divisionId = null): Collection
+    {
+        $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        $schedules = JaSchedule::query()
+            ->with([
+                'program.category:id,name',
+                'outlet:id_outlet,nama_outlet',
+                'trainers.user:id,nama_lengkap',
+            ])
+            ->whereNotIn('status', ['cancelled'])
+            ->where('start_at', '>=', $rangeStart)
+            ->where('start_at', '<=', $rangeEnd)
+            ->orderBy('start_at')
+            ->get();
+
+        return $schedules
+            ->map(fn (JaSchedule $schedule) => $this->mapDepartmentalPlanRow($schedule, $divisionId))
+            ->filter()
+            ->values()
+            ->map(fn (array $row, int $index) => array_merge($row, ['no' => $index + 1]));
+    }
+
     public function buildDepartmentalTrainingReport(int $year, int $month, ?int $divisionId = null): Collection
     {
         $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
@@ -808,6 +832,27 @@ class JustAcademyService
             ->filter()
             ->values()
             ->map(fn (array $row, int $index) => array_merge($row, ['no' => $index + 1]));
+    }
+
+    private function mapDepartmentalPlanRow(JaSchedule $schedule, ?int $divisionId): ?array
+    {
+        $participants = $this->scheduleParticipantUsers($schedule, $divisionId);
+        if ($divisionId && $participants->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'training_subject' => $schedule->title,
+            'objective' => $schedule->program?->description ?: '—',
+            'method' => $schedule->program?->category?->name ?: '—',
+            'duration' => $this->formatScheduleDuration($schedule),
+            'participant' => $participants->isNotEmpty()
+                ? $participants->pluck('nama_lengkap')->filter()->join(', ')
+                : '—',
+            'training_date' => $schedule->start_at?->timezone(config('app.timezone'))->format('d/m/Y'),
+            'venue' => $schedule->location ?: $schedule->outlet?->nama_outlet ?: '—',
+            'trainer' => $this->formatScheduleTrainers($schedule, true),
+        ];
     }
 
     private function mapDepartmentalReportRow(JaSchedule $schedule, ?int $divisionId): ?array
@@ -853,16 +898,25 @@ class JustAcademyService
 
     private function scheduleParticipantUserIds(JaSchedule $schedule, ?int $divisionId): Collection
     {
+        return $this->scheduleParticipantUsers($schedule, $divisionId)->pluck('id')->values();
+    }
+
+    private function scheduleParticipantUsers(JaSchedule $schedule, ?int $divisionId): Collection
+    {
         $userIds = $schedule->participants()->pluck('user_id');
-        if (!$divisionId) {
-            return $userIds->values();
+        if ($userIds->isEmpty()) {
+            return collect();
         }
 
-        return User::query()
+        $query = User::query()
             ->whereIn('id', $userIds)
-            ->where('division_id', $divisionId)
-            ->pluck('id')
-            ->values();
+            ->orderBy('nama_lengkap');
+
+        if ($divisionId) {
+            $query->where('division_id', $divisionId);
+        }
+
+        return $query->get(['id', 'nama_lengkap']);
     }
 
     private function resolvePrePostQuizIds(JaSchedule $schedule): array
@@ -953,15 +1007,23 @@ class JustAcademyService
         return '—';
     }
 
-    private function formatScheduleTrainers(JaSchedule $schedule): string
+    private function formatScheduleTrainers(JaSchedule $schedule, bool $withType = false): string
     {
         $names = $schedule->trainers
-            ->map(function ($trainer) {
-                if (($trainer->trainer_type ?? 'internal') === 'external') {
-                    return $trainer->external_name;
+            ->map(function ($trainer) use ($withType) {
+                $isExternal = ($trainer->trainer_type ?? 'internal') === 'external';
+                $name = $isExternal ? $trainer->external_name : $trainer->user?->nama_lengkap;
+                if (!$name) {
+                    return null;
                 }
 
-                return $trainer->user?->nama_lengkap;
+                if ($withType) {
+                    $type = $isExternal ? 'External' : 'Internal';
+
+                    return "{$name} ({$type})";
+                }
+
+                return $name;
             })
             ->filter()
             ->unique()
