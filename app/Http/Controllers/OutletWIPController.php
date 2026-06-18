@@ -433,8 +433,12 @@ class OutletWIPController extends Controller
         $outlet_id = $request->input('outlet_id');
         $warehouse_outlet_id = $request->input('warehouse_outlet_id');
 
-        if (!$item_id || !$qty || !$outlet_id || !$warehouse_outlet_id) {
+        if (!$item_id || !$outlet_id || !$warehouse_outlet_id) {
             return response()->json(['error' => 'Missing required parameters'], 400);
+        }
+
+        if ((float) $qty <= 0) {
+            return response()->json(['error' => 'Qty produksi tidak boleh 0'], 422);
         }
 
         // Ambil BOM untuk item tersebut
@@ -535,9 +539,11 @@ class OutletWIPController extends Controller
             'notes' => 'nullable|string',
             'productions' => 'required|array|min:1',
             'productions.*.item_id' => 'required|exists:items,id',
-            'productions.*.qty' => 'required|numeric|min:0',
+            'productions.*.qty' => 'required|numeric|min:0.01',
             'productions.*.qty_jadi' => 'required|numeric|min:0',
             'productions.*.unit_id' => 'required|exists:units,id',
+        ], [
+            'productions.*.qty.min' => 'Qty produksi tidak boleh 0',
         ]);
 
         $userId = Auth::id();
@@ -744,6 +750,10 @@ class OutletWIPController extends Controller
                 'success' => false,
                 'message' => 'Tidak ada item produksi'
             ], 400);
+        }
+
+        if ($reject = $this->rejectZeroProductionQty($productions)) {
+            return $reject;
         }
         
         $outlet_id = $header->outlet_id;
@@ -1176,6 +1186,8 @@ class OutletWIPController extends Controller
             'productions.*.qty' => 'required|numeric|min:0.01',
             'productions.*.qty_jadi' => 'required|numeric|min:0',
             'productions.*.unit_id' => 'required|integer',
+        ], [
+            'productions.*.qty.min' => 'Qty produksi tidak boleh 0',
         ]);
         
         $outlet_id = $validated['outlet_id'];
@@ -2396,5 +2408,23 @@ class OutletWIPController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    /**
+     * @param  iterable<int, object|array<string, mixed>>  $productions
+     */
+    private function rejectZeroProductionQty(iterable $productions): ?\Illuminate\Http\JsonResponse
+    {
+        foreach ($productions as $prod) {
+            $qty = is_object($prod) ? $prod->qty : ($prod['qty'] ?? 0);
+            if ((float) $qty <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Qty produksi tidak boleh 0',
+                ], 422);
+            }
+        }
+
+        return null;
     }
 }

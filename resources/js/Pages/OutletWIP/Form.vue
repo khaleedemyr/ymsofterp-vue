@@ -135,14 +135,18 @@
               </label>
               <input 
                 type="number" 
-                min="0" 
+                min="0.01" 
                 step="0.01" 
                 v-model.number="production.qty" 
                 class="input input-bordered w-full" 
                 required 
                 @input="() => onQtyChange(index)"
+                @blur="() => onQtyBlur(index)"
                 :disabled="!form.warehouse_outlet_id || !production.item_id" 
               />
+              <p v-if="production.item_id && production.qty <= 0" class="text-xs text-red-600 mt-1">
+                Qty produksi tidak boleh 0
+              </p>
               <p v-if="production.itemData?.small_conversion_qty" class="text-xs text-gray-500 mt-1">
                 1 {{ productionRecipeUnit(production) }} = {{ formatNumber(production.itemData.small_conversion_qty) }} {{ production.itemData.small_unit_name || 'small' }}
               </p>
@@ -482,6 +486,38 @@ function onQtyChange(index) {
   }
 }
 
+function onQtyBlur(index) {
+  const production = form.productions[index]
+  if (!production.item_id) return
+  if (!production.qty || production.qty <= 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Qty tidak valid',
+      text: 'Qty produksi tidak boleh 0',
+      confirmButtonText: 'OK',
+    })
+    production.qty = 1
+    applyAutoQtyJadi(production)
+    if (form.outlet_id && form.warehouse_outlet_id) {
+      fetchBom(index)
+    }
+  }
+}
+
+function validateProductionQty() {
+  const invalid = form.productions.some(p => p.item_id && (!p.qty || p.qty <= 0))
+  if (invalid) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Qty tidak valid',
+      text: 'Qty produksi tidak boleh 0',
+      confirmButtonText: 'OK',
+    })
+    return false
+  }
+  return true
+}
+
 async function fetchBom(index) {
   const production = form.productions[index]
   if (!production.item_id || !production.qty || !form.outlet_id || !form.warehouse_outlet_id) {
@@ -630,6 +666,7 @@ watch(() => [
 // Save draft function
 async function saveDraft() {
   if (isSaving.value) return
+  if (!validateProductionQty()) return
   
   isSaving.value = true
   
@@ -695,6 +732,8 @@ async function saveDraft() {
 }
 
 async function proceedProduction() {
+  if (!validateProductionQty()) return
+
   if (!canSubmit.value) {
     Swal.fire({
       icon: 'warning',
