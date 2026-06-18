@@ -1226,6 +1226,20 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/attendance-report/detail', [\App\Http\Controllers\AttendanceReportController::class, 'detail'])->name('api.approval-app.attendance-report.detail');
         Route::get('/attendance-report/shift-info', [\App\Http\Controllers\AttendanceReportController::class, 'shiftInfo'])->name('api.approval-app.attendance-report.shift-info');
 
+        // Just Academy (mobile ymsoftapp)
+        Route::prefix('just-academy')->name('api.approval-app.just-academy.')->group(function () {
+            Route::get('/dashboard', [\App\Http\Controllers\JustAcademy\ApiController::class, 'dashboard']);
+            Route::get('/my-schedules', [\App\Http\Controllers\JustAcademy\ApiController::class, 'mySchedules']);
+            Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ApiController::class, 'scheduleDetail']);
+            Route::get('/schedules/{schedule}/materials', [\App\Http\Controllers\JustAcademy\ApiController::class, 'materials']);
+            Route::post('/schedules/{schedule}/materials/{materialId}/complete', [\App\Http\Controllers\JustAcademy\ApiController::class, 'completeMaterial']);
+            Route::post('/schedules/{schedule}/quizzes/{quiz}/submit', [\App\Http\Controllers\JustAcademy\ApiController::class, 'submitQuiz']);
+            Route::post('/check-in', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkIn']);
+            Route::post('/check-out', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkOut']);
+            Route::post('/schedules/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\ApiController::class, 'feedback']);
+            Route::get('/schedules/{schedule}/attendance', [\App\Http\Controllers\JustAcademy\ApiController::class, 'myAttendance']);
+        });
+
         // Report Kasbon (PR kasbon / cicilan — selaras web)
         Route::get('/report-kasbon', [\App\Http\Controllers\KasbonReportController::class, 'apiIndex'])->name('api.approval-app.report-kasbon');
         Route::get('/report-kasbon/export', [\App\Http\Controllers\KasbonReportController::class, 'exportExcel'])->name('api.approval-app.report-kasbon.export');

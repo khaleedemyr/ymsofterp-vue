@@ -668,6 +668,20 @@ const menuGroups = [
             { name: () => t('sidebar.menus.quiz_report'), icon: 'fa-solid fa-question-circle', route: '/lms/quiz-report-page', code: 'lms-quiz-report' },
         ],
     },
+
+    {
+        title: () => t('sidebar.groups.just_academy'),
+        icon: 'fa-solid fa-graduation-cap',
+        collapsible: true,
+        open: ref(false),
+        menus: [
+            { name: () => t('sidebar.menus.just_academy_dashboard'), icon: 'fa-solid fa-gauge-high', route: '/just-academy/dashboard', code: 'just_academy_dashboard' },
+            { name: () => t('sidebar.menus.just_academy_programs'), icon: 'fa-solid fa-book-open', route: '/just-academy/programs', code: 'just_academy_programs' },
+            { name: () => t('sidebar.menus.just_academy_schedules'), icon: 'fa-solid fa-calendar-days', route: '/just-academy/schedules', code: 'just_academy_schedules' },
+            { name: () => t('sidebar.menus.just_academy_my_training'), icon: 'fa-solid fa-user-graduate', route: '/just-academy/my-training', code: 'just_academy_my_training' },
+            { name: () => t('sidebar.menus.just_academy_reports'), icon: 'fa-solid fa-chart-column', route: '/just-academy/reports', code: 'just_academy_reports' },
+        ],
+    },
 ];
 
 const filteredMenuGroups = computed(() =>

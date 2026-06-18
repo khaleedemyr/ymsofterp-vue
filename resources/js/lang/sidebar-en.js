@@ -20,7 +20,8 @@ export default {
     "support": "Support",
     "announcement": "Announcement",
     "crm": "CRM",
-    "lms": "LMS"
+    "lms": "LMS",
+    "just_academy": "Just Academy"
   },
   "menus": {
     "sales_outlet_dashboard": "Sales Outlet Dashboard",
@@ -298,6 +299,11 @@ export default {
     "trainer_report": "Trainer Report",
     "laporan_training_karyawan": "Laporan Training Karyawan",
     "training_report": "Training Report",
-    "quiz_report": "Quiz Report"
+    "quiz_report": "Quiz Report",
+    "just_academy_dashboard": "Dashboard",
+    "just_academy_programs": "Programs",
+    "just_academy_schedules": "Schedules",
+    "just_academy_my_training": "My Training",
+    "just_academy_reports": "Reports"
   }
 };

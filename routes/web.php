@@ -3626,4 +3626,46 @@ Route::get('/pos-void-item-approvals/pending', [\App\Http\Controllers\PosVoidIte
 Route::post('/pos-void-item-requests/{id}/approve', [\App\Http\Controllers\PosVoidItemRequestController::class, 'approve'])->name('pos-void-item.approve');
 Route::post('/pos-void-item-requests/{id}/reject', [\App\Http\Controllers\PosVoidItemRequestController::class, 'reject'])->name('pos-void-item.reject');
 
+// Just Academy
+Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-academy.')->group(function () {
+    Route::get('/dashboard', [\App\Http\Controllers\JustAcademy\DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/check-in', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'checkInPage'])->name('check-in');
+
+    Route::get('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'index'])->name('programs.index');
+    Route::get('/programs/create', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'create'])->name('programs.create');
+    Route::post('/programs', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'store'])->name('programs.store');
+    Route::get('/programs/{program}/edit', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'edit'])->name('programs.edit');
+    Route::put('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'update'])->name('programs.update');
+    Route::delete('/programs/{program}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroy'])->name('programs.destroy');
+    Route::post('/programs/{program}/materials', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'storeMaterial'])->name('programs.materials.store');
+    Route::delete('/programs/{program}/materials/{material}', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'destroyMaterial'])->name('programs.materials.destroy');
+    Route::post('/programs/{program}/quizzes', [\App\Http\Controllers\JustAcademy\ProgramController::class, 'storeQuiz'])->name('programs.quizzes.store');
+
+    Route::get('/schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'index'])->name('schedules.index');
+    Route::get('/schedules/create', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'create'])->name('schedules.create');
+    Route::post('/schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'store'])->name('schedules.store');
+    Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'show'])->name('schedules.show');
+    Route::get('/schedules/{schedule}/edit', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'edit'])->name('schedules.edit');
+    Route::put('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'update'])->name('schedules.update');
+    Route::delete('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'destroy'])->name('schedules.destroy');
+    Route::post('/schedules/{schedule}/invite', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'invite'])->name('schedules.invite');
+    Route::delete('/schedules/{schedule}/participants/{participantId}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'removeParticipant'])->name('schedules.participants.destroy');
+    Route::post('/schedules/{schedule}/trainers', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'assignTrainer'])->name('schedules.trainers.store');
+    Route::post('/schedules/{schedule}/attendance/manual', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'markAttendance'])->name('schedules.attendance.manual');
+
+    Route::get('/my-training', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'index'])->name('my-training.index');
+    Route::get('/my-training/{schedule}', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'show'])->name('my-training.show');
+    Route::post('/my-training/{schedule}/materials/{materialId}/complete', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'completeMaterial'])->name('my-training.materials.complete');
+    Route::post('/my-training/{schedule}/quizzes/{quizId}/submit', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'submitQuiz'])->name('my-training.quizzes.submit');
+    Route::post('/my-training/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'submitFeedback'])->name('my-training.feedback');
+
+    Route::get('/reports', [\App\Http\Controllers\JustAcademy\ReportController::class, 'index'])->name('reports.index');
+
+    Route::prefix('api')->name('api.')->group(function () {
+        Route::get('/users/search', [\App\Http\Controllers\JustAcademy\LookupController::class, 'searchUsers'])->name('users.search');
+        Route::get('/jabatan', [\App\Http\Controllers\JustAcademy\LookupController::class, 'jabatan'])->name('jabatan');
+        Route::get('/outlets', [\App\Http\Controllers\JustAcademy\LookupController::class, 'outlets'])->name('outlets');
+    });
+});
+
 require __DIR__.'/auth.php';
