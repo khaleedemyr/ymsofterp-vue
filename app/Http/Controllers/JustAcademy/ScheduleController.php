@@ -160,6 +160,9 @@ class ScheduleController extends Controller
             'qrUrl' => $schedule->qr_token
                 ? url('/just-academy/check-in?token=' . $schedule->qr_token . '&schedule_id=' . $schedule->id)
                 : null,
+            'jabatanList' => Jabatan::orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan']),
+            'divisions' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
+            'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
         ]);
     }
 

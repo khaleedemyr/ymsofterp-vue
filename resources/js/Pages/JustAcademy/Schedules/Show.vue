@@ -1,23 +1,23 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import axios from 'axios';
 import QRCode from 'qrcode';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
+import JaUserMultiselect from '@/Components/JustAcademy/JaUserMultiselect.vue';
 import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors, jaToastSuccess } from '@/composables/useJustAcademyUi';
 
-const props = defineProps({ schedule: Object, qrUrl: String });
+const props = defineProps({
+  schedule: Object,
+  qrUrl: String,
+  jabatanList: { type: Array, default: () => [] },
+  divisions: { type: Array, default: () => [] },
+  outlets: { type: Array, default: () => [] },
+});
 
-const showBulkInvite = ref(false);
+const showAddParticipants = ref(false);
 const qrCodeDataUrl = ref('');
 const markingUserId = ref(null);
-const userSearch = ref('');
-const userResults = ref([]);
-const selectedUsers = ref([]);
-const jabatanList = ref([]);
-const outletList = ref([]);
-const selectedJabatan = ref([]);
-const selectedOutlets = ref([]);
+const selectedInviteUsers = ref([]);
 
 const inviteForm = useForm({ user_ids: [], jabatan_ids: [], outlet_ids: [] });
 const attendanceForm = useForm({ user_id: '', notes: '' });
@@ -29,6 +29,14 @@ const attendedUserIds = computed(() => {
   const ids = new Set();
   (props.schedule.attendances || []).forEach((a) => {
     if (a.user_id) ids.add(a.user_id);
+  });
+  return ids;
+});
+
+const existingParticipantIds = computed(() => {
+  const ids = new Set();
+  (props.schedule.participants || []).forEach((p) => {
+    if (p.user_id) ids.add(p.user_id);
   });
   return ids;
 });
@@ -65,38 +73,27 @@ async function generateQrCode() {
   }
 }
 
-onMounted(async () => {
-  await generateQrCode();
-  const [jRes, oRes] = await Promise.all([
-    axios.get(route('just-academy.api.jabatan')),
-    axios.get(route('just-academy.api.outlets')),
-  ]);
-  jabatanList.value = jRes.data.jabatan || [];
-  outletList.value = oRes.data.outlets || [];
+onMounted(() => {
+  generateQrCode();
 });
 
-async function searchUsers() {
-  if (userSearch.value.length < 2) return;
-  const res = await axios.get(route('just-academy.api.users.search'), { params: { q: userSearch.value } });
-  userResults.value = res.data.users || [];
-}
-
-function addUser(u) {
-  if (!selectedUsers.value.find((x) => x.id === u.id)) selectedUsers.value.push(u);
-  userSearch.value = '';
-  userResults.value = [];
-}
-
 function submitInvite() {
-  inviteForm.user_ids = selectedUsers.value.map((u) => u.id);
-  inviteForm.jabatan_ids = selectedJabatan.value;
-  inviteForm.outlet_ids = selectedOutlets.value;
+  const userIds = selectedInviteUsers.value
+    .map((u) => u.id)
+    .filter((id) => !existingParticipantIds.value.has(id));
+
+  if (!userIds.length) {
+    jaFormErrors({ invite: 'Pilih minimal satu peserta baru.' });
+    return;
+  }
+
+  inviteForm.user_ids = userIds;
+  inviteForm.jabatan_ids = [];
+  inviteForm.outlet_ids = [];
   inviteForm.post(route('just-academy.schedules.invite', props.schedule.id), {
     onSuccess: () => {
-      selectedUsers.value = [];
-      selectedJabatan.value = [];
-      selectedOutlets.value = [];
-      showBulkInvite.value = false;
+      selectedInviteUsers.value = [];
+      showAddParticipants.value = false;
     },
     onError: (e) => jaFormErrors(e),
   });
@@ -193,8 +190,8 @@ function userLabel(user) {
       <div :class="[jaUi.card, jaUi.cardBody]">
         <div class="mb-4 flex items-center justify-between gap-3">
           <h2 class="font-semibold text-slate-800">Peserta ({{ participantCount() }})</h2>
-          <button type="button" :class="jaUi.btnLink" class="!text-xs" @click="showBulkInvite = !showBulkInvite">
-            {{ showBulkInvite ? 'Tutup tambah peserta' : '+ Tambah peserta massal' }}
+          <button type="button" :class="jaUi.btnLink" class="!text-xs" @click="showAddParticipants = !showAddParticipants">
+            {{ showAddParticipants ? 'Tutup tambah peserta' : '+ Tambah peserta' }}
           </button>
         </div>
 
@@ -238,52 +235,27 @@ function userLabel(user) {
             </button>
           </li>
         </ul>
-        <p v-else class="mb-4 text-sm text-slate-500">Belum ada peserta. Tambahkan lewat Edit Training Plan atau undang massal di bawah.</p>
+        <p v-else class="mb-4 text-sm text-slate-500">Belum ada peserta. Tambahkan lewat Edit Training Plan atau form di bawah.</p>
 
-        <div v-if="showBulkInvite" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4">
-          <p class="mb-3 text-xs text-slate-500">Opsional: undang tambahan per user, jabatan, atau outlet.</p>
-          <div class="space-y-4">
-            <div>
-              <input
-                v-model="userSearch"
-                type="text"
-                placeholder="Cari nama user..."
-                :class="[jaUi.input, 'max-w-md']"
-                @input="searchUsers"
-              />
-              <ul v-if="userResults.length" class="mt-1 max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-                <li
-                  v-for="u in userResults"
-                  :key="u.id"
-                  class="cursor-pointer px-3 py-2 text-sm hover:bg-indigo-50"
-                  @click="addUser(u)"
-                >
-                  {{ u.nama_lengkap || u.name }} — {{ u.email }}
-                </li>
-              </ul>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <span v-for="u in selectedUsers" :key="u.id" class="rounded-lg bg-indigo-50 px-2.5 py-1 text-sm text-indigo-800">
-                  {{ u.nama_lengkap || u.name }}
-                </span>
-              </div>
-            </div>
-            <div class="grid gap-4 md:grid-cols-2">
-              <div>
-                <p class="mb-2 text-sm font-medium text-slate-700">By Jabatan</p>
-                <label v-for="j in jabatanList" :key="j.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
-                  <input v-model="selectedJabatan" type="checkbox" :value="j.id" class="rounded border-slate-300 text-indigo-600" />
-                  {{ j.name }}
-                </label>
-              </div>
-              <div>
-                <p class="mb-2 text-sm font-medium text-slate-700">By Outlet</p>
-                <label v-for="o in outletList" :key="o.id" class="mb-1 flex items-center gap-2 text-sm text-slate-600">
-                  <input v-model="selectedOutlets" type="checkbox" :value="o.id" class="rounded border-slate-300 text-indigo-600" />
-                  {{ o.name }}
-                </label>
-              </div>
-            </div>
-            <button type="button" :class="jaUi.btnPrimary" @click="submitInvite">Kirim Undangan Tambahan</button>
+        <div v-if="showAddParticipants" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-4">
+          <label :class="jaUi.label">Tambah peserta</label>
+          <JaUserMultiselect
+            v-model="selectedInviteUsers"
+            :jabatan-list="jabatanList"
+            :divisions="divisions"
+            :outlets="outlets"
+            show-filters
+            placeholder="Cari nama, jabatan, divisi, atau outlet..."
+          />
+          <div class="mt-4 flex justify-end">
+            <button
+              type="button"
+              :class="jaUi.btnPrimary"
+              :disabled="inviteForm.processing || !selectedInviteUsers.length"
+              @click="submitInvite"
+            >
+              {{ inviteForm.processing ? 'Menyimpan...' : 'Tambah Peserta' }}
+            </button>
           </div>
         </div>
       </div>
