@@ -1318,7 +1318,7 @@
                     @click="addApprover(user)"
                     class="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
                   >
-                    <div class="font-medium">{{ user.name }}</div>
+                    <div class="font-medium">{{ user.nama_lengkap || user.name }}</div>
                     <div class="text-sm text-gray-600">{{ user.email }}</div>
                     <div v-if="user.jabatan" class="text-xs text-blue-600 font-medium">{{ user.jabatan }}</div>
                   </div>
@@ -1385,7 +1385,7 @@
                       Level {{ index + 1 }}
                     </span>
                     <div>
-                      <div class="font-medium">{{ approver.name }}</div>
+                      <div class="font-medium">{{ approver.nama_lengkap || approver.name }}</div>
                       <div class="text-sm text-gray-600">{{ approver.email }}</div>
                       <div v-if="approver.jabatan" class="text-xs text-blue-600 font-medium">{{ approver.jabatan }}</div>
                     </div>
@@ -3349,7 +3349,11 @@ const loadApprovers = async (search = '') => {
 const addApprover = (user) => {
   // Check if user already exists
   if (!form.approvers.find(approver => approver.id === user.id)) {
-    form.approvers.push(user)
+    form.approvers.push({
+      ...user,
+      name: user.nama_lengkap || user.name,
+      nama_lengkap: user.nama_lengkap || user.name,
+    })
   }
   approverSearch.value = ''
   showApproverDropdown.value = false

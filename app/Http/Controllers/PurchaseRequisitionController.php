@@ -2658,7 +2658,7 @@ class PurchaseRequisitionController extends Controller
         
         $query = User::where('users.status', 'A')
             ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
-            ->select('users.id', 'users.nama_lengkap as name', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
+            ->select('users.id', 'users.nama_lengkap', 'users.email', 'tbl_data_jabatan.nama_jabatan as jabatan');
         
         // Apply search filter if provided
         if (!empty($search)) {

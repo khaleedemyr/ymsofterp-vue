@@ -58,7 +58,9 @@ class User extends Authenticatable
 
     public function getNameAttribute(): ?string
     {
-        return $this->attributes['nama_lengkap'] ?? null;
+        return $this->attributes['nama_lengkap']
+            ?? $this->attributes['name']
+            ?? null;
     }
 
     public function jabatan() {
