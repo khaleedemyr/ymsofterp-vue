@@ -503,10 +503,12 @@ class OutletRejectionController extends Controller
         $isMKWarehouse = in_array($rejection->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         $approverTitle = $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
         
-        // Untuk rejection non-MK, pastikan sudah di-approve asisten SSD manager terlebih dahulu
-        // Asisten SSD Manager juga bisa approve level 2, tapi harus sudah ada approval level 1 dulu
+        // Untuk rejection non-MK: Asisten SSD Manager harus approve dulu,
+        // kecuali SSD Manager (161) / superadmin yang boleh final approve sekaligus.
         $user = Auth::user();
-        if (!$isMKWarehouse && !$rejection->assistant_ssd_manager_approved_at) {
+        $userJabatan = (int) $user->id_jabatan;
+        $isSsdManager = $userJabatan === 161 || $user->id_role === '5af56935b011a';
+        if (!$isMKWarehouse && !$rejection->assistant_ssd_manager_approved_at && !$isSsdManager) {
             return redirect()->route('outlet-rejections.index')->with('error', 'Outlet Rejection harus di-approve Asisten SSD Manager terlebih dahulu');
         }
         
@@ -602,14 +604,25 @@ class OutletRejectionController extends Controller
                 }
 
                 // Update approval data and complete
-                $rejection->update([
+                $updateData = [
                     'ssd_manager_approved_at' => now(),
                     'ssd_manager_approved_by' => Auth::id(),
                     'ssd_manager_note' => $request->ssd_manager_note,
                     'status' => 'completed',
                     'completed_by' => Auth::id(),
-                    'completed_at' => now()
-                ]);
+                    'completed_at' => now(),
+                ];
+
+                // SSD Manager final approve: auto-lengkapi tahap Asisten jika belum ada
+                if (!$isMKWarehouse && !$rejection->assistant_ssd_manager_approved_at) {
+                    $note = $request->ssd_manager_note;
+                    $updateData['assistant_ssd_manager_approved_at'] = now();
+                    $updateData['assistant_ssd_manager_approved_by'] = Auth::id();
+                    $updateData['assistant_ssd_manager_note'] = $note
+                        ?: 'Disetujui oleh SSD Manager (delegasi tahap Asisten SSD Manager)';
+                }
+
+                $rejection->update($updateData);
                 
                 Log::info('Transaction about to commit', [
                     'rejection_id' => $rejection->id

@@ -437,12 +437,20 @@ const canApproveSSD = computed(() => {
       && props.rejection.status === 'draft'
       && !props.rejection.ssd_manager_approved_at;
   } else {
-    // For other warehouses, SSD Manager (id_jabatan=161) atau Asisten SSD Manager (id_jabatan=172) bisa approve
-    // Tapi harus sudah di-approve asisten SSD manager terlebih dahulu
-    return ((user?.id_jabatan === 161 || user?.id_jabatan === 172) && user?.status === 'A' || isSuperadmin.value)
-      && props.rejection.status === 'draft'
-      && props.rejection.assistant_ssd_manager_approved_at
-      && !props.rejection.ssd_manager_approved_at;
+    const isDraft = props.rejection.status === 'draft';
+    const pendingSsd = !props.rejection.ssd_manager_approved_at;
+    const assistantApproved = props.rejection.assistant_ssd_manager_approved_at;
+
+    // SSD Manager (161) boleh approve meski tahap Asisten belum — backend auto-lengkapi
+    if ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value) {
+      return isDraft && pendingSsd;
+    }
+
+    // Asisten SSD Manager (172) hanya level 2, setelah tahap Asisten selesai
+    return (user?.id_jabatan === 172 && user?.status === 'A')
+      && isDraft
+      && assistantApproved
+      && pendingSsd;
   }
 });
 
