@@ -2552,7 +2552,7 @@ class StockCutController extends Controller
         $perPage = max(1, min(100, (int) $request->input('per_page', 25)));
         $page = max(1, (int) $request->input('page', 1));
         $status = $request->input('status');
-        $outletId = $request->input('outlet_id');
+        $outletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
@@ -2573,8 +2573,9 @@ class StockCutController extends Controller
                 'scl.created_at as stock_cut_executed_at'
             );
 
-        if ($user->id_outlet && (int) $user->id_outlet !== 1) {
-            $query->where('scv.outlet_id', $user->id_outlet);
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        if ($userOutletId > 0 && $userOutletId !== 1) {
+            $query->where('scv.outlet_id', $userOutletId);
         } elseif ($outletId) {
             $query->where('scv.outlet_id', $outletId);
         }

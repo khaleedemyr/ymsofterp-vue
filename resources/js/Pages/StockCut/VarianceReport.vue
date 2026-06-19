@@ -167,8 +167,8 @@ const filters = ref({
 
 onMounted(async () => {
   try {
-    const res = await axios.get('/api/outlets')
-    outlets.value = res.data || []
+    const res = await axios.get('/api/outlets/report')
+    outlets.value = res.data.outlets || []
   } catch (e) {
     console.error(e)
   }

@@ -245,6 +245,37 @@
               <p class="text-blue-700 font-medium">Memuat data laporan stock...</p>
             </div>
 
+            <!-- Shortfall items (qty minus) -->
+            <div v-if="shortfallItems.length > 0" class="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-4">
+              <h4 class="font-semibold text-amber-900 mb-2">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                Item Akan Minus ({{ shortfallItems.length }})
+              </h4>
+              <p class="text-sm text-amber-800 mb-3">Item berikut kebutuhannya melebihi stok tersedia — tetap bisa dipotong dengan qty minus.</p>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm divide-y divide-amber-200">
+                  <thead class="bg-amber-100">
+                    <tr>
+                      <th class="px-3 py-2 text-left font-medium text-amber-900">Gudang</th>
+                      <th class="px-3 py-2 text-left font-medium text-amber-900">Item</th>
+                      <th class="px-3 py-2 text-right font-medium text-amber-900">Kebutuhan</th>
+                      <th class="px-3 py-2 text-right font-medium text-amber-900">Stok</th>
+                      <th class="px-3 py-2 text-right font-medium text-amber-900">Kurang</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-amber-100 bg-white">
+                    <tr v-for="item in shortfallItems" :key="'sf-' + item.item_id + '-' + item.warehouse_id" class="hover:bg-amber-50">
+                      <td class="px-3 py-2">{{ item.warehouse_name }}</td>
+                      <td class="px-3 py-2 font-medium">{{ item.item_name }}</td>
+                      <td class="px-3 py-2 text-right tabular-nums">{{ formatQuantity(item.kebutuhan_small || item.kebutuhan) }} {{ item.unit_small_name || item.unit_name }}</td>
+                      <td class="px-3 py-2 text-right tabular-nums">{{ formatQuantity(item.stock_tersedia_small || item.stock_tersedia) }}</td>
+                      <td class="px-3 py-2 text-right tabular-nums font-semibold text-red-600">+{{ formatQuantity(item.selisih_small || item.selisih) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <!-- Table -->
             <div v-else-if="laporanStock.length > 0" class="bg-white rounded-lg shadow border overflow-hidden">
               <!-- Group by Warehouse -->
@@ -255,7 +286,7 @@
                       <h4 class="font-bold text-lg text-gray-800">{{ warehouseName }} ({{ getWarehouseItemCount(warehouseData) }} items)</h4>
                       <div class="text-sm text-gray-600">
                         <span class="text-green-600">{{ getWarehouseCukupCount(warehouseData) }} cukup</span> | 
-                        <span class="text-red-600">{{ getWarehouseKurangCount(warehouseData) }} kurang</span>
+                        <span class="text-red-600">{{ getWarehouseKurangCount(warehouseData) }} minus</span>
                       </div>
                     </div>
                     <i :class="{'fa-chevron-down': !expandedWarehouse[warehouseName], 'fa-chevron-up': expandedWarehouse[warehouseName]}" class="fa-solid text-gray-600"></i>
@@ -271,7 +302,7 @@
                           <h5 class="font-semibold text-blue-800">{{ categoryName }} ({{ getCategoryItemCount(categoryData) }} items)</h5>
                           <div class="text-xs text-blue-600">
                             <span class="text-green-600">{{ getCategoryCukupCount(categoryData) }} cukup</span> | 
-                            <span class="text-red-600">{{ getCategoryKurangCount(categoryData) }} kurang</span>
+                            <span class="text-red-600">{{ getCategoryKurangCount(categoryData) }} minus</span>
                           </div>
                         </div>
                         <i :class="{'fa-chevron-down': !expandedCategory[warehouseName+categoryName], 'fa-chevron-up': expandedCategory[warehouseName+categoryName]}" class="fa-solid text-blue-600"></i>
@@ -287,7 +318,7 @@
                               <h6 class="font-medium text-blue-700 text-sm">{{ subCategoryName }} ({{ subCategoryData.length }} items)</h6>
                               <div class="text-xs text-blue-600">
                                 <span class="text-green-600">{{ subCategoryData.filter(item => item.status === 'cukup').length }} cukup</span> | 
-                                <span class="text-red-600">{{ subCategoryData.filter(item => item.status === 'kurang').length }} kurang</span>
+                                <span class="text-red-600">{{ subCategoryData.filter(isShortfallItem).length }} minus</span>
                               </div>
                             </div>
                             <i :class="{'fa-chevron-down': !expandedSubCategory[warehouseName+categoryName+subCategoryName], 'fa-chevron-up': expandedSubCategory[warehouseName+categoryName+subCategoryName]}" class="fa-solid text-blue-600"></i>
@@ -309,7 +340,7 @@
                             <tbody class="bg-white divide-y divide-gray-200">
                               <template v-for="item in subCategoryData" :key="item.item_id + '-' + item.warehouse_id + '-' + item.unit_id">
                                 <!-- Row Small Unit (always shown) -->
-                                <tr class="hover:bg-gray-50">
+                                <tr class="hover:bg-gray-50" :class="isShortfallItem(item) ? 'bg-amber-50' : ''">
                                   <td class="px-4 py-3 text-sm font-medium text-gray-900">
                                     <div class="flex items-center">
                                       <button @click="toggleItem(item.item_id + '-' + item.warehouse_id + '-' + item.unit_id)" class="mr-2 text-blue-600 hover:text-blue-800">
@@ -448,7 +479,7 @@
                       <div class="font-bold text-green-800">{{ getWarehouseCukupCount(warehouseData) }}</div>
                     </div>
                     <div class="text-center">
-                      <div class="font-medium text-red-600">Kurang</div>
+                      <div class="font-medium text-red-600">Minus</div>
                       <div class="font-bold text-red-800">{{ getWarehouseKurangCount(warehouseData) }}</div>
                     </div>
                   </div>
@@ -605,6 +636,14 @@ const groupedLaporanStock = computed(() => {
   
   return grouped
 })
+
+const shortfallItems = computed(() => {
+  return (laporanStock.value || []).filter(isShortfallItem)
+})
+
+function isShortfallItem(item) {
+  return item?.status === 'kurang' || item?.status === 'minus' || item?.will_go_negative === true
+}
 
 // Lifecycle
 onMounted(async () => {
@@ -878,6 +917,7 @@ async function cekKebutuhan() {
         bolehPotong.value = true
         if (adaYangKurang) {
           successMsg.value = `Siap potong stock. ${res.data.total_minus || res.data.total_kurang} item akan qty minus (cost tetap full BOM, tercatat di Laporan Minus).`
+          expandShortfallSections()
         } else {
           successMsg.value = 'Stock cukup, siap untuk potong stock!'
         }
@@ -1044,7 +1084,7 @@ function getWarehouseCukupCount(warehouseData) {
 }
 
 function getWarehouseKurangCount(warehouseData) {
-  return Object.values(warehouseData).reduce((sum, category) => sum + Object.values(category).reduce((catSum, subCat) => catSum + subCat.filter(item => item.status === 'kurang').length, 0), 0);
+  return Object.values(warehouseData).reduce((sum, category) => sum + Object.values(category).reduce((catSum, subCat) => catSum + subCat.filter(isShortfallItem).length, 0), 0);
 }
 
 function getCategoryCukupCount(categoryData) {
@@ -1052,7 +1092,37 @@ function getCategoryCukupCount(categoryData) {
 }
 
 function getCategoryKurangCount(categoryData) {
-  return Object.values(categoryData).reduce((sum, subCat) => sum + subCat.filter(item => item.status === 'kurang').length, 0);
+  return Object.values(categoryData).reduce((sum, subCat) => sum + subCat.filter(isShortfallItem).length, 0);
+}
+
+function expandShortfallSections() {
+  Object.entries(groupedLaporanStock.value).forEach(([warehouseName, warehouseData]) => {
+    let warehouseHasShortfall = false
+
+    Object.entries(warehouseData).forEach(([categoryName, categoryData]) => {
+      let categoryHasShortfall = false
+
+      Object.entries(categoryData).forEach(([subCategoryName, subCategoryData]) => {
+        const subHasShortfall = subCategoryData.some(isShortfallItem)
+        if (subHasShortfall) {
+          categoryHasShortfall = true
+          expandedSubCategory.value[warehouseName + categoryName + subCategoryName] = true
+          subCategoryData.filter(isShortfallItem).forEach(item => {
+            expandedItems.value[item.item_id + '-' + item.warehouse_id + '-' + item.unit_id] = true
+          })
+        }
+      })
+
+      if (categoryHasShortfall) {
+        warehouseHasShortfall = true
+        expandedCategory.value[warehouseName + categoryName] = true
+      }
+    })
+
+    if (warehouseHasShortfall) {
+      expandedWarehouse.value[warehouseName] = true
+    }
+  })
 }
 
 function expandAll() {
