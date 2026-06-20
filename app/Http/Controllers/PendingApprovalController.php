@@ -65,6 +65,7 @@ class PendingApprovalController extends Controller
                 'ro_khusus' => [],
                 'employee_resignation' => [],
                 'lost_breakage' => [],
+                'qa2_cap' => [],
                 'pos_void_items' => [],
                 'asset_inventory_transfer' => [],
                 'asset_stock_adjustment' => [],
@@ -379,6 +380,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Lost & Breakage approvals: ' . $e->getMessage());
+            }
+
+            // 19a. QA2 CAP
+            try {
+                $qa2Controller = app(\App\Http\Controllers\Qa2AuditController::class);
+                $qa2Response = $qa2Controller->getPendingCapApprovals($request);
+                if ($qa2Response->getStatusCode() === 200) {
+                    $qa2Data = json_decode($qa2Response->getContent(), true);
+                    $data['qa2_cap'] = $qa2Data['audits'] ?? [];
+                    if ($limit > 0 && count($data['qa2_cap']) > $limit) {
+                        $data['qa2_cap'] = array_slice($data['qa2_cap'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading QA2 CAP approvals: ' . $e->getMessage());
             }
 
             // 19b. POS void item (kasir → HO approver)

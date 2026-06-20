@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -228,6 +230,8 @@ class Qa2AuditController extends Controller
             'permissions' => [
                 'can_manage' => $isHo && $audit->status === 'draft',
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
+                'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
+                'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
             ],
         ]);
     }
@@ -381,6 +385,7 @@ class Qa2AuditController extends Controller
             ->exists();
 
         abort_if(!$isAuditee, 403);
+        abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP tidak dapat diubah saat proses approval.');
 
         $validated = $request->validate([
             'caps' => 'required|array|min:1',
@@ -450,6 +455,7 @@ class Qa2AuditController extends Controller
             ->exists();
 
         abort_if(!$isAuditee, 403);
+        abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP tidak dapat diubah saat proses approval.');
 
         $cap = DB::table('qa2_audit_caps as c')
             ->join('qa2_audit_items as i', 'i.id', '=', 'c.audit_item_id')
@@ -759,6 +765,9 @@ class Qa2AuditController extends Controller
                 'a.audit_time_start',
                 'a.audit_time_end',
                 'a.status',
+                'a.cap_submission_status',
+                'a.cap_submitted_at',
+                'a.cap_submitted_by',
                 'a.outlet_id',
                 'a.template_id',
                 'a.notes',
@@ -872,6 +881,10 @@ class Qa2AuditController extends Controller
             'audit_time_start' => $audit->audit_time_start,
             'audit_time_end' => $audit->audit_time_end,
             'status' => $audit->status,
+            'cap_submission_status' => $audit->cap_submission_status ?? null,
+            'cap_submitted_at' => $audit->cap_submitted_at ?? null,
+            'cap_submitted_by' => $audit->cap_submitted_by ? (int) $audit->cap_submitted_by : null,
+            'cap_approval_flows' => $this->capApprovalFlowsForAudit($id),
             'outlet_id' => (int) $audit->outlet_id,
             'template_id' => (int) $audit->template_id,
             'notes' => $audit->notes,
@@ -1148,6 +1161,8 @@ class Qa2AuditController extends Controller
             'permissions' => [
                 'can_manage' => $isHo && $audit->status === 'draft',
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
+                'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
+                'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
             ],
         ]);
     }
@@ -1221,6 +1236,9 @@ class Qa2AuditController extends Controller
             DB::table('qa2_audit_items')->where('audit_id', $id)->delete();
             DB::table('qa2_audit_auditors')->where('audit_id', $id)->delete();
             DB::table('qa2_audit_auditees')->where('audit_id', $id)->delete();
+            if (Schema::hasTable('qa2_audit_cap_approval_flows')) {
+                DB::table('qa2_audit_cap_approval_flows')->where('audit_id', $id)->delete();
+            }
             DB::table('qa2_audits')->where('id', $id)->delete();
 
             foreach ($itemMedia as $path) {
@@ -1235,5 +1253,452 @@ class Qa2AuditController extends Controller
             'success' => true,
             'message' => 'QA Audit berhasil dihapus.',
         ]);
+    }
+
+    public function submitCapForApproval(Request $request, int $id)
+    {
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+        abort_if($audit->status !== 'submitted', 422, 'CAP hanya untuk audit submitted.');
+
+        $user = auth()->user();
+        $isAuditee = DB::table('qa2_audit_auditees')
+            ->where('audit_id', $id)
+            ->where('user_id', (int) $user->id)
+            ->exists();
+        abort_if(!$isAuditee, 403);
+        abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP sudah dalam proses approval atau telah disetujui.');
+
+        $validated = $request->validate([
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+            'caps' => 'nullable|array',
+            'caps.*.audit_item_id' => 'required|integer|exists:qa2_audit_items,id',
+            'caps.*.action_plan' => 'nullable|string',
+            'caps.*.target_date' => 'nullable|date',
+            'caps.*.status' => 'nullable|in:open,progress,done',
+        ]);
+
+        $ncItems = DB::table('qa2_audit_items')
+            ->where('audit_id', $id)
+            ->where('result', 'NC')
+            ->get(['id']);
+
+        if ($ncItems->isEmpty()) {
+            return response()->json(['success' => false, 'message' => 'Tidak ada parameter NC untuk CAP.'], 422);
+        }
+
+        if (!empty($validated['caps'])) {
+            $this->persistCaps($id, $validated['caps'], (int) $user->id);
+        }
+
+        foreach ($ncItems as $ncItem) {
+            $cap = DB::table('qa2_audit_caps')->where('audit_item_id', $ncItem->id)->first();
+            $plan = trim((string) ($cap->action_plan ?? ''));
+            if ($plan === '') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Semua parameter NC wajib memiliki action plan sebelum submit CAP.',
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use ($id, $validated, $user) {
+            DB::table('qa2_audit_cap_approval_flows')->where('audit_id', $id)->delete();
+
+            foreach ($validated['approvers'] as $index => $approverId) {
+                DB::table('qa2_audit_cap_approval_flows')->insert([
+                    'audit_id' => $id,
+                    'approver_id' => (int) $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            DB::table('qa2_audits')->where('id', $id)->update([
+                'cap_submission_status' => 'pending_approval',
+                'cap_submitted_at' => now(),
+                'cap_submitted_by' => (int) $user->id,
+                'updated_at' => now(),
+            ]);
+        });
+
+        $this->notifyNextCapApprover($id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'CAP berhasil disubmit untuk approval.',
+        ]);
+    }
+
+    public function getPendingCapApprovals(Request $request)
+    {
+        $currentUser = auth()->user();
+        if (!$currentUser) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized', 'audits' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = DB::table('qa2_audits as a')
+            ->join('qa2_audit_cap_approval_flows as af', 'a.id', '=', 'af.audit_id')
+            ->join('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
+            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id')
+            ->where('af.status', 'PENDING')
+            ->where('a.cap_submission_status', 'pending_approval');
+
+        if (!$isSuperadmin) {
+            $query->where('af.approver_id', $currentUser->id);
+        }
+
+        $rows = $query
+            ->leftJoin('users as approver', 'af.approver_id', '=', 'approver.id')
+            ->select(
+                'a.id',
+                'a.audit_number',
+                'a.audit_datetime',
+                'a.cap_submitted_at',
+                'o.nama_outlet as outlet_name',
+                't.name as template_name',
+                'submitter.nama_lengkap as submitter_name',
+                'af.approval_level',
+                'approver.nama_lengkap as approver_name'
+            )
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as nc_count")
+            ->get()
+            ->filter(function ($row) use ($currentUser, $isSuperadmin) {
+                if ($isSuperadmin) {
+                    return true;
+                }
+                $lowerPending = DB::table('qa2_audit_cap_approval_flows')
+                    ->where('audit_id', $row->id)
+                    ->where('approval_level', '<', $row->approval_level)
+                    ->where('status', 'PENDING')
+                    ->count();
+
+                return $lowerPending === 0;
+            })
+            ->unique('id')
+            ->values();
+
+        return response()->json(['success' => true, 'audits' => $rows]);
+    }
+
+    public function getCapApprovalDetails(int $id)
+    {
+        $audit = DB::table('qa2_audits as a')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
+            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id')
+            ->where('a.id', $id)
+            ->select(
+                'a.*',
+                'o.nama_outlet as outlet_name',
+                't.name as template_name',
+                'submitter.nama_lengkap as submitter_name'
+            )
+            ->first();
+
+        if (!$audit) {
+            return response()->json(['success' => false, 'message' => 'Audit tidak ditemukan'], 404);
+        }
+
+        $payload = $this->auditPayload($id);
+        $ncItems = collect($payload['items'] ?? [])
+            ->filter(fn ($item) => ($item->result ?? null) === 'NC' || (is_array($item) ? ($item['result'] ?? null) === 'NC' : false))
+            ->values();
+
+        if ($ncItems->isEmpty()) {
+            $ncItems = collect($payload['items'])->filter(function ($item) {
+                $row = is_array($item) ? $item : (array) $item;
+                return ($row['result'] ?? null) === 'NC';
+            })->values();
+        }
+
+        $capItems = collect($payload['items'])
+            ->filter(function ($item) {
+                $row = is_object($item) ? (array) $item : $item;
+                return ($row['result'] ?? null) === 'NC';
+            })
+            ->map(function ($item) {
+                $row = is_object($item) ? json_decode(json_encode($item), true) : $item;
+                return [
+                    'id' => $row['id'],
+                    'parameter_code' => $row['parameter_code'] ?? null,
+                    'parameter_text' => $row['parameter_text'] ?? null,
+                    'category_name' => $row['category_name'] ?? null,
+                    'subcategory_name' => $row['subcategory_name'] ?? null,
+                    'comment' => $row['comment'] ?? null,
+                    'due_date' => $row['due_date'] ?? null,
+                    'auditor_media' => $row['media'] ?? [],
+                    'cap' => $row['cap'] ?? null,
+                ];
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'audit' => [
+                'id' => (int) $audit->id,
+                'audit_number' => $audit->audit_number,
+                'audit_datetime' => $audit->audit_datetime,
+                'outlet_name' => $audit->outlet_name,
+                'template_name' => $audit->template_name,
+                'submitter_name' => $audit->submitter_name,
+                'cap_submission_status' => $audit->cap_submission_status,
+                'cap_submitted_at' => $audit->cap_submitted_at,
+            ],
+            'cap_items' => $capItems,
+            'approval_flows' => $this->capApprovalFlowsForAudit($id),
+        ]);
+    }
+
+    public function approveCap(Request $request, int $id)
+    {
+        $audit = $this->getAuditRow($id);
+        if (!$audit) {
+            return response()->json(['success' => false, 'message' => 'Audit tidak ditemukan'], 404);
+        }
+        if (($audit->cap_submission_status ?? '') !== 'pending_approval') {
+            return response()->json(['success' => false, 'message' => 'CAP tidak dalam status pending approval'], 400);
+        }
+
+        $currentUser = auth()->user();
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+        $note = $request->input('note') ?? $request->input('comments');
+
+        $flow = DB::table('qa2_audit_cap_approval_flows')
+            ->where('audit_id', $id)
+            ->where('approver_id', $currentUser->id)
+            ->where('status', 'PENDING')
+            ->first();
+
+        if (!$flow && $isSuperadmin) {
+            $flow = DB::table('qa2_audit_cap_approval_flows')
+                ->where('audit_id', $id)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+        }
+
+        if (!$flow) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki hak approve CAP ini'], 403);
+        }
+
+        $lowerPending = DB::table('qa2_audit_cap_approval_flows')
+            ->where('audit_id', $id)
+            ->where('approval_level', '<', $flow->approval_level)
+            ->where('status', 'PENDING')
+            ->count();
+        if ($lowerPending > 0 && !$isSuperadmin) {
+            return response()->json(['success' => false, 'message' => 'Tunggu approval level sebelumnya'], 400);
+        }
+
+        DB::table('qa2_audit_cap_approval_flows')->where('id', $flow->id)->update([
+            'status' => 'APPROVED',
+            'approved_at' => now(),
+            'comments' => $note,
+            'updated_at' => now(),
+        ]);
+
+        $pendingCount = DB::table('qa2_audit_cap_approval_flows')
+            ->where('audit_id', $id)
+            ->where('status', 'PENDING')
+            ->count();
+
+        $message = 'CAP berhasil di-approve.';
+        if ($pendingCount === 0) {
+            DB::table('qa2_audits')->where('id', $id)->update([
+                'cap_submission_status' => 'approved',
+                'updated_at' => now(),
+            ]);
+            $message = 'Semua approval selesai. CAP telah disetujui.';
+        } else {
+            $this->notifyNextCapApprover($id);
+        }
+
+        return response()->json(['success' => true, 'message' => $message]);
+    }
+
+    public function rejectCap(Request $request, int $id)
+    {
+        $audit = $this->getAuditRow($id);
+        if (!$audit) {
+            return response()->json(['success' => false, 'message' => 'Audit tidak ditemukan'], 404);
+        }
+        if (($audit->cap_submission_status ?? '') !== 'pending_approval') {
+            return response()->json(['success' => false, 'message' => 'CAP tidak dalam status pending approval'], 400);
+        }
+
+        $currentUser = auth()->user();
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+        $note = $request->input('note') ?? $request->input('comments');
+
+        $flow = DB::table('qa2_audit_cap_approval_flows')
+            ->where('audit_id', $id)
+            ->where('approver_id', $currentUser->id)
+            ->where('status', 'PENDING')
+            ->first();
+
+        if (!$flow && $isSuperadmin) {
+            $flow = DB::table('qa2_audit_cap_approval_flows')
+                ->where('audit_id', $id)
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+        }
+
+        if (!$flow) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki hak reject CAP ini'], 403);
+        }
+
+        DB::table('qa2_audit_cap_approval_flows')
+            ->where('audit_id', $id)
+            ->where('status', 'PENDING')
+            ->update([
+                'status' => 'REJECTED',
+                'rejected_at' => now(),
+                'comments' => $note,
+                'updated_at' => now(),
+            ]);
+
+        DB::table('qa2_audits')->where('id', $id)->update([
+            'cap_submission_status' => 'rejected',
+            'updated_at' => now(),
+        ]);
+
+        if ($audit->cap_submitted_by) {
+            NotificationService::insert([
+                'user_id' => (int) $audit->cap_submitted_by,
+                'type' => 'qa2_cap_rejected',
+                'title' => 'CAP QA2 Ditolak',
+                'message' => "CAP audit {$audit->audit_number} ditolak. Silakan perbaiki dan submit ulang.",
+                'is_read' => 0,
+            ]);
+        }
+
+        return response()->json(['success' => true, 'message' => 'CAP ditolak. Auditee dapat memperbaiki dan submit ulang.']);
+    }
+
+    private function capSubmissionEditable(object $audit): bool
+    {
+        $status = $audit->cap_submission_status ?? null;
+        return !in_array($status, ['pending_approval', 'approved'], true);
+    }
+
+    private function persistCaps(int $auditId, array $caps, int $userId): void
+    {
+        foreach ($caps as $cap) {
+            $itemExists = DB::table('qa2_audit_items')
+                ->where('id', (int) $cap['audit_item_id'])
+                ->where('audit_id', $auditId)
+                ->where('result', 'NC')
+                ->exists();
+            if (!$itemExists) {
+                continue;
+            }
+
+            $auditItemId = (int) $cap['audit_item_id'];
+            $existingCap = DB::table('qa2_audit_caps')->where('audit_item_id', $auditItemId)->first();
+
+            if ($existingCap) {
+                DB::table('qa2_audit_caps')->where('id', $existingCap->id)->update([
+                    'filled_by' => $userId,
+                    'action_plan' => $cap['action_plan'] ?? null,
+                    'target_date' => $cap['target_date'] ?? null,
+                    'status' => $cap['status'] ?? 'open',
+                    'updated_at' => now(),
+                ]);
+            } else {
+                DB::table('qa2_audit_caps')->insert([
+                    'audit_item_id' => $auditItemId,
+                    'filled_by' => $userId,
+                    'action_plan' => $cap['action_plan'] ?? null,
+                    'target_date' => $cap['target_date'] ?? null,
+                    'status' => $cap['status'] ?? 'open',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+        }
+    }
+
+    private function capApprovalFlowsForAudit(int $auditId): array
+    {
+        if (!Schema::hasTable('qa2_audit_cap_approval_flows')) {
+            return [];
+        }
+
+        return DB::table('qa2_audit_cap_approval_flows as af')
+            ->join('users as u', 'af.approver_id', '=', 'u.id')
+            ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('af.audit_id', $auditId)
+            ->orderBy('af.approval_level')
+            ->get([
+                'af.id',
+                'af.approver_id',
+                'af.approval_level',
+                'af.status',
+                'af.comments',
+                'af.approved_at',
+                'af.rejected_at',
+                'u.nama_lengkap as approver_name',
+                'u.email as approver_email',
+                'j.nama_jabatan as approver_jabatan',
+            ])
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'approver_id' => (int) $row->approver_id,
+                'approval_level' => (int) $row->approval_level,
+                'status' => $row->status,
+                'comments' => $row->comments,
+                'approved_at' => $row->approved_at,
+                'rejected_at' => $row->rejected_at,
+                'approver_name' => $row->approver_name,
+                'approver_email' => $row->approver_email,
+                'approver_jabatan' => $row->approver_jabatan,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function notifyNextCapApprover(int $auditId): void
+    {
+        try {
+            $next = DB::table('qa2_audit_cap_approval_flows as af')
+                ->join('users as u', 'af.approver_id', '=', 'u.id')
+                ->where('af.audit_id', $auditId)
+                ->where('af.status', 'PENDING')
+                ->orderBy('af.approval_level')
+                ->select('u.id', 'u.nama_lengkap')
+                ->first();
+
+            if (!$next) {
+                return;
+            }
+
+            $audit = DB::table('qa2_audits as a')
+                ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+                ->where('a.id', $auditId)
+                ->select('a.audit_number', 'o.nama_outlet')
+                ->first();
+
+            if (!$audit) {
+                return;
+            }
+
+            NotificationService::insert([
+                'user_id' => (int) $next->id,
+                'type' => 'qa2_cap_approval',
+                'title' => 'Approval CAP QA2',
+                'message' => "CAP audit {$audit->audit_number} ({$audit->nama_outlet}) menunggu approval Anda.",
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('QA2 CAP approval notification failed: '.$e->getMessage());
+        }
     }
 }

@@ -17,6 +17,7 @@ import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApp
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
+import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import { useI18n } from 'vue-i18n';
@@ -182,6 +183,12 @@ const pendingLostBreakageApprovals = ref([]);
 const loadingLostBreakageApprovals = ref(false);
 const showLostBreakageApprovalModal = ref(false);
 const selectedLostBreakageApproval = ref(null);
+
+// QA2 CAP approvals
+const pendingQa2CapApprovals = ref([]);
+const loadingQa2CapApprovals = ref(false);
+const showQa2CapApprovalModal = ref(false);
+const selectedQa2CapAuditId = ref(null);
 
 // POS void item (kasir — hapus item tersimpan)
 const pendingPosVoidItemApprovals = ref([]);
@@ -1059,6 +1066,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingOutletTransferApprovals.value = true;
     loadingWarehouseStockOpnameApprovals.value = true;
     loadingLostBreakageApprovals.value = true;
+    loadingQa2CapApprovals.value = true;
     loadingApprovals.value = true;
     loadingMovementApprovals.value = true;
     loadingCoachingApprovals.value = true;
@@ -1087,6 +1095,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
+            pendingQa2CapApprovals.value = data.qa2_cap || [];
             pendingPosVoidItemApprovals.value = data.pos_void_items || [];
             pendingAssetTransferApprovals.value = data.asset_inventory_transfer || [];
             pendingAssetAdjustmentApprovals.value = data.asset_stock_adjustment || [];
@@ -1109,6 +1118,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
+            loadingQa2CapApprovals.value = false;
             loadingAssetTransferApprovals.value = false;
             loadingAssetAdjustmentApprovals.value = false;
             loadingAssetServiceApprovals.value = false;
@@ -1131,6 +1141,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
+            loadingQa2CapApprovals.value = false;
             return false;
         }
     } catch (error) {
@@ -1149,6 +1160,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingCoachingApprovals.value = false;
         loadingCorrectionApprovals.value = false;
         loadingLostBreakageApprovals.value = false;
+        loadingQa2CapApprovals.value = false;
         return false;
     }
 }
@@ -2571,6 +2583,29 @@ async function loadPendingLostBreakageApprovals() {
     } finally {
         loadingLostBreakageApprovals.value = false;
     }
+}
+
+async function loadPendingQa2CapApprovals() {
+    loadingQa2CapApprovals.value = true;
+    try {
+        const response = await axios.get('/qa2-audits/cap-approvals/pending');
+        if (response.data.success) {
+            pendingQa2CapApprovals.value = response.data.audits || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending QA2 CAP approvals:', error);
+    } finally {
+        loadingQa2CapApprovals.value = false;
+    }
+}
+
+function showQa2CapApprovalDetails(auditId) {
+    selectedQa2CapAuditId.value = auditId;
+    showQa2CapApprovalModal.value = true;
+}
+
+function onQa2CapApprovalProcessed() {
+    loadAllPendingApprovalsOptimized();
 }
 
 async function loadPendingAssetTransferApprovals() {
@@ -5950,6 +5985,7 @@ onMounted(async () => {
         loadCoachingApprovals();
         loadPendingCorrectionApprovals();
         loadPendingLostBreakageApprovals();
+        loadPendingQa2CapApprovals();
         loadPendingAssetTransferApprovals();
         loadPendingAssetAdjustmentApprovals();
         loadPendingAssetServiceApprovals();
@@ -7220,6 +7256,66 @@ watch(locale, () => {
                             <div v-if="pendingLostBreakageApprovals.length > 3" class="text-center pt-2">
                                 <button class="text-sm text-rose-500 hover:text-rose-700 font-medium">
                                     Lihat {{ pendingLostBreakageApprovals.length - 3 }} lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- QA2 CAP Approval Section -->
+                <div v-if="pendingQa2CapApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa fa-clipboard-check mr-2 text-indigo-500"></i>
+                                    QA2 CAP Approval
+                                </h3>
+                            </div>
+                            <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingQa2CapApprovals.length }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingQa2CapApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="audit in pendingQa2CapApprovals.slice(0, 3)"
+                                :key="'qa2-cap-approval-' + audit.id"
+                                @click="showQa2CapApprovalDetails(audit.id)"
+                                class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100'"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ audit.audit_number || 'N/A' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-map-marker-alt mr-1 text-blue-500"></i>{{ audit.outlet_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-blue-500"></i>{{ audit.submitter_name }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ audit.nc_count || 0 }} parameter NC
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-indigo-500 font-medium text-right">
+                                        <i class="fa fa-user-check mr-1"></i>{{ audit.approver_name || 'Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingQa2CapApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
+                                    Lihat {{ pendingQa2CapApprovals.length - 3 }} lainnya...
                                 </button>
                             </div>
                         </div>
@@ -12919,6 +13015,13 @@ watch(locale, () => {
             </div>
         </div>
     </div>
+
+    <Qa2CapApprovalModal
+        :show="showQa2CapApprovalModal"
+        :audit-id="selectedQa2CapAuditId"
+        @close="showQa2CapApprovalModal = false"
+        @processed="onQa2CapApprovalProcessed"
+    />
     </AppLayout>
 </template>
 

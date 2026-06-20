@@ -23,6 +23,15 @@ const props = defineProps({
 const isCreate = computed(() => props.mode === 'create');
 const canManage = computed(() => !!props.permissions?.can_manage);
 const canFillCap = computed(() => !!props.permissions?.can_fill_cap);
+const canEditCap = computed(() => props.permissions?.can_edit_cap !== false && !!props.permissions?.can_fill_cap);
+const canSubmitCap = computed(() => !!props.permissions?.can_submit_cap);
+const capSubmissionStatus = computed(() => props.audit?.cap_submission_status || null);
+
+const capApprovers = ref([]);
+const capApproverSearch = ref('');
+const capApproverResults = ref([]);
+const showCapApproverDropdown = ref(false);
+const capSubmitting = ref(false);
 
 const selectedOutlet = ref(null);
 const selectedTemplate = ref(null);
@@ -263,7 +272,7 @@ const capPayload = computed(() => ({
 }));
 
 const autoSaveCap = debounce(async () => {
-  if (isCreate.value || !canFillCap.value) {
+  if (isCreate.value || !canEditCap.value) {
     return;
   }
 
@@ -284,8 +293,106 @@ const autoSaveCap = debounce(async () => {
 }, 1200);
 
 watch(capPayload, () => {
-  autoSaveCap();
+  if (canEditCap.value) {
+    autoSaveCap();
+  }
 }, { deep: true });
+
+const loadCapApprovers = async (search = '') => {
+  if (!search || search.length < 2) {
+    capApproverResults.value = [];
+    return;
+  }
+  try {
+    const { data } = await axios.get('/purchase-requisitions/approvers', { params: { search } });
+    if (data.success) {
+      capApproverResults.value = data.users || [];
+      showCapApproverDropdown.value = true;
+    }
+  } catch (e) {
+    capApproverResults.value = [];
+  }
+};
+
+watch(capApproverSearch, (val) => {
+  if (val && val.length >= 2) {
+    loadCapApprovers(val);
+  } else {
+    capApproverResults.value = [];
+    showCapApproverDropdown.value = false;
+  }
+});
+
+function addCapApprover(user) {
+  if (!user?.id) return;
+  if (!capApprovers.value.find((a) => a.id === user.id)) {
+    capApprovers.value.push({
+      ...user,
+      name: user.nama_lengkap || user.name,
+      nama_lengkap: user.nama_lengkap || user.name,
+    });
+  }
+  capApproverSearch.value = '';
+  showCapApproverDropdown.value = false;
+}
+
+function removeCapApprover(index) {
+  capApprovers.value.splice(index, 1);
+}
+
+function moveCapApprover(index, direction) {
+  const target = index + direction;
+  if (target < 0 || target >= capApprovers.value.length) return;
+  const list = [...capApprovers.value];
+  const [item] = list.splice(index, 1);
+  list.splice(target, 0, item);
+  capApprovers.value = list;
+}
+
+async function submitCapForApproval() {
+  if (!capApprovers.value.length) {
+    await Swal.fire('Approver wajib', 'Pilih minimal 1 approver sebelum submit CAP.', 'warning');
+    return;
+  }
+
+  const incomplete = items.value.filter((item) => item.result === 'NC' && !(item.cap?.action_plan || '').trim());
+  if (incomplete.length) {
+    await Swal.fire('Action plan belum lengkap', 'Semua parameter NC wajib memiliki action plan.', 'warning');
+    return;
+  }
+
+  const confirm = await Swal.fire({
+    title: 'Submit CAP untuk Approval?',
+    text: 'CAP akan dikunci sampai proses approval selesai.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonText: 'Submit',
+  });
+  if (!confirm.isConfirmed) return;
+
+  capSubmitting.value = true;
+  try {
+    const { data } = await axios.post(route('qa2-audits.submit-cap', props.audit.id), {
+      approvers: capApprovers.value.map((a) => a.id),
+      caps: capPayload.value.caps,
+    });
+    await Swal.fire('Berhasil', data.message || 'CAP disubmit.', 'success');
+    router.reload({ only: ['audit', 'permissions'] });
+  } catch (error) {
+    await Swal.fire('Gagal', error.response?.data?.message || 'Submit CAP gagal.', 'error');
+  } finally {
+    capSubmitting.value = false;
+  }
+}
+
+function capStatusLabel(status) {
+  const map = {
+    pending_approval: 'Menunggu Approval',
+    approved: 'CAP Disetujui',
+    rejected: 'CAP Ditolak',
+  };
+  return map[status] || 'Draft';
+}
 
 function toggleCategory(key) {
   collapseCategory.value[key] = !collapseCategory.value[key];
@@ -762,6 +869,14 @@ function formatUserLabel(user) {
           <div>
             <h2 class="text-lg font-semibold text-gray-900">Pengisian CAP (NC)</h2>
             <p class="text-sm text-gray-500">Hanya parameter Non-Compliant. Perubahan disimpan otomatis.</p>
+            <p v-if="capSubmissionStatus" class="mt-1 text-sm font-medium"
+              :class="{
+                'text-amber-600': capSubmissionStatus === 'pending_approval',
+                'text-emerald-600': capSubmissionStatus === 'approved',
+                'text-red-600': capSubmissionStatus === 'rejected',
+              }">
+              Status CAP: {{ capStatusLabel(capSubmissionStatus) }}
+            </p>
           </div>
           <input
             v-model="search"
@@ -864,30 +979,31 @@ function formatUserLabel(user) {
                             rows="2"
                             class="w-full rounded-lg border-rose-300 text-sm"
                             placeholder="Tindakan perbaikan..."
+                            :disabled="!canEditCap"
                           />
                         </div>
 
                         <div>
                           <label class="mb-1 block text-xs font-semibold text-rose-700">Target Date</label>
-                          <input v-model="item.cap.target_date" type="date" class="w-full rounded-lg border-rose-300 text-sm">
+                          <input v-model="item.cap.target_date" type="date" class="w-full rounded-lg border-rose-300 text-sm" :disabled="!canEditCap">
                         </div>
 
                         <div>
                           <label class="mb-1 block text-xs font-semibold text-rose-700">Status CAP</label>
-                          <select v-model="item.cap.status" class="w-full rounded-lg border-rose-300 text-sm">
+                          <select v-model="item.cap.status" class="w-full rounded-lg border-rose-300 text-sm" :disabled="!canEditCap">
                             <option value="open">Open</option>
                             <option value="progress">Progress</option>
                             <option value="done">Done</option>
                           </select>
                         </div>
 
-                        <div class="md:col-span-2">
+                        <div v-if="canEditCap" class="md:col-span-2">
                           <label class="mb-1 block text-xs font-semibold text-rose-700">Media CAP (per parameter)</label>
                           <div class="flex flex-wrap gap-2">
                             <button
                               type="button"
                               class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
+                              :disabled="uploadingCapMedia[item.id] || !canEditCap"
                               @click="openCapCamera(item, 'photo')"
                             >
                               <i class="fas fa-camera" />
@@ -896,7 +1012,7 @@ function formatUserLabel(user) {
                             <button
                               type="button"
                               class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
+                              :disabled="uploadingCapMedia[item.id] || !canEditCap"
                               @click="openCapCamera(item, 'video')"
                             >
                               <i class="fas fa-video" />
@@ -905,7 +1021,7 @@ function formatUserLabel(user) {
                             <button
                               type="button"
                               class="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-100 px-2.5 py-1.5 text-xs font-medium text-rose-800 hover:bg-rose-200 disabled:opacity-50"
-                              :disabled="uploadingCapMedia[item.id]"
+                              :disabled="uploadingCapMedia[item.id] || !canEditCap"
                               @click="triggerCapFilePicker(item)"
                             >
                               <i class="fas fa-images" />
@@ -960,6 +1076,72 @@ function formatUserLabel(user) {
 
           <div v-if="!groupedCapItems.length" class="rounded-lg border border-dashed border-rose-200 p-8 text-center text-sm text-gray-500">
             {{ search.trim() ? 'Tidak ada parameter NC yang cocok dengan pencarian.' : 'Tidak ada parameter NC untuk diisi CAP.' }}
+          </div>
+
+          <!-- CAP Approval Flow -->
+          <div v-if="canSubmitCap || capSubmissionStatus === 'pending_approval'" class="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+            <h3 class="text-base font-semibold text-indigo-900 mb-2">Approval Flow CAP</h3>
+            <p class="text-sm text-indigo-800 mb-4">Tambahkan approver dari level terendah ke tertinggi. Wajib diisi sebelum submit CAP.</p>
+
+            <div v-if="canSubmitCap" class="mb-4 relative">
+              <input
+                v-model="capApproverSearch"
+                type="text"
+                placeholder="Cari approver (nama, email, jabatan)..."
+                class="w-full rounded-lg border-gray-300 text-sm"
+              />
+              <div v-if="showCapApproverDropdown && capApproverResults.length" class="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border bg-white shadow-lg">
+                <button
+                  v-for="user in capApproverResults"
+                  :key="user.id"
+                  type="button"
+                  class="w-full px-3 py-2 text-left hover:bg-gray-50 border-b last:border-b-0"
+                  @click="addCapApprover(user)"
+                >
+                  <div class="font-medium text-sm">{{ user.nama_lengkap || user.name }}</div>
+                  <div class="text-xs text-gray-500">{{ user.email }}</div>
+                  <div v-if="user.jabatan" class="text-xs text-blue-600">{{ user.jabatan }}</div>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="capApprovers.length" class="space-y-2 mb-4">
+              <div v-for="(approver, index) in capApprovers" :key="approver.id" class="flex items-center justify-between rounded-lg bg-white border px-3 py-2">
+                <div>
+                  <span class="text-xs font-semibold text-indigo-700 mr-2">Level {{ index + 1 }}</span>
+                  <span class="font-medium text-sm">{{ approver.nama_lengkap || approver.name }}</span>
+                  <span class="text-xs text-gray-500 ml-2">{{ approver.jabatan || approver.email }}</span>
+                </div>
+                <div v-if="canSubmitCap" class="flex gap-1">
+                  <button type="button" class="text-gray-500 hover:text-gray-700 px-1" @click="moveCapApprover(index, -1)">↑</button>
+                  <button type="button" class="text-gray-500 hover:text-gray-700 px-1" @click="moveCapApprover(index, 1)">↓</button>
+                  <button type="button" class="text-red-500 hover:text-red-700 px-1" @click="removeCapApprover(index)">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="audit.cap_approval_flows?.length && !canSubmitCap" class="space-y-2 mb-4">
+              <div v-for="flow in audit.cap_approval_flows" :key="flow.id" class="rounded-lg bg-white border px-3 py-2 text-sm">
+                <span class="font-semibold text-indigo-700">Level {{ flow.approval_level }}</span>
+                — {{ flow.approver_name }}
+                <span class="ml-2 text-xs px-2 py-0.5 rounded-full"
+                  :class="{
+                    'bg-amber-100 text-amber-800': flow.status === 'PENDING',
+                    'bg-green-100 text-green-800': flow.status === 'APPROVED',
+                    'bg-red-100 text-red-800': flow.status === 'REJECTED',
+                  }">{{ flow.status }}</span>
+              </div>
+            </div>
+
+            <button
+              v-if="canSubmitCap"
+              type="button"
+              :disabled="capSubmitting || !capApprovers.length"
+              class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+              @click="submitCapForApproval"
+            >
+              {{ capSubmitting ? 'Submitting...' : 'Submit CAP untuk Approval' }}
+            </button>
           </div>
         </div>
       </div>

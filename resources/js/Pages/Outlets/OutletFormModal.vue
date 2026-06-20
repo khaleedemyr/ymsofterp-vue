@@ -85,7 +85,6 @@ async function submit() {
       onFinish: () => isSubmitting.value = false,
     });
   } else if (props.mode === 'edit' && props.outlet) {
-    form._method = 'PUT';
     form.post(route('outlets.update', props.outlet.id_outlet), {
       onSuccess: () => {
         Swal.fire('Berhasil', 'Outlet berhasil diupdate!', 'success');

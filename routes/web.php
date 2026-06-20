@@ -847,6 +847,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/api/outlets/{id}', [\App\Http\Controllers\OutletController::class, 'apiShow'])->name('outlets.show');
     Route::post('/outlets', [OutletController::class, 'store'])->name('outlets.store');
     Route::put('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
+    Route::post('/outlets/{id}', [OutletController::class, 'update'])->name('outlets.update');
     Route::delete('/outlets/{id}', [OutletController::class, 'destroy'])->name('outlets.destroy');
     Route::patch('/outlets/{id}/toggle-status', [OutletController::class, 'toggleStatus'])->name('outlets.toggle-status');
     Route::get('/outlets/{id}/download-qr', [OutletController::class, 'downloadQr'])->name('outlets.download-qr');
@@ -2436,6 +2437,11 @@ Route::post('qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController:
 Route::post('qa2-audits/{id}/items/{itemId}/media', [\App\Http\Controllers\Qa2AuditController::class, 'uploadItemMedia'])->name('qa2-audits.items.upload-media');
 Route::delete('qa2-audits/{id}/items/{itemId}/media/{mediaId}', [\App\Http\Controllers\Qa2AuditController::class, 'deleteItemMedia'])->name('qa2-audits.items.delete-media');
 Route::post('qa2-audits/{id}/save-cap', [\App\Http\Controllers\Qa2AuditController::class, 'saveCap'])->name('qa2-audits.save-cap');
+Route::post('qa2-audits/{id}/submit-cap', [\App\Http\Controllers\Qa2AuditController::class, 'submitCapForApproval'])->name('qa2-audits.submit-cap');
+Route::get('qa2-audits/cap-approvals/pending', [\App\Http\Controllers\Qa2AuditController::class, 'getPendingCapApprovals'])->name('qa2-audits.cap-approvals.pending');
+Route::get('api/qa2-audits/{id}/cap-approval-details', [\App\Http\Controllers\Qa2AuditController::class, 'getCapApprovalDetails'])->name('qa2-audits.cap-approval-details');
+Route::post('qa2-audits/{id}/cap-approve', [\App\Http\Controllers\Qa2AuditController::class, 'approveCap'])->name('qa2-audits.cap-approve');
+Route::post('qa2-audits/{id}/cap-reject', [\App\Http\Controllers\Qa2AuditController::class, 'rejectCap'])->name('qa2-audits.cap-reject');
 Route::post('qa2-audits/{id}/caps/{capId}/media', [\App\Http\Controllers\Qa2AuditController::class, 'uploadCapMedia'])->name('qa2-audits.cap.upload-media');
 Route::delete('qa2-audits/{id}', [\App\Http\Controllers\Qa2AuditController::class, 'destroy'])->name('qa2-audits.destroy');
 

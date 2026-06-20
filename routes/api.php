@@ -544,9 +544,14 @@ Route::prefix('approval-app')->group(function () {
 
         // QA2 Audits (Approval App — selaras web /qa2-audits)
         Route::get('/qa2-audits/create-data', [\App\Http\Controllers\Qa2AuditController::class, 'apiCreateData']);
+        Route::get('/qa2-audits/cap-approvals/pending', [\App\Http\Controllers\Qa2AuditController::class, 'getPendingCapApprovals']);
         Route::get('/qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'apiIndex']);
         Route::post('/qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'apiStore']);
         Route::get('/qa2-audits/{id}', [\App\Http\Controllers\Qa2AuditController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::get('/qa2-audits/{id}/cap-approval-details', [\App\Http\Controllers\Qa2AuditController::class, 'getCapApprovalDetails'])->where('id', '[0-9]+');
+        Route::post('/qa2-audits/{id}/submit-cap', [\App\Http\Controllers\Qa2AuditController::class, 'submitCapForApproval'])->where('id', '[0-9]+');
+        Route::post('/qa2-audits/{id}/cap-approve', [\App\Http\Controllers\Qa2AuditController::class, 'approveCap'])->where('id', '[0-9]+');
+        Route::post('/qa2-audits/{id}/cap-reject', [\App\Http\Controllers\Qa2AuditController::class, 'rejectCap'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController::class, 'apiSubmit'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-cap', [\App\Http\Controllers\Qa2AuditController::class, 'saveCap'])->where('id', '[0-9]+');
