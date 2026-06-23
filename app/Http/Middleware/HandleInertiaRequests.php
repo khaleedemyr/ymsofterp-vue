@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\ExternalUser;
 use App\Models\User;
 use App\Services\RoleMenuService;
+use App\Support\HrdApprovalAccess;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\DB;
@@ -94,7 +95,10 @@ class HandleInertiaRequests extends Middleware
                     'nama_outlet' => $authUser->outlet->nama_outlet
                 ] : null,
                 'pending_approvals_count' => $authUser->pendingApprovals()->count(),
-                'pending_hrd_approvals_count' => $authUser->division_id == 6 ? $authUser->pendingHrdApprovals()->count() : 0,
+                'pending_hrd_approvals_count' => HrdApprovalAccess::canAccessHrdApprovals($authUser)
+                    ? HrdApprovalAccess::pendingLeaveHrdApprovalsCount()
+                    : 0,
+                'can_access_hrd_approvals' => HrdApprovalAccess::canAccessHrdApprovals($authUser),
                 'signature_path' => $authUser->signature_path,
                 'pin_payroll' => $authUser->pin_payroll,
                 'region_id' => $authUser->id_outlet

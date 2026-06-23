@@ -146,7 +146,6 @@
           <option value="all">Semua Status</option>
           <option value="open">Open</option>
           <option value="in_progress">In Progress</option>
-          <option value="resolved">Resolved</option>
           <option value="closed">Closed</option>
         </select>
         <select
@@ -1318,12 +1317,12 @@ function getDueDateStatus(ticket) {
   const completionInfo = getTicketCompletionInfo(ticket);
   if (completionInfo.isCompleted) {
     if (completionInfo.completedAt && completionInfo.completedAt <= due) {
-      return completionInfo.type === 'resolved' ? 'Resolved On Time' : 'Closed On Time';
+      return 'Closed On Time';
     }
     if (completionInfo.completedAt && completionInfo.completedAt > due) {
-      return completionInfo.type === 'resolved' ? 'Resolved Late' : 'Closed Late';
+      return 'Closed Late';
     }
-    return completionInfo.type === 'resolved' ? 'Resolved' : 'Closed';
+    return 'Closed';
   }
 
   const today = new Date();
@@ -1345,18 +1344,16 @@ function getDueDateStatus(ticket) {
 
 function getTicketCompletionInfo(ticket) {
   const status = String(ticket?.status?.slug || '').toLowerCase();
-  const isResolved = status === 'resolved';
-  const isClosed = status === 'closed';
-  const isCompleted = isResolved || isClosed;
-  if (!isCompleted) {
+  const isClosed = status === 'closed' || status === 'resolved';
+  if (!isClosed) {
     return { isCompleted: false, type: null, completedAt: null };
   }
 
-  const completedRaw = isClosed ? ticket?.closed_at : ticket?.resolved_at;
+  const completedRaw = ticket?.closed_at ?? ticket?.resolved_at;
   const completedAt = completedRaw ? new Date(completedRaw) : null;
   return {
     isCompleted: true,
-    type: isResolved ? 'resolved' : 'closed',
+    type: 'closed',
     completedAt: completedAt && !Number.isNaN(completedAt.getTime()) ? completedAt : null,
   };
 }
@@ -1450,7 +1447,7 @@ function readableStatus(statusValue) {
   return {
     open: 'Open',
     in_progress: 'In Progress',
-    resolved: 'Resolved',
+    resolved: 'Closed',
     closed: 'Closed',
     pending: 'Pending'
   }[statusValue] || statusValue;

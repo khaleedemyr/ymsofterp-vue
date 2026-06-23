@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use App\Models\LeaveType;
 use App\Services\NotificationService;
 use App\Services\HolidayAttendanceService;
+use App\Support\HrdApprovalAccess;
 
 class AttendanceController extends Controller
 {
@@ -1007,8 +1008,8 @@ class AttendanceController extends Controller
             // Remove duplicates and maintain order
             $approvers = array_values(array_unique($approvers));
             
-            // Find HRD approver (division_id=6 and status=A) - will be used after all approvers approve
-            $hrdApprover = $this->findHrdApprover();
+            // Find HR approver (id_jabatan=309) - will be used after all approvers approve
+            $hrdApprover = HrdApprovalAccess::firstHrdApprover();
             
             // Create approval request (for backward compatibility with existing approval system)
             $firstApprover = $validApprovers->first();
@@ -1111,17 +1112,11 @@ class AttendanceController extends Controller
     }
     
     /**
-     * Find HRD approver (user with division_id=6 and status=A)
+     * Find HR approver (user with id_jabatan=309 and status=A)
      */
     private function findHrdApprover()
     {
-        $hrdApprover = DB::table('users')
-            ->where('division_id', 6)
-            ->where('status', 'A')
-            ->select('id', 'nama_lengkap', 'email')
-            ->first();
-            
-        return $hrdApprover;
+        return HrdApprovalAccess::firstHrdApprover();
     }
     
     /**

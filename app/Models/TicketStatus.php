@@ -54,6 +54,16 @@ class TicketStatus extends Model
         return $query->orderBy('order');
     }
 
+    public function scopeSelectable($query)
+    {
+        return $query->where('slug', '!=', 'resolved');
+    }
+
+    public static function isSelectableSlug(?string $slug): bool
+    {
+        return $slug !== null && $slug !== 'resolved';
+    }
+
     // Helper methods
     public function getTicketCount()
     {

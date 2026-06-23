@@ -708,9 +708,7 @@ class TicketController extends Controller
         }
 
         if ($status !== 'all') {
-            $query->whereHas('status', function($q) use ($status) {
-                $q->where('slug', $status);
-            });
+            $this->applyTicketStatusFilter($query, (string) $status);
         }
 
         if ($priority !== 'all') {
@@ -834,7 +832,7 @@ class TicketController extends Controller
         // Get filter options
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
-        $statuses = TicketStatus::active()->ordered()->get();
+        $statuses = $this->selectableTicketStatuses();
 
         $user = $request->user();
         // Get only divisions that have tickets (terbatas outlet user bila bukan pusat)
@@ -862,7 +860,6 @@ class TicketController extends Controller
             'total' => (clone $statsBase)->count(),
             'open' => (clone $statsBase)->open()->count(),
             'in_progress' => (clone $statsBase)->inProgress()->count(),
-            'resolved' => (clone $statsBase)->resolved()->count(),
             'closed' => (clone $statsBase)->closed()->count(),
         ];
 
@@ -928,9 +925,7 @@ class TicketController extends Controller
             });
         }
         if ($status !== 'all') {
-            $query->whereHas('status', function ($q) use ($status) {
-                $q->where('slug', $status);
-            });
+            $this->applyTicketStatusFilter($query, (string) $status);
         }
         if ($priority !== 'all') {
             $query->where('priority_id', $priority);
@@ -1399,6 +1394,34 @@ class TicketController extends Controller
         return [];
     }
 
+    private function selectableTicketStatuses()
+    {
+        return TicketStatus::active()->selectable()->ordered()->get();
+    }
+
+    private function applyTicketStatusFilter($query, string $status): void
+    {
+        if ($status === 'all') {
+            return;
+        }
+
+        if ($status === 'resolved') {
+            $status = 'closed';
+        }
+
+        if ($status === 'closed') {
+            $query->whereHas('status', function ($q) {
+                $q->whereIn('slug', ['closed', 'resolved']);
+            });
+
+            return;
+        }
+
+        $query->whereHas('status', function ($q) use ($status) {
+            $q->where('slug', $status);
+        });
+    }
+
     /**
      * Show the form for creating a new ticket
      */
@@ -1670,7 +1693,7 @@ class TicketController extends Controller
     {
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
-        $statuses = TicketStatus::active()->ordered()->get();
+        $statuses = $this->selectableTicketStatuses();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
         $outletsQuery = Outlet::active()->orderBy('nama_outlet');
         $user = $request->user();
@@ -1736,9 +1759,7 @@ class TicketController extends Controller
         }
 
         if ($status !== 'all') {
-            $query->whereHas('status', function ($q) use ($status) {
-                $q->where('slug', $status);
-            });
+            $this->applyTicketStatusFilter($query, (string) $status);
         }
 
         if ($priority !== 'all') {
@@ -1860,7 +1881,7 @@ class TicketController extends Controller
 
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
-        $statuses = TicketStatus::active()->ordered()->get();
+        $statuses = $this->selectableTicketStatuses();
         $apiUser = $request->user();
         $divisis = Divisi::whereHas('tickets', function ($q) use ($apiUser) {
             $this->applyTicketOutletVisibility($q, $apiUser);
@@ -1884,7 +1905,6 @@ class TicketController extends Controller
             'total' => (clone $statsBase)->count(),
             'open' => (clone $statsBase)->open()->count(),
             'in_progress' => (clone $statsBase)->inProgress()->count(),
-            'resolved' => (clone $statsBase)->resolved()->count(),
             'closed' => (clone $statsBase)->closed()->count(),
         ];
 
@@ -1936,7 +1956,7 @@ class TicketController extends Controller
 
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
-        $statuses = TicketStatus::active()->ordered()->get();
+        $statuses = $this->selectableTicketStatuses();
         $divisis = Divisi::active()->orderBy('nama_divisi')->get();
         $outlets = $this->outletsForTicketUser(auth()->user());
 
@@ -1987,7 +2007,13 @@ class TicketController extends Controller
         try {
             $oldData = $ticket->toArray();
             $oldStatusSlug = $ticket->status?->slug;
-            $newStatus = TicketStatus::findOrFail($request->status_id);
+            $newStatus = TicketStatus::active()->selectable()->where('id', $request->status_id)->first();
+            if (! $newStatus) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Status tidak valid atau tidak tersedia.',
+                ], 422);
+            }
 
             // Recalculate due date if priority changed
             $dueDate = $ticket->due_date;
@@ -2003,7 +2029,7 @@ class TicketController extends Controller
                 'description' => $request->description,
                 'category_id' => $request->category_id,
                 'priority_id' => $request->priority_id,
-                'status_id' => $request->status_id,
+                'status_id' => $newStatus->id,
                 'divisi_id' => $request->divisi_id,
                 'outlet_id' => $request->outlet_id,
                 'due_date' => $dueDate,
@@ -2057,11 +2083,11 @@ class TicketController extends Controller
             ], 422);
         }
 
-        $newStatus = TicketStatus::active()->where('id', $request->status_id)->first();
-        if (!$newStatus) {
+        $newStatus = TicketStatus::active()->selectable()->where('id', $request->status_id)->first();
+        if (! $newStatus) {
             return response()->json([
                 'success' => false,
-                'message' => 'Status tidak valid atau tidak aktif.',
+                'message' => 'Status tidak valid atau tidak tersedia.',
             ], 422);
         }
 

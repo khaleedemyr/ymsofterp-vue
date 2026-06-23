@@ -11,6 +11,7 @@ use App\Services\ExtraOffService;
 use App\Services\LeaveManagementService;
 use App\Services\HolidayAttendanceService;
 use App\Services\NotificationService;
+use App\Support\HrdApprovalAccess;
 
 class ApprovalController extends Controller
 {
@@ -373,19 +374,9 @@ class ApprovalController extends Controller
                         'updated_at' => now()
                     ]);
                 
-                // Send notification to HRD (old flow)
-                $hrdUsers = DB::table('users')
-                    ->where('division_id', 6)
-                    ->where('status', 'A')
-                    ->select('id')
-                    ->get();
-                
-                // Update HRD status for old flow
-                $hrdApprover = DB::table('users')
-                    ->where('division_id', 6)
-                    ->where('status', 'A')
-                    ->first();
-                
+                // Send notification to HR approvers (id_jabatan = 309)
+                $hrdApprover = HrdApprovalAccess::firstHrdApprover();
+
                 if ($hrdApprover) {
                     DB::table('approval_requests')
                         ->where('id', $id)
@@ -395,16 +386,13 @@ class ApprovalController extends Controller
                             'updated_at' => now()
                         ]);
                 }
-                    
-                foreach ($hrdUsers as $hrdUser) {
-                    NotificationService::insert([
-                        'user_id' => $hrdUser->id,
-                        'type' => 'leave_hrd_approval_request',
-                        'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan dan membutuhkan persetujuan HRD Anda.",
-                        'url' => config('app.url') . '/home',
-                        'is_read' => 0,
-                    ]);
-                }
+
+                HrdApprovalAccess::notifyHrdApprovers([
+                    'type' => 'leave_hrd_approval_request',
+                    'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh atasan dan membutuhkan persetujuan HRD Anda.",
+                    'url' => config('app.url') . '/home',
+                    'is_read' => 0,
+                ]);
                 
                 DB::commit();
                 return response()->json([
@@ -477,19 +465,9 @@ class ApprovalController extends Controller
                 ]);
                 
             } else {
-                // All approvers have approved - now send to HRD
-                $hrdUsers = DB::table('users')
-                    ->where('division_id', 6)
-                    ->where('status', 'A')
-                    ->select('id')
-                    ->get();
-                
-                // Update approval request to set HRD status
-                $hrdApprover = DB::table('users')
-                    ->where('division_id', 6)
-                    ->where('status', 'A')
-                    ->first();
-                
+                // All approvers have approved - now send to HR
+                $hrdApprover = HrdApprovalAccess::firstHrdApprover();
+
                 if ($hrdApprover) {
                     DB::table('approval_requests')
                         ->where('id', $id)
@@ -512,16 +490,13 @@ class ApprovalController extends Controller
                         'updated_at' => now()
                     ]);
                 
-                // Send notification to all HRD users
-                foreach ($hrdUsers as $hrdUser) {
-                    NotificationService::insert([
-                        'user_id' => $hrdUser->id,
-                        'type' => 'leave_hrd_approval_request',
-                        'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh semua atasan dan membutuhkan persetujuan HRD Anda.",
-                        'url' => config('app.url') . '/home',
-                        'is_read' => 0,
-                    ]);
-                }
+                // Send notification to HR approvers (id_jabatan = 309)
+                HrdApprovalAccess::notifyHrdApprovers([
+                    'type' => 'leave_hrd_approval_request',
+                    'message' => "Permohonan izin/cuti dari {$approvalRequest->user_name} untuk periode {$approvalRequest->date_from} - {$approvalRequest->date_to} telah disetujui oleh semua atasan dan membutuhkan persetujuan HRD Anda.",
+                    'url' => config('app.url') . '/home',
+                    'is_read' => 0,
+                ]);
                 
                 // Send notification to user
                 NotificationService::insert([
@@ -723,8 +698,8 @@ class ApprovalController extends Controller
             'isSuperadmin' => $isSuperadmin
         ]);
         
-        // Only HRD users (division_id = 6) or superadmin can access this
-        if (!$isSuperadmin && $user->division_id != 6) {
+        // Only HR approvers (id_jabatan=309) or superadmin can access this
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             \Log::warning('HRD Approvals: Access denied', [
                 'user_id' => $userId,
                 'id_role' => $user->id_role,
@@ -765,14 +740,7 @@ class ApprovalController extends Controller
             
         // Format the data to match the expected structure
         $formattedApprovals = $approvals->map(function($approval) {
-            // Get approver name - for HRD approvals, get any HRD user
-            $approverName = null;
-            $hrdUser = DB::table('users')
-                ->where('division_id', 6)
-                ->where('status', 'A')
-                ->select('nama_lengkap')
-                ->first();
-            $approverName = $hrdUser ? $hrdUser->nama_lengkap : 'HRD';
+            $approverName = HrdApprovalAccess::hrdApproverDisplayName();
             
             return (object)[
                 'id' => $approval->id,
@@ -821,8 +789,8 @@ class ApprovalController extends Controller
                 ->where('user_id', $userId);
                 
             // Filter based on user role
-            if ($user->division_id === 6) {
-                // HRD users should only see leave_hrd_approval_request notifications
+            if (HrdApprovalAccess::canAccessHrdApprovals($user)) {
+                // HR approvers should only see leave_hrd_approval_request notifications
                 $query->where('type', 'leave_hrd_approval_request');
             } else {
                 // Supervisor users should only see leave_approval_request notifications
@@ -855,10 +823,11 @@ class ApprovalController extends Controller
             'notes' => 'nullable|string|max:500'
         ]);
         
-        $userId = auth()->id();
-        
-        // Only HRD users can approve
-        if (auth()->user()->division_id !== 6) {
+        $user = auth()->user();
+        $userId = $user->id;
+
+        // Only HR approvers (id_jabatan=309) or superadmin can approve
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized'
@@ -1030,10 +999,11 @@ class ApprovalController extends Controller
             'notes' => 'required|string|max:500'
         ]);
         
-        $userId = auth()->id();
+        $user = auth()->user();
+        $userId = $user->id;
         
-        // Only HRD users can reject
-        if (auth()->user()->division_id !== 6) {
+        // Only HR approvers (id_jabatan=309) or superadmin can reject
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized'

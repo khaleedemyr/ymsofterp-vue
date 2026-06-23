@@ -892,7 +892,7 @@ function getChangeDescription(history) {
     'category_changed': 'Category changed',
     'comment_added': 'Comment added',
     'attachment_added': 'Attachment added',
-    'resolved': 'Ticket resolved',
+    'resolved': 'Ticket closed',
     'closed': 'Ticket closed',
     'reopened': 'Ticket reopened',
   };
@@ -911,7 +911,7 @@ function getHistoryTitle(action) {
     'category_changed': 'Category Changed',
     'comment_added': 'Comment Added',
     'attachment_added': 'Attachment Added',
-    'resolved': 'Ticket Resolved',
+    'resolved': 'Ticket Closed',
     'closed': 'Ticket Closed',
     'reopened': 'Ticket Reopened',
   };

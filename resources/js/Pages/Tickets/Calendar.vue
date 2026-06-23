@@ -57,7 +57,7 @@
             <span class="h-3 w-3 rounded-sm bg-indigo-100 border border-indigo-500"></span> Ticket baru (tgl buat)
           </span>
           <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1">
-            <span class="h-3 w-3 rounded-sm bg-blue-100 border border-blue-600"></span> Open / progres / resolved
+            <span class="h-3 w-3 rounded-sm bg-blue-100 border border-blue-600"></span> Open / progres / closed
           </span>
         </div>
       </div>

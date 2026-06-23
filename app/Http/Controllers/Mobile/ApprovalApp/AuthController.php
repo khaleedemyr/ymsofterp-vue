@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use App\Support\HrdApprovalAccess;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -226,6 +227,9 @@ class AuthController extends Controller
                 $user->outlet_name = $outlet->nama_outlet;
             }
         }
+
+        // HR approval access flag for mobile app
+        $user->can_access_hrd_approvals = HrdApprovalAccess::canAccessHrdApprovals($user);
 
         // Remove sensitive information
         unset($user->password);

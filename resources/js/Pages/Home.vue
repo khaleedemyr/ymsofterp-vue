@@ -28,6 +28,11 @@ import { parseRupiahInput, formatKasbonAmountForInput } from '@/utils/parseRupia
 const page = usePage();
 const user = page.props.auth?.user || {};
 
+const HR_APPROVER_JABATAN_ID = 309;
+function canAccessHrdApprovals() {
+    return user.id_role === '5af56935b011a' || Number(user.id_jabatan) === HR_APPROVER_JABATAN_ID || user.can_access_hrd_approvals === true;
+}
+
 const { t, locale } = useI18n();
 
 const greeting = ref('');
@@ -3544,7 +3549,7 @@ async function loadLeaveNotifications() {
 async function loadPendingHrdApprovals() {
     // Superadmin (id_role = '5af56935b011a') can see all approvals
     const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!isSuperadmin && user.division_id !== 6) return; // Only for HRD users or superadmin
+    if (!canAccessHrdApprovals()) return; // Only HR approver (jabatan 309) or superadmin
     
     loadingHrdApprovals.value = true;
     try {
@@ -3576,7 +3581,7 @@ async function loadPendingHrdApprovals() {
 async function loadPendingCorrectionApprovals() {
     // Superadmin (id_role = '5af56935b011a') can see all approvals
     const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!isSuperadmin && user.division_id !== 6) return; // Only for HRD users or superadmin
+    if (!canAccessHrdApprovals()) return; // Only HR approver (jabatan 309) or superadmin
     
     loadingCorrectionApprovals.value = true;
     try {
@@ -4921,7 +4926,7 @@ async function findApprovalIdFromNotification(notification) {
         }
         
         // Fallback: cari dari pending approvals
-        if (user.division_id === 6) {
+        if (canAccessHrdApprovals()) {
             // Jika user adalah HRD, cari di pending HRD approvals
             const response = await axios.get('/api/approval/pending-hrd');
             if (response.data.success && response.data.approvals.length > 0) {
@@ -4947,7 +4952,7 @@ async function showAllPendingApprovals() {
         // Ambil semua pending approvals
         let allApprovals = [];
         
-        if (user.division_id === 6) {
+        if (canAccessHrdApprovals()) {
             // Jika user adalah HRD, ambil pending HRD approvals
             const response = await axios.get('/api/approval/pending-hrd?limit=100');
             if (response.data.success) {
@@ -5768,7 +5773,7 @@ function isNotificationForCurrentUser(notification) {
     
     // For HRD users, only show leave_hrd_approval_request notifications
     // For supervisor users, only show leave_approval_request notifications
-    if (user.division_id === 6) { // HRD user
+    if (canAccessHrdApprovals()) { // HR approver
         if (notification.type === 'leave_approval_request') {
             return false; // This is for supervisor, not HRD
         }
@@ -7907,7 +7912,7 @@ watch(locale, () => {
                 <div class="bg-gray-50 dark:bg-gray-700 px-6 py-4 border-t border-gray-200 dark:border-gray-600">
                     <div class="flex justify-end gap-3">
                         <!-- HRD Actions -->
-                        <template v-if="user.division_id === 6 && selectedApproval.status === 'approved' && selectedApproval.hrd_status === 'pending'">
+                        <template v-if="canAccessHrdApprovals() && selectedApproval.status === 'approved' && selectedApproval.hrd_status === 'pending'">
                             <button @click="hrdRejectRequest(selectedApproval.id)" 
                                     class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors">
                                 Tolak HRD

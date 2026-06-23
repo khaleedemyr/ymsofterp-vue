@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Shift;
 use App\Services\NotificationService;
+use App\Support\HrdApprovalAccess;
 use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -240,22 +241,12 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'updated_at' => now(),
             ]);
             
-            // Get all HRD users (division_id = 6)
-            $hrdUsers = DB::table('users')
-                ->where('division_id', 6)
-                ->where('status', 'A')
-                ->pluck('id');
-            
-            // Send notification to all HRD users
-            foreach ($hrdUsers as $hrdUserId) {
-                NotificationService::insert([
-                    'user_id' => $hrdUserId,
-                    'type' => 'schedule_correction_approval',
-                    'message' => "Permohonan koreksi schedule untuk {$schedule->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($schedule->tanggal)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
-                    'url' => '/schedule-attendance-correction',
-                    'is_read' => 0,
-                ]);
-            }
+            HrdApprovalAccess::notifyHrdApprovers([
+                'type' => 'schedule_correction_approval',
+                'message' => "Permohonan koreksi schedule untuk {$schedule->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($schedule->tanggal)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
+                'url' => '/schedule-attendance-correction',
+                'is_read' => 0,
+            ]);
             
             DB::commit();
             
@@ -401,22 +392,12 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'updated_at' => now(),
             ]);
             
-            // Get all HRD users (division_id = 6)
-            $hrdUsers = DB::table('users')
-                ->where('division_id', 6)
-                ->where('status', 'A')
-                ->pluck('id');
-            
-            // Send notification to all HRD users
-            foreach ($hrdUsers as $hrdUserId) {
-                NotificationService::insert([
-                    'user_id' => $hrdUserId,
-                    'type' => 'manual_attendance_approval',
-                    'message' => "Permohonan input absen manual untuk {$user->nama_lengkap} pada tanggal " . date('d/m/Y H:i', strtotime($request->scan_date)) . " membutuhkan persetujuan Anda.",
-                    'url' => '/schedule-attendance-correction',
-                    'is_read' => 0,
-                ]);
-            }
+            HrdApprovalAccess::notifyHrdApprovers([
+                'type' => 'manual_attendance_approval',
+                'message' => "Permohonan input absen manual untuk {$user->nama_lengkap} pada tanggal " . date('d/m/Y H:i', strtotime($request->scan_date)) . " membutuhkan persetujuan Anda.",
+                'url' => '/schedule-attendance-correction',
+                'is_read' => 0,
+            ]);
             
             DB::commit();
             
@@ -516,22 +497,12 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'updated_at' => now(),
             ]);
             
-            // Get all HRD users (division_id = 6)
-            $hrdUsers = DB::table('users')
-                ->where('division_id', 6)
-                ->where('status', 'A')
-                ->pluck('id');
-            
-            // Send notification to all HRD users
-            foreach ($hrdUsers as $hrdUserId) {
-                NotificationService::insert([
-                    'user_id' => $hrdUserId,
-                    'type' => 'attendance_correction_approval',
-                    'message' => "Permohonan koreksi attendance untuk {$oldRecord->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($oldRecord->scan_date)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
-                    'url' => '/schedule-attendance-correction',
-                    'is_read' => 0,
-                ]);
-            }
+            HrdApprovalAccess::notifyHrdApprovers([
+                'type' => 'attendance_correction_approval',
+                'message' => "Permohonan koreksi attendance untuk {$oldRecord->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($oldRecord->scan_date)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
+                'url' => '/schedule-attendance-correction',
+                'is_read' => 0,
+            ]);
             
             DB::commit();
             
@@ -573,8 +544,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             'isSuperadmin' => $isSuperadmin
         ]);
         
-        // Only HRD users (division_id = 6) or superadmin can see pending approvals
-        if (!$isSuperadmin && $user->division_id != 6) {
+        // Only HR approvers (id_jabatan=309) or superadmin can see pending approvals
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             \Log::warning('Correction Approvals: Access denied', [
                 'user_id' => $user->id,
                 'id_role' => $user->id_role,
@@ -601,13 +572,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             ->orderBy('saca.created_at', 'desc')
             ->get()
             ->map(function($approval) {
-                // Get approver name - for corrections, get any HRD user
-                $hrdUser = DB::table('users')
-                    ->where('division_id', 6)
-                    ->where('status', 'A')
-                    ->select('nama_lengkap')
-                    ->first();
-                $approval->approver_name = $hrdUser ? $hrdUser->nama_lengkap : 'HRD';
+                $approval->approver_name = HrdApprovalAccess::hrdApproverDisplayName();
                 return $approval;
             });
             
@@ -765,9 +730,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 403);
         }
         
-        // Only HRD users (division_id = 6) or superadmin can approve
-        $isSuperadmin = $user->id_role === '5af56935b011a';
-        if (!$isSuperadmin && $user->division_id != 6) {
+        // Only HR approvers (id_jabatan=309) or superadmin can approve
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
@@ -1116,9 +1080,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 403);
         }
         
-        // Only HRD users (division_id = 6) or superadmin can reject
-        $isSuperadmin = $user->id_role === '5af56935b011a';
-        if (!$isSuperadmin && $user->division_id != 6) {
+        // Only HR approvers (id_jabatan=309) or superadmin can reject
+        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized access'
