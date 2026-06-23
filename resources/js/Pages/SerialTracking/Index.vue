@@ -14,6 +14,7 @@
 
       <div class="flex gap-2 mb-6 border-b border-gray-200">
         <button
+          v-if="isHQ"
           type="button"
           class="px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors"
           :class="activeTab === 'document' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-700'"
@@ -48,8 +49,8 @@
         </button>
       </div>
 
-      <!-- Tab: Per Dokumen -->
-      <div v-show="activeTab === 'document'" class="space-y-6">
+      <!-- Tab: Per Dokumen (HO only) -->
+      <div v-if="isHQ" v-show="activeTab === 'document'" class="space-y-6">
         <div class="bg-white rounded-2xl shadow-xl border border-gray-100 p-6">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
             <div>
@@ -593,7 +594,7 @@ const props = defineProps({
   rejectLogsTableReady: { type: Boolean, default: false },
 })
 
-const activeTab = ref('document')
+const activeTab = ref(props.isHQ ? 'document' : 'serial')
 
 const docFilters = reactive({
   source_type: '',
