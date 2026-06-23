@@ -34,6 +34,7 @@ const showCameraModal = ref(false);
 const existingTickets = ref([]);
 const ticketCommentDrafts = ref({});
 const submittingTicketComment = ref(null);
+const expandedTicketIds = ref({});
 const ticketForm = ref({
   title: '',
   description: '',
@@ -149,6 +150,7 @@ function loadAreaData(areaId) {
   hasUnsavedChanges.value = false;
 
   ticketCommentDrafts.value = {};
+  expandedTicketIds.value = {};
 
   if (form.value.status === 'NG') {
     loadExistingTickets();
@@ -615,6 +617,17 @@ function viewTicket(ticketId) {
   window.open(`/tickets/${ticketId}`, '_blank');
 }
 
+function isTicketExpanded(ticketId) {
+  return !!expandedTicketIds.value[ticketId];
+}
+
+function toggleTicketExpanded(ticketId) {
+  expandedTicketIds.value = {
+    ...expandedTicketIds.value,
+    [ticketId]: !expandedTicketIds.value[ticketId],
+  };
+}
+
 function updateTicketCommentDraft(ticketId, value) {
   ticketCommentDrafts.value[ticketId] = value;
 }
@@ -715,6 +728,7 @@ watch(() => form.value.status, async (status) => {
 
   existingTickets.value = [];
   ticketCommentDrafts.value = {};
+  expandedTicketIds.value = {};
 });
 
 watch(() => form.value.finding_problem, async () => {
@@ -898,10 +912,13 @@ onUnmounted(() => {
                   v-for="ticket in filteredExistingTickets"
                   :key="ticket.id"
                   class="open-ticket-card"
-                  :class="{ 'open-ticket-card--duplicate': ticket.is_same_title }"
+                  :class="{
+                    'open-ticket-card--duplicate': ticket.is_same_title,
+                    'open-ticket-card--expanded': isTicketExpanded(ticket.id),
+                  }"
                 >
-                  <div class="open-ticket-card-top open-ticket-clickable" @click="viewTicket(ticket.id)">
-                    <div class="open-ticket-card-title-wrap">
+                  <div class="open-ticket-summary">
+                    <div class="open-ticket-summary-main">
                       <div class="open-ticket-card-badges">
                         <span class="open-ticket-number">{{ ticket.ticket_number }}</span>
                         <span
@@ -912,63 +929,86 @@ onUnmounted(() => {
                         </span>
                       </div>
                       <p class="open-ticket-title">{{ ticket.title }}</p>
+                      <p v-if="!isTicketExpanded(ticket.id)" class="open-ticket-summary-meta">
+                        {{ getTicketReporterName(ticket) }} · {{ formatTicketReportedAt(ticket.created_at) }}
+                      </p>
                     </div>
-                    <span class="open-ticket-status" :class="getStatusBadgeClass(ticket.status?.slug)">
-                      {{ ticket.status?.name }}
-                    </span>
-                  </div>
 
-                  <div class="open-ticket-meta open-ticket-clickable" @click="viewTicket(ticket.id)">
-                    <div class="open-ticket-meta-item">
-                      <i class="fa-solid fa-user"></i>
-                      <span>Dilaporkan oleh <strong>{{ getTicketReporterName(ticket) }}</strong></span>
-                    </div>
-                    <div class="open-ticket-meta-item">
-                      <i class="fa-solid fa-clock"></i>
-                      <span>{{ formatTicketReportedAt(ticket.created_at) }}</span>
-                    </div>
-                  </div>
-
-                  <div class="open-ticket-comment" @click.stop>
-                    <label class="open-ticket-comment-label">
-                      <i class="fa-solid fa-comment"></i>
-                      Tambah komentar
-                    </label>
-                    <textarea
-                      :value="ticketCommentDrafts[ticket.id] || ''"
-                      class="open-ticket-comment-input"
-                      placeholder="Tulis komentar untuk ticket ini..."
-                      rows="2"
-                      @input="updateTicketCommentDraft(ticket.id, $event.target.value)"
-                    ></textarea>
-                    <div class="open-ticket-comment-actions">
-                      <button
-                        v-if="form.finding_problem?.trim()"
-                        type="button"
-                        class="open-ticket-comment-fill"
-                        @click="fillCommentFromFinding(ticket.id)"
-                      >
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        Gunakan finding problem
-                      </button>
+                    <div class="open-ticket-summary-actions">
+                      <span class="open-ticket-status" :class="getStatusBadgeClass(ticket.status?.slug)">
+                        {{ ticket.status?.name }}
+                      </span>
                       <button
                         type="button"
-                        class="open-ticket-comment-submit"
-                        :disabled="!canSubmitTicketComment(ticket.id)"
-                        @click="addTicketComment(ticket.id)"
+                        class="open-ticket-toggle"
+                        :aria-expanded="isTicketExpanded(ticket.id)"
+                        @click="toggleTicketExpanded(ticket.id)"
                       >
                         <i
                           class="fa-solid"
-                          :class="submittingTicketComment === ticket.id ? 'fa-spinner fa-spin' : 'fa-paper-plane'"
+                          :class="isTicketExpanded(ticket.id) ? 'fa-chevron-up' : 'fa-chevron-down'"
                         ></i>
-                        {{ submittingTicketComment === ticket.id ? 'Mengirim...' : 'Kirim' }}
+                        {{ isTicketExpanded(ticket.id) ? 'Tutup' : 'Buka' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="open-ticket-detail-btn"
+                        @click="viewTicket(ticket.id)"
+                      >
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                        Detail
                       </button>
                     </div>
                   </div>
 
-                  <div class="open-ticket-action open-ticket-clickable" @click="viewTicket(ticket.id)">
-                    <span>Klik untuk lihat detail ticket</span>
-                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  <div v-show="isTicketExpanded(ticket.id)" class="open-ticket-body">
+                    <div class="open-ticket-meta">
+                      <div class="open-ticket-meta-item">
+                        <i class="fa-solid fa-user"></i>
+                        <span>Dilaporkan oleh <strong>{{ getTicketReporterName(ticket) }}</strong></span>
+                      </div>
+                      <div class="open-ticket-meta-item">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>{{ formatTicketReportedAt(ticket.created_at) }}</span>
+                      </div>
+                    </div>
+
+                    <div class="open-ticket-comment">
+                      <label class="open-ticket-comment-label">
+                        <i class="fa-solid fa-comment"></i>
+                        Tambah komentar
+                      </label>
+                      <textarea
+                        :value="ticketCommentDrafts[ticket.id] || ''"
+                        class="open-ticket-comment-input"
+                        placeholder="Tulis komentar untuk ticket ini..."
+                        rows="2"
+                        @input="updateTicketCommentDraft(ticket.id, $event.target.value)"
+                      ></textarea>
+                      <div class="open-ticket-comment-actions">
+                        <button
+                          v-if="form.finding_problem?.trim()"
+                          type="button"
+                          class="open-ticket-comment-fill"
+                          @click="fillCommentFromFinding(ticket.id)"
+                        >
+                          <i class="fa-solid fa-wand-magic-sparkles"></i>
+                          Gunakan finding problem
+                        </button>
+                        <button
+                          type="button"
+                          class="open-ticket-comment-submit"
+                          :disabled="!canSubmitTicketComment(ticket.id)"
+                          @click="addTicketComment(ticket.id)"
+                        >
+                          <i
+                            class="fa-solid"
+                            :class="submittingTicketComment === ticket.id ? 'fa-spinner fa-spin' : 'fa-paper-plane'"
+                          ></i>
+                          {{ submittingTicketComment === ticket.id ? 'Mengirim...' : 'Kirim' }}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1687,18 +1727,15 @@ onUnmounted(() => {
 }
 
 .open-ticket-card {
-  cursor: pointer;
   border: 1px solid #fdba74;
   border-radius: 0.875rem;
   background: white;
-  padding: 0.875rem 1rem;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  padding: 0.75rem 1rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.open-ticket-card:hover {
-  transform: translateY(-1px);
-  border-color: #f97316;
-  box-shadow: 0 8px 24px -12px rgba(249, 115, 22, 0.55);
+.open-ticket-card--expanded {
+  box-shadow: 0 4px 16px -8px rgba(249, 115, 22, 0.35);
 }
 
 .open-ticket-card--duplicate {
@@ -1707,11 +1744,67 @@ onUnmounted(() => {
   box-shadow: inset 0 0 0 1px #fcd34d;
 }
 
-.open-ticket-card-top {
+.open-ticket-summary {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.open-ticket-summary-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.open-ticket-summary-meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open-ticket-summary-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+.open-ticket-toggle,
+.open-ticket-detail-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #fdba74;
+  border-radius: 0.5rem;
+  background: #fff;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #9a3412;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.open-ticket-toggle:hover,
+.open-ticket-detail-btn:hover {
+  background: #fff7ed;
+  border-color: #f97316;
+}
+
+.open-ticket-detail-btn {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.open-ticket-body {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #fed7aa;
 }
 
 .open-ticket-card-badges {
@@ -1740,10 +1833,14 @@ onUnmounted(() => {
 
 .open-ticket-title {
   margin: 0.35rem 0 0;
-  font-size: 0.95rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.35;
   color: #374151;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .open-ticket-status {
@@ -1758,9 +1855,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px dashed #fed7aa;
 }
 
 .open-ticket-meta-item {
@@ -1778,10 +1872,6 @@ onUnmounted(() => {
 
 .open-ticket-meta-item strong {
   color: #111827;
-}
-
-.open-ticket-clickable {
-  cursor: pointer;
 }
 
 .open-ticket-comment {
@@ -1866,16 +1956,6 @@ onUnmounted(() => {
 .open-ticket-comment-submit:disabled {
   background: #fdba74;
   cursor: not-allowed;
-}
-
-.open-ticket-action {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #ea580c;
 }
 
 .open-tickets-empty {
