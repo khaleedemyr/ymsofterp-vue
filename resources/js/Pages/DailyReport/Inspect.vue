@@ -32,6 +32,8 @@ const showCameraModal = ref(false);
 
 // Convert to ticket refs
 const existingTickets = ref([]);
+const ticketCommentDrafts = ref({});
+const submittingTicketComment = ref(null);
 const ticketForm = ref({
   title: '',
   description: '',
@@ -145,6 +147,8 @@ function loadAreaData(areaId) {
   }
   
   hasUnsavedChanges.value = false;
+
+  ticketCommentDrafts.value = {};
 
   if (form.value.status === 'NG') {
     loadExistingTickets();
@@ -611,6 +615,54 @@ function viewTicket(ticketId) {
   window.open(`/tickets/${ticketId}`, '_blank');
 }
 
+function updateTicketCommentDraft(ticketId, value) {
+  ticketCommentDrafts.value[ticketId] = value;
+}
+
+function canSubmitTicketComment(ticketId) {
+  return String(ticketCommentDrafts.value[ticketId] || '').trim().length > 0
+    && submittingTicketComment.value !== ticketId;
+}
+
+function fillCommentFromFinding(ticketId) {
+  const problem = String(form.value.finding_problem || '').trim();
+  if (!problem) {
+    return;
+  }
+
+  const areaName = currentArea.value?.nama_area || '';
+  const text = areaName
+    ? `[Daily Report] ${areaName}: ${problem}`
+    : `[Daily Report] ${problem}`;
+  ticketCommentDrafts.value[ticketId] = text;
+}
+
+async function addTicketComment(ticketId) {
+  const comment = String(ticketCommentDrafts.value[ticketId] || '').trim();
+  if (!comment) {
+    return;
+  }
+
+  submittingTicketComment.value = ticketId;
+  try {
+    const response = await axios.post(`/tickets/${ticketId}/comments`, { comment });
+    if (response.data.success) {
+      ticketCommentDrafts.value[ticketId] = '';
+      Swal.fire({
+        icon: 'success',
+        title: 'Berhasil',
+        text: 'Komentar berhasil ditambahkan ke ticket',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+    }
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || 'Gagal menambahkan komentar', 'error');
+  } finally {
+    submittingTicketComment.value = null;
+  }
+}
+
 function getStatusBadgeClass(statusSlug) {
   const statusClasses = {
     'open': 'bg-blue-100 text-blue-800',
@@ -621,6 +673,31 @@ function getStatusBadgeClass(statusSlug) {
     'cancelled': 'bg-red-100 text-red-800'
   };
   return statusClasses[statusSlug] || 'bg-gray-100 text-gray-800';
+}
+
+function getTicketReporterName(ticket) {
+  return ticket?.creator?.nama_lengkap
+    || ticket?.creator?.email
+    || 'Tidak diketahui';
+}
+
+function formatTicketReportedAt(value) {
+  if (!value) {
+    return '-';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 
@@ -637,6 +714,7 @@ watch(() => form.value.status, async (status) => {
   }
 
   existingTickets.value = [];
+  ticketCommentDrafts.value = {};
 });
 
 watch(() => form.value.finding_problem, async () => {
@@ -794,51 +872,113 @@ onUnmounted(() => {
             </div>
 
             <!-- Open tickets in this area (NG only) -->
-            <div v-if="form.status === 'NG'" class="form-section">
-              <h3 class="flex items-center gap-2">
-                <i class="fa-solid fa-ticket-alt text-orange-500"></i>
-                Ticket Open di Area Ini
-              </h3>
-              <p class="text-sm text-gray-500 mb-3">
-                Menampilkan ticket yang belum selesai (belum closed/done) di outlet dan area yang sama.
-              </p>
-
-              <div v-if="hasDuplicateTicket" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                Ditemukan ticket dengan judul yang sama. Hindari membuat ticket ganda.
+            <div v-if="form.status === 'NG'" class="form-section open-tickets-panel">
+              <div class="open-tickets-header">
+                <div class="open-tickets-header-icon">
+                  <i class="fa-solid fa-ticket-alt"></i>
+                </div>
+                <div>
+                  <h3>Ticket Open di Area Ini</h3>
+                  <p class="open-tickets-subtitle">
+                    Ticket belum selesai di outlet &amp; area yang sama — cek sebelum membuat ticket baru.
+                  </p>
+                </div>
+                <span v-if="filteredExistingTickets.length > 0" class="open-tickets-count">
+                  {{ filteredExistingTickets.length }} open
+                </span>
               </div>
 
-              <div v-if="filteredExistingTickets.length > 0" class="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+              <div v-if="hasDuplicateTicket" class="open-tickets-alert">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>Ada ticket dengan <strong>judul yang sama</strong>. Hindari membuat ticket ganda.</span>
+              </div>
+
+              <div v-if="filteredExistingTickets.length > 0" class="open-tickets-list">
                 <div
                   v-for="ticket in filteredExistingTickets"
                   :key="ticket.id"
-                  class="cursor-pointer border-b border-gray-100 p-3 hover:bg-gray-50"
-                  :class="ticket.is_same_title ? 'bg-amber-50 hover:bg-amber-100' : ''"
-                  @click="viewTicket(ticket.id)"
+                  class="open-ticket-card"
+                  :class="{ 'open-ticket-card--duplicate': ticket.is_same_title }"
                 >
-                  <div class="flex items-center justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <span class="text-sm font-semibold text-gray-900">{{ ticket.ticket_number }}</span>
+                  <div class="open-ticket-card-top open-ticket-clickable" @click="viewTicket(ticket.id)">
+                    <div class="open-ticket-card-title-wrap">
+                      <div class="open-ticket-card-badges">
+                        <span class="open-ticket-number">{{ ticket.ticket_number }}</span>
                         <span
                           v-if="ticket.is_same_title"
-                          class="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
+                          class="open-ticket-duplicate-badge"
                         >
                           Judul sama
                         </span>
                       </div>
-                      <p class="truncate text-sm text-gray-600">{{ ticket.title }}</p>
+                      <p class="open-ticket-title">{{ ticket.title }}</p>
                     </div>
-                    <span class="shrink-0 rounded-full px-2 py-1 text-xs" :class="getStatusBadgeClass(ticket.status?.slug)">
+                    <span class="open-ticket-status" :class="getStatusBadgeClass(ticket.status?.slug)">
                       {{ ticket.status?.name }}
                     </span>
                   </div>
+
+                  <div class="open-ticket-meta open-ticket-clickable" @click="viewTicket(ticket.id)">
+                    <div class="open-ticket-meta-item">
+                      <i class="fa-solid fa-user"></i>
+                      <span>Dilaporkan oleh <strong>{{ getTicketReporterName(ticket) }}</strong></span>
+                    </div>
+                    <div class="open-ticket-meta-item">
+                      <i class="fa-solid fa-clock"></i>
+                      <span>{{ formatTicketReportedAt(ticket.created_at) }}</span>
+                    </div>
+                  </div>
+
+                  <div class="open-ticket-comment" @click.stop>
+                    <label class="open-ticket-comment-label">
+                      <i class="fa-solid fa-comment"></i>
+                      Tambah komentar
+                    </label>
+                    <textarea
+                      :value="ticketCommentDrafts[ticket.id] || ''"
+                      class="open-ticket-comment-input"
+                      placeholder="Tulis komentar untuk ticket ini..."
+                      rows="2"
+                      @input="updateTicketCommentDraft(ticket.id, $event.target.value)"
+                    ></textarea>
+                    <div class="open-ticket-comment-actions">
+                      <button
+                        v-if="form.finding_problem?.trim()"
+                        type="button"
+                        class="open-ticket-comment-fill"
+                        @click="fillCommentFromFinding(ticket.id)"
+                      >
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        Gunakan finding problem
+                      </button>
+                      <button
+                        type="button"
+                        class="open-ticket-comment-submit"
+                        :disabled="!canSubmitTicketComment(ticket.id)"
+                        @click="addTicketComment(ticket.id)"
+                      >
+                        <i
+                          class="fa-solid"
+                          :class="submittingTicketComment === ticket.id ? 'fa-spinner fa-spin' : 'fa-paper-plane'"
+                        ></i>
+                        {{ submittingTicketComment === ticket.id ? 'Mengirim...' : 'Kirim' }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="open-ticket-action open-ticket-clickable" @click="viewTicket(ticket.id)">
+                    <span>Klik untuk lihat detail ticket</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                  </div>
                 </div>
               </div>
-              <p v-else class="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">
-                Belum ada ticket open di area ini.
-              </p>
-              <p v-if="filteredExistingTickets.length > 0" class="mt-2 text-xs text-gray-500">
+
+              <div v-else class="open-tickets-empty">
+                <i class="fa-regular fa-circle-check"></i>
+                <p>Belum ada ticket open di area ini.</p>
+              </div>
+
+              <p v-if="filteredExistingTickets.length > 0" class="open-tickets-footer">
                 {{ filteredExistingTickets.length }} ticket open ditemukan
                 <span v-if="hasDuplicateTicket"> • {{ duplicateOpenTickets.length }} dengan judul sama</span>
               </p>
@@ -1469,6 +1609,296 @@ onUnmounted(() => {
 .btn-large {
   padding: 1rem 2rem;
   font-size: 1.125rem;
+}
+
+.open-tickets-panel {
+  border: 2px solid #fb923c !important;
+  background: linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%);
+  box-shadow: 0 10px 30px -12px rgba(249, 115, 22, 0.45);
+}
+
+.open-tickets-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.open-tickets-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.open-tickets-header-icon {
+  display: flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.875rem;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: white;
+  font-size: 1.125rem;
+  box-shadow: 0 8px 20px -8px rgba(234, 88, 12, 0.8);
+}
+
+.open-tickets-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: #9a3412;
+  opacity: 0.85;
+}
+
+.open-tickets-count {
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: #ea580c;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.open-tickets-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+  border: 1px solid #f59e0b;
+  border-radius: 0.75rem;
+  background: #fef3c7;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.875rem;
+  color: #92400e;
+}
+
+.open-tickets-list {
+  display: flex;
+  max-height: 18rem;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+.open-ticket-card {
+  cursor: pointer;
+  border: 1px solid #fdba74;
+  border-radius: 0.875rem;
+  background: white;
+  padding: 0.875rem 1rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.open-ticket-card:hover {
+  transform: translateY(-1px);
+  border-color: #f97316;
+  box-shadow: 0 8px 24px -12px rgba(249, 115, 22, 0.55);
+}
+
+.open-ticket-card--duplicate {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  box-shadow: inset 0 0 0 1px #fcd34d;
+}
+
+.open-ticket-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.open-ticket-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.open-ticket-number {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.open-ticket-duplicate-badge {
+  border-radius: 9999px;
+  background: #fbbf24;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #78350f;
+}
+
+.open-ticket-title {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #374151;
+}
+
+.open-ticket-status {
+  flex-shrink: 0;
+  border-radius: 9999px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.open-ticket-meta {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #fed7aa;
+}
+
+.open-ticket-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+
+.open-ticket-meta-item i {
+  width: 1rem;
+  color: #ea580c;
+}
+
+.open-ticket-meta-item strong {
+  color: #111827;
+}
+
+.open-ticket-clickable {
+  cursor: pointer;
+}
+
+.open-ticket-comment {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #fdba74;
+}
+
+.open-ticket-comment-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9a3412;
+}
+
+.open-ticket-comment-input {
+  width: 100%;
+  border: 1px solid #fdba74;
+  border-radius: 0.625rem;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #111827;
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.open-ticket-comment-input:focus {
+  outline: none;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.15);
+}
+
+.open-ticket-comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.open-ticket-comment-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0.375rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #9a3412;
+  cursor: pointer;
+}
+
+.open-ticket-comment-fill:hover {
+  background: #fff7ed;
+}
+
+.open-ticket-comment-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #ea580c;
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+
+.open-ticket-comment-submit:hover:not(:disabled) {
+  background: #c2410c;
+}
+
+.open-ticket-comment-submit:disabled {
+  background: #fdba74;
+  cursor: not-allowed;
+}
+
+.open-ticket-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ea580c;
+}
+
+.open-tickets-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px dashed #fdba74;
+  border-radius: 0.875rem;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1.25rem;
+  color: #9a3412;
+}
+
+.open-tickets-empty i {
+  font-size: 1.5rem;
+  color: #22c55e;
+}
+
+.open-tickets-footer {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: #9a3412;
 }
 
 /* Mobile Styles */

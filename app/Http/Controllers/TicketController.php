@@ -2731,7 +2731,7 @@ class TicketController extends Controller
 
         $proposedTitle = $this->normalizeTicketTitle((string) $request->get('title', ''));
 
-        $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet'])
+        $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet', 'creator:id,nama_lengkap,email'])
             ->where('outlet_id', $outletId)
             ->where('title', 'like', '%'.$area->nama_area.'%')
             ->notFinal()
