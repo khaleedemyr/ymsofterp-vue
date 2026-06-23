@@ -2790,6 +2790,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/process-monthly-credit', [LeaveManagementController::class, 'processMonthlyCredit'])->name('process-monthly-credit');
         Route::post('/process-burning', [LeaveManagementController::class, 'processBurning'])->name('process-burning');
         Route::get('/statistics', [LeaveManagementController::class, 'getStatistics'])->name('statistics');
+        Route::get('/balance-template', [LeaveManagementController::class, 'downloadBalanceTemplate'])->name('balance-template');
+        Route::post('/balance-import', [LeaveManagementController::class, 'importBalanceReplace'])->name('balance-import');
     });
 });
 

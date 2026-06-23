@@ -6,6 +6,16 @@
           Manajemen Cuti Karyawan
         </h2>
         <div class="flex gap-2">
+          <button @click="downloadBalanceTemplate"
+                  class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+            <i class="fa-solid fa-file-excel"></i>
+            Template Saldo
+          </button>
+          <button @click="openImportModal"
+                  class="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+            <i class="fa-solid fa-upload"></i>
+            Upload Saldo
+          </button>
           <button @click="showStatistics" 
                   class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
             <i class="fa-solid fa-chart-bar"></i>
@@ -435,6 +445,124 @@
         </div>
       </div>
     </div>
+
+    <!-- Import Saldo Modal -->
+    <div v-if="showImportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div class="p-6 border-b shrink-0">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-semibold">Upload Replace Saldo Cuti</h3>
+            <button @click="closeImportModal" :disabled="isImporting" class="text-gray-500 hover:text-gray-700 disabled:opacity-40">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+        </div>
+        <div class="p-6 space-y-4 overflow-y-auto">
+          <div v-if="!importResult" class="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+            Upload file Excel dengan kolom <strong>Nama</strong>, <strong>Outlet</strong>, dan <strong>Saldo Cuti</strong>.
+            Saldo di file akan <strong>mengganti</strong> saldo cuti yang ada sekarang.
+          </div>
+
+          <div v-if="!importResult">
+            <label class="block text-sm font-medium text-gray-700 mb-1">File Excel (.xlsx / .xls / .csv)</label>
+            <input ref="importFileInput" type="file" accept=".xlsx,.xls,.csv"
+                   class="w-full border-gray-300 rounded-md shadow-sm"
+                   :disabled="isImporting"
+                   @change="onImportFileChange">
+          </div>
+          <div v-if="importFileName && !importResult" class="text-sm text-gray-600">
+            File dipilih: <strong>{{ importFileName }}</strong>
+          </div>
+
+          <!-- Progress upload & proses -->
+          <div v-if="isImporting" class="space-y-2">
+            <div class="flex justify-between text-sm text-gray-600">
+              <span>{{ importPhase === 'processing' ? 'Memproses data di server...' : 'Mengupload file...' }}</span>
+              <span>{{ importProgress }}%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+              <div class="h-2.5 rounded-full transition-all duration-300"
+                   :class="importPhase === 'processing' ? 'bg-teal-500 animate-pulse' : 'bg-teal-600'"
+                   :style="{ width: importProgress + '%' }"></div>
+            </div>
+          </div>
+
+          <!-- Hasil import -->
+          <div v-if="importResult" class="space-y-4">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div class="rounded-lg bg-green-50 border border-green-200 p-3 text-center">
+                <div class="text-xs text-green-700">Berhasil</div>
+                <div class="text-xl font-bold text-green-800">{{ importResult.success_count }}</div>
+              </div>
+              <div class="rounded-lg bg-yellow-50 border border-yellow-200 p-3 text-center">
+                <div class="text-xs text-yellow-700">Tidak berubah</div>
+                <div class="text-xl font-bold text-yellow-800">{{ importResult.skipped_count }}</div>
+              </div>
+              <div class="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
+                <div class="text-xs text-red-700">Gagal</div>
+                <div class="text-xl font-bold text-red-800">{{ importResult.error_count }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 border border-gray-200 p-3 text-center">
+                <div class="text-xs text-gray-600">Total baris</div>
+                <div class="text-xl font-bold text-gray-800">{{ importResult.total_rows }}</div>
+              </div>
+            </div>
+
+            <div v-if="importResult.message" class="text-sm text-gray-700">
+              {{ importResult.message }}
+            </div>
+
+            <div v-if="failedRows.length" class="border border-red-200 rounded-lg overflow-hidden">
+              <div class="bg-red-50 px-4 py-2 text-sm font-semibold text-red-800">
+                Baris yang gagal ({{ failedRows.length }})
+              </div>
+              <div class="max-h-64 overflow-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Baris</th>
+                      <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
+                      <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Outlet</th>
+                      <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                      <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Alasan gagal</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="(row, idx) in failedRows" :key="idx" class="hover:bg-red-50/40">
+                      <td class="px-3 py-2 whitespace-nowrap text-gray-700">{{ row.line }}</td>
+                      <td class="px-3 py-2 text-gray-900">{{ row.nama }}</td>
+                      <td class="px-3 py-2 text-gray-700">{{ row.outlet }}</td>
+                      <td class="px-3 py-2 whitespace-nowrap text-gray-700">{{ row.saldo_cuti }}</td>
+                      <td class="px-3 py-2 text-red-700">{{ row.reason }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-6 border-t shrink-0 flex justify-end gap-2">
+          <template v-if="importResult">
+            <button type="button" @click="finishImportAndReload"
+                    class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+              Tutup & Refresh
+            </button>
+          </template>
+          <template v-else>
+            <button type="button" @click="closeImportModal" :disabled="isImporting"
+                    class="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 disabled:opacity-40">
+              Batal
+            </button>
+            <button type="button" @click="processImportBalance" :disabled="!importFile || isImporting"
+                    class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:bg-gray-400">
+              <i v-if="isImporting" class="fa-solid fa-spinner fa-spin mr-1"></i>
+              Upload & Replace
+            </button>
+          </template>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -463,12 +591,21 @@ const showBurningModal = ref(false);
 const showAdjustmentModal = ref(false);
 const showUseLeaveModal = ref(false);
 const showHistoryModal = ref(false);
+const showImportModal = ref(false);
 
 // Form data
 const statistics = ref(null);
 const selectedUser = ref(null);
 const isProcessing = ref(false);
+const isImporting = ref(false);
+const importProgress = ref(0);
+const importPhase = ref('idle'); // idle | uploading | processing
+const importResult = ref(null);
+const failedRows = ref([]);
 const leaveHistory = ref([]);
+const importFile = ref(null);
+const importFileName = ref('');
+const importFileInput = ref(null);
 
 const monthlyCreditForm = reactive({
   year: new Date().getFullYear(),
@@ -696,6 +833,116 @@ async function processUseLeave() {
   } finally {
     isProcessing.value = false;
     showUseLeaveModal.value = false;
+  }
+}
+
+function downloadBalanceTemplate() {
+  window.location.href = route('leave-management.balance-template');
+}
+
+function openImportModal() {
+  importFile.value = null;
+  importFileName.value = '';
+  importResult.value = null;
+  failedRows.value = [];
+  importProgress.value = 0;
+  importPhase.value = 'idle';
+  showImportModal.value = true;
+}
+
+function closeImportModal() {
+  if (isImporting.value) return;
+  showImportModal.value = false;
+  importFile.value = null;
+  importFileName.value = '';
+  importResult.value = null;
+  failedRows.value = [];
+  importProgress.value = 0;
+  importPhase.value = 'idle';
+  if (importFileInput.value) {
+    importFileInput.value.value = '';
+  }
+}
+
+function finishImportAndReload() {
+  closeImportModal();
+  router.reload();
+}
+
+function onImportFileChange(event) {
+  const file = event.target.files?.[0] || null;
+  importFile.value = file;
+  importFileName.value = file?.name || '';
+  importResult.value = null;
+  failedRows.value = [];
+}
+
+function applyImportResponse(data) {
+  importResult.value = {
+    success_count: data.success_count ?? 0,
+    skipped_count: data.skipped_count ?? 0,
+    error_count: data.error_count ?? 0,
+    total_rows: data.total_rows ?? 0,
+    message: data.message ?? '',
+  };
+  failedRows.value = data.failed_rows ?? [];
+}
+
+async function processImportBalance() {
+  if (!importFile.value) return;
+
+  isImporting.value = true;
+  importProgress.value = 0;
+  importPhase.value = 'uploading';
+  importResult.value = null;
+  failedRows.value = [];
+
+  try {
+    const formData = new FormData();
+    formData.append('file', importFile.value);
+
+    const response = await axios.post(route('leave-management.balance-import'), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!event.total) return;
+        const pct = Math.min(99, Math.round((event.loaded * 100) / event.total));
+        importProgress.value = pct;
+        if (pct >= 99) {
+          importPhase.value = 'processing';
+        }
+      },
+    });
+
+    importProgress.value = 100;
+    importPhase.value = 'processing';
+    applyImportResponse(response.data);
+
+    if (response.data.success) {
+      if (response.data.error_count > 0) {
+        await Swal.fire({
+          icon: 'warning',
+          title: 'Import selesai dengan catatan',
+          text: `${response.data.success_count} berhasil, ${response.data.error_count} gagal. Lihat detail di bawah.`,
+        });
+      } else {
+        await Swal.fire('Berhasil', response.data.message || 'Import selesai', 'success');
+      }
+    }
+  } catch (error) {
+    const data = error.response?.data;
+    if (data?.failed_rows?.length || data?.error_count) {
+      applyImportResponse(data);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Import gagal',
+        text: data?.message || 'Semua baris gagal diproses. Periksa daftar error di bawah.',
+      });
+    } else {
+      await Swal.fire('Error', data?.message || 'Gagal mengupload file saldo cuti', 'error');
+    }
+  } finally {
+    isImporting.value = false;
+    importPhase.value = 'idle';
   }
 }
 </script>

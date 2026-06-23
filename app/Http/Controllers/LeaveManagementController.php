@@ -9,6 +9,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Facades\Excel;
 
 class LeaveManagementController extends Controller
 {
@@ -234,5 +237,74 @@ class LeaveManagementController extends Controller
             'monthly_credits_this_year' => $monthlyCredits,
             'total_burned_this_year' => abs($burningTransactions)
         ]);
+    }
+
+    /**
+     * Download template Excel saldo cuti (berisi data aktif untuk diedit).
+     */
+    public function downloadBalanceTemplate()
+    {
+        $rows = $this->leaveService->getActiveUsersForBalanceTemplate();
+
+        return Excel::download(
+            new class($rows) implements FromCollection, WithHeadings {
+                public function __construct(private $rows) {}
+
+                public function collection()
+                {
+                    return $this->rows->map(fn ($row) => [
+                        $row['nama'],
+                        $row['outlet'],
+                        $row['saldo_cuti'],
+                    ]);
+                }
+
+                public function headings(): array
+                {
+                    return ['Nama', 'Outlet', 'Saldo Cuti'];
+                }
+            },
+            'template_saldo_cuti_' . date('Y-m-d') . '.xlsx'
+        );
+    }
+
+    /**
+     * Upload Excel untuk replace saldo cuti.
+     */
+    public function importBalanceReplace(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        try {
+            $sheets = Excel::toArray([], $request->file('file'));
+            $rows = $sheets[0] ?? [];
+            $result = $this->leaveService->importBalanceReplace($rows, Auth::id());
+
+            if (!$result['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['error'] ?? $result['message'] ?? 'Import gagal',
+                    'errors' => $result['errors'] ?? [],
+                    'failed_rows' => $result['failed_rows'] ?? [],
+                    'total_rows' => $result['total_rows'] ?? 0,
+                    'success_count' => $result['success_count'] ?? 0,
+                    'skipped_count' => $result['skipped_count'] ?? 0,
+                    'error_count' => $result['error_count'] ?? 0,
+                ], 422);
+            }
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            \Log::error('Import saldo cuti gagal: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membaca file: ' . $e->getMessage(),
+                'failed_rows' => [],
+                'errors' => [],
+            ], 422);
+        }
     }
 }
