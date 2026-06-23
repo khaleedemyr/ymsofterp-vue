@@ -1,11 +1,11 @@
 <template>
   <AppLayout title="Manajemen Cuti">
-    <template #header>
-      <div class="flex justify-between items-center">
+    <div class="py-6 px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center mb-6">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
           Manajemen Cuti Karyawan
         </h2>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
           <button @click="downloadBalanceTemplate"
                   class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
             <i class="fa-solid fa-file-excel"></i>
@@ -33,9 +33,7 @@
           </button>
         </div>
       </div>
-    </template>
 
-    <div class="py-6">
       <!-- Filter Section -->
       <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
         <div class="p-4">
