@@ -66,6 +66,7 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import RecruitmentConfigForm from './RecruitmentConfigForm.vue';
 import RecruitmentSection from './RecruitmentSection.vue';
+import { useJustAcademyFlash } from '@/Composables/useJustAcademyUi';
 
 const props = defineProps({
   grouped: { type: Object, default: () => ({ head_office: [], outlet: [] }) },
@@ -78,6 +79,8 @@ const filterScope = ref(props.filters?.scope || '');
 const dateFrom = ref(props.filters?.date_from || '');
 const dateTo = ref(props.filters?.date_to || '');
 const configVacancy = ref(null);
+
+useJustAcademyFlash();
 
 watch(() => props.grouped, (v) => { grouped.value = v; });
 

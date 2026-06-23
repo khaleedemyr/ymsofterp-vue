@@ -332,6 +332,9 @@
 import { defineComponent, h, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { useJustAcademyFlash } from '@/Composables/useJustAcademyUi';
+
+useJustAcademyFlash();
 
 const DetailItem = defineComponent({
   name: 'DetailItem',

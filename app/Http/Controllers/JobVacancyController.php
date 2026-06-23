@@ -110,7 +110,7 @@ class JobVacancyController extends Controller
         return response()->json($job->fresh()->load(['recruitmentConfig', 'pics:id,nama_lengkap,email']));
     }
 
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $job = JobVacancy::findOrFail($id);
         if ($job->banner) {
@@ -118,14 +118,26 @@ class JobVacancyController extends Controller
         }
         $job->delete();
 
+        if ($request->header('X-Inertia')) {
+            return redirect()->back()->with('success', 'Lowongan pekerjaan berhasil dihapus.');
+        }
+
         return response()->json(['success' => true]);
     }
 
-    public function setActive($id, Request $request)
+    public function setActive(Request $request, $id)
     {
         $job = JobVacancy::findOrFail($id);
         $job->is_active = $request->input('is_active', 1);
         $job->save();
+
+        $message = $job->is_active
+            ? 'Lowongan berhasil diaktifkan.'
+            : 'Lowongan berhasil dinonaktifkan.';
+
+        if ($request->header('X-Inertia')) {
+            return redirect()->back()->with('success', $message);
+        }
 
         return response()->json($job);
     }
@@ -299,7 +311,7 @@ class JobVacancyController extends Controller
         $application->save();
 
         if ($request->header('X-Inertia')) {
-            return redirect()->back();
+            return redirect()->back()->with('success', 'Progress pelamar berhasil diperbarui.');
         }
 
         return response()->json([
@@ -393,7 +405,7 @@ class JobVacancyController extends Controller
         $config->save();
 
         if ($request->header('X-Inertia')) {
-            return redirect()->back();
+            return redirect()->back()->with('success', 'Keterangan rekrutmen berhasil disimpan.');
         }
 
         return response()->json([

@@ -49,12 +49,15 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
+import { useJustAcademyFlash } from '@/Composables/useJustAcademyUi';
 
 const props = defineProps({
   vacancy: { type: Object, required: true },
 });
 
 const emit = defineEmits(['close', 'saved']);
+
+useJustAcademyFlash();
 
 const saving = ref(false);
 const form = ref({

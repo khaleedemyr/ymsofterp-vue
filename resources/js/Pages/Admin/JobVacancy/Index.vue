@@ -95,11 +95,20 @@ import { ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import JobVacancyForm from './Form.vue';
+import {
+  jaConfirm,
+  jaConfirmDelete,
+  jaDelete,
+  jaFormErrors,
+  useJustAcademyFlash,
+} from '@/Composables/useJustAcademyUi';
 
 const props = defineProps({
   vacancies: Object, // { data, current_page, last_page, per_page, total, from, to }
   filters: Object,
 });
+
+useJustAcademyFlash();
 
 const jobs = ref(props.vacancies);
 const search = ref(props.filters?.search || '');
@@ -107,6 +116,13 @@ const filterActive = ref(props.filters?.is_active ?? '');
 const filterScope = ref(props.filters?.job_scope ?? '');
 const showForm = ref(false);
 const selectedJob = ref(null);
+
+watch(
+  () => props.vacancies,
+  (value) => {
+    jobs.value = value;
+  },
+);
 
 function fetchJobs(page = 1) {
   router.get('/admin/job-vacancy', {
@@ -129,16 +145,37 @@ function closeForm() {
   showForm.value = false;
   selectedJob.value = null;
 }
-function deleteJob(id) {
-  if (confirm('Yakin hapus lowongan ini?')) {
-    router.delete(`/admin/job-vacancy/${id}`, {
-      onSuccess: () => fetchJobs(jobs.value.current_page),
-    });
+async function deleteJob(id) {
+  const result = await jaConfirmDelete({
+    title: 'Hapus lowongan?',
+    text: 'Data lowongan yang dihapus tidak dapat dikembalikan.',
+  });
+  if (!result.isConfirmed) {
+    return;
   }
-}
-function toggleActive(job) {
-  router.patch(`/admin/job-vacancy/${job.id}/set-active`, { is_active: job.is_active ? 0 : 1 }, {
+
+  jaDelete(`/admin/job-vacancy/${id}`, {
     onSuccess: () => fetchJobs(jobs.value.current_page),
+  });
+}
+async function toggleActive(job) {
+  const activating = !job.is_active;
+  const result = await jaConfirm({
+    icon: 'question',
+    title: activating ? 'Aktifkan lowongan?' : 'Nonaktifkan lowongan?',
+    text: activating
+      ? 'Lowongan akan ditampilkan pada halaman publik.'
+      : 'Lowongan tidak akan ditampilkan pada halaman publik.',
+    confirmText: activating ? 'Ya, aktifkan' : 'Ya, nonaktifkan',
+  });
+  if (!result.isConfirmed) {
+    return;
+  }
+
+  router.patch(`/admin/job-vacancy/${job.id}/set-active`, { is_active: activating ? 1 : 0 }, {
+    preserveScroll: true,
+    onSuccess: () => fetchJobs(jobs.value.current_page),
+    onError: (errors) => jaFormErrors(errors),
   });
 }
 function bannerUrl(path) {

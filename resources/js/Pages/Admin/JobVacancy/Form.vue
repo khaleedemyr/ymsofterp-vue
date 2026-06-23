@@ -124,7 +124,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import axios from 'axios';
-import Swal from 'sweetalert2';
+import { jaToastError, jaToastSuccess } from '@/Composables/useJustAcademyUi';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 
@@ -260,23 +260,16 @@ async function submitForm() {
 
     await axios({ method, url, data, headers: { 'Content-Type': 'multipart/form-data' } });
 
-    await Swal.fire({
-      icon: 'success',
-      title: 'Berhasil!',
-      text: form.value.id ? 'Lowongan berhasil diperbarui!' : 'Lowongan berhasil ditambahkan!',
-      timer: 2000,
-      showConfirmButton: false,
-    });
+    await jaToastSuccess(
+      form.value.id ? 'Lowongan berhasil diperbarui!' : 'Lowongan berhasil ditambahkan!',
+    );
 
     emit('saved');
     emit('close');
   } catch (error) {
-    await Swal.fire({
-      icon: 'error',
-      title: 'Gagal!',
-      text: error.response?.data?.message || 'Terjadi kesalahan saat menyimpan lowongan.',
-      confirmButtonText: 'OK',
-    });
+    await jaToastError(
+      error.response?.data?.message || 'Terjadi kesalahan saat menyimpan lowongan.',
+    );
   } finally {
     isLoading.value = false;
   }
