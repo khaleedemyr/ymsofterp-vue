@@ -2729,20 +2729,35 @@ class TicketController extends Controller
             }
         }
 
-        // Get tickets that contain the area name in title, match outlet, and are not closed/cancelled
+        $proposedTitle = $this->normalizeTicketTitle((string) $request->get('title', ''));
+
         $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet'])
-            ->where('title', 'like', "%{$area->nama_area}%")
             ->where('outlet_id', $outletId)
-            ->whereHas('status', function($query) {
-                $query->whereNotIn('slug', ['closed', 'cancelled']);
-            })
-            ->orderBy('created_at', 'desc')
+            ->where('title', 'like', '%'.$area->nama_area.'%')
+            ->notFinal()
+            ->orderByDesc('created_at')
             ->limit(20)
-            ->get();
+            ->get()
+            ->map(function (Ticket $ticket) use ($proposedTitle) {
+                $normalizedTitle = $this->normalizeTicketTitle((string) $ticket->title);
+                $ticket->is_same_title = $proposedTitle !== ''
+                    && $normalizedTitle === $proposedTitle;
+
+                return $ticket;
+            })
+            ->values();
         
         return response()->json([
             'success' => true,
-            'tickets' => $tickets
+            'tickets' => $tickets,
+            'duplicate_count' => $tickets->where('is_same_title', true)->count(),
         ]);
+    }
+
+    private function normalizeTicketTitle(string $title): string
+    {
+        $normalized = preg_replace('/\s+/', ' ', trim($title));
+
+        return strtolower((string) $normalized);
     }
 }

@@ -47,18 +47,26 @@ const currentArea = computed(() => {
   return props.areas.find(area => area.id === currentAreaId.value);
 });
 
-const filteredExistingTickets = computed(() => {
-  if (!currentArea.value) return [];
-  
-  return existingTickets.value.filter(ticket => {
-    // Filter by area name in title (since title contains area name)
-    const areaName = currentArea.value.nama_area.toLowerCase();
-    const ticketTitle = ticket.title.toLowerCase();
-    return ticketTitle.includes(areaName) && 
-           ticket.status?.slug !== 'closed' && 
-           ticket.status?.slug !== 'cancelled';
-  });
+const filteredExistingTickets = computed(() => existingTickets.value);
+
+const proposedTicketTitle = computed(() => {
+  if (!currentArea.value) {
+    return '';
+  }
+
+  const problem = String(form.value.finding_problem || '').trim();
+  if (!problem) {
+    return '';
+  }
+
+  return `${currentArea.value.nama_area} - ${problem}`;
 });
+
+const duplicateOpenTickets = computed(() => {
+  return existingTickets.value.filter((ticket) => ticket.is_same_title);
+});
+
+const hasDuplicateTicket = computed(() => duplicateOpenTickets.value.length > 0);
 
 const isFormValid = computed(() => {
   return form.value.status && form.value.status.trim() !== '';
@@ -137,6 +145,12 @@ function loadAreaData(areaId) {
   }
   
   hasUnsavedChanges.value = false;
+
+  if (form.value.status === 'NG') {
+    loadExistingTickets();
+  } else {
+    existingTickets.value = [];
+  }
   
   if (isMobile.value) {
     sidebarOpen.value = false;
@@ -263,16 +277,42 @@ async function saveArea() {
       ...form.value
     };
     
-            // Add ticket creation data if division concern is filled
-            if (form.value.dept_concern_id && ticketForm.value.category_id && ticketForm.value.priority_id) {
-              saveData.create_ticket = true;
-              saveData.ticket_data = {
-                ...ticketForm.value,
-                title: `${currentArea.value?.nama_area} - ${form.value.finding_problem}`,
-                description: form.value.finding_problem,
-                divisi_id: form.value.dept_concern_id
-              };
-            }
+    const willCreateTicket = form.value.status === 'NG'
+      && form.value.dept_concern_id
+      && ticketForm.value.category_id
+      && ticketForm.value.priority_id;
+
+    if (willCreateTicket) {
+      await loadExistingTickets();
+
+      if (hasDuplicateTicket.value) {
+        const duplicateList = duplicateOpenTickets.value
+          .map((ticket) => `<li><strong>${ticket.ticket_number}</strong> — ${ticket.title}</li>`)
+          .join('');
+
+        const duplicateConfirm = await Swal.fire({
+          title: 'Ticket dengan judul sama sudah ada',
+          html: `<p class="text-sm text-gray-600 mb-2">Area dan outlet ini sudah memiliki ticket open dengan judul serupa:</p><ul class="text-left text-sm">${duplicateList}</ul><p class="text-sm text-gray-600 mt-3">Lanjutkan membuat ticket baru?</p>`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Tetap buat ticket baru',
+          cancelButtonText: 'Batal',
+          reverseButtons: true,
+        });
+
+        if (!duplicateConfirm.isConfirmed) {
+          return;
+        }
+      }
+
+      saveData.create_ticket = true;
+      saveData.ticket_data = {
+        ...ticketForm.value,
+        title: proposedTicketTitle.value,
+        description: form.value.finding_problem,
+        divisi_id: form.value.dept_concern_id,
+      };
+    }
     
     const response = await axios.post(`/daily-report/${props.dailyReport.id}/save-area`, saveData);
     
@@ -494,20 +534,24 @@ function goBackToIndex() {
 
 // Convert to ticket methods
 async function onDivisionConcernChange() {
-  console.log('Division concern changed:', form.value.dept_concern_id);
-  if (form.value.dept_concern_id && form.value.finding_problem) {
-    console.log('Loading existing tickets...');
+  if (form.value.status === 'NG') {
     await loadExistingTickets();
   }
 }
 
 
 async function loadExistingTickets() {
+  if (!currentAreaId.value || form.value.status !== 'NG') {
+    existingTickets.value = [];
+    return;
+  }
+
   try {
     const response = await axios.get(`/tickets/by-area/${currentAreaId.value}`, {
       params: {
-        outlet_id: props.dailyReport.outlet_id
-      }
+        outlet_id: props.dailyReport.outlet_id,
+        title: proposedTicketTitle.value || undefined,
+      },
     });
     existingTickets.value = response.data.tickets || [];
   } catch (error) {
@@ -586,9 +630,17 @@ watch(form, () => {
   hasUnsavedChanges.value = true;
 }, { deep: true });
 
-// Watch for finding_problem changes to load existing tickets
-watch(() => form.value.finding_problem, async (newValue) => {
-  if (newValue && form.value.dept_concern_id) {
+watch(() => form.value.status, async (status) => {
+  if (status === 'NG' && currentAreaId.value) {
+    await loadExistingTickets();
+    return;
+  }
+
+  existingTickets.value = [];
+});
+
+watch(() => form.value.finding_problem, async () => {
+  if (form.value.status === 'NG' && currentAreaId.value) {
     await loadExistingTickets();
   }
 });
@@ -741,6 +793,57 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- Open tickets in this area (NG only) -->
+            <div v-if="form.status === 'NG'" class="form-section">
+              <h3 class="flex items-center gap-2">
+                <i class="fa-solid fa-ticket-alt text-orange-500"></i>
+                Ticket Open di Area Ini
+              </h3>
+              <p class="text-sm text-gray-500 mb-3">
+                Menampilkan ticket yang belum selesai (belum closed/done) di outlet dan area yang sama.
+              </p>
+
+              <div v-if="hasDuplicateTicket" class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                Ditemukan ticket dengan judul yang sama. Hindari membuat ticket ganda.
+              </div>
+
+              <div v-if="filteredExistingTickets.length > 0" class="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+                <div
+                  v-for="ticket in filteredExistingTickets"
+                  :key="ticket.id"
+                  class="cursor-pointer border-b border-gray-100 p-3 hover:bg-gray-50"
+                  :class="ticket.is_same_title ? 'bg-amber-50 hover:bg-amber-100' : ''"
+                  @click="viewTicket(ticket.id)"
+                >
+                  <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-sm font-semibold text-gray-900">{{ ticket.ticket_number }}</span>
+                        <span
+                          v-if="ticket.is_same_title"
+                          class="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
+                        >
+                          Judul sama
+                        </span>
+                      </div>
+                      <p class="truncate text-sm text-gray-600">{{ ticket.title }}</p>
+                    </div>
+                    <span class="shrink-0 rounded-full px-2 py-1 text-xs" :class="getStatusBadgeClass(ticket.status?.slug)">
+                      {{ ticket.status?.name }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="rounded-lg border border-dashed border-gray-300 px-3 py-4 text-sm text-gray-500">
+                Belum ada ticket open di area ini.
+              </p>
+              <p v-if="filteredExistingTickets.length > 0" class="mt-2 text-xs text-gray-500">
+                {{ filteredExistingTickets.length }} ticket open ditemukan
+                <span v-if="hasDuplicateTicket"> • {{ duplicateOpenTickets.length }} dengan judul sama</span>
+              </p>
+            </div>
+
             <!-- Finding Problem -->
             <div class="form-section">
               <h3>Finding Problem</h3>
@@ -768,6 +871,11 @@ onUnmounted(() => {
                   <i class="fa-solid fa-ticket-alt"></i>
                   Create Ticket from This Issue
                 </h4>
+
+                <div v-if="proposedTicketTitle" class="mb-4 rounded-lg border border-blue-200 bg-white px-3 py-2">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Judul ticket yang akan dibuat</p>
+                  <p class="text-sm font-medium text-gray-800">{{ proposedTicketTitle }}</p>
+                </div>
                 
                 <!-- Category and Priority -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -820,29 +928,6 @@ onUnmounted(() => {
                   />
                   <p class="text-xs text-gray-500 mt-1">Auto-calculated based on priority</p>
                 </div>
-                
-                <!-- Existing Tickets in Same Area -->
-                <div v-if="existingTickets.length > 0" class="mb-4">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Existing Tickets in This Area</label>
-                  <div class="max-h-32 overflow-y-auto border border-gray-200 rounded-lg">
-                    <div v-for="ticket in filteredExistingTickets" :key="ticket.id" 
-                         class="p-2 border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-                         @click="viewTicket(ticket.id)">
-                      <div class="flex items-center justify-between">
-                        <div>
-                          <span class="font-medium text-sm">{{ ticket.ticket_number }}</span>
-                          <span class="text-xs text-gray-500 ml-2">{{ ticket.title }}</span>
-                        </div>
-                        <span class="text-xs px-2 py-1 rounded-full"
-                              :class="getStatusBadgeClass(ticket.status?.slug)">
-                          {{ ticket.status?.name }}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <p class="text-xs text-gray-500 mt-1">{{ filteredExistingTickets.length }} tickets found</p>
-                </div>
-                
               </div>
             </div>
 

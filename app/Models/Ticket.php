@@ -133,6 +133,13 @@ class Ticket extends Model
         });
     }
 
+    public function scopeNotFinal($query)
+    {
+        return $query->whereHas('status', function ($q) {
+            $q->where('is_final', 0);
+        });
+    }
+
     public function scopeByDivisi($query, $divisiId)
     {
         return $query->where('divisi_id', $divisiId);
