@@ -503,6 +503,7 @@ Route::prefix('approval-app')->group(function () {
 
         // Ticketing (Approval App — selaras web /tickets)
         Route::get('/tickets/form-options', [\App\Http\Controllers\TicketController::class, 'apiFormOptions']);
+        Route::get('/tickets/by-area/{areaId}', [\App\Http\Controllers\TicketController::class, 'getTicketsByArea'])->where('areaId', '[0-9]+');
         Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'apiIndex']);
         Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store']);
         Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'apiShow'])->where('id', '[0-9]+');
