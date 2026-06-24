@@ -968,8 +968,8 @@ class PayrollReportController extends Controller
                 $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
                 $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHoursForPeriod(
                     $userId,
-                    $gajian1SegmentStartStr,
-                    $gajian1SegmentEndStr
+                    $gajian1SegmentStart,
+                    $gajian1SegmentEnd
                 ));
                 $totalLemburRegular = floor($employeeRows->sum('lembur'));
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
@@ -2535,13 +2535,20 @@ class PayrollReportController extends Controller
     private function getExtraOffOvertimeHoursForPeriod($userId, $startDate, $endDate)
     {
         try {
+            $startStr = $startDate instanceof Carbon
+                ? $startDate->format('Y-m-d')
+                : Carbon::parse($startDate)->format('Y-m-d');
+            $endStr = $endDate instanceof Carbon
+                ? $endDate->format('Y-m-d')
+                : Carbon::parse($endDate)->format('Y-m-d');
+
             // Get all overtime transactions from Extra Off system for the date range
             $overtimeTransactions = DB::table('extra_off_transactions')
                 ->where('user_id', $userId)
                 ->where('source_type', 'overtime_work')
                 ->where('transaction_type', 'earned')
                 ->where('status', 'approved') // Only count approved transactions
-                ->whereBetween('source_date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                ->whereBetween('source_date', [$startStr, $endStr])
                 ->get();
 
             $totalOvertimeHours = 0;
@@ -2568,8 +2575,8 @@ class PayrollReportController extends Controller
         } catch (\Exception $e) {
             \Log::error('Error calculating Extra Off overtime hours for period', [
                 'user_id' => $userId,
-                'start_date' => $startDate->format('Y-m-d'),
-                'end_date' => $endDate->format('Y-m-d'),
+                'start_date' => $startDate instanceof Carbon ? $startDate->format('Y-m-d') : (string) $startDate,
+                'end_date' => $endDate instanceof Carbon ? $endDate->format('Y-m-d') : (string) $endDate,
                 'error' => $e->getMessage()
             ]);
             
@@ -2936,8 +2943,8 @@ class PayrollReportController extends Controller
                 $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
                 $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHoursForPeriod(
                     $userId,
-                    $gajian1SegmentStartStr,
-                    $gajian1SegmentEndStr
+                    $gajian1SegmentStart,
+                    $gajian1SegmentEnd
                 ));
                 $totalLemburRegular = floor($employeeRows->sum('lembur'));
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
