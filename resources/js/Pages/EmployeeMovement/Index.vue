@@ -138,7 +138,7 @@ function getInitials(name) {
           <div class="em-filter-grid">
             <div>
               <label class="em-label">Cari</label>
-              <div class="relative">
+              <div class="relative em-search-wrap">
                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                 <input
                   v-model="search"
