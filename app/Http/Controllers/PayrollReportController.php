@@ -296,6 +296,8 @@ class PayrollReportController extends Controller
             $payrollPhaseService = app(PayrollGeneratePhaseService::class);
             $gajian1Saved = false;
             $gajian2Saved = false;
+            $gajian1Locked = false;
+            $gajian2Locked = false;
 
             if ($payrollGenerated) {
                 // Ambil payment_method untuk backward compatibility
@@ -310,6 +312,8 @@ class PayrollReportController extends Controller
                     ->keyBy('user_id');
 
                 [$gajian1Saved, $gajian2Saved] = $payrollPhaseService->resolveLegacyPhaseSavedFlags($payrollGenerated);
+                $gajian1Locked = ($payrollGenerated->gajian1_status ?? '') === 'locked';
+                $gajian2Locked = ($payrollGenerated->gajian2_status ?? '') === 'locked';
             }
             
             // Debug: Log status payroll generated
@@ -323,9 +327,9 @@ class PayrollReportController extends Controller
                 'year' => $year
             ]);
             
-            // Snapshot penuh dari DB hanya jika kedua fase sudah tersimpan.
-            // Jika hanya Gajian 1, lanjut hitung ulang Gajian 2 (SC, lembur, L&B, dll).
-            if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty() && $gajian1Saved && $gajian2Saved) {
+            // Snapshot penuh dari DB hanya jika kedua fase sudah di-lock.
+            // Status "generated" tetap hitung ulang agar SC/L&B/deviasi/city ledger mengikuti logic terbaru.
+            if ($payrollGenerated && $payrollGeneratedDetailsFull->isNotEmpty() && $gajian1Locked && $gajian2Locked) {
                 \Log::info('Payroll - Using generated payroll data');
                 // Ambil data karyawan untuk mapping (include status untuk perhitungan statistik)
                 $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
@@ -1104,15 +1108,15 @@ class PayrollReportController extends Controller
                 }
 
                 // Hari kerja pool gajian 2 (SC/L&B/deviasi/city ledger) — basis absensi 1–akhir bulan
-                $hariKerjaGajian2Attendance = $isMutatedEmployee
-                    ? 0
-                    : $this->countHariKerjaGajian2Attendance(
-                        $allEmployeeRows,
-                        $gajian2Start,
-                        $gajian2End,
-                        $affectsGajian2 ? $resignationDate : null,
-                        $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start)
-                    );
+                $hariKerjaGajian2Attendance = $this->countHariKerjaGajian2Attendance(
+                    $allEmployeeRows,
+                    $gajian2Start,
+                    $gajian2End,
+                    $affectsGajian2 ? $resignationDate : null,
+                    $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start),
+                    $isMutatedEmployee ? $mutationEffectiveDate : null,
+                    $isMutatedEmployee ? $mutationRole : null
+                );
 
                 $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian2PoolDays([
                     'isMutatedEmployee' => $isMutatedEmployee,
@@ -1848,6 +1852,7 @@ class PayrollReportController extends Controller
                     'total_gaji_tanggal_8' => $totalGajiTanggal8,
                     'total_gaji' => $totalGaji,
                     'hari_kerja' => $hariKerja,
+                    'hari_kerja_gajian2' => $hariKerjaUntukServiceCharge,
                     'total_alpha' => $totalAlpha,
                     'total_izin_cuti' => $totalIzinCuti,
                     'izin_cuti_breakdown' => $izinCutiBreakdown,
@@ -1902,8 +1907,8 @@ class PayrollReportController extends Controller
                     $payrollDataItem = $payrollPhaseService->overlaySavedPhaseFields(
                         $payrollDataItem,
                         $savedDetail,
-                        $gajian1Saved,
-                        $gajian2Saved
+                        $gajian1Saved && $gajian1Locked,
+                        $gajian2Saved && $gajian2Locked
                     );
 
                     if ($gajian1Saved && !empty($payrollDataItem['leave_data']) && is_array($payrollDataItem['leave_data'])) {
@@ -3026,15 +3031,15 @@ class PayrollReportController extends Controller
                 $hariKerjaProrateGajian1 = $hariKerja;
             }
             
-            $hariKerjaGajian2Attendance = $isMutatedEmployee
-                ? 0
-                : $this->countHariKerjaGajian2Attendance(
-                    $allEmployeeRows,
-                    $gajian2Start,
-                    $gajian2End,
-                    $affectsGajian2 ? $resignationDate : null,
-                    $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start)
-                );
+            $hariKerjaGajian2Attendance = $this->countHariKerjaGajian2Attendance(
+                $allEmployeeRows,
+                $gajian2Start,
+                $gajian2End,
+                $affectsGajian2 ? $resignationDate : null,
+                $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start),
+                $isMutatedEmployee ? $mutationEffectiveDate : null,
+                $isMutatedEmployee ? $mutationRole : null
+            );
 
             $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian2PoolDays([
                 'isMutatedEmployee' => $isMutatedEmployee,
@@ -6988,9 +6993,19 @@ class PayrollReportController extends Controller
         Carbon $gajian2Start,
         Carbon $gajian2End,
         ?Carbon $resignationDate = null,
-        ?Carbon $tanggalMasukAfterGajian2Start = null
+        ?Carbon $tanggalMasukAfterGajian2Start = null,
+        ?Carbon $mutationEffectiveDate = null,
+        ?string $mutationRole = null
     ): int {
         $filtered = $this->filterAttendanceRowsForDateRange($rows, $gajian2Start, $gajian2End);
+
+        if ($mutationEffectiveDate && $mutationRole) {
+            $filtered = $this->filterAttendanceRowsForMutationSegment(
+                $filtered,
+                $mutationEffectiveDate,
+                $mutationRole
+            );
+        }
 
         if ($resignationDate) {
             $resignDay = $resignationDate->copy()->startOfDay();

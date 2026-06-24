@@ -131,6 +131,11 @@ class PayrollSplitPoolCalculator
     public static function resolveGajian2PoolDays(array $data, int $year, int $month): int
     {
         if ($data['isMutatedEmployee'] ?? false) {
+            $attendanceDays = max(0, (int) ($data['hariKerjaGajian2Attendance'] ?? 0));
+            if ($attendanceDays > 0) {
+                return $attendanceDays;
+            }
+
             return max(0, (int) ($data['hariKerjaGajian2'] ?? 0));
         }
 
@@ -188,9 +193,8 @@ class PayrollSplitPoolCalculator
                 continue;
             }
 
-            $hariKerja = $year > 0 && $month > 0
-                ? (float) self::resolveGajian2PoolDays($data, $year, $month)
-                : (float) ($data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'] ?? 0);
+            // Pakai hari pool yang sudah diset di Step 1 (sumber tunggal, selaras numerator/denominator).
+            $hariKerja = (float) ($data['hariKerjaUntukServiceCharge'] ?? 0);
 
             $totalPointHariKerja += (float) $data['userPoint'] * $hariKerja;
             $totalHariKerja += $hariKerja;
