@@ -167,6 +167,8 @@ class PayrollReportController extends Controller
         $totalMPAktif = 0;
         $totalMPResign = 0;
         $mutatedEmployeeIds = []; // Initialize mutatedEmployeeIds to avoid undefined variable error
+        $poolTotalHariKerjaGajian2 = 0;
+        $poolTotalPointHariKerja = 0;
 
         if ($outletId && $month && $year) {
             // Hitung periode payroll (26 bulan sebelumnya - 25 bulan yang dipilih)
@@ -241,6 +243,15 @@ class PayrollReportController extends Controller
                 );
                 $mutationMap = $this->buildPayrollMutationMap($mutations, (int) $outletId, $outletName);
                 $users = $this->mergeMutatedUsersIntoPayrollUsers($users, $mutations);
+                $users = $this->filterPayrollUsersForMutationEffectiveDate(
+                    $users,
+                    $mutationMap,
+                    $startDate,
+                    $endDate,
+                    $gajian2End,
+                    (int) $outletId,
+                    $outletName
+                );
 
                 \Log::info('Payroll - Mutations found and mapped', [
                     'outlet_id' => $outletId,
@@ -354,6 +365,15 @@ class PayrollReportController extends Controller
                     );
                     $users = $this->mergeMutatedUsersIntoPayrollUsers($users, $mutations);
                     $mutationMap = $this->buildPayrollMutationMap($mutations, (int) $outletId, $outletName);
+                    $users = $this->filterPayrollUsersForMutationEffectiveDate(
+                        $users,
+                        $mutationMap,
+                        $startDate,
+                        $endDate,
+                        $gajian2End,
+                        (int) $outletId,
+                        $outletName
+                    );
 
                     \Log::info('Payroll Generated - Mutations found', [
                         'outlet_id' => $outletId,
@@ -981,9 +1001,11 @@ class PayrollReportController extends Controller
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
                 $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
-                $hariKerja = ($isMutatedEmployee && isset($mutCtx))
-                    ? (int) ($mutCtx['hariKerjaGajian1'] ?? 0)
-                    : $hariKerjaAttendance;
+                $hariKerja = $this->resolveHariKerjaForPayrollSegment(
+                    $isMutatedEmployee,
+                    $mutCtx ?? null,
+                    $hariKerjaAttendance
+                );
 
                 $totalAlpha = $this->calculateAlpaDays($userId, null, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
                 $leaveData = $this->calculateLeaveData($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -1128,6 +1150,13 @@ class PayrollReportController extends Controller
                     'isNewEmployee' => $isNewEmployee,
                 ], (int) $year, (int) $month);
 
+                if ($isMutatedEmployee) {
+                    $hariKerjaUntukServiceCharge = $this->resolveMutationPoolDays(
+                        $hariKerja,
+                        $hariKerjaUntukServiceCharge
+                    );
+                }
+
                 if ($isMutatedEmployee && $hariKerja <= 0) {
                     $hariKerjaUntukServiceCharge = 0;
                     $hariKerjaGajian2 = 0;
@@ -1194,26 +1223,23 @@ class PayrollReportController extends Controller
                 (int) $outletId
             );
 
-            // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
-            $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc', (int) $year, (int) $month);
-            $totalPointHariKerja = $scPool['totalPointHariKerja'];
-            $totalHariKerja = $scPool['totalHariKerja'];
+            // Step 2–3: Pool & rate (Σ hari / Σ poin×hari sama untuk SC, L&B, deviasi, city ledger — seperti Excel)
+            $poolTotals = PayrollSplitPoolCalculator::calculatePoolTotals($userData);
+            $totalPointHariKerja = $poolTotals['totalPointHariKerja'];
+            $totalHariKerja = $poolTotals['totalHariKerja'];
             $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
             $rateByPoint = $scRates['rateByPoint'];
             $rateProRate = $scRates['rateProRate'];
 
-            $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb', (int) $year, (int) $month);
-            $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
+            $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $totalPointHariKerja, $totalHariKerja);
             $rateLBByPoint = $lbRates['rateByPoint'];
             $rateLBProRate = $lbRates['rateProRate'];
 
-            $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi', (int) $year, (int) $month);
-            $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
+            $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $totalPointHariKerja, $totalHariKerja);
             $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
             $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-            $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger', (int) $year, (int) $month);
-            $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
+            $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $totalPointHariKerja, $totalHariKerja);
             $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
             $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
 
@@ -1934,6 +1960,11 @@ class PayrollReportController extends Controller
             $totalMPAktif = $usersInPayrollData->where('status', 'A')->count();
             // Hitung total MP resign dari users yang ada di payrollData dan ada di resignations
             $totalMPResign = $usersInPayrollData->whereIn('id', $resignedEmployeeIds)->count();
+
+            $poolTotalHariKerjaGajian2 = (int) $payrollData->sum(fn ($item) => (int) ($item['hari_kerja_gajian2'] ?? 0));
+            $poolTotalPointHariKerja = (int) $payrollData->sum(
+                fn ($item) => (int) ($item['point'] ?? 0) * (int) ($item['hari_kerja_gajian2'] ?? 0)
+            );
         } else {
             $totalMP = 0;
             $totalMPAktif = 0;
@@ -2026,6 +2057,8 @@ class PayrollReportController extends Controller
                 'lb_amount' => $lbAmount,
                 'deviasi_amount' => $deviasiAmount,
                 'city_ledger_amount' => $cityLedgerAmount,
+                'pool_total_hari_kerja_gajian2' => $poolTotalHariKerjaGajian2,
+                'pool_total_point_hari_kerja' => $poolTotalPointHariKerja,
             ],
         ]);
     }
@@ -2728,6 +2761,15 @@ class PayrollReportController extends Controller
             );
             $mutationMap = $this->buildPayrollMutationMap($mutations, (int) $outletId, $outletName);
             $users = $this->mergeMutatedUsersIntoPayrollUsers($users, $mutations);
+            $users = $this->filterPayrollUsersForMutationEffectiveDate(
+                $users,
+                $mutationMap,
+                $startDate,
+                $endDate,
+                $gajian2End,
+                (int) $outletId,
+                $outletName
+            );
             $mutatedEmployeeIds = $mutations->pluck('employee_id')->toArray();
 
             \Log::info('Export - Mutations found and mapped', [
@@ -2771,9 +2813,20 @@ class PayrollReportController extends Controller
                 'u.nama_lengkap',
                 'u.division_id'
             )
-            ->where('u.id_outlet', $outletId)
             ->where('a.scan_date', '>=', $start . ' 00:00:00')
             ->where('a.scan_date', '<', $gajian2End->copy()->addDay()->format('Y-m-d') . ' 00:00:00');
+
+        if (! empty($outletId)) {
+            $mutatedEmployeeIdsForFilter = $mutatedEmployeeIds ?? [];
+            if (! empty($mutatedEmployeeIdsForFilter)) {
+                $sub->where(function ($q) use ($outletId, $mutatedEmployeeIdsForFilter) {
+                    $q->where('u.id_outlet', $outletId)
+                        ->orWhereIn('u.id', $mutatedEmployeeIdsForFilter);
+                });
+            } else {
+                $sub->where('u.id_outlet', $outletId);
+            }
+        }
 
         // Gunakan chunk untuk mencegah memory overflow
         $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
@@ -2970,9 +3023,11 @@ class PayrollReportController extends Controller
                 $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
             }
 
-            $hariKerja = ($isMutatedEmployee && isset($mutCtx))
-                ? (int) ($mutCtx['hariKerjaGajian1'] ?? 0)
-                : $hariKerjaAttendance;
+            $hariKerja = $this->resolveHariKerjaForPayrollSegment(
+                $isMutatedEmployee,
+                $mutCtx ?? null,
+                $hariKerjaAttendance
+            );
 
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
             $leaveData = $this->calculateLeaveData($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -3051,6 +3106,13 @@ class PayrollReportController extends Controller
                 'isNewEmployee' => $isNewEmployee,
             ], (int) $year, (int) $month);
 
+            if ($isMutatedEmployee) {
+                $hariKerjaUntukServiceCharge = $this->resolveMutationPoolDays(
+                    $hariKerja,
+                    $hariKerjaUntukServiceCharge
+                );
+            }
+
             if ($isMutatedEmployee && $hariKerja <= 0) {
                 $hariKerjaUntukServiceCharge = 0;
                 $hariKerjaGajian2 = 0;
@@ -3127,25 +3189,22 @@ class PayrollReportController extends Controller
         );
 
         // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
-        $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc', (int) $year, (int) $month);
-        $totalPointHariKerja = $scPool['totalPointHariKerja'];
-        $totalHariKerja = $scPool['totalHariKerja'];
+        $poolTotals = PayrollSplitPoolCalculator::calculatePoolTotals($userData);
+        $totalPointHariKerja = $poolTotals['totalPointHariKerja'];
+        $totalHariKerja = $poolTotals['totalHariKerja'];
         $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
         $rateByPoint = $scRates['rateByPoint'];
         $rateProRate = $scRates['rateProRate'];
 
-        $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb', (int) $year, (int) $month);
-        $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
+        $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $totalPointHariKerja, $totalHariKerja);
         $rateLBByPoint = $lbRates['rateByPoint'];
         $rateLBProRate = $lbRates['rateProRate'];
 
-        $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi', (int) $year, (int) $month);
-        $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
+        $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $totalPointHariKerja, $totalHariKerja);
         $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
         $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-        $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger', (int) $year, (int) $month);
-        $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
+        $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $totalPointHariKerja, $totalHariKerja);
         $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
         $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
 
@@ -6799,7 +6858,7 @@ class PayrollReportController extends Controller
 
         $fromMutations = DB::table('employee_movements')
             ->where('employment_type', 'mutation')
-            ->where('unit_property_change', true)
+            ->where('unit_property_change', '>', 0)
             ->whereNotNull('employment_effective_date')
             ->where(function ($q) use ($outletId, $outletName) {
                 $this->applyOutletMovementPropertyScope($q, 'unit_property_from', $outletId, $outletName);
@@ -6814,7 +6873,7 @@ class PayrollReportController extends Controller
 
         $toMutations = DB::table('employee_movements')
             ->where('employment_type', 'mutation')
-            ->where('unit_property_change', true)
+            ->where('unit_property_change', '>', 0)
             ->whereNotNull('employment_effective_date')
             ->where(function ($q) use ($outletId, $outletName) {
                 $this->applyOutletMovementPropertyScope($q, 'unit_property_to', $outletId, $outletName);
@@ -6885,17 +6944,17 @@ class PayrollReportController extends Controller
         $mutationMap = [];
 
         foreach ($mutations as $m) {
-            if (! ($m->unit_property_change ?? false)) {
+            if ((int) ($m->unit_property_change ?? 0) <= 0) {
                 continue;
             }
 
             $outletToId = $this->resolveOutletIdFromMovementProperty($m->unit_property_to);
             $outletFromId = $this->resolveOutletIdFromMovementProperty($m->unit_property_from);
-            $fromMatches = $this->outletMovementPropertyMatches($outletId, $outletName, $m->unit_property_from)
-                || $this->outletMovementPropertyMatches($outletId, $outletName, $m->employee_unit_property ?? null);
-            $toMatches = $this->outletMovementPropertyMatches($outletId, $outletName, $m->unit_property_to);
+            $outletFromMatches = $this->outletMovementPropertyMatches($outletId, $outletName, $m->unit_property_from);
+            $outletToMatches = $this->outletMovementPropertyMatches($outletId, $outletName, $m->unit_property_to);
 
-            if ($toMatches && ! $fromMatches) {
+            // Outlet tujuan: hari kerja sejak employment_effective_date
+            if ($outletToMatches) {
                 $mutationMap[$m->employee_id] = [
                     'effective_date' => $m->employment_effective_date,
                     'outlet_from_id' => $outletFromId,
@@ -6905,7 +6964,8 @@ class PayrollReportController extends Controller
                     'employee_name' => $m->employee_name,
                     'role' => 'to',
                 ];
-            } else {
+            } elseif ($outletFromMatches) {
+                // Outlet asal: hari kerja sampai sebelum employment_effective_date
                 $mutationMap[$m->employee_id] = [
                     'effective_date' => $m->employment_effective_date,
                     'outlet_from_id' => $outletId,
@@ -6919,6 +6979,99 @@ class PayrollReportController extends Controller
         }
 
         return $mutationMap;
+    }
+
+    /**
+     * Karyawan mutasi: tampil di outlet asal (sebelum effective date) dan outlet tujuan (sejak effective date).
+     * Karyawan yang belum efektif pindah ke outlet ini di-exclude dari payroll outlet tujuan.
+     */
+    private function filterPayrollUsersForMutationEffectiveDate(
+        $users,
+        array $mutationMap,
+        Carbon $startDate,
+        Carbon $endDate,
+        Carbon $gajian2End,
+        int $outletId,
+        ?string $outletName
+    ) {
+        $notYetArrivedIds = $this->resolveEmployeeIdsNotYetArrivedAtOutlet($outletId, $outletName, $gajian2End);
+
+        return $users->filter(function ($user) use ($mutationMap, $startDate, $gajian2End, $notYetArrivedIds) {
+            $userId = $user->id;
+
+            if (in_array($userId, $notYetArrivedIds, true) && ! isset($mutationMap[$userId])) {
+                return false;
+            }
+
+            if (! isset($mutationMap[$userId])) {
+                return true;
+            }
+
+            $mut = $mutationMap[$userId];
+            $effective = Carbon::parse($mut['effective_date'])->startOfDay();
+            $role = $mut['role'] ?? 'from';
+
+            if ($role === 'to' && $effective->gt($gajian2End->copy()->startOfDay())) {
+                return false;
+            }
+
+            if ($role === 'from' && $effective->lte($startDate->copy()->startOfDay())) {
+                return false;
+            }
+
+            return true;
+        })->values();
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function resolveEmployeeIdsNotYetArrivedAtOutlet(int $outletId, ?string $outletName, Carbon $gajian2End): array
+    {
+        if (! $outletName) {
+            return [];
+        }
+
+        return DB::table('employee_movements')
+            ->where('employment_type', 'mutation')
+            ->where('unit_property_change', '>', 0)
+            ->whereNotNull('employment_effective_date')
+            ->whereIn('status', ['executed', 'approved', 'pending'])
+            ->where(function ($q) use ($outletId, $outletName) {
+                $this->applyOutletMovementPropertyScope($q, 'unit_property_to', $outletId, $outletName);
+            })
+            ->where('employment_effective_date', '>', $gajian2End->toDateString())
+            ->pluck('employee_id')
+            ->unique()
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Hari kerja mutasi = absensi di segmen outlet (bukan kalender penuh periode).
+     *
+     * @param  array<string, mixed>|null  $mutCtx
+     */
+    private function resolveHariKerjaForPayrollSegment(
+        bool $isMutatedEmployee,
+        ?array $mutCtx,
+        int $hariKerjaAttendance
+    ): int {
+        if (! $isMutatedEmployee || $mutCtx === null) {
+            return $hariKerjaAttendance;
+        }
+
+        if (($mutCtx['hariKerjaGajian1'] ?? 0) <= 0) {
+            return 0;
+        }
+
+        return $hariKerjaAttendance;
+    }
+
+    /** Pool SC/L&B mutasi mengikuti hari kerja segmen di outlet ini (selaras kolom tampilan). */
+    private function resolveMutationPoolDays(int $hariKerjaSegment, int $hariKerjaGajian2Resolved): int
+    {
+        return $hariKerjaSegment > 0 ? $hariKerjaSegment : max(0, $hariKerjaGajian2Resolved);
     }
 
     private function mergeMutatedUsersIntoPayrollUsers($users, $mutations)

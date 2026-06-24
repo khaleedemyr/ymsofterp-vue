@@ -180,23 +180,20 @@ class PayrollSplitPoolCalculator
     }
 
     /**
+     * Σ hari & Σ(poin×hari) untuk rate pool — SEMUA karyawan di daftar payroll (mirror Excel D47/E47).
+     * Flag sc/lb/deviasi/city_ledger hanya mengontrol penerima, bukan pembagi.
+     *
      * @param  array<int, array<string, mixed>>  $userData
      * @return array{totalPointHariKerja: float, totalHariKerja: float}
      */
-    public static function calculatePoolTotals(array $userData, string $masterField, int $year = 0, int $month = 0): array
+    public static function calculatePoolTotals(array $userData): array
     {
         $totalPointHariKerja = 0.0;
         $totalHariKerja = 0.0;
 
         foreach ($userData as $data) {
-            if ((int) ($data['masterData']->{$masterField} ?? 0) !== 1) {
-                continue;
-            }
-
-            // Pakai hari pool yang sudah diset di Step 1 (sumber tunggal, selaras numerator/denominator).
             $hariKerja = (float) ($data['hariKerjaUntukServiceCharge'] ?? 0);
-
-            $totalPointHariKerja += (float) $data['userPoint'] * $hariKerja;
+            $totalPointHariKerja += (float) ($data['userPoint'] ?? 0) * $hariKerja;
             $totalHariKerja += $hariKerja;
         }
 
