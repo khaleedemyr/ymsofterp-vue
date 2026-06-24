@@ -124,6 +124,14 @@ class PayrollSplitPoolCalculator
     }
 
     /**
+     * Hari kerja pool SC/L&B/deviasi/city ledger — kolom D Excel (gajian 1 / 26–25).
+     */
+    public static function resolveGajian1PoolDays(int $hariKerjaGajian1): int
+    {
+        return max(0, $hariKerjaGajian1);
+    }
+
+    /**
      * Hari kerja pool gajian 2 (kolom D Excel): absensi 1–akhir bulan, mutasi/resign pakai aturan khusus.
      *
      * @param  array<string, mixed>  $data
