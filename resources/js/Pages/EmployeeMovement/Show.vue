@@ -2,8 +2,10 @@
 import { ref, computed } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import EmPageLayout from './components/EmPageLayout.vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import './styles/em-theme.css';
 
 const props = defineProps({
   movement: Object,
@@ -82,20 +84,13 @@ function openEdit() {
 
 function getStatusBadgeClass(status) {
   switch (status) {
-    case 'draft':
-      return 'bg-gray-100 text-gray-800';
-    case 'pending':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'approved':
-      return 'bg-green-100 text-green-800';
-    case 'rejected':
-      return 'bg-red-100 text-red-800';
-    case 'executed':
-      return 'bg-blue-100 text-blue-800';
-    case 'error':
-      return 'bg-red-100 text-red-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
+    case 'draft': return 'em-badge-draft';
+    case 'pending': return 'em-badge-pending';
+    case 'approved': return 'em-badge-approved';
+    case 'rejected': return 'em-badge-rejected';
+    case 'executed': return 'em-badge-executed';
+    case 'error': return 'em-badge-error';
+    default: return 'em-badge-draft';
   }
 }
 
@@ -334,113 +329,121 @@ function approveMovement(status) {
 
 <template>
   <AppLayout title="Employee Movement Detail">
-    <template #header>
-      <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        Employee Movement Detail
-      </h2>
-    </template>
+    <EmPageLayout
+      :title="movement.employee_name || 'Employee Movement'"
+      :subtitle="`NIK: ${movement.employee?.nik || movement.nik || '-'} · ${getEmploymentTypeText(movement.employment_type)}`"
+      show-back
+      @back="goBack"
+    >
+      <template #actions>
+        <template v-if="canApprove.canApprove && isPendingApproval">
+          <button type="button" class="em-btn em-btn-success em-btn-sm" @click="approveMovement('approved')">
+            <i class="fas fa-check"></i>
+            Approve {{ canApprove.level.toUpperCase() }}
+          </button>
+          <button type="button" class="em-btn em-btn-danger em-btn-sm" @click="approveMovement('rejected')">
+            <i class="fas fa-times"></i>
+            Reject {{ canApprove.level.toUpperCase() }}
+          </button>
+        </template>
+        <button
+          v-if="canExecuteMovement && movement.status === 'approved'"
+          type="button"
+          class="em-btn em-btn-success em-btn-sm"
+          @click="executeMovement"
+        >
+          <i class="fas fa-play"></i>
+          Execute
+        </button>
+        <button type="button" class="em-btn em-btn-primary em-btn-sm" @click="openEdit">
+          <i class="fas fa-edit"></i>
+          Edit
+        </button>
+      </template>
 
-    <div class="py-12">
-      <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
-          <!-- Header -->
-          <div class="p-6 border-b border-gray-200">
-            <div class="flex justify-between items-center">
-              <h3 class="text-lg font-medium text-gray-900">Employee Movement Details</h3>
-              <div class="flex space-x-2">
-                <button
-                  @click="goBack"
-                  class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Back
-                </button>
-                
-                <!-- Approval Buttons -->
-                <template v-if="canApprove.canApprove && isPendingApproval">
-                  <button
-                    @click="approveMovement('approved')"
-                    class="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
-                  >
-                    Approve {{ canApprove.level.toUpperCase() }}
-                  </button>
-                  <button
-                    @click="approveMovement('rejected')"
-                    class="px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700"
-                  >
-                    Reject {{ canApprove.level.toUpperCase() }}
-                  </button>
-                </template>
-                
-                <!-- Execute Movement Button -->
-                <button
-                  v-if="canExecuteMovement && movement.status === 'approved'"
-                  @click="executeMovement"
-                  class="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700"
-                >
-                  Execute Movement
-                </button>
-                
-                <!-- Edit Button -->
-                <button
-                  @click="openEdit"
-                  class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
-                >
-                  Edit
-                </button>
-              </div>
-            </div>
-          </div>
+      <div class="em-card">
+        <!-- Status banner -->
+        <div class="em-status-banner">
+          <span :class="['em-badge', getStatusBadgeClass(movement.status)]">
+            {{ getStatusText(movement.status) }}
+          </span>
+          <span class="em-status-banner-text">
+            Effective: {{ formatDate(movement.employment_effective_date) }}
+          </span>
+        </div>
 
-          <div class="p-6">
+        <div class="em-card-body">
             <!-- Employee Details Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Employee Details</h3>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-user"></i></div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Name</label>
-                  <div class="mt-1 p-2 bg-gray-50 rounded-md">{{ movement.employee_name || '-' }}</div>
+                  <h3 class="em-section-title">Data Karyawan</h3>
+                  <p class="em-section-desc">Informasi karyawan terkait movement ini</p>
                 </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Position</label>
-                  <div class="mt-1 p-2 bg-gray-50 rounded-md">{{ movement.employee_position || '-' }}</div>
+              </div>
+              <div class="em-section-body">
+              <div class="em-detail-grid em-detail-grid--5">
+                <div class="em-detail-field">
+                  <label>Name</label>
+                  <div class="em-detail-value">{{ movement.employee_name || '-' }}</div>
                 </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Division</label>
-                  <div class="mt-1 p-2 bg-gray-50 rounded-md">{{ movement.employee_division || '-' }}</div>
+                <div class="em-detail-field">
+                  <label>Position</label>
+                  <div class="em-detail-value">{{ movement.employee_position || '-' }}</div>
                 </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Unit/Property</label>
-                  <div class="mt-1 p-2 bg-gray-50 rounded-md">{{ movement.employee_unit_property || '-' }}</div>
+                <div class="em-detail-field">
+                  <label>Division</label>
+                  <div class="em-detail-value">{{ movement.employee_division || '-' }}</div>
                 </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700">Join Date</label>
-                  <div class="mt-1 p-2 bg-gray-50 rounded-md">{{ formatDate(movement.employee_join_date) }}</div>
+                <div class="em-detail-field">
+                  <label>Unit/Property</label>
+                  <div class="em-detail-value">{{ movement.employee_unit_property || '-' }}</div>
                 </div>
+                <div class="em-detail-field">
+                  <label>Join Date</label>
+                  <div class="em-detail-value">{{ formatDate(movement.employee_join_date) }}</div>
+                </div>
+              </div>
               </div>
             </div>
 
             <!-- Employment & Renewal Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Employment & Renewal</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="mb-4">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">Employment Type</label>
-                  <div class="p-2 bg-white rounded-md">{{ getEmploymentTypeText(movement.employment_type) }}</div>
-                </div>
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-briefcase"></i></div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Effective Date</label>
-                  <div class="mt-1 p-2 bg-white rounded-md">{{ formatDate(movement.employment_effective_date) }}</div>
+                  <h3 class="em-section-title">Employment & Renewal</h3>
+                  <p class="em-section-desc">Jenis perubahan dan tanggal efektif</p>
                 </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
+              <div class="em-detail-grid em-detail-grid--2">
+                <div class="em-detail-field">
+                  <label>Employment Type</label>
+                  <div class="em-detail-value">{{ getEmploymentTypeText(movement.employment_type) }}</div>
+                </div>
+                <div class="em-detail-field">
+                  <label>Effective Date</label>
+                  <div class="em-detail-value">{{ formatDate(movement.employment_effective_date) }}</div>
+                </div>
+              </div>
               </div>
             </div>
 
             <!-- Supporting Documents Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Supporting Documents</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-6">
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-paperclip"></i></div>
+                <div>
+                  <h3 class="em-section-title">Supporting Documents</h3>
+                  <p class="em-section-desc">Dokumen pendukung yang dilampirkan</p>
+                </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
+                <div class="space-y-3">
                   <!-- KPI Section -->
-                  <div class="border-b border-gray-200 pb-4">
+                  <div class="em-doc-block">
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex items-center">
                         <input
@@ -469,7 +472,7 @@ function approveMovement(status) {
                   </div>
 
                   <!-- Psikotest Section -->
-                  <div class="border-b border-gray-200 pb-4">
+                  <div class="em-doc-block">
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex items-center">
                         <input
@@ -498,7 +501,7 @@ function approveMovement(status) {
                   </div>
 
                   <!-- Training Attendance Section -->
-                  <div class="border-b border-gray-200 pb-4">
+                  <div class="em-doc-block">
                     <div class="flex items-center justify-between mb-3">
                       <div class="flex items-center">
                         <input
@@ -549,10 +552,16 @@ function approveMovement(status) {
             </div>
 
             <!-- Adjustment & Movement Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Adjustment & Movement</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-4">
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-sliders-h"></i></div>
+                <div>
+                  <h3 class="em-section-title">Adjustment & Movement</h3>
+                  <p class="em-section-desc">Perubahan posisi, level, gaji, divisi, dan outlet</p>
+                </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
+                <div class="space-y-3">
                   <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
                     <div class="flex items-center">
                       <input
@@ -684,46 +693,39 @@ function approveMovement(status) {
                   </div>
                 </div>
                 
-                <div class="mt-4">
-                  <label class="block text-sm font-medium text-gray-700">Effective Date</label>
-                  <div class="mt-1 p-2 bg-white rounded-md">{{ formatDate(movement.adjustment_effective_date) }}</div>
+                <div class="mt-4 em-detail-field max-w-xs">
+                  <label>Adjustment Effective Date</label>
+                  <div class="em-detail-value">{{ formatDate(movement.adjustment_effective_date) }}</div>
                 </div>
               </div>
             </div>
 
             <!-- Comments Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Comments</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <label class="block text-sm font-medium text-gray-700 mb-2">(Explain reason for movement.)</label>
-                <div class="p-3 bg-white rounded-md min-h-[100px] whitespace-pre-wrap">
-                  {{ movement.comments || 'No comments provided.' }}
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-comment-alt"></i></div>
+                <div>
+                  <h3 class="em-section-title">Comments</h3>
+                  <p class="em-section-desc">Alasan perubahan karyawan</p>
+                </div>
+              </div>
+              <div class="em-section-body">
+                <div class="em-detail-value min-h-[5rem] whitespace-pre-wrap">
+                  {{ movement.comments || 'Tidak ada komentar.' }}
                 </div>
               </div>
             </div>
 
-            <!-- Status Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Status</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <span
-                  :class="[
-                    'px-3 py-1 inline-flex text-sm leading-5 font-semibold rounded-full',
-                    getStatusBadgeClass(movement.status)
-                  ]"
-                >
-                  {{ getStatusText(movement.status) }}
-                </span>
-              </div>
-            </div>
-
             <!-- Approval Flow Section -->
-            <div v-if="movement.approval_flows && movement.approval_flows.length > 0" class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md flex items-center">
-                <i class="fa fa-users mr-2 text-blue-500"></i>
-                Approval Flow
-              </h3>
-              <!-- Current Approval Status Info for new approval flow -->
+            <div v-if="movement.approval_flows && movement.approval_flows.length > 0" class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-check-double"></i></div>
+                <div>
+                  <h3 class="em-section-title">Approval Flow</h3>
+                  <p class="em-section-desc">Status persetujuan dari setiap level</p>
+                </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
               <div v-if="canApprove.canApprove && isPendingApproval" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                 <div class="flex items-center">
                   <div class="flex-shrink-0">
@@ -738,8 +740,7 @@ function approveMovement(status) {
                   </div>
                 </div>
               </div>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-4">
+              <div class="space-y-3">
                   <div
                     v-for="(flow, index) in movement.approval_flows.sort((a, b) => (a.approval_level || 0) - (b.approval_level || 0))"
                     :key="flow.id"
@@ -787,10 +788,16 @@ function approveMovement(status) {
               </div>
             </div>
 
-            <!-- Legacy Approval Assignment Section (for backward compatibility) -->
-            <div v-else class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Approval Assignment</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
+            <!-- Legacy Approval Assignment Section -->
+            <div v-else class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-users"></i></div>
+                <div>
+                  <h3 class="em-section-title">Approval Assignment</h3>
+                  <p class="em-section-desc">Penugasan approver (legacy)</p>
+                </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">HOD Approver</label>
@@ -836,10 +843,16 @@ function approveMovement(status) {
               </div>
             </div>
 
-            <!-- Approval Status Section (only show for legacy data without approval flows) -->
-            <div v-if="!movement.approval_flows || movement.approval_flows.length === 0" class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4 bg-gray-100 p-3 rounded-md">Approval Status</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
+            <!-- Approval Status Section (legacy) -->
+            <div v-if="!movement.approval_flows || movement.approval_flows.length === 0" class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-clipboard-check"></i></div>
+                <div>
+                  <h3 class="em-section-title">Approval Status</h3>
+                  <p class="em-section-desc">Status tanda tangan persetujuan</p>
+                </div>
+              </div>
+              <div class="em-section-body em-section-body--muted">
                 <!-- Current Approval Status Info -->
                 <div v-if="canApprove.canApprove && isPendingApproval" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                   <div class="flex items-center">
@@ -922,15 +935,14 @@ function approveMovement(status) {
             </div>
 
             <!-- Timestamps -->
-            <div class="text-sm text-gray-500 border-t pt-4">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>Created: {{ formatDate(movement.created_at) }}</div>
-                <div>Last Updated: {{ formatDate(movement.updated_at) }}</div>
+            <div class="text-sm text-slate-400 border-t border-slate-100 pt-4 mt-2">
+              <div class="em-detail-grid em-detail-grid--2">
+                <div>Dibuat: {{ formatDate(movement.created_at) }}</div>
+                <div>Diperbarui: {{ formatDate(movement.updated_at) }}</div>
               </div>
             </div>
-          </div>
         </div>
       </div>
-    </div>
+    </EmPageLayout>
   </AppLayout>
 </template>

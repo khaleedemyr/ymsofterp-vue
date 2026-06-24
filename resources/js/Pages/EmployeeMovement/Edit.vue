@@ -3,9 +3,20 @@ import { ref, reactive, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import EmPageLayout from './components/EmPageLayout.vue';
 import axios from 'axios';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
+import './styles/em-theme.css';
+
+const employmentTypes = [
+  { value: 'extend_contract_without_adjustment', label: 'Extend contract tanpa adjustment', icon: 'fa-file-contract' },
+  { value: 'extend_contract_with_adjustment', label: 'Extend contract dengan adjustment', icon: 'fa-file-signature' },
+  { value: 'promotion', label: 'Promotion', icon: 'fa-arrow-up' },
+  { value: 'demotion', label: 'Demotion', icon: 'fa-arrow-down' },
+  { value: 'mutation', label: 'Mutation', icon: 'fa-exchange-alt' },
+  { value: 'termination', label: 'Termination', icon: 'fa-user-times' },
+];
 
 const props = defineProps({
   movement: Object,
@@ -409,173 +420,116 @@ const goBack = () => {
 
 <template>
   <AppLayout title="Edit Employee Movement">
-    <template #header>
-      <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-        Edit Employee Movement
-      </h2>
-    </template>
-
-    <div class="py-12">
-      <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg">
-          <form @submit.prevent="submit" class="p-6">
-            <!-- Employee Search Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4">Employee Details</h3>
-              
-              <!-- Employee Search -->
-              <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Search Employee</label>
-                <div class="relative">
-                  <input
-                    v-model="searchQuery"
-                    @input="searchEmployees"
-                    type="text"
-                    placeholder="Search by name, NIK, or email..."
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  
-                  <!-- Search Results Dropdown -->
+    <EmPageLayout
+      title="Edit Employee Movement"
+      subtitle="Perbarui data perubahan karyawan"
+      show-back
+      @back="goBack"
+    >
+      <form class="em-form" @submit.prevent="submit">
+        <!-- Employee Search Section -->
+        <div class="em-section">
+          <div class="em-section-header">
+            <div class="em-section-icon"><i class="fas fa-user"></i></div>
+            <div>
+              <h3 class="em-section-title">Data Karyawan</h3>
+              <p class="em-section-desc">Cari dan pilih karyawan yang akan diajukan perubahan</p>
+            </div>
+          </div>
+          <div class="em-section-body">
+            <div class="mb-4">
+              <label class="em-label">Cari Karyawan</label>
+              <div class="relative">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Nama, NIK, atau email..."
+                  class="em-input !pl-9"
+                  @input="searchEmployees"
+                />
+                <div
+                  v-if="showSearchResults && searchResults.length > 0"
+                  class="em-dropdown"
+                >
                   <div
-                    v-if="showSearchResults && searchResults.length > 0"
-                    class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+                    v-for="employee in searchResults"
+                    :key="employee.id"
+                    class="em-dropdown-item"
+                    @click="selectEmployee(employee)"
                   >
-                    <div
-                      v-for="employee in searchResults"
-                      :key="employee.id"
-                      @click="selectEmployee(employee)"
-                      class="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
-                    >
-                      <div class="font-medium">{{ employee.nama_lengkap }}</div>
-                      <div class="text-sm text-gray-600">
-                        NIK: {{ employee.nik }} | {{ employee.jabatan?.nama_jabatan || 'No Position' }}
-                      </div>
+                    <div class="font-semibold text-slate-800">{{ employee.nama_lengkap }}</div>
+                    <div class="text-sm text-slate-500 mt-0.5">
+                      NIK: {{ employee.nik }} · {{ employee.jabatan?.nama_jabatan || 'No Position' }}
                     </div>
                   </div>
                 </div>
               </div>
-
-              <!-- Employee Details Display -->
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-4">
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700">Position</label>
-                    <input
-                      v-model="form.employee_position"
-                      type="text"
-                      readonly
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700">Division</label>
-                    <input
-                      v-model="form.employee_division"
-                      type="text"
-                      readonly
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700">Unit/Property</label>
-                    <input
-                      v-model="form.employee_unit_property"
-                      type="text"
-                      readonly
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium text-gray-700">Join Date</label>
-                    <input
-                      v-model="form.employee_join_date"
-                      type="date"
-                      readonly
-                      class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
 
-                         <!-- Employment & Renewal Section -->
-             <div class="mb-8">
-               <h3 class="text-lg font-medium text-gray-900 mb-4">Employment & Renewal</h3>
-               <div class="bg-gray-50 p-4 rounded-md">
-                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="extend_contract_without_adjustment"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Extend contract without adjustment</label>
-                   </div>
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="extend_contract_with_adjustment"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Extend contract with adjustment</label>
-                   </div>
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="promotion"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Promotion</label>
-                   </div>
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="demotion"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Demotion</label>
-                   </div>
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="mutation"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Mutation</label>
-                   </div>
-                   <div class="flex items-center">
-                     <input
-                       v-model="form.employment_type"
-                       type="radio"
-                       value="termination"
-                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                     />
-                     <label class="ml-2 text-sm text-gray-700">Termination</label>
-                   </div>
-                 </div>
-                <div class="mt-4">
-                  <label class="block text-sm font-medium text-gray-700">Effective Date</label>
-                  <input
-                    v-model="form.employment_effective_date"
-                    type="date"
-                    class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                </div>
+            <div class="em-employee-card">
+              <div class="em-employee-field">
+                <label>Posisi</label>
+                <input v-model="form.employee_position" type="text" readonly class="em-input em-input--readonly" />
+              </div>
+              <div class="em-employee-field">
+                <label>Divisi</label>
+                <input v-model="form.employee_division" type="text" readonly class="em-input em-input--readonly" />
+              </div>
+              <div class="em-employee-field">
+                <label>Unit / Property</label>
+                <input v-model="form.employee_unit_property" type="text" readonly class="em-input em-input--readonly" />
+              </div>
+              <div class="em-employee-field">
+                <label>Tanggal Masuk</label>
+                <input v-model="form.employee_join_date" type="date" readonly class="em-input em-input--readonly" />
               </div>
             </div>
+          </div>
+        </div>
 
-                         <!-- Supporting Documents Section -->
-             <div class="mb-8">
-               <h3 class="text-lg font-medium text-gray-900 mb-4">Supporting Documents</h3>
-               <div class="bg-gray-50 p-4 rounded-md">
-                 <div class="space-y-6">
+        <!-- Employment & Renewal Section -->
+        <div class="em-section">
+          <div class="em-section-header">
+            <div class="em-section-icon"><i class="fas fa-briefcase"></i></div>
+            <div>
+              <h3 class="em-section-title">Employment & Renewal</h3>
+              <p class="em-section-desc">Pilih jenis perubahan dan tanggal efektif berlaku</p>
+            </div>
+          </div>
+          <div class="em-section-body em-section-body--muted">
+            <div class="em-choice-grid">
+              <label
+                v-for="type in employmentTypes"
+                :key="type.value"
+                class="em-choice-card"
+                :class="{ 'em-choice-card--active': form.employment_type === type.value }"
+              >
+                <input v-model="form.employment_type" type="radio" :value="type.value" />
+                <span class="em-choice-card-icon"><i class="fas" :class="type.icon"></i></span>
+                <span class="em-choice-card-label">{{ type.label }}</span>
+              </label>
+            </div>
+            <div class="mt-5 max-w-xs">
+              <label class="em-label">Effective Date</label>
+              <input v-model="form.employment_effective_date" type="date" class="em-input" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Supporting Documents Section -->
+        <div class="em-section">
+          <div class="em-section-header">
+            <div class="em-section-icon"><i class="fas fa-paperclip"></i></div>
+            <div>
+              <h3 class="em-section-title">Supporting Documents</h3>
+              <p class="em-section-desc">Lampiran KPI, psikotest, training, dan dokumen pendukung lainnya</p>
+            </div>
+          </div>
+          <div class="em-section-body em-section-body--muted">
+            <div class="space-y-3">
                    <!-- KPI Section -->
-                   <div class="border-b border-gray-200 pb-4">
+                   <div class="em-doc-block">
                      <div class="flex items-center justify-between mb-3">
                        <div class="flex items-center">
                          <input
@@ -608,7 +562,7 @@ const goBack = () => {
                    </div>
 
                    <!-- Psikotest Section -->
-                   <div class="border-b border-gray-200 pb-4">
+                   <div class="em-doc-block">
                      <div class="flex items-center justify-between mb-3">
                        <div class="flex items-center">
                          <input
@@ -649,7 +603,7 @@ const goBack = () => {
                    </div>
 
                    <!-- Training Attendance Section -->
-                   <div class="border-b border-gray-200 pb-4">
+                   <div class="em-doc-block">
                      <div class="flex items-center justify-between mb-3">
                        <div class="flex items-center">
                          <input
@@ -723,17 +677,23 @@ const goBack = () => {
                      </div>
                    </div>
                  </div>
-               </div>
-             </div>
+          </div>
+        </div>
 
-            <!-- Adjustment & Movement Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4">Adjustment & Movement</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <div class="space-y-6">
+        <!-- Adjustment & Movement Section -->
+        <div class="em-section">
+          <div class="em-section-header">
+            <div class="em-section-icon"><i class="fas fa-sliders-h"></i></div>
+            <div>
+              <h3 class="em-section-title">Adjustment & Movement</h3>
+              <p class="em-section-desc">Atur perubahan posisi, level, gaji, divisi, dan outlet</p>
+            </div>
+          </div>
+          <div class="em-section-body em-section-body--muted">
+            <div class="space-y-3">
                   <!-- Position -->
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div class="flex items-center">
+                  <div class="em-change-row">
+                    <div class="em-change-toggle">
                       <input
                         v-model="form.position_change"
                         type="checkbox"
@@ -769,8 +729,8 @@ const goBack = () => {
                   </div>
                   
                   <!-- Level -->
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div class="flex items-center">
+                  <div class="em-change-row">
+                    <div class="em-change-toggle">
                       <input
                         v-model="form.level_change"
                         type="checkbox"
@@ -806,8 +766,8 @@ const goBack = () => {
                   </div>
                   
                   <!-- Salary -->
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div class="flex items-center">
+                  <div class="em-change-row">
+                    <div class="em-change-toggle">
                       <input
                         v-model="form.salary_change"
                         type="checkbox"
@@ -854,8 +814,8 @@ const goBack = () => {
                   </div>
                   
                   <!-- Division -->
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div class="flex items-center">
+                  <div class="em-change-row">
+                    <div class="em-change-toggle">
                       <input
                         v-model="form.division_change"
                         type="checkbox"
@@ -891,8 +851,8 @@ const goBack = () => {
                   </div>
                   
                   <!-- Unit/Property -->
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div class="flex items-center">
+                  <div class="em-change-row">
+                    <div class="em-change-toggle">
                       <input
                         v-model="form.unit_property_change"
                         type="checkbox"
@@ -928,59 +888,65 @@ const goBack = () => {
                   </div>
                 </div>
                 
-                <div class="mt-6">
-                  <label class="block text-sm font-medium text-gray-700">Effective Date</label>
-                  <input
-                    v-model="form.adjustment_effective_date"
-                    type="date"
-                    class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md"
-                  />
+                <div class="mt-4 max-w-xs">
+                  <label class="em-label">Adjustment Effective Date</label>
+                  <input v-model="form.adjustment_effective_date" type="date" class="em-input" />
                 </div>
-              </div>
-            </div>
+          </div>
+        </div>
 
             <!-- Comments Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4">Comments</h3>
-              <div class="bg-gray-50 p-4 rounded-md">
-                <label class="block text-sm font-medium text-gray-700 mb-2">(Explain reason for movement.)</label>
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-comment-alt"></i></div>
+                <div>
+                  <h3 class="em-section-title">Comments</h3>
+                  <p class="em-section-desc">Jelaskan alasan perubahan karyawan</p>
+                </div>
+              </div>
+              <div class="em-section-body">
+                <label class="em-label">Alasan perubahan</label>
                 <textarea
                   v-model="form.comments"
                   rows="4"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter comments here..."
+                  class="em-input"
+                  placeholder="Tulis alasan perubahan di sini..."
                 ></textarea>
               </div>
             </div>
 
             <!-- Approval Flow Section -->
-            <div class="mb-8">
-              <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow</h3>
-              <p class="text-sm text-gray-600 mb-4">Add approvers in order from lowest to highest level. The first approver will be the lowest level, and the last approver will be the highest level.</p>
-              
+            <div class="em-section">
+              <div class="em-section-header">
+                <div class="em-section-icon"><i class="fas fa-check-double"></i></div>
+                <div>
+                  <h3 class="em-section-title">Approval Flow</h3>
+                  <p class="em-section-desc">Tambahkan approver dari level terendah ke tertinggi</p>
+                </div>
+              </div>
+              <div class="em-section-body">
               <!-- Add Approver Input -->
               <div class="mb-4">
                 <div class="relative">
+                  <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                   <input
                     v-model="approverSearch"
                     type="text"
-                    placeholder="Search users by name, email, or jabatan..."
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Cari user berdasarkan nama, email, atau jabatan..."
+                    class="em-input !pl-9"
                     @input="approverSearch.length >= 2 && loadApprovers(approverSearch)"
                     @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
                   />
-                  
-                  <!-- Dropdown Results -->
-                  <div v-if="showApproverDropdown && approverResults.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  <div v-if="showApproverDropdown && approverResults.length > 0" class="em-dropdown">
                     <div
                       v-for="user in approverResults"
                       :key="user.id"
+                      class="em-dropdown-item"
                       @click="addApprover(user)"
-                      class="px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-200 last:border-b-0"
                     >
-                      <div class="font-medium">{{ user.name }}</div>
-                      <div class="text-sm text-gray-600">{{ user.email }}</div>
-                      <div v-if="user.jabatan" class="text-xs text-blue-600 font-medium">{{ user.jabatan }}</div>
+                      <div class="font-semibold text-slate-800">{{ user.name }}</div>
+                      <div class="text-sm text-slate-500">{{ user.email }}</div>
+                      <div v-if="user.jabatan" class="text-xs text-indigo-600 font-medium mt-0.5">{{ user.jabatan }}</div>
                     </div>
                   </div>
                 </div>
@@ -988,133 +954,66 @@ const goBack = () => {
 
               <!-- Approvers List -->
               <div v-if="form.approvers.length > 0" class="space-y-2">
-                <h4 class="font-medium text-gray-700">Approval Order (Lowest to Highest):</h4>
+                <h4 class="text-sm font-semibold text-slate-600 mb-2">Urutan Approval (terendah → tertinggi)</h4>
                 
                 <div
                   v-for="(approver, index) in form.approvers"
                   :key="approver.id"
-                  class="flex items-center justify-between p-3 rounded-md bg-gray-50 border border-gray-200"
+                  class="em-approver-item"
                 >
-                  <div class="flex items-center space-x-3">
-                    <div class="flex items-center space-x-2">
+                  <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1">
                       <button
                         v-if="index > 0"
-                        @click="reorderApprover(index, index - 1)"
-                        class="p-1 text-gray-500 hover:text-gray-700"
+                        type="button"
+                        class="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
                         title="Move Up"
+                        @click="reorderApprover(index, index - 1)"
                       >
-                        <i class="fa fa-arrow-up"></i>
+                        <i class="fa fa-arrow-up text-xs"></i>
                       </button>
                       <button
                         v-if="index < form.approvers.length - 1"
-                        @click="reorderApprover(index, index + 1)"
-                        class="p-1 text-gray-500 hover:text-gray-700"
+                        type="button"
+                        class="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
                         title="Move Down"
+                        @click="reorderApprover(index, index + 1)"
                       >
-                        <i class="fa fa-arrow-down"></i>
+                        <i class="fa fa-arrow-down text-xs"></i>
                       </button>
                     </div>
-                    <div class="flex items-center space-x-2">
-                      <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        Level {{ index + 1 }}
-                      </span>
-                      <div>
-                        <div class="font-medium">{{ approver.name }}</div>
-                        <div class="text-sm text-gray-600">{{ approver.email }}</div>
-                        <div v-if="approver.jabatan" class="text-xs text-blue-600 font-medium">{{ approver.jabatan }}</div>
-                      </div>
+                    <span class="em-level-badge">Level {{ index + 1 }}</span>
+                    <div>
+                      <div class="font-semibold text-slate-800 text-sm">{{ approver.name }}</div>
+                      <div class="text-xs text-slate-500">{{ approver.email }}</div>
+                      <div v-if="approver.jabatan" class="text-xs text-indigo-600 font-medium">{{ approver.jabatan }}</div>
                     </div>
                   </div>
                   <button
-                    @click="removeApprover(index)"
-                    class="p-1 text-red-500 hover:text-red-700"
+                    type="button"
+                    class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
                     title="Remove Approver"
+                    @click="removeApprover(index)"
                   >
                     <i class="fa fa-times"></i>
                   </button>
                 </div>
               </div>
+              </div>
             </div>
 
-
-
             <!-- Form Actions -->
-            <div class="flex justify-end space-x-4">
-              <button
-                type="button"
-                @click="goBack"
-                class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
+            <div class="em-form-footer">
+              <button type="button" class="em-btn em-btn-secondary" @click="goBack">
+                Batal
               </button>
-              <button
-                type="submit"
-                :disabled="form.processing"
-                class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                {{ form.processing ? 'Updating...' : 'Update Employee Movement' }}
+              <button type="submit" class="em-btn em-btn-primary" :disabled="form.processing">
+                <i v-if="form.processing" class="fas fa-spinner fa-spin"></i>
+                <i v-else class="fas fa-save"></i>
+                {{ form.processing ? 'Menyimpan...' : 'Update Employee Movement' }}
               </button>
             </div>
           </form>
-        </div>
-      </div>
-    </div>
+    </EmPageLayout>
   </AppLayout>
 </template>
-
-<style scoped>
-/* Multiselect styling */
-:deep(.multiselect) {
-  min-height: 42px;
-  border-radius: 0.5rem;
-  border: 1px solid #d1d5db;
-}
-
-:deep(.multiselect:focus-within) {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
-
-:deep(.multiselect__input) {
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 0.875rem;
-  padding: 0.5rem 0;
-}
-
-:deep(.multiselect__placeholder) {
-  color: #6b7280;
-  font-size: 0.875rem;
-  padding: 0.5rem 0;
-}
-
-:deep(.multiselect__single) {
-  background: transparent;
-  padding: 0.5rem 0;
-  font-size: 0.875rem;
-  color: #374151;
-}
-
-:deep(.multiselect__option) {
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-  color: #374151;
-}
-
-:deep(.multiselect__option--highlight) {
-  background: #3b82f6;
-  color: white;
-}
-
-:deep(.multiselect__option--selected) {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-:deep(.multiselect__content-wrapper) {
-  border: 1px solid #d1d5db;
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-</style>
