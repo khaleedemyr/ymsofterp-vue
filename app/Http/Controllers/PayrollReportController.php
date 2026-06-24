@@ -176,6 +176,8 @@ class PayrollReportController extends Controller
             $end = date('Y-m-d', strtotime("$year-$month-25"));
             $startDate = Carbon::parse($start);
             $endDate = Carbon::parse($end);
+            $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
+            $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
 
             // Ambil data karyawan di outlet tersebut (HANYA yang aktif) - KEMBALIKAN KE LOGIKA SEMULA
             $users = User::where('status', 'A')
@@ -187,9 +189,7 @@ class PayrollReportController extends Controller
             // HANYA karyawan yang resign di periode ini yang akan muncul
             // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
             // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
-            $allResignations = EmployeeResignation::where('status', 'approved')
-                ->whereBetween('resignation_date', [$start, $end])
-                ->get(['employee_id', 'resignation_date', 'outlet_id']);
+            $allResignations = $this->queryApprovedResignationsForPayroll($start, $end, (int) $year, (int) $month);
             
             // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
             // Ambil employee_id dari resignations yang memiliki user dengan outlet yang sesuai
@@ -489,9 +489,7 @@ class PayrollReportController extends Controller
                 // Ambil data resignation untuk periode tersebut
                 // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
                 // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
-                $allResignations = EmployeeResignation::where('status', 'approved')
-                    ->whereBetween('resignation_date', [$start, $end])
-                    ->get(['employee_id', 'resignation_date', 'outlet_id']);
+                $allResignations = $this->queryApprovedResignationsForPayroll($start, $end, (int) $year, (int) $month);
                 
                 // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
                 // TIDAK memfilter status user (bisa 'A' atau 'N')
@@ -1166,32 +1164,33 @@ class PayrollReportController extends Controller
                     ]);
                 }
                 
-                // Cek apakah karyawan resign (resignation_date dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
-                $isResignedEmployee = false;
-                $hariKerjaKaryawanResign = $hariKerja; // Default: hari kerja normal
+                // Cek apakah karyawan resign (resignation_date dalam periode gajian 1 atau gajian 2)
                 $resignation = $resignations->get($user->id);
-                $resignationDate = null;
-                if ($resignation && $resignation->resignation_date) {
-                    $resignationDate = Carbon::parse($resignation->resignation_date);
-                    // HANYA dianggap karyawan resign jika tanggal resign BENAR-BENAR dalam periode payroll
-                    $isResignedEmployee = $resignationDate->greaterThanOrEqualTo($startDate) && $resignationDate->lessThanOrEqualTo($endDate);
-                    
-                    // Jika karyawan resign, hitung hari kerja dari awal periode sampai tanggal resign
-                    if ($isResignedEmployee) {
-                        // Hitung hari kerja dari awal periode sampai tanggal resign (hitung hari kalender)
-                        $hariKerjaKaryawanResign = $startDate->diffInDays($resignationDate) + 1; // +1 untuk include tanggal awal dan tanggal resign
-                    }
-                }
+                $resignCtx = $this->resolveResignationPayrollContext(
+                    $resignation,
+                    $hariKerja,
+                    $startDate,
+                    $endDate,
+                    $gajian2Start,
+                    $gajian2End
+                );
+                $isResignedEmployee = $resignCtx['isResignedEmployee'];
+                $affectsGajian2 = $resignCtx['affectsGajian2'];
+                $resignationDate = $resignCtx['resignationDate'];
+                $hariKerjaKaryawanResign = $resignCtx['hariKerjaKaryawanResign'];
                 
                 // Debug: Log untuk memastikan deteksi karyawan resign benar
-                if ($isResignedEmployee) {
+                if ($isResignedEmployee || $affectsGajian2) {
                     \Log::info('Detected resigned employee', [
                         'user_id' => $user->id,
                         'nama_lengkap' => $user->nama_lengkap,
                         'resignation_date' => $resignation ? $resignation->resignation_date : null,
                         'start_date' => $startDate->format('Y-m-d'),
                         'end_date' => $endDate->format('Y-m-d'),
+                        'gajian2_start' => $gajian2Start->format('Y-m-d'),
+                        'gajian2_end' => $gajian2End->format('Y-m-d'),
                         'is_resigned_employee' => $isResignedEmployee,
+                        'affects_gajian2' => $affectsGajian2,
                     ]);
                 }
                 
@@ -1247,7 +1246,10 @@ class PayrollReportController extends Controller
                     'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign, // Hari kerja untuk karyawan resign
                     'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja yang digunakan untuk service charge
                     'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
-                    'isResignedEmployee' => $isResignedEmployee, // Flag apakah karyawan resign
+                    'isResignedEmployee' => $isResignedEmployee, // Flag apakah karyawan resign (gajian 1)
+                    'affectsGajian2' => $affectsGajian2, // Flag resign mempengaruhi pool gajian 2
+                    'resignationDate' => $resignationDate, // Tanggal resign efektif
+                    'tanggalMasuk' => $tanggalMasuk, // Untuk prorate gajian 2 karyawan baru+resign
                     'isMutatedEmployee' => $isMutatedEmployee, // Flag apakah karyawan mutasi
                     'mutationEffectiveDate' => $mutationEffectiveDate, // Tanggal efektif mutasi
                     'mutationOutletTo' => $mutationOutletTo, // Outlet tujuan mutasi
@@ -1272,24 +1274,24 @@ class PayrollReportController extends Controller
             );
 
             // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
-            $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc');
+            $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc', (int) $year, (int) $month);
             $totalPointHariKerja = $scPool['totalPointHariKerja'];
             $totalHariKerja = $scPool['totalHariKerja'];
             $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
             $rateByPoint = $scRates['rateByPoint'];
             $rateProRate = $scRates['rateProRate'];
 
-            $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb');
+            $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb', (int) $year, (int) $month);
             $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
             $rateLBByPoint = $lbRates['rateByPoint'];
             $rateLBProRate = $lbRates['rateProRate'];
 
-            $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi');
+            $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi', (int) $year, (int) $month);
             $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
             $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
             $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-            $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger');
+            $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger', (int) $year, (int) $month);
             $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
             $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
             $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
@@ -1307,6 +1309,9 @@ class PayrollReportController extends Controller
                 $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
                 $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
                 $isResignedEmployee = $data['isResignedEmployee'] ?? false; // Flag apakah karyawan resign
+                $affectsGajian2 = $data['affectsGajian2'] ?? false;
+                $resignationDate = $data['resignationDate'] ?? null;
+                $tanggalMasuk = $data['tanggalMasuk'] ?? null;
                 $isMutatedEmployee = $data['isMutatedEmployee'] ?? false; // Flag apakah karyawan mutasi
                 $mutationEffectiveDate = $data['mutationEffectiveDate'] ?? null; // Tanggal efektif mutasi
                 $mutationOutletTo = $data['mutationOutletTo'] ?? null; // Outlet tujuan mutasi
@@ -1482,7 +1487,11 @@ class PayrollReportController extends Controller
                         $isMutatedEmployee,
                         $mutationEffectiveDate,
                         (int) $year,
-                        (int) $month
+                        (int) $month,
+                        $affectsGajian2,
+                        $resignationDate,
+                        $tanggalMasuk,
+                        $isNewEmployee
                     );
                     $serviceChargeByPointAmount = $scAmounts['by_point'];
                     $serviceChargeProRateAmount = $scAmounts['pro_rate'];
@@ -1665,7 +1674,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $lbByPointAmount = $lbAmounts['by_point'];
                 $lbProRateAmount = $lbAmounts['pro_rate'];
@@ -1688,7 +1701,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $deviasiByPointAmount = $deviasiAmounts['by_point'];
                 $deviasiProRateAmount = $deviasiAmounts['pro_rate'];
@@ -1711,7 +1728,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $cityLedgerByPointAmount = $cityLedgerAmounts['by_point'];
                 $cityLedgerProRateAmount = $cityLedgerAmounts['pro_rate'];
@@ -2078,6 +2099,8 @@ class PayrollReportController extends Controller
         $end = date('Y-m-d', strtotime("$year-$month-25"));
         $startDate = Carbon::parse($start);
         $endDate = Carbon::parse($end);
+        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
+        $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
 
         // Ambil data karyawan di outlet tersebut (HANYA yang aktif)
         $users = User::where('status', 'A')
@@ -2086,9 +2109,7 @@ class PayrollReportController extends Controller
             ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
 
         // Ambil data resignation untuk periode tersebut
-        $allResignations = EmployeeResignation::where('status', 'approved')
-            ->whereBetween('resignation_date', [$start, $end])
-            ->get(['employee_id', 'resignation_date', 'outlet_id']);
+        $allResignations = $this->queryApprovedResignationsForPayroll($start, $end, (int) $year, (int) $month);
         
         $resignedEmployeeIds = $allResignations->pluck('employee_id')->toArray();
         if (!empty($resignedEmployeeIds)) {
@@ -2697,6 +2718,8 @@ class PayrollReportController extends Controller
         $end = date('Y-m-d', strtotime("$year-$month-25"));
         $startDate = Carbon::parse($start);
         $endDate = Carbon::parse($end);
+        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
+        $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
 
         // Ambil data seperti di index() - SAMA PERSIS
         $users = User::where('status', 'A')
@@ -2708,9 +2731,7 @@ class PayrollReportController extends Controller
         // HANYA karyawan yang resign di periode ini yang akan muncul
         // PERBAIKAN: Ambil semua resignations yang approved dalam periode, lalu filter berdasarkan outlet user
         // TIDAK memfilter berdasarkan created_at atau approved_at, HANYA berdasarkan resignation_date
-        $allResignations = EmployeeResignation::where('status', 'approved')
-            ->whereBetween('resignation_date', [$start, $end])
-            ->get(['employee_id', 'resignation_date', 'outlet_id']);
+        $allResignations = $this->queryApprovedResignationsForPayroll($start, $end, (int) $year, (int) $month);
         
         // Filter resignations berdasarkan outlet user (bukan outlet di resignation)
         // Ambil employee_id dari resignations yang memiliki user dengan outlet yang sesuai
@@ -3017,21 +3038,20 @@ class PayrollReportController extends Controller
                 }
             }
             
-            // Cek apakah karyawan resign (resignation_date dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
-            $isResignedEmployee = false;
-            $hariKerjaKaryawanResign = $hariKerja; // Default: hari kerja normal
+            // Cek apakah karyawan resign (resignation_date dalam periode gajian 1 atau gajian 2)
             $resignation = $resignations->get($user->id);
-            $resignationDate = null;
-            if ($resignation && $resignation->resignation_date) {
-                $resignationDate = Carbon::parse($resignation->resignation_date);
-                $isResignedEmployee = $resignationDate->greaterThanOrEqualTo($startDate) && $resignationDate->lessThanOrEqualTo($endDate);
-                
-                // Jika karyawan resign, hitung hari kerja dari awal periode sampai tanggal resign
-                if ($isResignedEmployee) {
-                    // Hitung hari kerja dari awal periode sampai tanggal resign (hitung hari kalender)
-                    $hariKerjaKaryawanResign = $startDate->diffInDays($resignationDate) + 1; // +1 untuk include tanggal awal dan tanggal resign
-                }
-            }
+            $resignCtx = $this->resolveResignationPayrollContext(
+                $resignation,
+                $hariKerja,
+                $startDate,
+                $endDate,
+                $gajian2Start,
+                $gajian2End
+            );
+            $isResignedEmployee = $resignCtx['isResignedEmployee'];
+            $affectsGajian2 = $resignCtx['affectsGajian2'];
+            $resignationDate = $resignCtx['resignationDate'];
+            $hariKerjaKaryawanResign = $resignCtx['hariKerjaKaryawanResign'];
             
             // Gunakan hari kerja yang sesuai
             // PENTING: Jika karyawan baru DAN resign dalam periode yang sama, hitung dari tanggal masuk sampai tanggal resign
@@ -3118,6 +3138,9 @@ class PayrollReportController extends Controller
                 'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja yang digunakan untuk service charge
                 'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
                 'isResignedEmployee' => $isResignedEmployee, // Flag apakah karyawan resign
+                'affectsGajian2' => $affectsGajian2,
+                'resignationDate' => $resignationDate,
+                'tanggalMasuk' => $tanggalMasuk,
                 'totalAlpha' => $totalAlpha,
                 'totalIzinCuti' => $totalIzinCuti,
                 'izinCutiBreakdown' => $izinCutiBreakdown,
@@ -3151,24 +3174,24 @@ class PayrollReportController extends Controller
         );
 
         // Step 2–3: Pool & rate service charge + deduction (50% by point + 50% pro rate)
-        $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc');
+        $scPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'sc', (int) $year, (int) $month);
         $totalPointHariKerja = $scPool['totalPointHariKerja'];
         $totalHariKerja = $scPool['totalHariKerja'];
         $scRates = PayrollSplitPoolCalculator::calculateRates((float) $serviceCharge, $totalPointHariKerja, $totalHariKerja);
         $rateByPoint = $scRates['rateByPoint'];
         $rateProRate = $scRates['rateProRate'];
 
-        $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb');
+        $lbPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'lb', (int) $year, (int) $month);
         $lbRates = PayrollSplitPoolCalculator::calculateRates((float) $lbAmount, $lbPool['totalPointHariKerja'], $lbPool['totalHariKerja']);
         $rateLBByPoint = $lbRates['rateByPoint'];
         $rateLBProRate = $lbRates['rateProRate'];
 
-        $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi');
+        $deviasiPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'deviasi', (int) $year, (int) $month);
         $deviasiRates = PayrollSplitPoolCalculator::calculateRates((float) $deviasiAmount, $deviasiPool['totalPointHariKerja'], $deviasiPool['totalHariKerja']);
         $rateDeviasiByPoint = $deviasiRates['rateByPoint'];
         $rateDeviasiProRate = $deviasiRates['rateProRate'];
 
-        $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger');
+        $cityLedgerPool = PayrollSplitPoolCalculator::calculatePoolTotals($userData, 'city_ledger', (int) $year, (int) $month);
         $cityLedgerRates = PayrollSplitPoolCalculator::calculateRates((float) $cityLedgerAmount, $cityLedgerPool['totalPointHariKerja'], $cityLedgerPool['totalHariKerja']);
         $rateCityLedgerByPoint = $cityLedgerRates['rateByPoint'];
         $rateCityLedgerProRate = $cityLedgerRates['rateProRate'];
@@ -3223,6 +3246,9 @@ class PayrollReportController extends Controller
             $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
             $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
             $isResignedEmployee = $data['isResignedEmployee'] ?? false; // Flag apakah karyawan resign
+            $affectsGajian2 = $data['affectsGajian2'] ?? false;
+            $resignationDate = $data['resignationDate'] ?? null;
+            $tanggalMasuk = $data['tanggalMasuk'] ?? null;
             $isMutatedEmployee = $data['isMutatedEmployee'] ?? false;
             $mutationEffectiveDate = $data['mutationEffectiveDate'] ?? null;
             $userPoint = $data['userPoint'];
@@ -3260,7 +3286,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $serviceChargeByPointAmount = $scAmounts['by_point'];
                 $serviceChargeProRateAmount = $scAmounts['pro_rate'];
@@ -3305,7 +3335,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $lbByPointAmount = $lbAmounts['by_point'];
                 $lbProRateAmount = $lbAmounts['pro_rate'];
@@ -3328,7 +3362,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $deviasiByPointAmount = $deviasiAmounts['by_point'];
                 $deviasiProRateAmount = $deviasiAmounts['pro_rate'];
@@ -3351,7 +3389,11 @@ class PayrollReportController extends Controller
                     $isMutatedEmployee,
                     $mutationEffectiveDate,
                     (int) $year,
-                    (int) $month
+                    (int) $month,
+                    $affectsGajian2,
+                    $resignationDate,
+                    $tanggalMasuk,
+                    $isNewEmployee
                 );
                 $cityLedgerByPointAmount = $cityLedgerAmounts['by_point'];
                 $cityLedgerProRateAmount = $cityLedgerAmounts['pro_rate'];
@@ -6753,6 +6795,63 @@ class PayrollReportController extends Controller
                 'city_ledger_amount' => 0
             ]);
         }
+    }
+
+    /**
+     * Resign approved dalam periode gajian 1 (26–25) ATAU gajian 2 (1–akhir bulan).
+     */
+    private function queryApprovedResignationsForPayroll(string $start, string $end, int $year, int $month)
+    {
+        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
+        $gajian2End = Carbon::create($year, $month, 1)->endOfMonth()->endOfDay();
+
+        return EmployeeResignation::where('status', 'approved')
+            ->where(function ($query) use ($start, $end, $gajian2Start, $gajian2End) {
+                $query->whereBetween('resignation_date', [$start, $end])
+                    ->orWhereBetween('resignation_date', [$gajian2Start, $gajian2End]);
+            })
+            ->get(['employee_id', 'resignation_date', 'outlet_id']);
+    }
+
+    /**
+     * @return array{
+     *     isResignedEmployee: bool,
+     *     affectsGajian2: bool,
+     *     resignationDate: ?Carbon,
+     *     hariKerjaKaryawanResign: int
+     * }
+     */
+    private function resolveResignationPayrollContext(
+        $resignation,
+        int $hariKerjaDefault,
+        Carbon $startDate,
+        Carbon $endDate,
+        Carbon $gajian2Start,
+        Carbon $gajian2End
+    ): array {
+        $isResignedEmployee = false;
+        $affectsGajian2 = false;
+        $resignationDate = null;
+        $hariKerjaKaryawanResign = $hariKerjaDefault;
+
+        if ($resignation && $resignation->resignation_date) {
+            $resignationDate = Carbon::parse($resignation->resignation_date)->startOfDay();
+            $isResignedEmployee = $resignationDate->greaterThanOrEqualTo($startDate)
+                && $resignationDate->lessThanOrEqualTo($endDate);
+            $affectsGajian2 = $resignationDate->greaterThanOrEqualTo($gajian2Start)
+                && $resignationDate->lessThanOrEqualTo($gajian2End);
+
+            if ($isResignedEmployee) {
+                $hariKerjaKaryawanResign = $startDate->diffInDays($resignationDate) + 1;
+            }
+        }
+
+        return [
+            'isResignedEmployee' => $isResignedEmployee,
+            'affectsGajian2' => $affectsGajian2,
+            'resignationDate' => $resignationDate,
+            'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign,
+        ];
     }
 
     /**
