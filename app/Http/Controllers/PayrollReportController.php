@@ -893,8 +893,9 @@ class PayrollReportController extends Controller
                     'nama_lengkap' => $user->nama_lengkap ?? 'Unknown'
                 ]);
                 
-                $employeeRows = $employeeGroups->get($userId, collect());
-                $allEmployeeRows = $employeeRows;
+                $allEmployeeRows = $employeeGroups->get($userId, collect());
+                // Gajian 1 (26–25): telat, lembur, uang makan, hari_kerja tampilan
+                $employeeRows = $this->filterAttendanceRowsForDateRange($allEmployeeRows, $startDate, $endDate);
                 
                 // Jika user tidak punya data absensi, buat employeeRows kosong
                 if ($employeeRows->isEmpty()) {
@@ -2879,8 +2880,8 @@ class PayrollReportController extends Controller
         $userData = [];
         foreach ($users as $user) {
             $userId = $user->id;
-            $employeeRows = $employeeGroups->get($userId, collect());
-            $allEmployeeRows = $employeeRows;
+            $allEmployeeRows = $employeeGroups->get($userId, collect());
+            $employeeRows = $this->filterAttendanceRowsForDateRange($allEmployeeRows, $startDate, $endDate);
             
             // Jika user tidak punya data absensi, buat employeeRows kosong
             if ($employeeRows->isEmpty()) {
