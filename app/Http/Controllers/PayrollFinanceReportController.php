@@ -799,6 +799,7 @@ class PayrollFinanceReportController extends Controller
 
         $baseQuery = fn () => DB::table('employee_movements')
             ->where('employment_type', 'mutation')
+            ->where('unit_property_change', true)
             ->whereNotNull('employment_effective_date')
             ->where('employment_effective_date', '>', $start)
             ->where('employment_effective_date', '<=', $end)
