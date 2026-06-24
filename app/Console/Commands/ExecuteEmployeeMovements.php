@@ -140,7 +140,13 @@ class ExecuteEmployeeMovements extends Command
 
             // 5. Jika unit/property diubah, ubah id_outlet di users
             if ($movement->unit_property_change && $movement->unit_property_to) {
-                $employee->update(['id_outlet' => $movement->unit_property_to]);
+                $outletId = is_numeric($movement->unit_property_to)
+                    ? (int) $movement->unit_property_to
+                    : DB::table('tbl_data_outlet')->where('nama_outlet', $movement->unit_property_to)->value('id_outlet');
+
+                if ($outletId) {
+                    $employee->update(['id_outlet' => $outletId]);
+                }
             }
 
             // 6. Jika employment type adalah Termination, set status='N'

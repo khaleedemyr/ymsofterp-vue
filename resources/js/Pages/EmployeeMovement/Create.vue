@@ -83,6 +83,17 @@ watch(() => form.employment_type, (newType) => {
     form.tunjangan_to = '';
     form.salary_to = '';
   }
+
+  if (newType === 'mutation' && employeeOutletSnapshot.value) {
+    form.employee_unit_property = employeeOutletSnapshot.value.name;
+    form.unit_property_from = employeeOutletSnapshot.value.id || employeeOutletSnapshot.value.name;
+  }
+});
+
+watch(() => form.unit_property_to, (value) => {
+  if (value && (typeof value === 'object' ? value.id : value)) {
+    form.unit_property_change = true;
+  }
 });
 
 const searchQuery = ref('');
@@ -90,6 +101,7 @@ const searchResults = ref([]);
 const showSearchResults = ref(false);
 const selectedEmployee = ref(null);
 const isLoading = ref(false);
+const employeeOutletSnapshot = ref(null);
 
 // Dropdown data
 const positions = ref([]);
@@ -205,24 +217,31 @@ const selectEmployee = async (employee) => {
   form.employee_name = employee.nama_lengkap;
   form.employee_position = employee.jabatan?.nama_jabatan || '';
   form.employee_division = employee.divisi?.nama_divisi || '';
-  form.employee_unit_property = employee.outlet?.nama_outlet || '';
   form.employee_join_date = employee.tanggal_masuk || '';
   
   // Fetch detailed employee data including salary and level
   try {
     const response = await axios.get(route('employee-movements.employee-details', employee.id));
     const employeeDetails = response.data;
+    const outletName = employeeDetails.unit_property || employee.outlet?.nama_outlet || '';
+    const outletId = employeeDetails.unit_property_id || employee.outlet?.id_outlet || employee.id_outlet || '';
+
+    employeeOutletSnapshot.value = { name: outletName, id: outletId };
+    form.employee_unit_property = outletName;
     
     // Set current values for "from" fields
     form.position_from = employeeDetails.position || '';
     form.level_from = employeeDetails.current_level || '';
-    // Always set salary_from, default to 0 if not available
-    // This ensures the field is always populated for validation
     form.salary_from = formatCurrency(employeeDetails.current_salary || 0);
     form.division_from = employeeDetails.division || '';
-    form.unit_property_from = employeeDetails.unit_property || '';
+    form.unit_property_from = outletId || outletName;
   } catch (error) {
     console.error('Error fetching employee details:', error);
+    const outletName = employee.outlet?.nama_outlet || '';
+    const outletId = employee.outlet?.id_outlet || employee.id_outlet || '';
+    employeeOutletSnapshot.value = { name: outletName, id: outletId };
+    form.employee_unit_property = outletName;
+    form.unit_property_from = outletId || outletName;
   }
   
   searchQuery.value = employee.nama_lengkap;
@@ -269,8 +288,19 @@ const submit = () => {
   const positionToValue = form.position_to?.id || '';
   const levelToValue = form.level_to?.id || '';
   const divisionToValue = form.division_to?.id || '';
-  const unitPropertyToValue = form.unit_property_to?.id || '';
+  const unitPropertyToValue = form.unit_property_to?.id || form.unit_property_to || '';
   const hodApproverValue = form.hod_approver_id?.id || '';
+
+  if (form.employment_type === 'mutation' && !unitPropertyToValue) {
+    Swal.fire({
+      title: 'Validation Error',
+      text: 'Pilih Unit/Property tujuan untuk mutasi outlet.',
+      icon: 'error',
+      confirmButtonText: 'OK',
+    });
+    return;
+  }
+
   const gmApproverValue = form.gm_approver_id?.id || '';
   const gmHrApproverValue = form.gm_hr_approver_id?.id || '';
   const bodApproverValue = form.bod_approver_id?.id || '';
@@ -302,6 +332,28 @@ const submit = () => {
   form.gm_approver_id = gmApproverValue; // Keep for backward compatibility
   form.gm_hr_approver_id = gmHrApproverValue; // Keep for backward compatibility
   form.bod_approver_id = bodApproverValue; // Keep for backward compatibility
+
+  if (form.employment_type === 'mutation' && unitPropertyToValue) {
+    form.unit_property_change = true;
+  }
+
+  if (employeeOutletSnapshot.value) {
+    form.employee_unit_property = employeeOutletSnapshot.value.name;
+    if (!form.unit_property_from) {
+      form.unit_property_from = employeeOutletSnapshot.value.id || employeeOutletSnapshot.value.name;
+    }
+  }
+
+  // FormData tidak mengirim checkbox false — kirim eksplisit 0/1
+  form.unit_property_change = form.unit_property_change ? 1 : 0;
+  form.position_change = form.position_change ? 1 : 0;
+  form.level_change = form.level_change ? 1 : 0;
+  form.salary_change = form.salary_change ? 1 : 0;
+  form.division_change = form.division_change ? 1 : 0;
+  form.department_change = form.department_change ? 1 : 0;
+  form.kpi_required = form.kpi_required ? 1 : 0;
+  form.psikotest_required = form.psikotest_required ? 1 : 0;
+  form.training_attendance_required = form.training_attendance_required ? 1 : 0;
   
   // Convert approvers array to IDs for submission (filter out invalid entries)
   const approversIds = form.approvers

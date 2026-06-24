@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, onMounted, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { useForm } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -77,6 +77,10 @@ const searchResults = ref([]);
 const showSearchResults = ref(false);
 const selectedEmployee = ref(null);
 const isLoading = ref(false);
+const employeeOutletSnapshot = ref({
+  name: props.movement.employee_unit_property || '',
+  id: props.movement.unit_property_from || '',
+});
 
 // Dropdown data
 const positions = ref([]);
@@ -230,10 +234,49 @@ const reorderApprover = (fromIndex, toIndex) => {
   form.approvers.splice(toIndex, 0, approver);
 };
 
+const resolveMultiselectFields = () => {
+  const findById = (options, id) => options.find((item) => String(item.id) === String(id)) || null;
+
+  if (form.unit_property_to && typeof form.unit_property_to !== 'object') {
+    form.unit_property_to = findById(outlets.value, form.unit_property_to);
+    if (form.unit_property_to) {
+      form.unit_property_change = true;
+    }
+  }
+
+  if (form.division_to && typeof form.division_to !== 'object') {
+    form.division_to = findById(divisions.value, form.division_to);
+  }
+
+  if (form.position_to && typeof form.position_to !== 'object') {
+    form.position_to = findById(positions.value, form.position_to);
+  }
+
+  if (form.level_to && typeof form.level_to !== 'object') {
+    form.level_to = findById(levels.value, form.level_to);
+  }
+};
+
+watch(() => form.unit_property_to, (value) => {
+  if (value && (typeof value === 'object' ? value.id : value)) {
+    form.unit_property_change = true;
+  }
+});
+
+watch(() => form.employment_type, (newType) => {
+  if (newType === 'mutation' && employeeOutletSnapshot.value?.name) {
+    form.employee_unit_property = employeeOutletSnapshot.value.name;
+    if (!form.unit_property_from) {
+      form.unit_property_from = employeeOutletSnapshot.value.id || employeeOutletSnapshot.value.name;
+    }
+  }
+});
+
 // Initialize on mount
-onMounted(() => {
+onMounted(async () => {
   console.log('Component mounted, fetching dropdown data...');
-  fetchDropdownData();
+  await fetchDropdownData();
+  resolveMultiselectFields();
   fetchApprovers();
   loadApprovalFlows(); // Load existing approval flows
   
@@ -275,8 +318,27 @@ const selectEmployee = async (employee) => {
   form.employee_name = employee.nama_lengkap;
   form.employee_position = employee.jabatan?.nama_jabatan || '';
   form.employee_division = employee.divisi?.nama_divisi || '';
-  form.employee_unit_property = employee.outlet?.nama_outlet || '';
   form.employee_join_date = employee.tanggal_masuk || '';
+
+  try {
+    const response = await axios.get(route('employee-movements.employee-details', employee.id));
+    const employeeDetails = response.data;
+    const outletName = employeeDetails.unit_property || employee.outlet?.nama_outlet || '';
+    const outletId = employeeDetails.unit_property_id || employee.outlet?.id_outlet || employee.id_outlet || '';
+
+    if (!props.movement.employee_unit_property) {
+      employeeOutletSnapshot.value = { name: outletName, id: outletId };
+      form.employee_unit_property = outletName;
+      form.unit_property_from = outletId || outletName;
+    }
+
+    form.position_from = employeeDetails.position || '';
+    form.level_from = employeeDetails.current_level || '';
+    form.salary_from = formatCurrency(employeeDetails.current_salary || 0);
+    form.division_from = employeeDetails.division || '';
+  } catch (error) {
+    console.error('Error fetching employee details:', error);
+  }
   
   searchQuery.value = employee.nama_lengkap;
   showSearchResults.value = false;
@@ -311,7 +373,17 @@ const submit = () => {
   const positionToValue = form.position_to?.id || '';
   const levelToValue = form.level_to?.id || '';
   const divisionToValue = form.division_to?.id || '';
-  const unitPropertyToValue = form.unit_property_to?.id || '';
+  const unitPropertyToValue = form.unit_property_to?.id || form.unit_property_to || '';
+
+  if (form.employment_type === 'mutation' && !unitPropertyToValue) {
+    Swal.fire({
+      title: 'Validation Error',
+      text: 'Pilih Unit/Property tujuan untuk mutasi outlet.',
+      icon: 'error',
+      confirmButtonText: 'OK',
+    });
+    return;
+  }
 
   // Create summary for confirmation
   const summary = {
@@ -337,6 +409,27 @@ const submit = () => {
   form.level_to = levelToValue;
   form.division_to = divisionToValue;
   form.unit_property_to = unitPropertyToValue;
+
+  if (form.employment_type === 'mutation' && unitPropertyToValue) {
+    form.unit_property_change = true;
+  }
+
+  if (employeeOutletSnapshot.value?.name) {
+    form.employee_unit_property = employeeOutletSnapshot.value.name;
+    if (!form.unit_property_from) {
+      form.unit_property_from = employeeOutletSnapshot.value.id || employeeOutletSnapshot.value.name;
+    }
+  }
+
+  form.unit_property_change = form.unit_property_change ? 1 : 0;
+  form.position_change = form.position_change ? 1 : 0;
+  form.level_change = form.level_change ? 1 : 0;
+  form.salary_change = form.salary_change ? 1 : 0;
+  form.division_change = form.division_change ? 1 : 0;
+  form.department_change = form.department_change ? 1 : 0;
+  form.kpi_required = form.kpi_required ? 1 : 0;
+  form.psikotest_required = form.psikotest_required ? 1 : 0;
+  form.training_attendance_required = form.training_attendance_required ? 1 : 0;
   
   // Convert approvers array to IDs for submission
   form.approvers = form.approvers.map(approver => approver.id);

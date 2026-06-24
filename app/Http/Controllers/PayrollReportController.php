@@ -1001,19 +1001,19 @@ class PayrollReportController extends Controller
                 $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
 
                 $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
+                $hariKerjaMutationSc = ($isMutatedEmployee && $mutationRole)
+                    ? $this->countMutationSegmentScDays(
+                        $userId,
+                        (int) $outletId,
+                        $gajian1SegmentStart,
+                        $gajian1SegmentEnd,
+                        $mutationRole
+                    )
+                    : null;
                 $hariKerja = $this->resolveHariKerjaForPayrollSegment(
                     $isMutatedEmployee,
                     $mutCtx ?? null,
-                    $hariKerjaAttendance,
-                    $isMutatedEmployee && $mutationRole
-                        ? $this->countMutationSegmentScDays(
-                            $userId,
-                            (int) $outletId,
-                            $gajian1SegmentStart,
-                            $gajian1SegmentEnd,
-                            $mutationRole
-                        )
-                        : null
+                    $hariKerjaAttendance
                 );
 
                 $totalAlpha = $this->calculateAlpaDays($userId, null, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -1151,7 +1151,7 @@ class PayrollReportController extends Controller
 
                 $hariKerjaUntukServiceCharge = 0;
 
-                if ($isMutatedEmployee && $hariKerja <= 0) {
+                if ($isMutatedEmployee && $hariKerja <= 0 && ($hariKerjaMutationSc ?? 0) <= 0) {
                     $hariKerjaGajian2 = 0;
                     $hariKerjaProrateGajian1 = 0;
                 } else {
@@ -1167,7 +1167,9 @@ class PayrollReportController extends Controller
                     } elseif ($isResignedEmployee) {
                         $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
                     }
-                    $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
+                    $hariKerjaUntukServiceCharge = ($isMutatedEmployee && ($hariKerjaMutationSc ?? 0) > 0)
+                        ? $hariKerjaMutationSc
+                        : PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
                 }
 
                 $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -3017,19 +3019,19 @@ class PayrollReportController extends Controller
                 $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
             }
 
+            $hariKerjaMutationSc = ($isMutatedEmployee && $mutationRole)
+                ? $this->countMutationSegmentScDays(
+                    $userId,
+                    (int) $outletId,
+                    $gajian1SegmentStart,
+                    $gajian1SegmentEnd,
+                    $mutationRole
+                )
+                : null;
             $hariKerja = $this->resolveHariKerjaForPayrollSegment(
                 $isMutatedEmployee,
                 $mutCtx ?? null,
-                $hariKerjaAttendance,
-                $isMutatedEmployee && $mutationRole
-                    ? $this->countMutationSegmentScDays(
-                        $userId,
-                        (int) $outletId,
-                        $gajian1SegmentStart,
-                        $gajian1SegmentEnd,
-                        $mutationRole
-                    )
-                    : null
+                $hariKerjaAttendance
             );
 
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -3101,7 +3103,7 @@ class PayrollReportController extends Controller
 
             $hariKerjaUntukServiceCharge = 0;
 
-            if ($isMutatedEmployee && $hariKerja <= 0) {
+            if ($isMutatedEmployee && $hariKerja <= 0 && ($hariKerjaMutationSc ?? 0) <= 0) {
                 $hariKerjaGajian2 = 0;
                 $hariKerjaProrateGajian1 = 0;
             } else {
@@ -3117,7 +3119,9 @@ class PayrollReportController extends Controller
                 } elseif ($isResignedEmployee) {
                     $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
                 }
-                $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
+                $hariKerjaUntukServiceCharge = ($isMutatedEmployee && ($hariKerjaMutationSc ?? 0) > 0)
+                    ? $hariKerjaMutationSc
+                    : PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
             }
 
             $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -7036,15 +7040,14 @@ class PayrollReportController extends Controller
     }
 
     /**
-     * Hari kerja mutasi untuk SC: hari hadir + hari OFF transisi sejak/sampai efektif pindah outlet.
+     * Hari kerja tampilan/absensi di segmen mutasi (hanya hari ada check-in, tanpa OFF).
      *
      * @param  array<string, mixed>|null  $mutCtx
      */
     private function resolveHariKerjaForPayrollSegment(
         bool $isMutatedEmployee,
         ?array $mutCtx,
-        int $hariKerjaAttendance,
-        ?int $hariKerjaMutationSc = null
+        int $hariKerjaAttendance
     ): int {
         if (! $isMutatedEmployee || $mutCtx === null) {
             return $hariKerjaAttendance;
@@ -7054,7 +7057,7 @@ class PayrollReportController extends Controller
             return 0;
         }
 
-        return $hariKerjaMutationSc ?? $hariKerjaAttendance;
+        return $hariKerjaAttendance;
     }
 
     /**

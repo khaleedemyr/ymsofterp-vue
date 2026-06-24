@@ -37,6 +37,25 @@ class EmployeeMovementController extends Controller
         if (isset($requestData['bod_approver_id']) && is_array($requestData['bod_approver_id'])) {
             $requestData['bod_approver_id'] = $requestData['bod_approver_id']['id'] ?? $requestData['bod_approver_id'][0] ?? null;
         }
+
+        foreach ([
+            'position_to', 'position_from', 'level_to', 'level_from',
+            'division_to', 'division_from', 'unit_property_to', 'unit_property_from',
+        ] as $field) {
+            if (isset($requestData[$field]) && is_array($requestData[$field])) {
+                $requestData[$field] = $requestData[$field]['id'] ?? $requestData[$field][0] ?? null;
+            }
+        }
+
+        foreach ([
+            'kpi_required', 'psikotest_required', 'training_attendance_required',
+            'position_change', 'level_change', 'salary_change', 'department_change',
+            'division_change', 'unit_property_change',
+        ] as $boolField) {
+            if (array_key_exists($boolField, $requestData)) {
+                $requestData[$boolField] = $this->toRequestBoolean($requestData[$boolField]);
+            }
+        }
         
         // Process approvers array (new approval flow system)
         // Convert array of objects to array of IDs, or ensure it's already an array of IDs
@@ -82,6 +101,123 @@ class EmployeeMovementController extends Controller
         
         return $processedRequest;
     }
+
+    private function toRequestBoolean(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int) $value === 1;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function resolveOutletNameFromValue(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $value)
+                ->value('nama_outlet');
+        }
+
+        $byName = DB::table('tbl_data_outlet')
+            ->where('nama_outlet', $value)
+            ->value('nama_outlet');
+
+        return $byName ?: $value;
+    }
+
+    private function resolveOutletIdFromValue(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return (string) (int) $value;
+        }
+
+        $id = DB::table('tbl_data_outlet')
+            ->where('nama_outlet', $value)
+            ->value('id_outlet');
+
+        return $id !== null ? (string) $id : $value;
+    }
+
+    /**
+     * Normalisasi payload mutasi: snapshot outlet asal & pastikan unit_property_* terisi.
+     */
+    private function normalizeMovementPayload(array &$validated): void
+    {
+        $booleanFields = [
+            'kpi_required', 'psikotest_required', 'training_attendance_required',
+            'position_change', 'level_change', 'salary_change', 'department_change',
+            'division_change', 'unit_property_change',
+        ];
+
+        foreach ($booleanFields as $field) {
+            $validated[$field] = $this->toRequestBoolean($validated[$field] ?? false);
+        }
+
+        $employee = ! empty($validated['employee_id'])
+            ? User::with('outlet:id_outlet,nama_outlet')->find($validated['employee_id'])
+            : null;
+
+        $currentOutletName = $employee?->outlet?->nama_outlet;
+        $currentOutletId = $employee?->id_outlet;
+
+        if (empty($validated['unit_property_from']) && $currentOutletId) {
+            $validated['unit_property_from'] = (string) $currentOutletId;
+        }
+
+        $fromName = $this->resolveOutletNameFromValue(
+            isset($validated['unit_property_from']) ? (string) $validated['unit_property_from'] : null
+        );
+
+        if (empty($validated['employee_unit_property'])) {
+            $validated['employee_unit_property'] = $fromName ?: $currentOutletName;
+        }
+
+        if (! empty($validated['unit_property_to'])) {
+            $validated['unit_property_change'] = true;
+            $validated['unit_property_to'] = $this->resolveOutletIdFromValue((string) $validated['unit_property_to']);
+        }
+
+        if (($validated['employment_type'] ?? '') === 'mutation' && ! empty($validated['unit_property_to'])) {
+            $validated['unit_property_change'] = true;
+
+            if (empty($validated['unit_property_from']) && $currentOutletId) {
+                $validated['unit_property_from'] = (string) $currentOutletId;
+            }
+
+            $toName = $this->resolveOutletNameFromValue((string) $validated['unit_property_to']);
+            $snapshotName = $fromName ?: $currentOutletName;
+
+            if ($snapshotName) {
+                $validated['employee_unit_property'] = $snapshotName;
+            }
+
+            if ($toName && ($validated['employee_unit_property'] ?? '') === $toName && $snapshotName) {
+                $validated['employee_unit_property'] = $snapshotName;
+            }
+
+            $validated['unit_property_from'] = $this->resolveOutletNameFromValue(
+                isset($validated['unit_property_from']) ? (string) $validated['unit_property_from'] : null
+            ) ?? $snapshotName;
+        } elseif (! empty($validated['unit_property_from'])) {
+            $validated['unit_property_from'] = $this->resolveOutletNameFromValue(
+                (string) $validated['unit_property_from']
+            ) ?? $validated['unit_property_from'];
+        }
+    }
+
     public function index(Request $request)
     {
         $search = $request->input('search');
@@ -208,6 +344,8 @@ class EmployeeMovementController extends Controller
             $validated['salary_from'] = null;
             $validated['salary_to'] = null;
         }
+
+        $this->normalizeMovementPayload($validated);
 
         // Handle file uploads
         if ($request->hasFile('kpi_attachment')) {
@@ -873,6 +1011,8 @@ class EmployeeMovementController extends Controller
             $validated['salary_to'] = null;
         }
 
+        $this->normalizeMovementPayload($validated);
+
         // Handle file uploads
         if ($request->hasFile('kpi_attachment')) {
             // Delete old file if exists
@@ -1073,6 +1213,7 @@ class EmployeeMovementController extends Controller
             'position' => $employee->jabatan ? $employee->jabatan->nama_jabatan : null,
             'division' => $employee->divisi ? $employee->divisi->nama_divisi : null,
             'unit_property' => $employee->outlet ? $employee->outlet->nama_outlet : null,
+            'unit_property_id' => $employee->id_outlet,
             'join_date' => $employee->tanggal_masuk,
             'current_salary' => $currentSalary,
             'current_level' => $currentLevel,
@@ -1711,7 +1852,10 @@ class EmployeeMovementController extends Controller
 
             // 5. Jika unit/property diubah, ubah id_outlet di users
             if ($movement->unit_property_change && $movement->unit_property_to) {
-                $employee->update(['id_outlet' => $movement->unit_property_to]);
+                $outletId = $this->resolveOutletIdFromValue((string) $movement->unit_property_to);
+                if ($outletId) {
+                    $employee->update(['id_outlet' => $outletId]);
+                }
                 
                 // Log activity
                 ActivityLog::create([
