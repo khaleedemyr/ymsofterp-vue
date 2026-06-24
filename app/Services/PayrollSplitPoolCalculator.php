@@ -124,6 +124,57 @@ class PayrollSplitPoolCalculator
     }
 
     /**
+     * Hari kerja pool gajian 2 (kolom D Excel): absensi 1–akhir bulan, mutasi/resign pakai aturan khusus.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function resolveGajian2PoolDays(array $data, int $year, int $month): int
+    {
+        if ($data['isMutatedEmployee'] ?? false) {
+            return max(0, (int) ($data['hariKerjaGajian2'] ?? 0));
+        }
+
+        $gajian2Start = Carbon::create($year, $month, 1)->startOfDay();
+
+        $resignationDate = null;
+        if (! empty($data['resignationDate'])) {
+            $resignationDate = $data['resignationDate'] instanceof Carbon
+                ? $data['resignationDate']->copy()->startOfDay()
+                : Carbon::parse($data['resignationDate'])->startOfDay();
+        }
+
+        if ($resignationDate && $resignationDate->lt($gajian2Start)) {
+            return 0;
+        }
+
+        $attendanceDays = max(0, (int) ($data['hariKerjaGajian2Attendance'] ?? 0));
+
+        if ($resignationDate && ($data['affectsGajian2'] ?? false)) {
+            if ($attendanceDays > 0) {
+                return $attendanceDays;
+            }
+
+            $tanggalMasuk = ! empty($data['tanggalMasuk'])
+                ? ($data['tanggalMasuk'] instanceof Carbon ? $data['tanggalMasuk'] : Carbon::parse($data['tanggalMasuk']))
+                : null;
+
+            return self::calculateGajian2DaysForResigned(
+                $resignationDate,
+                $year,
+                $month,
+                $tanggalMasuk,
+                (bool) ($data['isNewEmployee'] ?? false)
+            );
+        }
+
+        if ($resignationDate && ! ($data['affectsGajian2'] ?? false)) {
+            return 0;
+        }
+
+        return $attendanceDays;
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $userData
      * @return array{totalPointHariKerja: float, totalHariKerja: float}
      */
@@ -137,25 +188,9 @@ class PayrollSplitPoolCalculator
                 continue;
             }
 
-            if ($data['isMutatedEmployee'] ?? false) {
-                $hariKerja = (float) ($data['hariKerjaGajian2'] ?? $data['hariKerjaUntukServiceCharge'] ?? 0);
-            } elseif (($data['affectsGajian2'] ?? false) && ! empty($data['resignationDate']) && $year > 0 && $month > 0) {
-                $resignationDate = $data['resignationDate'] instanceof Carbon
-                    ? $data['resignationDate']
-                    : Carbon::parse($data['resignationDate'])->startOfDay();
-                $tanggalMasuk = ! empty($data['tanggalMasuk'])
-                    ? ($data['tanggalMasuk'] instanceof Carbon ? $data['tanggalMasuk'] : Carbon::parse($data['tanggalMasuk'])->startOfDay())
-                    : null;
-                $hariKerja = (float) self::calculateGajian2DaysForResigned(
-                    $resignationDate,
-                    $year,
-                    $month,
-                    $tanggalMasuk,
-                    (bool) ($data['isNewEmployee'] ?? false)
-                );
-            } else {
-                $hariKerja = (float) ($data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'] ?? 0);
-            }
+            $hariKerja = $year > 0 && $month > 0
+                ? (float) self::resolveGajian2PoolDays($data, $year, $month)
+                : (float) ($data['hariKerjaUntukServiceCharge'] ?? $data['hariKerja'] ?? 0);
 
             $totalPointHariKerja += (float) $data['userPoint'] * $hariKerja;
             $totalHariKerja += $hariKerja;
@@ -200,54 +235,23 @@ class PayrollSplitPoolCalculator
         float $rateByPoint,
         float $rateProRate,
         float $userPoint,
-        float $hariKerjaUntukServiceCharge,
-        bool $isMutatedEmployee,
-        ?Carbon $mutationEffectiveDate,
-        int $year,
-        int $month,
+        float $hariKerjaPool,
+        bool $isMutatedEmployee = false,
+        ?Carbon $mutationEffectiveDate = null,
+        int $year = 0,
+        int $month = 0,
         bool $affectsGajian2 = false,
         ?Carbon $resignationDate = null,
         ?Carbon $tanggalMasuk = null,
         bool $isNewEmployee = false,
         ?string $mutationRole = null
     ): array {
-        if (! $enabled || $poolAmount <= 0) {
+        if (! $enabled || $poolAmount <= 0 || $hariKerjaPool <= 0) {
             return ['by_point' => 0.0, 'pro_rate' => 0.0, 'total' => 0.0];
         }
 
-        if ($isMutatedEmployee && $mutationEffectiveDate && $mutationRole) {
-            $days = self::calculateMutationGajian2Days(
-                $mutationEffectiveDate,
-                $year,
-                $month,
-                $mutationRole
-            );
-
-            if ($days <= 0) {
-                return ['by_point' => 0.0, 'pro_rate' => 0.0, 'total' => 0.0];
-            }
-
-            $byPoint = $rateByPoint * ($userPoint * $days);
-            $proRate = $rateProRate * $days;
-        } elseif ($affectsGajian2 && $resignationDate && $year > 0 && $month > 0) {
-            $hariKalender = self::calculateGajian2DaysForResigned(
-                $resignationDate,
-                $year,
-                $month,
-                $tanggalMasuk,
-                $isNewEmployee
-            );
-
-            if ($hariKalender <= 0) {
-                return ['by_point' => 0.0, 'pro_rate' => 0.0, 'total' => 0.0];
-            }
-
-            $byPoint = $rateByPoint * ($userPoint * $hariKalender);
-            $proRate = $rateProRate * $hariKalender;
-        } else {
-            $byPoint = $rateByPoint * ($userPoint * $hariKerjaUntukServiceCharge);
-            $proRate = $rateProRate * $hariKerjaUntukServiceCharge;
-        }
+        $byPoint = $rateByPoint * ($userPoint * $hariKerjaPool);
+        $proRate = $rateProRate * $hariKerjaPool;
 
         return [
             'by_point' => $byPoint,

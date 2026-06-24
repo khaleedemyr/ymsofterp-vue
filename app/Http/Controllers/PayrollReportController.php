@@ -727,7 +727,7 @@ class PayrollReportController extends Controller
                     'u.division_id'
                 )
                 ->where('a.scan_date', '>=', $start . ' 00:00:00')
-                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+                ->where('a.scan_date', '<', $gajian2End->copy()->addDay()->format('Y-m-d') . ' 00:00:00');
             
             // Apply filter outlet - SAMA PERSIS dengan employeeSummary
             // PERBAIKAN: Jangan filter berdasarkan outlet untuk karyawan mutasi, karena attendance tidak berdasarkan outlet
@@ -894,6 +894,7 @@ class PayrollReportController extends Controller
                 ]);
                 
                 $employeeRows = $employeeGroups->get($userId, collect());
+                $allEmployeeRows = $employeeRows;
                 
                 // Jika user tidak punya data absensi, buat employeeRows kosong
                 if ($employeeRows->isEmpty()) {
@@ -1091,46 +1092,54 @@ class PayrollReportController extends Controller
                     ]);
                 }
                 
-                // Gunakan hari kerja yang sesuai
-                // PENTING: Jika karyawan baru DAN resign dalam periode yang sama, hitung dari tanggal masuk sampai tanggal resign
-                // Ini penting untuk perhitungan service charge prorate yang konsisten
                 if ($isNewEmployee && $isResignedEmployee && $tanggalMasuk && $resignationDate) {
-                    // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
-                    // Hitung hari kerja dari tanggal masuk sampai tanggal resign (inklusif)
-                    $hariKerjaUntukServiceCharge = $tanggalMasuk->diffInDays($resignationDate) + 1;
-                    
-                    \Log::info('Detected new employee who resigned in same period', [
-                        'user_id' => $user->id,
-                        'nama_lengkap' => $user->nama_lengkap,
-                        'tanggal_masuk' => $user->tanggal_masuk,
-                        'resignation_date' => $resignation ? $resignation->resignation_date : null,
-                        'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
-                    ]);
-                } elseif ($isMutatedEmployee) {
-                    $hariKerjaUntukServiceCharge = $hariKerjaGajian2;
+                    $hariKerjaProrateGajian1 = $tanggalMasuk->diffInDays($resignationDate) + 1;
                 } elseif ($isNewEmployee) {
-                    // Karyawan baru saja (tidak resign)
-                    $hariKerjaUntukServiceCharge = $hariKerjaKaryawanBaru;
+                    $hariKerjaProrateGajian1 = $hariKerjaKaryawanBaru;
                 } elseif ($isResignedEmployee) {
-                    // Karyawan resign saja (bukan baru)
-                    $hariKerjaUntukServiceCharge = $hariKerjaKaryawanResign;
+                    $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
                 } else {
-                    // Karyawan biasa
-                    $hariKerjaUntukServiceCharge = $hariKerja;
+                    $hariKerjaProrateGajian1 = $hariKerja;
                 }
+
+                // Hari kerja pool gajian 2 (SC/L&B/deviasi/city ledger) — basis absensi 1–akhir bulan
+                $hariKerjaGajian2Attendance = $isMutatedEmployee
+                    ? 0
+                    : $this->countHariKerjaGajian2Attendance(
+                        $allEmployeeRows,
+                        $gajian2Start,
+                        $gajian2End,
+                        $affectsGajian2 ? $resignationDate : null,
+                        $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start)
+                    );
+
+                $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian2PoolDays([
+                    'isMutatedEmployee' => $isMutatedEmployee,
+                    'hariKerjaGajian2' => $hariKerjaGajian2,
+                    'hariKerjaGajian2Attendance' => $hariKerjaGajian2Attendance,
+                    'affectsGajian2' => $affectsGajian2,
+                    'resignationDate' => $resignationDate,
+                    'tanggalMasuk' => $tanggalMasuk,
+                    'isNewEmployee' => $isNewEmployee,
+                ], (int) $year, (int) $month);
 
                 if ($isMutatedEmployee && $hariKerja <= 0) {
                     $hariKerjaUntukServiceCharge = 0;
                     $hariKerjaGajian2 = 0;
+                    $hariKerjaProrateGajian1 = 0;
                 } else {
-                    $this->syncPayrollDaysWithAttendance(
+                    $this->syncGajian1ProrateDaysWithAttendance(
                         $hariKerja,
-                        $hariKerjaUntukServiceCharge,
                         $hariKerjaKaryawanBaru,
                         $hariKerjaKaryawanResign,
                         $isNewEmployee,
                         $isResignedEmployee
                     );
+                    if ($isNewEmployee) {
+                        $hariKerjaProrateGajian1 = $hariKerjaKaryawanBaru;
+                    } elseif ($isResignedEmployee) {
+                        $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
+                    }
                 }
 
                 $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -1146,8 +1155,10 @@ class PayrollReportController extends Controller
                     'hariKerja' => $hariKerja, // Hari kerja gajian 1 (kalender) di outlet ini
                     'hariKerjaKaryawanBaru' => $hariKerjaKaryawanBaru, // Hari kerja untuk karyawan baru
                     'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign, // Hari kerja untuk karyawan resign
-                    'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja gajian 2 di outlet ini
+                    'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja pool gajian 2
+                    'hariKerjaProrateGajian1' => $hariKerjaProrateGajian1,
                     'hariKerjaGajian2' => $hariKerjaGajian2,
+                    'hariKerjaGajian2Attendance' => $hariKerjaGajian2Attendance,
                     'mutationGajian1Ratio' => $mutationGajian1Ratio,
                     'mutationGajian2Ratio' => $mutationGajian2Ratio,
                     'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
@@ -1211,7 +1222,8 @@ class PayrollReportController extends Controller
                 $hariKerja = $data['hariKerja']; // Hari kerja aktual (jumlah hari bekerja)
                 $hariKerjaKaryawanBaru = $data['hariKerjaKaryawanBaru'] ?? $hariKerja; // Hari kerja untuk karyawan baru
                 $hariKerjaKaryawanResign = $data['hariKerjaKaryawanResign'] ?? $hariKerja; // Hari kerja untuk karyawan resign
-                $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
+                $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja pool gajian 2
+                $hariKerjaProrateGajian1 = $data['hariKerjaProrateGajian1'] ?? $hariKerja; // Hari prorate gajian 1
                 $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
                 $isResignedEmployee = $data['isResignedEmployee'] ?? false; // Flag apakah karyawan resign
                 $affectsGajian2 = $data['affectsGajian2'] ?? false;
@@ -1446,14 +1458,14 @@ class PayrollReportController extends Controller
                 if ($hariKerja <= 0) {
                     $gajiPokokFinal = 0;
                     $tunjanganFinal = 0;
-                } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaProrateGajian1 > 0) {
                     // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
                     // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                     // Hari kerja untuk service charge sudah dihitung dari tanggal masuk sampai tanggal resign
-                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     
                     $resignation = $resignations->get($user->id);
                     \Log::info('Karyawan baru yang resign - Pro rate calculation', [
@@ -1463,23 +1475,23 @@ class PayrollReportController extends Controller
                         'resignation_date' => $resignation ? $resignation->resignation_date : null,
                         'is_new_employee' => $isNewEmployee,
                         'is_resigned_employee' => $isResignedEmployee,
-                        'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
+                        'hari_kerja_dari_masuk_ke_resign' => $hariKerjaProrateGajian1,
                         'total_hari_kalender_periode' => $totalHariKalenderPeriode,
                         'gaji_pokok_original' => $masterData->gaji,
                         'tunjangan_original' => $masterData->tunjangan,
                         'gaji_pokok_pro_rate' => $gajiPokokFinal,
                         'tunjangan_pro_rate' => $tunjanganFinal,
-                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                     ]);
-                } elseif ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                } elseif ($isNewEmployee === true && $hariKerjaProrateGajian1 > 0) {
                     // Karyawan baru saja (tidak resign)
                     // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                     // Ini sama dengan proporsi yang digunakan service charge prorate
-                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     
                     \Log::info('Karyawan baru - Pro rate calculation', [
                         'user_id' => $user->id,
@@ -1493,16 +1505,16 @@ class PayrollReportController extends Controller
                         'tunjangan_original' => $masterData->tunjangan,
                         'gaji_pokok_pro_rate' => $gajiPokokFinal,
                         'tunjangan_pro_rate' => $tunjanganFinal,
-                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                     ]);
-                } elseif ($isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+                } elseif ($isResignedEmployee === true && $hariKerjaProrateGajian1 > 0) {
                     // Karyawan resign saja (bukan baru)
                     // Untuk karyawan resign, hitung prorate dari awal periode sampai tanggal resign
                     // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
-                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                    $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                     
                     $resignation = $resignations->get($user->id);
                     \Log::info('Karyawan resign - Pro rate calculation', [
@@ -1517,8 +1529,8 @@ class PayrollReportController extends Controller
                         'tunjangan_original' => $masterData->tunjangan,
                         'gaji_pokok_pro_rate' => $gajiPokokFinal,
                         'tunjangan_pro_rate' => $tunjanganFinal,
-                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                        'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                        'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                     ]);
                 } elseif ($isMutatedEmployee === true && $hariKerja > 0) {
                     $gajiPokokFinal = $masterData->gaji * ($hariKerja / $totalHariKalenderPeriode);
@@ -2755,7 +2767,7 @@ class PayrollReportController extends Controller
             )
             ->where('u.id_outlet', $outletId)
             ->where('a.scan_date', '>=', $start . ' 00:00:00')
-            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+            ->where('a.scan_date', '<', $gajian2End->copy()->addDay()->format('Y-m-d') . ' 00:00:00');
 
         // Gunakan chunk untuk mencegah memory overflow
         $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {
@@ -2868,6 +2880,7 @@ class PayrollReportController extends Controller
         foreach ($users as $user) {
             $userId = $user->id;
             $employeeRows = $employeeGroups->get($userId, collect());
+            $allEmployeeRows = $employeeRows;
             
             // Jika user tidak punya data absensi, buat employeeRows kosong
             if ($employeeRows->isEmpty()) {
@@ -3001,39 +3014,54 @@ class PayrollReportController extends Controller
             $affectsGajian2 = $resignCtx['affectsGajian2'];
             $resignationDate = $resignCtx['resignationDate'];
             $hariKerjaKaryawanResign = $resignCtx['hariKerjaKaryawanResign'];
-            
-            // Gunakan hari kerja yang sesuai
-            // PENTING: Jika karyawan baru DAN resign dalam periode yang sama, hitung dari tanggal masuk sampai tanggal resign
-            // Ini penting untuk perhitungan service charge prorate yang konsisten
+
             if ($isNewEmployee && $isResignedEmployee && $tanggalMasuk && $resignationDate) {
-                // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
-                // Hitung hari kerja dari tanggal masuk sampai tanggal resign (inklusif)
-                $hariKerjaUntukServiceCharge = $tanggalMasuk->diffInDays($resignationDate) + 1;
-            } elseif ($isMutatedEmployee) {
-                $hariKerjaUntukServiceCharge = $hariKerjaGajian2;
+                $hariKerjaProrateGajian1 = $tanggalMasuk->diffInDays($resignationDate) + 1;
             } elseif ($isNewEmployee) {
-                // Karyawan baru saja (tidak resign)
-                $hariKerjaUntukServiceCharge = $hariKerjaKaryawanBaru;
+                $hariKerjaProrateGajian1 = $hariKerjaKaryawanBaru;
             } elseif ($isResignedEmployee) {
-                // Karyawan resign saja (bukan baru)
-                $hariKerjaUntukServiceCharge = $hariKerjaKaryawanResign;
+                $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
             } else {
-                // Karyawan biasa
-                $hariKerjaUntukServiceCharge = $hariKerja;
+                $hariKerjaProrateGajian1 = $hariKerja;
             }
+            
+            $hariKerjaGajian2Attendance = $isMutatedEmployee
+                ? 0
+                : $this->countHariKerjaGajian2Attendance(
+                    $allEmployeeRows,
+                    $gajian2Start,
+                    $gajian2End,
+                    $affectsGajian2 ? $resignationDate : null,
+                    $this->resolveTanggalMasukForGajian2Pool($tanggalMasuk, $gajian2Start)
+                );
+
+            $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian2PoolDays([
+                'isMutatedEmployee' => $isMutatedEmployee,
+                'hariKerjaGajian2' => $hariKerjaGajian2,
+                'hariKerjaGajian2Attendance' => $hariKerjaGajian2Attendance,
+                'affectsGajian2' => $affectsGajian2,
+                'resignationDate' => $resignationDate,
+                'tanggalMasuk' => $tanggalMasuk,
+                'isNewEmployee' => $isNewEmployee,
+            ], (int) $year, (int) $month);
 
             if ($isMutatedEmployee && $hariKerja <= 0) {
                 $hariKerjaUntukServiceCharge = 0;
                 $hariKerjaGajian2 = 0;
+                $hariKerjaProrateGajian1 = 0;
             } else {
-                $this->syncPayrollDaysWithAttendance(
+                $this->syncGajian1ProrateDaysWithAttendance(
                     $hariKerja,
-                    $hariKerjaUntukServiceCharge,
                     $hariKerjaKaryawanBaru,
                     $hariKerjaKaryawanResign,
                     $isNewEmployee,
                     $isResignedEmployee
                 );
+                if ($isNewEmployee) {
+                    $hariKerjaProrateGajian1 = $hariKerjaKaryawanBaru;
+                } elseif ($isResignedEmployee) {
+                    $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
+                }
             }
 
             $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -3050,7 +3078,9 @@ class PayrollReportController extends Controller
                 'hariKerjaKaryawanBaru' => $hariKerjaKaryawanBaru,
                 'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign,
                 'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge,
+                'hariKerjaProrateGajian1' => $hariKerjaProrateGajian1,
                 'hariKerjaGajian2' => $hariKerjaGajian2,
+                'hariKerjaGajian2Attendance' => $hariKerjaGajian2Attendance,
                 'mutationGajian1Ratio' => $mutationGajian1Ratio,
                 'mutationGajian2Ratio' => $mutationGajian2Ratio,
                 'isNewEmployee' => $isNewEmployee,
@@ -3160,7 +3190,8 @@ class PayrollReportController extends Controller
             $hariKerja = $data['hariKerja']; // Hari kerja aktual (jumlah hari bekerja)
             $hariKerjaKaryawanBaru = $data['hariKerjaKaryawanBaru'] ?? $hariKerja; // Hari kerja untuk karyawan baru
             $hariKerjaKaryawanResign = $data['hariKerjaKaryawanResign'] ?? $hariKerja; // Hari kerja untuk karyawan resign
-            $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja yang digunakan untuk service charge
+            $hariKerjaUntukServiceCharge = $data['hariKerjaUntukServiceCharge'] ?? $hariKerja; // Hari kerja pool gajian 2
+            $hariKerjaProrateGajian1 = $data['hariKerjaProrateGajian1'] ?? $hariKerja; // Hari prorate gajian 1
             $isNewEmployee = $data['isNewEmployee'] ?? false; // Flag apakah karyawan baru
             $isResignedEmployee = $data['isResignedEmployee'] ?? false; // Flag apakah karyawan resign
             $affectsGajian2 = $data['affectsGajian2'] ?? false;
@@ -3356,14 +3387,14 @@ class PayrollReportController extends Controller
             if ($hariKerja <= 0) {
                 $gajiPokokFinal = 0;
                 $tunjanganFinal = 0;
-            } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+            } elseif ($isNewEmployee === true && $isResignedEmployee === true && $hariKerjaProrateGajian1 > 0) {
                 // Kasus khusus: Karyawan baru yang resign dalam periode yang sama
                 // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                 // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                 // Hari kerja untuk service charge sudah dihitung dari tanggal masuk sampai tanggal resign
-                $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 
                 $resignation = $resignations->get($user->id);
                 \Log::info('Karyawan baru yang resign - Pro rate calculation (Export)', [
@@ -3373,23 +3404,23 @@ class PayrollReportController extends Controller
                     'resignation_date' => $resignation ? $resignation->resignation_date : null,
                     'is_new_employee' => $isNewEmployee,
                     'is_resigned_employee' => $isResignedEmployee,
-                    'hari_kerja_dari_masuk_ke_resign' => $hariKerjaUntukServiceCharge,
+                    'hari_kerja_dari_masuk_ke_resign' => $hariKerjaProrateGajian1,
                     'total_hari_kalender_periode' => $totalHariKalenderPeriode,
                     'gaji_pokok_original' => $masterData->gaji,
                     'tunjangan_original' => $masterData->tunjangan,
                     'gaji_pokok_pro_rate' => $gajiPokokFinal,
                     'tunjangan_pro_rate' => $tunjanganFinal,
-                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                 ]);
-            } elseif ($isNewEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+            } elseif ($isNewEmployee === true && $hariKerjaProrateGajian1 > 0) {
                 // Karyawan baru saja (tidak resign)
                 // Pro rate menggunakan proporsi yang sama dengan service charge prorate
                 // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
                 // Ini sama dengan proporsi yang digunakan service charge prorate
-                $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 
                 \Log::info('Karyawan baru - Pro rate calculation (Export)', [
                     'user_id' => $user->id,
@@ -3397,22 +3428,22 @@ class PayrollReportController extends Controller
                     'tanggal_masuk' => $user->tanggal_masuk,
                     'is_new_employee' => $isNewEmployee,
                     'hari_kerja_karyawan_baru' => $hariKerjaKaryawanBaru,
-                    'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                    'hari_kerja_prorate_gajian1' => $hariKerjaProrateGajian1,
                     'total_hari_kalender_periode' => $totalHariKalenderPeriode,
                     'gaji_pokok_original' => $masterData->gaji,
                     'tunjangan_original' => $masterData->tunjangan,
                     'gaji_pokok_pro_rate' => $gajiPokokFinal,
                     'tunjangan_pro_rate' => $tunjanganFinal,
-                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                 ]);
-            } elseif ($isResignedEmployee === true && $hariKerjaUntukServiceCharge > 0) {
+            } elseif ($isResignedEmployee === true && $hariKerjaProrateGajian1 > 0) {
                 // Karyawan resign saja (bukan baru)
                 // Untuk karyawan resign, hitung prorate dari awal periode sampai tanggal resign
                 // Gaji pokok prorate = gaji pokok × (hari kerja untuk service charge / total hari kalender dalam periode)
-                $gajiPokokFinal = $masterData->gaji * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $gajiPokokFinal = $masterData->gaji * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 // Tunjangan prorate = tunjangan × (hari kerja untuk service charge / total hari kalender dalam periode)
-                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaUntukServiceCharge / $totalHariKalenderPeriode);
+                $tunjanganFinal = $masterData->tunjangan * ($hariKerjaProrateGajian1 / $totalHariKalenderPeriode);
                 
                 $resignation = $resignations->get($user->id);
                 \Log::info('Karyawan resign - Pro rate calculation (Export)', [
@@ -3421,14 +3452,14 @@ class PayrollReportController extends Controller
                     'is_resigned_employee' => $isResignedEmployee,
                     'resignation_date' => $resignation ? $resignation->resignation_date : null,
                     'hari_kerja_karyawan_resign' => $hariKerjaKaryawanResign,
-                    'hari_kerja_untuk_service_charge' => $hariKerjaUntukServiceCharge,
+                    'hari_kerja_prorate_gajian1' => $hariKerjaProrateGajian1,
                     'total_hari_kalender_periode' => $totalHariKalenderPeriode,
                     'gaji_pokok_original' => $masterData->gaji,
                     'tunjangan_original' => $masterData->tunjangan,
                     'gaji_pokok_pro_rate' => $gajiPokokFinal,
                     'tunjangan_pro_rate' => $tunjanganFinal,
-                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
-                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaUntukServiceCharge} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
+                    'formula_gaji' => "{$masterData->gaji} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$gajiPokokFinal}",
+                    'formula_tunjangan' => "{$masterData->tunjangan} × ({$hariKerjaProrateGajian1} / {$totalHariKalenderPeriode}) = {$tunjanganFinal}"
                 ]);
             } elseif ($isMutatedEmployee === true && $hariKerja > 0) {
                 $gajiPokokFinal = $masterData->gaji * ($hariKerja / $totalHariKalenderPeriode);
@@ -6939,6 +6970,55 @@ class PayrollReportController extends Controller
         ];
     }
 
+    private function filterAttendanceRowsForDateRange($rows, Carbon $start, Carbon $end)
+    {
+        $start = $start->copy()->startOfDay();
+        $end = $end->copy()->startOfDay();
+
+        return $rows->filter(function ($row) use ($start, $end) {
+            $d = Carbon::parse($row->tanggal)->startOfDay();
+
+            return $d->gte($start) && $d->lte($end);
+        })->values();
+    }
+
+    private function countHariKerjaGajian2Attendance(
+        $rows,
+        Carbon $gajian2Start,
+        Carbon $gajian2End,
+        ?Carbon $resignationDate = null,
+        ?Carbon $tanggalMasukAfterGajian2Start = null
+    ): int {
+        $filtered = $this->filterAttendanceRowsForDateRange($rows, $gajian2Start, $gajian2End);
+
+        if ($resignationDate) {
+            $resignDay = $resignationDate->copy()->startOfDay();
+            $filtered = $filtered->filter(function ($row) use ($resignDay) {
+                return Carbon::parse($row->tanggal)->startOfDay()->lte($resignDay);
+            });
+        }
+
+        if ($tanggalMasukAfterGajian2Start) {
+            $masuk = $tanggalMasukAfterGajian2Start->copy()->startOfDay();
+            $filtered = $filtered->filter(function ($row) use ($masuk) {
+                return Carbon::parse($row->tanggal)->startOfDay()->gte($masuk);
+            });
+        }
+
+        return $this->attendanceReportHelper()->countHariKerjaFromRows($filtered->values());
+    }
+
+    private function resolveTanggalMasukForGajian2Pool(?Carbon $tanggalMasuk, Carbon $gajian2Start): ?Carbon
+    {
+        if (! $tanggalMasuk) {
+            return null;
+        }
+
+        $masuk = $tanggalMasuk->copy()->startOfDay();
+
+        return $masuk->gt($gajian2Start) ? $masuk : null;
+    }
+
     private function filterAttendanceRowsForMutationSegment($rows, Carbon $effectiveDate, string $role)
     {
         return $rows->filter(function ($row) use ($effectiveDate, $role) {
@@ -7068,33 +7148,28 @@ class PayrollReportController extends Controller
     }
 
     /**
-     * Selaraskan hari prorate/SC dengan hari kerja absensi.
-     * Tidak ada absensi (0) → tidak ada hak gaji pokok, tunjangan, service charge, dll.
+     * Selaraskan hari prorate gajian 1 (gaji pokok/tunjangan) dengan absensi gajian 1.
      */
-    private function syncPayrollDaysWithAttendance(
+    private function syncGajian1ProrateDaysWithAttendance(
         int $hariKerja,
-        int &$hariKerjaUntukServiceCharge,
         int &$hariKerjaKaryawanBaru,
         int &$hariKerjaKaryawanResign,
         bool $isNewEmployee,
         bool $isResignedEmployee
     ): void {
         if ($hariKerja <= 0) {
-            $hariKerjaUntukServiceCharge = 0;
             $hariKerjaKaryawanBaru = 0;
             $hariKerjaKaryawanResign = 0;
 
             return;
         }
 
-        if ($hariKerjaUntukServiceCharge > $hariKerja) {
-            $hariKerjaUntukServiceCharge = $hariKerja;
-            if ($isResignedEmployee) {
-                $hariKerjaKaryawanResign = $hariKerja;
-            }
-            if ($isNewEmployee) {
-                $hariKerjaKaryawanBaru = min($hariKerjaKaryawanBaru, $hariKerja);
-            }
+        if ($isResignedEmployee && $hariKerjaKaryawanResign > $hariKerja) {
+            $hariKerjaKaryawanResign = $hariKerja;
+        }
+
+        if ($isNewEmployee && $hariKerjaKaryawanBaru > $hariKerja) {
+            $hariKerjaKaryawanBaru = min($hariKerjaKaryawanBaru, $hariKerja);
         }
     }
 
