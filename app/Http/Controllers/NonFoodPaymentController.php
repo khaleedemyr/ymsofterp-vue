@@ -23,6 +23,7 @@ class NonFoodPaymentController extends Controller
         // Get filter parameters
         $supplier = $request->input('supplier');
         $status = $request->input('status');
+        $paymentMethod = $request->input('payment_method');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
         $search = $request->input('search');
@@ -31,7 +32,7 @@ class NonFoodPaymentController extends Controller
         
         // Jika belum ada request untuk load data dan tidak ada filter/search, return empty
         // Ini untuk optimasi - tidak load data saat pertama kali masuk halaman
-        if (!$loadData && !$supplier && !$status && !$dateFrom && !$dateTo && !$search) {
+        if (!$loadData && !$supplier && !$status && !$paymentMethod && !$dateFrom && !$dateTo && !$search) {
             // Get suppliers for filter dropdown (tetap load untuk dropdown)
             $suppliers = DB::table('suppliers')
                 ->where('status', 'active')
@@ -48,7 +49,7 @@ class NonFoodPaymentController extends Controller
                     ['path' => $request->url(), 'query' => $request->query()]
                 ),
                 'suppliers' => $suppliers,
-                'filters' => $request->only(['supplier', 'status', 'date_from', 'date_to', 'search', 'per_page']),
+                'filters' => $request->only(['supplier', 'status', 'payment_method', 'date_from', 'date_to', 'search', 'per_page']),
                 'dataLoaded' => false
             ]);
         }
@@ -100,6 +101,10 @@ class NonFoodPaymentController extends Controller
             } else {
                 $query->where('non_food_payments.status', $status);
             }
+        }
+
+        if ($paymentMethod) {
+            $query->where('non_food_payments.payment_method', $paymentMethod);
         }
         
         // Filter by date range (date_from dan date_to)
@@ -278,7 +283,7 @@ class NonFoodPaymentController extends Controller
         return Inertia::render('NonFoodPayment/Index', [
             'payments' => $payments,
             'suppliers' => $suppliers,
-            'filters' => $request->only(['supplier', 'status', 'date_from', 'date_to', 'search', 'per_page', 'load_data']),
+            'filters' => $request->only(['supplier', 'status', 'payment_method', 'date_from', 'date_to', 'search', 'per_page', 'load_data']),
             'dataLoaded' => true
         ]);
     }

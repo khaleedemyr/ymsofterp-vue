@@ -20,13 +20,14 @@ class FoodPaymentController extends Controller
     {
         $search = $request->input('search');
         $status = $request->input('status');
+        $paymentType = $request->input('payment_type');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
         $loadData = $request->input('load_data', false);
         $perPage = $request->input('per_page', 10);
         
         // Jika belum ada request untuk load data dan tidak ada filter/search, return empty
-        if (!$loadData && !$search && !$status && !$dateFrom && !$dateTo) {
+        if (!$loadData && !$search && !$status && !$paymentType && !$dateFrom && !$dateTo) {
             return inertia('FoodPayment/Index', [
                 'payments' => new \Illuminate\Pagination\LengthAwarePaginator(
                     collect([]),
@@ -35,7 +36,7 @@ class FoodPaymentController extends Controller
                     1,
                     ['path' => $request->url(), 'query' => $request->query()]
                 ),
-                'filters' => $request->only(['search', 'status', 'date_from', 'date_to', 'per_page']),
+                'filters' => $request->only(['search', 'status', 'payment_type', 'date_from', 'date_to', 'per_page']),
                 'dataLoaded' => false
             ]);
         }
@@ -92,6 +93,9 @@ class FoodPaymentController extends Controller
         
         if ($status) {
             $query->where('food_payments.status', $status);
+        }
+        if ($paymentType) {
+            $query->where('food_payments.payment_type', $paymentType);
         }
         if ($dateFrom) {
             $query->whereDate('food_payments.date', '>=', $dateFrom);
@@ -297,7 +301,7 @@ class FoodPaymentController extends Controller
 
         return inertia('FoodPayment/Index', [
             'payments' => $payments,
-            'filters' => $request->only(['search', 'status', 'date_from', 'date_to', 'per_page']),
+            'filters' => $request->only(['search', 'status', 'payment_type', 'date_from', 'date_to', 'per_page']),
             'dataLoaded' => true
         ]);
     }

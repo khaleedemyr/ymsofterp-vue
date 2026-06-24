@@ -31,6 +31,12 @@
           <option value="rejected">Rejected</option>
           <option value="paid">Paid</option>
         </select>
+        <select v-model="filters.payment_type" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="">Semua Payment Type</option>
+          <option value="Cash">Cash</option>
+          <option value="Transfer">Transfer</option>
+          <option value="Giro">Giro</option>
+        </select>
         <input type="date" v-model="filters.date_from" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari Tanggal" title="Dari Tanggal" />
         <input type="date" v-model="filters.date_to" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai Tanggal" title="Sampai Tanggal" />
         
@@ -216,6 +222,7 @@ const getTodayDate = () => {
 const filters = ref({
   search: props.filters?.search || '',
   status: props.filters?.status || '',
+  payment_type: props.filters?.payment_type || '',
   date_from: props.filters?.date_from || getTodayDate(),
   date_to: props.filters?.date_to || getTodayDate(),
   per_page: props.filters?.per_page || 10
@@ -271,6 +278,7 @@ watch(
     if (newFilters) {
       filters.value.search = newFilters.search || '';
       filters.value.status = newFilters.status || '';
+      filters.value.payment_type = newFilters.payment_type || '';
       filters.value.date_from = newFilters.date_from || getTodayDate();
       filters.value.date_to = newFilters.date_to || getTodayDate();
       filters.value.per_page = newFilters.per_page || 10;
@@ -306,6 +314,7 @@ function loadData() {
     load_data: true,
     search: filters.value.search,
     status: filters.value.status,
+    payment_type: filters.value.payment_type,
     date_from: filters.value.date_from,
     date_to: filters.value.date_to,
     per_page: filters.value.per_page

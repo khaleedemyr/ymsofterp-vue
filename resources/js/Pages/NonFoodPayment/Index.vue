@@ -37,6 +37,12 @@
           <option value="rejected">Rejected</option>
           <option value="cancelled">Cancelled</option>
         </select>
+        <select v-model="filters.payment_method" class="px-4 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition">
+          <option value="">Semua Payment Method</option>
+          <option value="cash">Cash</option>
+          <option value="transfer">Transfer</option>
+          <option value="check">Check</option>
+        </select>
         <input type="date" v-model="filters.date_from" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Dari Tanggal" title="Dari Tanggal" />
         <input type="date" v-model="filters.date_to" class="px-2 py-2 rounded-xl border border-blue-200 shadow focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition" placeholder="Sampai Tanggal" title="Sampai Tanggal" />
         
@@ -257,6 +263,7 @@ const today = new Date().toISOString().split('T')[0];
 const filters = ref({
   supplier: props.filters?.supplier || '',
   status: props.filters?.status || '',
+  payment_method: props.filters?.payment_method || '',
   date_from: props.filters?.date_from || today,
   date_to: props.filters?.date_to || today,
   search: props.filters?.search || '',
