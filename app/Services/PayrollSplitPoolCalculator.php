@@ -80,6 +80,37 @@ class PayrollSplitPoolCalculator
         return $segmentStart->diffInDays($end) + 1;
     }
 
+    /**
+     * @return array{start: Carbon, end: Carbon}|null
+     */
+    public static function resolveMutationDateSegment(
+        Carbon $effectiveDate,
+        string $role,
+        Carbon $periodStart,
+        Carbon $periodEnd
+    ): ?array {
+        if (self::calculateMutationDaysInPeriod($effectiveDate, $periodStart, $periodEnd, $role) <= 0) {
+            return null;
+        }
+
+        $effective = $effectiveDate->copy()->startOfDay();
+        $start = $periodStart->copy()->startOfDay();
+        $end = $periodEnd->copy()->startOfDay();
+
+        if ($role === 'from') {
+            $segmentEnd = $effective->copy()->subDay();
+            if ($segmentEnd->gt($end)) {
+                $segmentEnd = $end->copy();
+            }
+
+            return ['start' => $start, 'end' => $segmentEnd];
+        }
+
+        $segmentStart = $effective->gt($start) ? $effective->copy() : $start->copy();
+
+        return ['start' => $segmentStart, 'end' => $end];
+    }
+
     public static function calculateMutationGajian2Days(
         Carbon $effectiveDate,
         int $year,

@@ -905,90 +905,18 @@ class PayrollReportController extends Controller
                 // Ambil data master payroll untuk user ini
                 $masterData = $this->resolvePayrollMasterForUser($user, $payrollMaster, $outletId);
 
-                // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
-                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
-                
-                // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
-                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
-                
-                // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
-                $totalLemburRegular = floor($employeeRows->sum('lembur'));
-                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
-
-                // Hari kerja: check-in di hari itu, bukan OFF (scan OUT cross-day tidak dihitung)
-                $hariKerja = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
-
-                // Hitung total alpha menggunakan method yang sama persis dengan AttendanceReportController
-                // GUNAKAN METHOD calculateAlpaDays yang sudah COPY PERSIS dari AttendanceReportController
-                // SAMA PERSIS dengan employeeSummary: kirim null untuk outlet_id
-                $totalAlpha = $this->calculateAlpaDays($userId, null, $start, $end);
-                
-                // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
-                $leaveData = $this->calculateLeaveData($userId, $start, $end);
-                
-                // Extract breakdown dari leaveData - SAMA PERSIS dengan Employee Summary
-                // Langsung ambil semua key yang berakhiran '_days' kecuali 'extra_off_days'
-                $izinCutiBreakdown = [];
-                $totalIzinCuti = 0;
-                foreach ($leaveData as $key => $value) {
-                    if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
-                        $izinCutiBreakdown[$key] = $value;
-                        $totalIzinCuti += $value;
-                    }
-                }
-                
-                // Hitung PH Bonus (Public Holiday bonus only, not extra_off)
-                // Debug: Log sebelum memanggil calculatePHBonus
-                \Log::info('Payroll - Before calculatePHBonus', [
-                    'user_id' => $userId,
-                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown',
-                    'start_date' => $start,
-                    'end_date' => $end,
-                    'start_type' => gettype($start),
-                    'end_type' => gettype($end)
-                ]);
-                
-                $phBonus = $this->calculatePHBonus($userId, $start, $end);
-                
-                // Debug: Log PH Bonus untuk semua user (termasuk yang 0)
-                \Log::info('Payroll - PH Bonus calculated', [
-                    'user_id' => $userId,
-                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown',
-                    'start_date' => $start,
-                    'end_date' => $end,
-                    'ph_bonus' => $phBonus,
-                    'ph_bonus_type' => gettype($phBonus)
-                ]);
-                
-                // Pastikan $phBonus tidak di-reset setelah ini
-                if ($phBonus > 0) {
-                    \Log::info('Payroll - PH Bonus is greater than 0', [
-                        'user_id' => $userId,
-                        'ph_bonus' => $phBonus
-                    ]);
-                }
-                
-                // Debug: Log leave data
-                \Log::info('Payroll - Leave data extracted', [
-                    'user_id' => $userId,
-                    'leave_data' => $leaveData,
-                    'izin_cuti_breakdown' => $izinCutiBreakdown,
-                    'extra_off_days' => $leaveData['extra_off_days'] ?? 0
-                ]);
-
-                // Ambil point dari level melalui jabatan
-                $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-                $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
-
-                // ==== CEK APAKAH KARYAWAN MUTASI OUTLET ====
+                // Mutasi outlet: tentukan segmen gajian 1 sebelum hitung absensi/alpha/leave
                 $isMutatedEmployee = isset($mutationMap[$userId]);
                 $mutationData = $isMutatedEmployee ? $mutationMap[$userId] : null;
-                $hariKerjaAttendance = $hariKerja;
                 $mutationRole = null;
                 $mutationEffectiveDate = null;
                 $hariKerjaGajian2 = 0;
                 $hariKerjaOutletLama = 0;
                 $hariKerjaOutletBaru = 0;
+                $mutationGajian1Ratio = 1.0;
+                $mutationGajian2Ratio = 1.0;
+                $gajian1SegmentStart = $startDate->copy();
+                $gajian1SegmentEnd = $endDate->copy();
 
                 if ($isMutatedEmployee && $mutationData) {
                     $mutCtx = $this->resolveMutationPayrollContext(
@@ -1000,23 +928,110 @@ class PayrollReportController extends Controller
                     );
                     $mutationRole = $mutCtx['mutationRole'];
                     $mutationEffectiveDate = $mutCtx['mutationEffectiveDate'];
-                    $hariKerja = $mutCtx['hariKerjaGajian1'];
                     $hariKerjaGajian2 = $mutCtx['hariKerjaGajian2'];
                     $hariKerjaOutletLama = $mutCtx['hariKerjaOutletLama'];
                     $hariKerjaOutletBaru = $mutCtx['hariKerjaOutletBaru'];
+                    $ratios = $this->buildMutationPayrollRatios(
+                        $mutCtx['hariKerjaGajian1'],
+                        $hariKerjaGajian2,
+                        $startDate,
+                        $endDate,
+                        $gajian2Start,
+                        $gajian2End
+                    );
+                    $mutationGajian1Ratio = $ratios['gajian1'];
+                    $mutationGajian2Ratio = $ratios['gajian2'];
 
-                    \Log::info('Payroll - Mutated employee calendar days', [
+                    $segment = PayrollSplitPoolCalculator::resolveMutationDateSegment(
+                        $mutationEffectiveDate,
+                        $mutationRole,
+                        $startDate,
+                        $endDate
+                    );
+                    if ($segment) {
+                        $gajian1SegmentStart = $segment['start'];
+                        $gajian1SegmentEnd = $segment['end'];
+                        $employeeRows = $this->filterAttendanceRowsForMutationSegment(
+                            $employeeRows,
+                            $mutationEffectiveDate,
+                            $mutationRole
+                        );
+                    } else {
+                        $employeeRows = collect();
+                    }
+                }
+
+                $gajian1SegmentStartStr = $gajian1SegmentStart->format('Y-m-d');
+                $gajian1SegmentEndStr = $gajian1SegmentEnd->format('Y-m-d');
+
+                // Hitung total telat dan lembur dari baris absensi (sudah difilter segmen mutasi bila ada)
+                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
+                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHoursForPeriod(
+                    $userId,
+                    $gajian1SegmentStartStr,
+                    $gajian1SegmentEndStr
+                ));
+                $totalLemburRegular = floor($employeeRows->sum('lembur'));
+                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
+
+                $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
+                $hariKerja = ($isMutatedEmployee && isset($mutCtx))
+                    ? (int) ($mutCtx['hariKerjaGajian1'] ?? 0)
+                    : $hariKerjaAttendance;
+
+                $totalAlpha = $this->calculateAlpaDays($userId, null, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+                $leaveData = $this->calculateLeaveData($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+
+                $izinCutiBreakdown = [];
+                $totalIzinCuti = 0;
+                foreach ($leaveData as $key => $value) {
+                    if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                        $izinCutiBreakdown[$key] = $value;
+                        $totalIzinCuti += $value;
+                    }
+                }
+
+                $phBonus = $this->calculatePHBonus($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+
+                if ($isMutatedEmployee && $mutationData) {
+                    \Log::info('Payroll - Mutated employee segment metrics', [
                         'user_id' => $userId,
                         'employee_name' => $mutationData['employee_name'],
                         'effective_date' => $mutationEffectiveDate->format('Y-m-d'),
                         'mutation_role' => $mutationRole,
+                        'segment_start' => $gajian1SegmentStartStr,
+                        'segment_end' => $gajian1SegmentEndStr,
                         'hari_kerja_gajian1' => $hariKerja,
                         'hari_kerja_gajian2' => $hariKerjaGajian2,
-                        'attendance_total' => $hariKerjaAttendance,
-                        'outlet_from' => $mutationData['outlet_from_name'],
-                        'outlet_to' => $mutationData['outlet_to_name'],
+                        'gajian1_ratio' => $mutationGajian1Ratio,
+                        'gajian2_ratio' => $mutationGajian2Ratio,
+                        'attendance_in_segment' => $hariKerjaAttendance,
+                        'total_lembur' => $totalLembur,
+                        'total_telat' => $totalTelat,
                     ]);
                 }
+
+                // Debug: Log PH Bonus untuk semua user (termasuk yang 0)
+                \Log::info('Payroll - PH Bonus calculated', [
+                    'user_id' => $userId,
+                    'nama_lengkap' => $user->nama_lengkap ?? 'Unknown',
+                    'start_date' => $gajian1SegmentStartStr,
+                    'end_date' => $gajian1SegmentEndStr,
+                    'ph_bonus' => $phBonus,
+                    'ph_bonus_type' => gettype($phBonus)
+                ]);
+
+                // Debug: Log leave data
+                \Log::info('Payroll - Leave data extracted', [
+                    'user_id' => $userId,
+                    'leave_data' => $leaveData,
+                    'izin_cuti_breakdown' => $izinCutiBreakdown,
+                    'extra_off_days' => $leaveData['extra_off_days'] ?? 0
+                ]);
+
+                // Ambil point dari level melalui jabatan
+                $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
+                $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
 
                 // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
                 $isNewEmployee = false;
@@ -1104,12 +1119,9 @@ class PayrollReportController extends Controller
                     $hariKerjaUntukServiceCharge = $hariKerja;
                 }
 
-                if ($isMutatedEmployee) {
-                    if ($hariKerjaAttendance <= 0) {
-                        $hariKerja = 0;
-                        $hariKerjaUntukServiceCharge = 0;
-                        $hariKerjaGajian2 = 0;
-                    }
+                if ($isMutatedEmployee && $hariKerja <= 0) {
+                    $hariKerjaUntukServiceCharge = 0;
+                    $hariKerjaGajian2 = 0;
                 } else {
                     $this->syncPayrollDaysWithAttendance(
                         $hariKerja,
@@ -1136,6 +1148,8 @@ class PayrollReportController extends Controller
                     'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign, // Hari kerja untuk karyawan resign
                     'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge, // Hari kerja gajian 2 di outlet ini
                     'hariKerjaGajian2' => $hariKerjaGajian2,
+                    'mutationGajian1Ratio' => $mutationGajian1Ratio,
+                    'mutationGajian2Ratio' => $mutationGajian2Ratio,
                     'isNewEmployee' => $isNewEmployee, // Flag apakah karyawan baru
                     'isResignedEmployee' => $isResignedEmployee, // Flag apakah karyawan resign (gajian 1)
                     'affectsGajian2' => $affectsGajian2, // Flag resign mempengaruhi pool gajian 2
@@ -1329,6 +1343,18 @@ class PayrollReportController extends Controller
                     $bpjsJKN = $bpjsCalc['bpjs_jkn'];
                     $bpjsTK = $bpjsCalc['bpjs_tk'];
                     $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
+
+                    if ($isMutatedEmployee) {
+                        $bpjsProrated = $this->prorateBpjsForMutationSegment(
+                            $bpjsJKN,
+                            $bpjsTK,
+                            $bpjsPerusahaanDetail,
+                            (float) ($data['mutationGajian1Ratio'] ?? 0)
+                        );
+                        $bpjsJKN = $bpjsProrated['bpjs_jkn'];
+                        $bpjsTK = $bpjsProrated['bpjs_tk'];
+                        $bpjsPerusahaanDetail = $bpjsProrated['perusahaan_detail'];
+                    }
 
                     \Log::info('BPJS calculation', [
                         'user_id' => $user->id,
@@ -1677,6 +1703,17 @@ class PayrollReportController extends Controller
                 $customEarnings = $customEarningsGajian1;
                 $customDeductions = $customDeductionsGajian1;
 
+                if ($isMutatedEmployee) {
+                    $gajian1Ratio = (float) ($data['mutationGajian1Ratio'] ?? 0);
+                    $gajian2Ratio = (float) ($data['mutationGajian2Ratio'] ?? 0);
+                    $customEarningsGajian1 = round($customEarningsGajian1 * $gajian1Ratio);
+                    $customDeductionsGajian1 = round($customDeductionsGajian1 * $gajian1Ratio);
+                    $customEarningsGajian2 = round($customEarningsGajian2 * $gajian2Ratio);
+                    $customDeductionsGajian2 = round($customDeductionsGajian2 * $gajian2Ratio);
+                    $customEarnings = $customEarningsGajian1;
+                    $customDeductions = $customDeductionsGajian1;
+                }
+
                 $potonganKasbon = 0;
                 $prKasbonId = null;
                 $kasbonCicilanKe = null;
@@ -1685,6 +1722,9 @@ class PayrollReportController extends Controller
                 $kasbonTerminTotal = null;
                 if ($kasbonPreview) {
                     $potonganKasbon = $kasbonPreview['potongan_kasbon'];
+                    if ($isMutatedEmployee) {
+                        $potonganKasbon = round($potonganKasbon * (float) ($data['mutationGajian1Ratio'] ?? 0));
+                    }
                     $prKasbonId = $kasbonPreview['pr_kasbon_id'];
                     $kasbonCicilanKe = $kasbonPreview['kasbon_cicilan_ke'];
                     $kasbonPrNumber = $kasbonPreview['kasbon_pr_number'];
@@ -2830,56 +2870,17 @@ class PayrollReportController extends Controller
             // Ambil data master payroll untuk user ini
             $masterData = $this->resolvePayrollMasterForUser($user, $payrollMaster, $outletId);
 
-            // Hitung total telat dan lembur dari employeeRows - SAMA PERSIS dengan Employee Summary
-            // PERBAIKAN: Handle kasus ketika user tidak punya data attendance
-            if ($employeeRows->isEmpty()) {
-                $totalTelat = 0;
-                $totalLembur = 0;
-                $hariKerja = 0;
-            } else {
-                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
-                
-                // Calculate Extra Off overtime total - SAMA PERSIS dengan Employee Summary
-                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHours($userId, $start, $end));
-                
-                // Total lembur = lembur biasa + extra off overtime - SAMA PERSIS dengan Employee Summary
-                $totalLemburRegular = floor($employeeRows->sum('lembur'));
-                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
-
-                $hariKerja = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
-            }
-
-            // Hitung total alpha menggunakan method yang sama dengan Employee Summary
-            $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $start, $end);
-            
-            // Hitung breakdown izin/cuti per kategori menggunakan calculateLeaveData (sama seperti Employee Summary)
-            $leaveData = $this->calculateLeaveData($userId, $start, $end);
-            
-            // Extract breakdown dari leaveData - SAMA PERSIS dengan Employee Summary
-            $izinCutiBreakdown = [];
-            $totalIzinCuti = 0;
-            foreach ($leaveData as $key => $value) {
-                if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
-                    $izinCutiBreakdown[$key] = $value;
-                    $totalIzinCuti += $value;
-                }
-            }
-            
-            // Hitung PH Bonus (Public Holiday bonus only, not extra_off)
-            $phBonus = $this->calculatePHBonus($userId, $start, $end);
-
-            // Ambil point dari level melalui jabatan
-            $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
-            $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
-
             $isMutatedEmployee = isset($mutationMap[$userId]);
             $mutationData = $isMutatedEmployee ? $mutationMap[$userId] : null;
-            $hariKerjaAttendance = $hariKerja;
             $mutationRole = null;
             $mutationEffectiveDate = null;
             $hariKerjaGajian2 = 0;
             $hariKerjaOutletLama = 0;
             $hariKerjaOutletBaru = 0;
+            $mutationGajian1Ratio = 1.0;
+            $mutationGajian2Ratio = 1.0;
+            $gajian1SegmentStart = $startDate->copy();
+            $gajian1SegmentEnd = $endDate->copy();
 
             if ($isMutatedEmployee && $mutationData) {
                 $mutCtx = $this->resolveMutationPayrollContext(
@@ -2891,11 +2892,78 @@ class PayrollReportController extends Controller
                 );
                 $mutationRole = $mutCtx['mutationRole'];
                 $mutationEffectiveDate = $mutCtx['mutationEffectiveDate'];
-                $hariKerja = $mutCtx['hariKerjaGajian1'];
                 $hariKerjaGajian2 = $mutCtx['hariKerjaGajian2'];
                 $hariKerjaOutletLama = $mutCtx['hariKerjaOutletLama'];
                 $hariKerjaOutletBaru = $mutCtx['hariKerjaOutletBaru'];
+                $ratios = $this->buildMutationPayrollRatios(
+                    $mutCtx['hariKerjaGajian1'],
+                    $hariKerjaGajian2,
+                    $startDate,
+                    $endDate,
+                    $gajian2Start,
+                    $gajian2End
+                );
+                $mutationGajian1Ratio = $ratios['gajian1'];
+                $mutationGajian2Ratio = $ratios['gajian2'];
+
+                $segment = PayrollSplitPoolCalculator::resolveMutationDateSegment(
+                    $mutationEffectiveDate,
+                    $mutationRole,
+                    $startDate,
+                    $endDate
+                );
+                if ($segment) {
+                    $gajian1SegmentStart = $segment['start'];
+                    $gajian1SegmentEnd = $segment['end'];
+                    $employeeRows = $this->filterAttendanceRowsForMutationSegment(
+                        $employeeRows,
+                        $mutationEffectiveDate,
+                        $mutationRole
+                    );
+                } else {
+                    $employeeRows = collect();
+                }
             }
+
+            $gajian1SegmentStartStr = $gajian1SegmentStart->format('Y-m-d');
+            $gajian1SegmentEndStr = $gajian1SegmentEnd->format('Y-m-d');
+
+            if ($employeeRows->isEmpty()) {
+                $totalTelat = 0;
+                $totalLembur = 0;
+                $hariKerjaAttendance = 0;
+            } else {
+                $totalTelat = $this->attendanceReportHelper()->sumTelatFromAttendanceRows($employeeRows);
+                $extraOffOvertimeTotal = floor($this->getExtraOffOvertimeHoursForPeriod(
+                    $userId,
+                    $gajian1SegmentStartStr,
+                    $gajian1SegmentEndStr
+                ));
+                $totalLemburRegular = floor($employeeRows->sum('lembur'));
+                $totalLembur = floor($totalLemburRegular + $extraOffOvertimeTotal);
+                $hariKerjaAttendance = $this->attendanceReportHelper()->countHariKerjaFromRows($employeeRows);
+            }
+
+            $hariKerja = ($isMutatedEmployee && isset($mutCtx))
+                ? (int) ($mutCtx['hariKerjaGajian1'] ?? 0)
+                : $hariKerjaAttendance;
+
+            $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+            $leaveData = $this->calculateLeaveData($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+
+            $izinCutiBreakdown = [];
+            $totalIzinCuti = 0;
+            foreach ($leaveData as $key => $value) {
+                if (strpos($key, '_days') !== false && $key !== 'extra_off_days') {
+                    $izinCutiBreakdown[$key] = $value;
+                    $totalIzinCuti += $value;
+                }
+            }
+
+            $phBonus = $this->calculatePHBonus($userId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
+
+            $userLevel = $jabatanLevels[$user->id_jabatan] ?? null;
+            $userPoint = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
 
             // Cek apakah karyawan baru (tanggal_masuk dalam periode payroll) - HARUS DILAKUKAN DI STEP 1
             $isNewEmployee = false;
@@ -2947,12 +3015,9 @@ class PayrollReportController extends Controller
                 $hariKerjaUntukServiceCharge = $hariKerja;
             }
 
-            if ($isMutatedEmployee) {
-                if ($hariKerjaAttendance <= 0) {
-                    $hariKerja = 0;
-                    $hariKerjaUntukServiceCharge = 0;
-                    $hariKerjaGajian2 = 0;
-                }
+            if ($isMutatedEmployee && $hariKerja <= 0) {
+                $hariKerjaUntukServiceCharge = 0;
+                $hariKerjaGajian2 = 0;
             } else {
                 $this->syncPayrollDaysWithAttendance(
                     $hariKerja,
@@ -2979,6 +3044,8 @@ class PayrollReportController extends Controller
                 'hariKerjaKaryawanResign' => $hariKerjaKaryawanResign,
                 'hariKerjaUntukServiceCharge' => $hariKerjaUntukServiceCharge,
                 'hariKerjaGajian2' => $hariKerjaGajian2,
+                'mutationGajian1Ratio' => $mutationGajian1Ratio,
+                'mutationGajian2Ratio' => $mutationGajian2Ratio,
                 'isNewEmployee' => $isNewEmployee,
                 'isResignedEmployee' => $isResignedEmployee,
                 'affectsGajian2' => $affectsGajian2,
@@ -3162,6 +3229,18 @@ class PayrollReportController extends Controller
                 $bpjsJKN = $bpjsCalc['bpjs_jkn'];
                 $bpjsTK = $bpjsCalc['bpjs_tk'];
                 $bpjsPerusahaanDetail = $bpjsCalc['perusahaan_detail'];
+
+                if ($isMutatedEmployee) {
+                    $bpjsProrated = $this->prorateBpjsForMutationSegment(
+                        $bpjsJKN,
+                        $bpjsTK,
+                        $bpjsPerusahaanDetail,
+                        (float) ($data['mutationGajian1Ratio'] ?? 0)
+                    );
+                    $bpjsJKN = $bpjsProrated['bpjs_jkn'];
+                    $bpjsTK = $bpjsProrated['bpjs_tk'];
+                    $bpjsPerusahaanDetail = $bpjsProrated['perusahaan_detail'];
+                }
             }
 
             // Hitung L & B (mirror service charge)
@@ -6831,6 +6910,68 @@ class PayrollReportController extends Controller
                     ->orWhereBetween('resignation_date', [$gajian2Start, $gajian2End]);
             })
             ->get(['employee_id', 'resignation_date', 'outlet_id']);
+    }
+
+    /**
+     * @return array{gajian1: float, gajian2: float}
+     */
+    private function buildMutationPayrollRatios(
+        int $hariKerjaGajian1,
+        int $hariKerjaGajian2,
+        Carbon $startDate,
+        Carbon $endDate,
+        Carbon $gajian2Start,
+        Carbon $gajian2End
+    ): array {
+        $totalGajian1 = max(1, $startDate->diffInDays($endDate) + 1);
+        $totalGajian2 = max(1, $gajian2Start->diffInDays($gajian2End) + 1);
+
+        return [
+            'gajian1' => $hariKerjaGajian1 / $totalGajian1,
+            'gajian2' => $hariKerjaGajian2 / $totalGajian2,
+        ];
+    }
+
+    private function filterAttendanceRowsForMutationSegment($rows, Carbon $effectiveDate, string $role)
+    {
+        return $rows->filter(function ($row) use ($effectiveDate, $role) {
+            $rowDate = Carbon::parse($row->tanggal)->startOfDay();
+
+            return $role === 'from'
+                ? $rowDate->lt($effectiveDate)
+                : $rowDate->gte($effectiveDate);
+        })->values();
+    }
+
+    /**
+     * @return array{bpjs_jkn: float, bpjs_tk: float, perusahaan_detail: array|null}
+     */
+    private function prorateBpjsForMutationSegment(
+        float $bpjsJkn,
+        float $bpjsTk,
+        ?array $perusahaanDetail,
+        float $ratio
+    ): array {
+        $ratio = max(0.0, min(1.0, $ratio));
+        $detail = $perusahaanDetail;
+        if (is_array($detail)) {
+            if (isset($detail['lines']) && is_array($detail['lines'])) {
+                foreach ($detail['lines'] as $i => $line) {
+                    if (isset($line['amount'])) {
+                        $detail['lines'][$i]['amount'] = round((float) $line['amount'] * $ratio, 2);
+                    }
+                }
+            }
+            if (isset($detail['total_perusahaan'])) {
+                $detail['total_perusahaan'] = round((float) $detail['total_perusahaan'] * $ratio, 2);
+            }
+        }
+
+        return [
+            'bpjs_jkn' => round($bpjsJkn * $ratio, 2),
+            'bpjs_tk' => round($bpjsTk * $ratio, 2),
+            'perusahaan_detail' => $detail,
+        ];
     }
 
     /**
