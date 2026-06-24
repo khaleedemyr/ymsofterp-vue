@@ -1444,7 +1444,7 @@ onMounted(() => {
                         Resign: {{ formatDate(item.resignation_date) }}
                       </div>
                       <div v-if="item.is_mutated_employee && item.mutation_effective_date" class="text-xs text-purple-600 mt-1 font-medium">
-                        Mutasi: {{ formatDate(item.mutation_effective_date) }} → {{ item.mutation_outlet_to }}
+                        Mutasi: {{ formatDate(item.mutation_effective_date) }} dari {{ item.mutation_outlet_from || '-' }} → {{ item.mutation_outlet_to || '-' }}
                       </div>
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-700">{{ item.jabatan }}</td>

@@ -810,8 +810,8 @@ class PayrollFinanceReportController extends Controller
         foreach ($baseQuery()->where('unit_property_from', $outletName)->get() as $mutation) {
             $mutationOutMap[$mutation->employee_id] = [
                 'effective_date' => $mutation->employment_effective_date,
-                'outlet_from' => $mutation->unit_property_from,
-                'outlet_to' => $mutation->unit_property_to,
+                'outlet_from' => $this->resolveOutletNameFromMovementProperty($mutation->unit_property_from),
+                'outlet_to' => $this->resolveOutletNameFromMovementProperty($mutation->unit_property_to),
             ];
         }
 
@@ -822,12 +822,29 @@ class PayrollFinanceReportController extends Controller
 
             $mutationInMap[$mutation->employee_id] = [
                 'effective_date' => $mutation->employment_effective_date,
-                'outlet_from' => $mutation->unit_property_from,
-                'outlet_to' => $mutation->unit_property_to,
+                'outlet_from' => $this->resolveOutletNameFromMovementProperty($mutation->unit_property_from),
+                'outlet_to' => $this->resolveOutletNameFromMovementProperty($mutation->unit_property_to),
             ];
         }
 
         return [$mutationOutMap, $mutationInMap];
+    }
+
+    private function resolveOutletNameFromMovementProperty(?string $property): ?string
+    {
+        if ($property === null || $property === '') {
+            return null;
+        }
+
+        if (ctype_digit((string) $property)) {
+            $name = DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $property)
+                ->value('nama_outlet');
+
+            return $name ?: null;
+        }
+
+        return $property;
     }
 
     /**

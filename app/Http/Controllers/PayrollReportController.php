@@ -580,6 +580,7 @@ class PayrollReportController extends Controller
                         'mutation_effective_date' => $mutationData
                             ? Carbon::parse($mutationData['effective_date'])->format('Y-m-d')
                             : null,
+                        'mutation_outlet_from' => $mutationData['outlet_from_name'] ?? null,
                         'mutation_outlet_to' => $mutationData['outlet_to_name'] ?? null,
                         'resignation_date' => $resignationDate,
                         'jabatan' => $detail->jabatan ?? null,
@@ -1120,6 +1121,7 @@ class PayrollReportController extends Controller
                     );
                 }
 
+                $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
                 $mutationOutletTo = $isMutatedEmployee ? ($mutationData['outlet_to_name'] ?? null) : null;
 
                 // Simpan data user untuk perhitungan service charge
@@ -1142,6 +1144,7 @@ class PayrollReportController extends Controller
                     'isMutatedEmployee' => $isMutatedEmployee, // Flag apakah karyawan mutasi outlet
                     'mutationRole' => $mutationRole,
                     'mutationEffectiveDate' => $mutationEffectiveDate, // Tanggal efektif mutasi
+                    'mutationOutletFrom' => $mutationOutletFrom,
                     'mutationOutletTo' => $mutationOutletTo, // Outlet tujuan mutasi
                     'mutationData' => $mutationData, // Full mutation data
                     'hariKerjaOutletLama' => $hariKerjaOutletLama,
@@ -1729,6 +1732,7 @@ class PayrollReportController extends Controller
                 // Ambil informasi mutasi dari userData
                 $isMutatedEmployee = $data['isMutatedEmployee'] ?? false;
                 $mutationEffectiveDate = $data['mutationEffectiveDate'] ?? null;
+                $mutationOutletFrom = $data['mutationOutletFrom'] ?? null;
                 $mutationOutletTo = $data['mutationOutletTo'] ?? null;
                 
                 $payrollDataItem = [
@@ -1740,6 +1744,7 @@ class PayrollReportController extends Controller
                     'is_new_employee' => $isNewEmployee,
                     'is_mutated_employee' => $isMutatedEmployee,
                     'mutation_effective_date' => $mutationEffectiveDate ? $mutationEffectiveDate->format('Y-m-d') : null,
+                    'mutation_outlet_from' => $mutationOutletFrom,
                     'mutation_outlet_to' => $mutationOutletTo,
                     'resignation_date' => $resignationDate,
                     'jabatan' => $jabatans[$user->id_jabatan] ?? '-',
@@ -2959,6 +2964,7 @@ class PayrollReportController extends Controller
                 );
             }
 
+            $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
             $mutationOutletTo = $isMutatedEmployee ? ($mutationData['outlet_to_name'] ?? null) : null;
 
             // Simpan data user untuk perhitungan service charge
@@ -2987,6 +2993,7 @@ class PayrollReportController extends Controller
                 'isMutatedEmployee' => $isMutatedEmployee,
                 'mutationRole' => $mutationRole,
                 'mutationEffectiveDate' => $mutationEffectiveDate,
+                'mutationOutletFrom' => $mutationOutletFrom,
                 'mutationOutletTo' => $mutationOutletTo,
                 'mutationData' => $mutationData,
                 'hariKerjaOutletLama' => $hariKerjaOutletLama,
@@ -6729,6 +6736,23 @@ class PayrollReportController extends Controller
         return $id ? (int) $id : null;
     }
 
+    private function resolveOutletNameFromMovementProperty(?string $property): ?string
+    {
+        if ($property === null || $property === '') {
+            return null;
+        }
+
+        if (ctype_digit((string) $property)) {
+            $name = DB::table('tbl_data_outlet')
+                ->where('id_outlet', (int) $property)
+                ->value('nama_outlet');
+
+            return $name ?: null;
+        }
+
+        return $property;
+    }
+
     /**
      * @param  \Illuminate\Support\Collection<int, object>  $mutations
      * @return array<int, array<string, mixed>>
@@ -6753,7 +6777,7 @@ class PayrollReportController extends Controller
                     'effective_date' => $m->employment_effective_date,
                     'outlet_from_id' => $outletFromId,
                     'outlet_to_id' => $outletId,
-                    'outlet_from_name' => $m->unit_property_from,
+                    'outlet_from_name' => $this->resolveOutletNameFromMovementProperty($m->unit_property_from),
                     'outlet_to_name' => $outletName,
                     'employee_name' => $m->employee_name,
                     'role' => 'to',
@@ -6764,7 +6788,7 @@ class PayrollReportController extends Controller
                     'outlet_from_id' => $outletId,
                     'outlet_to_id' => $outletToId,
                     'outlet_from_name' => $outletName,
-                    'outlet_to_name' => $m->unit_property_to,
+                    'outlet_to_name' => $this->resolveOutletNameFromMovementProperty($m->unit_property_to),
                     'employee_name' => $m->employee_name,
                     'role' => 'from',
                 ];
