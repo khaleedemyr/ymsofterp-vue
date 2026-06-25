@@ -60,8 +60,8 @@
 
           <p v-if="!form.outlet_id" class="text-sm text-amber-600 mb-4">Pilih outlet terlebih dahulu untuk menambah item.</p>
 
-          <div class="overflow-x-auto">
-            <table class="min-w-full text-sm border border-gray-200">
+          <div class="overflow-x-auto overflow-y-visible">
+            <table class="min-w-full text-sm border border-gray-200 relative">
               <thead class="bg-gray-800 text-white">
                 <tr>
                   <th class="px-3 py-2 text-left w-8">#</th>
@@ -76,34 +76,40 @@
                 <tr v-if="form.items.length === 0">
                   <td colspan="6" class="px-3 py-6 text-center text-gray-500">Belum ada item. Klik "Tambah Item".</td>
                 </tr>
-                <tr v-for="(row, idx) in form.items" :key="row._key" class="border-t align-top">
+                <tr v-for="(row, idx) in form.items" :key="row._key" class="border-t align-top overflow-visible">
                   <td class="px-3 py-3 text-gray-500">{{ idx + 1 }}</td>
-                  <td class="px-3 py-3">
+                  <td class="px-3 py-3 overflow-visible">
                     <div class="relative">
                       <input
+                        :id="`usa-item-input-${idx}`"
                         v-model="row.search"
                         type="text"
                         :disabled="!form.outlet_id"
                         placeholder="Cari item..."
+                        autocomplete="off"
                         class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
                         @input="onItemSearch(idx)"
-                        @focus="row.showDropdown = true"
+                        @focus="onItemFocus(idx)"
+                        @blur="onItemBlur(idx)"
                       />
-                      <div
-                        v-if="row.showDropdown && row.suggestions.length"
-                        class="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"
-                      >
-                        <button
-                          v-for="item in row.suggestions"
-                          :key="item.id"
-                          type="button"
-                          class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
-                          @click="selectItem(idx, item)"
+                      <Teleport to="body">
+                        <div
+                          v-if="row.showDropdown && row.suggestions.length"
+                          :style="getDropdownStyle(idx)"
+                          class="fixed z-[99999] bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto"
                         >
-                          <div class="font-medium text-gray-800">{{ item.name }}</div>
-                          <div class="text-xs text-gray-500">{{ item.category_label }}</div>
-                        </button>
-                      </div>
+                          <button
+                            v-for="item in row.suggestions"
+                            :key="item.id"
+                            type="button"
+                            class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                            @mousedown.prevent="selectItem(idx, item)"
+                          >
+                            <div class="font-medium text-gray-800">{{ item.name }}</div>
+                            <div class="text-xs text-gray-500">{{ item.category_label }}</div>
+                          </button>
+                        </div>
+                      </Teleport>
                     </div>
                     <div v-if="row.item_name" class="mt-1 text-xs text-gray-600">
                       {{ row.item_name }}
@@ -241,6 +247,27 @@ function recalcRow(idx) {
   const cover = Math.max(1, parseInt(row.cover, 10) || 1);
   row.cover = cover;
   row.fb_revenue = Math.round((Number(row.average_check) || 0) * cover);
+}
+
+function onItemFocus(idx) {
+  form.items[idx].showDropdown = true;
+}
+
+function onItemBlur(idx) {
+  setTimeout(() => {
+    form.items[idx].showDropdown = false;
+  }, 200);
+}
+
+function getDropdownStyle(idx) {
+  const input = document.getElementById(`usa-item-input-${idx}`);
+  if (!input) return {};
+  const rect = input.getBoundingClientRect();
+  return {
+    left: `${rect.left}px`,
+    top: `${rect.bottom + 4}px`,
+    width: `${Math.max(rect.width, 280)}px`,
+  };
 }
 
 function onItemSearch(idx) {
