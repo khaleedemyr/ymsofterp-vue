@@ -94,7 +94,7 @@
                 <th class="px-6 py-3 text-right">Rounding</th>
                 <th class="px-6 py-3 text-right">Total Sales</th>
                 <th class="px-6 py-3 text-right">Grand Total</th>
-                <th class="px-6 py-3 text-center">EOD</th>
+                <th class="px-6 py-3 text-center">{{ isExternalMode ? 'Export' : 'EOD' }}</th>
               </tr>
             </thead>
             <tbody>
@@ -119,16 +119,18 @@
                   <td class="px-6 py-3 text-right font-semibold">{{ formatCurrency(row.grand_total) }}</td>
                   <td class="px-6 py-3 text-center">
                     <div class="flex flex-row justify-end items-center gap-2">
-                      <button @click="openEodModal(row, tanggal)" title="EOD" class="bg-blue-600 text-white p-2 rounded-lg shadow hover:bg-blue-700 transition font-bold text-sm">
-                        <i class="fa-solid fa-file-invoice"></i>
-                      </button>
-                      <button @click="openRevenueReport(tanggal)" title="Revenue Report" class="bg-orange-500 text-white p-2 rounded-lg shadow hover:bg-orange-600 transition font-bold text-sm">
-                        <i class="fa-solid fa-coins"></i>
-                      </button>
-                      <button @click="openPerModeModal(tanggal)" title="Mode" class="bg-green-600 text-white p-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
-                        <i class="fa-solid fa-layer-group"></i>
-                      </button>
-                      <button @click="exportOrderDetail(tanggal)" title="Export" class="bg-yellow-500 text-white p-2 rounded-lg shadow hover:bg-yellow-600 transition font-bold text-sm">
+                      <template v-if="!isExternalMode">
+                        <button @click="openEodModal(row, tanggal)" title="EOD" class="bg-blue-600 text-white p-2 rounded-lg shadow hover:bg-blue-700 transition font-bold text-sm">
+                          <i class="fa-solid fa-file-invoice"></i>
+                        </button>
+                        <button @click="openRevenueReport(tanggal)" title="Revenue Report" class="bg-orange-500 text-white p-2 rounded-lg shadow hover:bg-orange-600 transition font-bold text-sm">
+                          <i class="fa-solid fa-coins"></i>
+                        </button>
+                        <button @click="openPerModeModal(tanggal)" title="Mode" class="bg-green-600 text-white p-2 rounded-lg shadow hover:bg-green-700 transition font-bold text-sm">
+                          <i class="fa-solid fa-layer-group"></i>
+                        </button>
+                      </template>
+                      <button @click="exportOrderDetail(tanggal)" title="Export Excel" class="bg-yellow-500 text-white p-2 rounded-lg shadow hover:bg-yellow-600 transition font-bold text-sm">
                         <i class="fa-solid fa-file-excel"></i>
                       </button>
                     </div>
