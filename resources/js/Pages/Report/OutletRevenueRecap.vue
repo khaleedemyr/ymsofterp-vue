@@ -24,7 +24,7 @@
               class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
             />
           </div>
-          <div class="md:col-span-2 flex justify-end">
+          <div class="md:col-span-2 flex justify-end gap-2">
             <button
               type="button"
               @click="fetchReport"
@@ -32,6 +32,14 @@
               class="px-6 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {{ loading ? 'Memuat...' : 'Tampilkan' }}
+            </button>
+            <button
+              type="button"
+              @click="exportExcel"
+              :disabled="loading || !filters.date_from || !filters.date_to"
+              class="px-6 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              Export Excel
             </button>
           </div>
         </div>
@@ -151,5 +159,19 @@ async function fetchReport() {
   } finally {
     loading.value = false;
   }
+}
+
+function exportExcel() {
+  if (!filters.date_from || !filters.date_to) {
+    Swal.fire({ icon: 'warning', title: 'Tanggal wajib diisi', text: 'Pilih Tanggal From dan Tanggal To.' });
+    return;
+  }
+
+  const query = new URLSearchParams({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+  }).toString();
+
+  window.open(`/report/outlet-revenue-recap/export?${query}`, '_blank');
 }
 </script>
