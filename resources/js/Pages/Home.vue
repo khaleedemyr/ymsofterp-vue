@@ -566,6 +566,14 @@ function displayMovement(value) {
     const cleaned = formatMovementLabelRaw(value);
     return cleaned || '-';
 }
+
+function movementCreatedByName(mv) {
+    return mv?.created_by_name || mv?.creator?.nama_lengkap || '-';
+}
+
+function movementCreatedByDivision(mv) {
+    return mv?.created_by_division_name || mv?.creator?.divisi?.nama_divisi || '';
+}
 const filteredMovementApprovals = computed(() => {
     let list = [...pendingMovementApprovals.value];
     if (movementSearchQuery.value) {
@@ -596,6 +604,11 @@ function openAllMovementApprovalsModal() {
 }
 async function openMovementApproval(movement) {
     if (!movement?.id) return;
+    if (showAllMovementApprovalsModal.value) {
+        showAllMovementApprovalsModal.value = false;
+        await nextTick();
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
     loadingMovementDetail.value = true;
     try {
         const resp = await axios.get(`/employee-movements/${movement.id}/debug`);
@@ -6460,6 +6473,10 @@ watch(locale, () => {
                                     <div class="flex-1 min-w-0">
                                         <div class="font-semibold text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">Personal Movement</div>
                                         <div class="text-xs truncate" :class="isNight ? 'text-slate-300' : 'text-slate-600'">{{ mv.employee_name }} — {{ (mv.employment_type || '').replaceAll('_', ' ') }}</div>
+                                        <div v-if="movementCreatedByName(mv) !== '-'" class="text-[11px] truncate mt-0.5" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            Dibuat oleh: {{ movementCreatedByName(mv) }}
+                                            <span v-if="movementCreatedByDivision(mv)"> ({{ movementCreatedByDivision(mv) }})</span>
+                                        </div>
                                     </div>
                                     <div class="text-xs text-emerald-600 font-medium whitespace-nowrap ml-2">
                                         <i class="fa fa-user-check mr-1"></i>{{ mv.approver_name || 'Approval' }}
@@ -10659,7 +10676,7 @@ watch(locale, () => {
         </div>
 
         <!-- Personal Movement Detail Modal -->
-        <div v-if="showMovementDetailModal && selectedMovement" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showMovementDetailModal = false">
+        <div v-if="showMovementDetailModal && selectedMovement" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]" @click="showMovementDetailModal = false">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -10683,6 +10700,15 @@ watch(locale, () => {
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Karyawan</label>
                                 <p class="text-gray-900 dark:text-white font-semibold">{{ selectedMovement.employee_nama_lengkap || selectedMovement.employee?.nama_lengkap || selectedMovement.employee_name }}</p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Diajukan Oleh</label>
+                                <p class="text-gray-900 dark:text-white font-semibold">
+                                    {{ selectedMovement.created_by_name || selectedMovement.creator?.nama_lengkap || '-' }}
+                                    <span v-if="selectedMovement.created_by_division_name || selectedMovement.creator?.divisi?.nama_divisi" class="text-sm font-normal text-gray-600 dark:text-gray-300">
+                                        ({{ selectedMovement.created_by_division_name || selectedMovement.creator?.divisi?.nama_divisi }})
+                                    </span>
+                                </p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Jenis Movement</label>
@@ -10741,6 +10767,9 @@ watch(locale, () => {
                                         </div>
                                         <div v-if="flow.approver?.jabatan?.nama_jabatan" class="text-xs text-blue-600 dark:text-blue-400 font-medium">
                                             {{ flow.approver.jabatan.nama_jabatan }}
+                                        </div>
+                                        <div v-if="flow.approver?.divisi?.nama_divisi" class="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                                            Bagian: {{ flow.approver.divisi.nama_divisi }}
                                         </div>
                                         <div v-if="flow.comments" class="text-xs text-gray-600 dark:text-gray-400 mt-1 italic">
                                             "{{ flow.comments }}"
@@ -10872,7 +10901,7 @@ watch(locale, () => {
         </div>
 
         <!-- All Pending Personal Movement Approvals Modal -->
-        <div v-if="showAllMovementApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllMovementApprovalsModal = false">
+        <div v-if="showAllMovementApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[50]" @click="showAllMovementApprovalsModal = false">
             <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-medium text-gray-900 dark:text-white">
@@ -10907,6 +10936,14 @@ watch(locale, () => {
                             <div class="flex-1 min-w-0">
                                 <div class="font-semibold text-gray-900 dark:text-white truncate">Personal Movement</div>
                                 <div class="text-xs text-gray-600 dark:text-gray-300 truncate">{{ mv.employee_name }} — {{ (mv.employment_type || '').replaceAll('_', ' ') }}</div>
+                                <div class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                                    Dibuat oleh: {{ movementCreatedByName(mv) }}
+                                    <span v-if="movementCreatedByDivision(mv)"> ({{ movementCreatedByDivision(mv) }})</span>
+                                </div>
+                                <div v-if="mv.approver_name" class="text-xs text-emerald-600 dark:text-emerald-400 truncate mt-0.5">
+                                    Approver: {{ mv.approver_name }}
+                                    <span v-if="mv.approver_division_name"> ({{ mv.approver_division_name }})</span>
+                                </div>
                             </div>
                             <div class="text-xs text-gray-500 dark:text-gray-400 pl-3 whitespace-nowrap">
                                 {{ new Date(mv.created_at).toLocaleDateString('id-ID') }}

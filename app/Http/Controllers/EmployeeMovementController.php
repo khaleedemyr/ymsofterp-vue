@@ -389,6 +389,8 @@ class EmployeeMovementController extends Controller
             
             unset($validated['approvers']); // Remove from validated to prevent saving to employee_movements table
             
+            $validated['created_by'] = Auth::id();
+            
             $movement = EmployeeMovement::create($validated);
 
             // Create approval flows if approvers provided (new system)
@@ -675,7 +677,7 @@ class EmployeeMovementController extends Controller
             })
             ->with(['approvalFlows' => function($q) {
                 $q->orderBy('approval_level');
-            }, 'approvalFlows.approver.jabatan']);
+            }, 'approvalFlows.approver.jabatan', 'approvalFlows.approver.divisi', 'creator.divisi']);
         
         if (!$isSuperadmin) {
             $queryWithFlows->whereHas('approvalFlows', function($q) use ($user) {
@@ -708,10 +710,12 @@ class EmployeeMovementController extends Controller
             if ($pendingFlows->isNotEmpty()) {
                 $nextFlow = $pendingFlows->first();
                 $movement->approver_name = $nextFlow->approver ? $nextFlow->approver->nama_lengkap : null;
+                $movement->approver_division_name = $nextFlow->approver?->divisi?->nama_divisi;
             } else {
                 $movement->approver_name = null;
+                $movement->approver_division_name = null;
             }
-            return $movement;
+            return $this->appendMovementCreatorMeta($movement);
         });
 
         // Then, get movements with old approval system (backward compatibility)
@@ -719,6 +723,7 @@ class EmployeeMovementController extends Controller
             ->select([
                 'id',
                 'employee_id',
+                'created_by',
                 'employee_name',
                 'employment_type',
                 'status',
@@ -816,25 +821,31 @@ class EmployeeMovementController extends Controller
             ->orderByDesc('created_at');
 
         $limit = (int) $request->input('limit', 100);
-        $movementsOld = $query->limit($limit)->get()
+        $movementsOld = $query->with(['creator.divisi'])->limit($limit)->get()
             ->map(function($movement) use ($isSuperadmin, $user) {
                 // Get approver name from old approval system
                 $approverName = null;
+                $approverDivisionName = null;
                 if (!$movement->hod_approval || strtolower($movement->hod_approval) === 'pending') {
                     $hodApprover = \App\Models\User::find($movement->hod_approver_id);
                     $approverName = $hodApprover ? $hodApprover->nama_lengkap : null;
+                    $approverDivisionName = $hodApprover?->divisi?->nama_divisi;
                 } elseif (!$movement->gm_approval || strtolower($movement->gm_approval) === 'pending') {
                     $gmApprover = \App\Models\User::find($movement->gm_approver_id);
                     $approverName = $gmApprover ? $gmApprover->nama_lengkap : null;
+                    $approverDivisionName = $gmApprover?->divisi?->nama_divisi;
                 } elseif (!$movement->gm_hr_approval || strtolower($movement->gm_hr_approval) === 'pending') {
                     $gmHrApprover = \App\Models\User::find($movement->gm_hr_approver_id);
                     $approverName = $gmHrApprover ? $gmHrApprover->nama_lengkap : null;
+                    $approverDivisionName = $gmHrApprover?->divisi?->nama_divisi;
                 } elseif (!$movement->bod_approval || strtolower($movement->bod_approval) === 'pending') {
                     $bodApprover = \App\Models\User::find($movement->bod_approver_id);
                     $approverName = $bodApprover ? $bodApprover->nama_lengkap : null;
+                    $approverDivisionName = $bodApprover?->divisi?->nama_divisi;
                 }
                 $movement->approver_name = $approverName;
-                return $movement;
+                $movement->approver_division_name = $approverDivisionName;
+                return $this->appendMovementCreatorMeta($movement);
             });
 
         // Merge and limit results
@@ -856,11 +867,14 @@ class EmployeeMovementController extends Controller
             'employee.jabatan:id_jabatan,nama_jabatan',
             'employee.outlet:id_outlet,nama_outlet',
             'employee.divisi:id,nama_divisi',
+            'creator:id,nama_lengkap,division_id',
+            'creator.divisi:id,nama_divisi',
             'hodApprover:id,nama_lengkap',
             'gmApprover:id,nama_lengkap',
             'gmHrApprover:id,nama_lengkap',
             'bodApprover:id,nama_lengkap',
-            'approvalFlows.approver.jabatan'
+            'approvalFlows.approver.jabatan',
+            'approvalFlows.approver.divisi'
         ])
             ->where('employee_movements.id', $id)
             ->first();
@@ -946,7 +960,33 @@ class EmployeeMovementController extends Controller
             $movementData['level_to'] = $levelTo ?: $movementData['level_to'];
         }
 
+        $this->appendMovementCreatorMeta($movement);
+        $movementData['created_by'] = $movement->created_by;
+        $movementData['created_by_name'] = $movement->created_by_name;
+        $movementData['created_by_division_name'] = $movement->created_by_division_name;
+        $movementData['creator'] = $movement->creator ? [
+            'id' => $movement->creator->id,
+            'nama_lengkap' => $movement->creator->nama_lengkap,
+            'divisi' => $movement->creator->divisi ? [
+                'nama_divisi' => $movement->creator->divisi->nama_divisi,
+            ] : null,
+        ] : null;
+
         return response()->json(['success' => true, 'data' => $movementData]);
+    }
+
+    private function appendMovementCreatorMeta(EmployeeMovement $movement): EmployeeMovement
+    {
+        $creator = $movement->relationLoaded('creator')
+            ? $movement->creator
+            : ($movement->created_by
+                ? User::with('divisi:id,nama_divisi')->find($movement->created_by)
+                : null);
+
+        $movement->created_by_name = $creator?->nama_lengkap;
+        $movement->created_by_division_name = $creator?->divisi?->nama_divisi;
+
+        return $movement;
     }
 
     public function update(Request $request, EmployeeMovement $employeeMovement)

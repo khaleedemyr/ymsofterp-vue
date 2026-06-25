@@ -13,6 +13,7 @@ class EmployeeMovement extends Model
 
                    protected $fillable = [
                    'employee_id',
+                   'created_by',
                    'employee_name',
                    'employee_position',
                    'employee_division',
@@ -93,6 +94,11 @@ class EmployeeMovement extends Model
     public function employee()
     {
         return $this->belongsTo(User::class, 'employee_id', 'id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by', 'id');
     }
 
     public function hodApprover()
