@@ -4574,9 +4574,13 @@ const saveWhatsOn = () => {
     ? `/admin/member-apps-settings/whats-on/${editingWhatsOn.value.id}`
     : '/admin/member-apps-settings/whats-on'
 
-  const method = editingWhatsOn.value ? 'put' : 'post'
+  // PUT + multipart FormData tidak ter-parse PHP → field title/content jadi null.
+  // Pakai POST + _method PUT (sama seperti save brand).
+  if (editingWhatsOn.value) {
+    formData.append('_method', 'PUT')
+  }
 
-  router[method](url, formData, {
+  router.post(url, formData, {
     forceFormData: true,
     onSuccess: () => {
       savingWhatsOn.value = false
