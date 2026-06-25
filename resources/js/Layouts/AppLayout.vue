@@ -217,6 +217,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.ticketing_system'), icon: 'fa-solid fa-ticket-alt', route: '/tickets', code: 'tickets' },
             { name: () => t('sidebar.menus.pr_tracking_report'), icon: 'fa-solid fa-timeline', route: '/purchase-requisitions/tracking-report', code: 'pr_tracking_report' },
             { name: () => t('sidebar.menus.ro_vs_forecast_harian'), icon: 'fa-solid fa-scale-balanced', route: '/reports/floor-order-vs-forecast', code: 'floor_order_vs_forecast' },
+            { name: () => t('sidebar.menus.upselling_sales_achievement'), icon: 'fa-solid fa-arrow-trend-up', route: '/upselling-sales-achievement', code: 'upselling_sales_achievement' },
           ],
         },
     {

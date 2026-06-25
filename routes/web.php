@@ -1010,6 +1010,12 @@ Route::post('/api/master-moq', [\App\Http\Controllers\MasterMoqController::class
 Route::put('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController::class, 'update'])->name('master-moq.update');
 Route::delete('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController::class, 'destroy'])->name('master-moq.destroy');
 
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/api/upselling-sales-achievement/search-items', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'searchItems'])
+        ->name('upselling-sales-achievement.search-items');
+    Route::resource('upselling-sales-achievement', \App\Http\Controllers\UpsellingSalesAchievementController::class);
+});
+
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);
 Route::get('/api/items/by-fo-schedule/{fo_schedule_id}', [App\Http\Controllers\ItemController::class, 'getByFOSchedule']);
 Route::get('/items/search-for-outlet-transfer', [ItemController::class, 'searchForOutletTransfer']);
