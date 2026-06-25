@@ -16,8 +16,8 @@ use Illuminate\Support\Facades\DB;
 
 class PrFoodController extends Controller
 {
-    /** Set true untuk mengaktifkan filter jam PR Foods (tutup 10:00–15:00) */
-    private const PR_FOODS_SCHEDULE_FILTER_ENABLED = false;
+    /** Filter jam PR Foods: tombol create disembunyikan 10:00–15:00 */
+    private const PR_FOODS_SCHEDULE_FILTER_ENABLED = true;
 
     public function index(Request $request)
     {

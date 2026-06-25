@@ -1013,7 +1013,8 @@ class PayrollReportController extends Controller
                 $hariKerja = $this->resolveHariKerjaForPayrollSegment(
                     $isMutatedEmployee,
                     $mutCtx ?? null,
-                    $hariKerjaAttendance
+                    $hariKerjaAttendance,
+                    $hariKerjaMutationSc
                 );
 
                 $totalAlpha = $this->calculateAlpaDays($userId, null, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -1151,7 +1152,7 @@ class PayrollReportController extends Controller
 
                 $hariKerjaUntukServiceCharge = 0;
 
-                if ($isMutatedEmployee && $hariKerja <= 0 && ($hariKerjaMutationSc ?? 0) <= 0) {
+                if ($isMutatedEmployee && $hariKerja <= 0) {
                     $hariKerjaGajian2 = 0;
                     $hariKerjaProrateGajian1 = 0;
                 } else {
@@ -1167,9 +1168,7 @@ class PayrollReportController extends Controller
                     } elseif ($isResignedEmployee) {
                         $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
                     }
-                    $hariKerjaUntukServiceCharge = ($isMutatedEmployee && ($hariKerjaMutationSc ?? 0) > 0)
-                        ? $hariKerjaMutationSc
-                        : PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
+                    $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
                 }
 
                 $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -3031,7 +3030,8 @@ class PayrollReportController extends Controller
             $hariKerja = $this->resolveHariKerjaForPayrollSegment(
                 $isMutatedEmployee,
                 $mutCtx ?? null,
-                $hariKerjaAttendance
+                $hariKerjaAttendance,
+                $hariKerjaMutationSc
             );
 
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $gajian1SegmentStartStr, $gajian1SegmentEndStr);
@@ -3103,7 +3103,7 @@ class PayrollReportController extends Controller
 
             $hariKerjaUntukServiceCharge = 0;
 
-            if ($isMutatedEmployee && $hariKerja <= 0 && ($hariKerjaMutationSc ?? 0) <= 0) {
+            if ($isMutatedEmployee && $hariKerja <= 0) {
                 $hariKerjaGajian2 = 0;
                 $hariKerjaProrateGajian1 = 0;
             } else {
@@ -3119,9 +3119,7 @@ class PayrollReportController extends Controller
                 } elseif ($isResignedEmployee) {
                     $hariKerjaProrateGajian1 = $hariKerjaKaryawanResign;
                 }
-                $hariKerjaUntukServiceCharge = ($isMutatedEmployee && ($hariKerjaMutationSc ?? 0) > 0)
-                    ? $hariKerjaMutationSc
-                    : PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
+                $hariKerjaUntukServiceCharge = PayrollSplitPoolCalculator::resolveGajian1PoolDays($hariKerja);
             }
 
             $mutationOutletFrom = $isMutatedEmployee ? ($mutationData['outlet_from_name'] ?? null) : null;
@@ -7040,14 +7038,16 @@ class PayrollReportController extends Controller
     }
 
     /**
-     * Hari kerja tampilan/absensi di segmen mutasi (hanya hari ada check-in, tanpa OFF).
+     * Hari kerja gajian 1 — tampilan, uang makan, dan pool SC memakai sumber yang sama.
+     * Karyawan mutasi: formula SC mutasi (OFF transisi + hadir). Lainnya: absensi.
      *
      * @param  array<string, mixed>|null  $mutCtx
      */
     private function resolveHariKerjaForPayrollSegment(
         bool $isMutatedEmployee,
         ?array $mutCtx,
-        int $hariKerjaAttendance
+        int $hariKerjaAttendance,
+        ?int $hariKerjaMutationSc = null
     ): int {
         if (! $isMutatedEmployee || $mutCtx === null) {
             return $hariKerjaAttendance;
@@ -7055,6 +7055,10 @@ class PayrollReportController extends Controller
 
         if (($mutCtx['hariKerjaGajian1'] ?? 0) <= 0) {
             return 0;
+        }
+
+        if ($hariKerjaMutationSc !== null && $hariKerjaMutationSc > 0) {
+            return $hariKerjaMutationSc;
         }
 
         return $hariKerjaAttendance;

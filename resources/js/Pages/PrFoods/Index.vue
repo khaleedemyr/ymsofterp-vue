@@ -17,8 +17,8 @@ const selectedStatus = ref(props.filters?.status || '');
 const from = ref(props.filters?.from || '');
 const to = ref(props.filters?.to || '');
 
-// Set true untuk mengaktifkan filter jam PR Foods (tutup 10:00–15:00)
-const PR_FOODS_SCHEDULE_FILTER_ENABLED = false;
+// Filter jam PR Foods: tombol create disembunyikan 10:00–15:00
+const PR_FOODS_SCHEDULE_FILTER_ENABLED = true;
 
 // Computed untuk cek jadwal PR Foods
 const scheduleInfo = computed(() => {
@@ -220,8 +220,8 @@ async function hapus(pr) {
           <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
             <i class="fa-solid fa-file-invoice text-blue-500"></i> Purchase Requisition Foods
           </h1>
-          <!-- Info Jadwal (nonaktif sementara: set PR_FOODS_SCHEDULE_FILTER_ENABLED = true) -->
-          <div v-if="PR_FOODS_SCHEDULE_FILTER_ENABLED" class="mt-2 flex items-center gap-2">
+          <!-- Info Jadwal -->
+          <div v-if="PR_FOODS_SCHEDULE_FILTER_ENABLED && !canCreatePrFood" class="mt-2 flex items-center gap-2">
             <div class="flex items-center gap-1 text-sm">
               <i class="fa fa-clock text-blue-500"></i>
               <span class="font-medium">Jadwal:</span>
@@ -236,15 +236,10 @@ async function hapus(pr) {
           </div>
         </div>
         <button
+          v-if="canCreatePrFood"
           @click="openCreate"
-          :disabled="!canCreatePrFood"
-          :class="[
-            'px-4 py-2 rounded-xl shadow-lg transition-all font-semibold',
-            canCreatePrFood
-              ? 'bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl cursor-pointer'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          ]"
-          :title="canCreatePrFood ? 'Buat PR Foods Baru' : 'PR Foods hanya bisa dibuat di luar jam 10:00 - 15:00'"
+          class="px-4 py-2 rounded-xl shadow-lg transition-all font-semibold bg-gradient-to-r from-blue-500 to-blue-700 text-white hover:shadow-2xl cursor-pointer"
+          title="Buat PR Foods Baru"
         >
           <i class="fa fa-plus mr-2"></i> + Buat PR Foods Baru
         </button>
