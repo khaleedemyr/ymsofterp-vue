@@ -101,6 +101,7 @@ export default {
     "ticketing_system": "Ticketing System",
     "pr_tracking_report": "PR Tracking Report",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
+    "upselling_sales_achievement": "Upselling Sales Achievement",
     "modal_x_engineering": "Modal x Engineering",
     "data_level": "Data Level",
     "kategori_bpjs": "Kategori BPJS",
