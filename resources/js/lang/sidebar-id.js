@@ -103,6 +103,7 @@ export default {
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",
     "modal_x_engineering": "Modal x Engineering",
+    "outlet_revenue_recap": "Rekap Revenue Outlet",
     "data_level": "Data Level",
     "kategori_bpjs": "Kategori BPJS",
     "kpi_parameters": "KPI Parameter",

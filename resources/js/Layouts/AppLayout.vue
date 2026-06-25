@@ -482,6 +482,12 @@ const menuGroups = [
                 code: 'modal_x_engineering',
             },
             {
+                name: () => t('sidebar.menus.outlet_revenue_recap'),
+                icon: 'fa-solid fa-chart-column',
+                route: '/report/outlet-revenue-recap',
+                code: 'outlet_revenue_recap',
+            },
+            {
                 name: () => t('sidebar.menus.report_pembelanjaan_supplier_warehouse_gr'),
                 icon: 'fa-solid fa-sack-dollar',
                 route: '/food-good-receive-report-supplier-spending',

@@ -2358,6 +2358,8 @@ Route::get('/api/my-outlet-qr', [\App\Http\Controllers\Report\ReportHelperContro
 
 // API untuk item engineering
 Route::get('/api/report/item-engineering', [\App\Http\Controllers\Report\EngineeringReportController::class, 'reportItemEngineering']);
+Route::get('/api/report/outlet-revenue-recap', [\App\Http\Controllers\Report\OutletRevenueRecapController::class, 'report']);
+Route::get('/report/outlet-revenue-recap', [\App\Http\Controllers\Report\OutletRevenueRecapController::class, 'index'])->middleware(['auth']);
 // Web route untuk halaman
 Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
