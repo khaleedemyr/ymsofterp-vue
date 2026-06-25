@@ -13,6 +13,7 @@ class OutletRevenueRecapService
         $outlets = DB::table('tbl_data_outlet as o')
             ->leftJoin('regions as r', 'r.id', '=', 'o.region_id')
             ->where('o.status', 'A')
+            ->where('o.is_outlet', 1)
             ->orderBy('r.name')
             ->orderBy('o.nama_outlet')
             ->select(
@@ -68,6 +69,8 @@ class OutletRevenueRecapService
     {
         $rows = DB::table('orders')
             ->join('tbl_data_outlet as o', 'orders.kode_outlet', '=', 'o.qr_code')
+            ->where('o.status', 'A')
+            ->where('o.is_outlet', 1)
             ->whereDate('orders.created_at', '>=', $dateFrom)
             ->whereDate('orders.created_at', '<=', $dateTo)
             ->groupBy('orders.kode_outlet')
