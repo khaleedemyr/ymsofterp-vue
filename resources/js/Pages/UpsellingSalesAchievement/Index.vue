@@ -76,12 +76,13 @@
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Tahun</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Created At</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Created By</th>
+              <th class="px-4 py-3 text-center font-semibold text-gray-700">Achievement %</th>
               <th class="px-4 py-3 text-center font-semibold text-gray-700">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="records.data.length === 0">
-              <td colspan="6" class="px-4 py-8 text-center text-gray-500">Belum ada data.</td>
+              <td colspan="7" class="px-4 py-8 text-center text-gray-500">Belum ada data.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-gray-50">
               <td class="px-4 py-3">{{ row.outlet?.nama_outlet || '-' }}</td>
@@ -89,6 +90,11 @@
               <td class="px-4 py-3">{{ row.year }}</td>
               <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(row.created_at) }}</td>
               <td class="px-4 py-3">{{ row.creator?.nama_lengkap || row.creator?.name || '-' }}</td>
+              <td class="px-4 py-3 text-center">
+                <span :class="achievementClass(row.achievement_percent)" class="px-2 py-1 rounded font-semibold text-xs whitespace-nowrap">
+                  {{ formatPercent(row.achievement_percent) }}
+                </span>
+              </td>
               <td class="px-4 py-3">
                 <div class="flex justify-center gap-2">
                   <Link
@@ -169,6 +175,18 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatPercent(val) {
+  const n = Number(val) || 0;
+  return `${n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+}
+
+function achievementClass(pct) {
+  const n = Number(pct) || 0;
+  if (n >= 100) return 'bg-green-100 text-green-800';
+  if (n >= 75) return 'bg-yellow-100 text-yellow-800';
+  return 'bg-red-100 text-red-800';
 }
 
 function applyFilters() {

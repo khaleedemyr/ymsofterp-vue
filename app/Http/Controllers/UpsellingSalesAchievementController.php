@@ -29,7 +29,7 @@ class UpsellingSalesAchievementController extends Controller
         $year = $request->get('year', '');
 
         $query = UpsellingSalesAchievement::query()
-            ->with(['outlet', 'creator'])
+            ->with(['outlet', 'creator', 'items'])
             ->orderByDesc('year')
             ->orderByDesc('month')
             ->orderByDesc('id');
@@ -50,6 +50,15 @@ class UpsellingSalesAchievementController extends Controller
         }
 
         $records = $query->paginate(15)->withQueryString();
+
+        $records->getCollection()->transform(function (UpsellingSalesAchievement $record) {
+            $record->setAttribute(
+                'achievement_percent',
+                $this->service->computeAchievementPercent($record)
+            );
+
+            return $record;
+        });
 
         return Inertia::render('UpsellingSalesAchievement/Index', [
             'records' => $records,

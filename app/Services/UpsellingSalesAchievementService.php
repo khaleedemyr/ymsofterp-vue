@@ -237,6 +237,13 @@ class UpsellingSalesAchievementService
         ];
     }
 
+    public function computeAchievementPercent(UpsellingSalesAchievement $achievement): float
+    {
+        $detail = $this->buildDetailRows($achievement);
+
+        return (float) ($detail['totals']['achievement_percent'] ?? 0.0);
+    }
+
     public static function monthLabel(int $month): string
     {
         $labels = [
