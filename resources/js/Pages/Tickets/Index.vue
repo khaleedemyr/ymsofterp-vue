@@ -441,6 +441,15 @@
                       <i class="fa-solid fa-eye"></i>
                     </button>
                     <button
+                      type="button"
+                      @click="shareToWhatsApp(ticket)"
+                      :disabled="sharingTicketId === ticket.id"
+                      class="text-[#25D366] hover:text-[#128C7E] disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Share ke WhatsApp"
+                    >
+                      <i :class="sharingTicketId === ticket.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i>
+                    </button>
+                    <button
                       v-if="can_manage_tickets"
                       @click="editTicket(ticket)"
                       class="text-green-600 hover:text-green-900"
@@ -755,6 +764,7 @@ const issueType = ref(props.filters?.issue_type || 'all');
 const perPage = ref(props.filters?.per_page || 15);
 const importFileInput = ref(null);
 const statusUpdatingId = ref(null);
+const sharingTicketId = ref(null);
 const ticketStatuses = computed(() => props.filterOptions?.statuses ?? []);
 const commentModal = ref({
   open: false,
@@ -989,6 +999,26 @@ async function quickUpdateStatus(ticket, event) {
 
 function viewTicket(ticket) {
   router.visit(`/tickets/${ticket.id}`);
+}
+
+async function shareToWhatsApp(ticket) {
+  if (sharingTicketId.value === ticket.id) return;
+
+  try {
+    sharingTicketId.value = ticket.id;
+    const response = await axios.post(`/tickets/${ticket.id}/share-link`);
+    const url = response.data?.url;
+    if (!url) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    const message = `Ticket ${ticket.ticket_number}: ${ticket.title}\n${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingTicketId.value = null;
+  }
 }
 
 function editTicket(ticket) {
