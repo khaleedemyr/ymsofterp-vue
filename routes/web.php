@@ -1014,6 +1014,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/upselling-sales-achievement/search-items', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'searchItems'])
         ->name('upselling-sales-achievement.search-items');
     Route::resource('upselling-sales-achievement', \App\Http\Controllers\UpsellingSalesAchievementController::class);
+
+    Route::get('/api/employee-coaching/search-employees', [\App\Http\Controllers\EmployeeCoachingController::class, 'searchEmployees'])
+        ->name('employee-coaching.search-employees');
+    Route::resource('employee-coaching', \App\Http\Controllers\EmployeeCoachingController::class);
 });
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);

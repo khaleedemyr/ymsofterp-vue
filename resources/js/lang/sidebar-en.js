@@ -102,6 +102,7 @@ export default {
     "pr_tracking_report": "PR Tracking Report",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",
+    "employee_coaching": "Employee Coaching",
     "modal_x_engineering": "Modal x Engineering",
     "outlet_revenue_recap": "Rekap Revenue Outlet",
     "data_level": "Data Level",
