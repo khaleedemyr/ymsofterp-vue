@@ -142,13 +142,13 @@ class UpsellingSalesAchievementController extends Controller
             'record' => $upsellingSalesAchievement,
             'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
             'monthOptions' => $this->monthOptions(),
-            'yearOptions' => $this->yearOptions(),
+            'yearOptions' => $this->yearOptions((int) $upsellingSalesAchievement->year),
         ]);
     }
 
     public function update(Request $request, UpsellingSalesAchievement $upsellingSalesAchievement)
     {
-        $validated = $this->validatePayload($request);
+        $validated = $this->validatePayload($request, $upsellingSalesAchievement);
 
         $exists = UpsellingSalesAchievement::where('outlet_id', $validated['outlet_id'])
             ->where('month', $validated['month'])
@@ -234,12 +234,24 @@ class UpsellingSalesAchievementController extends Controller
         return response()->json(['items' => $items]);
     }
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, ?UpsellingSalesAchievement $existing = null): array
     {
+        $currentYear = (int) date('Y');
+        $minYear = $currentYear;
+        $requestedYear = (int) $request->input('year');
+
+        if (
+            $existing
+            && $requestedYear === (int) $existing->year
+            && (int) $existing->year < $currentYear
+        ) {
+            $minYear = (int) $existing->year;
+        }
+
         return $request->validate([
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'month' => 'required|integer|min:1|max:12',
-            'year' => 'required|integer|min:2000|max:2100',
+            'year' => "required|integer|min:{$minYear}|max:2100",
             'items' => 'required|array|min:1',
             'items.*.item_id' => 'required|integer|exists:items,id',
             'items.*.item_name' => 'required|string|max:255',
@@ -274,11 +286,17 @@ class UpsellingSalesAchievementController extends Controller
         ])->all();
     }
 
-    private function yearOptions(): array
+    private function yearOptions(?int $includeYear = null): array
     {
         $current = (int) date('Y');
+        $end = $current + 2;
+        $years = range($current, $end);
 
-        return collect(range($current - 2, $current + 2))->map(fn ($y) => [
+        if ($includeYear !== null && $includeYear < $current && ! in_array($includeYear, $years, true)) {
+            array_unshift($years, $includeYear);
+        }
+
+        return collect($years)->map(fn ($y) => [
             'value' => $y,
             'label' => (string) $y,
         ])->all();

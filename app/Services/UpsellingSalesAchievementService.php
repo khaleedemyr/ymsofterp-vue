@@ -134,19 +134,34 @@ class UpsellingSalesAchievementService
             ->whereDate('orders.created_at', '>=', $dateFrom)
             ->whereDate('orders.created_at', '<=', $dateTo)
             ->whereIn('order_items.item_id', $itemIds)
-            ->groupBy('order_items.item_id')
             ->select(
                 'order_items.item_id',
-                DB::raw('SUM(order_items.qty) as cover'),
-                DB::raw('SUM(order_items.qty * order_items.price) as fb_revenue')
+                'order_items.qty',
+                'order_items.price'
             )
             ->get();
 
         $map = [];
         foreach ($rows as $row) {
-            $cover = (float) $row->cover;
-            $fbRevenue = (float) $row->fb_revenue;
-            $map[(int) $row->item_id] = [
+            $itemId = (int) $row->item_id;
+            $qty = (float) $row->qty;
+            $netPrice = self::calculateNetAverageCheck((float) $row->price);
+
+            if (! isset($map[$itemId])) {
+                $map[$itemId] = [
+                    'cover' => 0.0,
+                    'fb_revenue' => 0.0,
+                ];
+            }
+
+            $map[$itemId]['cover'] += $qty;
+            $map[$itemId]['fb_revenue'] += $qty * $netPrice;
+        }
+
+        foreach ($map as $itemId => $entry) {
+            $cover = (float) $entry['cover'];
+            $fbRevenue = (float) round($entry['fb_revenue']);
+            $map[$itemId] = [
                 'cover' => $cover,
                 'average_check' => $cover > 0 ? (float) round($fbRevenue / $cover) : 0.0,
                 'fb_revenue' => $fbRevenue,
