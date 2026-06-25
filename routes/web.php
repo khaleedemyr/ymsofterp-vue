@@ -143,6 +143,10 @@ Route::get('/kebijakan-privasi', function () {
     return response()->view('privacy-policy')->header('Content-Type', 'text/html; charset=UTF-8');
 })->name('kebijakan-privasi');
 
+// Ticket share — publik tanpa login
+Route::get('/tickets/share/{token}', [\App\Http\Controllers\TicketController::class, 'publicShow'])
+    ->name('tickets.public.show');
+
 Route::get('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
     ->name('external.login');
 Route::post('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
@@ -481,6 +485,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
     Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store'])->name('tickets.store');
     Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'show'])->name('tickets.show');
+    Route::post('/tickets/{id}/share-link', [\App\Http\Controllers\TicketController::class, 'generateShareLink'])->name('tickets.share-link');
     Route::get('/tickets/{id}/edit', [\App\Http\Controllers\TicketController::class, 'edit'])->name('tickets.edit');
     Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->name('tickets.update');
     Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');

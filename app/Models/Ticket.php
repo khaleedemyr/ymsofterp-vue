@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Ticket extends Model
 {
@@ -26,6 +27,7 @@ class Ticket extends Model
         'closed_at',
         'source',
         'source_id',
+        'share_token',
     ];
 
     protected $casts = [
@@ -253,5 +255,15 @@ class Ticket extends Model
         }
         
         return $prefix . str_pad($nextNumber, 6, '0', STR_PAD_LEFT);
+    }
+
+    public function ensureShareToken(): string
+    {
+        if (! $this->share_token) {
+            $this->share_token = Str::random(48);
+            $this->save();
+        }
+
+        return $this->share_token;
     }
 }

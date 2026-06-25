@@ -1547,11 +1547,44 @@ class TicketController extends Controller
     }
 
     /**
-     * Payload detail ticket (web + Approval App API).
+     * Landing page publik — tanpa login, via share token.
      */
-    protected function buildTicketDetailArray(int $id, $user): array
+    public function publicShow(string $token)
     {
-        $ticket = Ticket::with([
+        $ticket = $this->loadTicketModelForDetail()
+            ->where('share_token', $token)
+            ->firstOrFail();
+
+        return Inertia::render('Tickets/PublicShow', [
+            'ticket' => $this->enrichTicketDetailPayload($ticket),
+        ]);
+    }
+
+    /**
+     * Generate / kembalikan link share untuk WhatsApp.
+     */
+    public function generateShareLink(Request $request, $id)
+    {
+        $ticket = Ticket::findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            abort(404);
+        }
+
+        $shareToken = $ticket->ensureShareToken();
+
+        return response()->json([
+            'success' => true,
+            'url' => route('tickets.public.show', $shareToken),
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<\App\Models\Ticket>
+     */
+    protected function loadTicketModelForDetail()
+    {
+        return Ticket::with([
             'category',
             'priority',
             'status',
@@ -1563,13 +1596,25 @@ class TicketController extends Controller
             'attachments',
             'history.user',
             'assignedUsers:id,nama_lengkap,avatar',
-        ])->findOrFail($id);
+        ]);
+    }
+
+    /**
+     * Payload detail ticket (web + Approval App API).
+     */
+    protected function buildTicketDetailArray(int $id, $user): array
+    {
+        $ticket = $this->loadTicketModelForDetail()->findOrFail($id);
 
         if (! self::userCanViewTicket($user, $ticket)) {
             abort(404);
         }
 
-        // If ticket source is daily_report, get attachments from daily report area
+        return $this->enrichTicketDetailPayload($ticket);
+    }
+
+    protected function enrichTicketDetailPayload(Ticket $ticket): array
+    {
         if ($ticket->source === 'daily_report' && $ticket->source_id) {
             $dailyReport = \App\Models\DailyReport::find($ticket->source_id);
             if ($dailyReport) {

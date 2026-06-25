@@ -7,6 +7,14 @@
         </h1>
         <div class="flex gap-2">
           <button
+            @click="shareToWhatsApp"
+            :disabled="sharingLink"
+            class="bg-[#25D366] text-white px-4 py-2 rounded-xl hover:bg-[#20bd5a] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <i class="fab fa-whatsapp mr-2"></i>
+            {{ sharingLink ? 'Menyiapkan...' : 'Share WhatsApp' }}
+          </button>
+          <button
             v-if="can_manage_tickets"
             @click="openCreatePayment"
             class="bg-emerald-600 text-white px-4 py-2 rounded-xl hover:bg-emerald-700 transition-colors"
@@ -530,6 +538,7 @@ const imgsRef = ref([]);
 
 // Comment state
 const commentsExpanded = ref(false);
+const sharingLink = ref(false);
 
 function goBack() {
   router.visit('/tickets');
@@ -569,6 +578,26 @@ function editTicket() {
 
 function openCreatePayment() {
   router.visit(`/purchase-requisitions/create?mode=purchase_payment&ticket_id=${encodeURIComponent(props.ticket.id)}`);
+}
+
+async function shareToWhatsApp() {
+  if (sharingLink.value) return;
+
+  try {
+    sharingLink.value = true;
+    const response = await axios.post(`/tickets/${props.ticket.id}/share-link`);
+    const url = response.data?.url;
+    if (!url) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    const message = `Ticket ${props.ticket.ticket_number}: ${props.ticket.title}\n${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingLink.value = false;
+  }
 }
 
 async function addComment() {
