@@ -1565,18 +1565,32 @@ class TicketController extends Controller
      */
     public function generateShareLink(Request $request, $id)
     {
-        $ticket = Ticket::findOrFail($id);
+        $ticket = Ticket::with('outlet')->findOrFail($id);
 
         if (! self::userCanViewTicket($request->user(), $ticket)) {
             abort(404);
         }
 
         $shareToken = $ticket->ensureShareToken();
+        $url = route('tickets.public.show', $shareToken);
 
         return response()->json([
             'success' => true,
-            'url' => route('tickets.public.show', $shareToken),
+            'url' => $url,
+            'message' => $this->buildTicketShareMessage($ticket, $url),
         ]);
+    }
+
+    protected function buildTicketShareMessage(Ticket $ticket, string $url): string
+    {
+        $outletName = trim((string) ($ticket->outlet?->nama_outlet ?? ''));
+        $line = 'Ticket ' . $ticket->ticket_number;
+        if ($outletName !== '') {
+            $line .= ' - ' . $outletName;
+        }
+        $line .= ': ' . $ticket->title;
+
+        return $line . "\n" . $url;
     }
 
     /**

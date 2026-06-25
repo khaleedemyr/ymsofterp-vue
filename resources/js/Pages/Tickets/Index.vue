@@ -1012,7 +1012,7 @@ async function shareToWhatsApp(ticket) {
       throw new Error('Link tidak tersedia');
     }
 
-    const message = `Ticket ${ticket.ticket_number}: ${ticket.title}\n${url}`;
+    const message = response.data?.message || `Ticket ${ticket.ticket_number}: ${ticket.title}\n${url}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
   } catch (error) {
     Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
