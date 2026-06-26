@@ -339,6 +339,93 @@ class FbProductCalibrationService
     /**
      * @return array<string, mixed>
      */
+    public function buildReport(
+        string $dateFrom,
+        string $dateTo,
+        ?int $outletId = null,
+        ?string $employeeSearch = null
+    ): array {
+        $employeeSearch = trim((string) $employeeSearch);
+
+        $calibrations = FbProductCalibration::query()
+            ->where('status', 'completed')
+            ->whereBetween('scheduled_date', [$dateFrom, $dateTo])
+            ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
+            ->orderBy('scheduled_date')
+            ->orderBy('outlet_name')
+            ->with(['products', 'participants', 'results'])
+            ->get();
+
+        $rows = [];
+
+        foreach ($calibrations as $calibration) {
+            $productMap = $calibration->products->keyBy('id');
+            $participantMap = $calibration->participants->keyBy('id');
+
+            foreach ($calibration->results as $result) {
+                $participant = $participantMap->get($result->participant_id);
+                $product = $productMap->get($result->calibration_product_id);
+                if (! $participant || ! $product) {
+                    continue;
+                }
+
+                if ($employeeSearch !== '' && ! str_contains(
+                    mb_strtolower($participant->user_name),
+                    mb_strtolower($employeeSearch)
+                )) {
+                    continue;
+                }
+
+                $category = trim((string) ($product->category_name ?? ''));
+                if ($product->sub_category_name) {
+                    $category = $category !== ''
+                        ? $category.' · '.$product->sub_category_name
+                        : (string) $product->sub_category_name;
+                }
+
+                $parameters = [];
+                foreach (self::PARAMETER_CODES as $code) {
+                    $parameters[$code] = $result->{$code};
+                }
+
+                $rows[] = [
+                    'product_name' => $product->item_name,
+                    'category' => $category !== '' ? $category : '-',
+                    'calibration_date' => $calibration->scheduled_date?->format('Y-m-d'),
+                    'employee_name' => $participant->user_name,
+                    'outlet' => $calibration->outlet_name,
+                    'conducted_by' => $calibration->conductor_name,
+                    'parameters' => $parameters,
+                ];
+            }
+        }
+
+        usort($rows, function (array $a, array $b): int {
+            return [$a['calibration_date'], $a['outlet'], $a['employee_name'], $a['product_name']]
+                <=> [$b['calibration_date'], $b['outlet'], $b['employee_name'], $b['product_name']];
+        });
+
+        foreach ($rows as $index => &$row) {
+            $row['no'] = $index + 1;
+        }
+        unset($row);
+
+        return [
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'outlet_id' => $outletId,
+                'employee_search' => $employeeSearch !== '' ? $employeeSearch : null,
+            ],
+            'parameter_options' => $this->parameterOptions(),
+            'rows' => $rows,
+            'total' => count($rows),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function snapshot(FbProductCalibration $calibration): array
     {
         $calibration->load(['products', 'participants']);

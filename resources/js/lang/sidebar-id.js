@@ -104,6 +104,7 @@ export default {
     "upselling_sales_achievement": "Upselling Sales Achievement",
     "employee_coaching": "Employee Coaching",
     "fb_product_calibration": "F&B Product Calibration",
+    "fb_product_calibration_report": "F&B Product Calibration Report",
     "modal_x_engineering": "Modal x Engineering",
     "outlet_revenue_recap": "Rekap Revenue Outlet",
     "data_level": "Data Level",
