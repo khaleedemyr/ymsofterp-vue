@@ -298,7 +298,7 @@ function confirmDelete() {
   if (!id) return;
   Swal.fire({
     title: 'Hapus jadwal?',
-    text: `Hapus calibration ${detail.event?.outlet_name || ''}?`,
+    text: `Jadwal ${detail.event?.outlet_name || ''} akan dihapus dari kalender. Data tetap tersimpan di sistem.`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#dc2626',
@@ -432,7 +432,6 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-pen mr-1"></i> Edit
             </Link>
             <button
-              v-if="detail.event?.status !== 'completed'"
               type="button"
               class="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
               @click="confirmDelete"

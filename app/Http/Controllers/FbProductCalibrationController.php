@@ -171,12 +171,6 @@ class FbProductCalibrationController extends Controller
 
     public function destroy(Request $request, FbProductCalibration $fbProductCalibration)
     {
-        if ($fbProductCalibration->status === 'completed') {
-            throw ValidationException::withMessages([
-                'status' => 'Calibration yang sudah selesai tidak dapat dihapus.',
-            ]);
-        }
-
         $oldSnapshot = $this->enrichDeleteSnapshot($this->service->snapshot($fbProductCalibration->load('products')));
         $fbProductCalibration->delete();
 

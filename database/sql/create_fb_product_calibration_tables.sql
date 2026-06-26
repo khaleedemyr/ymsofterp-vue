@@ -13,11 +13,13 @@ CREATE TABLE IF NOT EXISTS `fb_product_calibrations` (
     `updated_by` BIGINT UNSIGNED NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    `deleted_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     KEY `fb_product_calibrations_outlet_id_index` (`outlet_id`),
     KEY `fb_product_calibrations_scheduled_date_index` (`scheduled_date`),
     KEY `fb_product_calibrations_conductor_id_index` (`conductor_id`),
-    KEY `fb_product_calibrations_status_index` (`status`)
+    KEY `fb_product_calibrations_status_index` (`status`),
+    KEY `fb_product_calibrations_deleted_at_index` (`deleted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `fb_product_calibration_products` (

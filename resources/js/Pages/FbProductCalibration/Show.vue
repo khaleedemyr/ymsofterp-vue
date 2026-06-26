@@ -28,6 +28,13 @@
             <i class="fa-solid fa-clipboard-check mr-1"></i>
             {{ record.status === 'completed' ? 'Edit Conduct' : 'Conduct Calibration' }}
           </Link>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
+            @click="confirmDelete"
+          >
+            <i class="fa-solid fa-trash mr-1"></i> Hapus
+          </button>
         </div>
       </div>
 
@@ -132,7 +139,8 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   record: { type: Object, required: true },
@@ -174,6 +182,22 @@ function statusClass(status) {
     cancelled: 'bg-gray-100 text-gray-700',
   };
   return map[status] || 'bg-gray-100 text-gray-700';
+}
+
+function confirmDelete() {
+  Swal.fire({
+    title: 'Hapus jadwal?',
+    text: `Jadwal ${props.record.outlet_name} akan dihapus dari kalender. Data tetap tersimpan di sistem.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626',
+    confirmButtonText: 'Hapus',
+    cancelButtonText: 'Batal',
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(route('fb-product-calibration.destroy', props.record.id));
+    }
+  });
 }
 </script>
 
