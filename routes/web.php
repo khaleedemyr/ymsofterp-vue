@@ -1018,6 +1018,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/employee-coaching/search-employees', [\App\Http\Controllers\EmployeeCoachingController::class, 'searchEmployees'])
         ->name('employee-coaching.search-employees');
     Route::resource('employee-coaching', \App\Http\Controllers\EmployeeCoachingController::class);
+
+    Route::get('/api/fb-product-calibration/search-conductors', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchConductors'])
+        ->name('fb-product-calibration.search-conductors');
+    Route::get('/api/fb-product-calibration/search-participants', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchParticipants'])
+        ->name('fb-product-calibration.search-participants');
+    Route::get('/api/fb-product-calibration/search-products', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchProducts'])
+        ->name('fb-product-calibration.search-products');
+    Route::get('/fb-product-calibration/{fb_product_calibration}/conduct', [\App\Http\Controllers\FbProductCalibrationController::class, 'conduct'])
+        ->name('fb-product-calibration.conduct');
+    Route::post('/fb-product-calibration/{fb_product_calibration}/conduct', [\App\Http\Controllers\FbProductCalibrationController::class, 'storeConduct'])
+        ->name('fb-product-calibration.conduct.store');
+    Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
 });
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);

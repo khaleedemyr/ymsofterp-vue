@@ -219,6 +219,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.ro_vs_forecast_harian'), icon: 'fa-solid fa-scale-balanced', route: '/reports/floor-order-vs-forecast', code: 'floor_order_vs_forecast' },
             { name: () => t('sidebar.menus.upselling_sales_achievement'), icon: 'fa-solid fa-arrow-trend-up', route: '/upselling-sales-achievement', code: 'upselling_sales_achievement' },
             { name: () => t('sidebar.menus.employee_coaching'), icon: 'fa-solid fa-user-graduate', route: '/employee-coaching', code: 'employee_coaching' },
+            { name: () => t('sidebar.menus.fb_product_calibration'), icon: 'fa-solid fa-utensils', route: '/fb-product-calibration', code: 'fb_product_calibration' },
           ],
         },
     {

@@ -1,0 +1,289 @@
+<template>
+  <AppLayout>
+    <div class="max-w-7xl mx-auto py-8 px-4">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-clipboard-check text-violet-600"></i>
+            Conduct Calibration
+          </h1>
+          <p class="text-sm text-gray-500 mt-1">
+            {{ record.outlet_name }} · {{ formatDate(record.scheduled_date) }} · Conducted by {{ record.conductor_name }}
+          </p>
+        </div>
+        <Link :href="route('fb-product-calibration.show', record.id)" class="text-gray-600 hover:text-gray-800">
+          <i class="fa-solid fa-arrow-left mr-1"></i> Kembali
+        </Link>
+      </div>
+
+      <form @submit.prevent="submit" class="space-y-6">
+        <div class="bg-white rounded-xl shadow p-6">
+          <label class="block text-sm font-semibold text-gray-700 mb-2">User yang di-calibration test</label>
+          <Multiselect
+            v-model="participants"
+            :options="participantOptions"
+            :multiple="true"
+            :searchable="true"
+            :internal-search="false"
+            :loading="participantLoading"
+            placeholder="Cari user..."
+            label="display_label"
+            track-by="user_id"
+            @search-change="searchParticipants"
+          />
+          <p class="text-xs text-gray-500 mt-2">Bisa pilih beberapa user sekaligus.</p>
+        </div>
+
+        <div v-if="participants.length" class="space-y-6">
+          <div
+            v-for="participant in participants"
+            :key="participant.user_id"
+            class="bg-white rounded-xl shadow overflow-x-auto"
+          >
+            <div class="px-6 py-4 border-b bg-gray-50">
+              <h3 class="font-semibold text-gray-800">{{ participant.user_name || participant.nama_lengkap }}</h3>
+              <p class="text-sm text-gray-500">{{ participant.jabatan_name }}</p>
+            </div>
+
+            <table class="min-w-full text-xs border-collapse">
+              <thead>
+                <tr class="bg-gray-900 text-white">
+                  <th rowspan="2" class="px-3 py-2 border border-gray-700 text-left min-w-[180px]">Product</th>
+                  <th colspan="7" class="px-2 py-2 border border-gray-700 text-center bg-gray-800">
+                    CALIBRATION PARAMETER
+                  </th>
+                </tr>
+                <tr class="bg-gray-800 text-white">
+                  <th
+                    v-for="param in parameterOptions"
+                    :key="param.code"
+                    colspan="2"
+                    class="px-2 py-1 border border-gray-700 text-center whitespace-nowrap"
+                  >
+                    {{ param.label }}
+                  </th>
+                </tr>
+                <tr class="bg-gray-700 text-white">
+                  <th class="px-3 py-1 border border-gray-600"></th>
+                  <template v-for="param in parameterOptions" :key="`${param.code}-cn`">
+                    <th class="px-2 py-1 border border-gray-600 text-center w-10">C</th>
+                    <th class="px-2 py-1 border border-gray-600 text-center w-10">NC</th>
+                  </template>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="product in record.products" :key="product.id">
+                  <td class="px-3 py-3 border border-gray-200 align-top">
+                    <div class="font-medium text-gray-800">{{ product.item_name }}</div>
+                    <div class="text-gray-500">
+                      {{ product.category_name }}
+                      <span v-if="product.sub_category_name"> · {{ product.sub_category_name }}</span>
+                    </div>
+                  </td>
+                  <template v-for="param in parameterOptions" :key="`${participant.user_id}-${product.id}-${param.code}`">
+                    <td class="px-2 py-2 border border-gray-200 text-center">
+                      <input
+                        type="radio"
+                        :name="`r-${participant.user_id}-${product.id}-${param.code}`"
+                        value="C"
+                        :checked="getValue(participant.user_id, product.id, param.code) === 'C'"
+                        class="text-green-600 focus:ring-green-500"
+                        @change="setValue(participant.user_id, product.id, param.code, 'C')"
+                      />
+                    </td>
+                    <td class="px-2 py-2 border border-gray-200 text-center">
+                      <input
+                        type="radio"
+                        :name="`r-${participant.user_id}-${product.id}-${param.code}`"
+                        value="NC"
+                        :checked="getValue(participant.user_id, product.id, param.code) === 'NC'"
+                        class="text-red-600 focus:ring-red-500"
+                        @change="setValue(participant.user_id, product.id, param.code, 'NC')"
+                      />
+                    </td>
+                  </template>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3">
+          <Link :href="route('fb-product-calibration.show', record.id)" class="px-6 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+            Batal
+          </Link>
+          <button
+            type="submit"
+            :disabled="form.processing || !participants.length"
+            class="px-6 py-2.5 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {{ form.processing ? 'Menyimpan...' : 'Simpan Hasil Calibration' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </AppLayout>
+</template>
+
+<script setup>
+import AppLayout from '@/Layouts/AppLayout.vue';
+import { Link, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
+import { onMounted, ref } from 'vue';
+import Swal from 'sweetalert2';
+
+const props = defineProps({
+  record: { type: Object, required: true },
+  parameterOptions: { type: Array, default: () => [] },
+  initialParticipants: { type: Array, default: () => [] },
+  initialResults: { type: Array, default: () => [] },
+});
+
+const form = useForm({
+  participants: [],
+  results: [],
+});
+
+const participants = ref([]);
+const participantOptions = ref([]);
+const participantLoading = ref(false);
+let participantTimer = null;
+
+const resultState = ref({});
+
+function initResults() {
+  const state = {};
+  props.initialResults.forEach((row) => {
+    const key = `${row.user_id}_${row.calibration_product_id}`;
+    state[key] = { ...row };
+  });
+  resultState.value = state;
+}
+
+function initParticipants() {
+  participants.value = (props.initialParticipants || []).map((p) => ({
+    user_id: p.user_id,
+    user_name: p.user_name,
+    jabatan_name: p.jabatan_name,
+    nama_lengkap: p.user_name,
+    display_label: p.display_label || `${p.user_name} — ${p.jabatan_name || '-'}`,
+  }));
+  participantOptions.value = [...participants.value];
+}
+
+function resultKey(userId, productId) {
+  return `${userId}_${productId}`;
+}
+
+function ensureResultRow(userId, productId) {
+  const key = resultKey(userId, productId);
+  if (!resultState.value[key]) {
+    resultState.value[key] = {
+      user_id: userId,
+      calibration_product_id: productId,
+    };
+    props.parameterOptions.forEach((param) => {
+      resultState.value[key][param.code] = null;
+    });
+  }
+  return resultState.value[key];
+}
+
+function getValue(userId, productId, paramCode) {
+  const key = resultKey(userId, productId);
+  return resultState.value[key]?.[paramCode] || null;
+}
+
+function setValue(userId, productId, paramCode, value) {
+  const row = ensureResultRow(userId, productId);
+  row[paramCode] = value;
+}
+
+function searchParticipants(query) {
+  clearTimeout(participantTimer);
+  participantTimer = setTimeout(async () => {
+    participantLoading.value = true;
+    try {
+      const res = await axios.get('/api/fb-product-calibration/search-participants', { params: { q: query || '' } });
+      const fetched = (res.data.users || []).map((u) => ({
+        user_id: u.id,
+        user_name: u.nama_lengkap,
+        jabatan_name: u.jabatan_name,
+        nama_lengkap: u.nama_lengkap,
+        display_label: u.display_label,
+      }));
+      const selectedIds = new Set(participants.value.map((p) => p.user_id));
+      participantOptions.value = [
+        ...participants.value,
+        ...fetched.filter((u) => !selectedIds.has(u.user_id)),
+      ];
+    } finally {
+      participantLoading.value = false;
+    }
+  }, 300);
+}
+
+function formatDate(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function buildPayload() {
+  form.participants = participants.value.map((p) => ({ user_id: p.user_id }));
+
+  const results = [];
+  participants.value.forEach((participant) => {
+    props.record.products.forEach((product) => {
+      const key = resultKey(participant.user_id, product.id);
+      const row = resultState.value[key] || {};
+      const entry = {
+        user_id: participant.user_id,
+        calibration_product_id: product.id,
+      };
+      props.parameterOptions.forEach((param) => {
+        entry[param.code] = row[param.code] || null;
+      });
+      results.push(entry);
+    });
+  });
+  form.results = results;
+}
+
+function validateClient() {
+  if (!participants.value.length) {
+    Swal.fire({ icon: 'warning', title: 'Tambahkan minimal satu user' });
+    return false;
+  }
+
+  for (const participant of participants.value) {
+    for (const product of props.record.products) {
+      for (const param of props.parameterOptions) {
+        const val = getValue(participant.user_id, product.id, param.code);
+        if (!val) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Lengkapi semua parameter',
+            text: `User ${participant.user_name || participant.nama_lengkap}, product ${product.item_name}, parameter ${param.label}`,
+          });
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+function submit() {
+  if (!validateClient()) return;
+  buildPayload();
+  form.post(route('fb-product-calibration.conduct.store', props.record.id));
+}
+
+onMounted(() => {
+  initParticipants();
+  initResults();
+  searchParticipants('');
+});
+</script>

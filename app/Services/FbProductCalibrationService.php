@@ -1,0 +1,309 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\FbProductCalibration;
+use App\Models\FbProductCalibrationParticipant;
+use App\Models\FbProductCalibrationProduct;
+use App\Models\FbProductCalibrationResult;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+class FbProductCalibrationService
+{
+    public const PARAMETER_CODES = [
+        'presentation',
+        'taste_profile',
+        'portion_size',
+        'recipe_compliance',
+        'cooking_method',
+        'texture',
+        'temperature',
+    ];
+
+    /**
+     * @return list<array{code: string, label: string}>
+     */
+    public function parameterOptions(): array
+    {
+        return [
+            ['code' => 'presentation', 'label' => 'Presentation'],
+            ['code' => 'taste_profile', 'label' => 'Taste Profile'],
+            ['code' => 'portion_size', 'label' => 'Portion Size'],
+            ['code' => 'recipe_compliance', 'label' => 'Recipe Compliance'],
+            ['code' => 'cooking_method', 'label' => 'Cooking Method'],
+            ['code' => 'texture', 'label' => 'Texture'],
+            ['code' => 'temperature', 'label' => 'Temperature'],
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function calendarEvents(int $year, int $month): array
+    {
+        $start = sprintf('%04d-%02d-01', $year, $month);
+        $end = date('Y-m-t', strtotime($start));
+
+        $records = FbProductCalibration::query()
+            ->with(['products'])
+            ->whereBetween('scheduled_date', [$start, $end])
+            ->where('status', '!=', 'cancelled')
+            ->orderBy('scheduled_date')
+            ->get();
+
+        return $records->map(function (FbProductCalibration $record) {
+            $productCount = $record->products->count();
+            $color = match ($record->status) {
+                'completed' => '#16a34a',
+                'in_progress' => '#2563eb',
+                default => '#7c3aed',
+            };
+
+            return [
+                'id' => 'fbc-'.$record->id,
+                'title' => $record->outlet_name.' · '.$productCount.' product',
+                'start' => $record->scheduled_date->format('Y-m-d'),
+                'allDay' => true,
+                'backgroundColor' => $color,
+                'borderColor' => $color,
+                'extendedProps' => [
+                    'calibration_id' => $record->id,
+                    'outlet_name' => $record->outlet_name,
+                    'conductor_name' => $record->conductor_name,
+                    'status' => $record->status,
+                    'product_count' => $productCount,
+                    'products' => $record->products->map(fn ($p) => $p->item_name)->values()->all(),
+                ],
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function searchConductors(string $query, int $limit = 15): array
+    {
+        $search = trim($query);
+        if ($search === '') {
+            return [];
+        }
+
+        return User::query()
+            ->where('users.status', 'A')
+            ->where(function ($q) use ($search) {
+                $q->where('users.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhere('users.nik', 'like', "%{$search}%")
+                    ->orWhere('users.email', 'like', "%{$search}%");
+            })
+            ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+            ->orderBy('users.nama_lengkap')
+            ->limit($limit)
+            ->get([
+                'users.id',
+                'users.nama_lengkap',
+                DB::raw('j.nama_jabatan as jabatan_name'),
+            ])
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'nama_lengkap' => (string) $row->nama_lengkap,
+                'jabatan_name' => (string) ($row->jabatan_name ?? '-'),
+                'display_label' => trim($row->nama_lengkap.' — '.($row->jabatan_name ?? '-')),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function searchParticipants(string $query, int $limit = 15): array
+    {
+        return $this->searchConductors($query, $limit);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function searchProducts(int $outletId, string $term = '', array $excludeIds = []): array
+    {
+        $upselling = app(UpsellingSalesAchievementService::class);
+        $items = $upselling->searchPosItems($outletId, $term);
+
+        if (! empty($excludeIds)) {
+            $exclude = array_map('intval', $excludeIds);
+            $items = array_values(array_filter($items, fn ($item) => ! in_array((int) $item['id'], $exclude, true)));
+        }
+
+        return array_map(function ($item) {
+            $parts = explode(' - ', (string) ($item['category_label'] ?? ''), 2);
+
+            return [
+                'id' => (int) $item['id'],
+                'item_name' => (string) $item['name'],
+                'category_name' => $parts[0] ?? (string) ($item['category_label'] ?? ''),
+                'sub_category_name' => $parts[1] ?? null,
+                'display_label' => (string) ($item['display_label'] ?? $item['name']),
+            ];
+        }, $items);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $products
+     */
+    public function syncProducts(FbProductCalibration $calibration, array $products): void
+    {
+        FbProductCalibrationProduct::where('calibration_id', $calibration->id)->delete();
+
+        foreach ($products as $index => $product) {
+            FbProductCalibrationProduct::create([
+                'calibration_id' => $calibration->id,
+                'item_id' => (int) $product['item_id'],
+                'item_name' => (string) $product['item_name'],
+                'category_name' => $product['category_name'] ?? null,
+                'sub_category_name' => $product['sub_category_name'] ?? null,
+                'sort_order' => $index,
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $participants
+     * @param  array<int, array<string, mixed>>  $results
+     */
+    public function saveConduct(
+        FbProductCalibration $calibration,
+        array $participants,
+        array $results
+    ): void {
+        FbProductCalibrationParticipant::where('calibration_id', $calibration->id)->delete();
+        FbProductCalibrationResult::where('calibration_id', $calibration->id)->delete();
+
+        $calibration->load('products');
+        $productMap = $calibration->products->keyBy('id');
+
+        $participantModels = [];
+        foreach ($participants as $index => $participant) {
+            $user = User::query()
+                ->where('id', (int) $participant['user_id'])
+                ->where('status', 'A')
+                ->with('jabatan')
+                ->firstOrFail();
+
+            $participantModels[(int) $user->id] = FbProductCalibrationParticipant::create([
+                'calibration_id' => $calibration->id,
+                'user_id' => $user->id,
+                'user_name' => (string) $user->nama_lengkap,
+                'jabatan_name' => (string) ($user->jabatan?->nama_jabatan ?? '-'),
+                'sort_order' => $index,
+            ]);
+        }
+
+        foreach ($results as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            $productId = (int) ($row['calibration_product_id'] ?? 0);
+            if (! isset($participantModels[$userId]) || ! $productMap->has($productId)) {
+                continue;
+            }
+
+            $payload = [
+                'calibration_id' => $calibration->id,
+                'participant_id' => $participantModels[$userId]->id,
+                'calibration_product_id' => $productId,
+            ];
+
+            foreach (self::PARAMETER_CODES as $code) {
+                $value = $row[$code] ?? null;
+                $payload[$code] = in_array($value, ['C', 'NC'], true) ? $value : null;
+            }
+
+            FbProductCalibrationResult::create($payload);
+        }
+
+        $calibration->update([
+            'status' => 'completed',
+            'updated_by' => auth()->id(),
+        ]);
+    }
+
+    public function notifyConductor(FbProductCalibration $calibration): void
+    {
+        $calibration->load('products');
+        $productList = $calibration->products->pluck('item_name')->implode(', ');
+        $dateLabel = $calibration->scheduled_date->format('d M Y');
+
+        NotificationService::create([
+            'user_id' => $calibration->conductor_id,
+            'type' => 'fb_product_calibration_assigned',
+            'title' => 'F&B Product Calibration',
+            'message' => sprintf(
+                'Anda ditugaskan conduct calibration di %s pada %s. Produk: %s',
+                $calibration->outlet_name,
+                $dateLabel,
+                $productList ?: '-'
+            ),
+            'url' => config('app.url').'/fb-product-calibration/'.$calibration->id,
+            'is_read' => 0,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildConductPayload(FbProductCalibration $calibration): array
+    {
+        $calibration->load(['products', 'participants', 'results']);
+
+        $resultMap = [];
+        foreach ($calibration->results as $result) {
+            $participant = $calibration->participants->firstWhere('id', $result->participant_id);
+            if (! $participant) {
+                continue;
+            }
+            $key = $participant->user_id.'_'.$result->calibration_product_id;
+            $resultMap[$key] = [
+                'user_id' => (int) $participant->user_id,
+                'calibration_product_id' => (int) $result->calibration_product_id,
+            ];
+            foreach (self::PARAMETER_CODES as $code) {
+                $resultMap[$key][$code] = $result->{$code};
+            }
+        }
+
+        return [
+            'participants' => $calibration->participants->map(fn ($p) => [
+                'user_id' => (int) $p->user_id,
+                'user_name' => $p->user_name,
+                'jabatan_name' => $p->jabatan_name,
+                'display_label' => $p->user_name.' — '.($p->jabatan_name ?? '-'),
+            ])->values()->all(),
+            'results' => array_values($resultMap),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function snapshot(FbProductCalibration $calibration): array
+    {
+        $calibration->load(['products', 'participants']);
+
+        return [
+            'id' => $calibration->id,
+            'outlet_id' => $calibration->outlet_id,
+            'outlet_name' => $calibration->outlet_name,
+            'scheduled_date' => $calibration->scheduled_date?->format('Y-m-d'),
+            'conductor_id' => $calibration->conductor_id,
+            'conductor_name' => $calibration->conductor_name,
+            'status' => $calibration->status,
+            'products' => $calibration->products->map(fn ($p) => [
+                'item_id' => $p->item_id,
+                'item_name' => $p->item_name,
+            ])->values()->all(),
+            'participants' => $calibration->participants->map(fn ($p) => [
+                'user_id' => $p->user_id,
+                'user_name' => $p->user_name,
+            ])->values()->all(),
+        ];
+    }
+}
