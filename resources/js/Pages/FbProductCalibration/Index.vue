@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
 import { Calendar } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -17,11 +18,49 @@ const page = usePage();
 const calendarEl = ref(null);
 let calendarApi = null;
 const detail = reactive({ open: false, event: null });
+const holidays = ref([]);
+
+const todayStr = computed(() => formatDateYmd(new Date()));
+
+const holidayMap = computed(() => {
+  const map = {};
+  holidays.value.forEach((h) => {
+    const key = normalizeHolidayDate(h.tgl_libur);
+    if (key) map[key] = h.keterangan || 'Libur nasional';
+  });
+  return map;
+});
 
 const monthTitle = computed(() => {
   const d = new Date(props.year, props.month - 1, 1);
   return d.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
 });
+
+function formatDateYmd(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function normalizeHolidayDate(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : raw.slice(0, 10);
+}
+
+function isHolidayDate(dateStr) {
+  return Boolean(holidayMap.value[dateStr]);
+}
+
+function isPastDate(dateStr) {
+  return dateStr < todayStr.value;
+}
+
+function canCreateOnDate(dateStr) {
+  return dateStr && !isPastDate(dateStr);
+}
 
 function initialDateStr() {
   return `${props.year}-${String(props.month).padStart(2, '0')}-01`;
@@ -38,7 +77,20 @@ function statusLabel(status) {
 }
 
 function goCreate(dateStr) {
+  if (!canCreateOnDate(dateStr)) return;
   router.get(route('fb-product-calibration.create'), { date: dateStr });
+}
+
+async function fetchHolidays() {
+  try {
+    const { data } = await axios.get('/api/holidays');
+    holidays.value = (Array.isArray(data) ? data : []).map((h) => ({
+      ...h,
+      tgl_libur: normalizeHolidayDate(h.tgl_libur),
+    }));
+  } catch {
+    holidays.value = [];
+  }
 }
 
 function loadCalendarCss() {
@@ -54,28 +106,121 @@ function loadCalendarCss() {
   document.head.appendChild(grid);
 }
 
+function getDayCellDateStr(el, fallbackDate) {
+  const fromAttr = el.getAttribute('data-date') || el.dataset?.date || '';
+  if (fromAttr) return fromAttr;
+  if (fallbackDate) return formatDateYmd(fallbackDate);
+  return '';
+}
+
+function upsertHolidayLabel(frame, dateStr) {
+  const holidayName = holidayMap.value[dateStr];
+  const existing = frame.querySelector('.fbc-fc-holiday-label');
+
+  if (!holidayName) {
+    existing?.remove();
+    return;
+  }
+
+  if (existing) {
+    existing.textContent = holidayName;
+    return;
+  }
+
+  const label = document.createElement('div');
+  label.className = 'fbc-fc-holiday-label';
+  label.textContent = holidayName;
+  frame.appendChild(label);
+}
+
+function applyHolidayClass(el, dateStr) {
+  const frame = el.querySelector('.fc-daygrid-day-frame');
+  const holidayName = holidayMap.value[dateStr];
+  const isHoliday = Boolean(holidayName);
+
+  el.classList.toggle('fbc-fc-holiday-day', isHoliday);
+  if (frame) {
+    frame.classList.toggle('fbc-fc-holiday-frame', isHoliday);
+    if (isHoliday) {
+      frame.title = holidayName;
+      upsertHolidayLabel(frame, dateStr);
+    } else {
+      frame.removeAttribute('title');
+      frame.querySelector('.fbc-fc-holiday-label')?.remove();
+    }
+  }
+}
+
+function applyHolidayClassesToDom() {
+  if (!calendarEl.value) return;
+  calendarEl.value.querySelectorAll('.fc-daygrid-day').forEach((el) => {
+    const dateStr = getDayCellDateStr(el);
+    if (dateStr) applyHolidayClass(el, dateStr);
+  });
+}
+
+function buildHolidayEvents() {
+  return holidays.value
+    .map((h) => {
+      const date = normalizeHolidayDate(h.tgl_libur);
+      if (!date) return null;
+
+      return {
+        id: `fbc-holiday-${h.id || date}`,
+        start: date,
+        allDay: true,
+        display: 'background',
+        backgroundColor: '#fecaca',
+        borderColor: '#ef4444',
+        classNames: ['fbc-fc-holiday-event'],
+        extendedProps: {
+          isHoliday: true,
+          keterangan: h.keterangan || 'Libur nasional',
+        },
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildCalendarEvents() {
+  return [...(props.calendarEvents || []), ...buildHolidayEvents()];
+}
+
 function mountDayCellExtras(info) {
   const frame = info.el.querySelector('.fc-daygrid-day-frame');
-  if (!frame || frame.querySelector('.fbc-fc-add-btn')) return;
+  if (!frame) return;
 
-  const dateStr = info.el.getAttribute('data-date') || '';
+  const dateStr = getDayCellDateStr(info.el, info.date);
+  applyHolidayClass(info.el, dateStr);
+
+  frame.querySelector('.fbc-fc-add-btn')?.remove();
+
+  if (!canCreateOnDate(dateStr)) return;
+
+  const top = frame.querySelector('.fc-daygrid-day-top');
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'fbc-fc-add-btn';
   btn.title = 'Tambah jadwal calibration';
+  btn.setAttribute('aria-label', `Tambah jadwal ${dateStr}`);
   btn.textContent = '+';
   btn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
     goCreate(dateStr);
   });
-  frame.appendChild(btn);
+
+  if (top) {
+    top.insertBefore(btn, top.firstChild);
+  } else {
+    frame.appendChild(btn);
+  }
 }
 
 function resetCalendarEvents() {
   if (!calendarApi) return;
   calendarApi.removeAllEvents();
-  (props.calendarEvents || []).forEach((event) => calendarApi.addEvent(event));
+  buildCalendarEvents().forEach((event) => calendarApi.addEvent(event));
 }
 
 function buildCalendar() {
@@ -92,11 +237,17 @@ function buildCalendar() {
     fixedWeekCount: false,
     dayMaxEvents: 4,
     moreLinkText: (n) => `+${n} lagi`,
+    dayCellClassNames(arg) {
+      const key = arg.dateStr || formatDateYmd(arg.date);
+      return isHolidayDate(key) ? ['fbc-fc-holiday-day'] : [];
+    },
     dayCellDidMount: mountDayCellExtras,
     dateClick(info) {
+      if (!canCreateOnDate(info.dateStr)) return;
       goCreate(info.dateStr);
     },
     eventClick(info) {
+      if (info.event.extendedProps?.isHoliday) return;
       info.jsEvent.preventDefault();
       detail.event = {
         title: info.event.title,
@@ -107,12 +258,14 @@ function buildCalendar() {
   });
   calendarApi.render();
   resetCalendarEvents();
+  nextTick(applyHolidayClassesToDom);
 }
 
 function syncCalendar() {
   if (!calendarApi) return;
   calendarApi.gotoDate(initialDateStr());
   resetCalendarEvents();
+  nextTick(applyHolidayClassesToDom);
 }
 
 function navigateMonth(delta) {
@@ -160,8 +313,9 @@ function confirmDelete() {
   });
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadCalendarCss();
+  await fetchHolidays();
   nextTick(buildCalendar);
   if (page.props.flash?.success) {
     Swal.fire({ icon: 'success', title: 'Berhasil', text: page.props.flash.success, timer: 2000, showConfirmButton: false });
@@ -169,6 +323,16 @@ onMounted(() => {
 });
 
 watch(() => [props.year, props.month, props.calendarEvents], () => nextTick(syncCalendar), { deep: true });
+
+watch(holidays, () => {
+  nextTick(() => {
+    if (calendarApi) {
+      resetCalendarEvents();
+      calendarApi.render();
+    }
+    applyHolidayClassesToDom();
+  });
+}, { deep: true });
 
 onBeforeUnmount(() => {
   if (calendarApi) {
@@ -190,7 +354,7 @@ onBeforeUnmount(() => {
           <p class="text-sm text-gray-500 mt-1">Kalender jadwal calibration product F&B per outlet</p>
         </div>
         <Link
-          :href="route('fb-product-calibration.create')"
+          :href="route('fb-product-calibration.create', { date: todayStr })"
           class="inline-flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg shadow hover:bg-violet-700"
         >
           <i class="fa-solid fa-plus"></i> Tambah Jadwal
@@ -219,6 +383,9 @@ onBeforeUnmount(() => {
           </span>
           <span class="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 bg-white">
             <span class="h-3 w-3 rounded-sm bg-green-600"></span> Completed
+          </span>
+          <span class="inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 bg-white">
+            <span class="h-3 w-3 rounded-sm bg-red-300 border border-red-400"></span> Hari Libur
           </span>
         </div>
       </div>
@@ -280,26 +447,78 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+:deep(.fc-daygrid-day-top) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 4px;
+  padding: 4px 6px 0;
+  position: relative;
+  z-index: 4;
+}
+:deep(.fc-daygrid-day-number) {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.2;
+  pointer-events: none;
+}
 :deep(.fbc-fc-add-btn) {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  border-radius: 9999px;
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   border: 1px solid #c4b5fd;
   background: #ede9fe;
   color: #6d28d9;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  pointer-events: auto;
 }
 :deep(.fbc-fc-add-btn:hover) {
   background: #ddd6fe;
+  transform: scale(1.05);
+}
+:deep(.fbc-fc-holiday-day .fbc-fc-add-btn) {
+  background: #fff;
+  color: #dc2626;
+  border-color: #fca5a5;
 }
 :deep(.fc-daygrid-day-frame) {
   position: relative;
   min-height: 88px;
+}
+:deep(.fbc-fc-holiday-day .fc-daygrid-day-frame) {
+  background: #fef2f2;
+}
+:deep(.fbc-fc-holiday-label) {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  z-index: 3;
+  margin-top: 0;
+  padding: 2px 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: #b91c1c;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.92);
+  pointer-events: none;
+}
+:deep(.fbc-fc-holiday-event) {
+  opacity: 0.35;
 }
 </style>

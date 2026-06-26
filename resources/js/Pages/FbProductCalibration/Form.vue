@@ -35,6 +35,7 @@
               v-model="form.scheduled_date"
               type="date"
               required
+              :min="isEdit ? undefined : minScheduleDate"
               class="w-full rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500"
             />
           </div>
@@ -145,6 +146,11 @@ const props = defineProps({
 });
 
 const isEdit = computed(() => !!props.record?.id);
+
+const minScheduleDate = computed(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+});
 
 const form = useForm({
   outlet_id: props.record?.outlet_id || '',

@@ -123,7 +123,7 @@ class FbProductCalibrationController extends Controller
     public function update(Request $request, FbProductCalibration $fbProductCalibration)
     {
         $this->ensureEditable($fbProductCalibration);
-        $validated = $this->validateSchedulePayload($request);
+        $validated = $this->validateSchedulePayload($request, $fbProductCalibration);
         $outlet = Outlet::findOrFail($validated['outlet_id']);
         $conductor = User::where('id', $validated['conductor_id'])->where('status', 'A')->firstOrFail();
 
@@ -288,9 +288,9 @@ class FbProductCalibrationController extends Controller
         return response()->json(['items' => $items]);
     }
 
-    private function validateSchedulePayload(Request $request): array
+    private function validateSchedulePayload(Request $request, ?FbProductCalibration $existing = null): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'scheduled_date' => 'required|date',
             'conductor_id' => 'required|integer|exists:users,id',
@@ -304,6 +304,18 @@ class FbProductCalibrationController extends Controller
             'products.required' => 'Pilih minimal satu product.',
             'products.min' => 'Pilih minimal satu product.',
         ]);
+
+        $today = now()->toDateString();
+        $scheduledDate = $validated['scheduled_date'];
+        $existingDate = $existing?->scheduled_date?->format('Y-m-d');
+
+        if ($scheduledDate < $today && $scheduledDate !== $existingDate) {
+            throw ValidationException::withMessages([
+                'scheduled_date' => 'Tanggal calibration tidak boleh sebelum hari ini.',
+            ]);
+        }
+
+        return $validated;
     }
 
     private function validateConductPayload(Request $request, FbProductCalibration $calibration): array
