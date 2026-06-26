@@ -127,25 +127,80 @@ class FbProductCalibrationService
      */
     public function searchProducts(int $outletId, string $term = '', array $excludeIds = []): array
     {
-        $upselling = app(UpsellingSalesAchievementService::class);
-        $items = $upselling->searchPosItems($outletId, $term);
-
-        if (! empty($excludeIds)) {
-            $exclude = array_map('intval', $excludeIds);
-            $items = array_values(array_filter($items, fn ($item) => ! in_array((int) $item['id'], $exclude, true)));
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+        if (! $outlet) {
+            return [];
         }
 
-        return array_map(function ($item) {
-            $parts = explode(' - ', (string) ($item['category_label'] ?? ''), 2);
+        $regionId = $outlet->region_id ? (int) $outlet->region_id : null;
+        $term = trim($term);
+        $limit = $term === '' ? 50 : 30;
+
+        $query = DB::table('items as i')
+            ->join('categories as c', 'c.id', '=', 'i.category_id')
+            ->leftJoin('sub_categories as sc', 'sc.id', '=', 'i.sub_category_id')
+            ->where('c.show_pos', '1')
+            ->where('i.status', 'active')
+            ->where(function ($q) {
+                $q->where('c.status', 'active')->orWhereNull('c.status');
+            })
+            ->whereExists(function ($sub) use ($outletId, $regionId) {
+                $sub->select(DB::raw(1))
+                    ->from('item_availabilities as ia')
+                    ->whereColumn('ia.item_id', 'i.id')
+                    ->where(function ($w) use ($outletId, $regionId) {
+                        $w->whereIn('ia.availability_type', ['all'])
+                            ->orWhere(function ($w2) use ($outletId) {
+                                $w2->whereIn('ia.availability_type', ['outlet', 'byOutlet'])
+                                    ->where('ia.outlet_id', $outletId);
+                            });
+
+                        if ($regionId) {
+                            $w->orWhere(function ($w2) use ($regionId) {
+                                $w2->whereIn('ia.availability_type', ['region', 'byRegion'])
+                                    ->where('ia.region_id', $regionId);
+                            });
+                        }
+                    });
+            })
+            ->when($term !== '', function ($q) use ($term) {
+                $q->where(function ($sub) use ($term) {
+                    $sub->where('i.name', 'like', "%{$term}%")
+                        ->orWhere('i.sku', 'like', "%{$term}%")
+                        ->orWhere('c.name', 'like', "%{$term}%")
+                        ->orWhere('sc.name', 'like', "%{$term}%");
+                });
+            })
+            ->when(! empty($excludeIds), function ($q) use ($excludeIds) {
+                $q->whereNotIn('i.id', array_map('intval', $excludeIds));
+            })
+            ->select(
+                'i.id',
+                'i.name',
+                'i.sku',
+                'c.name as category_name',
+                'sc.name as sub_category_name'
+            )
+            ->distinct()
+            ->orderBy('i.name')
+            ->limit($limit);
+
+        return $query->get()->map(function ($row) {
+            $categoryName = (string) ($row->category_name ?? '');
+            $subCategoryName = $row->sub_category_name ? (string) $row->sub_category_name : null;
+            $categoryLabel = $subCategoryName
+                ? "{$categoryName} · {$subCategoryName}"
+                : $categoryName;
 
             return [
-                'id' => (int) $item['id'],
-                'item_name' => (string) $item['name'],
-                'category_name' => $parts[0] ?? (string) ($item['category_label'] ?? ''),
-                'sub_category_name' => $parts[1] ?? null,
-                'display_label' => (string) ($item['display_label'] ?? $item['name']),
+                'id' => (int) $row->id,
+                'item_id' => (int) $row->id,
+                'item_name' => (string) $row->name,
+                'category_name' => $categoryName,
+                'sub_category_name' => $subCategoryName,
+                'display_label' => (string) $row->name.' ('.$categoryLabel.')',
             ];
-        }, $items);
+        })->values()->all();
     }
 
     /**

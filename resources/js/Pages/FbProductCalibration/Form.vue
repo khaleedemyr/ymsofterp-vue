@@ -80,20 +80,42 @@
         <div class="bg-white rounded-xl shadow p-6 space-y-4">
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-1">Product <span class="text-red-500">*</span></label>
-            <p class="text-xs text-gray-500 mb-2">Item POS yang available untuk outlet terpilih (show_pos=1)</p>
-            <Multiselect
-              v-model="selectedProducts"
-              :options="productOptions"
-              :multiple="true"
-              :searchable="true"
-              :internal-search="false"
-              :loading="productLoading"
-              :disabled="!form.outlet_id"
-              placeholder="Cari product..."
-              label="display_label"
-              track-by="id"
-              @search-change="searchProducts"
-            />
+            <div class="relative">
+              <input
+                id="product-search-input"
+                v-model="productSearch"
+                type="text"
+                :disabled="!form.outlet_id"
+                placeholder="Cari product..."
+                autocomplete="off"
+                class="w-full rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500 disabled:bg-gray-100"
+                @input="onProductSearch"
+                @focus="onProductFocus"
+                @blur="onProductBlur"
+              />
+              <Teleport to="body">
+                <div
+                  v-if="showProductDropdown && productSuggestions.length"
+                  :style="productDropdownStyle"
+                  class="fixed z-[99999] bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+                >
+                  <button
+                    v-for="item in productSuggestions"
+                    :key="item.id"
+                    type="button"
+                    class="w-full text-left px-3 py-2 hover:bg-violet-50 border-b border-gray-100 last:border-b-0"
+                    @mousedown.prevent="selectProduct(item)"
+                  >
+                    <div class="font-medium text-gray-800">{{ item.item_name }}</div>
+                    <div class="text-xs text-gray-500">
+                      {{ item.category_name }}
+                      <span v-if="item.sub_category_name"> · {{ item.sub_category_name }}</span>
+                    </div>
+                  </button>
+                </div>
+              </Teleport>
+            </div>
+            <p v-if="!form.outlet_id" class="text-xs text-amber-600 mt-2">Pilih outlet terlebih dahulu.</p>
             <p v-if="form.errors.products" class="text-sm text-red-600 mt-1">{{ form.errors.products }}</p>
           </div>
 
@@ -134,8 +156,6 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import Multiselect from 'vue-multiselect';
-import 'vue-multiselect/dist/vue-multiselect.min.css';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import Swal from 'sweetalert2';
 
@@ -167,7 +187,10 @@ const conductorDropdownStyle = ref({});
 let conductorTimer = null;
 
 const selectedProducts = ref([]);
-const productOptions = ref([]);
+const productSearch = ref('');
+const productSuggestions = ref([]);
+const showProductDropdown = ref(false);
+const productDropdownStyle = ref({});
 const productLoading = ref(false);
 let productTimer = null;
 
@@ -183,7 +206,6 @@ function initFromRecord() {
       ? `${p.item_name} (${p.category_name} · ${p.sub_category_name})`
       : `${p.item_name} (${p.category_name || '-'})`,
   }));
-  productOptions.value = [...selectedProducts.value];
   selectedConductor.value = {
     id: props.record.conductor_id,
     nama_lengkap: props.record.conductor_name,
@@ -192,7 +214,74 @@ function initFromRecord() {
 
 function onOutletChange() {
   selectedProducts.value = [];
-  productOptions.value = [];
+  productSearch.value = '';
+  productSuggestions.value = [];
+  showProductDropdown.value = false;
+}
+
+function updateProductDropdownPosition() {
+  const el = document.getElementById('product-search-input');
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  productDropdownStyle.value = {
+    top: `${rect.bottom + 4}px`,
+    left: `${rect.left}px`,
+    width: `${rect.width}px`,
+  };
+}
+
+async function fetchProducts(query = '') {
+  if (!form.outlet_id) return;
+  productLoading.value = true;
+  try {
+    const excludeIds = selectedProducts.value.map((p) => p.id);
+    const res = await axios.get('/api/fb-product-calibration/search-products', {
+      params: {
+        outlet_id: Number(form.outlet_id),
+        q: query,
+        exclude_ids: excludeIds,
+      },
+    });
+    productSuggestions.value = res.data.items || [];
+    showProductDropdown.value = productSuggestions.value.length > 0;
+    await nextTick();
+    updateProductDropdownPosition();
+  } catch {
+    productSuggestions.value = [];
+    showProductDropdown.value = false;
+  } finally {
+    productLoading.value = false;
+  }
+}
+
+function onProductSearch() {
+  clearTimeout(productTimer);
+  productTimer = setTimeout(() => {
+    fetchProducts(productSearch.value.trim());
+  }, 300);
+}
+
+function onProductFocus() {
+  fetchProducts(productSearch.value.trim());
+}
+
+function onProductBlur() {
+  setTimeout(() => {
+    showProductDropdown.value = false;
+  }, 150);
+}
+
+function selectProduct(item) {
+  const duplicate = selectedProducts.value.some((p) => p.id === item.id);
+  if (duplicate) {
+    Swal.fire({ icon: 'warning', title: 'Product duplikat', text: 'Product ini sudah ditambahkan.' });
+    return;
+  }
+
+  selectedProducts.value.push({ ...item });
+  productSearch.value = '';
+  productSuggestions.value = [];
+  showProductDropdown.value = false;
 }
 
 function onConductorSearch() {
@@ -246,28 +335,6 @@ function selectConductor(user) {
   showConductorDropdown.value = false;
 }
 
-function searchProducts(query) {
-  if (!form.outlet_id) return;
-  clearTimeout(productTimer);
-  productTimer = setTimeout(async () => {
-    productLoading.value = true;
-    try {
-      const excludeIds = selectedProducts.value.map((p) => p.id);
-      const res = await axios.get('/api/fb-product-calibration/search-products', {
-        params: { outlet_id: form.outlet_id, q: query || '', exclude_ids: excludeIds },
-      });
-      const fetched = res.data.items || [];
-      const selectedIds = new Set(selectedProducts.value.map((p) => p.id));
-      productOptions.value = [
-        ...selectedProducts.value,
-        ...fetched.filter((item) => !selectedIds.has(item.id)),
-      ];
-    } finally {
-      productLoading.value = false;
-    }
-  }, 300);
-}
-
 function removeProduct(product) {
   selectedProducts.value = selectedProducts.value.filter((p) => p.id !== product.id);
 }
@@ -298,6 +365,5 @@ function submit() {
 
 onMounted(() => {
   initFromRecord();
-  if (form.outlet_id) searchProducts('');
 });
 </script>
