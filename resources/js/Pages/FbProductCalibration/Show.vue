@@ -75,38 +75,46 @@
             <h3 class="font-semibold text-gray-800">{{ participant.user_name }}</h3>
             <p class="text-sm text-gray-500">{{ participant.jabatan_name }}</p>
           </div>
-          <table class="min-w-full text-xs border-collapse">
+          <table class="fbc-calibration-table min-w-[1100px] w-full text-xs border-collapse">
             <thead>
-              <tr class="bg-gray-900 text-white">
-                <th rowspan="2" class="px-3 py-2 border border-gray-700 text-left min-w-[160px]">Product</th>
+              <tr>
+                <th rowspan="3" class="fbc-th-product">Product</th>
+                <th :colspan="parameterOptions.length * 2" class="fbc-th-group">
+                  CALIBRATION PARAMETER
+                </th>
+              </tr>
+              <tr>
                 <th
                   v-for="param in parameterOptions"
                   :key="param.code"
                   colspan="2"
-                  class="px-2 py-2 border border-gray-700 text-center"
+                  class="fbc-th-param"
                 >
                   {{ param.label }}
                 </th>
               </tr>
-              <tr class="bg-gray-800 text-white">
+              <tr>
                 <template v-for="param in parameterOptions" :key="`${param.code}-sub`">
-                  <th class="px-2 py-1 border border-gray-700 text-center w-10">C</th>
-                  <th class="px-2 py-1 border border-gray-700 text-center w-10">NC</th>
+                  <th class="fbc-th-choice">C</th>
+                  <th class="fbc-th-choice">NC</th>
                 </template>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="product in record.products" :key="product.id" class="border-b">
-                <td class="px-3 py-2 border border-gray-200">
-                  <div class="font-medium">{{ product.item_name }}</div>
-                  <div class="text-gray-500">{{ product.category_name }}</div>
+              <tr v-for="product in record.products" :key="product.id">
+                <td class="fbc-td-product">
+                  <div class="font-semibold text-gray-900">{{ product.item_name }}</div>
+                  <div class="text-[11px] text-gray-500 leading-snug">
+                    {{ product.category_name }}
+                    <span v-if="product.sub_category_name"> · {{ product.sub_category_name }}</span>
+                  </div>
                 </td>
                 <template v-for="param in parameterOptions" :key="`${product.id}-${param.code}`">
-                  <td class="px-2 py-2 border border-gray-200 text-center">
-                    <span v-if="getResult(participant.user_id, product.id, param.code) === 'C'" class="font-bold text-green-700">✓</span>
+                  <td class="fbc-td-choice">
+                    <span v-if="getResult(participant.user_id, product.id, param.code) === 'C'" class="font-bold text-green-700 text-sm">✓</span>
                   </td>
-                  <td class="px-2 py-2 border border-gray-200 text-center">
-                    <span v-if="getResult(participant.user_id, product.id, param.code) === 'NC'" class="font-bold text-red-700">✓</span>
+                  <td class="fbc-td-choice">
+                    <span v-if="getResult(participant.user_id, product.id, param.code) === 'NC'" class="font-bold text-red-700 text-sm">✓</span>
                   </td>
                 </template>
               </tr>
@@ -168,3 +176,62 @@ function statusClass(status) {
   return map[status] || 'bg-gray-100 text-gray-700';
 }
 </script>
+
+<style scoped>
+.fbc-calibration-table {
+  table-layout: fixed;
+}
+.fbc-calibration-table th,
+.fbc-calibration-table td {
+  border: 1px solid #d1d5db;
+}
+.fbc-th-product {
+  width: 200px;
+  min-width: 200px;
+  background: #111827;
+  color: #fff;
+  font-weight: 700;
+  text-align: left;
+  vertical-align: middle;
+  padding: 10px 12px;
+}
+.fbc-th-group {
+  background: #111827;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+  padding: 8px 6px;
+}
+.fbc-th-param {
+  background: #1f2937;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 8px 4px;
+  white-space: nowrap;
+}
+.fbc-th-choice {
+  background: #374151;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 6px 4px;
+}
+.fbc-td-product {
+  background: #fff;
+  vertical-align: middle;
+  padding: 10px 12px;
+}
+.fbc-td-choice {
+  background: #fff;
+  text-align: center;
+  vertical-align: middle;
+  padding: 8px 4px;
+}
+</style>

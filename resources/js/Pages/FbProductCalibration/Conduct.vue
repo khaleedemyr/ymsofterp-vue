@@ -45,59 +45,58 @@
               <p class="text-sm text-gray-500">{{ participant.jabatan_name }}</p>
             </div>
 
-            <table class="min-w-full text-xs border-collapse">
+            <table class="fbc-calibration-table min-w-[1100px] w-full text-xs border-collapse">
               <thead>
-                <tr class="bg-gray-900 text-white">
-                  <th rowspan="2" class="px-3 py-2 border border-gray-700 text-left min-w-[180px]">Product</th>
-                  <th colspan="7" class="px-2 py-2 border border-gray-700 text-center bg-gray-800">
+                <tr>
+                  <th rowspan="3" class="fbc-th-product">Product</th>
+                  <th :colspan="parameterOptions.length * 2" class="fbc-th-group">
                     CALIBRATION PARAMETER
                   </th>
                 </tr>
-                <tr class="bg-gray-800 text-white">
+                <tr>
                   <th
                     v-for="param in parameterOptions"
                     :key="param.code"
                     colspan="2"
-                    class="px-2 py-1 border border-gray-700 text-center whitespace-nowrap"
+                    class="fbc-th-param"
                   >
                     {{ param.label }}
                   </th>
                 </tr>
-                <tr class="bg-gray-700 text-white">
-                  <th class="px-3 py-1 border border-gray-600"></th>
+                <tr>
                   <template v-for="param in parameterOptions" :key="`${param.code}-cn`">
-                    <th class="px-2 py-1 border border-gray-600 text-center w-10">C</th>
-                    <th class="px-2 py-1 border border-gray-600 text-center w-10">NC</th>
+                    <th class="fbc-th-choice">C</th>
+                    <th class="fbc-th-choice">NC</th>
                   </template>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="product in record.products" :key="product.id">
-                  <td class="px-3 py-3 border border-gray-200 align-top">
-                    <div class="font-medium text-gray-800">{{ product.item_name }}</div>
-                    <div class="text-gray-500">
+                  <td class="fbc-td-product">
+                    <div class="font-semibold text-gray-900">{{ product.item_name }}</div>
+                    <div class="text-[11px] text-gray-500 leading-snug">
                       {{ product.category_name }}
                       <span v-if="product.sub_category_name"> · {{ product.sub_category_name }}</span>
                     </div>
                   </td>
                   <template v-for="param in parameterOptions" :key="`${participant.user_id}-${product.id}-${param.code}`">
-                    <td class="px-2 py-2 border border-gray-200 text-center">
+                    <td class="fbc-td-choice">
                       <input
                         type="radio"
                         :name="`r-${participant.user_id}-${product.id}-${param.code}`"
                         value="C"
                         :checked="getValue(participant.user_id, product.id, param.code) === 'C'"
-                        class="text-green-600 focus:ring-green-500"
+                        class="fbc-radio"
                         @change="setValue(participant.user_id, product.id, param.code, 'C')"
                       />
                     </td>
-                    <td class="px-2 py-2 border border-gray-200 text-center">
+                    <td class="fbc-td-choice">
                       <input
                         type="radio"
                         :name="`r-${participant.user_id}-${product.id}-${param.code}`"
                         value="NC"
                         :checked="getValue(participant.user_id, product.id, param.code) === 'NC'"
-                        class="text-red-600 focus:ring-red-500"
+                        class="fbc-radio"
                         @change="setValue(participant.user_id, product.id, param.code, 'NC')"
                       />
                     </td>
@@ -287,3 +286,68 @@ onMounted(() => {
   searchParticipants('');
 });
 </script>
+
+<style scoped>
+.fbc-calibration-table {
+  table-layout: fixed;
+}
+.fbc-calibration-table th,
+.fbc-calibration-table td {
+  border: 1px solid #d1d5db;
+}
+.fbc-th-product {
+  width: 200px;
+  min-width: 200px;
+  background: #111827;
+  color: #fff;
+  font-weight: 700;
+  text-align: left;
+  vertical-align: middle;
+  padding: 10px 12px;
+}
+.fbc-th-group {
+  background: #111827;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.04em;
+  padding: 8px 6px;
+}
+.fbc-th-param {
+  background: #1f2937;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  padding: 8px 4px;
+  white-space: nowrap;
+}
+.fbc-th-choice {
+  background: #374151;
+  color: #fff;
+  font-weight: 700;
+  text-align: center;
+  width: 44px;
+  min-width: 44px;
+  padding: 6px 4px;
+}
+.fbc-td-product {
+  background: #fff;
+  vertical-align: middle;
+  padding: 10px 12px;
+}
+.fbc-td-choice {
+  background: #fff;
+  text-align: center;
+  vertical-align: middle;
+  padding: 8px 4px;
+}
+.fbc-radio {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #4f46e5;
+}
+</style>
