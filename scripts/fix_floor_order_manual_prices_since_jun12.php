@@ -12,39 +12,52 @@ use Illuminate\Support\Facades\Schema;
 
 $apply = in_array('--apply', $argv ?? [], true);
 $since = '2026-06-12';
+$fromDate = null;
+$toDate = null;
 $limit = null;
-$allItems = in_array('--all-items', $argv ?? [], true);
-
-$defaultItemNames = [
-    'Barbeque Sauce',
-    'Blackpepper Sauce',
-    'Bolognaise Sauce',
-    'Curry Sauce',
-    'Japanese Teriyaki Sauce',
-    'Korean BBQ Sauce',
-    'Mushroom Sauce',
-    'Cheese Sauce',
-    'Kuah Buntut',
+$allStatuses = in_array('--all-statuses', $argv ?? [], true);
+$defaultSharedItems = [
+    'Beef Patty',
+    'Dressing Salad',
+    'Duck Confit',
+    'Marinate Gomatare',
+    'Orange Sauce',
+    'Sauce Blueberry',
+    'Smoked Chicken',
     'Thai Dressing',
-    'Beef Chuck Short Ribs Dice',
-    'Beef Oxtail',
-    'Beef Ragout',
-    'Duck Crispy',
+    'Beef Patty Steak',
+    'Meat Ball Patty',
+    'Coating Goreng',
 ];
+$itemNames = $defaultSharedItems;
 
 foreach ($argv ?? [] as $arg) {
     if (str_starts_with($arg, '--since=')) {
         $since = substr($arg, strlen('--since='));
     }
+    if (str_starts_with($arg, '--from=')) {
+        $fromDate = substr($arg, strlen('--from='));
+    }
+    if (str_starts_with($arg, '--to=')) {
+        $toDate = substr($arg, strlen('--to='));
+    }
     if (str_starts_with($arg, '--limit=')) {
         $limit = max(1, (int) substr($arg, strlen('--limit=')));
     }
+    if (str_starts_with($arg, '--items=')) {
+        $itemNames = array_filter(array_map('trim', explode(',', substr($arg, strlen('--items=')))));
+    }
 }
 
-echo "=== Fix FO manual prices (post Jun-12 logic) ===\n";
+echo "=== Fix FO prices from item_prices (large → medium) ===\n";
 echo 'Mode: ' . ($apply ? 'APPLY' : 'DRY-RUN') . "\n";
-echo "Since: {$since}\n";
-echo 'Scope: ' . ($allItems ? 'all items' : 'listed items only') . "\n";
+if ($fromDate && $toDate) {
+    echo "Tanggal FO: {$fromDate} s/d {$toDate}\n";
+} else {
+    echo "Since updated_at: {$since}\n";
+}
+echo 'Statuses: ' . ($allStatuses ? 'all' : 'draft, submitted') . "\n";
+echo 'Items: ' . implode(', ', $itemNames) . "\n";
 if ($limit !== null) {
     echo "Limit rows: {$limit}\n";
 }
@@ -58,7 +71,7 @@ if (! Schema::hasTable('food_floor_order_items') || ! Schema::hasTable('food_flo
 $query = DB::table('food_floor_order_items as ffoi')
     ->join('food_floor_orders as ffo', 'ffo.id', '=', 'ffoi.floor_order_id')
     ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
-    ->whereDate('ffoi.updated_at', '>=', $since)
+    ->whereNotIn('ffo.fo_mode', ['RO Khusus', 'RO Supplier'])
     ->select(
         'ffoi.id',
         'ffoi.floor_order_id',
@@ -67,25 +80,31 @@ $query = DB::table('food_floor_order_items as ffoi')
         'ffoi.qty',
         'ffoi.price',
         'ffoi.subtotal',
-        'ffoi.updated_at',
+        'ffo.tanggal',
         'ffo.id_outlet',
         'ffo.order_number',
+        'ffo.status',
         'o.region_id',
         'o.nama_outlet'
     )
     ->orderBy('ffoi.id');
 
-if (! $allItems) {
-    $itemIds = DB::table('items')
-        ->whereIn('name', $defaultItemNames)
-        ->pluck('id')
-        ->all();
-    if ($itemIds === []) {
-        echo "Item list default tidak ditemukan di master.\n";
-        exit(1);
-    }
-    $query->whereIn('ffoi.item_id', $itemIds);
+if ($fromDate && $toDate) {
+    $query->whereBetween('ffo.tanggal', [$fromDate, $toDate]);
+} else {
+    $query->whereDate('ffoi.updated_at', '>=', $since);
 }
+
+if (! $allStatuses) {
+    $query->whereIn('ffo.status', ['draft', 'submitted']);
+}
+
+$itemIds = DB::table('items')->whereIn('name', $itemNames)->pluck('id')->all();
+if ($itemIds === []) {
+    echo "Item filter tidak ditemukan di master.\n";
+    exit(1);
+}
+$query->whereIn('ffoi.item_id', $itemIds);
 
 if ($limit !== null) {
     $query->limit($limit);
@@ -94,62 +113,60 @@ if ($limit !== null) {
 $rows = $query->get();
 echo "Rows scanned: {$rows->count()}\n";
 
-$fixes = [];
-$priceRowCache = [];
+$priceKeys = [];
 foreach ($rows as $row) {
     $regionId = $row->region_id ? (int) $row->region_id : null;
     $outletId = $row->id_outlet ? (string) $row->id_outlet : null;
-    $cacheKey = $row->item_id . '|' . ($regionId ?? 0) . '|' . ($outletId ?? '0');
+    $key = (int) $row->item_id . '|' . ($regionId ?? 0) . '|' . ($outletId ?? '0');
+    $priceKeys[$key] = [(int) $row->item_id, $regionId, $outletId];
+}
 
-    if (! array_key_exists($cacheKey, $priceRowCache)) {
-        $priceRowCache[$cacheKey] = FloorOrderItemPriceResolver::resolvePriceRow((int) $row->item_id, $regionId, $outletId);
-    }
-    $priceRow = $priceRowCache[$cacheKey];
-    if (! $priceRow) {
+echo 'Unique price keys: ' . count($priceKeys) . "\n";
+
+$expectedCache = [];
+foreach ($priceKeys as $key => [$itemId, $regionId, $outletId]) {
+    $expectedCache[$key] = FloorOrderItemPriceResolver::resolveMediumUnitPrice($itemId, $regionId, $outletId);
+}
+
+$fixes = [];
+foreach ($rows as $row) {
+    $regionId = $row->region_id ? (int) $row->region_id : null;
+    $outletId = $row->id_outlet ? (string) $row->id_outlet : null;
+    $key = (int) $row->item_id . '|' . ($regionId ?? 0) . '|' . ($outletId ?? '0');
+    $expected = $expectedCache[$key] ?? 0.0;
+    if ($expected <= 0) {
         continue;
     }
 
-    $mode = ($priceRow->pricing_mode ?? 'manual') === 'auto' ? 'auto' : 'manual';
-    $rawPrice = (float) ($priceRow->price ?? 0);
-    if ($mode !== 'manual' || $rawPrice <= 0) {
-        continue;
-    }
-
-    $expected = FloorOrderItemPriceResolver::roundUpToHundred($rawPrice);
     $current = (float) $row->price;
     if (abs($expected - $current) < 0.01) {
         continue;
     }
 
     $qty = (float) $row->qty;
-    $expectedSubtotal = round($expected * $qty, 2);
-
     $fixes[] = [
         'id' => (int) $row->id,
-        'floor_order_id' => (int) $row->floor_order_id,
         'order_number' => (string) ($row->order_number ?? ''),
+        'tanggal' => (string) ($row->tanggal ?? ''),
+        'status' => (string) ($row->status ?? ''),
         'outlet' => (string) ($row->nama_outlet ?? ''),
         'item_name' => (string) ($row->item_name ?? ''),
         'current_price' => $current,
         'expected_price' => $expected,
-        'current_subtotal' => (float) ($row->subtotal ?? 0),
-        'expected_subtotal' => $expectedSubtotal,
+        'expected_subtotal' => round($expected * $qty, 2),
         'qty' => $qty,
-        'price_row_id' => (int) $priceRow->id,
-        'price_row_scope' => (string) ($priceRow->availability_price_type ?? ''),
     ];
 }
 
-echo "Manual mismatched rows: " . count($fixes) . "\n\n";
+echo 'Mismatched rows: ' . count($fixes) . "\n\n";
 
-$preview = array_slice($fixes, 0, 30);
+$preview = array_slice($fixes, 0, 40);
 foreach ($preview as $f) {
-    echo "[FO {$f['order_number']}] {$f['outlet']} | {$f['item_name']}\n";
+    echo "[{$f['status']}] {$f['tanggal']} FO {$f['order_number']} | {$f['outlet']} | {$f['item_name']}\n";
     echo "  price {$f['current_price']} -> {$f['expected_price']} | qty={$f['qty']}\n";
-    echo "  subtotal {$f['current_subtotal']} -> {$f['expected_subtotal']} | row_scope={$f['price_row_scope']}#{$f['price_row_id']}\n";
 }
 if (count($fixes) > count($preview)) {
-    echo "... and " . (count($fixes) - count($preview)) . " more rows\n";
+    echo '... and ' . (count($fixes) - count($preview)) . " more rows\n";
 }
 echo "\n";
 

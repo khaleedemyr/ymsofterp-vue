@@ -23,12 +23,6 @@ final class FloorOrderItemPriceResolver
         }
 
         $priceRow = self::resolvePriceRow($itemId, $regionId, $outletId);
-        if (self::isManualRow($priceRow) && $priceRow && (float) ($priceRow->price ?? 0) > 0) {
-            // Manual mode di item_prices diperlakukan sebagai harga unit FO (medium/display),
-            // supaya tidak terpecah oleh medium_conversion_qty.
-            return self::roundUpToHundred((float) $priceRow->price);
-        }
-
         $priceLarge = self::resolvePriceLarge($itemId, $priceRow);
 
         return self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item));
@@ -107,18 +101,6 @@ final class FloorOrderItemPriceResolver
         $fallback = FoodGrLastPurchaseForItem::suggestedSellingPrice($itemId);
 
         return $fallback ? (float) $fallback : 0.0;
-    }
-
-    private static function isManualRow(?object $priceRow): bool
-    {
-        if (! $priceRow) {
-            return true;
-        }
-        if (! Schema::hasColumn('item_prices', 'pricing_mode')) {
-            return true;
-        }
-
-        return ($priceRow->pricing_mode ?? 'manual') !== 'auto';
     }
 
     public static function largeToMediumPrice(float $priceLarge, object $item): float
