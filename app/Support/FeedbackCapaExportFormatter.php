@@ -19,9 +19,11 @@ class FeedbackCapaExportFormatter
     public function flatten(array $case, array $capa): Collection
     {
         $ids = $this->collectCapaUserIds($capa);
-        $names = $ids === []
-            ? []
-            : User::whereIn('id', $ids)->pluck('nama_lengkap', 'id')->all();
+        $userRows = $ids === []
+            ? collect()
+            : User::whereIn('id', $ids)->get(['id', 'nama_lengkap', 'nama_jabatan']);
+        $names = $userRows->pluck('nama_lengkap', 'id')->all();
+        $jabatans = $userRows->pluck('nama_jabatan', 'id')->all();
 
         $rows = [];
 
@@ -74,8 +76,18 @@ class FeedbackCapaExportFormatter
         $this->push($rows, '2. Issue Details', 'Type of Issue', $this->mapComplaintTypes($types));
         $this->push($rows, '2. Issue Details', 'Description', $this->str($b['description'] ?? null));
         $this->push($rows, '2. Issue Details', 'Area / Section', $this->str($b['area_section'] ?? null));
-        $this->push($rows, '2. Issue Details', 'Involved Parties', $this->str($b['involved_parties'] ?? null));
-        $this->push($rows, '2. Issue Details', 'Witness(es)', $this->str($b['witnesses'] ?? null));
+        $involvedIds = is_array($b['involved_party_user_ids'] ?? null) ? $b['involved_party_user_ids'] : [];
+        $witnessIds = is_array($b['witness_user_ids'] ?? null) ? $b['witness_user_ids'] : [];
+        $involvedVal = $this->formatUserIdList($involvedIds, $names, $jabatans);
+        if ($involvedVal === '—') {
+            $involvedVal = $this->str($b['involved_parties'] ?? null);
+        }
+        $witnessVal = $this->formatUserIdList($witnessIds, $names, $jabatans);
+        if ($witnessVal === '—') {
+            $witnessVal = $this->str($b['witnesses'] ?? null);
+        }
+        $this->push($rows, '2. Issue Details', 'Involved Parties', $involvedVal);
+        $this->push($rows, '2. Issue Details', 'Witness(es)', $witnessVal);
 
         $c = is_array($capa['c'] ?? null) ? $capa['c'] : [];
         $actions = isset($c['actions']) && is_array($c['actions']) ? $c['actions'] : [];
@@ -138,8 +150,43 @@ class FeedbackCapaExportFormatter
         if (is_array($g) && isset($g['verified_by_user_id']) && $g['verified_by_user_id'] !== null && $g['verified_by_user_id'] !== '') {
             $ids[] = (int) $g['verified_by_user_id'];
         }
+        $b = $capa['b'] ?? null;
+        if (is_array($b)) {
+            foreach (['involved_party_user_ids', 'witness_user_ids'] as $key) {
+                if (! is_array($b[$key] ?? null)) {
+                    continue;
+                }
+                foreach ($b[$key] as $uid) {
+                    $ids[] = (int) $uid;
+                }
+            }
+        }
 
         return array_values(array_unique(array_filter($ids, fn ($id) => $id > 0)));
+    }
+
+    /**
+     * @param  array<int|string>  $ids
+     * @param  array<int, string>  $names
+     * @param  array<int, string|null>  $jabatans
+     */
+    private function formatUserIdList(array $ids, array $names, array $jabatans): string
+    {
+        $parts = [];
+        foreach ($ids as $rawId) {
+            $id = (int) $rawId;
+            if ($id <= 0) {
+                continue;
+            }
+            $name = trim((string) ($names[$id] ?? ''));
+            if ($name === '') {
+                $name = '#'.$id;
+            }
+            $jab = trim((string) ($jabatans[$id] ?? ''));
+            $parts[] = $jab !== '' ? $name.' ('.$jab.')' : $name;
+        }
+
+        return $parts === [] ? '—' : implode(', ', $parts);
     }
 
     private function str(mixed $v): string

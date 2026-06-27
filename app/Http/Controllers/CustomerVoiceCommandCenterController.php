@@ -293,6 +293,8 @@ class CustomerVoiceCommandCenterController extends Controller
         $request->validate([
             'capa' => 'required|array',
             'capa_division' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -326,6 +328,7 @@ class CustomerVoiceCommandCenterController extends Controller
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
+        $sanitized = $this->stampCapaReportedByFromCsPic($sanitized, $id);
         if (is_array($existingDivisionCapa)) {
             foreach (['d', 'g', 'h'] as $legacySec) {
                 if (isset($existingDivisionCapa[$legacySec]) && is_array($existingDivisionCapa[$legacySec])) {
@@ -362,6 +365,7 @@ class CustomerVoiceCommandCenterController extends Controller
         });
 
         $message = 'Form CAPA tersimpan.';
+        $message .= $this->appendCapaApprovalSubmitNote($request, $id, $division);
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -371,6 +375,66 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         return $this->redirectToVoiceIndex($request)->with('success', $message);
+    }
+
+    /**
+     * @param  array<string, mixed>  $sanitized
+     * @return array<string, mixed>
+     */
+    private function stampCapaReportedByFromCsPic(array $sanitized, int $caseId): array
+    {
+        $row = DB::table('feedback_cases as c')
+            ->leftJoin('users as u', 'u.id', '=', 'c.assigned_to')
+            ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
+            ->where('c.id', $caseId)
+            ->first(['c.assigned_to', 'u.nama_lengkap', 'j.nama_jabatan as nama_jabatan']);
+
+        if ($row === null || $row->assigned_to === null || (int) $row->assigned_to <= 0) {
+            return $sanitized;
+        }
+
+        if (! isset($sanitized['a']) || ! is_array($sanitized['a'])) {
+            $sanitized['a'] = [];
+        }
+
+        $name = trim((string) ($row->nama_lengkap ?? ''));
+        $sanitized['a']['reported_by'] = $name !== '' ? $name : null;
+        $jabatan = trim((string) ($row->nama_jabatan ?? ''));
+        $sanitized['a']['reported_by_position'] = $jabatan !== '' ? $jabatan : null;
+
+        return $sanitized;
+    }
+
+    /**
+     * @return string Catatan tambahan untuk flash/message (approval otomatis saat simpan).
+     */
+    private function appendCapaApprovalSubmitNote(Request $request, int $caseId, string $division): string
+    {
+        $approvers = $request->input('approvers');
+        if (! is_array($approvers) || $approvers === []) {
+            return '';
+        }
+
+        $approverIds = array_values(array_unique(array_filter(array_map('intval', $approvers), fn ($id) => $id > 0)));
+        if ($approverIds === []) {
+            return '';
+        }
+
+        $submitResult = $this->capaApprovalService->submitForApproval(
+            $caseId,
+            $division,
+            $approverIds,
+            (int) ($request->user()->id ?? 0)
+        );
+
+        if ($submitResult['success']) {
+            $summary = $this->capaApprovalService->divisionSummary($caseId, $division);
+            $this->stampCapaApprovalAuditMeta($caseId, $division, $summary['state'] ?? 'pending');
+
+            return ' Approval telah diajukan.';
+        }
+
+        return ' '.$submitResult['message'];
     }
 
     /**
@@ -497,6 +561,8 @@ class CustomerVoiceCommandCenterController extends Controller
         $request->validate([
             'capa' => 'required|array',
             'capa_division' => 'nullable|string',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
         ]);
 
         $row = DB::table('feedback_cases')->where('id', $id)->first();
@@ -525,6 +591,7 @@ class CustomerVoiceCommandCenterController extends Controller
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
+        $sanitized = $this->stampCapaReportedByFromCsPic($sanitized, $id);
         if (is_array($existingDivisionCapa)) {
             foreach (['d', 'g', 'h'] as $legacySec) {
                 if (isset($existingDivisionCapa[$legacySec]) && is_array($existingDivisionCapa[$legacySec])) {
@@ -561,6 +628,7 @@ class CustomerVoiceCommandCenterController extends Controller
         });
 
         $message = 'Form CAPA tersimpan.';
+        $message .= $this->appendCapaApprovalSubmitNote($request, $id, $division);
 
         return response()->json([
             'success' => true,

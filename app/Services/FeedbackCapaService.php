@@ -35,6 +35,8 @@ class FeedbackCapaService
                 'area_section' => null,
                 'involved_parties' => null,
                 'witnesses' => null,
+                'involved_party_user_ids' => [],
+                'witness_user_ids' => [],
             ],
             'c' => [
                 'actions' => [],
@@ -226,6 +228,9 @@ class FeedbackCapaService
         if (count($b['types'] ?? []) > 0) {
             return true;
         }
+        if (count($b['involved_party_user_ids'] ?? []) > 0 || count($b['witness_user_ids'] ?? []) > 0) {
+            return true;
+        }
         foreach (['types_other', 'description', 'area_section', 'involved_parties', 'witnesses'] as $k) {
             $v = $b[$k] ?? null;
             if ($v !== null && trim((string) $v) !== '') {
@@ -365,6 +370,8 @@ class FeedbackCapaService
         $merged['b']['area_section'] = $this->limitStr($merged['b']['area_section'] ?? null, 500);
         $merged['b']['involved_parties'] = $this->limitStr($merged['b']['involved_parties'] ?? null, 4000);
         $merged['b']['witnesses'] = $this->limitStr($merged['b']['witnesses'] ?? null, 4000);
+        $merged['b']['involved_party_user_ids'] = $this->sanitizeUserIdArray($merged['b']['involved_party_user_ids'] ?? []);
+        $merged['b']['witness_user_ids'] = $this->sanitizeUserIdArray($merged['b']['witness_user_ids'] ?? []);
         $merged['d']['problem_statement'] = $this->limitStr($merged['d']['problem_statement'] ?? null, 4000);
         foreach (['man', 'method', 'machine', 'material', 'measurement', 'environment', 'root_cause_summary'] as $fk) {
             $merged['d'][$fk] = $this->limitStr($merged['d'][$fk] ?? null, 8000);
@@ -425,6 +432,34 @@ class FeedbackCapaService
         }
 
         return DB::table('users')->where('id', $id)->exists() ? $id : null;
+    }
+
+    /**
+     * @param  mixed  $raw
+     * @return array<int, int>
+     */
+    private function sanitizeUserIdArray(mixed $raw): array
+    {
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $ids = [];
+        foreach ($raw as $item) {
+            $id = (int) $item;
+            if ($id > 0) {
+                $ids[] = $id;
+            }
+        }
+
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            return [];
+        }
+
+        $existing = DB::table('users')->whereIn('id', $ids)->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        return array_values(array_intersect($ids, $existing));
     }
 
     /**

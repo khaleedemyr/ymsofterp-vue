@@ -68,11 +68,11 @@
         </div>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Reported By
-          <input v-model="local.a.reported_by" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nama pelapor" />
+          <input v-model="local.a.reported_by" type="text" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800" placeholder="Otomatis dari CS PIC case" />
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Position
-          <input v-model="local.a.reported_by_position" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Jabatan / posisi" />
+          <input v-model="local.a.reported_by_position" type="text" readonly class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800" placeholder="Otomatis dari jabatan CS PIC" />
         </label>
       </div>
     </section>
@@ -98,11 +98,11 @@
         </label>
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Involved Parties
-          <input v-model="local.b.involved_parties" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <CapaUserMultiselect v-model="local.b.involved_party_user_ids" :assignees="assigneesMerged" placeholder="Cari pihak terlibat…" class="mt-1" />
         </label>
         <label class="sm:col-span-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Witness(es)
-          <textarea v-model="local.b.witnesses" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          <CapaUserMultiselect v-model="local.b.witness_user_ids" :assignees="assigneesMerged" placeholder="Cari saksi…" class="mt-1" />
         </label>
       </div>
     </section>
@@ -184,7 +184,7 @@
     <!-- Approval -->
     <section id="capa-approval" class="scroll-mt-28 rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">Approval</h3>
-      <p class="mt-1 text-[11px] text-slate-600">Pilih approver berurutan (level 1 → terakhir), pola sama dengan PO Ops.</p>
+      <p class="mt-1 text-[11px] text-slate-600">Pilih approver berurutan (level 1 → terakhir). Approval diajukan otomatis saat klik Simpan form CAPA.</p>
 
       <div v-if="approvalFlows.length" class="mt-3 space-y-2">
         <div v-for="flow in approvalFlows" :key="flow.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-xs" :class="approvalFlowClass(flow.status)">
@@ -227,9 +227,6 @@
               <button type="button" class="rounded border border-rose-200 px-2 py-0.5 text-xs text-rose-700" @click="removeApprover(idx)">×</button>
             </div>
           </div>
-          <button type="button" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="submittingApproval || !selectedApprovers.length" @click="submitApproval">
-            {{ submittingApproval ? 'Mengajukan…' : 'Ajukan Approval' }}
-          </button>
         </div>
       </div>
 
@@ -255,6 +252,7 @@
 
 <script setup>
 import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
+import CapaUserMultiselect from '@/Pages/CustomerVoiceCommandCenter/CapaUserMultiselect.vue'
 import axios from 'axios'
 import Swal from 'sweetalert2'
 import { computed, ref, watch } from 'vue'
@@ -272,6 +270,9 @@ const props = defineProps({
   saving: { type: Boolean, default: false },
   assignees: { type: Array, default: () => [] },
   authUser: { type: Object, default: null },
+  assignedToId: { type: Number, default: null },
+  assignedToName: { type: String, default: '' },
+  assignedToJabatan: { type: String, default: '' },
   deleting: { type: Boolean, default: false },
   focusSectionId: { type: String, default: null },
 })
@@ -286,6 +287,7 @@ const divisions = [
 
 const activeDivision = ref('service')
 const divisionDrafts = ref({ service: ensureShape({}), kitchen: ensureShape({}), bar: ensureShape({}) })
+const divisionApproverDrafts = ref({ service: [], kitchen: [], bar: [] })
 const local = ref(ensureShape({}))
 const approvalSummariesLocal = ref({ service: emptyApproval(), kitchen: emptyApproval(), bar: emptyApproval() })
 
@@ -297,7 +299,6 @@ const approverSearch = ref('')
 const approverResults = ref([])
 const showApproverDropdown = ref(false)
 const selectedApprovers = ref([])
-const submittingApproval = ref(false)
 const actingApproval = ref(false)
 const approvalComments = ref('')
 
@@ -319,6 +320,23 @@ const assigneesMerged = computed(() => {
     base.unshift({ id: au.id, nama_lengkap: au.nama_lengkap || '', nama_jabatan: au.nama_jabatan ?? null })
   }
   return base
+})
+
+/** CS PIC case — pelapor CAPA (bukan user regional yang mengisi). */
+const capaReporterUser = computed(() => {
+  const csId = Number(props.assignedToId || 0)
+  if (csId > 0) {
+    const fromList = assigneesMerged.value.find((x) => Number(x.id) === csId)
+    if (fromList) {
+      return { nama_lengkap: fromList.nama_lengkap || '', nama_jabatan: fromList.nama_jabatan || '' }
+    }
+  }
+  const name = String(props.assignedToName || '').trim()
+  const jabatan = String(props.assignedToJabatan || '').trim()
+  if (name) {
+    return { nama_lengkap: name, nama_jabatan: jabatan }
+  }
+  return null
 })
 
 const capaRows = computed(() => divisions.map((d) => ({ id: d.id, label: d.label, filled: isDivisionFilled(d.id) })))
@@ -360,6 +378,7 @@ watch(
       kitchen: { ...emptyApproval(), ...(props.approvalSummaries?.kitchen || {}) },
       bar: { ...emptyApproval(), ...(props.approvalSummaries?.bar || {}) },
     }
+    divisionApproverDrafts.value = { service: [], kitchen: [], bar: [] }
     selectedApprovers.value = []
   },
   { immediate: true, deep: true },
@@ -368,24 +387,35 @@ watch(
 watch(activeDivision, (next, prev) => {
   if (prev && divisionDrafts.value[prev]) {
     divisionDrafts.value[prev] = ensureShape(JSON.parse(JSON.stringify(local.value)))
+    divisionApproverDrafts.value[prev] = [...selectedApprovers.value]
   }
   local.value = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[next] || {})))
-  selectedApprovers.value = []
+  selectedApprovers.value = [...(divisionApproverDrafts.value[next] || [])]
+  applyReportedBy(local.value)
 })
+
+watch(
+  () => [props.assignedToId, props.assignedToName, props.assignedToJabatan],
+  () => {
+    applyReportedBy(local.value)
+  },
+)
 
 function emptyApproval() {
   return { state: 'none', flows: [], next_approver_id: null, can_submit: true, can_resubmit: false }
 }
 
+function applyReportedBy(merged) {
+  const reporter = capaReporterUser.value
+  if (!reporter) return
+  merged.a.reported_by = reporter.nama_lengkap || null
+  merged.a.reported_by_position = reporter.nama_jabatan || null
+}
+
 function seedFromSource(merged) {
   merged.b.types = sourceComplaintTypeBadges.value.map((x) => x.key)
   merged.b.description = sourceComplaintDescription.value || merged.b.description
-  if (!merged.a.reported_by && props.authUser?.nama_lengkap) {
-    merged.a.reported_by = props.authUser.nama_lengkap
-  }
-  if (!merged.a.reported_by_position && props.authUser?.nama_jabatan) {
-    merged.a.reported_by_position = props.authUser.nama_jabatan
-  }
+  applyReportedBy(merged)
 }
 
 const sourceComplaintTypeBadges = computed(() => {
@@ -412,7 +442,7 @@ function divisionLabel(div) {
 function ensureShape(src) {
   const base = {
     a: { complaint_date: null, complaint_time: null, guest_name: null, channel: null, channel_other: null, reported_by: null, reported_by_position: null },
-    b: { types: [], types_other: null, description: null, area_section: null, involved_parties: null, witnesses: null },
+    b: { types: [], types_other: null, description: null, area_section: null, involved_parties: null, witnesses: null, involved_party_user_ids: [], witness_user_ids: [] },
     c: { actions: [], actions_other: null, response_time_note: null, pic_user_id: null },
     e: { action: null, pic_user_id: null, deadline: null, status: 'open' },
     f: { action: null, improvement_areas: [], pic_user_id: null, timeline: null, kpi: null },
@@ -488,8 +518,17 @@ function toggleAction(v) {
 }
 
 function submit() {
+  applyReportedBy(local.value)
   divisionDrafts.value[activeDivision.value] = ensureShape(JSON.parse(JSON.stringify(local.value)))
-  emit('save', { division: activeDivision.value, capa: JSON.parse(JSON.stringify(local.value)) })
+  divisionApproverDrafts.value[activeDivision.value] = [...selectedApprovers.value]
+  const payload = {
+    division: activeDivision.value,
+    capa: JSON.parse(JSON.stringify(local.value)),
+  }
+  if (canManageApprovers.value && selectedApprovers.value.length) {
+    payload.approvers = selectedApprovers.value.map((a) => a.id)
+  }
+  emit('save', payload)
 }
 
 function csrfToken() {
@@ -564,25 +603,6 @@ function approvalFlowClass(status) {
   if (status === 'APPROVED') return 'border-emerald-200 bg-emerald-50'
   if (status === 'REJECTED') return 'border-rose-200 bg-rose-50'
   return 'border-amber-200 bg-amber-50'
-}
-
-async function submitApproval() {
-  if (!selectedApprovers.value.length) return
-  submittingApproval.value = true
-  try {
-    const { data } = await axios.post(
-      route('customer-voice-command-center.cases.capa.submit-approval', props.caseId),
-      { division: activeDivision.value, approvers: selectedApprovers.value.map((a) => a.id) },
-      { headers: { 'X-CSRF-TOKEN': csrfToken(), Accept: 'application/json' } },
-    )
-    if (!data.success) throw new Error(data.message)
-    approvalSummariesLocal.value[activeDivision.value] = data.summary
-    selectedApprovers.value = []
-    emit('approval-changed')
-    await Swal.fire({ icon: 'success', title: 'Diajukan', timer: 1200, showConfirmButton: false })
-  } catch (e) {
-    Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || e.message })
-  } finally { submittingApproval.value = false }
 }
 
 async function actApproval(approved) {

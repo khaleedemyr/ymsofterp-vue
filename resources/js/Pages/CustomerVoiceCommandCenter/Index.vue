@@ -1714,6 +1714,7 @@ function submitCapa(payload) {
   if (!detailCaseId.value) return
   const capa = payload && typeof payload === 'object' && payload.capa ? payload.capa : payload
   const capaDivision = payload && typeof payload === 'object' ? payload.division : null
+  const approvers = payload && typeof payload === 'object' && Array.isArray(payload.approvers) ? payload.approvers : null
   capaSaving.value = true
   Swal.fire({
     title: 'Menyimpan CAPA…',
@@ -1723,11 +1724,15 @@ function submitCapa(payload) {
       Swal.showLoading()
     },
   })
-  router.post(`/customer-voice-command-center/cases/${detailCaseId.value}/capa`, {
+  const postData = {
     ...voiceIndexPostExtras(),
     capa_division: capaDivision || 'service',
     capa,
-  }, {
+  }
+  if (approvers && approvers.length) {
+    postData.approvers = approvers
+  }
+  router.post(`/customer-voice-command-center/cases/${detailCaseId.value}/capa`, postData, {
     preserveScroll: true,
     onSuccess: () => {
       Swal.close()
