@@ -278,7 +278,10 @@ class WebProfileOutletLandingController extends Controller
             'logo_url' => $logoPath ? $this->publicStorageUrl($logoPath) : null,
             'gallery_images' => $gallery,
             'address' => $address !== '' ? $address : null,
+            'lat' => $outlet?->lat,
+            'long' => $outlet?->long,
             'map_url' => $mapUrl !== '' ? $mapUrl : null,
+            'map_embed_url' => $this->resolveOutletMapEmbedUrl($outlet),
             'book_now_label' => $landing->book_now_label ?: 'BOOK NOW',
             'see_map_label' => $landing->see_map_label ?: 'SEE MAP',
             'book_now_outlet_id' => (int) $landing->outlet_id,
@@ -350,6 +353,31 @@ class WebProfileOutletLandingController extends Controller
         }
 
         return sprintf('https://www.google.com/maps?q=%s,%s', $lat, $long);
+    }
+
+    private function resolveOutletMapEmbedUrl(?Outlet $outlet): ?string
+    {
+        if (! $outlet) {
+            return null;
+        }
+
+        $lat = trim((string) ($outlet->lat ?? ''));
+        $long = trim((string) ($outlet->long ?? ''));
+
+        if ($lat !== '' && $long !== '') {
+            return sprintf(
+                'https://maps.google.com/maps?q=%s,%s&z=15&output=embed',
+                rawurlencode($lat),
+                rawurlencode($long)
+            );
+        }
+
+        $address = trim((string) ($outlet->lokasi ?? ''));
+        if ($address === '') {
+            return null;
+        }
+
+        return 'https://maps.google.com/maps?q='.rawurlencode($address).'&z=15&output=embed';
     }
 
     private function generateUniqueSlug(string $outletName, int $outletId): string
