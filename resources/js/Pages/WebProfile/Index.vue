@@ -88,6 +88,19 @@
           </div>
         </Link>
 
+        <!-- Outlet Landing Pages -->
+        <Link href="/web-profile/outlet-landings" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-orange-500">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-800 mb-1">Outlet Landing Pages</h3>
+              <p class="text-sm text-gray-500">Landing page per outlet (Justus Kunest)</p>
+            </div>
+            <div class="bg-orange-100 p-3 rounded-full">
+              <i class="fa-solid fa-map-location-dot text-orange-600 text-2xl"></i>
+            </div>
+          </div>
+        </Link>
+
         <!-- Home Service Menu (web) -->
         <Link href="/web-profile/home-service-packages" class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border-l-4 border-rose-600">
           <div class="flex items-center justify-between">

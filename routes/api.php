@@ -1945,6 +1945,8 @@ Route::prefix('web-profile')->group(function () {
     Route::get('/brands', [\App\Http\Controllers\WebProfileController::class, 'apiBrands'])->name('api.web-profile.brands');
     Route::get('/home-blocks', [\App\Http\Controllers\WebProfileController::class, 'apiHomeBlocks'])->name('api.web-profile.home-blocks');
     Route::get('/home-service-packages', [\App\Http\Controllers\WebProfileController::class, 'apiHomeServicePackages'])->name('api.web-profile.home-service-packages');
+    Route::get('/outlet-landings', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'apiIndex'])->name('api.web-profile.outlet-landings');
+    Route::get('/outlet-landings/{slug}', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'apiShow'])->name('api.web-profile.outlet-landings.show');
     Route::get('/justus-apps-page', [\App\Http\Controllers\WebProfileController::class, 'apiJustusAppsPage'])->name('api.web-profile.justus-apps-page');
     Route::get('/about-page', [\App\Http\Controllers\WebProfileController::class, 'apiAboutPage'])->name('api.web-profile.about-page');
     Route::get('/careers-page', [\App\Http\Controllers\WebProfileController::class, 'apiCareersPage'])->name('api.web-profile.careers-page');

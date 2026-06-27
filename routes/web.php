@@ -2739,6 +2739,12 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/update', [\App\Http\Controllers\WebProfileController::class, 'homeServiceLandingUpdate'])->name('update');
     });
 
+    Route::prefix('web-profile/outlet-landings')->name('web-profile.outlet-landings.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'index'])->name('index');
+        Route::get('/{outletId}/edit', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'edit'])->name('edit')->whereNumber('outletId');
+        Route::match(['put', 'post'], '/{outletId}', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'update'])->name('update')->whereNumber('outletId');
+    });
+
     Route::prefix('web-profile/home-service-packages')->name('web-profile.home-service-packages.')->group(function () {
         Route::post('/hero', [\App\Http\Controllers\WebProfileController::class, 'homeServiceHeroStore'])->name('hero');
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'homeServicePackagesIndex'])->name('index');

@@ -89,4 +89,9 @@ return [
         'use_v1_api' => env('FCM_USE_V1_API', true), // Use HTTP v1 API (default: true)
     ],
 
+    'justus_kunest' => [
+        'web_url' => rtrim((string) env('JUSTUS_KUNEST_WEB_URL', ''), '/'),
+        'preview_key' => (string) env('JUSTUS_KUNEST_PREVIEW_KEY', ''),
+    ],
+
 ];
