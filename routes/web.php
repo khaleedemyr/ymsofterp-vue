@@ -2741,6 +2741,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::prefix('web-profile/outlet-landings')->name('web-profile.outlet-landings.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'index'])->name('index');
+        Route::post('/settings', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'updateSettings'])->name('settings');
         Route::get('/{outletId}/edit', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'edit'])->name('edit')->whereNumber('outletId');
         Route::match(['put', 'post'], '/{outletId}', [\App\Http\Controllers\WebProfileOutletLandingController::class, 'update'])->name('update')->whereNumber('outletId');
     });

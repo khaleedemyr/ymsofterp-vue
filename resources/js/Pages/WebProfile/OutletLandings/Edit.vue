@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -9,6 +9,7 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   outlet: { type: Object, required: true },
   landing: { type: Object, required: true },
+  brandGalleryImages: { type: Array, default: () => [] },
   justusKunestWebUrl: { type: String, default: '' },
   previewKey: { type: String, default: '' },
 });
@@ -18,7 +19,6 @@ const page = usePage();
 const form = ref({
   slug: props.landing.slug || '',
   is_active: props.landing.is_active ?? false,
-  outlet_subtitle: props.landing.outlet_subtitle || '',
   headline: props.landing.headline || '',
   intro_paragraph: props.landing.intro_paragraph || '',
   secondary_paragraph: props.landing.secondary_paragraph || '',
@@ -30,8 +30,6 @@ const heroFile = ref(null);
 const logoFile = ref(null);
 const removeHero = ref(false);
 const removeLogo = ref(false);
-const galleryKeep = ref((props.landing.gallery_images || []).map((g) => g.path));
-const galleryNewPreviews = ref([]);
 const saving = ref(false);
 
 const mediaSpecs = [
@@ -48,20 +46,6 @@ const mediaSpecs = [
     mobile: '1080 × 720 px',
     ratio: '16:9 – 3:2',
     note: 'Landscape lebar. Area penting di tengah (object-cover).',
-  },
-  {
-    label: 'Galeri — baris atas (2 foto)',
-    web: '1200 × 800 px',
-    mobile: '800 × 600 px',
-    ratio: '3:2',
-    note: '2 foto besar sejajar di desktop & mobile.',
-  },
-  {
-    label: 'Galeri — baris bawah (3 foto)',
-    web: '800 × 800 px',
-    mobile: '600 × 600 px',
-    ratio: '1:1',
-    note: '3 foto lebih kecil. Min. 5 foto total untuk layout penuh.',
   },
 ];
 
@@ -90,49 +74,25 @@ function buildPreviewUrl(draft = false) {
 }
 
 function openPreview(draft = false) {
-  const url = buildPreviewUrl(draft);
+  let url = draft ? props.landing.preview_draft_url : props.landing.preview_live_url;
+
+  if (draft && previewSlug.value !== String(props.landing.slug || '').trim()) {
+    url = buildPreviewUrl(true);
+  }
+
   if (!url) {
     const missing = !String(props.justusKunestWebUrl || '').trim()
-      ? 'Set env JUSTUS_KUNEST_WEB_URL di ymsofterp.'
+      ? 'Isi URL Justus Kunest Web di halaman Daftar Outlet Landing → Simpan Pengaturan.'
       : (draft && !props.previewKey)
-        ? 'Set env JUSTUS_KUNEST_PREVIEW_KEY di ymsofterp & justuskunest untuk preview draft.'
-        : 'Isi slug landing page terlebih dahulu.';
+        ? 'Isi Preview Key di pengaturan (Daftar Outlet Landing) untuk preview draft.'
+        : draft
+          ? 'Simpan landing page terlebih dahulu sebelum preview draft.'
+          : 'Landing belum siap tampil (aktif + hero + headline/intro).';
     Swal.fire({ icon: 'info', title: 'Preview tidak tersedia', text: missing });
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
-
-function onGalleryPick(event) {
-  const files = Array.from(event.target.files || []);
-  for (const file of files) {
-    galleryNewPreviews.value.push({
-      file,
-      url: URL.createObjectURL(file),
-    });
-  }
-  event.target.value = '';
-}
-
-function removeExistingGallery(path) {
-  galleryKeep.value = galleryKeep.value.filter((p) => p !== path);
-}
-
-function removeNewGallery(index) {
-  const item = galleryNewPreviews.value[index];
-  if (item?.url) {
-    URL.revokeObjectURL(item.url);
-  }
-  galleryNewPreviews.value = galleryNewPreviews.value.filter((_, i) => i !== index);
-}
-
-onBeforeUnmount(() => {
-  galleryNewPreviews.value.forEach((item) => {
-    if (item?.url) {
-      URL.revokeObjectURL(item.url);
-    }
-  });
-});
 
 function submit() {
   saving.value = true;
@@ -145,12 +105,10 @@ function submit() {
       fd.append(key, val ?? '');
     }
   });
-  fd.append('gallery_keep_json', JSON.stringify(galleryKeep.value));
   if (heroFile.value) fd.append('hero_image', heroFile.value);
   if (logoFile.value) fd.append('logo_override', logoFile.value);
   if (removeHero.value) fd.append('remove_hero', '1');
   if (removeLogo.value) fd.append('remove_logo', '1');
-  galleryNewPreviews.value.forEach((item) => fd.append('gallery_new[]', item.file));
 
   router.post(`/web-profile/outlet-landings/${props.outlet.id}`, fd, {
     forceFormData: true,
@@ -211,10 +169,6 @@ function submit() {
             <TextInput v-model="form.slug" class="mt-1 w-full" placeholder="justus-steakhouse-alam-sutera" />
             <p class="text-xs text-gray-500 mt-1">URL web: /outlets/{{ form.slug || 'slug' }}</p>
           </div>
-          <div>
-            <InputLabel value="Subtitle Outlet (contoh: ALAM SUTERA)" />
-            <TextInput v-model="form.outlet_subtitle" class="mt-1 w-full" />
-          </div>
         </div>
 
         <div class="bg-white rounded-xl shadow p-6 space-y-4">
@@ -260,7 +214,7 @@ function submit() {
                 </tbody>
               </table>
             </div>
-            <p class="text-xs text-indigo-700 mt-2">Format: JPG, PNG, WebP. Maks. hero 10 MB, galeri 50 MB per file.</p>
+            <p class="text-xs text-indigo-700 mt-2">Format: JPG, PNG, WebP. Maks. hero 10 MB.</p>
           </div>
 
           <div>
@@ -283,18 +237,27 @@ function submit() {
           </div>
           <div>
             <InputLabel value="Galeri Foto" />
-            <p class="text-xs text-gray-500 mt-0.5">Rekomendasi: 2 foto besar 1200×800 px + 3 foto 800×800 px (min. 5 untuk layout penuh)</p>
-            <div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div v-for="g in landing.gallery_images.filter((x) => galleryKeep.includes(x.path))" :key="g.path" class="relative">
-                <img :src="g.url" alt="" class="h-28 w-full rounded-lg object-cover" />
-                <button type="button" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs" @click="removeExistingGallery(g.path)">×</button>
-              </div>
-              <div v-for="(preview, idx) in galleryNewPreviews" :key="`new-${idx}-${preview.url}`" class="relative">
-                <img :src="preview.url" alt="" class="h-28 w-full rounded-lg object-cover" />
-                <button type="button" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs" @click="removeNewGallery(idx)">×</button>
-              </div>
+            <p class="text-xs text-gray-500 mt-0.5">
+              Diambil otomatis dari galeri Brand outlet (Member Apps Settings). Urutan mengikuti sort order brand.
+            </p>
+            <div v-if="brandGalleryImages.length" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <img
+                v-for="(url, idx) in brandGalleryImages"
+                :key="`${idx}-${url}`"
+                :src="url"
+                alt=""
+                class="h-28 w-full rounded-lg object-cover"
+              />
             </div>
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="mt-3 block w-full text-sm" @change="onGalleryPick" />
+            <p v-else class="mt-2 text-sm text-amber-700">
+              Belum ada foto galeri di brand outlet ini.
+            </p>
+            <Link
+              href="/admin/member-apps-settings"
+              class="mt-3 inline-flex text-sm text-indigo-600 hover:underline"
+            >
+              Kelola galeri di Member Apps Settings → Brand
+            </Link>
           </div>
         </div>
 

@@ -11,10 +11,16 @@ const props = defineProps({
   filters: { type: Object, default: () => ({ search: '' }) },
   justusKunestWebUrl: { type: String, default: '' },
   previewKey: { type: String, default: '' },
+  previewWebUrlConfigured: { type: Boolean, default: false },
 });
 
 const page = usePage();
 const search = ref(props.filters.search || '');
+const settingsForm = ref({
+  justus_kunest_web_url: props.justusKunestWebUrl || '',
+  preview_key: props.previewKey || '',
+});
+const savingSettings = ref(false);
 
 watch(
   () => page.props.flash?.success,
@@ -38,13 +44,24 @@ function openPreviewUrl(url) {
     Swal.fire({
       icon: 'info',
       title: 'Preview tidak tersedia',
-      text: !props.justusKunestWebUrl
-        ? 'Set env JUSTUS_KUNEST_WEB_URL di ymsofterp.'
+      text: !props.previewWebUrlConfigured
+        ? 'Isi URL Justus Kunest Web di pengaturan di bawah, lalu klik Simpan Pengaturan.'
         : 'Landing belum siap atau slug belum diisi.',
     });
     return;
   }
   window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function saveSettings() {
+  savingSettings.value = true;
+  router.post('/web-profile/outlet-landings/settings', settingsForm.value, {
+    onFinish: () => { savingSettings.value = false; },
+    onError: (errors) => {
+      const msg = Object.values(errors || {}).flat().join('\n') || 'Gagal menyimpan pengaturan.';
+      Swal.fire({ icon: 'error', title: 'Gagal', text: msg });
+    },
+  });
 }
 </script>
 
@@ -56,6 +73,48 @@ function openPreviewUrl(url) {
           <Link href="/web-profile" class="text-sm text-gray-500 hover:text-gray-700">&larr; Web Profile</Link>
           <h1 class="text-2xl font-bold text-gray-800 mt-1">Outlet Landing Pages</h1>
           <p class="text-sm text-gray-500 mt-1">Kelola landing page per outlet untuk Justus Kunest web</p>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow p-6 mb-6 space-y-4">
+        <h2 class="font-semibold text-gray-800">Pengaturan Preview (Justus Kunest Web)</h2>
+        <p class="text-sm text-gray-500">
+          Wajib diisi agar tombol Preview dan link landing page berfungsi. Bisa juga lewat env
+          <code class="text-xs bg-gray-100 px-1 rounded">JUSTUS_KUNEST_WEB_URL</code> di server.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <InputLabel value="URL Justus Kunest Web *" />
+            <TextInput
+              v-model="settingsForm.justus_kunest_web_url"
+              class="mt-1 w-full"
+              placeholder="https://justus.co.id"
+            />
+          </div>
+          <div>
+            <InputLabel value="Preview Key (draft)" />
+            <TextInput
+              v-model="settingsForm.preview_key"
+              class="mt-1 w-full"
+              placeholder="secret-key-untuk-preview-draft"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            :disabled="savingSettings"
+            @click="saveSettings"
+          >
+            {{ savingSettings ? 'Menyimpan...' : 'Simpan Pengaturan' }}
+          </button>
+          <span
+            class="text-xs font-semibold px-2 py-1 rounded"
+            :class="previewWebUrlConfigured ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+          >
+            {{ previewWebUrlConfigured ? 'URL preview sudah dikonfigurasi' : 'URL preview belum dikonfigurasi' }}
+          </span>
         </div>
       </div>
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MemberAppsBrand;
 use App\Models\Outlet;
 use App\Models\WebProfileOutletLanding;
+use App\Models\WebProfileSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -69,7 +70,6 @@ class WebProfileOutletLandingController extends Controller
                 'is_active' => false,
                 'book_now_label' => 'BOOK NOW',
                 'see_map_label' => 'SEE MAP',
-                'gallery_images' => [],
             ]
         );
 
@@ -82,9 +82,36 @@ class WebProfileOutletLandingController extends Controller
                 'long' => $outlet->long,
                 'map_url' => $this->resolveOutletMapUrl($outlet),
             ],
-            'landing' => $this->landingForEdit($landing),
+            'brandGalleryImages' => $this->resolveBrandGalleryUrls($outlet->id_outlet),
+            'landing' => array_merge($this->landingForEdit($landing), [
+                'preview_draft_url' => $this->buildPreviewUrl((string) $landing->slug, true),
+                'preview_live_url' => $landing->isPublished()
+                    ? $this->buildPreviewUrl((string) $landing->slug, false)
+                    : null,
+            ]),
             ...$this->previewProps(),
         ]);
+    }
+
+    public function updateSettings(Request $request)
+    {
+        $validated = $request->validate([
+            'justus_kunest_web_url' => 'required|url|max:500',
+            'preview_key' => 'nullable|string|max:120',
+        ]);
+
+        WebProfileSetting::setValue(
+            'justus_kunest_web_url',
+            rtrim((string) $validated['justus_kunest_web_url'], '/')
+        );
+        WebProfileSetting::setValue(
+            'justus_kunest_preview_key',
+            trim((string) ($validated['preview_key'] ?? ''))
+        );
+
+        return redirect()
+            ->route('web-profile.outlet-landings.index')
+            ->with('success', 'Pengaturan URL preview Justus Kunest berhasil disimpan.');
     }
 
     public function update(Request $request, int $outletId)
@@ -98,14 +125,12 @@ class WebProfileOutletLandingController extends Controller
             ['outlet_id' => $outlet->id_outlet],
             [
                 'slug' => $this->generateUniqueSlug($outlet->nama_outlet, $outlet->id_outlet),
-                'gallery_images' => [],
             ]
         );
 
         $request->validate([
             'slug' => 'required|string|max:191|unique:web_profile_outlet_landings,slug,'.$landing->id,
             'is_active' => 'nullable|boolean',
-            'outlet_subtitle' => 'nullable|string|max:255',
             'headline' => 'nullable|string|max:500',
             'intro_paragraph' => 'nullable|string',
             'secondary_paragraph' => 'nullable|string',
@@ -113,9 +138,6 @@ class WebProfileOutletLandingController extends Controller
             'see_map_label' => 'nullable|string|max:100',
             'hero_image' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:10240',
             'logo_override' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:5120',
-            'gallery_keep_json' => 'nullable|string',
-            'gallery_new' => 'nullable',
-            'gallery_new.*' => 'file|image|mimes:jpeg,jpg,png,webp|max:51200',
             'remove_hero' => 'nullable|boolean',
             'remove_logo' => 'nullable|boolean',
         ]);
@@ -123,32 +145,6 @@ class WebProfileOutletLandingController extends Controller
         $slug = Str::slug((string) $request->input('slug'));
         if ($slug === '') {
             $slug = $this->generateUniqueSlug($outlet->nama_outlet, $outlet->id_outlet);
-        }
-
-        $keep = json_decode($request->input('gallery_keep_json', '[]'), true);
-        if (! is_array($keep)) {
-            $keep = [];
-        }
-        $allowedGallery = collect($landing->gallery_images ?: [])->filter()->values()->all();
-        $gallery = collect($keep)
-            ->filter(fn ($p) => is_string($p) && in_array($p, $allowedGallery, true))
-            ->values()
-            ->all();
-
-        foreach ($request->file('gallery_new', []) ?? [] as $file) {
-            if (! $file) {
-                continue;
-            }
-            $gallery[] = $file->storeAs(
-                'web-profile/outlet-landings/gallery',
-                time().'_'.Str::random(8).'.'.$file->getClientOriginalExtension(),
-                'public'
-            );
-        }
-
-        $removedGallery = array_diff($allowedGallery, $gallery);
-        foreach ($removedGallery as $path) {
-            Storage::disk('public')->delete($path);
         }
 
         $heroPath = $landing->hero_image;
@@ -188,7 +184,6 @@ class WebProfileOutletLandingController extends Controller
         $landing->update([
             'slug' => $slug,
             'is_active' => $request->boolean('is_active'),
-            'outlet_subtitle' => $request->input('outlet_subtitle'),
             'headline' => $request->input('headline'),
             'intro_paragraph' => $request->input('intro_paragraph'),
             'secondary_paragraph' => $request->input('secondary_paragraph'),
@@ -196,7 +191,6 @@ class WebProfileOutletLandingController extends Controller
             'see_map_label' => $request->input('see_map_label') ?: 'SEE MAP',
             'hero_image' => $heroPath,
             'logo_override' => $logoPath,
-            'gallery_images' => array_values($gallery),
         ]);
 
         return redirect()
@@ -221,7 +215,7 @@ class WebProfileOutletLandingController extends Controller
 
     public function apiShow(Request $request, string $slug)
     {
-        $previewKey = (string) config('services.justus_kunest.preview_key', '');
+        $previewKey = $this->resolvePreviewKey();
         $isPreview = $previewKey !== ''
             && hash_equals($previewKey, (string) $request->query('preview', ''));
 
@@ -252,7 +246,10 @@ class WebProfileOutletLandingController extends Controller
     private function buildPublicPayload(WebProfileOutletLanding $landing): array
     {
         $outlet = Outlet::find($landing->outlet_id);
-        $brand = MemberAppsBrand::where('outlet_id', $landing->outlet_id)->first();
+        $brand = MemberAppsBrand::where('outlet_id', $landing->outlet_id)
+            ->where('is_active', true)
+            ->with(['galleries' => fn ($q) => $q->orderBy('sort_order')])
+            ->first();
 
         $logoPath = $landing->logo_override ?: ($brand?->logo);
         $address = $this->resolveOutletAddress($outlet);
@@ -263,9 +260,10 @@ class WebProfileOutletLandingController extends Controller
             ? preg_split("/\n\s*\n/", $intro) ?: []
             : [];
 
-        $gallery = collect($landing->gallery_images ?: [])
-            ->filter(fn ($p) => is_string($p) && $p !== '')
-            ->map(fn ($p) => $this->publicStorageUrl($p))
+        $gallery = collect($brand?->galleries ?? [])
+            ->filter(fn ($row) => is_string($row->image) && trim($row->image) !== '')
+            ->sortBy('sort_order')
+            ->map(fn ($row) => $this->publicStorageUrl($row->image))
             ->values()
             ->all();
 
@@ -273,7 +271,6 @@ class WebProfileOutletLandingController extends Controller
             'outlet_id' => (int) $landing->outlet_id,
             'slug' => $landing->slug,
             'outlet_name' => (string) ($outlet?->nama_outlet ?? ''),
-            'outlet_subtitle' => $landing->outlet_subtitle,
             'headline' => $landing->headline,
             'intro_paragraphs' => array_values(array_filter(array_map('trim', $introParagraphs))),
             'secondary_paragraph' => $landing->secondary_paragraph,
@@ -298,7 +295,6 @@ class WebProfileOutletLandingController extends Controller
             'slug' => $landing->slug,
             'is_active' => $landing->is_active,
             'is_published' => $landing->isPublished(),
-            'outlet_subtitle' => $landing->outlet_subtitle,
             'headline' => $landing->headline,
             'intro_paragraph' => $landing->intro_paragraph,
             'secondary_paragraph' => $landing->secondary_paragraph,
@@ -308,11 +304,29 @@ class WebProfileOutletLandingController extends Controller
             'hero_image_url' => $landing->hero_image ? $this->publicStorageUrl($landing->hero_image) : null,
             'logo_override_path' => $landing->logo_override,
             'logo_override_url' => $landing->logo_override ? $this->publicStorageUrl($landing->logo_override) : null,
-            'gallery_images' => collect($landing->gallery_images ?: [])->map(fn ($p) => [
-                'path' => $p,
-                'url' => $this->publicStorageUrl($p),
-            ])->values()->all(),
         ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function resolveBrandGalleryUrls(int $outletId): array
+    {
+        $brand = MemberAppsBrand::where('outlet_id', $outletId)
+            ->where('is_active', true)
+            ->with(['galleries' => fn ($q) => $q->orderBy('sort_order')])
+            ->first();
+
+        if (! $brand) {
+            return [];
+        }
+
+        return collect($brand->galleries ?? [])
+            ->filter(fn ($gallery) => is_string($gallery->image) && trim($gallery->image) !== '')
+            ->sortBy('sort_order')
+            ->map(fn ($gallery) => $this->publicStorageUrl($gallery->image))
+            ->values()
+            ->all();
     }
 
     private function resolveOutletAddress(?Outlet $outlet): ?string
@@ -383,15 +397,39 @@ class WebProfileOutletLandingController extends Controller
      */
     private function previewProps(): array
     {
+        $webUrl = $this->resolveJustusKunestWebUrl();
+        $previewKey = $this->resolvePreviewKey();
+
         return [
-            'justus_kunest_web_url' => (string) config('services.justus_kunest.web_url', ''),
-            'preview_key' => (string) config('services.justus_kunest.preview_key', ''),
+            'justus_kunest_web_url' => $webUrl,
+            'preview_key' => $previewKey,
+            'preview_web_url_configured' => $webUrl !== '',
         ];
+    }
+
+    private function resolveJustusKunestWebUrl(): string
+    {
+        $fromSetting = trim((string) WebProfileSetting::getValue('justus_kunest_web_url', ''));
+        if ($fromSetting !== '') {
+            return rtrim($fromSetting, '/');
+        }
+
+        return rtrim((string) config('services.justus_kunest.web_url', ''), '/');
+    }
+
+    private function resolvePreviewKey(): string
+    {
+        $fromSetting = trim((string) WebProfileSetting::getValue('justus_kunest_preview_key', ''));
+        if ($fromSetting !== '') {
+            return $fromSetting;
+        }
+
+        return (string) config('services.justus_kunest.preview_key', '');
     }
 
     private function buildPreviewUrl(string $slug, bool $draft): ?string
     {
-        $base = rtrim((string) config('services.justus_kunest.web_url', ''), '/');
+        $base = $this->resolveJustusKunestWebUrl();
         $slug = trim($slug);
         if ($base === '' || $slug === '') {
             return null;
@@ -399,7 +437,7 @@ class WebProfileOutletLandingController extends Controller
 
         $url = $base.'/outlets/'.rawurlencode($slug);
         if ($draft) {
-            $key = (string) config('services.justus_kunest.preview_key', '');
+            $key = $this->resolvePreviewKey();
             if ($key === '') {
                 return null;
             }
