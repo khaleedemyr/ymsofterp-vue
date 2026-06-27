@@ -241,6 +241,12 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.cases.capa.evidence');
     Route::delete('/customer-voice-command-center/cases/{id}/capa/evidence/{evidenceId}', [CustomerVoiceCommandCenterController::class, 'deleteCapaEvidence'])
         ->name('customer-voice-command-center.cases.capa.evidence.destroy');
+    Route::get('/customer-voice-command-center/capa/approvers', [CustomerVoiceCommandCenterController::class, 'getCapaApprovers'])
+        ->name('customer-voice-command-center.capa.approvers');
+    Route::post('/customer-voice-command-center/cases/{id}/capa/submit-approval', [CustomerVoiceCommandCenterController::class, 'submitCapaApproval'])
+        ->name('customer-voice-command-center.cases.capa.submit-approval');
+    Route::post('/customer-voice-command-center/cases/{id}/capa/approve', [CustomerVoiceCommandCenterController::class, 'approveCapa'])
+        ->name('customer-voice-command-center.cases.capa.approve');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');

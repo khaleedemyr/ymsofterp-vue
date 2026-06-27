@@ -1391,6 +1391,9 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/customer-voice-command-center/cases/{id}/capa', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiDestroyCapa'])->name('api.approval-app.customer-voice-command-center.cases.capa.destroy');
         Route::post('/customer-voice-command-center/cases/{id}/capa/evidence', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiUploadCapaEvidence'])->name('api.approval-app.customer-voice-command-center.cases.capa.evidence');
         Route::delete('/customer-voice-command-center/cases/{id}/capa/evidence/{evidenceId}', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'apiDeleteCapaEvidence'])->name('api.approval-app.customer-voice-command-center.cases.capa.evidence.destroy');
+        Route::get('/customer-voice-command-center/capa/approvers', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'getCapaApprovers'])->name('api.approval-app.customer-voice-command-center.capa.approvers');
+        Route::post('/customer-voice-command-center/cases/{id}/capa/submit-approval', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'submitCapaApproval'])->name('api.approval-app.customer-voice-command-center.cases.capa.submit-approval');
+        Route::post('/customer-voice-command-center/cases/{id}/capa/approve', [\App\Http\Controllers\CustomerVoiceCommandCenterController::class, 'approveCapa'])->name('api.approval-app.customer-voice-command-center.cases.capa.approve');
 
         // Activity Log Report routes
         Route::get('/report/activity-log', [\App\Http\Controllers\ReportController::class, 'reportActivityLog'])->name('api.approval-app.report.activity-log');

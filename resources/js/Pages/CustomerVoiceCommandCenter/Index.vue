@@ -311,9 +311,9 @@
                 <th class="px-3 py-3 text-left font-semibold min-w-[100px]" title="Berdasarkan isian tersimpan di meta CAPA">CAPA</th>
                 <th
                   class="px-3 py-3 text-left font-semibold min-w-[108px]"
-                  title="Bagian G — apakah hasil verifikasi (efektif / tidak efektif) sudah diisi"
+                  title="Status approval CAPA per divisi"
                 >
-                  Verif. CAPA
+                  Approval CAPA
                 </th>
                 <th class="px-3 py-3 text-left font-semibold">SLA</th>
                 <th class="px-3 py-3 text-left font-semibold">CS PIC</th>
@@ -773,6 +773,7 @@
             :initial-capa="selectedCase.capa"
             :initial-capa-divisions="selectedCase.capa_divisions || {}"
             :active-division="selectedCase.capa_active_division || 'service'"
+            :approval-summaries="selectedCase.capa_division_approval || {}"
             :source-type="selectedCase.source_type || ''"
             :source-complaint-topics="Array.isArray(selectedCase.topics) ? selectedCase.topics : []"
             :source-complaint-text="selectedCase.raw_text || ''"
@@ -791,7 +792,7 @@
             @reset="resetCapaDraft"
             @delete-capa="deleteStoredCapa"
             @focused-section="capaDetailFocusSection = null"
-            @verify-clicked="showVerifyInfo"
+            @approval-changed="reloadSelectedCase"
             @dirty-changed="capaFormDirty = $event"
           />
 
@@ -1606,8 +1607,9 @@ function stripVoiceDeepLinkQueryParams() {
       u.searchParams.delete('open_case')
       changed = true
     }
-    if (u.searchParams.has('capa_verify')) {
+    if (u.searchParams.has('capa_verify') || u.searchParams.has('capa_approval')) {
       u.searchParams.delete('capa_verify')
+      u.searchParams.delete('capa_approval')
       changed = true
     }
     if (changed) {
@@ -1627,7 +1629,7 @@ async function tryOpenCaseFromQuery() {
   try {
     const params = new URLSearchParams(window.location.search)
     raw = params.get('open_case')
-    const v = params.get('capa_verify')
+    const v = params.get('capa_verify') || params.get('capa_approval')
     wantCapaVerify = v === '1' || v === 'true'
   } catch {
     return
@@ -1645,7 +1647,7 @@ async function tryOpenCaseFromQuery() {
   if (caseMap.value[id]) {
     openDetail(id)
     if (wantCapaVerify) {
-      capaDetailFocusSection.value = 'capa-g'
+      capaDetailFocusSection.value = 'capa-approval'
     }
     stripVoiceDeepLinkQueryParams()
     return
@@ -1664,7 +1666,7 @@ async function tryOpenCaseFromQuery() {
       detailOverrides.value = { ...detailOverrides.value, [id]: data.case }
       detailCaseId.value = id
       if (wantCapaVerify) {
-        capaDetailFocusSection.value = 'capa-g'
+        capaDetailFocusSection.value = 'capa-approval'
       }
       stripVoiceDeepLinkQueryParams()
     } else {
@@ -1688,6 +1690,24 @@ function closeDetail() {
   detailCaseId.value = null
   capaDetailFocusSection.value = null
   capaFormDirty.value = false
+}
+
+async function reloadSelectedCase() {
+  if (!detailCaseId.value) return
+  const id = detailCaseId.value
+  try {
+    const res = await fetch(route('customer-voice-command-center.cases.brief', id), {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    })
+    const data = await res.json()
+    if (data.success && data.case) {
+      detailOverrides.value = { ...detailOverrides.value, [id]: data.case }
+    }
+    router.reload({ only: ['cases'], preserveScroll: true })
+  } catch {
+    /* noop */
+  }
 }
 
 function submitCapa(payload) {
@@ -1935,7 +1955,7 @@ function divisionCapaFilled(row, divisionId) {
   const capa = rowDivisionCapa(row, divisionId)
   if (!capa || typeof capa !== 'object') return false
   if (Array.isArray(capa.evidence) && capa.evidence.length > 0) return true
-  return hasMeaningfulValue(capa.c) || hasMeaningfulValue(capa.d) || hasMeaningfulValue(capa.e) || hasMeaningfulValue(capa.f) || hasMeaningfulValue(capa.g) || hasMeaningfulValue(capa.h)
+  return hasMeaningfulValue(capa.b) || hasMeaningfulValue(capa.c) || hasMeaningfulValue(capa.e) || hasMeaningfulValue(capa.f)
 }
 
 function divisionVerificationDisplay(row, divisionId) {
@@ -1946,23 +1966,35 @@ function divisionVerificationDisplay(row, divisionId) {
       return {
         iconClass: 'fa fa-minus',
         badgeClass: 'border-slate-200 bg-slate-50 text-slate-600',
-        title: 'Belum ada verifikator / belum proses verifikasi',
+        title: 'Belum diajukan approval',
       }
     }
     if (v.state === 'pending') {
       return {
         iconClass: 'fa fa-hourglass-half',
         badgeClass: 'border-amber-200 bg-amber-50 text-amber-900',
-        title: 'Verifikator ditunjuk — hasil (efektif / tidak efektif) belum diisi',
+        title: 'Menunggu approval',
+      }
+    }
+    if (v.result === 'approved') {
+      return {
+        iconClass: 'fa fa-check',
+        badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+        title: 'Approval selesai — disetujui',
+      }
+    }
+    if (v.result === 'rejected') {
+      return {
+        iconClass: 'fa fa-times',
+        badgeClass: 'border-rose-200 bg-rose-50 text-rose-800',
+        title: 'Approval ditolak',
       }
     }
     const sub = v.result === 'effective' ? 'Efektif' : 'Tidak efektif'
     return {
       iconClass: v.result === 'effective' ? 'fa fa-check' : 'fa fa-times',
-      badgeClass: v.result === 'effective'
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        : 'border-rose-200 bg-rose-50 text-rose-800',
-      title: `Verifikasi selesai — ${sub}`,
+      badgeClass: v.result === 'effective' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800',
+      title: `Verifikasi legacy — ${sub}`,
     }
   }
   const capa = rowDivisionCapa(row, divisionId)

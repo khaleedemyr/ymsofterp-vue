@@ -10,13 +10,13 @@
             <div class="h-3 w-3 animate-pulse rounded-full bg-violet-500" />
             <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
               <i class="fa fa-clipboard-check mr-2 text-violet-500" />
-              Verifikasi CAPA
+              Approval CAPA
             </h3>
           </div>
           <div class="rounded-full bg-violet-600 px-2 py-1 text-xs font-bold text-white">{{ count }}</div>
         </div>
         <p class="mb-3 text-xs leading-relaxed" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-          Verifikasi dikerjakan langsung dari modal Home, tanpa masuk ke form CAPA.
+          Approval dikerjakan langsung dari modal Home (Approve / Reject).
         </p>
 
         <div v-if="loading" class="py-4 text-center">
@@ -57,8 +57,8 @@
               class="shrink-0 rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700"
               @click="openVerifyModal(item)"
             >
-              <i class="fa fa-clipboard-check mr-1" aria-hidden="true" />
-              Verifikasi
+              <i class="fa fa-user-check mr-1" aria-hidden="true" />
+              Approval
             </button>
           </div>
 
@@ -89,7 +89,7 @@
           <div class="mb-3 flex items-start justify-between gap-3 border-b pb-3" :class="isNight ? 'border-slate-700' : 'border-slate-200'">
             <div class="min-w-0">
               <h4 class="truncate text-base font-bold" :class="isNight ? 'text-white' : 'text-slate-900'">
-                Verifikasi CAPA — Case #{{ modalItem?.id }}
+                Approval CAPA — Case #{{ modalItem?.id }}
               </h4>
               <p class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-500'">
                 Divisi: <span class="font-semibold">{{ divisionLabel(activeDivision) }}</span>
@@ -174,7 +174,7 @@
               </button>
             </div>
             <div v-if="!pendingDivisions.length" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Tidak ada divisi pending verifikasi untuk Anda pada case ini.
+              Tidak ada divisi pending approval untuk Anda pada case ini.
             </div>
 
             <template v-if="pendingDivisions.length && capa">
@@ -380,35 +380,14 @@
             </template>
 
             <div v-if="pendingDivisions.length" class="rounded-xl border p-3" :class="isNight ? 'border-violet-800 bg-violet-900/20' : 'border-violet-200 bg-violet-50/50'">
-              <div class="text-sm font-semibold" :class="isNight ? 'text-violet-200' : 'text-violet-900'">Verifikasi {{ divisionLabel(activeDivision) }}</div>
-              <p class="mt-1 text-[11px] text-slate-600">Isi hasil verifikasi di bawah, lalu simpan.</p>
-              <div class="mt-2 grid gap-3 sm:grid-cols-2">
-                <label class="text-[11px] font-semibold uppercase tracking-wide" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                  Hasil
-                  <select v-model="verifyForm.result" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" :class="isNight ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-300 bg-white text-slate-800'">
-                    <option value="">— pilih —</option>
-                    <option value="effective">Effective — efektif</option>
-                    <option value="not_effective">Not effective — tidak efektif</option>
-                  </select>
-                </label>
-                <label class="text-[11px] font-semibold uppercase tracking-wide" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                  Tanggal follow up
-                  <input v-model="verifyForm.follow_up_date" type="date" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" :class="isNight ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-300 bg-white text-slate-800'" />
-                </label>
-                <label class="sm:col-span-2 text-[11px] font-semibold uppercase tracking-wide" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                  Catatan tambahan
-                  <textarea v-model="verifyForm.notes" rows="3" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" :class="isNight ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-300 bg-white text-slate-800'" />
-                </label>
-              </div>
-              <div class="mt-3 flex justify-end">
-                <button
-                  type="button"
-                  class="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
-                  :disabled="savingVerify"
-                  @click="submitVerify"
-                >
-                  {{ savingVerify ? 'Menyimpan…' : 'Simpan Verifikasi' }}
-                </button>
+              <div class="text-sm font-semibold" :class="isNight ? 'text-violet-200' : 'text-violet-900'">Approval {{ divisionLabel(activeDivision) }}</div>
+              <label class="mt-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Komentar (opsional)
+                <textarea v-model="verifyForm.notes" rows="3" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm" :class="isNight ? 'border-slate-600 bg-slate-900 text-slate-100' : 'border-slate-300 bg-white text-slate-800'" />
+              </label>
+              <div class="mt-3 flex justify-end gap-2">
+                <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60" :disabled="savingVerify" @click="submitApproval(true)">Approve</button>
+                <button type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60" :disabled="savingVerify" @click="submitApproval(false)">Reject</button>
               </div>
             </div>
           </div>
@@ -457,12 +436,12 @@ const modalError = ref('')
 const activeDivision = ref('service')
 const savingVerify = ref(false)
 const lightboxImage = ref(null)
-const verifyForm = ref({ result: '', notes: '', follow_up_date: '' })
+const verifyForm = ref({ notes: '' })
 
 const visible = computed(() => loading.value || count.value > 0)
 
 const pendingDivisions = computed(() => {
-  if (modalCase.value) return getVerifierPendingDivisionsFromCase(modalCase.value)
+  if (modalCase.value) return getApproverPendingDivisionsFromCase(modalCase.value)
   const list = modalItem.value?.pending_divisions || []
   return Array.isArray(list) ? list : []
 })
@@ -503,12 +482,7 @@ const activeImageEvidence = computed(() => activeEvidence.value.filter((ev) => i
 const activeNonImageEvidence = computed(() => activeEvidence.value.filter((ev) => !isImageEvidence(ev)))
 
 watch(activeDivision, () => {
-  const g = activeCapa.value?.g || {}
-  verifyForm.value = {
-    result: String(g.result || ''),
-    notes: String(g.notes || ''),
-    follow_up_date: String(g.follow_up_date || ''),
-  }
+  verifyForm.value = { notes: '' }
 })
 
 function divisionLabel(v) {
@@ -686,15 +660,10 @@ async function openVerifyModal(item) {
     const data = await res.json()
     if (!data.success || !data.case) throw new Error(data.message || 'Gagal memuat detail case.')
     modalCase.value = data.case
-    const pendingForMe = getVerifierPendingDivisionsFromCase(modalCase.value)
+    const pendingForMe = getApproverPendingDivisionsFromCase(modalCase.value)
     const firstDiv = pendingForMe[0] || (item.pending_divisions || [])[0] || 'service'
     activeDivision.value = firstDiv
-    const g = modalCase.value?.capa_divisions?.[firstDiv]?.g || modalCase.value?.capa?.g || {}
-    verifyForm.value = {
-      result: String(g.result || ''),
-      notes: String(g.notes || ''),
-      follow_up_date: String(g.follow_up_date || ''),
-    }
+    verifyForm.value = { notes: '' }
   } catch (e) {
     modalError.value = e?.message || 'Gagal memuat detail CAPA.'
   } finally {
@@ -726,26 +695,15 @@ function closeImageLightbox() {
   lightboxImage.value = null
 }
 
-function getVerifierPendingDivisionsFromCase(caseRow) {
+function getApproverPendingDivisionsFromCase(caseRow) {
   const uid = Number(authUserId.value || 0)
   if (!uid || !caseRow || typeof caseRow !== 'object') return []
 
   const divisions = ['service', 'kitchen', 'bar']
   const result = []
   for (const div of divisions) {
-    let capa = null
-    const divs = caseRow.capa_divisions
-    if (divs && typeof divs === 'object' && divs[div] && typeof divs[div] === 'object') {
-      capa = divs[div]
-    } else if ((caseRow.capa_active_division || 'service') === div && caseRow.capa && typeof caseRow.capa === 'object') {
-      capa = caseRow.capa
-    }
-    if (!capa || typeof capa !== 'object') continue
-    const g = capa.g && typeof capa.g === 'object' ? capa.g : {}
-    const verifierId = Number(g.verified_by_user_id || 0)
-    const resultValue = String(g.result || '').toLowerCase()
-    const done = resultValue === 'effective' || resultValue === 'not_effective'
-    if (verifierId === uid && !done) {
+    const approval = caseRow.capa_division_approval?.[div]
+    if (approval && approval.state === 'pending' && Number(approval.next_approver_id) === uid) {
       result.push(div)
     }
   }
@@ -756,29 +714,17 @@ function csrfToken() {
   return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
 }
 
-async function submitVerify() {
+async function submitApproval(approved) {
   if (!modalItem.value?.id || !modalCase.value) return
-  if (!verifyForm.value.result) {
-    Swal.fire({ icon: 'warning', title: 'Pilih hasil verifikasi', text: 'Isi Effective / Not Effective dulu.' })
-    return
-  }
   const division = activeDivision.value
-  const base = modalCase.value?.capa_divisions?.[division] && typeof modalCase.value.capa_divisions[division] === 'object'
-    ? JSON.parse(JSON.stringify(modalCase.value.capa_divisions[division]))
-    : JSON.parse(JSON.stringify(modalCase.value?.capa || {}))
-  if (!base.g || typeof base.g !== 'object') base.g = {}
-  base.g.verified_by_user_id = authUserId.value || base.g.verified_by_user_id || null
-  base.g.result = verifyForm.value.result
-  base.g.notes = verifyForm.value.notes || null
-  base.g.follow_up_date = verifyForm.value.follow_up_date || null
-
   savingVerify.value = true
   try {
     const { data } = await axios.post(
-      route('customer-voice-command-center.cases.capa', modalItem.value.id),
+      route('customer-voice-command-center.cases.capa.approve', modalItem.value.id),
       {
-        capa: base,
-        capa_division: division,
+        division,
+        approved,
+        comments: verifyForm.value.notes || null,
       },
       {
         headers: {
@@ -789,12 +735,12 @@ async function submitVerify() {
         },
       },
     )
-    if (!data?.success) throw new Error(data?.message || 'Gagal simpan verifikasi.')
-    await Swal.fire({ icon: 'success', title: 'Verifikasi tersimpan', timer: 1300, showConfirmButton: false })
+    if (!data?.success) throw new Error(data?.message || 'Gagal proses approval.')
+    await Swal.fire({ icon: 'success', title: approved ? 'Disetujui' : 'Ditolak', timer: 1300, showConfirmButton: false })
     await load()
     closeVerifyModal()
   } catch (e) {
-    Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || e?.message || 'Gagal simpan verifikasi.' })
+    Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || e?.message || 'Gagal proses approval.' })
   } finally {
     savingVerify.value = false
   }

@@ -62,68 +62,50 @@ class FeedbackCapaExportFormatter
         }
 
         $a = is_array($capa['a'] ?? null) ? $capa['a'] : [];
-        $this->push($rows, 'A. Informasi umum', 'Tanggal complaint', $this->str($a['complaint_date'] ?? null));
-        $this->push($rows, 'A. Informasi umum', 'Waktu complaint', $this->str($a['complaint_time'] ?? null));
-        $this->push($rows, 'A. Informasi umum', 'Nama tamu (form)', $this->str($a['guest_name'] ?? null));
-        $this->push($rows, 'A. Informasi umum', 'Channel', $this->channelLabel(isset($a['channel']) ? (string) $a['channel'] : null));
-        $this->push($rows, 'A. Informasi umum', 'Channel (lainnya)', $this->str($a['channel_other'] ?? null));
+        $this->push($rows, '1. General Information', 'Tanggal', $this->str($a['complaint_date'] ?? null));
+        $this->push($rows, '1. General Information', 'Waktu', $this->str($a['complaint_time'] ?? null));
+        $this->push($rows, '1. General Information', 'Reported By', $this->str($a['reported_by'] ?? null));
+        $this->push($rows, '1. General Information', 'Position', $this->str($a['reported_by_position'] ?? null));
+        $this->push($rows, '1. General Information', 'Nama tamu (legacy)', $this->str($a['guest_name'] ?? null));
+        $this->push($rows, '1. General Information', 'Channel', $this->channelLabel(isset($a['channel']) ? (string) $a['channel'] : null));
 
         $b = is_array($capa['b'] ?? null) ? $capa['b'] : [];
         $types = isset($b['types']) && is_array($b['types']) ? $b['types'] : [];
-        $this->push($rows, 'B. Detail complaint', 'Jenis complaint', $this->mapComplaintTypes($types));
-        $this->push($rows, 'B. Detail complaint', 'Jenis (lainnya)', $this->str($b['types_other'] ?? null));
-        $this->push($rows, 'B. Detail complaint', 'Deskripsi complaint', $this->str($b['description'] ?? null));
+        $this->push($rows, '2. Issue Details', 'Type of Issue', $this->mapComplaintTypes($types));
+        $this->push($rows, '2. Issue Details', 'Description', $this->str($b['description'] ?? null));
+        $this->push($rows, '2. Issue Details', 'Area / Section', $this->str($b['area_section'] ?? null));
+        $this->push($rows, '2. Issue Details', 'Involved Parties', $this->str($b['involved_parties'] ?? null));
+        $this->push($rows, '2. Issue Details', 'Witness(es)', $this->str($b['witnesses'] ?? null));
 
         $c = is_array($capa['c'] ?? null) ? $capa['c'] : [];
         $actions = isset($c['actions']) && is_array($c['actions']) ? $c['actions'] : [];
-        $this->push($rows, 'C. Immediate action', 'Tindakan langsung', $this->mapImmediateActions($actions));
-        $this->push($rows, 'C. Immediate action', 'Tindakan (lainnya)', $this->str($c['actions_other'] ?? null));
-        $this->push($rows, 'C. Immediate action', 'Waktu respon', $this->str($c['response_time_note'] ?? null));
-        $picC = isset($c['pic_user_id']) ? (int) $c['pic_user_id'] : 0;
-        $this->push($rows, 'C. Immediate action', 'PIC', $picC > 0 ? ($names[$picC] ?? ('#'.$picC)) : '—');
-
-        $d = is_array($capa['d'] ?? null) ? $capa['d'] : [];
-        $this->push($rows, 'D. Root cause', 'Masalah (problem statement)', $this->str($d['problem_statement'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Man (SDM)', $this->str($d['man'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Method (SOP)', $this->str($d['method'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Machine', $this->str($d['machine'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Material', $this->str($d['material'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Measurement', $this->str($d['measurement'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Environment', $this->str($d['environment'] ?? null));
-        $this->push($rows, 'D. Root cause', 'Akar masalah utama', $this->str($d['root_cause_summary'] ?? null));
+        $this->push($rows, '3. Action Taken', 'Immediate Action', $this->mapImmediateActions($actions));
+        $this->push($rows, '3. Action Taken', 'Immediate (lainnya)', $this->str($c['actions_other'] ?? null));
 
         $e = is_array($capa['e'] ?? null) ? $capa['e'] : [];
-        $this->push($rows, 'E. Corrective action', 'Action', $this->str($e['action'] ?? null));
+        $this->push($rows, '3. Action Taken', 'Follow-Up Action', $this->str($e['action'] ?? null));
+        $this->push($rows, '3. Action Taken', 'Status', $this->correctiveStatusLabel(isset($e['status']) ? (string) $e['status'] : null));
         $picE = isset($e['pic_user_id']) ? (int) $e['pic_user_id'] : 0;
-        $this->push($rows, 'E. Corrective action', 'PIC', $picE > 0 ? ($names[$picE] ?? ('#'.$picE)) : '—');
-        $this->push($rows, 'E. Corrective action', 'Deadline', $this->str($e['deadline'] ?? null));
-        $this->push($rows, 'E. Corrective action', 'Status', $this->correctiveStatusLabel(isset($e['status']) ? (string) $e['status'] : null));
+        $this->push($rows, '3. Action Taken', 'Follow Up By', $picE > 0 ? ($names[$picE] ?? ('#'.$picE)) : '—');
 
         $f = is_array($capa['f'] ?? null) ? $capa['f'] : [];
-        $imp = isset($f['improvement_areas']) && is_array($f['improvement_areas']) ? $f['improvement_areas'] : [];
-        $this->push($rows, 'F. Preventive action', 'Improvement area', $this->mapImprovementAreas($imp));
-        $this->push($rows, 'F. Preventive action', 'Action', $this->str($f['action'] ?? null));
+        $this->push($rows, '4. Preventive Measures', 'Corrective Action Plan', $this->str($f['action'] ?? null));
         $picF = isset($f['pic_user_id']) ? (int) $f['pic_user_id'] : 0;
-        $this->push($rows, 'F. Preventive action', 'PIC', $picF > 0 ? ($names[$picF] ?? ('#'.$picF)) : '—');
-        $this->push($rows, 'F. Preventive action', 'Timeline', $this->str($f['timeline'] ?? null));
-        $this->push($rows, 'F. Preventive action', 'KPI', $this->str($f['kpi'] ?? null));
+        $this->push($rows, '4. Preventive Measures', 'Responsible Person', $picF > 0 ? ($names[$picF] ?? ('#'.$picF)) : '—');
+        $this->push($rows, '4. Preventive Measures', 'Target Completion Date', $this->str($f['timeline'] ?? null));
+
+        $d = is_array($capa['d'] ?? null) ? $capa['d'] : [];
+        if ($this->str($d['problem_statement'] ?? null) !== '—') {
+            $this->push($rows, 'Legacy — Root cause', 'Masalah', $this->str($d['problem_statement'] ?? null));
+            $this->push($rows, 'Legacy — Root cause', 'Akar masalah utama', $this->str($d['root_cause_summary'] ?? null));
+        }
 
         $g = is_array($capa['g'] ?? null) ? $capa['g'] : [];
-        $this->push($rows, 'G. Follow up & verifikasi', 'Tanggal follow up', $this->str($g['follow_up_date'] ?? null));
-        $ver = isset($g['verified_by_user_id']) ? (int) $g['verified_by_user_id'] : 0;
-        $this->push($rows, 'G. Follow up & verifikasi', 'Verifikasi oleh', $ver > 0 ? ($names[$ver] ?? ('#'.$ver)) : '—');
-        $this->push($rows, 'G. Follow up & verifikasi', 'Hasil', $this->verificationResultLabel($g['result'] ?? null));
-        $this->push($rows, 'G. Follow up & verifikasi', 'Catatan', $this->str($g['notes'] ?? null));
-
-        $h = is_array($capa['h'] ?? null) ? $capa['h'] : [];
-        $this->push($rows, 'H. Customer recovery', 'Tamu dihubungi kembali', $this->contactedLabel($h['contacted'] ?? null));
-        $cm = isset($h['contact_methods']) && is_array($h['contact_methods']) ? $h['contact_methods'] : [];
-        $this->push($rows, 'H. Customer recovery', 'Metode kontak', $this->mapContactMethods($cm));
-        $this->push($rows, 'H. Customer recovery', 'Feedback tamu setelah recovery', $this->str($h['recovery_feedback'] ?? null));
-        $this->push($rows, 'H. Customer recovery', 'Kepuasan', $this->satisfactionLabel($h['satisfaction'] ?? null));
-        $this->push($rows, 'H. Customer recovery', 'Severity (dokumentasi CAPA)', $this->str($h['documented_severity'] ?? null));
-        $di = isset($h['documented_impact']) && is_array($h['documented_impact']) ? $h['documented_impact'] : [];
-        $this->push($rows, 'H. Customer recovery', 'Impact (dokumentasi)', $this->mapDocumentedImpact($di));
+        if ($this->str($g['result'] ?? null) !== '—' || ! empty($g['verified_by_user_id'])) {
+            $ver = isset($g['verified_by_user_id']) ? (int) $g['verified_by_user_id'] : 0;
+            $this->push($rows, 'Legacy — Verifikasi', 'Verifikator', $ver > 0 ? ($names[$ver] ?? ('#'.$ver)) : '—');
+            $this->push($rows, 'Legacy — Verifikasi', 'Hasil', $this->verificationResultLabel($g['result'] ?? null));
+        }
 
         return collect($rows);
     }

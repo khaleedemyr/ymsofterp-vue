@@ -25,11 +25,16 @@ class FeedbackCapaService
                 'guest_name' => null,
                 'channel' => null,
                 'channel_other' => null,
+                'reported_by' => null,
+                'reported_by_position' => null,
             ],
             'b' => [
                 'types' => [],
                 'types_other' => null,
                 'description' => null,
+                'area_section' => null,
+                'involved_parties' => null,
+                'witnesses' => null,
             ],
             'c' => [
                 'actions' => [],
@@ -221,8 +226,15 @@ class FeedbackCapaService
         if (count($b['types'] ?? []) > 0) {
             return true;
         }
-        foreach (['types_other', 'description'] as $k) {
+        foreach (['types_other', 'description', 'area_section', 'involved_parties', 'witnesses'] as $k) {
             $v = $b[$k] ?? null;
+            if ($v !== null && trim((string) $v) !== '') {
+                return true;
+            }
+        }
+
+        foreach (['reported_by', 'reported_by_position'] as $k) {
+            $v = $a[$k] ?? null;
             if ($v !== null && trim((string) $v) !== '') {
                 return true;
             }
@@ -346,8 +358,13 @@ class FeedbackCapaService
 
         $merged['a']['guest_name'] = $this->limitStr($merged['a']['guest_name'] ?? null, 500);
         $merged['a']['channel_other'] = $this->limitStr($merged['a']['channel_other'] ?? null, 500);
+        $merged['a']['reported_by'] = $this->limitStr($merged['a']['reported_by'] ?? null, 500);
+        $merged['a']['reported_by_position'] = $this->limitStr($merged['a']['reported_by_position'] ?? null, 500);
         $merged['b']['types_other'] = $this->limitStr($merged['b']['types_other'] ?? null, 500);
         $merged['b']['description'] = $this->limitStr($merged['b']['description'] ?? null, 12000);
+        $merged['b']['area_section'] = $this->limitStr($merged['b']['area_section'] ?? null, 500);
+        $merged['b']['involved_parties'] = $this->limitStr($merged['b']['involved_parties'] ?? null, 4000);
+        $merged['b']['witnesses'] = $this->limitStr($merged['b']['witnesses'] ?? null, 4000);
         $merged['d']['problem_statement'] = $this->limitStr($merged['d']['problem_statement'] ?? null, 4000);
         foreach (['man', 'method', 'machine', 'material', 'measurement', 'environment', 'root_cause_summary'] as $fk) {
             $merged['d'][$fk] = $this->limitStr($merged['d'][$fk] ?? null, 8000);

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Exports\FeedbackCapaExcelExport;
+use App\Models\FeedbackCapaApprovalFlow;
 use App\Models\Outlet;
 use App\Models\User;
+use App\Services\FeedbackCapaApprovalService;
 use App\Services\FeedbackCapaService;
 use App\Services\FeedbackCaseIngestionService;
 use App\Services\NotificationService;
@@ -22,7 +24,8 @@ use Maatwebsite\Excel\Facades\Excel;
 class CustomerVoiceCommandCenterController extends Controller
 {
     public function __construct(
-        private FeedbackCapaService $capaService
+        private FeedbackCapaService $capaService,
+        private FeedbackCapaApprovalService $capaApprovalService,
     ) {}
 
     public function index(Request $request): Response
@@ -92,94 +95,99 @@ class CustomerVoiceCommandCenterController extends Controller
     }
 
     /**
-     * Daftar kasus CAPA yang menunggu verifikasi bagian G oleh user login (dipilih sebagai verifikator).
+     * Daftar kasus CAPA yang menunggu approval oleh user login.
      */
     public function pendingCapaVerificationsJson(Request $request)
     {
-        $userId = (int) ($request->user()->id ?? 0);
+        $user = $request->user();
+        $userId = (int) ($user->id ?? 0);
         if ($userId <= 0) {
             return response()->json(['success' => true, 'count' => 0, 'items' => []]);
         }
 
-        $rows = DB::table('feedback_cases as c')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'c.id_outlet')
-            ->where(function ($q) {
-                $q->whereRaw('JSON_EXTRACT(c.meta, "$.capa.g.result") IS NULL')
-                    ->orWhereRaw(
-                        'LOWER(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.result")), ""))) NOT IN (?, ?)',
-                        ['effective', 'not_effective']
-                    );
-            })
-            ->where(function ($q) use ($userId) {
-                $q->whereRaw(
-                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa.g.verified_by_user_id")) AS UNSIGNED) = ?',
-                    [$userId]
-                )->orWhereRaw(
-                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.service.g.verified_by_user_id")) AS UNSIGNED) = ?',
-                    [$userId]
-                )->orWhereRaw(
-                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.kitchen.g.verified_by_user_id")) AS UNSIGNED) = ?',
-                    [$userId]
-                )->orWhereRaw(
-                    'CAST(JSON_UNQUOTE(JSON_EXTRACT(c.meta, "$.capa_divisions.bar.g.verified_by_user_id")) AS UNSIGNED) = ?',
-                    [$userId]
-                );
-            })
-            ->orderByDesc('c.updated_at')
-            ->limit(30)
-            ->get([
-                'c.id',
-                'c.event_at',
-                'c.summary_id',
-                'c.status',
-                'c.follow_up_status',
-                'c.severity',
-                'o.nama_outlet',
-                'c.meta',
-            ]);
-
-        $items = $rows->map(function ($r) use ($userId) {
-            $meta = [];
-            if (! empty($r->meta)) {
-                $meta = json_decode((string) $r->meta, true) ?: [];
-            }
-            $pendingDivisions = [];
-            foreach (['service', 'kitchen', 'bar'] as $division) {
-                $capa = null;
-                if (isset($meta['capa_divisions'][$division]) && is_array($meta['capa_divisions'][$division])) {
-                    $capa = $meta['capa_divisions'][$division];
-                } elseif (($meta['capa_active_division'] ?? 'service') === $division && isset($meta['capa']) && is_array($meta['capa'])) {
-                    $capa = $meta['capa'];
-                }
-                if (! is_array($capa)) {
-                    continue;
-                }
-                $g = isset($capa['g']) && is_array($capa['g']) ? $capa['g'] : [];
-                $verifierId = (int) ($g['verified_by_user_id'] ?? 0);
-                $result = strtolower(trim((string) ($g['result'] ?? '')));
-                $isDone = in_array($result, ['effective', 'not_effective'], true);
-                if ($verifierId === $userId && ! $isDone) {
-                    $pendingDivisions[] = $division;
-                }
-            }
-
-            return [
-                'id' => (int) $r->id,
-                'event_at' => $r->event_at,
-                'summary_id' => $r->summary_id,
-                'status' => (string) ($r->status ?? ''),
-                'follow_up_status' => (string) ($r->follow_up_status ?? 'new'),
-                'severity' => (string) ($r->severity ?? ''),
-                'nama_outlet' => (string) ($r->nama_outlet ?? ''),
-                'pending_divisions' => $pendingDivisions,
-            ];
-        })->filter(fn ($x) => ! empty($x['pending_divisions']))->values()->all();
+        $isSuperadmin = $this->capaApprovalService->isSuperadmin($user);
+        $items = $this->capaApprovalService->pendingItemsForUser($userId, $isSuperadmin);
 
         return response()->json([
             'success' => true,
             'count' => count($items),
             'items' => $items,
         ]);
+    }
+
+    public function getCapaApprovers(Request $request): JsonResponse
+    {
+        $search = (string) $request->get('search', '');
+        $users = $this->capaApprovalService->searchApprovers($search);
+
+        return response()->json(['success' => true, 'users' => $users]);
+    }
+
+    public function submitCapaApproval(Request $request, int $id): JsonResponse
+    {
+        $payload = $request->validate([
+            'division' => 'required|string|in:service,kitchen,bar',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ]);
+
+        $exists = DB::table('feedback_cases')->where('id', $id)->exists();
+        if (! $exists) {
+            return response()->json(['success' => false, 'message' => 'Case tidak ditemukan.'], 404);
+        }
+
+        $result = $this->capaApprovalService->submitForApproval(
+            $id,
+            $payload['division'],
+            $payload['approvers'],
+            (int) ($request->user()->id ?? 0)
+        );
+
+        if (! $result['success']) {
+            return response()->json($result, 400);
+        }
+
+        $summary = $this->capaApprovalService->divisionSummary($id, $payload['division']);
+        $this->stampCapaApprovalAuditMeta($id, $payload['division'], $summary['state'] ?? 'pending');
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'summary' => $summary,
+        ]);
+    }
+
+    public function approveCapa(Request $request, int $id): JsonResponse
+    {
+        $payload = $request->validate([
+            'division' => 'required|string|in:service,kitchen,bar',
+            'approved' => 'required|boolean',
+            'comments' => 'nullable|string|max:2000',
+        ]);
+
+        $exists = DB::table('feedback_cases')->where('id', $id)->exists();
+        if (! $exists) {
+            return response()->json(['success' => false, 'message' => 'Case tidak ditemukan.'], 404);
+        }
+
+        $user = $request->user();
+        $result = $this->capaApprovalService->approve(
+            $id,
+            $payload['division'],
+            (int) ($user->id ?? 0),
+            (bool) $payload['approved'],
+            $payload['comments'] ?? null,
+            $this->capaApprovalService->isSuperadmin($user)
+        );
+
+        if (! $result['success']) {
+            return response()->json($result, 403);
+        }
+
+        $state = $result['summary']['state'] ?? 'pending';
+        $this->stampCapaApprovalAuditMeta($id, $payload['division'], $state, (int) ($user->id ?? 0));
+
+        return response()->json($result);
     }
 
     /**
@@ -310,7 +318,6 @@ class CustomerVoiceCommandCenterController extends Controller
             $incoming = [];
         }
         $division = $this->normalizeCapaDivision($request->input('capa_division'));
-        $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
         $existingDivisionCapa = $this->getDivisionCapaFromMeta($meta, $division);
         if (! empty($existingDivisionCapa['evidence']) && is_array($existingDivisionCapa['evidence'])) {
@@ -319,14 +326,21 @@ class CustomerVoiceCommandCenterController extends Controller
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
+        if (is_array($existingDivisionCapa)) {
+            foreach (['d', 'g', 'h'] as $legacySec) {
+                if (isset($existingDivisionCapa[$legacySec]) && is_array($existingDivisionCapa[$legacySec])) {
+                    $sanitized[$legacySec] = $existingDivisionCapa[$legacySec];
+                }
+            }
+        }
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->mergeDivisionCapaIntoMeta($meta, $division, $sanitized);
-        $newVerifierId = $this->extractCapaVerifierUserId($meta);
+        $approvalSummary = $this->capaApprovalService->divisionSummary($id, $division);
         $meta = $this->stampCapaAuditMeta(
             $meta,
             $request->user()->id ?? null,
             $now = now(),
-            $this->extractCapaVerificationResult($meta)
+            $approvalSummary['state'] === 'approved' ? 'approved' : null
         );
 
         DB::transaction(function () use ($id, $meta, $request, $now) {
@@ -346,9 +360,6 @@ class CustomerVoiceCommandCenterController extends Controller
                 'updated_at' => $now,
             ]);
         });
-
-        $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
-        $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
         $message = 'Form CAPA tersimpan.';
 
@@ -457,6 +468,8 @@ class CustomerVoiceCommandCenterController extends Controller
         unset($meta['capa_active_division']);
         unset($meta['capa_meta']);
 
+        FeedbackCapaApprovalFlow::query()->where('feedback_case_id', $id)->delete();
+
         $now = now();
         DB::transaction(function () use ($id, $meta, $request, $now) {
             DB::table('feedback_cases')->where('id', $id)->update([
@@ -504,7 +517,6 @@ class CustomerVoiceCommandCenterController extends Controller
             $incoming = [];
         }
         $division = $this->normalizeCapaDivision($request->input('capa_division'));
-        $oldVerifierId = $this->extractCapaVerifierUserId($meta);
         $preservedEvidence = [];
         $existingDivisionCapa = $this->getDivisionCapaFromMeta($meta, $division);
         if (! empty($existingDivisionCapa['evidence']) && is_array($existingDivisionCapa['evidence'])) {
@@ -513,14 +525,21 @@ class CustomerVoiceCommandCenterController extends Controller
         unset($incoming['evidence']);
 
         $sanitized = $this->capaService->sanitizeCapa($incoming);
+        if (is_array($existingDivisionCapa)) {
+            foreach (['d', 'g', 'h'] as $legacySec) {
+                if (isset($existingDivisionCapa[$legacySec]) && is_array($existingDivisionCapa[$legacySec])) {
+                    $sanitized[$legacySec] = $existingDivisionCapa[$legacySec];
+                }
+            }
+        }
         $sanitized['evidence'] = $preservedEvidence;
         $meta = $this->mergeDivisionCapaIntoMeta($meta, $division, $sanitized);
-        $newVerifierId = $this->extractCapaVerifierUserId($meta);
+        $approvalSummary = $this->capaApprovalService->divisionSummary($id, $division);
         $meta = $this->stampCapaAuditMeta(
             $meta,
             $request->user()->id ?? null,
             $now = now(),
-            $this->extractCapaVerificationResult($meta)
+            $approvalSummary['state'] === 'approved' ? 'approved' : null
         );
 
         DB::transaction(function () use ($id, $meta, $request, $now) {
@@ -540,9 +559,6 @@ class CustomerVoiceCommandCenterController extends Controller
                 'updated_at' => $now,
             ]);
         });
-
-        $summaryRow = DB::table('feedback_cases')->where('id', $id)->first(['summary_id']);
-        $this->notifyCapaVerifierIfNew($request, $id, $oldVerifierId, $newVerifierId, $summaryRow?->summary_id ?? null);
 
         $message = 'Form CAPA tersimpan.';
 
@@ -1527,6 +1543,7 @@ class CustomerVoiceCommandCenterController extends Controller
      */
     private function presentVoiceCaseRow(object $case): array
     {
+        $caseId = (int) $case->id;
         $meta = [];
         if (! empty($case->meta)) {
             $decoded = json_decode((string) $case->meta, true);
@@ -1624,9 +1641,14 @@ class CustomerVoiceCommandCenterController extends Controller
             'bar' => $this->capaService->storedCapaHasUserInput($capaDivisions['bar'] ?? null),
         ];
         $capaDivisionVerification = [
-            'service' => $this->capaService->storedCapaVerificationState($capaDivisions['service'] ?? null),
-            'kitchen' => $this->capaService->storedCapaVerificationState($capaDivisions['kitchen'] ?? null),
-            'bar' => $this->capaService->storedCapaVerificationState($capaDivisions['bar'] ?? null),
+            'service' => $this->capaDivisionApprovalOrLegacyVerification($caseId, 'service', $capaDivisions['service'] ?? null),
+            'kitchen' => $this->capaDivisionApprovalOrLegacyVerification($caseId, 'kitchen', $capaDivisions['kitchen'] ?? null),
+            'bar' => $this->capaDivisionApprovalOrLegacyVerification($caseId, 'bar', $capaDivisions['bar'] ?? null),
+        ];
+        $capaDivisionApproval = [
+            'service' => $this->capaApprovalService->divisionSummary($caseId, 'service'),
+            'kitchen' => $this->capaApprovalService->divisionSummary($caseId, 'kitchen'),
+            'bar' => $this->capaApprovalService->divisionSummary($caseId, 'bar'),
         ];
 
         $gcfCapa = null;
@@ -1687,7 +1709,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'notify_follower_user_ids' => $notifyFollowerIds,
             'regional_user_ids' => $regionalUserIds,
             'capa_filled' => $this->capaService->storedCapaHasUserInput($storedCapa),
-            'capa_verification' => $this->capaService->storedCapaVerificationState($storedCapa),
+            'capa_verification' => $this->capaDivisionApprovalOrLegacyVerification($caseId, $activeDivision, $storedCapa),
             'capa_audit' => [
                 'updated_by_user_id' => $this->extractCapaAuditUserId($meta, 'updated_by_user_id'),
                 'updated_at' => $this->extractCapaAuditDateTime($meta, 'updated_at'),
@@ -1698,6 +1720,7 @@ class CustomerVoiceCommandCenterController extends Controller
             'capa_divisions' => $capaDivisionsPresented,
             'capa_division_filled' => $capaDivisionFilled,
             'capa_division_verification' => $capaDivisionVerification,
+            'capa_division_approval' => $capaDivisionApproval,
             'capa' => $capa,
             'gcf_capa' => $gcfCapa,
         ];
@@ -2159,10 +2182,7 @@ class CustomerVoiceCommandCenterController extends Controller
         $capaMeta['updated_by_user_id'] = $actorId > 0 ? $actorId : null;
 
         if ($verificationResult !== null) {
-            $verifiedBy = $this->extractCapaVerifierUserId($meta);
-            if ($verifiedBy === null || $verifiedBy <= 0) {
-                $verifiedBy = $actorId > 0 ? $actorId : null;
-            }
+            $verifiedBy = $actorId > 0 ? $actorId : null;
             $capaMeta['verified_at'] = $now->format('Y-m-d H:i:s');
             $capaMeta['verified_by_user_id'] = $verifiedBy;
         } else {
@@ -2199,6 +2219,54 @@ class CustomerVoiceCommandCenterController extends Controller
         $v = trim((string) ($capaMeta[$key] ?? ''));
 
         return $v !== '' ? $v : null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $approvalSummary
+     * @return array{state: string, result: string|null, approval?: array<string, mixed>}
+     */
+    private function capaDivisionApprovalOrLegacyVerification(int $caseId, string $division, ?array $storedCapa, ?array $approvalSummary = null): array
+    {
+        $approval = $approvalSummary ?? $this->capaApprovalService->divisionSummary($caseId, $division);
+        $state = (string) ($approval['state'] ?? 'none');
+
+        if ($state === 'approved') {
+            return ['state' => 'done', 'result' => 'approved', 'approval' => $approval];
+        }
+        if ($state === 'rejected') {
+            return ['state' => 'done', 'result' => 'rejected', 'approval' => $approval];
+        }
+        if ($state === 'pending') {
+            return ['state' => 'pending', 'result' => null, 'approval' => $approval];
+        }
+
+        $legacy = $this->capaService->storedCapaVerificationState($storedCapa);
+
+        return array_merge($legacy, ['approval' => $approval]);
+    }
+
+    private function stampCapaApprovalAuditMeta(int $caseId, string $division, string $approvalState, ?int $actorId = null): void
+    {
+        if ($approvalState !== 'approved') {
+            return;
+        }
+
+        $row = DB::table('feedback_cases')->where('id', $caseId)->first(['meta']);
+        if ($row === null) {
+            return;
+        }
+
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+
+        $meta = $this->stampCapaAuditMeta($meta, $actorId, now(), 'approved');
+
+        DB::table('feedback_cases')->where('id', $caseId)->update([
+            'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ]);
     }
 
     private function notifyCapaVerifierIfNew(Request $request, int $caseId, ?int $oldVerifierId, ?int $newVerifierId, mixed $summaryId): void

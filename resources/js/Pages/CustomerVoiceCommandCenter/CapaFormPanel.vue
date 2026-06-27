@@ -1,41 +1,16 @@
 <template>
   <div class="capa-form touch-manipulation space-y-4 pb-2 selection:bg-indigo-100">
     <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-4 py-4 shadow-sm">
-      <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Form standar</p>
-      <h2 class="mt-1 text-base font-bold leading-snug text-slate-900">
-        Customer Complaint Handling — Corrective &amp; Preventive Action Plan
-      </h2>
-      <p class="mt-2 text-xs leading-relaxed text-slate-600">
-        Isi sesuai penanganan komplain di lapangan. Data tersimpan pada kasus (meta). <strong>Corrective</strong> = perbaiki kejadian saat ini;
-        <strong>Preventive</strong> = cegah kejadian berulang.
-      </p>
+      <p class="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Form CAPA</p>
+      <h2 class="mt-1 text-base font-bold leading-snug text-slate-900">Customer Complaint — Corrective &amp; Preventive Action</h2>
+      <p class="mt-2 text-xs leading-relaxed text-slate-600">Isi per divisi (Service / Kitchen / Bar). Lampiran bukti tetap wajib jika ada dokumen pendukung.</p>
     </div>
+
     <div class="rounded-xl border border-slate-200 bg-white p-2">
       <div class="text-[10px] font-bold uppercase tracking-wide text-slate-500">Divisi CAPA aktif</div>
       <div class="mt-1 text-xs font-semibold text-indigo-900">{{ divisionLabel(activeDivision) }}</div>
     </div>
-    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Informasi Komplain</h3>
-      <p class="mt-1 text-[11px] text-slate-500">Outlet, tanggal, dan waktu komplain ditampilkan di atas agar cepat terlihat.</p>
-      <div class="mt-3 grid gap-3 sm:grid-cols-2">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Tanggal complaint
-          <input v-model="local.a.complaint_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-        </label>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Waktu complaint
-          <input v-model="local.a.complaint_time" type="time" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
-        </label>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">Outlet / lokasi</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ outletDisplay }}</div>
-        </div>
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-500">Channel complaint</div>
-          <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
-        </div>
-      </div>
-    </section>
+
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div class="mb-3 flex items-center justify-between gap-2">
         <h3 class="text-sm font-bold text-slate-900">List CAPA</h3>
@@ -53,19 +28,10 @@
             <div class="text-[11px] text-slate-500">{{ row.filled ? 'Sudah ada data CAPA' : 'Belum ada data CAPA' }}</div>
           </div>
           <div class="flex items-center gap-1.5">
-            <button
-              type="button"
-              class="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-              @click="switchDivision(row.id)"
-            >
+            <button type="button" class="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" @click="switchDivision(row.id)">
               {{ row.id === activeDivision ? 'Editing' : 'Show/Edit' }}
             </button>
-            <button
-              type="button"
-              class="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
-              :disabled="!row.filled"
-              @click="removeDivision(row.id)"
-            >
+            <button type="button" class="rounded-md border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50" :disabled="!row.filled" @click="removeDivision(row.id)">
               Hapus
             </button>
           </div>
@@ -73,99 +39,102 @@
       </div>
     </section>
 
-    <div
-      v-if="pendingVerifierSelf"
-      class="rounded-2xl border border-violet-300 bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-3 shadow-sm"
-    >
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-xs font-medium leading-relaxed text-violet-950">
-          <i class="fa fa-clipboard-check mr-1.5 text-violet-600" aria-hidden="true" />
-          Anda ditunjuk sebagai <strong>verifikator</strong>. Lengkapi <strong>bagian G — Hasil</strong>, lalu klik
-          <strong>Simpan form CAPA</strong>.
-        </p>
-        <button
-          type="button"
-          class="inline-flex min-h-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-700 active:bg-violet-800"
-          @click="handleVerifyClick"
-        >
-          Verifikasi
-        </button>
-      </div>
+    <div v-if="pendingApproverSelf" class="rounded-2xl border border-violet-300 bg-gradient-to-r from-violet-50 to-indigo-50 px-4 py-3 shadow-sm">
+      <p class="text-xs font-medium text-violet-950">
+        <i class="fa fa-user-check mr-1.5 text-violet-600" aria-hidden="true" />
+        CAPA divisi <strong>{{ divisionLabel(activeDivision) }}</strong> menunggu approval Anda.
+      </p>
     </div>
 
-    <nav
-      class="sticky top-0 z-[6] -mx-0.5 mb-1 flex gap-0.5 overflow-x-auto rounded-xl border border-slate-200 bg-white/95 py-1.5 px-1 text-[11px] font-semibold shadow-sm backdrop-blur sm:hidden"
-      aria-label="Loncat ke bagian form"
-    >
-      <a v-for="l in sectionLinks" :key="l.id" :href="'#' + l.id" class="shrink-0 rounded-lg px-2.5 py-2 text-indigo-700 active:bg-indigo-50">{{ l.short }}</a>
-    </nav>
+    <!-- 1. General Information -->
+    <section id="capa-general" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">1. General Information</h3>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Date
+          <input v-model="local.a.complaint_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Time
+          <input v-model="local.a.complaint_time" type="time" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Outlet Name</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ outletDisplay }}</div>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-500">Location / Channel</div>
+          <div class="mt-1 text-sm font-semibold text-slate-900">{{ sourceLabel }}</div>
+        </div>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Reported By
+          <input v-model="local.a.reported_by" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Nama pelapor" />
+        </label>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Position
+          <input v-model="local.a.reported_by_position" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Jabatan / posisi" />
+        </label>
+      </div>
+    </section>
 
+    <!-- 2. Issue Details -->
+    <section id="capa-issue" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">2. Issue Details</h3>
+      <p class="mt-1 text-[11px] text-slate-600">Type of Issue</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <label v-for="opt in complaintTypes" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800">
+          <input type="checkbox" class="rounded border-slate-300 text-indigo-600" :checked="hasType(opt.v)" @change="toggleType(opt.v)" />
+          {{ opt.label }}
+        </label>
+      </div>
+      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Description
+        <textarea v-model="local.b.description" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+      </label>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Area / Section
+          <input v-model="local.b.area_section" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Involved Parties
+          <input v-model="local.b.involved_parties" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+        <label class="sm:col-span-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Witness(es)
+          <textarea v-model="local.b.witnesses" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+      </div>
+    </section>
+
+    <!-- Evidence -->
     <section id="capa-evidence" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3 class="text-sm font-bold text-slate-900">Lampiran bukti &amp; dokumen</h3>
-      <p class="mt-1 text-[11px] leading-relaxed text-slate-600">
-        Foto struk, SS chat, PDF SOP, dll. Maks. 20 file, per file ±15 MB. Tersimpan aman di server; tidak hilang saat menyimpan form CAPA.
-      </p>
+      <p class="mt-1 text-[11px] text-slate-600">Maks. 20 file, per file ±15 MB.</p>
       <p v-if="evidenceError" class="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{{ evidenceError }}</p>
       <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <button
-          type="button"
-          class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 active:bg-slate-50 disabled:opacity-50"
-          :disabled="uploadingEvidence || evidenceFull"
-          @click="triggerCameraInput"
-        >
-          Ambil foto
-        </button>
-        <button
-          type="button"
-          class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-900 active:bg-indigo-100 disabled:opacity-50"
-          :disabled="uploadingEvidence || evidenceFull"
-          @click="triggerFilePicker"
-        >
-          Pilih file / galeri
-        </button>
+        <button type="button" class="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 disabled:opacity-50" :disabled="uploadingEvidence || evidenceFull" @click="triggerCameraInput">Ambil foto</button>
+        <button type="button" class="inline-flex min-h-11 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-900 disabled:opacity-50" :disabled="uploadingEvidence || evidenceFull" @click="triggerFilePicker">Pilih file / galeri</button>
       </div>
       <input ref="cameraInputRef" type="file" class="hidden" accept="image/*" capture="environment" @change="onEvidenceFiles" />
-      <input
-        ref="pickerInputRef"
-        type="file"
-        class="hidden"
-        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf"
-        @change="onEvidenceFiles"
-      />
-      <p v-if="uploadingEvidence" class="mt-2 text-xs font-medium text-indigo-600">Mengunggah…</p>
+      <input ref="pickerInputRef" type="file" class="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf" @change="onEvidenceFiles" />
       <ul v-if="(local.evidence || []).length" class="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
-        <li v-for="ev in local.evidence" :key="ev.id" class="flex flex-wrap items-center justify-between gap-2 py-3 first:pt-0 last:pb-0">
-          <div class="min-w-0 flex-1">
-            <a
-              v-if="ev.url"
-              :href="ev.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="break-all text-sm font-medium text-indigo-700 underline decoration-indigo-200 underline-offset-2"
-            >{{ ev.original_name || 'Lampiran' }}</a>
-            <span v-else class="break-all text-sm text-slate-700">{{ ev.original_name || 'Lampiran' }}</span>
-            <p class="text-[10px] text-slate-400">{{ formatBytes(ev.size) }} · {{ formatUploaded(ev.uploaded_at) }}</p>
-          </div>
-          <button
-            type="button"
-            class="min-h-10 shrink-0 rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 active:bg-rose-50 disabled:opacity-50"
-            :disabled="uploadingEvidence"
-            @click="removeEvidence(ev.id)"
-          >
-            Hapus
-          </button>
+        <li v-for="ev in local.evidence" :key="ev.id" class="flex flex-wrap items-center justify-between gap-2 py-3">
+          <a v-if="ev.url" :href="ev.url" target="_blank" rel="noopener noreferrer" class="break-all text-sm font-medium text-indigo-700 underline">{{ ev.original_name || 'Lampiran' }}</a>
+          <span v-else class="break-all text-sm text-slate-700">{{ ev.original_name || 'Lampiran' }}</span>
+          <button type="button" class="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700" :disabled="uploadingEvidence" @click="removeEvidence(ev.id)">Hapus</button>
         </li>
       </ul>
       <p v-else class="mt-3 text-xs text-slate-400">Belum ada lampiran.</p>
     </section>
 
-    <!-- C -->
-    <section id="capa-c" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Immediate Action <span class="font-normal text-slate-500">(Tindakan langsung)</span></h3>
-      <p class="mt-2 text-[11px] font-semibold text-slate-700">Tindakan yang dilakukan saat itu</p>
+    <!-- 3. Action Taken -->
+    <section id="capa-action" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">3. Action Taken</h3>
+      <p class="mt-2 text-[11px] font-semibold text-slate-700">Immediate Action</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        <label v-for="opt in immediateActions" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
-          <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasAction(opt.v)" @change="toggleAction(opt.v)" />
+        <label v-for="opt in immediateActions" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800">
+          <input type="checkbox" class="rounded border-slate-300 text-indigo-600" :checked="hasAction(opt.v)" @change="toggleAction(opt.v)" />
           {{ opt.label }}
         </label>
       </div>
@@ -173,240 +142,112 @@
         Lainnya
         <input v-model="local.c.actions_other" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
       </label>
-      <div class="mt-4 grid gap-3 sm:grid-cols-2">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Waktu respon
-          <input v-model="local.c.response_time_note" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: kurang dari 5 menit setelah keluhan" />
-        </label>
-        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          PIC
-          <CapaUserPicker v-model="local.c.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
-        </div>
-      </div>
-    </section>
-
-    <!-- D -->
-    <section id="capa-d" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Root Cause Analysis <span class="font-normal text-slate-500">(Analisa akar masalah)</span></h3>
-      <p class="mt-2 text-[11px] leading-relaxed text-slate-600">
-        Kerangka fishbone (6M): Man, Method, Machine, Material, Measurement, Environment — isi kolom di bawah sesuai fakta.
-      </p>
-
       <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Masalah
-        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Ringkas inti keluhan (satu kalimat atau ringkasan singkat).</span>
-        <textarea v-model="local.d.problem_statement" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Contoh: Tamu mengeluh waiting time lama" />
+        Follow-Up Action
+        <textarea v-model="local.e.action" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
       </label>
-
-      <p class="mt-5 text-[11px] font-semibold text-slate-700">Breakdown fishbone</p>
-      <div class="mt-3 grid gap-4">
-        <div v-for="row in fishboneRows" :key="row.key" class="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-          <label class="block text-[11px] font-bold uppercase tracking-wide text-slate-700">{{ row.title }}</label>
-          <p class="mt-0.5 text-[10px] leading-snug text-slate-500">{{ row.hint }}</p>
-          <textarea v-model="local.d[row.key]" rows="3" class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" :placeholder="row.placeholder" />
-        </div>
-      </div>
-      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Akar masalah utama
-        <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Contoh: SOP tidak dijalankan, human error, equipment issue, dll.</span>
-        <textarea v-model="local.d.root_cause_summary" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-      </label>
-    </section>
-
-    <!-- E -->
-    <section id="capa-e" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Corrective Action <span class="font-normal text-slate-500">(Perbaikan jangka pendek)</span></h3>
-      <p class="mt-1 text-[11px] text-slate-600">Tindakan untuk memperbaiki masalah yang sudah terjadi.</p>
-      <div class="mt-3 grid gap-3">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Action
-          <textarea v-model="local.e.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Perbaikan konkret untuk insiden ini" />
-        </label>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            PIC
-            <CapaUserPicker v-model="local.e.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
-          </div>
-          <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Deadline
-            <input v-model="local.e.deadline" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-          </label>
-        </div>
-      </div>
-    </section>
-
-    <!-- F -->
-    <section id="capa-f" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Preventive Action <span class="font-normal text-slate-500">(Pencegahan jangka panjang)</span></h3>
-      <p class="mt-1 text-[11px] text-slate-600">Tindakan agar masalah tidak berulang.</p>
-      <p class="mt-3 text-[11px] font-semibold text-slate-700">Improvement area</p>
-      <div class="mt-2 flex flex-wrap gap-2">
-        <label v-for="opt in improvementAreas" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
-          <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasImprovement(opt.v)" @change="toggleImprovement(opt.v)" />
-          {{ opt.label }}
-        </label>
-      </div>
-      <div class="mt-4 grid gap-3">
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Action
-          <textarea v-model="local.f.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            PIC
-            <CapaUserPicker v-model="local.f.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
-          </div>
-          <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Timeline
-            <input v-model="local.f.timeline" type="text" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" placeholder="Periode atau milestone" />
-          </label>
-        </div>
-        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          KPI terkait
-          <span class="mt-0.5 block text-[10px] font-normal normal-case text-slate-400">Contoh: complaint rate ≤ 2%, service time ≤ 10 menit.</span>
-          <textarea v-model="local.f.kpi" rows="2" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-        </label>
-      </div>
-    </section>
-
-    <!-- G -->
-    <section id="capa-g" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Follow Up &amp; Verification</h3>
       <div class="mt-3 grid gap-3 sm:grid-cols-2">
         <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          Tanggal follow up
-          <input v-model="local.g.follow_up_date" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+          Status
+          <select v-model="local.e.status" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <option value="open">Open</option>
+            <option value="on_progress">On Progress</option>
+            <option value="closed">Closed</option>
+          </select>
         </label>
-        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">
-          Verifikasi oleh <span class="font-normal normal-case text-slate-400">(Manager / QA / Ops)</span>
-          <CapaUserPicker
-            v-model="local.g.verified_by_user_id"
-            :assignees="assigneesMerged"
-            placeholder="Cari nama verifikator…"
-            clearable
-            class="mt-1 block"
+        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Follow Up By
+          <CapaUserPicker v-model="local.e.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Preventive Measures -->
+    <section id="capa-preventive" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">4. Preventive Measures</h3>
+      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        Corrective Action Plan
+        <textarea v-model="local.f.action" rows="4" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+      </label>
+      <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <div class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Responsible Person
+          <CapaUserPicker v-model="local.f.pic_user_id" :assignees="assigneesMerged" placeholder="Cari PIC…" class="mt-1 block" />
+        </div>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Target Completion Date
+          <input v-model="local.f.timeline" type="date" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+        </label>
+      </div>
+    </section>
+
+    <!-- Approval -->
+    <section id="capa-approval" class="scroll-mt-28 rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
+      <h3 class="text-sm font-bold text-slate-900">Approval</h3>
+      <p class="mt-1 text-[11px] text-slate-600">Pilih approver berurutan (level 1 → terakhir), pola sama dengan PO Ops.</p>
+
+      <div v-if="approvalFlows.length" class="mt-3 space-y-2">
+        <div v-for="flow in approvalFlows" :key="flow.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-xs" :class="approvalFlowClass(flow.status)">
+          <div>
+            <span class="font-bold">Level {{ flow.approval_level }}</span>
+            — {{ flow.approver?.nama_lengkap || `User #${flow.approver_id}` }}
+          </div>
+          <span class="font-semibold uppercase">{{ flow.status }}</span>
+        </div>
+      </div>
+
+      <div v-if="canManageApprovers" class="mt-4">
+        <div class="relative">
+          <input
+            v-model="approverSearch"
+            type="text"
+            placeholder="Cari approver (nama / email / jabatan)…"
+            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+            @input="onApproverSearch"
           />
-          <p class="mt-1 text-[10px] font-normal normal-case text-slate-400">Tanpa default — pilih dari daftar karyawan aktif.</p>
+          <div v-if="showApproverDropdown && approverResults.length" class="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+            <button
+              v-for="user in approverResults"
+              :key="user.id"
+              type="button"
+              class="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 last:border-0"
+              @click="addApprover(user)"
+            >
+              <div class="font-medium">{{ user.name }}</div>
+              <div v-if="user.jabatan" class="text-[11px] text-indigo-600">{{ user.jabatan }}</div>
+            </button>
+          </div>
         </div>
-      </div>
-      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Hasil
-        <select v-model="local.g.result" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-          <option :value="null">— pilih —</option>
-          <option value="effective">Effective — efektif</option>
-          <option value="not_effective">Not effective — tidak efektif</option>
-        </select>
-      </label>
-      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Catatan tambahan
-        <textarea v-model="local.g.notes" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-      </label>
-    </section>
-
-    <!-- H -->
-    <section id="capa-h" class="scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 class="text-sm font-bold text-slate-900">Customer Recovery <span class="font-normal text-slate-500">(Service recovery)</span></h3>
-
-      <div class="mt-3">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Apakah tamu sudah dihubungi kembali?</p>
-        <div class="mt-2 inline-flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-          <button
-            type="button"
-            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-            :class="local.h.contacted === null || local.h.contacted === undefined ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/80'"
-            @click="local.h.contacted = null"
-          >
-            —
-          </button>
-          <button
-            type="button"
-            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-            :class="local.h.contacted === 'yes' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white/80'"
-            @click="local.h.contacted = 'yes'"
-          >
-            Ya
-          </button>
-          <button
-            type="button"
-            class="rounded-lg px-3 py-1.5 text-xs font-semibold transition"
-            :class="local.h.contacted === 'no' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600 hover:bg-white/80'"
-            @click="local.h.contacted = 'no'"
-          >
-            Tidak
+        <div v-if="selectedApprovers.length" class="mt-3 space-y-2">
+          <div v-for="(ap, idx) in selectedApprovers" :key="ap.id" class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <span><strong>L{{ idx + 1 }}</strong> — {{ ap.name }}</span>
+            <div class="flex gap-1">
+              <button v-if="idx > 0" type="button" class="rounded border px-2 py-0.5 text-xs" @click="reorderApprover(idx, idx - 1)">↑</button>
+              <button v-if="idx < selectedApprovers.length - 1" type="button" class="rounded border px-2 py-0.5 text-xs" @click="reorderApprover(idx, idx + 1)">↓</button>
+              <button type="button" class="rounded border border-rose-200 px-2 py-0.5 text-xs text-rose-700" @click="removeApprover(idx)">×</button>
+            </div>
+          </div>
+          <button type="button" class="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="submittingApproval || !selectedApprovers.length" @click="submitApproval">
+            {{ submittingApproval ? 'Mengajukan…' : 'Ajukan Approval' }}
           </button>
         </div>
       </div>
 
-      <div class="mt-5">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Metode</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <label v-for="opt in contactMethods" :key="opt.v" class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 hover:bg-white">
-            <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" :checked="hasContact(opt.v)" @change="toggleContact(opt.v)" />
-            {{ opt.label }}
-          </label>
+      <div v-if="pendingApproverSelf" class="mt-4 rounded-xl border border-violet-200 bg-violet-50 p-3">
+        <label class="block text-[11px] font-semibold uppercase text-slate-600">Komentar (opsional)</label>
+        <textarea v-model="approvalComments" rows="2" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button type="button" class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="actingApproval" @click="actApproval(true)">Approve</button>
+          <button type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" :disabled="actingApproval" @click="actApproval(false)">Reject</button>
         </div>
-      </div>
-
-      <label class="mt-4 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Feedback tamu setelah recovery
-        <textarea v-model="local.h.recovery_feedback" rows="3" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-      </label>
-      <label class="mt-3 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Status kepuasan
-        <select v-model="local.h.satisfaction" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-          <option :value="null">—</option>
-          <option value="satisfied">Satisfied — puas</option>
-          <option value="neutral">Neutral — netral</option>
-          <option value="unsatisfied">Unsatisfied — tidak puas</option>
-        </select>
-      </label>
-
-      <div class="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
-        <p class="text-[10px] leading-snug text-slate-500">Kategori severity dan impact mengikuti data source di bagian atas form.</p>
       </div>
     </section>
 
-    <div class="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-[11px] leading-relaxed text-amber-950">
-      <strong>Catatan:</strong> Corrective = perbaiki kejadian saat ini. Preventive = mencegah kejadian berulang.
-    </div>
-
-    <div
-      class="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-white/80 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <button
-        type="button"
-        class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-        :disabled="saving || deleting"
-        @click="askDeleteStoredCapa"
-      >
-        {{ deleting ? 'Menghapus…' : 'Hapus data CAPA' }}
-      </button>
-      <div class="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
-        <button
-          v-if="pendingVerifierSelf"
-          type="button"
-          class="rounded-xl border border-violet-300 bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="saving || deleting"
-          @click="handleVerifyClick"
-        >
-          Verifikasi
-        </button>
-        <button
-          type="button"
-          class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          :disabled="saving || deleting"
-          @click="$emit('reset')"
-        >
-          Batalkan perubahan lokal
-        </button>
-        <button
-          type="button"
-          class="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="saving || deleting"
-          @click="submit"
-        >
-          {{ saving ? 'Menyimpan…' : 'Simpan form CAPA' }}
-        </button>
+    <div class="sticky bottom-0 flex flex-col gap-2 border-t border-slate-200 bg-white/95 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+      <button type="button" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-800 disabled:opacity-60" :disabled="saving || deleting" @click="askDeleteStoredCapa">Hapus data CAPA</button>
+      <div class="flex gap-2">
+        <button type="button" class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700" :disabled="saving || deleting" @click="$emit('reset')">Batalkan</button>
+        <button type="button" class="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60" :disabled="saving || deleting" @click="submit">Simpan form CAPA</button>
       </div>
     </div>
   </div>
@@ -414,83 +255,55 @@
 
 <script setup>
 import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vue'
+import axios from 'axios'
 import Swal from 'sweetalert2'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   caseId: { type: Number, required: true },
   initialCapa: { type: Object, default: () => ({}) },
   initialCapaDivisions: { type: Object, default: () => ({}) },
   activeDivision: { type: String, default: 'service' },
+  approvalSummaries: { type: Object, default: () => ({}) },
   sourceType: { type: String, default: '' },
   sourceComplaintTopics: { type: Array, default: () => [] },
   sourceComplaintText: { type: String, default: '' },
-  sourceSeverity: { type: String, default: '' },
-  sourceImpact: { type: Array, default: () => [] },
   outletName: { type: String, default: '' },
   saving: { type: Boolean, default: false },
   assignees: { type: Array, default: () => [] },
   authUser: { type: Object, default: null },
-  assignedToId: { type: Number, default: null },
-  assignedToName: { type: String, default: '' },
-  assignedToJabatan: { type: String, default: '' },
   deleting: { type: Boolean, default: false },
-  /** Deep link dari Home / kartu verifikasi — scroll ke section CAPA (mis. capa-g). */
   focusSectionId: { type: String, default: null },
 })
 
-const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'verify-clicked', 'dirty-changed'])
+const emit = defineEmits(['save', 'reset', 'delete-capa', 'focused-section', 'dirty-changed', 'approval-changed'])
+
 const divisions = [
   { id: 'service', label: 'Service' },
   { id: 'kitchen', label: 'Kitchen' },
   { id: 'bar', label: 'Bar' },
 ]
+
 const activeDivision = ref('service')
-const divisionDrafts = ref({
-  service: ensureShape({}),
-  kitchen: ensureShape({}),
-  bar: ensureShape({}),
-})
-
-function askDeleteStoredCapa() {
-  emit('delete-capa')
-}
-
-const sectionLinks = [
-  { id: 'capa-evidence', short: 'File' },
-  { id: 'capa-a', short: 'A' },
-  { id: 'capa-b', short: 'B' },
-  { id: 'capa-c', short: 'C' },
-  { id: 'capa-d', short: 'D' },
-  { id: 'capa-e', short: 'E' },
-  { id: 'capa-f', short: 'F' },
-  { id: 'capa-g', short: 'G' },
-  { id: 'capa-h', short: 'H' },
-]
+const divisionDrafts = ref({ service: ensureShape({}), kitchen: ensureShape({}), bar: ensureShape({}) })
+const local = ref(ensureShape({}))
+const approvalSummariesLocal = ref({ service: emptyApproval(), kitchen: emptyApproval(), bar: emptyApproval() })
 
 const cameraInputRef = ref(null)
 const pickerInputRef = ref(null)
 const uploadingEvidence = ref(false)
 const evidenceError = ref('')
+const approverSearch = ref('')
+const approverResults = ref([])
+const showApproverDropdown = ref(false)
+const selectedApprovers = ref([])
+const submittingApproval = ref(false)
+const actingApproval = ref(false)
+const approvalComments = ref('')
 
-const outletDisplay = computed(() => {
-  const s = (props.outletName || '').trim()
-  return s !== '' ? s : '—'
-})
+let searchTimer = null
 
-const assigneesMerged = computed(() => {
-  const base = [...(props.assignees || [])]
-  const au = props.authUser
-  if (au?.id != null && !base.some((x) => x.id === au.id)) {
-    base.unshift({
-      id: au.id,
-      nama_lengkap: au.nama_lengkap || '',
-      nama_jabatan: au.nama_jabatan ?? null,
-    })
-  }
-
-  return base
-})
+const outletDisplay = computed(() => (props.outletName || '').trim() || '—')
 const sourceLabel = computed(() => {
   const s = String(props.sourceType || '').toLowerCase()
   if (s === 'google_review') return 'Google Review'
@@ -498,291 +311,111 @@ const sourceLabel = computed(() => {
   if (s === 'guest_comment') return 'Guest Comment'
   return '—'
 })
-const sourceChannelValue = computed(() => {
-  const s = String(props.sourceType || '').toLowerCase()
-  if (s === 'google_review') return 'google_review'
-  if (s === 'instagram_comment') return 'instagram_comment'
-  if (s === 'guest_comment') return 'guest_comment'
-  return null
-})
-const sourceComplaintTypeBadges = computed(() => {
-  const raw = Array.isArray(props.sourceComplaintTopics) ? props.sourceComplaintTopics : []
-  const keyMap = {
-    food_quality: { key: 'food_quality', label: 'Food Quality' },
-    service: { key: 'service', label: 'Service' },
-    hygiene: { key: 'cleanliness', label: 'Cleanliness' },
-    cleanliness: { key: 'cleanliness', label: 'Cleanliness' },
-    wait_time: { key: 'waiting_time', label: 'Waiting Time' },
-    waiting_time: { key: 'waiting_time', label: 'Waiting Time' },
-    speed_wait_time: { key: 'waiting_time', label: 'Waiting Time' },
-    billing: { key: 'billing', label: 'Billing' },
-    price: { key: 'billing', label: 'Billing' },
-    price_value: { key: 'billing', label: 'Billing' },
-    other: { key: 'other', label: 'Others' },
+
+const assigneesMerged = computed(() => {
+  const base = [...(props.assignees || [])]
+  const au = props.authUser
+  if (au?.id != null && !base.some((x) => x.id === au.id)) {
+    base.unshift({ id: au.id, nama_lengkap: au.nama_lengkap || '', nama_jabatan: au.nama_jabatan ?? null })
   }
-  const out = []
-  const seen = new Set()
-  for (const t of raw) {
-    const k = String(t || '').toLowerCase().trim()
-    if (!k) continue
-    const mapped = keyMap[k] || { key: 'other', label: 'Others' }
-    if (seen.has(mapped.key)) continue
-    seen.add(mapped.key)
-    out.push(mapped)
-  }
-  return out.length ? out : [{ key: 'other', label: 'Others' }]
-})
-const sourceComplaintDescription = computed(() => String(props.sourceComplaintText || '').trim())
-const sourceImpactBadges = computed(() => {
-  const raw = Array.isArray(props.sourceImpact) ? props.sourceImpact : []
-  const out = []
-  const seen = new Set()
-  for (const x of raw) {
-    const k = String(x || '').toLowerCase().trim()
-    if (!k) continue
-    if (seen.has(k)) continue
-    seen.add(k)
-    out.push(k)
-  }
-  return out.length ? out : ['-']
+  return base
 })
 
-const local = ref(ensureShape({}))
-const emptyCapaSignature = normalizeForDirty(ensureShape({}))
-const capaRows = computed(() => divisions.map((d) => ({
-  id: d.id,
-  label: d.label,
-  filled: isDivisionFilled(d.id),
-})))
-
+const capaRows = computed(() => divisions.map((d) => ({ id: d.id, label: d.label, filled: isDivisionFilled(d.id) })))
 const evidenceFull = computed(() => (local.value.evidence || []).length >= 20)
 
-/** User login = verifikator di G dan hasil belum dipilih (efektif / tidak efektif). */
-const pendingVerifierSelf = computed(() => {
-  const uid = props.authUser?.id != null ? Number(props.authUser.id) : null
-  if (!uid || uid <= 0) return false
-  const vidRaw = local.value?.g?.verified_by_user_id
-  const vid = vidRaw != null && vidRaw !== '' ? Number(vidRaw) : null
-  if (!vid || vid !== uid) return false
-  const r = local.value?.g?.result
-  return r !== 'effective' && r !== 'not_effective'
+const activeApproval = computed(() => approvalSummariesLocal.value[activeDivision.value] || emptyApproval())
+const approvalFlows = computed(() => activeApproval.value.flows || [])
+const canManageApprovers = computed(() => {
+  const s = activeApproval.value.state
+  return s === 'none' || s === 'rejected' || activeApproval.value.can_resubmit
+})
+const pendingApproverSelf = computed(() => {
+  const uid = Number(props.authUser?.id || 0)
+  if (!uid) return false
+  return activeApproval.value.state === 'pending' && Number(activeApproval.value.next_approver_id) === uid
 })
 
-function scrollToSectionById(sectionId, emitAfter) {
-  if (!sectionId) return
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        if (emitAfter) {
-          emit('focused-section')
-        }
-      }, 120)
-    })
-  })
-}
-
-function scrollToCapaG() {
-  scrollToSectionById('capa-g', false)
-}
-
-function handleVerifyClick() {
-  scrollToCapaG()
-  emit('verify-clicked')
-}
-
 watch(
-  () => [props.caseId, props.focusSectionId],
-  ([, sectionId]) => {
-    if (sectionId) {
-      scrollToSectionById(sectionId, true)
-    }
-  },
-  { flush: 'post' },
-)
-
-watch(
-  () => [props.initialCapa, props.initialCapaDivisions, props.activeDivision],
-  ([single, byDivision, currentDivision]) => {
+  () => [props.initialCapa, props.initialCapaDivisions, props.activeDivision, props.approvalSummaries],
+  () => {
     const next = {
-      service: ensureShape(single && typeof single === 'object' ? JSON.parse(JSON.stringify(single)) : {}),
+      service: ensureShape(props.initialCapa && typeof props.initialCapa === 'object' ? JSON.parse(JSON.stringify(props.initialCapa)) : {}),
       kitchen: ensureShape({}),
       bar: ensureShape({}),
     }
-    if (byDivision && typeof byDivision === 'object') {
+    if (props.initialCapaDivisions && typeof props.initialCapaDivisions === 'object') {
       for (const d of ['service', 'kitchen', 'bar']) {
-        const x = byDivision[d]
-        if (x && typeof x === 'object') {
-          next[d] = ensureShape(JSON.parse(JSON.stringify(x)))
-        }
+        if (props.initialCapaDivisions[d]) next[d] = ensureShape(JSON.parse(JSON.stringify(props.initialCapaDivisions[d])))
       }
     }
     divisionDrafts.value = next
-    activeDivision.value = ['service', 'kitchen', 'bar'].includes(String(currentDivision || '').toLowerCase())
-      ? String(currentDivision).toLowerCase()
+    activeDivision.value = ['service', 'kitchen', 'bar'].includes(String(props.activeDivision || '').toLowerCase())
+      ? String(props.activeDivision).toLowerCase()
       : 'service'
-    const merged = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[activeDivision.value] || {})))
-    const uid = props.authUser?.id
-    if (uid != null) {
-      if (merged.c.pic_user_id == null) merged.c.pic_user_id = uid
-      if (merged.e.pic_user_id == null) merged.e.pic_user_id = uid
-      if (merged.f.pic_user_id == null) merged.f.pic_user_id = uid
+    local.value = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[activeDivision.value] || {})))
+    seedFromSource(local.value)
+    approvalSummariesLocal.value = {
+      service: { ...emptyApproval(), ...(props.approvalSummaries?.service || {}) },
+      kitchen: { ...emptyApproval(), ...(props.approvalSummaries?.kitchen || {}) },
+      bar: { ...emptyApproval(), ...(props.approvalSummaries?.bar || {}) },
     }
-    merged.b.types = sourceComplaintTypeBadges.value.map((x) => x.key)
-    merged.b.types_other = null
-    merged.b.description = sourceComplaintDescription.value || null
-    merged.h.documented_severity = ['minor', 'major', 'critical'].includes(String(props.sourceSeverity || '').toLowerCase())
-      ? String(props.sourceSeverity).toLowerCase()
-      : null
-    merged.h.documented_impact = sourceImpactBadges.value.filter((x) => ['reputasi', 'finansial', 'operasional'].includes(x))
-    merged.a.channel = sourceChannelValue.value
-    if (sourceChannelValue.value) {
-      merged.a.channel_other = sourceLabel.value
-    }
-    local.value = merged
+    selectedApprovers.value = []
   },
   { immediate: true, deep: true },
 )
 
-watch(
-  () => activeDivision.value,
-  (next, prev) => {
-    if (prev && divisionDrafts.value[prev]) {
-      divisionDrafts.value[prev] = ensureShape(JSON.parse(JSON.stringify(local.value)))
-    }
-    local.value = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[next] || {})))
-  },
-)
+watch(activeDivision, (next, prev) => {
+  if (prev && divisionDrafts.value[prev]) {
+    divisionDrafts.value[prev] = ensureShape(JSON.parse(JSON.stringify(local.value)))
+  }
+  local.value = ensureShape(JSON.parse(JSON.stringify(divisionDrafts.value[next] || {})))
+  selectedApprovers.value = []
+})
 
-function normalizeForDirty(value) {
-  try {
-    return JSON.stringify(ensureShape(JSON.parse(JSON.stringify(value && typeof value === 'object' ? value : {}))))
-  } catch {
-    return ''
+function emptyApproval() {
+  return { state: 'none', flows: [], next_approver_id: null, can_submit: true, can_resubmit: false }
+}
+
+function seedFromSource(merged) {
+  merged.b.types = sourceComplaintTypeBadges.value.map((x) => x.key)
+  merged.b.description = sourceComplaintDescription.value || merged.b.description
+  if (!merged.a.reported_by && props.authUser?.nama_lengkap) {
+    merged.a.reported_by = props.authUser.nama_lengkap
+  }
+  if (!merged.a.reported_by_position && props.authUser?.nama_jabatan) {
+    merged.a.reported_by_position = props.authUser.nama_jabatan
   }
 }
 
-watch(
-  [() => props.initialCapa, local],
-  () => {
-    const source = divisionDrafts.value[activeDivision.value] || props.initialCapa
-    const dirty = normalizeForDirty(local.value) !== normalizeForDirty(source)
-    emit('dirty-changed', dirty)
-  },
-  { immediate: true, deep: true },
-)
-function switchDivision(div) {
-  if (!['service', 'kitchen', 'bar'].includes(div)) return
-  activeDivision.value = div
-}
-
-function isDivisionFilled(div) {
-  const draft = divisionDrafts.value?.[div]
-  return normalizeForDirty(draft || {}) !== emptyCapaSignature
-}
-
-async function removeDivision(div) {
-  if (!isDivisionFilled(div)) return
-  const res = await Swal.fire({
-    icon: 'warning',
-    title: `Hapus CAPA ${divisionLabel(div)}?`,
-    text: 'Data CAPA divisi ini akan dikosongkan.',
-    showCancelButton: true,
-    confirmButtonText: 'Ya, hapus',
-    cancelButtonText: 'Batal',
-    reverseButtons: true,
-  })
-  if (!res.isConfirmed) return
-  divisionDrafts.value[div] = ensureShape({})
-  if (activeDivision.value === div) {
-    local.value = ensureShape({})
+const sourceComplaintTypeBadges = computed(() => {
+  const keyMap = {
+    food_quality: 'food_quality', service: 'service', hygiene: 'cleanliness', cleanliness: 'cleanliness',
+    wait_time: 'waiting_time', waiting_time: 'waiting_time', billing: 'billing', price: 'billing', other: 'other',
   }
-  await Swal.fire({
-    icon: 'success',
-    title: 'Divisi dikosongkan',
-    text: `Data CAPA ${divisionLabel(div)} dihapus dari draft saat ini.`,
-    timer: 1300,
-    showConfirmButton: false,
-  })
-}
+  const out = []
+  const seen = new Set()
+  for (const t of props.sourceComplaintTopics || []) {
+    const mapped = keyMap[String(t || '').toLowerCase()] || 'other'
+    if (seen.has(mapped)) continue
+    seen.add(mapped)
+    out.push({ key: mapped })
+  }
+  return out.length ? out : [{ key: 'other' }]
+})
+const sourceComplaintDescription = computed(() => String(props.sourceComplaintText || '').trim())
 
 function divisionLabel(div) {
-  const item = divisions.find((d) => d.id === div)
-  return item ? item.label : String(div || '-')
+  return divisions.find((d) => d.id === div)?.label || String(div)
 }
-
-const fishboneRows = [
-  {
-    key: 'man',
-    title: 'Man (SDM)',
-    hint: 'skill, attitude, staffing',
-    placeholder: 'Contoh: understaff saat peak hour…',
-  },
-  {
-    key: 'method',
-    title: 'Method (SOP)',
-    hint: 'prosedur, workflow',
-    placeholder: 'Contoh: SOP service flow tidak konsisten…',
-  },
-  {
-    key: 'machine',
-    title: 'Machine (equipment)',
-    hint: 'alat rusak / tidak ada',
-    placeholder: 'Contoh: POS lambat, equipment bottleneck…',
-  },
-  {
-    key: 'material',
-    title: 'Material (bahan)',
-    hint: 'kualitas bahan',
-    placeholder: 'Contoh: bahan belum siap (prep kurang)…',
-  },
-  {
-    key: 'measurement',
-    title: 'Measurement',
-    hint: 'KPI, kontrol, monitoring',
-    placeholder: 'Contoh: tidak ada target service time…',
-  },
-  {
-    key: 'environment',
-    title: 'Environment',
-    hint: 'kondisi outlet, rush hour',
-    placeholder: 'Contoh: over capacity, layout kurang efisien…',
-  },
-]
 
 function ensureShape(src) {
   const base = {
-    a: {
-      complaint_date: null,
-      complaint_time: null,
-      guest_name: null,
-      channel: null,
-      channel_other: null,
-      pic_receiver_name: null,
-    },
-    b: { types: [], types_other: null, description: null },
+    a: { complaint_date: null, complaint_time: null, guest_name: null, channel: null, channel_other: null, reported_by: null, reported_by_position: null },
+    b: { types: [], types_other: null, description: null, area_section: null, involved_parties: null, witnesses: null },
     c: { actions: [], actions_other: null, response_time_note: null, pic_user_id: null },
-    d: {
-      problem_statement: null,
-      man: null,
-      method: null,
-      machine: null,
-      material: null,
-      measurement: null,
-      environment: null,
-      root_cause_summary: null,
-    },
     e: { action: null, pic_user_id: null, deadline: null, status: 'open' },
     f: { action: null, improvement_areas: [], pic_user_id: null, timeline: null, kpi: null },
-    g: { follow_up_date: null, verified_by_user_id: null, result: null, notes: null },
-    h: {
-      contacted: null,
-      contact_methods: [],
-      recovery_feedback: null,
-      satisfaction: null,
-      documented_severity: null,
-      documented_impact: [],
-    },
     evidence: [],
   }
   return deepMerge(base, src || {})
@@ -801,6 +434,26 @@ function deepMerge(target, src) {
   return out
 }
 
+function isDivisionFilled(div) {
+  return JSON.stringify(divisionDrafts.value?.[div] || {}) !== JSON.stringify(ensureShape({}))
+}
+
+function switchDivision(div) {
+  if (['service', 'kitchen', 'bar'].includes(div)) activeDivision.value = div
+}
+
+async function removeDivision(div) {
+  if (!isDivisionFilled(div)) return
+  const res = await Swal.fire({ icon: 'warning', title: `Hapus CAPA ${divisionLabel(div)}?`, showCancelButton: true })
+  if (!res.isConfirmed) return
+  divisionDrafts.value[div] = ensureShape({})
+  if (activeDivision.value === div) local.value = ensureShape({})
+}
+
+function askDeleteStoredCapa() {
+  emit('delete-capa')
+}
+
 const complaintTypes = [
   { v: 'food_quality', label: 'Food Quality' },
   { v: 'service', label: 'Service' },
@@ -809,38 +462,15 @@ const complaintTypes = [
   { v: 'billing', label: 'Billing' },
   { v: 'other', label: 'Others' },
 ]
-
 const immediateActions = [
-  { v: 'apology', label: 'Apology diberikan' },
+  { v: 'apology', label: 'Apology' },
   { v: 'replace_product', label: 'Replace product' },
   { v: 'refund_discount', label: 'Refund / Discount' },
-  { v: 'escalate', label: 'Escalate ke Supervisor / Manager' },
+  { v: 'escalate', label: 'Escalate' },
   { v: 'other', label: 'Lainnya' },
 ]
 
-const improvementAreas = [
-  { v: 'sop', label: 'SOP' },
-  { v: 'training', label: 'Training' },
-  { v: 'equipment', label: 'Equipment' },
-  { v: 'manpower', label: 'Manpower' },
-  { v: 'system', label: 'System' },
-]
-
-const contactMethods = [
-  { v: 'call', label: 'Call' },
-  { v: 'whatsapp', label: 'WhatsApp' },
-  { v: 'email', label: 'Email' },
-]
-
-const impactOpts = [
-  { v: 'reputasi', label: 'Reputasi' },
-  { v: 'finansial', label: 'Finansial' },
-  { v: 'operasional', label: 'Operasional' },
-]
-
-function hasType(v) {
-  return (local.value.b.types || []).includes(v)
-}
+function hasType(v) { return (local.value.b.types || []).includes(v) }
 function toggleType(v) {
   const arr = [...(local.value.b.types || [])]
   const i = arr.indexOf(v)
@@ -848,10 +478,7 @@ function toggleType(v) {
   else arr.push(v)
   local.value.b.types = arr
 }
-
-function hasAction(v) {
-  return (local.value.c.actions || []).includes(v)
-}
+function hasAction(v) { return (local.value.c.actions || []).includes(v) }
 function toggleAction(v) {
   const arr = [...(local.value.c.actions || [])]
   const i = arr.indexOf(v)
@@ -860,160 +487,119 @@ function toggleAction(v) {
   local.value.c.actions = arr
 }
 
-function hasImprovement(v) {
-  return (local.value.f.improvement_areas || []).includes(v)
-}
-function toggleImprovement(v) {
-  const arr = [...(local.value.f.improvement_areas || [])]
-  const i = arr.indexOf(v)
-  if (i >= 0) arr.splice(i, 1)
-  else arr.push(v)
-  local.value.f.improvement_areas = arr
-}
-
-function hasContact(v) {
-  return (local.value.h.contact_methods || []).includes(v)
-}
-function toggleContact(v) {
-  const arr = [...(local.value.h.contact_methods || [])]
-  const i = arr.indexOf(v)
-  if (i >= 0) arr.splice(i, 1)
-  else arr.push(v)
-  local.value.h.contact_methods = arr
-}
-
-function hasImpact(v) {
-  return (local.value.h.documented_impact || []).includes(v)
-}
-function toggleImpact(v) {
-  const arr = [...(local.value.h.documented_impact || [])]
-  const i = arr.indexOf(v)
-  if (i >= 0) arr.splice(i, 1)
-  else arr.push(v)
-  local.value.h.documented_impact = arr
-}
-
 function submit() {
   divisionDrafts.value[activeDivision.value] = ensureShape(JSON.parse(JSON.stringify(local.value)))
-  emit('save', {
-    division: activeDivision.value,
-    capa: JSON.parse(JSON.stringify(local.value)),
-  })
+  emit('save', { division: activeDivision.value, capa: JSON.parse(JSON.stringify(local.value)) })
 }
 
 function csrfToken() {
   return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
 }
 
-function triggerCameraInput() {
-  cameraInputRef.value?.click()
-}
-
-function triggerFilePicker() {
-  pickerInputRef.value?.click()
-}
+function triggerCameraInput() { cameraInputRef.value?.click() }
+function triggerFilePicker() { pickerInputRef.value?.click() }
 
 async function onEvidenceFiles(ev) {
-  const input = ev.target
-  const file = input.files?.[0]
-  input.value = ''
+  const file = ev.target.files?.[0]
+  ev.target.value = ''
   if (!file || !props.caseId) return
-  evidenceError.value = ''
   uploadingEvidence.value = true
+  evidenceError.value = ''
   try {
     const fd = new FormData()
     fd.append('file', file)
     const res = await fetch(`/customer-voice-command-center/cases/${props.caseId}/capa/evidence`, {
-      method: 'POST',
-      body: fd,
-      credentials: 'same-origin',
-      headers: {
-        'X-CSRF-TOKEN': csrfToken(),
-        'X-Requested-With': 'XMLHttpRequest',
-        Accept: 'application/json',
-      },
+      method: 'POST', body: fd, credentials: 'same-origin',
+      headers: { 'X-CSRF-TOKEN': csrfToken(), 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok || !data.success) {
-      evidenceError.value = data.message || `Upload gagal (${res.status}).`
-
-      return
-    }
-    if (!Array.isArray(local.value.evidence)) {
-      local.value.evidence = []
-    }
+    if (!res.ok || !data.success) { evidenceError.value = data.message || 'Upload gagal.'; return }
+    if (!Array.isArray(local.value.evidence)) local.value.evidence = []
     local.value.evidence.push(data.item)
-  } catch {
-    evidenceError.value = 'Upload gagal (periksa jaringan).'
-  } finally {
-    uploadingEvidence.value = false
-  }
+  } catch { evidenceError.value = 'Upload gagal.' }
+  finally { uploadingEvidence.value = false }
 }
 
 async function removeEvidence(evidenceId) {
   if (!props.caseId || !evidenceId) return
-  evidenceError.value = ''
   uploadingEvidence.value = true
   try {
     const res = await fetch(`/customer-voice-command-center/cases/${props.caseId}/capa/evidence/${encodeURIComponent(evidenceId)}`, {
-      method: 'DELETE',
-      credentials: 'same-origin',
-      headers: {
-        'X-CSRF-TOKEN': csrfToken(),
-        'X-Requested-With': 'XMLHttpRequest',
-        Accept: 'application/json',
-      },
+      method: 'DELETE', credentials: 'same-origin',
+      headers: { 'X-CSRF-TOKEN': csrfToken(), 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok || !data.success) {
-      evidenceError.value = data.message || `Hapus gagal (${res.status}).`
-
-      return
-    }
-    local.value.evidence = (local.value.evidence || []).filter((x) => x.id !== evidenceId)
-  } catch {
-    evidenceError.value = 'Hapus gagal (periksa jaringan).'
-  } finally {
-    uploadingEvidence.value = false
-  }
+    if (res.ok && data.success) local.value.evidence = (local.value.evidence || []).filter((x) => x.id !== evidenceId)
+  } finally { uploadingEvidence.value = false }
 }
 
-function formatBytes(n) {
-  if (n == null || Number.isNaN(Number(n))) return '—'
-  const v = Number(n)
-  if (v < 1024) return `${v} B`
-  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`
-
-  return `${(v / (1024 * 1024)).toFixed(1)} MB`
+function onApproverSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(loadApprovers, 300)
 }
 
-function formatUploaded(iso) {
-  if (!iso) return ''
+async function loadApprovers() {
+  const q = approverSearch.value.trim()
+  if (q.length < 2) { approverResults.value = []; showApproverDropdown.value = false; return }
   try {
-    return new Date(iso).toLocaleString('id-ID')
-  } catch {
-    return String(iso)
-  }
+    const { data } = await axios.get(route('customer-voice-command-center.capa.approvers'), { params: { search: q } })
+    approverResults.value = data.users || []
+    showApproverDropdown.value = approverResults.value.length > 0
+  } catch { approverResults.value = [] }
+}
+
+function addApprover(user) {
+  if (!selectedApprovers.value.find((a) => a.id === user.id)) selectedApprovers.value.push(user)
+  approverSearch.value = ''
+  showApproverDropdown.value = false
+}
+
+function removeApprover(index) { selectedApprovers.value.splice(index, 1) }
+function reorderApprover(from, to) {
+  const item = selectedApprovers.value.splice(from, 1)[0]
+  selectedApprovers.value.splice(to, 0, item)
+}
+
+function approvalFlowClass(status) {
+  if (status === 'APPROVED') return 'border-emerald-200 bg-emerald-50'
+  if (status === 'REJECTED') return 'border-rose-200 bg-rose-50'
+  return 'border-amber-200 bg-amber-50'
+}
+
+async function submitApproval() {
+  if (!selectedApprovers.value.length) return
+  submittingApproval.value = true
+  try {
+    const { data } = await axios.post(
+      route('customer-voice-command-center.cases.capa.submit-approval', props.caseId),
+      { division: activeDivision.value, approvers: selectedApprovers.value.map((a) => a.id) },
+      { headers: { 'X-CSRF-TOKEN': csrfToken(), Accept: 'application/json' } },
+    )
+    if (!data.success) throw new Error(data.message)
+    approvalSummariesLocal.value[activeDivision.value] = data.summary
+    selectedApprovers.value = []
+    emit('approval-changed')
+    await Swal.fire({ icon: 'success', title: 'Diajukan', timer: 1200, showConfirmButton: false })
+  } catch (e) {
+    Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || e.message })
+  } finally { submittingApproval.value = false }
+}
+
+async function actApproval(approved) {
+  actingApproval.value = true
+  try {
+    const { data } = await axios.post(
+      route('customer-voice-command-center.cases.capa.approve', props.caseId),
+      { division: activeDivision.value, approved, comments: approvalComments.value || null },
+      { headers: { 'X-CSRF-TOKEN': csrfToken(), Accept: 'application/json' } },
+    )
+    if (!data.success) throw new Error(data.message)
+    approvalSummariesLocal.value[activeDivision.value] = data.summary
+    approvalComments.value = ''
+    emit('approval-changed')
+    await Swal.fire({ icon: 'success', title: approved ? 'Disetujui' : 'Ditolak', timer: 1200, showConfirmButton: false })
+  } catch (e) {
+    Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || e.message })
+  } finally { actingApproval.value = false }
 }
 </script>
-
-<style scoped>
-/* HP: target sentuh ~44px + font 16px agar tidak zoom otomatis iOS */
-@media (max-width: 639px) {
-  .capa-form :deep(input[type='text']),
-  .capa-form :deep(input[type='date']),
-  .capa-form :deep(input[type='time']),
-  .capa-form :deep(select),
-  .capa-form :deep(textarea) {
-    min-height: 2.75rem;
-    font-size: 16px;
-  }
-  .capa-form :deep(textarea) {
-    min-height: 6rem;
-  }
-  .capa-form :deep(input[type='checkbox']) {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-}
-</style>
