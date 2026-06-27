@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import TextInput from '@/Components/TextInput.vue';
@@ -31,8 +31,39 @@ const logoFile = ref(null);
 const removeHero = ref(false);
 const removeLogo = ref(false);
 const galleryKeep = ref((props.landing.gallery_images || []).map((g) => g.path));
-const galleryNew = ref([]);
+const galleryNewPreviews = ref([]);
 const saving = ref(false);
+
+const mediaSpecs = [
+  {
+    label: 'Logo',
+    web: '512 × 512 px',
+    mobile: '512 × 512 px',
+    ratio: '1:1',
+    note: 'PNG/WebP transparan. Tampil bulat di landing.',
+  },
+  {
+    label: 'Hero Banner',
+    web: '1920 × 900 px',
+    mobile: '1080 × 720 px',
+    ratio: '16:9 – 3:2',
+    note: 'Landscape lebar. Area penting di tengah (object-cover).',
+  },
+  {
+    label: 'Galeri — baris atas (2 foto)',
+    web: '1200 × 800 px',
+    mobile: '800 × 600 px',
+    ratio: '3:2',
+    note: '2 foto besar sejajar di desktop & mobile.',
+  },
+  {
+    label: 'Galeri — baris bawah (3 foto)',
+    web: '800 × 800 px',
+    mobile: '600 × 600 px',
+    ratio: '1:1',
+    note: '3 foto lebih kecil. Min. 5 foto total untuk layout penuh.',
+  },
+];
 
 watch(
   () => page.props.flash?.success,
@@ -74,7 +105,12 @@ function openPreview(draft = false) {
 
 function onGalleryPick(event) {
   const files = Array.from(event.target.files || []);
-  galleryNew.value = [...galleryNew.value, ...files];
+  for (const file of files) {
+    galleryNewPreviews.value.push({
+      file,
+      url: URL.createObjectURL(file),
+    });
+  }
   event.target.value = '';
 }
 
@@ -83,8 +119,20 @@ function removeExistingGallery(path) {
 }
 
 function removeNewGallery(index) {
-  galleryNew.value = galleryNew.value.filter((_, i) => i !== index);
+  const item = galleryNewPreviews.value[index];
+  if (item?.url) {
+    URL.revokeObjectURL(item.url);
+  }
+  galleryNewPreviews.value = galleryNewPreviews.value.filter((_, i) => i !== index);
 }
+
+onBeforeUnmount(() => {
+  galleryNewPreviews.value.forEach((item) => {
+    if (item?.url) {
+      URL.revokeObjectURL(item.url);
+    }
+  });
+});
 
 function submit() {
   saving.value = true;
@@ -102,7 +150,7 @@ function submit() {
   if (logoFile.value) fd.append('logo_override', logoFile.value);
   if (removeHero.value) fd.append('remove_hero', '1');
   if (removeLogo.value) fd.append('remove_logo', '1');
-  galleryNew.value.forEach((file) => fd.append('gallery_new[]', file));
+  galleryNewPreviews.value.forEach((item) => fd.append('gallery_new[]', item.file));
 
   router.post(`/web-profile/outlet-landings/${props.outlet.id}`, fd, {
     forceFormData: true,
@@ -187,35 +235,66 @@ function submit() {
 
         <div class="bg-white rounded-xl shadow p-6 space-y-4">
           <h2 class="font-semibold text-gray-800">Media</h2>
+
+          <div class="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4 text-sm">
+            <p class="font-semibold text-indigo-900 mb-2">Rekomendasi dimensi (web & mobile)</p>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-xs text-left">
+                <thead>
+                  <tr class="text-indigo-800 border-b border-indigo-200">
+                    <th class="py-2 pr-3 font-semibold">Aset</th>
+                    <th class="py-2 pr-3 font-semibold">Web</th>
+                    <th class="py-2 pr-3 font-semibold">Mobile</th>
+                    <th class="py-2 pr-3 font-semibold">Rasio</th>
+                    <th class="py-2 font-semibold">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody class="text-indigo-950">
+                  <tr v-for="spec in mediaSpecs" :key="spec.label" class="border-b border-indigo-100 last:border-0">
+                    <td class="py-2 pr-3 font-medium whitespace-nowrap">{{ spec.label }}</td>
+                    <td class="py-2 pr-3 whitespace-nowrap">{{ spec.web }}</td>
+                    <td class="py-2 pr-3 whitespace-nowrap">{{ spec.mobile }}</td>
+                    <td class="py-2 pr-3 whitespace-nowrap">{{ spec.ratio }}</td>
+                    <td class="py-2 text-indigo-800">{{ spec.note }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="text-xs text-indigo-700 mt-2">Format: JPG, PNG, WebP. Maks. hero 10 MB, galeri 50 MB per file.</p>
+          </div>
+
           <div>
             <InputLabel value="Logo (opsional, override logo outlet)" />
+            <p class="text-xs text-gray-500 mt-0.5">Rekomendasi: 512 × 512 px (1:1)</p>
             <img v-if="landing.logo_override_url && !removeLogo && !logoFile" :src="landing.logo_override_url" alt="" class="mt-2 h-20 w-20 rounded-full object-cover" />
-            <input type="file" accept="image/*" class="mt-2 block w-full text-sm" @change="logoFile = $event.target.files?.[0] || null" />
+            <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-2 block w-full text-sm" @change="logoFile = $event.target.files?.[0] || null" />
             <label v-if="landing.logo_override_url" class="mt-2 flex items-center gap-2 text-sm text-gray-600">
               <input v-model="removeLogo" type="checkbox" class="rounded border-gray-300" /> Hapus logo override
             </label>
           </div>
           <div>
             <InputLabel value="Hero Banner *" />
+            <p class="text-xs text-gray-500 mt-0.5">Rekomendasi: 1920 × 900 px (web) / 1080 × 720 px (mobile), landscape</p>
             <img v-if="landing.hero_image_url && !removeHero && !heroFile" :src="landing.hero_image_url" alt="" class="mt-2 max-h-48 w-full rounded-lg object-cover" />
-            <input type="file" accept="image/*" class="mt-2 block w-full text-sm" @change="heroFile = $event.target.files?.[0] || null" />
+            <input type="file" accept="image/jpeg,image/png,image/webp" class="mt-2 block w-full text-sm" @change="heroFile = $event.target.files?.[0] || null" />
             <label v-if="landing.hero_image_url" class="mt-2 flex items-center gap-2 text-sm text-gray-600">
               <input v-model="removeHero" type="checkbox" class="rounded border-gray-300" /> Hapus hero
             </label>
           </div>
           <div>
             <InputLabel value="Galeri Foto" />
+            <p class="text-xs text-gray-500 mt-0.5">Rekomendasi: 2 foto besar 1200×800 px + 3 foto 800×800 px (min. 5 untuk layout penuh)</p>
             <div class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div v-for="g in landing.gallery_images.filter((x) => galleryKeep.includes(x.path))" :key="g.path" class="relative">
                 <img :src="g.url" alt="" class="h-28 w-full rounded-lg object-cover" />
                 <button type="button" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs" @click="removeExistingGallery(g.path)">×</button>
               </div>
-              <div v-for="(file, idx) in galleryNew" :key="`new-${idx}`" class="relative">
-                <img :src="URL.createObjectURL(file)" alt="" class="h-28 w-full rounded-lg object-cover" />
+              <div v-for="(preview, idx) in galleryNewPreviews" :key="`new-${idx}-${preview.url}`" class="relative">
+                <img :src="preview.url" alt="" class="h-28 w-full rounded-lg object-cover" />
                 <button type="button" class="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 text-xs" @click="removeNewGallery(idx)">×</button>
               </div>
             </div>
-            <input type="file" accept="image/*" multiple class="mt-3 block w-full text-sm" @change="onGalleryPick" />
+            <input type="file" accept="image/jpeg,image/png,image/webp" multiple class="mt-3 block w-full text-sm" @change="onGalleryPick" />
           </div>
         </div>
 
