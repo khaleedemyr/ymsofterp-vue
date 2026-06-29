@@ -423,6 +423,12 @@ function getMovementCurrentLevel(mv) {
 
 const canApproveSelectedMovement = computed(() => !!getMovementCurrentLevel(selectedMovement.value));
 
+const sortedMovementApprovalFlows = computed(() => {
+    const flows = selectedMovement.value?.approval_flows;
+    if (!Array.isArray(flows) || flows.length === 0) return [];
+    return [...flows].sort((a, b) => Number(a.approval_level ?? 0) - Number(b.approval_level ?? 0));
+});
+
 async function approveSelectedMovement() {
     const mv = selectedMovement.value;
     const level = getMovementCurrentLevel(mv);
@@ -10743,9 +10749,9 @@ watch(locale, () => {
                     <!-- Approval Flow -->
                     <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
-                        <div v-if="selectedMovement.approval_flows && selectedMovement.approval_flows.length > 0" class="space-y-2">
+                        <div v-if="sortedMovementApprovalFlows.length > 0" class="space-y-2">
                             <div 
-                                v-for="(flow, index) in selectedMovement.approval_flows.sort((a, b) => (a.approval_level || 0) - (b.approval_level || 0))"
+                                v-for="(flow, index) in sortedMovementApprovalFlows"
                                 :key="flow.id"
                                 class="flex items-center justify-between p-3 rounded border"
                                 :class="[

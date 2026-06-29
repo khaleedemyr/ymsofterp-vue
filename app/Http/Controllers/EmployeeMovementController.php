@@ -539,6 +539,8 @@ class EmployeeMovementController extends Controller
                 ->value('nama_level');
             $movementData['level_to'] = $levelTo ?: $movementData['level_to'];
         }
+
+        $this->sortMovementApprovalFlows($movementData);
         
         return Inertia::render('EmployeeMovement/Show', [
             'movement' => $movementData,
@@ -972,7 +974,21 @@ class EmployeeMovementController extends Controller
             ] : null,
         ] : null;
 
+        $this->sortMovementApprovalFlows($movementData);
+
         return response()->json(['success' => true, 'data' => $movementData]);
+    }
+
+    private function sortMovementApprovalFlows(array &$movementData): void
+    {
+        if (empty($movementData['approval_flows']) || !is_array($movementData['approval_flows'])) {
+            return;
+        }
+
+        $movementData['approval_flows'] = collect($movementData['approval_flows'])
+            ->sortBy(fn ($flow) => (int) ($flow['approval_level'] ?? 0))
+            ->values()
+            ->all();
     }
 
     private function appendMovementCreatorMeta(EmployeeMovement $movement): EmployeeMovement

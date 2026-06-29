@@ -74,6 +74,15 @@ const isSalaryChangeAllowed = computed(() => {
          props.movement.employment_type !== 'termination';
 });
 
+const sortedApprovalFlows = computed(() => {
+  if (!props.movement?.approval_flows || props.movement.approval_flows.length === 0) {
+    return [];
+  }
+  return [...props.movement.approval_flows].sort(
+    (a, b) => Number(a.approval_level ?? 0) - Number(b.approval_level ?? 0)
+  );
+});
+
 function goBack() {
   router.visit('/employee-movements');
 }
@@ -717,7 +726,7 @@ function approveMovement(status) {
             </div>
 
             <!-- Approval Flow Section -->
-            <div v-if="movement.approval_flows && movement.approval_flows.length > 0" class="em-section">
+            <div v-if="sortedApprovalFlows.length > 0" class="em-section">
               <div class="em-section-header">
                 <div class="em-section-icon"><i class="fas fa-check-double"></i></div>
                 <div>
@@ -742,7 +751,7 @@ function approveMovement(status) {
               </div>
               <div class="space-y-3">
                   <div
-                    v-for="(flow, index) in movement.approval_flows.sort((a, b) => (a.approval_level || 0) - (b.approval_level || 0))"
+                    v-for="(flow, index) in sortedApprovalFlows"
                     :key="flow.id"
                     class="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gradient-to-r from-gray-50 to-white"
                     :class="getApprovalFlowClass(flow.status)"
