@@ -243,6 +243,279 @@ class UpsellingSalesAchievementController extends Controller
         return response()->json(['items' => $items]);
     }
 
+    public function apiIndex(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+        $outletId = $request->get('outlet_id', '');
+        $month = $request->get('month', '');
+        $year = $request->get('year', '');
+        $perPage = min(50, max(5, (int) $request->input('per_page', 15)));
+
+        $query = UpsellingSalesAchievement::query()
+            ->with(['outlet', 'creator', 'items'])
+            ->orderByDesc('year')
+            ->orderByDesc('month')
+            ->orderByDesc('id');
+
+        if ($search !== '') {
+            $query->whereHas('outlet', function ($q) use ($search) {
+                $q->where('nama_outlet', 'like', "%{$search}%");
+            });
+        }
+        if ($outletId !== '') {
+            $query->where('outlet_id', $outletId);
+        }
+        if ($month !== '') {
+            $query->where('month', (int) $month);
+        }
+        if ($year !== '') {
+            $query->where('year', (int) $year);
+        }
+
+        $records = $query->paginate($perPage);
+
+        $records->getCollection()->transform(function (UpsellingSalesAchievement $record) {
+            return $this->serializeListRecord($record);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $records->items(),
+            'meta' => [
+                'current_page' => $records->currentPage(),
+                'last_page' => $records->lastPage(),
+                'per_page' => $records->perPage(),
+                'total' => $records->total(),
+            ],
+            'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'month_options' => $this->monthOptions(),
+        ]);
+    }
+
+    public function apiCreateData(Request $request, ?int $id = null)
+    {
+        $record = null;
+        $includeYear = null;
+
+        if ($id !== null) {
+            $record = UpsellingSalesAchievement::with(['outlet', 'items'])->findOrFail($id);
+            $includeYear = (int) $record->year;
+        }
+
+        return response()->json([
+            'success' => true,
+            'record' => $record ? $this->serializeFormRecord($record) : null,
+            'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'month_options' => $this->monthOptions(),
+            'year_options' => $this->yearOptions($includeYear),
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $record = UpsellingSalesAchievement::with(['outlet', 'creator', 'items'])->findOrFail($id);
+        $detail = $this->service->buildDetailRows($record);
+
+        return response()->json([
+            'success' => true,
+            'record' => $this->serializeFormRecord($record, true),
+            'detail' => $detail,
+            'month_label' => UpsellingSalesAchievementService::monthLabel((int) $record->month),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $achievement = $this->persistAchievement($request, null);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Upselling Sales Achievement berhasil disimpan.',
+                'id' => $achievement->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $record = UpsellingSalesAchievement::findOrFail($id);
+
+        try {
+            $achievement = $this->persistAchievement($request, $record);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Upselling Sales Achievement berhasil diperbarui.',
+                'id' => $achievement->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiDestroy(Request $request, int $id)
+    {
+        $record = UpsellingSalesAchievement::with(['outlet', 'items'])->findOrFail($id);
+        $oldSnapshot = $this->enrichDeleteSnapshot($this->achievementSnapshot($record));
+
+        $record->delete();
+
+        $this->writeActivityLog(
+            $request,
+            'upselling_sales_achievement',
+            'delete',
+            $this->activityDescription('Menghapus', $record),
+            $oldSnapshot,
+            null
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Upselling Sales Achievement berhasil dihapus.',
+        ]);
+    }
+
+    public function apiSearchItems(Request $request)
+    {
+        return $this->searchItems($request);
+    }
+
+    private function persistAchievement(Request $request, ?UpsellingSalesAchievement $existing): UpsellingSalesAchievement
+    {
+        $validated = $this->validatePayload($request, $existing);
+
+        $existsQuery = UpsellingSalesAchievement::where('outlet_id', $validated['outlet_id'])
+            ->where('month', $validated['month'])
+            ->where('year', $validated['year']);
+
+        if ($existing) {
+            $existsQuery->where('id', '!=', $existing->id);
+        }
+
+        if ($existsQuery->exists()) {
+            throw ValidationException::withMessages([
+                'month' => 'Data upselling untuk outlet, bulan, dan tahun ini sudah ada.',
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            if ($existing) {
+                $existing->load(['outlet', 'items']);
+                $oldSnapshot = $this->achievementSnapshot($existing);
+
+                $existing->update([
+                    'outlet_id' => $validated['outlet_id'],
+                    'month' => $validated['month'],
+                    'year' => $validated['year'],
+                    'updated_by' => auth()->id(),
+                ]);
+
+                UpsellingSalesAchievementItem::where('achievement_id', $existing->id)->delete();
+                $this->syncItems($existing, $validated['items']);
+
+                DB::commit();
+
+                $existing->load(['outlet', 'items']);
+                $this->writeActivityLog(
+                    $request,
+                    'upselling_sales_achievement',
+                    'update',
+                    $this->activityDescription('Memperbarui', $existing),
+                    $oldSnapshot,
+                    $this->achievementSnapshot($existing)
+                );
+
+                return $existing;
+            }
+
+            $achievement = UpsellingSalesAchievement::create([
+                'outlet_id' => $validated['outlet_id'],
+                'month' => $validated['month'],
+                'year' => $validated['year'],
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+
+            $this->syncItems($achievement, $validated['items']);
+
+            DB::commit();
+
+            $achievement->load(['outlet', 'items']);
+            $this->writeActivityLog(
+                $request,
+                'upselling_sales_achievement',
+                'create',
+                $this->activityDescription('Membuat', $achievement),
+                null,
+                $this->achievementSnapshot($achievement)
+            );
+
+            return $achievement;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    private function serializeListRecord(UpsellingSalesAchievement $record): array
+    {
+        $record->setAttribute(
+            'achievement_percent',
+            $this->service->computeAchievementPercent($record)
+        );
+
+        return [
+            'id' => $record->id,
+            'outlet_id' => $record->outlet_id,
+            'outlet_name' => $record->outlet?->nama_outlet,
+            'month' => (int) $record->month,
+            'month_label' => UpsellingSalesAchievementService::monthLabel((int) $record->month),
+            'year' => (int) $record->year,
+            'created_at' => $record->created_at?->toIso8601String(),
+            'created_by_name' => $record->creator?->nama_lengkap ?? $record->creator?->name,
+            'achievement_percent' => (float) $record->achievement_percent,
+            'items_count' => $record->items?->count() ?? 0,
+        ];
+    }
+
+    private function serializeFormRecord(UpsellingSalesAchievement $record, bool $withCreator = false): array
+    {
+        $data = [
+            'id' => $record->id,
+            'outlet_id' => $record->outlet_id,
+            'outlet_name' => $record->outlet?->nama_outlet,
+            'month' => (int) $record->month,
+            'year' => (int) $record->year,
+            'created_at' => $record->created_at?->toIso8601String(),
+            'items' => $record->items->map(fn ($item) => [
+                'item_id' => (int) $item->item_id,
+                'item_name' => $item->item_name,
+                'category_label' => $item->category_label,
+                'average_check' => (float) $item->average_check,
+                'cover' => (int) $item->cover,
+                'fb_revenue' => (float) $item->fb_revenue,
+            ])->values()->all(),
+        ];
+
+        if ($withCreator) {
+            $data['created_by_name'] = $record->creator?->nama_lengkap ?? $record->creator?->name;
+        }
+
+        return $data;
+    }
+
     private function validatePayload(Request $request, ?UpsellingSalesAchievement $existing = null): array
     {
         $currentYear = (int) date('Y');

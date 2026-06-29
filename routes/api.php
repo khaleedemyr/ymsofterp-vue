@@ -801,6 +801,15 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/outlet-wip/{id}', [\App\Http\Controllers\OutletWIPController::class, 'destroy']);
         Route::get('/outlet-wip-report', [\App\Http\Controllers\OutletWIPController::class, 'apiReport']);
 
+        // Upselling Sales Achievement (mobile app)
+        Route::get('/upselling-sales-achievement', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiIndex']);
+        Route::get('/upselling-sales-achievement/create-data/{id?}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::get('/upselling-sales-achievement/search-items', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiSearchItems']);
+        Route::post('/upselling-sales-achievement', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiStore']);
+        Route::get('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
