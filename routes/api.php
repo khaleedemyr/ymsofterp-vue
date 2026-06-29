@@ -832,6 +832,11 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/fb-product-calibration/{id}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::delete('/fb-product-calibration/{id}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // F&B Product Calibration Report (mobile app)
+        Route::get('/fb-product-calibration-report/filters', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiFilters']);
+        Route::get('/fb-product-calibration-report', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiReport']);
+        Route::get('/fb-product-calibration-report/export', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiExport']);
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
