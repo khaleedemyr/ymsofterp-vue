@@ -282,6 +282,341 @@ class FbProductCalibrationController extends Controller
         return response()->json(['items' => $items]);
     }
 
+    public function apiIndex(Request $request)
+    {
+        $year = (int) $request->get('year', date('Y'));
+        $month = max(1, min(12, (int) $request->get('month', date('n'))));
+
+        return response()->json([
+            'success' => true,
+            'calendar_events' => $this->service->calendarEvents($year, $month),
+            'year' => $year,
+            'month' => $month,
+        ]);
+    }
+
+    public function apiCreateData(?int $id = null)
+    {
+        $record = null;
+        if ($id !== null) {
+            $record = FbProductCalibration::with('products')->findOrFail($id);
+            try {
+                $this->ensureEditable($record);
+            } catch (ValidationException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => collect($e->errors())->flatten()->first() ?? 'Data tidak dapat diubah.',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'record' => $record ? $this->serializeDetailRecord($record) : null,
+            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $calibration = FbProductCalibration::with(['products', 'participants.results', 'creator', 'conductor'])->findOrFail($id);
+        $canConduct = $this->canConduct($calibration);
+        $conductPayload = $calibration->status === 'completed'
+            ? $this->service->buildConductPayload($calibration)
+            : null;
+
+        return response()->json([
+            'success' => true,
+            'record' => $this->serializeDetailRecord($calibration, true),
+            'parameter_options' => $this->service->parameterOptions(),
+            'can_conduct' => $canConduct,
+            'conduct_payload' => $conductPayload,
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $calibration = $this->persistSchedule($request, null);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Jadwal F&B Product Calibration berhasil dibuat.',
+                'id' => $calibration->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $record = FbProductCalibration::findOrFail($id);
+
+        try {
+            $this->ensureEditable($record);
+            $calibration = $this->persistSchedule($request, $record);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Jadwal F&B Product Calibration berhasil diperbarui.',
+                'id' => $calibration->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiDestroy(Request $request, int $id)
+    {
+        $record = FbProductCalibration::with('products')->findOrFail($id);
+        $oldSnapshot = $this->enrichDeleteSnapshot($this->service->snapshot($record));
+        $record->delete();
+
+        $this->writeActivityLog(
+            $request,
+            'fb_product_calibration',
+            'delete',
+            $this->activityDescription('Menghapus jadwal', $record),
+            $oldSnapshot,
+            null
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Jadwal F&B Product Calibration berhasil dihapus.',
+        ]);
+    }
+
+    public function apiConductData(int $id)
+    {
+        $calibration = FbProductCalibration::with(['products', 'participants'])->findOrFail($id);
+
+        if ($calibration->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Calibration yang dibatalkan tidak dapat dilakukan.',
+            ], 422);
+        }
+
+        if (! $this->canConduct($calibration)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk conduct calibration ini.',
+            ], 403);
+        }
+
+        $existing = $calibration->status === 'completed'
+            ? $this->service->buildConductPayload($calibration)
+            : ['participants' => [], 'results' => []];
+
+        return response()->json([
+            'success' => true,
+            'record' => $this->serializeDetailRecord($calibration),
+            'parameter_options' => $this->service->parameterOptions(),
+            'initial_participants' => $existing['participants'],
+            'initial_results' => $existing['results'],
+        ]);
+    }
+
+    public function apiStoreConduct(Request $request, int $id)
+    {
+        $calibration = FbProductCalibration::findOrFail($id);
+
+        if ($calibration->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Calibration yang dibatalkan tidak dapat dilakukan.',
+            ], 422);
+        }
+
+        if (! $this->canConduct($calibration)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk conduct calibration ini.',
+            ], 403);
+        }
+
+        try {
+            $validated = $this->validateConductPayload($request, $calibration);
+
+            DB::beginTransaction();
+            try {
+                if ($calibration->status === 'scheduled') {
+                    $calibration->update([
+                        'status' => 'in_progress',
+                        'updated_by' => auth()->id(),
+                    ]);
+                }
+
+                $this->service->saveConduct(
+                    $calibration,
+                    $validated['participants'],
+                    $validated['results']
+                );
+
+                DB::commit();
+
+                $calibration->load(['products', 'participants']);
+                $this->writeActivityLog(
+                    $request,
+                    'fb_product_calibration',
+                    'update',
+                    $this->activityDescription('Menyelesaikan conduct', $calibration),
+                    null,
+                    $this->service->snapshot($calibration)
+                );
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Hasil calibration berhasil disimpan.',
+                'id' => $calibration->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiSearchConductors(Request $request)
+    {
+        return $this->searchConductors($request);
+    }
+
+    public function apiSearchParticipants(Request $request)
+    {
+        return $this->searchParticipants($request);
+    }
+
+    public function apiSearchProducts(Request $request)
+    {
+        return $this->searchProducts($request);
+    }
+
+    private function persistSchedule(Request $request, ?FbProductCalibration $existing): FbProductCalibration
+    {
+        $validated = $this->validateSchedulePayload($request, $existing);
+        $outlet = Outlet::findOrFail($validated['outlet_id']);
+        $conductor = User::where('id', $validated['conductor_id'])->where('status', 'A')->firstOrFail();
+
+        DB::beginTransaction();
+        try {
+            if ($existing) {
+                $oldConductorId = (int) $existing->conductor_id;
+                $oldSnapshot = $this->service->snapshot($existing->load('products'));
+
+                $existing->update([
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'scheduled_date' => $validated['scheduled_date'],
+                    'conductor_id' => $conductor->id,
+                    'conductor_name' => (string) $conductor->nama_lengkap,
+                    'notes' => $validated['notes'] ?? null,
+                    'updated_by' => auth()->id(),
+                ]);
+
+                $this->service->syncProducts($existing, $validated['products']);
+                $existing->load('products');
+
+                if ((int) $conductor->id !== $oldConductorId) {
+                    $this->service->notifyConductor($existing);
+                }
+
+                DB::commit();
+
+                $this->writeActivityLog(
+                    $request,
+                    'fb_product_calibration',
+                    'update',
+                    $this->activityDescription('Memperbarui jadwal', $existing),
+                    $oldSnapshot,
+                    $this->service->snapshot($existing)
+                );
+
+                return $existing;
+            }
+
+            $calibration = FbProductCalibration::create([
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => (string) $outlet->nama_outlet,
+                'scheduled_date' => $validated['scheduled_date'],
+                'conductor_id' => $conductor->id,
+                'conductor_name' => (string) $conductor->nama_lengkap,
+                'status' => 'scheduled',
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+
+            $this->service->syncProducts($calibration, $validated['products']);
+            $calibration->load('products');
+            $this->service->notifyConductor($calibration);
+
+            DB::commit();
+
+            $this->writeActivityLog(
+                $request,
+                'fb_product_calibration',
+                'create',
+                $this->activityDescription('Membuat jadwal', $calibration),
+                null,
+                $this->service->snapshot($calibration)
+            );
+
+            return $calibration;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeDetailRecord(FbProductCalibration $record, bool $withMeta = false): array
+    {
+        $data = [
+            'id' => $record->id,
+            'outlet_id' => $record->outlet_id,
+            'outlet_name' => $record->outlet_name,
+            'scheduled_date' => $record->scheduled_date?->format('Y-m-d'),
+            'conductor_id' => $record->conductor_id,
+            'conductor_name' => $record->conductor_name,
+            'status' => $record->status,
+            'notes' => $record->notes,
+            'products' => $record->products->map(fn ($p) => [
+                'id' => $p->id,
+                'item_id' => $p->item_id,
+                'item_name' => $p->item_name,
+                'category_name' => $p->category_name,
+                'sub_category_name' => $p->sub_category_name,
+            ])->values()->all(),
+        ];
+
+        if ($withMeta) {
+            $data['created_at'] = $record->created_at?->toIso8601String();
+            $data['created_by_name'] = $record->creator?->nama_lengkap ?? $record->creator?->name;
+        }
+
+        return $data;
+    }
+
     private function validateSchedulePayload(Request $request, ?FbProductCalibration $existing = null): array
     {
         $validated = $request->validate([

@@ -810,6 +810,28 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::delete('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // Employee Coaching (mobile app)
+        Route::get('/employee-coaching', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiIndex']);
+        Route::get('/employee-coaching/create-data/{id?}', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::get('/employee-coaching/search-employees', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiSearchEmployees']);
+        Route::post('/employee-coaching', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiStore']);
+        Route::get('/employee-coaching/{id}', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/employee-coaching/{id}', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/employee-coaching/{id}', [\App\Http\Controllers\EmployeeCoachingController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // F&B Product Calibration (mobile app)
+        Route::get('/fb-product-calibration', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiIndex']);
+        Route::get('/fb-product-calibration/create-data/{id?}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::get('/fb-product-calibration/search-conductors', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiSearchConductors']);
+        Route::get('/fb-product-calibration/search-participants', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiSearchParticipants']);
+        Route::get('/fb-product-calibration/search-products', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiSearchProducts']);
+        Route::post('/fb-product-calibration', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiStore']);
+        Route::get('/fb-product-calibration/{id}/conduct-data', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiConductData'])->where('id', '[0-9]+');
+        Route::post('/fb-product-calibration/{id}/conduct', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiStoreConduct'])->where('id', '[0-9]+');
+        Route::get('/fb-product-calibration/{id}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/fb-product-calibration/{id}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/fb-product-calibration/{id}', [\App\Http\Controllers\FbProductCalibrationController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
