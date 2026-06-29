@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -263,4 +264,40 @@ class User extends Authenticatable
     //         ->get()
     //         ->pluck('course');
     // }
+
+    protected function tanggalLahir(): Attribute
+    {
+        return $this->dateOnlyAttribute();
+    }
+
+    protected function tanggalMasuk(): Attribute
+    {
+        return $this->dateOnlyAttribute();
+    }
+
+    private function dateOnlyAttribute(): Attribute
+    {
+        return Attribute::make(
+            get: fn (?string $value) => $this->normalizeDateOnly($value),
+            set: fn ($value) => $this->normalizeDateOnly($value),
+        );
+    }
+
+    private function normalizeDateOnly(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $str = trim((string) $value);
+        if ($str === '') {
+            return null;
+        }
+
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $str, $m)) {
+            return $m[1];
+        }
+
+        return \Carbon\Carbon::parse($str)->format('Y-m-d');
+    }
 }

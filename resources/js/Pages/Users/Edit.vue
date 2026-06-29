@@ -4,6 +4,7 @@ import { useForm, router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { toDateInputValue } from '@/utils/dateOnly';
 
 const props = defineProps({
   user: Object,
@@ -66,7 +67,7 @@ const form = useForm({
   nama_panggilan: String(props.user.nama_panggilan || ''),
   jenis_kelamin: String(props.user.jenis_kelamin || ''),
   tempat_lahir: String(props.user.tempat_lahir || ''),
-  tanggal_lahir: props.user.tanggal_lahir || '',
+  tanggal_lahir: toDateInputValue(props.user.tanggal_lahir),
   suku: String(props.user.suku || ''),
   agama: String(props.user.agama || ''),
   status_pernikahan: String(props.user.status_pernikahan || ''),
@@ -95,7 +96,7 @@ const form = useForm({
   name_school_college: String(props.user.name_school_college || ''),
   school_college_major: String(props.user.school_college_major || ''),
   upload_latest_color_photo: null,
-  tanggal_masuk: props.user.tanggal_masuk || '',
+  tanggal_masuk: toDateInputValue(props.user.tanggal_masuk),
 });
 
 async function fetchDropdownData() {

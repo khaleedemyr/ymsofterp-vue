@@ -8,6 +8,22 @@ import { Inertia } from '@inertiajs/inertia';
 import { ref, watch, onMounted } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { toDateInputValue, formatDateOnlyIdLong } from '@/utils/dateOnly';
+
+const DATE_ONLY_FORM_FIELDS = new Set(['tanggal_lahir', 'tanggal_masuk']);
+
+function assignFormField(key, value) {
+    if (value === undefined || value === null) return;
+    if (DATE_ONLY_FORM_FIELDS.has(key)) {
+        form[key] = toDateInputValue(value);
+        return;
+    }
+    let normalized = value;
+    if (typeof normalized !== 'string' && typeof normalized !== 'number' && typeof normalized !== 'boolean') {
+        normalized = String(normalized);
+    }
+    form[key] = normalized;
+}
 
 const props = defineProps({
     show: {
@@ -183,15 +199,8 @@ const fetchUser = async () => {
             // Populate all form fields with proper data type conversion
             Object.keys(form.data()).forEach(key => {
                 if (data[key] !== undefined && data[key] !== null) {
-                    let value = data[key];
-                    
-                    // Ensure string fields are converted to string
-                    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-                        value = String(value);
-                    }
-                    
-                    form[key] = value;
-                    console.log(`Setting ${key}:`, value, `(type: ${typeof value})`);
+                    assignFormField(key, data[key]);
+                    console.log(`Setting ${key}:`, form[key], `(type: ${typeof form[key]})`);
                 }
             });
             
@@ -212,15 +221,8 @@ const fetchUser = async () => {
                 if (data.success && data.user) {
                     Object.keys(form.data()).forEach(key => {
                         if (data.user[key] !== undefined && data.user[key] !== null) {
-                            let value = data.user[key];
-                            
-                            // Ensure string fields are converted to string
-                            if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-                                value = String(value);
-                            }
-                            
-                            form[key] = value;
-                            console.log(`Setting ${key} from test route:`, value, `(type: ${typeof value})`);
+                            assignFormField(key, data.user[key]);
+                            console.log(`Setting ${key} from test route:`, form[key], `(type: ${typeof form[key]})`);
                         }
                     });
                     
@@ -368,22 +370,7 @@ function getDivisionName() {
 }
 
 function formatDate(dateString) {
-    console.log('formatDate - dateString:', dateString);
-    if (!dateString) return 'Tidak ada tanggal';
-    
-    try {
-        const date = new Date(dateString);
-        if (isNaN(date.getTime())) return 'Tanggal tidak valid';
-        
-        return date.toLocaleDateString('id-ID', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    } catch (error) {
-        console.error('formatDate error:', error);
-        return 'Format tanggal salah';
-    }
+    return formatDateOnlyIdLong(dateString);
 }
 
 // Update display names
@@ -404,15 +391,8 @@ watch(() => props.show, (val) => {
             console.log('User from usePage:', user);
             Object.keys(form.data()).forEach(key => {
                 if (user[key] !== undefined && user[key] !== null) {
-                    let value = user[key];
-                    
-                    // Ensure string fields are converted to string
-                    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-                        value = String(value);
-                    }
-                    
-                    form[key] = value;
-                    console.log(`Setting ${key} from usePage:`, value, `(type: ${typeof value})`);
+                    assignFormField(key, user[key]);
+                    console.log(`Setting ${key} from usePage:`, form[key], `(type: ${typeof form[key]})`);
                 }
             });
         previewUrl.value = user.avatar ? `/storage/${user.avatar}` : null;

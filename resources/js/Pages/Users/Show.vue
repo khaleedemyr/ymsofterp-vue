@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
+import { formatDateOnlyId } from '@/utils/dateOnly';
 
 const props = defineProps({
   user: Object,
@@ -37,12 +38,7 @@ function editUser() {
 
 // Helper functions for formatting
 function formatDate(date) {
-  if (!date) return '-';
-  return new Date(date).toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
+  return formatDateOnlyId(date);
 }
 
 function formatGender(gender) {
