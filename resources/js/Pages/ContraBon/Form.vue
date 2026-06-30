@@ -264,6 +264,7 @@ onMounted(async () => {
 // Filter functions for modal search - now searches on backend
 let searchTimeout = null;
 let retailFoodSearchTimeout = null;
+let retailNonFoodSearchTimeout = null;
 let warehouseRetailFoodSearchTimeout = null;
 let poGrAbortController = null;
 
@@ -528,7 +529,7 @@ function closeWarehouseRetailFoodModal() {
 function openRetailNonFoodModal() {
   showRetailNonFoodModal.value = true;
   retailNonFoodSearchQuery.value = '';
-  filteredRetailNonFoodList.value = retailNonFoodList.value;
+  loadRetailNonFoodList('');
 }
 
 function closeRetailNonFoodModal() {
@@ -536,17 +537,42 @@ function closeRetailNonFoodModal() {
   retailNonFoodSearchQuery.value = '';
 }
 
-function filterRetailNonFoodList() {
-  if (!retailNonFoodSearchQuery.value.trim()) {
-    filteredRetailNonFoodList.value = retailNonFoodList.value;
-    return;
+async function loadRetailNonFoodList(searchQuery = '') {
+  loadingPOGR.value = true;
+  try {
+    const params = {};
+    if (searchQuery && searchQuery.trim()) {
+      params.search = searchQuery.trim();
+    }
+    const response = await axios.get('/api/contra-bon/retail-non-food-contra-bon', { params });
+    const data = response.data?.data || [];
+    retailNonFoodList.value = data;
+    filteredRetailNonFoodList.value = data;
+  } catch (e) {
+    console.error('Error loading retail non food:', e);
+    Swal.fire('Error', 'Gagal mengambil data Retail Non Food: ' + (e.response?.data?.message || e.message), 'error');
+    retailNonFoodList.value = [];
+    filteredRetailNonFoodList.value = [];
+  } finally {
+    loadingPOGR.value = false;
   }
-  const query = retailNonFoodSearchQuery.value.toLowerCase();
-  filteredRetailNonFoodList.value = retailNonFoodList.value.filter(rnf => 
-    (rnf.retail_number || '').toLowerCase().includes(query) ||
-    (rnf.supplier_name || '').toLowerCase().includes(query) ||
-    (rnf.outlet_name || '').toLowerCase().includes(query)
-  );
+}
+
+function filterRetailNonFoodList() {
+  if (retailNonFoodSearchTimeout) {
+    clearTimeout(retailNonFoodSearchTimeout);
+  }
+  if (retailNonFoodSearchQuery.value.trim()) {
+    loadingPOGR.value = true;
+  }
+  retailNonFoodSearchTimeout = setTimeout(async () => {
+    const query = retailNonFoodSearchQuery.value.trim();
+    if (query.length > 0 && query.length < 2) {
+      loadingPOGR.value = false;
+      return;
+    }
+    await loadRetailNonFoodList(query);
+  }, 500);
 }
 
 async function selectRetailNonFoodFromModal(rnf) {
@@ -2181,7 +2207,11 @@ function getUnitName(item) {
           </div>
         </div>
         <div class="flex-1 overflow-y-auto">
-          <div v-if="filteredRetailNonFoodList.length === 0" class="p-8 text-center text-gray-500">
+          <div v-if="loadingPOGR" class="p-8 text-center">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+            <p class="mt-2 text-gray-600">Memuat data...</p>
+          </div>
+          <div v-else-if="filteredRetailNonFoodList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
           </div>
           <div v-else class="divide-y divide-gray-200">

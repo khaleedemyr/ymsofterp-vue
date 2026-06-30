@@ -1178,6 +1178,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/contra-bon/retail-food-detail/{id}', [\App\Http\Controllers\ContraBonController::class, 'getRetailFoodContraBonDetail']);
     Route::get('/api/contra-bon/warehouse-retail-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBon']);
     Route::get('/api/contra-bon/warehouse-retail-food-detail/{id}', [\App\Http\Controllers\ContraBonController::class, 'getWarehouseRetailFoodContraBonDetail']);
+    Route::get('/api/contra-bon/retail-non-food-contra-bon', [\App\Http\Controllers\ContraBonController::class, 'apiGetRetailNonFoodForCreate']);
     Route::get('/api/contra-bon/pending-approvals', [\App\Http\Controllers\ContraBonController::class, 'getPendingApprovals']);
     Route::get('/api/contra-bon/{id}', [\App\Http\Controllers\ContraBonController::class, 'getDetail']);
     Route::get('/api/contra-bon/trace', [\App\Http\Controllers\ContraBonController::class, 'traceContraBon']);

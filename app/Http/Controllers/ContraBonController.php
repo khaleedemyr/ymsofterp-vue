@@ -1008,7 +1008,7 @@ class ContraBonController extends Controller
         $availableRetailNonFoods = $allRetailNonFoods->filter(function($rnf) use ($hasContraBonSet) {
             // Cek di Set (O(1)) instead of query (O(n))
             return !isset($hasContraBonSet[$rnf->id]);
-        })->take(50)->values();
+        })->values();
 
         // Get suppliers for filter dropdown
         $suppliers = DB::table('suppliers')
