@@ -33,7 +33,7 @@ class OutletRevenueRecapController extends Controller
             $validated['date_to']
         );
 
-        return response()->json($this->service->stripInternalFields($data));
+        return response()->json($data);
     }
 
     public function export(Request $request)
@@ -47,7 +47,6 @@ class OutletRevenueRecapController extends Controller
             $validated['date_from'],
             $validated['date_to']
         );
-        $data = $this->service->stripInternalFields($data);
 
         $filename = sprintf(
             'rekap_revenue_outlet_%s_%s_%s.xlsx',

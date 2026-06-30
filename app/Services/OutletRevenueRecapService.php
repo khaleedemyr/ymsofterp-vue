@@ -141,28 +141,4 @@ class OutletRevenueRecapService
             'avg_check' => $totalPax > 0 ? (float) round($grandTotal / $totalPax) : 0.0,
         ];
     }
-
-    public function stripInternalFields(array $data): array
-    {
-        $strip = function (array $metrics): array {
-            unset($metrics['grand_total']);
-
-            return $metrics;
-        };
-
-        $data['groups'] = array_map(function (array $group) use ($strip) {
-            $group['rows'] = array_map(function (array $row) use ($strip) {
-                return array_merge(
-                    ['outlet_id' => $row['outlet_id'], 'outlet_name' => $row['outlet_name']],
-                    $strip($row)
-                );
-            }, $group['rows']);
-            $group['subtotal'] = $strip($group['subtotal']);
-
-            return $group;
-        }, $data['groups']);
-        $data['totals'] = $strip($data['totals']);
-
-        return $data;
-    }
 }

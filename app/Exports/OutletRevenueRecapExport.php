@@ -44,6 +44,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
             'Service Charge',
             'PB 1',
             'Commfee',
+            'Grand Total',
             'Total Pax',
             'Average Check',
         ];
@@ -58,6 +59,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
             $this->regionHeaderRows[] = $rowIndex;
             $lines->push([
                 (string) ($group['region_name'] ?? ''),
+                '',
                 '',
                 '',
                 '',
@@ -103,6 +105,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
             (float) ($metrics['service_charge'] ?? 0),
             (float) ($metrics['pb1'] ?? 0),
             (float) ($metrics['commfee'] ?? 0),
+            (float) ($metrics['grand_total'] ?? 0),
             (float) ($metrics['total_pax'] ?? 0),
             (float) ($metrics['avg_check'] ?? 0),
         ];
@@ -127,15 +130,15 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
                     'A2',
                     'Periode: '.($this->payload['date_from'] ?? '').' s/d '.($this->payload['date_to'] ?? '')
                 );
-                $sheet->mergeCells('A1:I1');
-                $sheet->mergeCells('A2:I2');
-                $sheet->getStyle('A1:I2')->applyFromArray([
+                $sheet->mergeCells('A1:J1');
+                $sheet->mergeCells('A2:J2');
+                $sheet->getStyle('A1:J2')->applyFromArray([
                     'font' => ['bold' => true],
                     'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
                 ]);
 
                 $headerRow = 3;
-                $sheet->getStyle('A'.$headerRow.':I'.$headerRow)->applyFromArray([
+                $sheet->getStyle('A'.$headerRow.':J'.$headerRow)->applyFromArray([
                     'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                     'fill' => [
                         'fillType' => Fill::FILL_SOLID,
@@ -149,7 +152,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
                 foreach ($this->regionHeaderRows as $row) {
                     $actualRow = $row + $offset;
-                    $sheet->getStyle('A'.$actualRow.':I'.$actualRow)->applyFromArray([
+                    $sheet->getStyle('A'.$actualRow.':J'.$actualRow)->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => '312E81']],
                         'fill' => [
                             'fillType' => Fill::FILL_SOLID,
@@ -160,7 +163,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
                 foreach ($this->subtotalRows as $row) {
                     $actualRow = $row + $offset;
-                    $sheet->getStyle('A'.$actualRow.':I'.$actualRow)->applyFromArray([
+                    $sheet->getStyle('A'.$actualRow.':J'.$actualRow)->applyFromArray([
                         'font' => ['bold' => true],
                         'fill' => [
                             'fillType' => Fill::FILL_SOLID,
@@ -171,7 +174,7 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
                 if ($this->grandTotalRow > 0) {
                     $actualRow = $this->grandTotalRow + $offset;
-                    $sheet->getStyle('A'.$actualRow.':I'.$actualRow)->applyFromArray([
+                    $sheet->getStyle('A'.$actualRow.':J'.$actualRow)->applyFromArray([
                         'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
                         'fill' => [
                             'fillType' => Fill::FILL_SOLID,
@@ -182,13 +185,13 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
                 $dataStart = 4;
                 $dataEnd = $lastRow + $offset;
-                $sheet->getStyle('C'.$dataStart.':G'.$dataEnd)
+                $sheet->getStyle('C'.$dataStart.':H'.$dataEnd)
+                    ->getNumberFormat()
+                    ->setFormatCode('#,##0');
+                $sheet->getStyle('J'.$dataStart.':J'.$dataEnd)
                     ->getNumberFormat()
                     ->setFormatCode('#,##0');
                 $sheet->getStyle('I'.$dataStart.':I'.$dataEnd)
-                    ->getNumberFormat()
-                    ->setFormatCode('#,##0');
-                $sheet->getStyle('H'.$dataStart.':H'.$dataEnd)
                     ->getNumberFormat()
                     ->setFormatCode('#,##0');
 

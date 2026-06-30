@@ -61,6 +61,7 @@
               <th class="px-4 py-3 text-right whitespace-nowrap">Service Charge</th>
               <th class="px-4 py-3 text-right whitespace-nowrap">PB 1</th>
               <th class="px-4 py-3 text-right whitespace-nowrap">Commfee</th>
+              <th class="px-4 py-3 text-right whitespace-nowrap">Grand Total</th>
               <th class="px-4 py-3 text-right whitespace-nowrap">Total Pax</th>
               <th class="px-4 py-3 text-right whitespace-nowrap">Average Check</th>
             </tr>
@@ -68,7 +69,7 @@
           <tbody>
             <template v-for="group in report.groups" :key="group.region_id ?? group.region_name">
               <tr class="bg-indigo-50 border-t-2 border-indigo-200">
-                <td colspan="8" class="px-4 py-2 font-bold text-indigo-900 uppercase tracking-wide text-xs">
+                <td colspan="9" class="px-4 py-2 font-bold text-indigo-900 uppercase tracking-wide text-xs">
                   <i class="fa-solid fa-map-location-dot mr-2"></i>{{ group.region_name }}
                 </td>
               </tr>
@@ -83,6 +84,7 @@
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(row.service_charge) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(row.pb1) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(row.commfee) }}</td>
+                <td class="px-4 py-2.5 text-right font-semibold">{{ formatCurrency(row.grand_total) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatNumber(row.total_pax) }}</td>
                 <td class="px-4 py-2.5 text-right font-semibold">{{ formatCurrency(row.avg_check) }}</td>
               </tr>
@@ -93,6 +95,7 @@
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(group.subtotal.service_charge) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(group.subtotal.pb1) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(group.subtotal.commfee) }}</td>
+                <td class="px-4 py-2.5 text-right">{{ formatCurrency(group.subtotal.grand_total) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatNumber(group.subtotal.total_pax) }}</td>
                 <td class="px-4 py-2.5 text-right">{{ formatCurrency(group.subtotal.avg_check) }}</td>
               </tr>
@@ -106,6 +109,7 @@
               <td class="px-4 py-3 text-right">{{ formatCurrency(report.totals.service_charge) }}</td>
               <td class="px-4 py-3 text-right">{{ formatCurrency(report.totals.pb1) }}</td>
               <td class="px-4 py-3 text-right">{{ formatCurrency(report.totals.commfee) }}</td>
+              <td class="px-4 py-3 text-right">{{ formatCurrency(report.totals.grand_total) }}</td>
               <td class="px-4 py-3 text-right">{{ formatNumber(report.totals.total_pax) }}</td>
               <td class="px-4 py-3 text-right">{{ formatCurrency(report.totals.avg_check) }}</td>
             </tr>
