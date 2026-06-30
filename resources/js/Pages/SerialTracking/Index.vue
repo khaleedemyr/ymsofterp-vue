@@ -161,30 +161,40 @@
             Belum ada serial pada dokumen ini (belum generate/print barcode).
           </div>
           <div v-else class="flex flex-wrap gap-2">
-            <button
+            <div
               v-for="s in serialRepackMatch.serials"
               :key="s.id"
-              type="button"
-              class="px-3 py-1 bg-white border border-indigo-300 rounded-lg font-mono text-sm hover:bg-indigo-100"
-              @click="serialQuery = s.serial_number; lookupSerial()"
+              class="inline-flex items-center gap-1 px-2 py-1 bg-white border border-indigo-300 rounded-lg"
             >
-              {{ s.serial_number }} <span class="text-gray-500 text-xs">({{ s.item_name }})</span>
-            </button>
+              <button
+                type="button"
+                class="px-1 py-0.5 font-mono text-sm hover:bg-indigo-100 rounded"
+                @click="serialQuery = s.serial_number; lookupSerial()"
+              >
+                {{ s.serial_number }} <span class="text-gray-500 text-xs">({{ s.item_name }})</span>
+              </button>
+              <SerialNumberActions :serial-number="s.serial_number" @show-qr="openQrModal" />
+            </div>
           </div>
         </div>
 
         <div v-if="serialSuggestions.length" class="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <p class="text-sm font-semibold text-amber-800 mb-2">Serial tidak exact match. Pilih dari daftar:</p>
           <div class="flex flex-wrap gap-2">
-            <button
+            <div
               v-for="s in serialSuggestions"
               :key="s.id"
-              type="button"
-              class="px-3 py-1 bg-white border border-amber-300 rounded-lg font-mono text-sm hover:bg-amber-100"
-              @click="serialQuery = s.serial_number; lookupSerial()"
+              class="inline-flex items-center gap-1 px-2 py-1 bg-white border border-amber-300 rounded-lg"
             >
-              {{ s.serial_number }} <span class="text-gray-500 text-xs">({{ s.item_name }})</span>
-            </button>
+              <button
+                type="button"
+                class="px-1 py-0.5 font-mono text-sm hover:bg-amber-100 rounded"
+                @click="serialQuery = s.serial_number; lookupSerial()"
+              >
+                {{ s.serial_number }} <span class="text-gray-500 text-xs">({{ s.item_name }})</span>
+              </button>
+              <SerialNumberActions :serial-number="s.serial_number" @show-qr="openQrModal" />
+            </div>
           </div>
         </div>
 
@@ -192,7 +202,10 @@
           <div class="flex flex-wrap items-start justify-between gap-4 mb-6">
             <div>
               <p class="text-sm text-gray-500 mb-1">Nomor Seri</p>
-              <p class="text-2xl font-mono font-bold text-indigo-700">{{ serialDetail.serial_number }}</p>
+              <div class="flex flex-wrap items-center gap-3">
+                <p class="text-2xl font-mono font-bold text-indigo-700">{{ serialDetail.serial_number }}</p>
+                <SerialNumberActions :serial-number="serialDetail.serial_number" show-label @show-qr="openQrModal" />
+              </div>
             </div>
             <span class="inline-flex px-3 py-1 rounded-full text-xs font-semibold" :class="statusBadgeClass(serialDetail.status?.color)">
               {{ serialDetail.status?.label }}
@@ -398,7 +411,12 @@
                         </thead>
                         <tbody class="divide-y divide-amber-100 bg-white">
                           <tr v-for="sn in doRow.serials" :key="sn.serial_id" class="hover:bg-amber-50/50">
-                            <td class="px-4 py-2 font-mono font-semibold text-indigo-700">{{ sn.serial_number }}</td>
+                            <td class="px-4 py-2">
+                              <div class="flex flex-wrap items-center gap-2">
+                                <span class="font-mono font-semibold text-indigo-700">{{ sn.serial_number }}</span>
+                                <SerialNumberActions :serial-number="sn.serial_number" @show-qr="openQrModal" />
+                              </div>
+                            </td>
                             <td class="px-4 py-2">{{ sn.item_name || '-' }}</td>
                             <td class="px-4 py-2 text-gray-500">{{ sn.item_sku || '-' }}</td>
                             <td class="px-4 py-2">{{ sn.unit_name || '-' }}</td>
@@ -502,7 +520,12 @@
               <tbody class="divide-y divide-gray-100">
                 <tr v-for="row in rejectLogList" :key="row.id" class="hover:bg-red-50/40">
                   <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-600">{{ formatDateTime(row.created_at) }}</td>
-                  <td class="px-4 py-3 font-mono font-semibold text-indigo-700">{{ row.serial_number }}</td>
+                  <td class="px-4 py-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-mono font-semibold text-indigo-700">{{ row.serial_number }}</span>
+                      <SerialNumberActions :serial-number="row.serial_number" @show-qr="openQrModal" />
+                    </div>
+                  </td>
                   <td class="px-4 py-3">
                     <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold" :class="rejectReasonBadge(row.reject_reason)">{{ row.reject_reason_label }}</span>
                   </td>
@@ -557,7 +580,12 @@
               </thead>
               <tbody class="divide-y">
                 <tr v-for="s in docSerialList" :key="s.id" class="hover:bg-gray-50">
-                  <td class="px-3 py-2 font-mono font-semibold text-indigo-700">{{ s.serial_number }}</td>
+                  <td class="px-3 py-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="font-mono font-semibold text-indigo-700">{{ s.serial_number }}</span>
+                      <SerialNumberActions :serial-number="s.serial_number" @show-qr="openQrModal" />
+                    </div>
+                  </td>
                   <td class="px-3 py-2">{{ s.item_name }}</td>
                   <td class="px-3 py-2">{{ s.unit_name }}</td>
                   <td class="px-3 py-2">
@@ -575,6 +603,8 @@
           </div>
         </div>
       </div>
+
+      <SerialQrModal :serial-number="qrModalSerial" @close="closeQrModal" />
     </div>
   </AppLayout>
 </template>
@@ -584,6 +614,8 @@ import { Head } from '@inertiajs/vue3'
 import { ref, reactive, computed } from 'vue'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import SerialNumberActions from './SerialNumberActions.vue'
+import SerialQrModal from './SerialQrModal.vue'
 
 const props = defineProps({
   sourceTypes: { type: Array, default: () => [] },
@@ -620,6 +652,18 @@ const serialTimeline = ref([])
 const serialSuggestions = ref([])
 const serialRepackMatch = ref(null)
 const serialLookupMessage = ref(null)
+
+const qrModalSerial = ref('')
+
+const openQrModal = (serialNumber) => {
+  const sn = (serialNumber || '').trim()
+  if (!sn) return
+  qrModalSerial.value = sn
+}
+
+const closeQrModal = () => {
+  qrModalSerial.value = ''
+}
 
 const pendingFilters = reactive({
   outlet_id: '',

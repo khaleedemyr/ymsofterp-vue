@@ -317,7 +317,7 @@ class SerialTrackingController extends Controller
         ->orderBy('do.number')
         ->orderBy('s.serial_number')
         ->get()
-        ->groupBy('do_id');
+        ->groupBy(fn ($row) => (int) $row->do_id);
     }
 
     $data = collect($doPaginated->items())->map(function ($doRow) use ($serialsByDo) {
@@ -326,7 +326,7 @@ class SerialTrackingController extends Controller
         ? (int) \Carbon\Carbon::parse($displayDate)->diffInDays(now())
         : null;
 
-      $serials = collect($serialsByDo->get($doRow->do_id, []))->map(function ($row) {
+      $serials = collect($serialsByDo->get((int) $doRow->do_id, []))->map(function ($row) {
         return [
           'serial_id' => $row->serial_id,
           'serial_number' => $row->serial_number,

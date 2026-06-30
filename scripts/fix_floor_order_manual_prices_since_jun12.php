@@ -14,6 +14,8 @@ $apply = in_array('--apply', $argv ?? [], true);
 $since = '2026-06-12';
 $fromDate = null;
 $toDate = null;
+$grFromDate = null;
+$grToDate = null;
 $limit = null;
 $allStatuses = in_array('--all-statuses', $argv ?? [], true);
 $defaultSharedItems = [
@@ -30,6 +32,7 @@ $defaultSharedItems = [
     'Coating Goreng',
 ];
 $itemNames = $defaultSharedItems;
+$allItems = in_array('--all-items', $argv ?? [], true);
 
 foreach ($argv ?? [] as $arg) {
     if (str_starts_with($arg, '--since=')) {
@@ -41,6 +44,12 @@ foreach ($argv ?? [] as $arg) {
     if (str_starts_with($arg, '--to=')) {
         $toDate = substr($arg, strlen('--to='));
     }
+    if (str_starts_with($arg, '--gr-from=')) {
+        $grFromDate = substr($arg, strlen('--gr-from='));
+    }
+    if (str_starts_with($arg, '--gr-to=')) {
+        $grToDate = substr($arg, strlen('--gr-to='));
+    }
     if (str_starts_with($arg, '--limit=')) {
         $limit = max(1, (int) substr($arg, strlen('--limit=')));
     }
@@ -51,13 +60,19 @@ foreach ($argv ?? [] as $arg) {
 
 echo "=== Fix FO prices from item_prices (large → medium) ===\n";
 echo 'Mode: ' . ($apply ? 'APPLY' : 'DRY-RUN') . "\n";
-if ($fromDate && $toDate) {
+if ($grFromDate && $grToDate) {
+    echo "Tanggal GR (receive): {$grFromDate} s/d {$grToDate}\n";
+} elseif ($fromDate && $toDate) {
     echo "Tanggal FO: {$fromDate} s/d {$toDate}\n";
 } else {
     echo "Since updated_at: {$since}\n";
 }
 echo 'Statuses: ' . ($allStatuses ? 'all' : 'draft, submitted') . "\n";
-echo 'Items: ' . implode(', ', $itemNames) . "\n";
+if ($allItems) {
+    echo "Items: ALL (manual pricing, non-asset)\n";
+} else {
+    echo 'Items: ' . implode(', ', $itemNames) . "\n";
+}
 if ($limit !== null) {
     echo "Limit rows: {$limit}\n";
 }
@@ -89,7 +104,27 @@ $query = DB::table('food_floor_order_items as ffoi')
     )
     ->orderBy('ffoi.id');
 
-if ($fromDate && $toDate) {
+if ($grFromDate && $grToDate) {
+    $linkedFoItemIds = DB::table('outlet_food_good_receives as gr')
+        ->join('outlet_food_good_receive_items as gri', 'gr.id', '=', 'gri.outlet_food_good_receive_id')
+        ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+        ->join('food_floor_order_items as linked', function ($join) {
+            $join->on('gri.item_id', '=', 'linked.item_id')
+                ->on('linked.floor_order_id', '=', 'do.floor_order_id');
+        })
+        ->whereBetween('gr.receive_date', [$grFromDate, $grToDate])
+        ->whereNull('gr.deleted_at')
+        ->distinct()
+        ->pluck('linked.id')
+        ->all();
+
+    if ($linkedFoItemIds === []) {
+        echo "Tidak ada FO item terhubung ke GR pada rentang tanggal tersebut.\n";
+        exit(0);
+    }
+
+    $query->whereIn('ffoi.id', $linkedFoItemIds);
+} elseif ($fromDate && $toDate) {
     $query->whereBetween('ffo.tanggal', [$fromDate, $toDate]);
 } else {
     $query->whereDate('ffoi.updated_at', '>=', $since);
@@ -99,7 +134,19 @@ if (! $allStatuses) {
     $query->whereIn('ffo.status', ['draft', 'submitted']);
 }
 
-$itemIds = DB::table('items')->whereIn('name', $itemNames)->pluck('id')->all();
+$itemIds = [];
+if ($allItems) {
+    $itemIds = DB::table('items as i')
+        ->join('categories as c', 'c.id', '=', 'i.category_id')
+        ->where('i.status', 'active')
+        ->where(function ($q) {
+            $q->whereNull('c.is_asset')->orWhere('c.is_asset', '!=', '1');
+        })
+        ->pluck('i.id')
+        ->all();
+} else {
+    $itemIds = DB::table('items')->whereIn('name', $itemNames)->pluck('id')->all();
+}
 if ($itemIds === []) {
     echo "Item filter tidak ditemukan di master.\n";
     exit(1);
@@ -146,6 +193,7 @@ foreach ($rows as $row) {
     $qty = (float) $row->qty;
     $fixes[] = [
         'id' => (int) $row->id,
+        'floor_order_id' => (int) $row->floor_order_id,
         'order_number' => (string) ($row->order_number ?? ''),
         'tanggal' => (string) ($row->tanggal ?? ''),
         'status' => (string) ($row->status ?? ''),
@@ -178,6 +226,7 @@ if (! $apply) {
 DB::beginTransaction();
 try {
     $updated = 0;
+    $affectedOrderIds = [];
     foreach ($fixes as $f) {
         DB::table('food_floor_order_items')
             ->where('id', $f['id'])
@@ -186,7 +235,23 @@ try {
                 'subtotal' => $f['expected_subtotal'],
                 'updated_at' => now(),
             ]);
+        $affectedOrderIds[$f['floor_order_id']] = true;
         $updated++;
+    }
+
+    if (Schema::hasColumn('food_floor_orders', 'total_amount')) {
+        foreach (array_keys($affectedOrderIds) as $orderId) {
+            $total = (float) DB::table('food_floor_order_items')
+                ->where('floor_order_id', $orderId)
+                ->sum('subtotal');
+            DB::table('food_floor_orders')
+                ->where('id', $orderId)
+                ->update([
+                    'total_amount' => $total,
+                    'updated_at' => now(),
+                ]);
+        }
+        echo 'Recalculated total_amount for ' . count($affectedOrderIds) . " FO(s)\n";
     }
 
     DB::commit();
