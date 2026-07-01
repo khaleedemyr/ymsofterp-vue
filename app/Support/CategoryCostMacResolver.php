@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -41,7 +42,9 @@ final class CategoryCostMacResolver
     }
 
     /**
-     * MAC histori per satuan kecil pada/before tanggal transaksi (fallback ke stok).
+     * MAC histori per satuan kecil pada/before tanggal transaksi.
+     * Jika histori pra-cutover sudah dihapus: transaksi sebelum tanggal saldo awal
+     * memakai MAC initial_balance; setelah itu tetap dari rantai histori per tanggal.
      */
     public static function resolveHistoryMacAtDate(
         int $inventoryItemId,
@@ -62,6 +65,24 @@ final class CategoryCostMacResolver
             return self::historyMacPerSmall($row);
         }
 
+        $initialBalanceRow = self::resolveInitialBalanceHistoryRow(
+            $inventoryItemId,
+            $outletId,
+            $warehouseOutletId
+        );
+        if ($initialBalanceRow) {
+            $initialBalanceMac = self::historyMacPerSmall($initialBalanceRow);
+            $initialBalanceDate = (string) ($initialBalanceRow->date ?? '');
+            if (
+                $initialBalanceMac !== null
+                && $initialBalanceMac > 0
+                && $initialBalanceDate !== ''
+                && self::isTransactionBeforeSaldoAwal($asOfDate, $initialBalanceDate)
+            ) {
+                return $initialBalanceMac;
+            }
+        }
+
         $stock = DB::table('outlet_food_inventory_stocks')
             ->where('inventory_item_id', $inventoryItemId)
             ->where('id_outlet', $outletId)
@@ -73,6 +94,36 @@ final class CategoryCostMacResolver
         }
 
         return null;
+    }
+
+    /**
+     * Transaksi pra-saldo-awal: tanggal transaksi sebelum tanggal baris initial_balance.
+     */
+    private static function isTransactionBeforeSaldoAwal(string $asOfDate, string $saldoAwalDate): bool
+    {
+        try {
+            return Carbon::parse($asOfDate)->startOfDay()->lt(Carbon::parse($saldoAwalDate)->startOfDay());
+        } catch (\Throwable) {
+            return $asOfDate < $saldoAwalDate;
+        }
+    }
+
+    /**
+     * Baris MAC saldo awal (initial_balance) untuk partisi stok outlet.
+     */
+    private static function resolveInitialBalanceHistoryRow(
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId
+    ): ?object {
+        return DB::table('outlet_food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('id_outlet', $outletId)
+            ->where('warehouse_outlet_id', $warehouseOutletId)
+            ->where('reference_type', 'initial_balance')
+            ->orderBy('date')
+            ->orderBy('id')
+            ->first();
     }
 
     public static function resolveMacPerSmallUnit(
@@ -114,7 +165,8 @@ final class CategoryCostMacResolver
     }
 
     /**
-     * MAC histori WIP dianggap level 1 resep jika mendekati total BOM resep.
+     * MAC histori WIP dianggap level 1 resep jika mendekati total BOM resep,
+     * atau jika dikonversi ke satuan medium/large menghasilkan biaya tidak masuk akal.
      */
     private static function wipHistoryMacLooksRecipeLevel(float $historyMac, float $recipeCost, float $yield): bool
     {
@@ -122,7 +174,10 @@ final class CategoryCostMacResolver
             return true;
         }
 
-        // Tanpa BOM: nilai sangat besar kemungkinan biaya 1 resep, bukan per gram.
+        if ($yield > 0 && $historyMac >= 10 && ($historyMac * $yield) > 50_000) {
+            return true;
+        }
+
         return $yield > 0 && $historyMac > 10_000;
     }
 

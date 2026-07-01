@@ -97,24 +97,24 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                 ->get();
             
             $itemIds = $details->pluck('item_id')->unique()->all();
-            $inventoryItems = [];
+            $inventoryItems = collect();
             if (count($itemIds) > 0) {
-                $inventoryItemsData = DB::table('outlet_food_inventory_items')
+                $inventoryItems = DB::table('outlet_food_inventory_items')
                     ->whereIn('item_id', $itemIds)
                     ->get()
                     ->keyBy('item_id');
-                $inventoryItems = $inventoryItemsData->toArray();
             }
             
-            $inventoryItemIds = collect($inventoryItems)->pluck('id')->unique()->all();
+            $inventoryItemIds = $inventoryItems->pluck('id')->unique()->values()->all();
             $macHistories = [];
             if (count($inventoryItemIds) > 0 && count($headerIds) > 0) {
                 $headerData = $data->keyBy('id');
                 $macQueryConditions = [];
                 foreach ($details as $detail) {
                     $header = $headerData->get($detail->header_id);
-                    if ($header && isset($inventoryItems[$detail->item_id])) {
-                        $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+                    $inventoryItem = $inventoryItems->get($detail->item_id);
+                    if ($header && $inventoryItem) {
+                        $inventoryItemId = (int) $inventoryItem->id;
                         $key = "{$inventoryItemId}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
                         if (!isset($macQueryConditions[$key])) {
                             $macQueryConditions[$key] = [
@@ -128,32 +128,23 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                 }
                 
                 foreach ($macQueryConditions as $condition) {
-                    $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $condition['inventory_item_id'])
-                        ->where('id_outlet', $condition['id_outlet'])
-                        ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
-                        ->where('date', '<=', $condition['date'])
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->first();
-                    if ($macRow) {
-                        $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
-                        $macHistories[$macKey] = CategoryCostMacResolver::historyMacPerSmall($macRow);
-                    }
+                    $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
+                    $macHistories[$macKey] = CategoryCostMacResolver::resolveHistoryMacAtDate(
+                        (int) $condition['inventory_item_id'],
+                        (int) $condition['id_outlet'],
+                        (int) $condition['warehouse_outlet_id'],
+                        (string) $condition['date']
+                    );
                 }
             }
             
             foreach ($details as $item) {
                 $mac = null;
-                if (isset($inventoryItems[$item->item_id])) {
-                    $inventoryItem = $inventoryItems[$item->item_id];
-                    $header = $data->firstWhere('id', $item->header_id);
-                    if ($header) {
-                        $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
-                        if (isset($macHistories[$macKey])) {
-                            $mac = $macHistories[$macKey];
-                        }
-                    }
+                $inventoryItem = $inventoryItems->get($item->item_id);
+                $header = $data->firstWhere('id', $item->header_id);
+                if ($header && $inventoryItem) {
+                    $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                    $mac = $macHistories[$macKey] ?? null;
                 }
                 
                 $lineMac = self::categoryCostLineMac(
@@ -171,8 +162,11 @@ class CategoryCostOutletExport implements FromCollection, WithHeadings, WithMapp
                 $subtotalPerHeader[$item->header_id] += $subtotal_mac;
             }
             
-            $data = collect($data)->map(function($row) use ($subtotalPerHeader) {
-                $row->subtotal_mac = $subtotalPerHeader[$row->id] ?? 0;
+            $data = collect($data)->map(function ($row) use ($subtotalPerHeader) {
+                $recalculated = round((float) ($subtotalPerHeader[$row->id] ?? 0), 2);
+                $stored = round((float) ($row->subtotal_mac ?? 0), 2);
+                $row->subtotal_mac = $recalculated > 0 ? $recalculated : ($stored > 0 ? $stored : $recalculated);
+
                 return $row;
             });
         } else {

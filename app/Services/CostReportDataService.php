@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\CategoryCostMacResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -953,7 +954,7 @@ class CostReportDataService
                 ->whereIn('id_outlet', array_values(array_unique($outletIdsForMac)))
                 ->whereIn('warehouse_outlet_id', array_values(array_unique($warehouseIdsForMac)))
                 ->where('date', '<=', $maxDate)
-                ->select('inventory_item_id', 'id_outlet', 'warehouse_outlet_id', 'date', 'id', 'mac')
+                ->select('inventory_item_id', 'id_outlet', 'warehouse_outlet_id', 'date', 'id', 'mac', 'new_cost')
                 ->orderBy('inventory_item_id')
                 ->orderBy('id_outlet')
                 ->orderBy('warehouse_outlet_id')
@@ -977,9 +978,18 @@ class CostReportDataService
 
                 foreach (($historiesByTuple[$tupleKey] ?? []) as $historyRow) {
                     if ($historyRow->date <= $targetDate) {
-                        $macHistories[$key] = (float) ($historyRow->mac ?? 0);
+                        $macHistories[$key] = CategoryCostMacResolver::historyMacPerSmall($historyRow);
                         break;
                     }
+                }
+
+                if ($macHistories[$key] === null) {
+                    $macHistories[$key] = CategoryCostMacResolver::resolveHistoryMacAtDate(
+                        (int) $condition['inventory_item_id'],
+                        (int) $condition['id_outlet'],
+                        (int) $condition['warehouse_outlet_id'],
+                        (string) $condition['date']
+                    );
                 }
             }
         }

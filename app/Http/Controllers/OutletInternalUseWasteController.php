@@ -2214,15 +2214,14 @@ class OutletInternalUseWasteController extends Controller
             $itemIds = $details->pluck('item_id')->unique()->all();
             $inventoryItems = [];
             if (count($itemIds) > 0) {
-                $inventoryItemsData = DB::table('outlet_food_inventory_items')
+                $inventoryItems = DB::table('outlet_food_inventory_items')
                     ->whereIn('item_id', $itemIds)
                     ->get()
                     ->keyBy('item_id');
-                $inventoryItems = $inventoryItemsData->toArray();
             }
             
             // Batch query untuk MAC histories - optimasi dengan subquery
-            $inventoryItemIds = collect($inventoryItems)->pluck('id')->unique()->all();
+            $inventoryItemIds = $inventoryItems->pluck('id')->unique()->values()->all();
             $macHistories = [];
             if (count($inventoryItemIds) > 0 && count($headerIds) > 0) {
                 // Get unique combinations of outlet_id, warehouse_outlet_id, and dates
@@ -2230,8 +2229,9 @@ class OutletInternalUseWasteController extends Controller
                 $macQueryConditions = [];
                 foreach ($details as $detail) {
                     $header = $headerData->get($detail->header_id);
-                    if ($header && isset($inventoryItems[$detail->item_id])) {
-                        $inventoryItemId = $inventoryItems[$detail->item_id]->id;
+                    $inventoryItem = $inventoryItems->get($detail->item_id);
+                    if ($header && $inventoryItem) {
+                        $inventoryItemId = (int) $inventoryItem->id;
                         $key = "{$inventoryItemId}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
                         if (!isset($macQueryConditions[$key])) {
                             $macQueryConditions[$key] = [
@@ -2244,61 +2244,26 @@ class OutletInternalUseWasteController extends Controller
                     }
                 }
                 
-                // Batch query MAC histories
                 foreach ($macQueryConditions as $condition) {
-                    $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $condition['inventory_item_id'])
-                        ->where('id_outlet', $condition['id_outlet'])
-                        ->where('warehouse_outlet_id', $condition['warehouse_outlet_id'])
-                        ->where('date', '<=', $condition['date'])
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->first();
-                    if ($macRow) {
-                        $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
-                        $macHistories[$macKey] = CategoryCostMacResolver::historyMacPerSmall($macRow);
-                    }
+                    $macKey = "{$condition['inventory_item_id']}_{$condition['id_outlet']}_{$condition['warehouse_outlet_id']}_{$condition['date']}";
+                    $macHistories[$macKey] = CategoryCostMacResolver::resolveHistoryMacAtDate(
+                        (int) $condition['inventory_item_id'],
+                        (int) $condition['id_outlet'],
+                        (int) $condition['warehouse_outlet_id'],
+                        (string) $condition['date']
+                    );
                 }
             }
             
-            // Calculate totals
-            foreach ($details as $item) {
-                $mac = null;
-                $header = $data->firstWhere('id', $item->header_id);
-                if ($header && isset($inventoryItems[$item->item_id])) {
-                    $inventoryItem = $inventoryItems[$item->item_id];
-                    $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
-                    if (isset($macHistories[$macKey])) {
-                        $mac = $macHistories[$macKey];
-                    }
-                }
-
-                $lineMac = $this->categoryCostMacForDetailLine(
-                    $item,
-                    $mac,
-                    (int) ($item->header_outlet_id ?? 0),
-                    (int) ($item->header_warehouse_outlet_id ?? 0),
-                    (string) ($item->header_date ?? '')
-                );
-                $subtotal_mac = $lineMac['subtotal_mac'];
-                $type = $item->header_type;
-                if (!isset($totalPerType[$type])) {
-                    $totalPerType[$type] = 0;
-                }
-                $totalPerType[$type] += $subtotal_mac;
-            }
-            
-            // Calculate subtotal MAC per header
+            // Hitung subtotal MAC per header
             $subtotalPerHeader = [];
             foreach ($details as $item) {
                 $mac = null;
                 $header = $data->firstWhere('id', $item->header_id);
-                if ($header && isset($inventoryItems[$item->item_id])) {
-                    $inventoryItem = $inventoryItems[$item->item_id];
+                $inventoryItem = $inventoryItems->get($item->item_id);
+                if ($header && $inventoryItem) {
                     $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
-                    if (isset($macHistories[$macKey])) {
-                        $mac = $macHistories[$macKey];
-                    }
+                    $mac = $macHistories[$macKey] ?? null;
                 }
 
                 $lineMac = $this->categoryCostMacForDetailLine(
@@ -2316,11 +2281,23 @@ class OutletInternalUseWasteController extends Controller
                 $subtotalPerHeader[$item->header_id] += $subtotal_mac;
             }
             
-            // Add subtotal_mac to each header row
-            $data = collect($data)->map(function($row) use ($subtotalPerHeader) {
-                $row->subtotal_mac = $subtotalPerHeader[$row->id] ?? 0;
+            // Add subtotal_mac to each header row (fallback ke nilai tersimpan jika hitung ulang 0)
+            $data = collect($data)->map(function ($row) use ($subtotalPerHeader) {
+                $recalculated = round((float) ($subtotalPerHeader[$row->id] ?? 0), 2);
+                $stored = round((float) ($row->subtotal_mac ?? 0), 2);
+                $row->subtotal_mac = $recalculated > 0 ? $recalculated : ($stored > 0 ? $stored : $recalculated);
+
                 return $row;
             });
+
+            $totalPerType = [];
+            foreach ($data as $row) {
+                $type = (string) ($row->type ?? '');
+                if ($type === '') {
+                    continue;
+                }
+                $totalPerType[$type] = ($totalPerType[$type] ?? 0) + (float) ($row->subtotal_mac ?? 0);
+            }
         } else {
             // If no details, set subtotal_mac to 0 for all rows
             $data = collect($data)->map(function($row) {
@@ -2447,18 +2424,12 @@ class OutletInternalUseWasteController extends Controller
                 \Log::debug('DETAILS: inventory_item_id for item_id ' . $item->item_id . ': ' . ($inventoryItem ? $inventoryItem->id : 'NOT FOUND'));
                 $mac = null;
                 if ($inventoryItem) {
-                    // Ambil MAC terakhir sebelum/tanggal transaksi
-                    $macRow = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $header->outlet_id)
-                        ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                        ->where('date', '<=', $header->date)
-                        ->orderByDesc('date')
-                        ->orderByDesc('id')
-                        ->first();
-                    if ($macRow) {
-                        $mac = CategoryCostMacResolver::historyMacPerSmall($macRow);
-                    }
+                    $mac = CategoryCostMacResolver::resolveHistoryMacAtDate(
+                        (int) $inventoryItem->id,
+                        (int) $header->outlet_id,
+                        (int) $header->warehouse_outlet_id,
+                        (string) $header->date
+                    );
                 }
                 \Log::debug('DETAILS: MAC for item_id ' . $item->item_id . ': ' . ($mac !== null ? $mac : 'NOT FOUND'));
                 $lineMac = $this->categoryCostMacForDetailLine(

@@ -6,6 +6,7 @@ use App\Http\Controllers\AttendanceReportController;
 use App\Http\Traits\ReportHelperTrait;
 use App\Models\UserRegional;
 use App\Services\PayrollGajiSplitCalculator;
+use App\Support\CategoryCostMacResolver;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -2391,15 +2392,12 @@ class OutletAnalyzerService
             $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
 
             if (! array_key_exists($macKey, $macHistories)) {
-                $macRow = DB::table('outlet_food_inventory_cost_histories')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $header->outlet_id)
-                    ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                    ->where('date', '<=', $header->date)
-                    ->orderByDesc('date')
-                    ->orderByDesc('id')
-                    ->first();
-                $macHistories[$macKey] = $macRow ? (float) $macRow->new_cost : null;
+                $macHistories[$macKey] = CategoryCostMacResolver::resolveHistoryMacAtDate(
+                    (int) $inventoryItem->id,
+                    (int) $header->outlet_id,
+                    (int) $header->warehouse_outlet_id,
+                    (string) $header->date
+                );
             }
         }
 
