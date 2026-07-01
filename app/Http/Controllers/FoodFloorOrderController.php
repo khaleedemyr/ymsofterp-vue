@@ -78,8 +78,9 @@ class FoodFloorOrderController extends Controller
             if (empty($item['item_id'])) {
                 continue;
             }
-            $price = FloorOrderItemPriceResolver::resolveMediumUnitPrice(
+            $price = FloorOrderItemPriceResolver::resolveLineUnitPrice(
                 (int) $item['item_id'],
+                isset($item['unit']) ? (string) $item['unit'] : null,
                 $regionId,
                 $outletKey,
             );

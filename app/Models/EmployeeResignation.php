@@ -44,7 +44,8 @@ class EmployeeResignation extends Model
 
     public function approvalFlows()
     {
-        return $this->hasMany(EmployeeResignationApprovalFlow::class, 'employee_resignation_id');
+        return $this->hasMany(EmployeeResignationApprovalFlow::class, 'employee_resignation_id')
+            ->orderBy('approval_level');
     }
 
     // Scopes

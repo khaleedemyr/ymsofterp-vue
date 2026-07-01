@@ -1905,6 +1905,7 @@ class StockOpnameController extends Controller
             'serial_receive',
             'good_receive_outlet',
             'outlet_food_good_receive',
+            'initial_balance',
             'mac_correction',
         ];
 

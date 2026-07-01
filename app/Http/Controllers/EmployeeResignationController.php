@@ -305,7 +305,7 @@ class EmployeeResignationController extends Controller
                         'email' => $employeeResignation->creator->email,
                     ] : null,
                     'created_at' => $employeeResignation->created_at,
-                    'approval_flows' => $employeeResignation->approvalFlows->map(function($flow) {
+                    'approval_flows' => $this->sortedApprovalFlows($employeeResignation)->map(function($flow) {
                         return [
                             'id' => $flow->id,
                             'approval_level' => $flow->approval_level,

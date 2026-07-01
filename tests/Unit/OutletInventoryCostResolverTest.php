@@ -34,4 +34,18 @@ class OutletInventoryCostResolverTest extends TestCase
         $this->assertTrue(OutletInventoryCostResolver::macLooksAnomalousVsAnchor(32_419.87, 51.8209));
         $this->assertFalse(OutletInventoryCostResolver::macLooksAnomalousVsAnchor(52.0, 51.8209));
     }
+
+    public function test_mac_rates_per_small_medium_large(): void
+    {
+        $itemMaster = (object) [
+            'small_conversion_qty' => 10,
+            'medium_conversion_qty' => 5,
+        ];
+
+        [$small, $medium, $large] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge(2.5, $itemMaster);
+
+        $this->assertEqualsWithDelta(2.5, $small, 0.0001);
+        $this->assertEqualsWithDelta(25.0, $medium, 0.0001);
+        $this->assertEqualsWithDelta(125.0, $large, 0.0001);
+    }
 }

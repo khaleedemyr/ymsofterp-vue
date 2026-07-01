@@ -571,6 +571,7 @@ class GoodReceiveOutletSupplierController extends Controller
                 $total_qty = $qty_lama + $qty_baru;
                 $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
                 $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
+                [$macSmall, $macMedium, $macLarge] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge($mac, $itemMaster);
                 if ($existingStock) {
                     DB::table('outlet_food_inventory_stocks')
                         ->where('id', $existingStock->id)
@@ -579,9 +580,9 @@ class GoodReceiveOutletSupplierController extends Controller
                             'qty_medium' => $existingStock->qty_medium + $qty_medium,
                             'qty_large' => $existingStock->qty_large + $qty_large,
                             'value' => $total_nilai,
-                            'last_cost_small' => $mac,
-                            'last_cost_medium' => $cost_medium,
-                            'last_cost_large' => $cost_large,
+                            'last_cost_small' => $macSmall,
+                            'last_cost_medium' => $macMedium,
+                            'last_cost_large' => $macLarge,
                             'warehouse_outlet_id' => $warehouseOutletId,
                             'updated_at' => now(),
                         ]);
@@ -592,10 +593,10 @@ class GoodReceiveOutletSupplierController extends Controller
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $nilai_baru,
-                        'last_cost_small' => $cost_small,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
+                        'value' => $total_nilai,
+                        'last_cost_small' => $macSmall,
+                        'last_cost_medium' => $macMedium,
+                        'last_cost_large' => $macLarge,
                         'warehouse_outlet_id' => $warehouseOutletId,
                         'created_at' => now(),
                         'updated_at' => now(),
@@ -647,6 +648,7 @@ class GoodReceiveOutletSupplierController extends Controller
                 $lastCostHistory = DB::table('outlet_food_inventory_cost_histories')
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
                     ->orderByDesc('date')
                     ->orderByDesc('created_at')
                     ->first();
@@ -1094,9 +1096,21 @@ class GoodReceiveOutletSupplierController extends Controller
                         
                         $mac = $cost_small;
                         if ($existingStock && $existingStock->qty_small > 0) {
-                            $mac = ($existingStock->value + ($qty_small * $cost_small)) / ($existingStock->qty_small + $qty_small);
+                            $macLama = OutletInventoryCostResolver::resolveMacFromStockRow($existingStock);
+                            $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall(
+                                (float) $existingStock->qty_small,
+                                $macLama,
+                                $qty_small,
+                                $cost_small
+                            );
                         }
-                        
+                        $totalQty = ($existingStock ? (float) $existingStock->qty_small : 0.0) + $qty_small;
+                        $totalNilai = OutletInventoryCostResolver::stockTotalValue($totalQty, $mac);
+                        [$macSmall, $macMedium, $macLarge] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge(
+                            $mac,
+                            $itemMaster
+                        );
+
                         // Update atau insert stock
                         if ($existingStock) {
                             DB::table('outlet_food_inventory_stocks')
@@ -1105,10 +1119,10 @@ class GoodReceiveOutletSupplierController extends Controller
                                     'qty_small' => $existingStock->qty_small + $qty_small,
                                     'qty_medium' => $existingStock->qty_medium + $qty_medium,
                                     'qty_large' => $existingStock->qty_large + $qty_large,
-                                    'value' => ($existingStock->qty_small + $qty_small) * $mac,
-                                    'last_cost_small' => $mac,
-                                    'last_cost_medium' => $mac * $smallConv,
-                                    'last_cost_large' => $mac * $smallConv * $mediumConv,
+                                    'value' => $totalNilai,
+                                    'last_cost_small' => $macSmall,
+                                    'last_cost_medium' => $macMedium,
+                                    'last_cost_large' => $macLarge,
                                     'updated_at' => now(),
                                 ]);
                         } else {
@@ -1119,10 +1133,10 @@ class GoodReceiveOutletSupplierController extends Controller
                                 'qty_small' => $qty_small,
                                 'qty_medium' => $qty_medium,
                                 'qty_large' => $qty_large,
-                                'value' => $qty_small * $mac,
-                                'last_cost_small' => $mac,
-                                'last_cost_medium' => $mac * $smallConv,
-                                'last_cost_large' => $mac * $smallConv * $mediumConv,
+                                'value' => $totalNilai,
+                                'last_cost_small' => $macSmall,
+                                'last_cost_medium' => $macMedium,
+                                'last_cost_large' => $macLarge,
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ]);

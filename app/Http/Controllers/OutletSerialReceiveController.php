@@ -1056,6 +1056,7 @@ class OutletSerialReceiveController extends Controller
         $totalQty = $qtyLama + $qtySmall;
         $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qtyLama, $macLama, $qtySmall, $costSmall);
         $syncedValue = OutletInventoryCostResolver::stockTotalValue($totalQty, $mac);
+        [$macSmall, $macMedium, $macLarge] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge($mac, $itemMaster);
 
         if ($stock) {
             DB::table('outlet_food_inventory_stocks')
@@ -1065,9 +1066,9 @@ class OutletSerialReceiveController extends Controller
                     'qty_medium' => DB::raw("qty_medium + {$qtyMedium}"),
                     'qty_large' => DB::raw("qty_large + {$qtyLarge}"),
                     'value' => $syncedValue,
-                    'last_cost_small' => $mac,
-                    'last_cost_medium' => $costMedium,
-                    'last_cost_large' => $costLarge,
+                    'last_cost_small' => $macSmall,
+                    'last_cost_medium' => $macMedium,
+                    'last_cost_large' => $macLarge,
                     'updated_at' => now(),
                 ]);
         } else {
@@ -1078,10 +1079,10 @@ class OutletSerialReceiveController extends Controller
                 'qty_small' => $qtySmall,
                 'qty_medium' => $qtyMedium,
                 'qty_large' => $qtyLarge,
-                'value' => $nilaiBaru,
-                'last_cost_small' => $mac,
-                'last_cost_medium' => $costMedium,
-                'last_cost_large' => $costLarge,
+                'value' => $syncedValue,
+                'last_cost_small' => $macSmall,
+                'last_cost_medium' => $macMedium,
+                'last_cost_large' => $macLarge,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

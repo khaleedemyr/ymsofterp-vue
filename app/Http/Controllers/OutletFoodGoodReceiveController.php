@@ -516,6 +516,7 @@ class OutletFoodGoodReceiveController extends Controller
                 $total_qty = $qty_lama + $qty_baru;
                 $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
                 $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
+                [$macSmall, $macMedium, $macLarge] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge($mac, $itemMaster);
                 if ($stock) {
                     $stockUpdates[] = [
                         'id' => $stock->id,
@@ -523,9 +524,9 @@ class OutletFoodGoodReceiveController extends Controller
                         'qty_medium' => $stock->qty_medium + $qty_medium,
                         'qty_large' => $stock->qty_large + $qty_large,
                         'value' => $total_nilai,
-                        'last_cost_small' => $mac,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
+                        'last_cost_small' => $macSmall,
+                        'last_cost_medium' => $macMedium,
+                        'last_cost_large' => $macLarge,
                         'updated_at' => now(),
                     ];
                     // Update cache for subsequent items
@@ -540,10 +541,10 @@ class OutletFoodGoodReceiveController extends Controller
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $nilai_baru,
-                        'last_cost_small' => $mac,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
+                        'value' => $total_nilai,
+                        'last_cost_small' => $macSmall,
+                        'last_cost_medium' => $macMedium,
+                        'last_cost_large' => $macLarge,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ];

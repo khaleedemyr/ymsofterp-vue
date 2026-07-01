@@ -28,6 +28,81 @@ final class FloorOrderItemPriceResolver
         return self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item));
     }
 
+    /**
+     * Harga jual per satuan baris FO (small / medium / large) dari item_prices (large).
+     */
+    public static function resolveLineUnitPrice(
+        int $itemId,
+        ?string $unitName,
+        ?int $regionId = null,
+        ?string $outletId = null,
+        ?object $itemMaster = null,
+    ): float {
+        $item = $itemMaster ?? DB::table('items')->where('id', $itemId)->first();
+        if (! $item) {
+            return 0.0;
+        }
+
+        $priceRow = self::resolvePriceRow($itemId, $regionId, $outletId);
+        $priceLarge = self::resolvePriceLarge($itemId, $priceRow);
+        if ($priceLarge <= 0) {
+            return 0.0;
+        }
+
+        $tier = self::detectUnitTier($item, $unitName);
+
+        return match ($tier) {
+            'large' => self::roundUpToHundred($priceLarge),
+            'small' => self::roundUpToHundred(self::largeToSmallPrice($priceLarge, $item)),
+            default => self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item)),
+        };
+    }
+
+    /** @return 'small'|'medium'|'large' */
+    public static function detectUnitTier(object $item, ?string $unitName, ?array $unitNameById = null): string
+    {
+        $normalized = strtolower(trim((string) $unitName));
+        if ($normalized === '') {
+            return 'medium';
+        }
+
+        $unitIds = array_filter([
+            'small' => $item->small_unit_id ?? null,
+            'medium' => $item->medium_unit_id ?? null,
+            'large' => $item->large_unit_id ?? null,
+        ]);
+
+        if ($unitIds !== []) {
+            if ($unitNameById === null) {
+                $unitNameById = DB::table('units')->whereIn('id', array_values($unitIds))->pluck('name', 'id')->all();
+            }
+            foreach ($unitIds as $tier => $unitId) {
+                $name = strtolower(trim((string) ($unitNameById[$unitId] ?? '')));
+                if ($name !== '' && $name === $normalized) {
+                    return $tier;
+                }
+            }
+        }
+
+        return 'medium';
+    }
+
+    public static function largeToSmallPrice(float $priceLarge, object $item): float
+    {
+        if ($priceLarge <= 0) {
+            return 0.0;
+        }
+
+        $mediumConv = (float) ($item->medium_conversion_qty ?? 1) ?: 1;
+        $smallConv = (float) ($item->small_conversion_qty ?? 1) ?: 1;
+        $divisor = $mediumConv * $smallConv;
+        if ($divisor <= 0) {
+            return 0.0;
+        }
+
+        return round($priceLarge / $divisor, 2);
+    }
+
     public static function resolvePriceRow(int $itemId, ?int $regionId, ?string $outletId): ?object
     {
         if ($outletId && ! $regionId) {

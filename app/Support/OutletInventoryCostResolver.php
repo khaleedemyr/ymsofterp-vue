@@ -17,6 +17,7 @@ final class OutletInventoryCostResolver
         'serial_receive',
         'good_receive_outlet',
         'outlet_food_good_receive',
+        'initial_balance',
         'mac_correction',
     ];
     /**
@@ -248,5 +249,22 @@ final class OutletInventoryCostResolver
     public static function stockTotalValue(float $qtySmall, float $macPerSmall): float
     {
         return max(0.0, $qtySmall * $macPerSmall);
+    }
+
+    /**
+     * MAC per satuan kecil/med/large konsisten dari MAC small (setelah WAC).
+     *
+     * @return array{0: float, 1: float, 2: float} [small, medium, large]
+     */
+    public static function macRatesPerSmallMediumLarge(float $macPerSmall, object $itemMaster): array
+    {
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+        return [
+            $macPerSmall,
+            $smallConv > 0 ? $macPerSmall * $smallConv : $macPerSmall,
+            ($smallConv > 0 && $mediumConv > 0) ? $macPerSmall * $smallConv * $mediumConv : $macPerSmall,
+        ];
     }
 }

@@ -1,0 +1,1165 @@
+line_id,item_id,item_name,tanggal,order_number,status,outlet,unit,unit_tier,qty,current_price,expected_price,diff,price_large,medium_conv,small_conv,pricing_mode
+12211119,52738,"Alumunium Foil",2026-06-12,RO-20260612-F25D,packing,"Justus Steakhouse The Barn",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12175089,52738,"Alumunium Foil",2026-06-12,RO-20260612-FDE2,packing,"Tempayan Citarum",Pack,small,3,17400,15700,1700,15700,1,1,auto
+12234350,52738,"Alumunium Foil",2026-06-13,RO-20260613-EBEC,packing,"Justus Steak House Bintaro",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12230428,52738,"Alumunium Foil",2026-06-13,RO-20260613-2344,packing,"Justus Steakhouse SMB",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12324645,52738,"Alumunium Foil",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12336816,52738,"Alumunium Foil",2026-06-15,RO-20260615-5B6E,packing,"Justus Steakhouse SMB",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12433582,52738,"Alumunium Foil",2026-06-16,RO-20260616-B1E0,packing,"Melt Steak d'Botanica",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12425842,52738,"Alumunium Foil",2026-06-16,RO-20260616-3CE9,packing,"Justus Steak House Festival Citylink",Pack,small,1,21300,15700,5600,15700,1,1,auto
+12422831,52738,"Alumunium Foil",2026-06-16,RO-20260616-386E,packing,"Justus Steak House Dago",Pack,small,1,21300,15700,5600,15700,1,1,auto
+12424124,52738,"Alumunium Foil",2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12460413,52738,"Alumunium Foil",2026-06-16,RO-20260616-6953,packing,"Justus Steak House Ciwalk",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12447220,52738,"Alumunium Foil",2026-06-16,RO-20260616-4C1E,packing,"Justus Steak House Miko Mall",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12441977,52738,"Alumunium Foil",2026-06-16,RO-20260616-7244,packing,"Tempayan Citarum",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12429773,52738,"Alumunium Foil",2026-06-16,RO-20260616-93F7,packing,"ASIAN GRILL BIP",Pack,small,1,21300,15700,5600,15700,1,1,auto
+12423570,52738,"Alumunium Foil",2026-06-16,RO-20260616-EB2C,packing,"Justus Steak House Buah Batu",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12483077,52738,"Alumunium Foil",2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12488810,52738,"Alumunium Foil",2026-06-17,RO-20260617-CC7B,packing,"Justus Steak House Bintaro",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12484723,52738,"Alumunium Foil",2026-06-17,RO-20260617-2B0B,packing,"Justus Steakhouse SMB",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12485174,52738,"Alumunium Foil",2026-06-17,RO-20260617-3CD5,packing,"Melt Steak d'Botanica",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12487571,52738,"Alumunium Foil",2026-06-17,RO-20260617-887D,packing,"Justus Steakhouse The Barn",Pack,small,3,21300,15700,5600,15700,1,1,auto
+12526994,52738,"Alumunium Foil",2026-06-18,RO-20260618-B547,packing,"Justus Steak House Jawa",Pack,small,7,21300,15700,5600,15700,1,1,auto
+12545376,52738,"Alumunium Foil",2026-06-18,RO-20260618-1466,packing,"Justus Steak House Metro Indah Mall",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12536810,52738,"Alumunium Foil",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Pack,small,1,21300,15700,5600,15700,1,1,auto
+12524563,52738,"Alumunium Foil",2026-06-18,RO-20260618-E8F7,packing,"Justus Steak House Buah Batu",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12567249,52738,"Alumunium Foil",2026-06-18,RO-20260618-D082,packing,"Justus Steak House Ciwalk",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12531046,52738,"Alumunium Foil",2026-06-18,RO-20260618-6540,packing,"Justus Steak House Cipete",Pack,small,5,21300,15700,5600,15700,1,1,auto
+12531574,52738,"Alumunium Foil",2026-06-18,RO-20260618-2AB2,packing,"Justus Steak House Miko Mall",Pack,small,1,21300,15700,5600,15700,1,1,auto
+12527952,52738,"Alumunium Foil",2026-06-18,RO-20260618-72B2,packing,"Justus Steak House Dago",Pack,small,2,21300,15700,5600,15700,1,1,auto
+12174990,52711,Balon,2026-06-12,RO-20260612-559B,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,3,168000,168100,-100,168100,1,100,auto
+12174904,52711,Balon,2026-06-12,RO-20260612-BF2E,packing,"Justus Steakhouse SMB",Pack,medium,2,168000,168100,-100,168100,1,100,auto
+12211131,52711,Balon,2026-06-12,RO-20260612-F25D,packing,"Justus Steakhouse The Barn",Pack,medium,1,168000,168100,-100,168100,1,100,auto
+12234253,52711,Balon,2026-06-13,RO-20260613-B870,packing,"Justus Steakhouse SMB",Pack,medium,2,168000,168100,-100,168100,1,100,auto
+12348190,52711,Balon,2026-06-15,RO-20260615-3F3D,packing,"Justus Steakhouse SMB",Pack,medium,1,168000,168100,-100,168100,1,100,auto
+12348427,52711,Balon,2026-06-15,RO-20260615-4D9A,packing,"Justus Steak House Cipete",Pack,medium,3,168000,168100,-100,168100,1,100,auto
+12324639,52711,Balon,2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,2,168000,168100,-100,168100,1,100,auto
+12460410,52711,Balon,2026-06-16,RO-20260616-6953,packing,"Justus Steak House Ciwalk",Pack,medium,1,168000,168100,-100,168100,1,100,auto
+12423569,52711,Balon,2026-06-16,RO-20260616-EB2C,packing,"Justus Steak House Buah Batu",Pack,medium,1,168000,168100,-100,168100,1,100,auto
+12424138,52711,Balon,2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,3,168000,168100,-100,168100,1,100,auto
+12424456,52711,Balon,2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,1,168000,168100,-100,168100,1,100,auto
+12484722,52711,Balon,2026-06-17,RO-20260617-2B0B,packing,"Justus Steakhouse SMB",Pack,medium,2,168000,168100,-100,168100,1,100,auto
+12483083,52711,Balon,2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,medium,4,168000,168100,-100,168100,1,100,auto
+12175076,54667,"Barbeque Sauce",2026-06-12,RO-20260612-49D8,packing,"Justus Steak House Ciwalk",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12171316,54667,"Barbeque Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,16,29700,7500,22200,29638,4,500,manual
+12165952,54667,"Barbeque Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,16,29700,7500,22200,29638,4,500,manual
+12170934,54667,"Barbeque Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,3,29700,7500,22200,29638,4,500,manual
+12174862,54667,"Barbeque Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,15,29700,7500,22200,29638,4,500,manual
+12508582,54667,"Barbeque Sauce",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,6,29700,7500,22200,29638,4,500,manual
+12497631,54667,"Barbeque Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,10,29700,7500,22200,29638,4,500,manual
+12490412,54667,"Barbeque Sauce",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12511849,54667,"Barbeque Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,20,29700,7500,22200,29638,4,500,manual
+12519669,54667,"Barbeque Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,12,29700,7500,22200,29638,4,500,manual
+12490737,54667,"Barbeque Sauce",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12490465,54667,"Barbeque Sauce",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pack,medium,3,29700,7500,22200,29638,4,500,manual
+12487302,54667,"Barbeque Sauce",2026-06-17,RO-20260617-438F,packing,"JUSTUS BEC",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12496389,54667,"Barbeque Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,15,29700,7500,22200,29638,4,500,manual
+12506870,54667,"Barbeque Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12487839,54667,"Barbeque Sauce",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Pack,medium,5,29700,7500,22200,29638,4,500,manual
+12505741,54667,"Barbeque Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12510449,54667,"Barbeque Sauce",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12508684,54667,"Barbeque Sauce",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12509225,54667,"Barbeque Sauce",2026-06-17,RO-20260617-1FA2,packing,"Justus Steak House Cimanuk",Pack,medium,3,29700,7500,22200,29638,4,500,manual
+12532469,54667,"Barbeque Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,6,29700,7500,22200,29638,4,500,manual
+12547781,54667,"Barbeque Sauce",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,3,29700,7500,22200,29638,4,500,manual
+12552831,54667,"Barbeque Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,6,29700,7500,22200,29638,4,500,manual
+12571829,54667,"Barbeque Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,12,29700,7500,22200,29638,4,500,manual
+12536704,54667,"Barbeque Sauce",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12559788,54667,"Barbeque Sauce",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12549813,54667,"Barbeque Sauce",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Pack,medium,5,29700,7500,22200,29638,4,500,manual
+12537005,54667,"Barbeque Sauce",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12554448,54667,"Barbeque Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,14,29700,7500,22200,29638,4,500,manual
+12520164,54667,"Barbeque Sauce",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,10,29700,7500,22200,29638,4,500,manual
+12542891,54667,"Barbeque Sauce",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12572205,54667,"Barbeque Sauce",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,10,29700,7500,22200,29638,4,500,manual
+12542759,54667,"Barbeque Sauce",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12575484,54667,"Barbeque Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,12,29700,7500,22200,29638,4,500,manual
+12556702,54667,"Barbeque Sauce",2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Pack,medium,8,29700,7500,22200,29638,4,500,manual
+12563529,54667,"Barbeque Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,19,29700,7500,22200,29638,4,500,manual
+12522577,54667,"Barbeque Sauce",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,4,29700,7500,22200,29638,4,500,manual
+12538433,54667,"Barbeque Sauce",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Pack,medium,5,29700,7500,22200,29638,4,500,manual
+12522949,54667,"Barbeque Sauce",2026-06-18,RO-20260618-9171,packing,"Justus Steak House Cimanuk",Pack,medium,2,29700,7500,22200,29638,4,500,manual
+12225215,52331,"Bawang Goreng",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Pack,medium,1,61600,61700,-100,61700,1,500,auto
+12174830,52331,"Bawang Goreng",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,1,61600,61700,-100,61700,1,500,auto
+12436936,52331,"Bawang Goreng",2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Pack,medium,1,61600,61700,-100,61700,1,500,auto
+12170942,54706,"Beef Chuck Short Ribs Dice",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12171331,54706,"Beef Chuck Short Ribs Dice",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12165967,54706,"Beef Chuck Short Ribs Dice",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12507711,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-F35F,packing,"Tempayan Citarum",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12510457,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pack,small,2,58200,3100,55100,58189,19,1,manual
+12508592,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12519660,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12497647,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,small,10,58200,3100,55100,58189,19,1,manual
+12505751,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,small,2,58200,3100,55100,58189,19,1,manual
+12490423,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,small,2,58200,3100,55100,58189,19,1,manual
+12511870,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,small,10,58200,3100,55100,58189,19,1,manual
+12506878,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12508691,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,small,1,58200,3100,55100,58189,19,1,manual
+12496407,54706,"Beef Chuck Short Ribs Dice",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,small,8,58200,3100,55100,58189,19,1,manual
+12547795,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12572219,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,small,10,58200,3100,55100,58189,19,1,manual
+12554460,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12563545,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12522588,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12552844,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,small,4,58200,3100,55100,58189,19,1,manual
+12537015,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,small,3,58200,3100,55100,58189,19,1,manual
+12542334,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12575499,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,small,4,58200,3100,55100,58189,19,1,manual
+12559794,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,small,2,58200,3100,55100,58189,19,1,manual
+12542767,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,small,1,58200,3100,55100,58189,19,1,manual
+12532481,54706,"Beef Chuck Short Ribs Dice",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,small,5,58200,3100,55100,58189,19,1,manual
+12175079,54715,"Beef Crispy Belly",2026-06-12,RO-20260612-49D8,packing,"Justus Steak House Ciwalk",Pack,medium,1,155500,31100,124400,155405,5,600,manual
+12171332,54707,"Beef Oxtail",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,small,10,83900,4700,79200,83853,18,1,manual
+12174874,54707,"Beef Oxtail",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,small,3,83900,4700,79200,83853,18,1,manual
+12165968,54707,"Beef Oxtail",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,small,1,83900,4700,79200,83853,18,1,manual
+12511871,54707,"Beef Oxtail",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,small,8,83900,4700,79200,83853,18,1,manual
+12496408,54707,"Beef Oxtail",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,small,3,83900,4700,79200,83853,18,1,manual
+12507712,54707,"Beef Oxtail",2026-06-17,RO-20260617-F35F,packing,"Tempayan Citarum",Pack,small,15,83900,4700,79200,83853,18,1,manual
+12519661,54707,"Beef Oxtail",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,small,6,83900,4700,79200,83853,18,1,manual
+12575500,54707,"Beef Oxtail",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,small,2,83900,4700,79200,83853,18,1,manual
+12547796,54707,"Beef Oxtail",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,small,2,83900,4700,79200,83853,18,1,manual
+12572220,54707,"Beef Oxtail",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,small,5,83900,4700,79200,83853,18,1,manual
+12563546,54707,"Beef Oxtail",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,small,2,83900,4700,79200,83853,18,1,manual
+12542335,54707,"Beef Oxtail",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,small,15,83900,4700,79200,83853,18,1,manual
+12178088,54708,"Beef Patty",2026-06-12,RO-20260612-FF29,packing,"ASIAN GRILL BIP",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12196938,54708,"Beef Patty",2026-06-12,RO-20260612-7B44,packing,"Justus Steak House Buah Batu",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12177974,54708,"Beef Patty",2026-06-12,RO-20260612-63EB,packing,"Melt Steak d'Botanica",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12178552,54708,"Beef Patty",2026-06-12,RO-20260612-2633,packing,"JUSTUS BIP",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12225294,54708,"Beef Patty",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Pcs,small,30,200,9300,-9100,675587,73,1,manual
+12199054,54708,"Beef Patty",2026-06-12,RO-20260612-342A,packing,"Justus Steak House Paris Van Java",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12222325,54708,"Beef Patty",2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12204464,54708,"Beef Patty",2026-06-12,RO-20260612-68B5,packing,"Justus Steak House Paskal 23",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12196475,54708,"Beef Patty",2026-06-12,RO-20260612-7967,packing,"Justus Steak House Dago",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12177670,54708,"Beef Patty",2026-06-12,RO-20260612-2D78,packing,"Justus Steak House Metro Indah Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12181301,54708,"Beef Patty",2026-06-12,RO-20260612-0F42,packing,"Justus Steak House Festival Citylink",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12176700,54708,"Beef Patty",2026-06-12,RO-20260612-9640,packing,"ASIAN GRILL BEC",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12178356,54708,"Beef Patty",2026-06-12,RO-20260612-622C,packing,"JUSTUS BEC",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12181744,54708,"Beef Patty",2026-06-12,RO-20260612-EF32,packing,"Justus Steak House Ciwalk",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12202631,54708,"Beef Patty",2026-06-12,RO-20260612-0DA9,packing,"Justus Steak House Miko Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12253675,54708,"Beef Patty",2026-06-13,RO-20260613-7756,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,30,200,9300,-9100,675587,73,1,manual
+12235335,54708,"Beef Patty",2026-06-13,RO-20260613-1ABF,packing,"Justus Steak House Metro Indah Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12235601,54708,"Beef Patty",2026-06-13,RO-20260613-C97E,packing,"JUSTUS BEC",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12260813,54708,"Beef Patty",2026-06-13,RO-20260614-CB79,packing,"Justus Steak House Lebak Bulus",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12249048,54708,"Beef Patty",2026-06-13,RO-20260613-602A,packing,"Justus Steak House Miko Mall",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12238046,54708,"Beef Patty",2026-06-13,RO-20260613-9FED,packing,"Melt Steak d'Botanica",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12239647,54708,"Beef Patty",2026-06-13,RO-20260613-D2F2,packing,"Justus Steak House Festival Citylink",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12235637,54708,"Beef Patty",2026-06-13,RO-20260613-5E34,packing,"JUSTUS FCL",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12238399,54708,"Beef Patty",2026-06-13,RO-20260613-36D9,packing,"Justus Steak House Ciwalk",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12234161,54708,"Beef Patty",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12229230,54708,"Beef Patty",2026-06-13,RO-20260613-EC62,packing,"Justus Steak House Cimanuk",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12228674,54708,"Beef Patty",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Pcs,small,30,200,9300,-9100,675587,73,1,manual
+12246234,54708,"Beef Patty",2026-06-13,RO-20260613-D95A,packing,"Justus Steak House Paris Van Java",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12236853,54708,"Beef Patty",2026-06-13,RO-20260613-F86A,packing,"JUSTUS BIP",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12277179,54708,"Beef Patty",2026-06-14,RO-20260614-CA52,packing,"Justus Steak House Ciwalk",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12259552,54708,"Beef Patty",2026-06-14,RO-20260614-518F,packing,"Justus Steak House Cipete",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12283111,54708,"Beef Patty",2026-06-14,RO-20260614-CCD1,packing,"Justus Steak House Festival Citylink",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12290400,54708,"Beef Patty",2026-06-14,RO-20260614-5AE5,packing,"Justus Steak House Buah Batu",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12275693,54708,"Beef Patty",2026-06-14,RO-20260614-B462,packing,"Melt Steak d'Botanica",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12267878,54708,"Beef Patty",2026-06-14,RO-20260614-0CC6,packing,"ASIAN GRILL BEC",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12306085,54708,"Beef Patty",2026-06-14,RO-20260614-D63E,packing,"Justus Steak House Miko Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12275274,54708,"Beef Patty",2026-06-14,RO-20260614-CF44,packing,"ASIAN GRILL BIP",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12299650,54708,"Beef Patty",2026-06-14,RO-20260614-E9A6,packing,"Justus Steak House Dago",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12268319,54708,"Beef Patty",2026-06-14,RO-20260614-5D0D,packing,"JUSTUS BEC",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12323371,54708,"Beef Patty",2026-06-14,RO-20260615-865A,packing,"Justus Steak House Bintaro",Pcs,small,35,200,9300,-9100,675587,73,1,manual
+12270834,54708,"Beef Patty",2026-06-14,RO-20260614-50E7,packing,"JUSTUS FCL",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12274479,54708,"Beef Patty",2026-06-14,RO-20260614-B08B,packing,"Justus Steak House Jawa",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12277534,54708,"Beef Patty",2026-06-14,RO-20260614-7918,packing,"JUSTUS BIP",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12282714,54708,"Beef Patty",2026-06-14,RO-20260614-6E45,packing,"Justus Steak House Cimanuk",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12270341,54708,"Beef Patty",2026-06-14,RO-20260614-239B,packing,"Justus Steak House Metro Indah Mall",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12296951,54708,"Beef Patty",2026-06-14,RO-20260614-84BC,packing,"Justus Steak House Paskal 23",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12349044,54708,"Beef Patty",2026-06-14,RO-20260615-E1AA,packing,"Justus Steak House Paris Van Java",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12358922,54708,"Beef Patty",2026-06-15,RO-20260615-3ABE,packing,"Justus Steak House Paris Van Java",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12352292,54708,"Beef Patty",2026-06-15,RO-20260615-8584,packing,"Justus Steak House Festival Citylink",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12360644,54708,"Beef Patty",2026-06-15,RO-20260615-5117,packing,"Justus Steak House Jawa",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12364515,54708,"Beef Patty",2026-06-15,RO-20260616-CE46,packing,"Justus Steak House Paskal 23",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12351114,54708,"Beef Patty",2026-06-15,RO-20260615-4544,packing,"Melt Steak d'Botanica",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12337952,54708,"Beef Patty",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12330362,54708,"Beef Patty",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12350849,54708,"Beef Patty",2026-06-15,RO-20260615-DD44,packing,"ASIAN GRILL BIP",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12353527,54708,"Beef Patty",2026-06-15,RO-20260615-853B,packing,"Justus Steak House Ciwalk",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12360690,54708,"Beef Patty",2026-06-15,RO-20260615-1A65,packing,"Justus Steak House Miko Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12351176,54708,"Beef Patty",2026-06-15,RO-20260615-0A5B,packing,"JUSTUS BIP",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12356843,54708,"Beef Patty",2026-06-15,RO-20260615-83BC,packing,"Justus Steak House Dago",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12348123,54708,"Beef Patty",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12364958,54708,"Beef Patty",2026-06-16,RO-20260616-F383,packing,"Justus Steak House Paskal 23",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12428346,54708,"Beef Patty",2026-06-16,RO-20260616-9240,packing,"Melt Steak d'Botanica",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12425956,54708,"Beef Patty",2026-06-16,RO-20260616-12B8,packing,"Justus Steak House Metro Indah Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12429415,54708,"Beef Patty",2026-06-16,RO-20260616-A930,packing,"JUSTUS FCL",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12452994,54708,"Beef Patty",2026-06-16,RO-20260616-B9F9,packing,"JUSTUS BEC",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12364661,54708,"Beef Patty",2026-06-16,RO-20260616-AAF9,packing,"ASIAN GRILL BEC",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12464841,54708,"Beef Patty",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12434556,54708,"Beef Patty",2026-06-16,RO-20260616-410E,packing,"JUSTUS BIP",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12460322,54708,"Beef Patty",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12460397,54708,"Beef Patty",2026-06-16,RO-20260616-C4CD,packing,"ASIAN GRILL BEC",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12455264,54708,"Beef Patty",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Pcs,small,30,200,9300,-9100,675587,73,1,manual
+12497648,54708,"Beef Patty",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pcs,small,30,200,9300,-9100,675587,73,1,manual
+12485175,54708,"Beef Patty",2026-06-17,RO-20260617-3CD5,packing,"Melt Steak d'Botanica",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12487843,54708,"Beef Patty",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12506879,54708,"Beef Patty",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12508692,54708,"Beef Patty",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12485451,54708,"Beef Patty",2026-06-17,RO-20260617-7BE3,packing,"Justus Steak House Miko Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12510455,54708,"Beef Patty",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12511872,54708,"Beef Patty",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pcs,small,40,200,9300,-9100,675587,73,1,manual
+12484638,54708,"Beef Patty",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12489556,54708,"Beef Patty",2026-06-17,RO-20260617-5B58,packing,"ASIAN GRILL BIP",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12477869,54708,"Beef Patty",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Pcs,small,40,200,9300,-9100,675587,73,1,manual
+12496409,54708,"Beef Patty",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12519663,54708,"Beef Patty",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12508593,54708,"Beef Patty",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pcs,small,25,200,9300,-9100,675587,73,1,manual
+12490743,54708,"Beef Patty",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12490471,54708,"Beef Patty",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12474064,54708,"Beef Patty",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12536711,54708,"Beef Patty",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12563547,54708,"Beef Patty",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12542768,54708,"Beef Patty",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12525304,54708,"Beef Patty",2026-06-18,RO-20260618-DAE4,packing,"ASIAN GRILL BEC",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12575501,54708,"Beef Patty",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12554461,54708,"Beef Patty",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12522996,54708,"Beef Patty",2026-06-18,RO-20260618-DB50,packing,"Justus Steak House Buah Batu",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12549816,54708,"Beef Patty",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12522589,54708,"Beef Patty",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12536821,54708,"Beef Patty",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Pcs,small,20,200,9300,-9100,675587,73,1,manual
+12547797,54708,"Beef Patty",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12552845,54708,"Beef Patty",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12572221,54708,"Beef Patty",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pcs,small,15,200,9300,-9100,675587,73,1,manual
+12537016,54708,"Beef Patty",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pcs,small,5,200,9300,-9100,675587,73,1,manual
+12542895,54708,"Beef Patty",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Pcs,small,10,200,9300,-9100,675587,73,1,manual
+12170943,54713,"Beef Ragout",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,1,37900,2800,35100,37871,14,225,manual
+12171335,54713,"Beef Ragout",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,37900,2800,35100,37871,14,225,manual
+12506881,54713,"Beef Ragout",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,1,37900,2800,35100,37871,14,225,manual
+12496410,54713,"Beef Ragout",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,3,37900,2800,35100,37871,14,225,manual
+12519664,54713,"Beef Ragout",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,3,37900,2800,35100,37871,14,225,manual
+12508594,54713,"Beef Ragout",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,1,37900,2800,35100,37871,14,225,manual
+12511874,54713,"Beef Ragout",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,5,37900,2800,35100,37871,14,225,manual
+12508693,54713,"Beef Ragout",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,37900,2800,35100,37871,14,225,manual
+12554462,54713,"Beef Ragout",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,2,37900,2800,35100,37871,14,225,manual
+12571846,54713,"Beef Ragout",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,3,37900,2800,35100,37871,14,225,manual
+12547798,54713,"Beef Ragout",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,2,37900,2800,35100,37871,14,225,manual
+12575502,54713,"Beef Ragout",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,2,37900,2800,35100,37871,14,225,manual
+12563549,54713,"Beef Ragout",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,2,37900,2800,35100,37871,14,225,manual
+12542336,54714,"Beef Sei",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,2,129700,43300,86400,129619,3,1500,manual
+12434388,52503,"Beras Jepang",2026-06-16,RO-20260616-C6C8,packing,"Justus Steak House Festival Citylink",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12460296,52503,"Beras Jepang",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,5,37600,38100,-500,38100,1,1000,auto
+12425929,52503,"Beras Jepang",2026-06-16,RO-20260616-12B8,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,3,37600,38100,-500,38100,1,1000,auto
+12436957,52503,"Beras Jepang",2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12455226,52503,"Beras Jepang",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12464811,52503,"Beras Jepang",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Kilogram,medium,8,37600,38100,-500,38100,1,1000,auto
+12485282,52503,"Beras Jepang",2026-06-16,RO-20260617-280D,packing,"Justus Steak House Paris Van Java",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12428029,52503,"Beras Jepang",2026-06-16,RO-20260616-B544,packing,"Justus Steak House Ciwalk",Kilogram,medium,1.5,37600,38100,-500,38100,1,1000,auto
+12437051,52503,"Beras Jepang",2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12442060,52503,"Beras Jepang",2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Kilogram,medium,3,37600,38100,-500,38100,1,1000,auto
+12484568,52503,"Beras Jepang",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Kilogram,medium,4,37600,38100,-500,38100,1,1000,auto
+12496374,52503,"Beras Jepang",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Kilogram,medium,3,37600,38100,-500,38100,1,1000,auto
+12519613,52503,"Beras Jepang",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Kilogram,medium,1.5,37600,38100,-500,38100,1,1000,auto
+12485218,52503,"Beras Jepang",2026-06-17,RO-20260617-C64C,packing,"Justus Steak House Paskal 23",Kilogram,medium,1,37600,38100,-500,38100,1,1000,auto
+12477834,52503,"Beras Jepang",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Kilogram,medium,3.5,37600,38100,-500,38100,1,1000,auto
+12511781,52503,"Beras Jepang",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Kilogram,medium,5,37600,38100,-500,38100,1,1000,auto
+12485489,52503,"Beras Jepang",2026-06-17,RO-20260617-2414,packing,"Justus Steak House Cimanuk",Kilogram,medium,1.5,37600,38100,-500,38100,1,1000,auto
+12474029,52503,"Beras Jepang",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,4,37600,38100,-500,38100,1,1000,auto
+12559785,52503,"Beras Jepang",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Kilogram,medium,2.5,37600,38100,-500,38100,1,1000,auto
+12536965,52503,"Beras Jepang",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Kilogram,medium,3,37600,38100,-500,38100,1,1000,auto
+12575473,52503,"Beras Jepang",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,4,37600,38100,-500,38100,1,1000,auto
+12554438,52503,"Beras Jepang",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Kilogram,medium,5,37600,38100,-500,38100,1,1000,auto
+12572195,52503,"Beras Jepang",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Kilogram,medium,3,37600,38100,-500,38100,1,1000,auto
+12556692,52503,"Beras Jepang",2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Kilogram,medium,1.5,37600,38100,-500,38100,1,1000,auto
+12563509,52503,"Beras Jepang",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Kilogram,medium,4,37600,38100,-500,38100,1,1000,auto
+12547770,52503,"Beras Jepang",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12571808,52503,"Beras Jepang",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Kilogram,medium,6,37600,38100,-500,38100,1,1000,auto
+12552815,52503,"Beras Jepang",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Kilogram,medium,2,37600,38100,-500,38100,1,1000,auto
+12542733,52503,"Beras Jepang",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,1,37600,38100,-500,38100,1,1000,auto
+12532462,52503,"Beras Jepang",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Kilogram,medium,4,37600,38100,-500,38100,1,1000,auto
+12171295,52335,"Biji Wijen",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,1,39200,39300,-100,39300,1,1000,auto
+12171296,52337,"Black Pepper",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,0.25,201600,201700,-100,201700,1,1000,auto
+12337859,52337,"Black Pepper",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Kilogram,medium,0.25,201600,201700,-100,201700,1,1000,auto
+12460278,52337,"Black Pepper",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,0.25,201600,201700,-100,201700,1,1000,auto
+12477817,52337,"Black Pepper",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Kilogram,medium,0.5,201600,201700,-100,201700,1,1000,auto
+12170935,54668,"Blackpepper Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12174863,54668,"Blackpepper Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,15,38700,2800,35900,38622,14,500,manual
+12175077,54668,"Blackpepper Sauce",2026-06-12,RO-20260612-49D8,packing,"Justus Steak House Ciwalk",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12171317,54668,"Blackpepper Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,14,38700,2800,35900,38622,14,500,manual
+12165953,54668,"Blackpepper Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,14,38700,2800,35900,38622,14,500,manual
+12487303,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-438F,packing,"JUSTUS BEC",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12496390,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,12,38700,2800,35900,38622,14,500,manual
+12506871,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,4,38700,2800,35900,38622,14,500,manual
+12487840,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Pack,medium,1,38700,2800,35900,38622,14,500,manual
+12505742,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12508694,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12510450,54668,"Blackpepper Sauce",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pack,medium,8,38700,2800,35900,38622,14,500,manual
+12508583,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,5,38700,2800,35900,38622,14,500,manual
+12497632,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,8,38700,2800,35900,38622,14,500,manual
+12490413,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12511850,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,20,38700,2800,35900,38622,14,500,manual
+12519670,54668,"Blackpepper Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,12,38700,2800,35900,38622,14,500,manual
+12490738,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Pack,medium,1,38700,2800,35900,38622,14,500,manual
+12490466,54668,"Blackpepper Sauce",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pack,medium,1,38700,2800,35900,38622,14,500,manual
+12556703,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Pack,medium,8,38700,2800,35900,38622,14,500,manual
+12563530,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,15,38700,2800,35900,38622,14,500,manual
+12522578,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12538434,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12522950,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-9171,packing,"Justus Steak House Cimanuk",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12532470,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,8,38700,2800,35900,38622,14,500,manual
+12547782,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,4,38700,2800,35900,38622,14,500,manual
+12552832,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,4,38700,2800,35900,38622,14,500,manual
+12571830,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,8,38700,2800,35900,38622,14,500,manual
+12536705,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pack,medium,1,38700,2800,35900,38622,14,500,manual
+12559789,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,4,38700,2800,35900,38622,14,500,manual
+12537006,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12554449,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,10,38700,2800,35900,38622,14,500,manual
+12520165,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,6,38700,2800,35900,38622,14,500,manual
+12542892,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12572206,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,6,38700,2800,35900,38622,14,500,manual
+12549814,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Pack,medium,2,38700,2800,35900,38622,14,500,manual
+12542760,54668,"Blackpepper Sauce",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,medium,3,38700,2800,35900,38622,14,500,manual
+12575485,54668,"Blackpepper Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,10,38700,2800,35900,38622,14,500,manual
+12163376,52591,"Boba Mangga",2026-06-12,RO-20260612-B74F,packing,"Tempayan Citarum",Kilogram,medium,1,100800,100900,-100,100900,1,1000,auto
+12163375,52670,"Boba Strawberry",2026-06-12,RO-20260612-B74F,packing,"Tempayan Citarum",Pack,medium,1,100800,100900,-100,100900,1,1000,auto
+12171318,54669,"Bolognaise Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,22000,2800,19200,21924,8,250,manual
+12174864,54669,"Bolognaise Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,4,22000,2800,19200,21924,8,250,manual
+12348411,54669,"Bolognaise Sauce",2026-06-15,RO-20260615-F287,approved,"Melt Steak d'Botanica",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12497633,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,5,22000,2800,19200,21924,8,250,manual
+12511851,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,10,22000,2800,19200,21924,8,250,manual
+12519671,54669,"Bolognaise Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,3,22000,2800,19200,21924,8,250,manual
+12490739,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12490467,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12487304,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-438F,packing,"JUSTUS BEC",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12496391,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,3,22000,2800,19200,21924,8,250,manual
+12487841,54669,"Bolognaise Sauce",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Pack,medium,2,22000,2800,19200,21924,8,250,manual
+12552833,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12571831,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,4,22000,2800,19200,21924,8,250,manual
+12554450,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,3,22000,2800,19200,21924,8,250,manual
+12520166,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,3,22000,2800,19200,21924,8,250,manual
+12572207,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,3,22000,2800,19200,21924,8,250,manual
+12549815,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Pack,medium,2,22000,2800,19200,21924,8,250,manual
+12575486,54669,"Bolognaise Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,5,22000,2800,19200,21924,8,250,manual
+12563531,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,5,22000,2800,19200,21924,8,250,manual
+12538435,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12532471,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,2,22000,2800,19200,21924,8,250,manual
+12547783,54669,"Bolognaise Sauce",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,1,22000,2800,19200,21924,8,250,manual
+12177851,52339,"Buah Peach Can",2026-06-12,RO-20260612-7D06,packing,"Justus Steakhouse The Barn",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12175124,52339,"Buah Peach Can",2026-06-12,RO-20260612-6C24,packing,"Justus Steak House Cimanuk",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12180824,52339,"Buah Peach Can",2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12186984,52339,"Buah Peach Can",2026-06-12,RO-20260612-CE31,packing,"Justus Steakhouse SMB",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12458515,52339,"Buah Peach Can",2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12425779,52339,"Buah Peach Can",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12422291,52339,"Buah Peach Can",2026-06-16,RO-20260616-948B,packing,"Justus Steak House Paris Van Java",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12436848,52339,"Buah Peach Can",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12448043,52339,"Buah Peach Can",2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12455536,52339,"Buah Peach Can",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12433397,52339,"Buah Peach Can",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Can,medium,2,61600,61700,-100,61700,1,480,auto
+12425172,52339,"Buah Peach Can",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Can,medium,1,61600,61700,-100,61700,1,480,auto
+12160778,53079,"Buah Strawberry Frozen",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12496564,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-177E,packing,"Justus Steak House Cimanuk",Kilogram,medium,1,22400,23600,-1200,23520,1,1000,manual
+12485537,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-04C3,packing,"Justus Steak House Ciwalk",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12497513,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-94CC,packing,"Justus Steak House Paskal 23",Kilogram,medium,3,22400,23600,-1200,23520,1,1000,manual
+12504767,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-F7D4,packing,"Justus Steak House Buah Batu",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12488887,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-33A4,packing,"Justus Steak House Jawa",Kilogram,medium,1,22400,23600,-1200,23520,1,1000,manual
+12486346,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-9750,packing,"Justus Steak House Dago",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12486297,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-D9FB,packing,"Justus Steak House Paris Van Java",Kilogram,medium,3,22400,23600,-1200,23520,1,1000,manual
+12490589,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-A1D3,packing,"Justus Steak House Festival Citylink",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12489349,53079,"Buah Strawberry Frozen",2026-06-17,RO-20260617-B844,packing,"Justus Steak House Alam Sutera",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12526937,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-02EB,packing,"Justus Steak House Ciwalk",Kilogram,medium,1,22400,23600,-1200,23520,1,1000,manual
+12532750,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-11F5,packing,"JUSTUS BIP",Kilogram,medium,1,22400,23600,-1200,23520,1,1000,manual
+12540177,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-CEEB,packing,"Justus Steak House Cimanuk",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12554835,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-6010,packing,"Justus Steak House Jawa",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12524926,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-DFFC,packing,"Justus Steak House Paris Van Java",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12526387,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-DE25,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,4,22400,23600,-1200,23520,1,1000,manual
+12524967,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-ADB0,packing,"JUSTUS BEC",Kilogram,medium,1,22400,23600,-1200,23520,1,1000,manual
+12530060,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-CA15,packing,"Justus Steak House Dago",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12521219,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-DC4D,packing,"Justus Steak House Bintaro",Kilogram,medium,4,22400,23600,-1200,23520,1,1000,manual
+12527061,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-A4C8,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12545167,53079,"Buah Strawberry Frozen",2026-06-18,RO-20260618-66BC,packing,"Justus Steak House Miko Mall",Kilogram,medium,2,22400,23600,-1200,23520,1,1000,manual
+12170930,53265,"Butter Salted",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,4,62500,87600,-25100,87573,1,200,manual
+12171312,53265,"Butter Salted",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,15,62500,87600,-25100,87573,1,200,manual
+12165948,53265,"Butter Salted",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,10,62500,87600,-25100,87573,1,200,manual
+12508677,53265,"Butter Salted",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,62500,87600,-25100,87573,1,200,manual
+12506864,53265,"Butter Salted",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,6,62500,87600,-25100,87573,1,200,manual
+12511832,53265,"Butter Salted",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,15,62500,87600,-25100,87573,1,200,manual
+12497624,53265,"Butter Salted",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,10,62500,87600,-25100,87573,1,200,manual
+12490408,53265,"Butter Salted",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,2,62500,87600,-25100,87573,1,200,manual
+12519606,53265,"Butter Salted",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,20,62500,87600,-25100,87573,1,200,manual
+12508576,53265,"Butter Salted",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,5,62500,87600,-25100,87573,1,200,manual
+12542753,53265,"Butter Salted",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,62500,87600,-25100,87573,1,200,manual
+12522570,53265,"Butter Salted",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,1,62500,87600,-25100,87573,1,200,manual
+12563520,53265,"Butter Salted",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,15,62500,87600,-25100,87573,1,200,manual
+12520161,53265,"Butter Salted",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,3,62500,87600,-25100,87573,1,200,manual
+12575478,53265,"Butter Salted",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,10,62500,87600,-25100,87573,1,200,manual
+12552827,53265,"Butter Salted",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,2,62500,87600,-25100,87573,1,200,manual
+12547775,53265,"Butter Salted",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,5,62500,87600,-25100,87573,1,200,manual
+12532466,53265,"Butter Salted",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,1,62500,87600,-25100,87573,1,200,manual
+12571821,53265,"Butter Salted",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,10,62500,87600,-25100,87573,1,200,manual
+12174869,54676,"Cheese Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,10,59000,3300,55700,58901,18,250,manual
+12165958,54676,"Cheese Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,6,59000,3300,55700,58901,18,250,manual
+12171323,54676,"Cheese Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,8,59000,3300,55700,58901,18,250,manual
+12170939,54676,"Cheese Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,2,59000,3300,55700,58901,18,250,manual
+12497638,54676,"Cheese Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,4,59000,3300,55700,58901,18,250,manual
+12506876,54676,"Cheese Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,2,59000,3300,55700,58901,18,250,manual
+12505747,54676,"Cheese Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12511856,54676,"Cheese Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,12,59000,3300,55700,58901,18,250,manual
+12490417,54676,"Cheese Sauce",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12496396,54676,"Cheese Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,8,59000,3300,55700,58901,18,250,manual
+12519672,54676,"Cheese Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,8,59000,3300,55700,58901,18,250,manual
+12571836,54676,"Cheese Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,8,59000,3300,55700,58901,18,250,manual
+12547786,54676,"Cheese Sauce",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,2,59000,3300,55700,58901,18,250,manual
+12575491,54676,"Cheese Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,6,59000,3300,55700,58901,18,250,manual
+12532475,54676,"Cheese Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,2,59000,3300,55700,58901,18,250,manual
+12559791,54676,"Cheese Sauce",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,3,59000,3300,55700,58901,18,250,manual
+12537010,54676,"Cheese Sauce",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12563536,54676,"Cheese Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,5,59000,3300,55700,58901,18,250,manual
+12552837,54676,"Cheese Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12542762,54676,"Cheese Sauce",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12522582,54676,"Cheese Sauce",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,1,59000,3300,55700,58901,18,250,manual
+12165878,53043,"Chicken Breast",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Kilogram,medium,8,57200,47600,9600,47600,1,1000,manual
+12174800,53043,"Chicken Breast",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,5,57200,47600,9600,47600,1,1000,manual
+12170897,53043,"Chicken Breast",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12519654,53043,"Chicken Breast",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Kilogram,medium,10,57200,47600,9600,47600,1,1000,manual
+12490455,53043,"Chicken Breast",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Kilogram,medium,1,57200,47600,9600,47600,1,1000,manual
+12510433,53043,"Chicken Breast",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12487831,53043,"Chicken Breast",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12506833,53043,"Chicken Breast",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12508546,53043,"Chicken Breast",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Kilogram,medium,4,57200,47600,9600,47600,1,1000,manual
+12490725,53043,"Chicken Breast",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12487292,53043,"Chicken Breast",2026-06-17,RO-20260617-438F,packing,"JUSTUS BEC",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12505721,53043,"Chicken Breast",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12490381,53043,"Chicken Breast",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12511816,53043,"Chicken Breast",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Kilogram,medium,10,57200,47600,9600,47600,1,1000,manual
+12508669,53043,"Chicken Breast",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12496331,53043,"Chicken Breast",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Kilogram,medium,5,57200,47600,9600,47600,1,1000,manual
+12497591,53043,"Chicken Breast",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Kilogram,medium,10,57200,47600,9600,47600,1,1000,manual
+12559753,53043,"Chicken Breast",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12554386,53043,"Chicken Breast",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12549803,53043,"Chicken Breast",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12532416,53043,"Chicken Breast",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Kilogram,medium,8,57200,47600,9600,47600,1,1000,manual
+12572151,53043,"Chicken Breast",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Kilogram,medium,5,57200,47600,9600,47600,1,1000,manual
+12536983,53043,"Chicken Breast",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12547725,53043,"Chicken Breast",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12520140,53043,"Chicken Breast",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12522561,53043,"Chicken Breast",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12542874,53043,"Chicken Breast",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12563460,53043,"Chicken Breast",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Kilogram,medium,6,57200,47600,9600,47600,1,1000,manual
+12538420,53043,"Chicken Breast",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12571757,53043,"Chicken Breast",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Kilogram,medium,6,57200,47600,9600,47600,1,1000,manual
+12552764,53043,"Chicken Breast",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Kilogram,medium,3,57200,47600,9600,47600,1,1000,manual
+12575436,53043,"Chicken Breast",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,10,57200,47600,9600,47600,1,1000,manual
+12556676,53043,"Chicken Breast",2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Kilogram,medium,10,57200,47600,9600,47600,1,1000,manual
+12536691,53043,"Chicken Breast",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Kilogram,medium,1,57200,47600,9600,47600,1,1000,manual
+12542743,53043,"Chicken Breast",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,2,57200,47600,9600,47600,1,1000,manual
+12542337,54717,"Chicken Sei",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,2,39500,5000,34500,39413,8,4000,manual
+12174833,52345,"Chilli Flake",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12225218,52345,"Chilli Flake",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12165917,52345,"Chilli Flake",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12330321,52345,"Chilli Flake",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12460280,52345,"Chilli Flake",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12572180,52345,"Chilli Flake",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Kilogram,medium,0.25,156800,156900,-100,156900,1,1000,auto
+12488799,52347,"Chilli Sachet",2026-06-17,RO-20260617-CC7B,packing,"Justus Steak House Bintaro",Box,medium,0.25,144500,145600,-1100,145600,1,480,auto
+12527955,52347,"Chilli Sachet",2026-06-18,RO-20260618-72B2,packing,"Justus Steak House Dago",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12525291,52347,"Chilli Sachet",2026-06-18,RO-20260618-DAE4,packing,"ASIAN GRILL BEC",Box,medium,0.5,114900,145600,-30700,145600,1,480,auto
+12535824,52347,"Chilli Sachet",2026-06-18,RO-20260618-2B20,packing,"Justus Steak House Paris Van Java",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12583936,52347,"Chilli Sachet",2026-06-18,RO-20260618-5163,packing,"Justus Steakhouse SMB",Box,medium,0.24,114900,145600,-30700,145600,1,480,auto
+12545526,52347,"Chilli Sachet",2026-06-18,RO-20260618-48BE,packing,"Melt Steak d'Botanica",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12531564,52347,"Chilli Sachet",2026-06-18,RO-20260618-2AB2,packing,"Justus Steak House Miko Mall",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12527010,52347,"Chilli Sachet",2026-06-18,RO-20260618-B547,packing,"Justus Steak House Jawa",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12524554,52347,"Chilli Sachet",2026-06-18,RO-20260618-E8F7,packing,"Justus Steak House Buah Batu",Box,medium,0.25,114900,145600,-30700,145600,1,480,auto
+12327962,52461,"Chocolate Compound",2026-06-15,RO-20260615-0968,packing,"Justus Steakhouse SMB",Pack,medium,1,84000,84100,-100,84100,1,1000,auto
+12425182,52461,"Chocolate Compound",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Pack,medium,1,84000,84100,-100,84100,1,1000,auto
+12425791,52461,"Chocolate Compound",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,84000,84100,-100,84100,1,1000,auto
+12387991,52461,"Chocolate Compound",2026-06-16,RO-20260616-C989,packing,"Justus Steak House Buah Batu",Pack,medium,1,84000,84100,-100,84100,1,1000,auto
+12455538,52461,"Chocolate Compound",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,84000,84100,-100,84100,1,1000,auto
+12199052,54692,"Coating Goreng",2026-06-12,RO-20260612-342A,packing,"Justus Steak House Paris Van Java",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12175232,54692,"Coating Goreng",2026-06-12,RO-20260612-215F,packing,"Justus Steak House Paris Van Java",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12249045,54692,"Coating Goreng",2026-06-13,RO-20260613-602A,packing,"Justus Steak House Miko Mall",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12229226,54692,"Coating Goreng",2026-06-13,RO-20260613-EC62,packing,"Justus Steak House Cimanuk",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12228668,54692,"Coating Goreng",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12259547,54692,"Coating Goreng",2026-06-14,RO-20260614-518F,packing,"Justus Steak House Cipete",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12296949,54692,"Coating Goreng",2026-06-14,RO-20260614-84BC,packing,"Justus Steak House Paskal 23",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12306082,54692,"Coating Goreng",2026-06-14,RO-20260614-D63E,packing,"Justus Steak House Miko Mall",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12323366,54692,"Coating Goreng",2026-06-14,RO-20260615-865A,packing,"Justus Steak House Bintaro",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12282709,54692,"Coating Goreng",2026-06-14,RO-20260614-6E45,packing,"Justus Steak House Cimanuk",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12330376,54692,"Coating Goreng",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12337942,54692,"Coating Goreng",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12437008,54692,"Coating Goreng",2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12428068,54692,"Coating Goreng",2026-06-16,RO-20260616-B544,packing,"Justus Steak House Ciwalk",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12455256,54692,"Coating Goreng",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12477865,54692,"Coating Goreng",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12484633,54692,"Coating Goreng",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12496402,54692,"Coating Goreng",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12563542,54692,"Coating Goreng",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,1,3900,4600,-700,4580,1,70,manual
+12547791,54692,"Coating Goreng",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12542345,54692,"Coating Goreng",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,2,3900,4600,-700,4580,1,70,manual
+12250712,52353,"Cokelat Powder",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Kilogram,medium,1,246400,246500,-100,246500,1,1000,auto
+12425781,52353,"Cokelat Powder",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,1,246400,246500,-100,246500,1,1000,auto
+12455540,52353,"Cokelat Powder",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,1,246400,246500,-100,246500,1,1000,auto
+12436856,52353,"Cokelat Powder",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Kilogram,medium,1,246400,246500,-100,246500,1,1000,auto
+12425174,52353,"Cokelat Powder",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Kilogram,medium,2,246400,246500,-100,246500,1,1000,auto
+12433400,52353,"Cokelat Powder",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Kilogram,medium,1,246400,246500,-100,246500,1,1000,auto
+12181297,54682,"Dressing Salad",2026-06-12,RO-20260612-0F42,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12222317,54682,"Dressing Salad",2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12199049,54682,"Dressing Salad",2026-06-12,RO-20260612-342A,packing,"Justus Steak House Paris Van Java",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12196467,54682,"Dressing Salad",2026-06-12,RO-20260612-7967,packing,"Justus Steak House Dago",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12225287,54682,"Dressing Salad",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12204454,54682,"Dressing Salad",2026-06-12,RO-20260612-68B5,packing,"Justus Steak House Paskal 23",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12202626,54682,"Dressing Salad",2026-06-12,RO-20260612-0DA9,packing,"Justus Steak House Miko Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12234152,54682,"Dressing Salad",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12246227,54682,"Dressing Salad",2026-06-13,RO-20260613-D95A,packing,"Justus Steak House Paris Van Java",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12247692,54682,"Dressing Salad",2026-06-13,RO-20260613-F3F3,packing,"Justus Steak House Dago",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12253664,54682,"Dressing Salad",2026-06-13,RO-20260613-7756,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12239640,54682,"Dressing Salad",2026-06-13,RO-20260613-D2F2,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12238394,54682,"Dressing Salad",2026-06-13,RO-20260613-36D9,packing,"Justus Steak House Ciwalk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12260523,54682,"Dressing Salad",2026-06-13,RO-20260614-906B,packing,"Justus Steak House Paskal 23",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12228664,54682,"Dressing Salad",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12236692,54682,"Dressing Salad",2026-06-13,RO-20260613-0306,packing,"Justus Steak House Jawa",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12229223,54682,"Dressing Salad",2026-06-13,RO-20260613-EC62,packing,"Justus Steak House Cimanuk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12349037,54682,"Dressing Salad",2026-06-14,RO-20260615-E1AA,packing,"Justus Steak House Paris Van Java",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12274473,54682,"Dressing Salad",2026-06-14,RO-20260614-B08B,packing,"Justus Steak House Jawa",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12277175,54682,"Dressing Salad",2026-06-14,RO-20260614-CA52,packing,"Justus Steak House Ciwalk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12270335,54682,"Dressing Salad",2026-06-14,RO-20260614-239B,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12299645,54682,"Dressing Salad",2026-06-14,RO-20260614-E9A6,packing,"Justus Steak House Dago",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12323361,54682,"Dressing Salad",2026-06-14,RO-20260615-865A,packing,"Justus Steak House Bintaro",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12296946,54682,"Dressing Salad",2026-06-14,RO-20260614-84BC,packing,"Justus Steak House Paskal 23",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12290392,54682,"Dressing Salad",2026-06-14,RO-20260614-5AE5,packing,"Justus Steak House Buah Batu",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12283108,54682,"Dressing Salad",2026-06-14,RO-20260614-CCD1,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12259542,54682,"Dressing Salad",2026-06-14,RO-20260614-518F,packing,"Justus Steak House Cipete",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12352285,54682,"Dressing Salad",2026-06-15,RO-20260615-8584,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12348139,54682,"Dressing Salad",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12364525,54682,"Dressing Salad",2026-06-15,RO-20260616-CE46,packing,"Justus Steak House Paskal 23",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12350657,54682,"Dressing Salad",2026-06-15,RO-20260615-2533,packing,"Justus Steak House Cimanuk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12360685,54682,"Dressing Salad",2026-06-15,RO-20260615-1A65,packing,"Justus Steak House Miko Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12330377,54682,"Dressing Salad",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12356399,54682,"Dressing Salad",2026-06-15,RO-20260615-67EF,packing,"Justus Steak House Buah Batu",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12356835,54682,"Dressing Salad",2026-06-15,RO-20260615-83BC,packing,"Justus Steak House Dago",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12337938,54682,"Dressing Salad",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12358914,54682,"Dressing Salad",2026-06-15,RO-20260615-3ABE,packing,"Justus Steak House Paris Van Java",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12360641,54682,"Dressing Salad",2026-06-15,RO-20260615-5117,packing,"Justus Steak House Jawa",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12434401,54682,"Dressing Salad",2026-06-16,RO-20260616-C6C8,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12437067,54682,"Dressing Salad",2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12464833,54682,"Dressing Salad",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12428060,54682,"Dressing Salad",2026-06-16,RO-20260616-B544,packing,"Justus Steak House Ciwalk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12455251,54682,"Dressing Salad",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12460312,54682,"Dressing Salad",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12460118,54682,"Dressing Salad",2026-06-16,RO-20260616-7DB3,packing,"Justus Steak House Cimanuk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12485310,54682,"Dressing Salad",2026-06-16,RO-20260617-280D,packing,"Justus Steak House Paris Van Java",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12511858,54682,"Dressing Salad",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12508687,54682,"Dressing Salad",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12497639,54682,"Dressing Salad",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12474053,54682,"Dressing Salad",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12505748,54682,"Dressing Salad",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12484628,54682,"Dressing Salad",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12477859,54682,"Dressing Salad",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12519680,54682,"Dressing Salad",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12490418,54682,"Dressing Salad",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12496397,54682,"Dressing Salad",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12563537,54682,"Dressing Salad",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12552838,54682,"Dressing Salad",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12554455,54682,"Dressing Salad",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12575493,54682,"Dressing Salad",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12522583,54682,"Dressing Salad",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12571837,54682,"Dressing Salad",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12532476,54682,"Dressing Salad",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12559792,54682,"Dressing Salad",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12572211,54682,"Dressing Salad",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,2,23700,47300,-23600,94544,2,500,manual
+12547788,54682,"Dressing Salad",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,1,23700,47300,-23600,94544,2,500,manual
+12171337,54730,"Duck Confit",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,2,42200,44200,-2000,883504,20,1,manual
+12222328,54730,"Duck Confit",2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12234405,54730,"Duck Confit",2026-06-13,RO-20260613-9767,packing,"Justus Steak House Cipete",Pcs,small,2,2200,44200,-42000,883504,20,1,manual
+12234163,54730,"Duck Confit",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Pcs,small,2,2200,44200,-42000,883504,20,1,manual
+12259554,54730,"Duck Confit",2026-06-14,RO-20260614-518F,packing,"Justus Steak House Cipete",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12348127,54730,"Duck Confit",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pcs,small,5,2200,44200,-42000,883504,20,1,manual
+12356845,54730,"Duck Confit",2026-06-15,RO-20260615-83BC,packing,"Justus Steak House Dago",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12455266,54730,"Duck Confit",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12442077,54730,"Duck Confit",2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12460325,54730,"Duck Confit",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12511876,54730,"Duck Confit",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pcs,small,2,2200,44200,-42000,883504,20,1,manual
+12474068,54730,"Duck Confit",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,4,2200,44200,-42000,883504,20,1,manual
+12496411,54730,"Duck Confit",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pcs,small,2,2200,44200,-42000,883504,20,1,manual
+12519666,54730,"Duck Confit",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12547800,54730,"Duck Confit",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pcs,small,1,2200,44200,-42000,883504,20,1,manual
+12171336,54729,"Duck Crispy",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,4,37800,1900,35900,37746,20,1,manual
+12165970,54729,"Duck Crispy",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pcs,small,1,37800,1900,35900,37746,20,1,manual
+12170944,54729,"Duck Crispy",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pcs,small,1,37800,1900,35900,37746,20,1,manual
+12506882,54729,"Duck Crispy",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pcs,small,2,37800,1900,35900,37746,20,1,manual
+12519667,54729,"Duck Crispy",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pcs,small,5,37800,1900,35900,37746,20,1,manual
+12511875,54729,"Duck Crispy",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pcs,small,8,37800,1900,35900,37746,20,1,manual
+12559795,54729,"Duck Crispy",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pcs,small,2,37800,1900,35900,37746,20,1,manual
+12575503,54729,"Duck Crispy",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pcs,small,3,37800,1900,35900,37746,20,1,manual
+12563550,54729,"Duck Crispy",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pcs,small,4,37800,1900,35900,37746,20,1,manual
+12572222,54729,"Duck Crispy",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pcs,small,3,37800,1900,35900,37746,20,1,manual
+12547799,54729,"Duck Crispy",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pcs,small,3,37800,1900,35900,37746,20,1,manual
+12225237,52660,Guacamole,2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Botol,medium,2,58600,89200,-30600,89200,1,300,auto
+12165940,52660,Guacamole,2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Botol,medium,1,58600,89200,-30600,89200,1,300,auto
+12228648,52660,Guacamole,2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Botol,medium,2,58600,89200,-30600,89200,1,300,auto
+12253644,52660,Guacamole,2026-06-13,RO-20260613-7756,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,2,58900,89200,-30300,89200,1,300,auto
+12234124,52660,Guacamole,2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Botol,medium,1,58600,89200,-30600,89200,1,300,auto
+12337880,52660,Guacamole,2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12348071,52660,Guacamole,2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12425958,52660,Guacamole,2026-06-16,RO-20260616-12B8,packing,"Justus Steak House Metro Indah Mall",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12464814,52660,Guacamole,2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12436961,52660,Guacamole,2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12428030,52660,Guacamole,2026-06-16,RO-20260616-B544,packing,"Justus Steak House Ciwalk",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12484571,52660,Guacamole,2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Botol,medium,1,58900,89200,-30300,89200,1,300,auto
+12511788,52660,Guacamole,2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Botol,medium,3,62300,89200,-26900,89200,1,300,auto
+12496379,52660,Guacamole,2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Botol,medium,2,62300,89200,-26900,89200,1,300,auto
+12572197,52660,Guacamole,2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Botol,medium,2,62300,89200,-26900,89200,1,300,auto
+12563513,52660,Guacamole,2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Botol,medium,2,62300,89200,-26900,89200,1,300,auto
+12571812,52660,Guacamole,2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Botol,medium,1,62300,89200,-26900,89200,1,300,auto
+12556694,52660,Guacamole,2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Botol,medium,1,62300,89200,-26900,89200,1,300,auto
+12575474,52660,Guacamole,2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Botol,medium,2,62300,89200,-26900,89200,1,300,auto
+12552820,52660,Guacamole,2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Botol,medium,1,62300,89200,-26900,89200,1,300,auto
+12234391,52369,"Gula Merah",2026-06-13,RO-20260613-4663,packing,"Tempayan Citarum",Kilogram,medium,1,28000,28100,-100,28100,1,1000,auto
+12424131,52555,"Gula Putih Sachet SH",2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,1,93300,73400,19900,73400,1,250,auto
+12524565,52555,"Gula Putih Sachet SH",2026-06-18,RO-20260618-E8F7,packing,"Justus Steak House Buah Batu",Pack,medium,1,93300,73400,19900,73400,1,250,auto
+12555030,52555,"Gula Putih Sachet SH",2026-06-18,RO-20260618-9C32,packing,"Justus Steak House Festival Citylink",Pack,medium,1,93300,73400,19900,73400,1,250,auto
+12174851,52736,Hairnet,2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12222262,52736,Hairnet,2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12175008,52736,Hairnet,2026-06-12,RO-20260612-083A,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12260760,52736,Hairnet,2026-06-13,RO-20260614-CB79,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12348074,52736,Hairnet,2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12424136,52736,Hairnet,2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,2,44800,44900,-100,44900,1,100,auto
+12442063,52736,Hairnet,2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12424443,52736,Hairnet,2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12430571,52736,Hairnet,2026-06-16,RO-20260616-368A,packing,"Justus Steak House Paskal 23",Pack,medium,1,44800,44900,-100,44900,1,100,auto
+12474037,52736,Hairnet,2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,44800,44900,-100,44900,1,100,auto
+12165942,52732,"Hands Glove Rubber",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12222261,52732,"Hands Glove Rubber",2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Pack,medium,2,78400,78500,-100,78500,1,100,auto
+12163384,52732,"Hands Glove Rubber",2026-06-12,RO-20260612-B74F,packing,"Tempayan Citarum",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12175006,52732,"Hands Glove Rubber",2026-06-12,RO-20260612-083A,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,78400,78500,-100,78500,1,100,auto
+12234127,52732,"Hands Glove Rubber",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12234410,52732,"Hands Glove Rubber",2026-06-13,RO-20260613-AC65,packing,"Justus Steak House Jawa",Pack,medium,3,78400,78500,-100,78500,1,100,auto
+12228650,52732,"Hands Glove Rubber",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Pack,medium,3,78400,78500,-100,78500,1,100,auto
+12324641,52732,"Hands Glove Rubber",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,2,78400,78500,-100,78500,1,100,auto
+12330381,52732,"Hands Glove Rubber",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12348099,52732,"Hands Glove Rubber",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12424441,52732,"Hands Glove Rubber",2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12425841,52732,"Hands Glove Rubber",2026-06-16,RO-20260616-3CE9,packing,"Justus Steak House Festival Citylink",Pack,medium,2,78400,78500,-100,78500,1,100,auto
+12441975,52732,"Hands Glove Rubber",2026-06-16,RO-20260616-7244,packing,"Tempayan Citarum",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12447221,52732,"Hands Glove Rubber",2026-06-16,RO-20260616-4C1E,packing,"Justus Steak House Miko Mall",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12484573,52732,"Hands Glove Rubber",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Pack,medium,1,78400,78500,-100,78500,1,100,auto
+12477838,52732,"Hands Glove Rubber",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Pack,medium,3,78400,78500,-100,78500,1,100,auto
+12572199,52732,"Hands Glove Rubber",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,2,78400,78500,-100,78500,1,100,auto
+12163378,52375,"House Blend",2026-06-12,RO-20260612-B74F,packing,"Tempayan Citarum",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12177854,52375,"House Blend",2026-06-12,RO-20260612-7D06,packing,"Justus Steakhouse The Barn",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12180843,52375,"House Blend",2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12250714,52375,"House Blend",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12436857,52375,"House Blend",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12433403,52375,"House Blend",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12421194,52375,"House Blend",2026-06-16,RO-20260616-76C2,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12457240,52375,"House Blend",2026-06-16,RO-20260616-7120,packing,"Justus Steak House Cimanuk",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12387990,52375,"House Blend",2026-06-16,RO-20260616-C989,packing,"Justus Steak House Buah Batu",Kilogram,medium,1,392000,392100,-100,392100,1,1000,auto
+12348429,54789,"HVS 1 Ply 75x65",2026-06-15,RO-20260615-4D9A,packing,"Justus Steak House Cipete",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12348189,54789,"HVS 1 Ply 75x65",2026-06-15,RO-20260615-3F3D,packing,"Justus Steakhouse SMB",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12324662,54789,"HVS 1 Ply 75x65",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12423578,54789,"HVS 1 Ply 75x65",2026-06-16,RO-20260616-EB2C,packing,"Justus Steak House Buah Batu",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12430583,54789,"HVS 1 Ply 75x65",2026-06-16,RO-20260616-368A,packing,"Justus Steak House Paskal 23",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12483073,54789,"HVS 1 Ply 75x65",2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12535820,54789,"HVS 1 Ply 75x65",2026-06-18,RO-20260618-2B20,packing,"Justus Steak House Paris Van Java",Pack,medium,1,44800,44900,-100,44900,1,10,auto
+12174866,54671,"Japanese Teriyaki Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,3,18500,1900,16600,18450,10,500,manual
+12165955,54671,"Japanese Teriyaki Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12171320,54671,"Japanese Teriyaki Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12170936,54671,"Japanese Teriyaki Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12496393,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12508585,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12519674,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12508685,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12490415,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12490468,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12497635,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,4,18500,1900,16600,18450,10,500,manual
+12506873,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12489554,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-5B58,packing,"ASIAN GRILL BIP",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12505744,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12511853,54671,"Japanese Teriyaki Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,4,18500,1900,16600,18450,10,500,manual
+12559790,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12572209,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,3,18500,1900,16600,18450,10,500,manual
+12538436,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12525301,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-DAE4,packing,"ASIAN GRILL BEC",Pack,medium,3,18500,1900,16600,18450,10,500,manual
+12522580,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12542893,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12575488,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,3,18500,1900,16600,18450,10,500,manual
+12536815,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Pack,medium,5,18500,1900,16600,18450,10,500,manual
+12563533,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12552834,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12536707,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12537008,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,1,18500,1900,16600,18450,10,500,manual
+12532473,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12571833,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,2,18500,1900,16600,18450,10,500,manual
+12554452,54671,"Japanese Teriyaki Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,5,18500,1900,16600,18450,10,500,manual
+12174844,52496,"Kacang Tanah",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,39200,34200,5000,34200,1,1000,auto
+12234121,52496,"Kacang Tanah",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,39200,34200,5000,34200,1,1000,auto
+12330323,52496,"Kacang Tanah",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Kilogram,medium,0.25,39200,34200,5000,34200,1,1000,auto
+12348068,52496,"Kacang Tanah",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,39200,34200,5000,34200,1,1000,auto
+12437049,52496,"Kacang Tanah",2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Kilogram,medium,0.25,39200,34200,5000,34200,1,1000,auto
+12519625,52496,"Kacang Tanah",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Kilogram,medium,0.25,39300,34200,5100,34200,1,1000,auto
+12536963,52496,"Kacang Tanah",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Kilogram,medium,0.25,39300,34200,5100,34200,1,1000,auto
+12575471,52496,"Kacang Tanah",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,0.25,39300,34200,5100,34200,1,1000,auto
+12542302,52496,"Kacang Tanah",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Kilogram,medium,0.25,39300,34200,5100,34200,1,1000,auto
+12571806,52496,"Kacang Tanah",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Kilogram,medium,0.5,39300,34200,5100,34200,1,1000,auto
+12225220,52381,"Kecap Asin",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Botol,medium,1,22400,20200,2200,20200,1,620,auto
+12171299,52381,"Kecap Asin",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,1,22400,20200,2200,20200,1,620,auto
+12174836,52381,"Kecap Asin",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Botol,medium,1,22400,20200,2200,20200,1,620,auto
+12228639,52381,"Kecap Asin",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Botol,medium,1,22400,20200,2200,20200,1,620,auto
+12436942,52381,"Kecap Asin",2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Botol,medium,1,24700,20200,4500,20200,1,620,auto
+12442053,52381,"Kecap Asin",2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Botol,medium,1,24700,20200,4500,20200,1,620,auto
+12464795,52381,"Kecap Asin",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Botol,medium,1,24700,20200,4500,20200,1,620,auto
+12474016,52381,"Kecap Asin",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,1,24700,20200,4500,20200,1,620,auto
+12485284,52674,"Kecap Manis Noni",2026-06-16,RO-20260617-280D,packing,"Justus Steak House Paris Van Java",Botol,medium,1,30800,30900,-100,30900,1,600,auto
+12437056,52674,"Kecap Manis Noni",2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Botol,medium,1,30800,30900,-100,30900,1,600,auto
+12446123,52656,"Ketumbar Bubuk",2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Kilogram,medium,0.5,112000,112100,-100,112100,1,1000,auto
+12171321,54672,"Korean BBQ Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12170937,54672,"Korean BBQ Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12174867,54672,"Korean BBQ Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,2,25900,1200,24700,25900,22,500,manual
+12165956,54672,"Korean BBQ Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12497636,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12506874,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12489555,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-5B58,packing,"ASIAN GRILL BIP",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12505745,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12511854,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,2,25900,1200,24700,25900,22,500,manual
+12496394,54672,"Korean BBQ Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12519675,54672,"Korean BBQ Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12571834,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12554453,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12525302,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-DAE4,packing,"ASIAN GRILL BEC",Pack,medium,3,25900,1200,24700,25900,22,500,manual
+12575489,54672,"Korean BBQ Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12536816,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Pack,medium,6,25900,1200,24700,25900,22,500,manual
+12563534,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12552835,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12536708,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12520168,54672,"Korean BBQ Sauce",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,1,25900,1200,24700,25900,22,500,manual
+12174873,54697,"Kuah Buntut",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,10,7700,200,7500,7622,45,200,manual
+12165965,54697,"Kuah Buntut",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12170941,54697,"Kuah Buntut",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,4,7700,200,7500,7622,45,200,manual
+12519681,54697,"Kuah Buntut",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,10,7700,200,7500,7622,45,200,manual
+12508590,54697,"Kuah Buntut",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12490422,54697,"Kuah Buntut",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,2,7700,200,7500,7622,45,200,manual
+12508690,54697,"Kuah Buntut",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,2,7700,200,7500,7622,45,200,manual
+12511867,54697,"Kuah Buntut",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,20,7700,200,7500,7622,45,200,manual
+12496404,54697,"Kuah Buntut",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,15,7700,200,7500,7622,45,200,manual
+12507713,54697,"Kuah Buntut",2026-06-17,RO-20260617-F35F,packing,"Tempayan Citarum",Pack,medium,15,7700,200,7500,7622,45,200,manual
+12497645,54697,"Kuah Buntut",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,10,7700,200,7500,7622,45,200,manual
+12510456,54697,"Kuah Buntut",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pack,medium,2,7700,200,7500,7622,45,200,manual
+12532479,54697,"Kuah Buntut",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12537014,54697,"Kuah Buntut",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,3,7700,200,7500,7622,45,200,manual
+12542339,54697,"Kuah Buntut",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,20,7700,200,7500,7622,45,200,manual
+12547793,54697,"Kuah Buntut",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,6,7700,200,7500,7622,45,200,manual
+12559793,54697,"Kuah Buntut",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12572217,54697,"Kuah Buntut",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,15,7700,200,7500,7622,45,200,manual
+12552842,54697,"Kuah Buntut",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,4,7700,200,7500,7622,45,200,manual
+12575497,54697,"Kuah Buntut",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,10,7700,200,7500,7622,45,200,manual
+12563544,54697,"Kuah Buntut",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12522587,54697,"Kuah Buntut",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,5,7700,200,7500,7622,45,200,manual
+12165966,54698,"Kuah Garang Asam",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,1,17300,800,16500,17202,24,400,manual
+12171329,54698,"Kuah Garang Asam",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,17300,800,16500,17202,24,400,manual
+12511868,54698,"Kuah Garang Asam",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,5,17300,800,16500,17202,24,400,manual
+12496405,54698,"Kuah Garang Asam",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,1,17300,800,16500,17202,24,400,manual
+12507714,54698,"Kuah Garang Asam",2026-06-17,RO-20260617-F35F,packing,"Tempayan Citarum",Pack,medium,5,17300,800,16500,17202,24,400,manual
+12519682,54698,"Kuah Garang Asam",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,3,17300,800,16500,17202,24,400,manual
+12542341,54698,"Kuah Garang Asam",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,10,17300,800,16500,17202,24,400,manual
+12572218,54698,"Kuah Garang Asam",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,2,17300,800,16500,17202,24,400,manual
+12174852,55500,"Label Preparation Roll",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Roll,medium,2,168000,168100,-100,168100,1,1000,auto
+12225298,55500,"Label Preparation Roll",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Roll,medium,2,168000,168100,-100,168100,1,1000,auto
+12228651,55500,"Label Preparation Roll",2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12434547,55500,"Label Preparation Roll",2026-06-16,RO-20260616-410E,packing,"JUSTUS BIP",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12424223,55500,"Label Preparation Roll",2026-06-16,RO-20260616-F35B,packing,"Justus Steak House Ciwalk",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12422301,55500,"Label Preparation Roll",2026-06-16,RO-20260616-948B,packing,"Justus Steak House Paris Van Java",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12442064,55500,"Label Preparation Roll",2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12428032,55500,"Label Preparation Roll",2026-06-16,RO-20260616-B544,packing,"Justus Steak House Ciwalk",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12434390,55500,"Label Preparation Roll",2026-06-16,RO-20260616-C6C8,packing,"Justus Steak House Festival Citylink",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12365082,55500,"Label Preparation Roll",2026-06-16,RO-20260616-6688,packing,"Tempayan Citarum",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12474038,55500,"Label Preparation Roll",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Roll,medium,2,168000,168100,-100,168100,1,1000,auto
+12485500,55500,"Label Preparation Roll",2026-06-17,RO-20260617-8F7D,packing,"Justus Steak House Jawa",Roll,medium,1,168000,168100,-100,168100,1,1000,auto
+12160766,52390,"Marjan Lychee",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12250715,52390,"Marjan Lychee",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12327960,52390,"Marjan Lychee",2026-06-15,RO-20260615-0968,packing,"Justus Steakhouse SMB",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12436840,52390,"Marjan Lychee",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Botol,medium,3,25200,25300,-100,25300,1,460,auto
+12433406,52390,"Marjan Lychee",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12440806,52390,"Marjan Lychee",2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12458531,52390,"Marjan Lychee",2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12439014,52390,"Marjan Lychee",2026-06-16,RO-20260616-DC3A,packing,"Justus Steak House Miko Mall",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12425785,52390,"Marjan Lychee",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12186992,52392,"Marjan Strawberry",2026-06-12,RO-20260612-CE31,packing,"Justus Steakhouse SMB",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12160767,52392,"Marjan Strawberry",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12201673,52392,"Marjan Strawberry",2026-06-12,RO-20260612-9958,packing,"Justus Steak House Bintaro",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12177855,52392,"Marjan Strawberry",2026-06-12,RO-20260612-7D06,packing,"Justus Steakhouse The Barn",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12180827,52392,"Marjan Strawberry",2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12250716,52392,"Marjan Strawberry",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12348156,52392,"Marjan Strawberry",2026-06-15,RO-20260615-8B36,packing,"Melt Steak d'Botanica",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12439015,52392,"Marjan Strawberry",2026-06-16,RO-20260616-DC3A,packing,"Justus Steak House Miko Mall",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12425786,52392,"Marjan Strawberry",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12422293,52392,"Marjan Strawberry",2026-06-16,RO-20260616-948B,packing,"Justus Steak House Paris Van Java",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12436843,52392,"Marjan Strawberry",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12425178,52392,"Marjan Strawberry",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Botol,medium,3,25200,25300,-100,25300,1,460,auto
+12423805,52392,"Marjan Strawberry",2026-06-16,RO-20260616-2619,packing,"Justus Steak House Jawa",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12455546,52392,"Marjan Strawberry",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12448046,52392,"Marjan Strawberry",2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12457241,52392,"Marjan Strawberry",2026-06-16,RO-20260616-7120,packing,"Justus Steak House Cimanuk",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12433407,52392,"Marjan Strawberry",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Botol,medium,3,25200,25300,-100,25300,1,460,auto
+12440807,52392,"Marjan Strawberry",2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Botol,medium,4,25200,25300,-100,25300,1,460,auto
+12458533,52392,"Marjan Strawberry",2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12175125,52393,"Marjan Vanilla",2026-06-12,RO-20260612-6C24,packing,"Justus Steak House Cimanuk",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12160768,52393,"Marjan Vanilla",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12439016,52393,"Marjan Vanilla",2026-06-16,RO-20260616-DC3A,packing,"Justus Steak House Miko Mall",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12425787,52393,"Marjan Vanilla",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Botol,medium,1,25200,25300,-100,25300,1,460,auto
+12425179,52393,"Marjan Vanilla",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Botol,medium,2,25200,25300,-100,25300,1,460,auto
+12247695,54710,"Meat Ball Patty",2026-06-13,RO-20260613-F3F3,packing,"Justus Steak House Dago",Pcs,small,16,100,4400,-4300,837250,194,1,manual
+12249049,54710,"Meat Ball Patty",2026-06-13,RO-20260613-602A,packing,"Justus Steak House Miko Mall",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12246187,54710,"Meat Ball Patty",2026-06-13,RO-20260613-6B7A,packing,"Justus Steak House Buah Batu",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12349046,54710,"Meat Ball Patty",2026-06-14,RO-20260615-E1AA,packing,"Justus Steak House Paris Van Java",Pcs,small,16,100,4400,-4300,837250,194,1,manual
+12323372,54710,"Meat Ball Patty",2026-06-14,RO-20260615-865A,packing,"Justus Steak House Bintaro",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12348128,54710,"Meat Ball Patty",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12337948,54710,"Meat Ball Patty",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12460119,54710,"Meat Ball Patty",2026-06-16,RO-20260616-7DB3,packing,"Justus Steak House Cimanuk",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12511873,54710,"Meat Ball Patty",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12477870,54710,"Meat Ball Patty",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12505752,54710,"Meat Ball Patty",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12474065,54710,"Meat Ball Patty",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12497649,54710,"Meat Ball Patty",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12506880,54710,"Meat Ball Patty",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12563548,54710,"Meat Ball Patty",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pcs,small,8,100,4400,-4300,837250,194,1,manual
+12571845,54710,"Meat Ball Patty",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pcs,small,16,100,4400,-4300,837250,194,1,manual
+12174848,52654,"Merica Halus",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,112000,112100,-100,112100,1,1000,auto
+12464813,52654,"Merica Halus",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Kilogram,medium,0.25,112000,112100,-100,112100,1,1000,auto
+12429771,52556,"Mineral Water FC",2026-06-16,RO-20260616-93F7,packing,"ASIAN GRILL BIP",Karton,medium,1,44800,44900,-100,44900,1,24,auto
+12424527,52556,"Mineral Water FC",2026-06-16,RO-20260616-CD66,packing,"JUSTUS BIP",Karton,medium,1,44800,44900,-100,44900,1,24,auto
+12424479,52556,"Mineral Water FC",2026-06-16,RO-20260616-5531,packing,"JUSTUS FCL",Karton,medium,1,44800,44900,-100,44900,1,24,auto
+12434431,52556,"Mineral Water FC",2026-06-16,RO-20260616-F152,packing,"Melt Steak d'Botanica",Karton,medium,1,44800,44900,-100,44900,1,24,auto
+12365558,52556,"Mineral Water FC",2026-06-16,RO-20260616-36B3,packing,"Melt Steak d'Botanica",Karton,medium,1,44800,44900,-100,44900,1,24,auto
+12433409,52398,"Mineral Water SH",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Karton,medium,4,106400,106500,-100,106500,1,24,auto
+12440809,52398,"Mineral Water SH",2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Karton,medium,2,106400,106500,-100,106500,1,24,auto
+12457243,52398,"Mineral Water SH",2026-06-16,RO-20260616-7120,packing,"Justus Steak House Cimanuk",Karton,medium,1,106400,106500,-100,106500,1,24,auto
+12387992,52398,"Mineral Water SH",2026-06-16,RO-20260616-C989,packing,"Justus Steak House Buah Batu",Karton,medium,1,106400,106500,-100,106500,1,24,auto
+12439019,52398,"Mineral Water SH",2026-06-16,RO-20260616-DC3A,packing,"Justus Steak House Miko Mall",Karton,medium,1,106400,106500,-100,106500,1,24,auto
+12423811,52398,"Mineral Water SH",2026-06-16,RO-20260616-2619,packing,"Justus Steak House Jawa",Karton,medium,1,106400,106500,-100,106500,1,24,auto
+12436854,52398,"Mineral Water SH",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Karton,medium,6,106400,106500,-100,106500,1,24,auto
+12422295,52398,"Mineral Water SH",2026-06-16,RO-20260616-948B,packing,"Justus Steak House Paris Van Java",Karton,medium,1,106400,106500,-100,106500,1,24,auto
+12455227,52607,"Minyak Klentik",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12446124,52607,"Minyak Klentik",2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12484569,52607,"Minyak Klentik",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12511786,52607,"Minyak Klentik",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12496377,52607,"Minyak Klentik",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12542311,52607,"Minyak Klentik",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12552819,52607,"Minyak Klentik",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12572196,52607,"Minyak Klentik",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Botol,medium,1,58900,59400,-500,59400,1,600,auto
+12174868,54673,"Mushroom Sauce",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,medium,15,37100,2400,34700,37055,16,500,manual
+12165957,54673,"Mushroom Sauce",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,medium,20,37100,2400,34700,37055,16,500,manual
+12171322,54673,"Mushroom Sauce",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,18,37100,2400,34700,37055,16,500,manual
+12170938,54673,"Mushroom Sauce",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12175078,54673,"Mushroom Sauce",2026-06-12,RO-20260612-49D8,packing,"Justus Steak House Ciwalk",Pack,medium,2,37100,2400,34700,37055,16,500,manual
+12490416,54673,"Mushroom Sauce",2026-06-17,RO-20260617-2C87,packing,"Justus Steak House Festival Citylink",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12490469,54673,"Mushroom Sauce",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12496395,54673,"Mushroom Sauce",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Pack,medium,18,37100,2400,34700,37055,16,500,manual
+12519676,54673,"Mushroom Sauce",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,14,37100,2400,34700,37055,16,500,manual
+12510452,54673,"Mushroom Sauce",2026-06-17,RO-20260618-E637,packing,"Justus Steak House Paris Van Java",Pack,medium,10,37100,2400,34700,37055,16,500,manual
+12509226,54673,"Mushroom Sauce",2026-06-17,RO-20260617-1FA2,packing,"Justus Steak House Cimanuk",Pack,medium,5,37100,2400,34700,37055,16,500,manual
+12490740,54673,"Mushroom Sauce",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12497637,54673,"Mushroom Sauce",2026-06-17,RO-20260617-C7B1,packing,"Justus Steak House Paskal 23",Pack,medium,12,37100,2400,34700,37055,16,500,manual
+12506875,54673,"Mushroom Sauce",2026-06-17,RO-20260617-5F3B,packing,"Justus Steak House Jawa",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12505746,54673,"Mushroom Sauce",2026-06-17,RO-20260617-7B82,packing,"Justus Steak House Miko Mall",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12511855,54673,"Mushroom Sauce",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,22,37100,2400,34700,37055,16,500,manual
+12508586,54673,"Mushroom Sauce",2026-06-17,RO-20260617-22B6,packing,"Justus Steak House Buah Batu",Pack,medium,6,37100,2400,34700,37055,16,500,manual
+12487305,54673,"Mushroom Sauce",2026-06-17,RO-20260617-438F,packing,"JUSTUS BEC",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12487842,54673,"Mushroom Sauce",2026-06-17,RO-20260617-233D,packing,"JUSTUS FCL",Pack,medium,2,37100,2400,34700,37055,16,500,manual
+12508686,54673,"Mushroom Sauce",2026-06-17,RO-20260617-604A,packing,"Justus Steak House Metro Indah Mall",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12575490,54673,"Mushroom Sauce",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Pack,medium,12,37100,2400,34700,37055,16,500,manual
+12522954,54673,"Mushroom Sauce",2026-06-18,RO-20260618-9171,packing,"Justus Steak House Cimanuk",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12532474,54673,"Mushroom Sauce",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Pack,medium,6,37100,2400,34700,37055,16,500,manual
+12563535,54673,"Mushroom Sauce",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Pack,medium,19,37100,2400,34700,37055,16,500,manual
+12552836,54673,"Mushroom Sauce",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Pack,medium,5,37100,2400,34700,37055,16,500,manual
+12536709,54673,"Mushroom Sauce",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12542761,54673,"Mushroom Sauce",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Pack,medium,4,37100,2400,34700,37055,16,500,manual
+12520169,54673,"Mushroom Sauce",2026-06-18,RO-20260618-5405,packing,"Justus Steak House Dago",Pack,medium,14,37100,2400,34700,37055,16,500,manual
+12572210,54673,"Mushroom Sauce",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,10,37100,2400,34700,37055,16,500,manual
+12538437,54673,"Mushroom Sauce",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Pack,medium,5,37100,2400,34700,37055,16,500,manual
+12522581,54673,"Mushroom Sauce",2026-06-18,RO-20260618-8E79,approved,"Justus Steak House Ciwalk",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12542894,54673,"Mushroom Sauce",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Pack,medium,1,37100,2400,34700,37055,16,500,manual
+12571835,54673,"Mushroom Sauce",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Pack,medium,20,37100,2400,34700,37055,16,500,manual
+12554454,54673,"Mushroom Sauce",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Pack,medium,16,37100,2400,34700,37055,16,500,manual
+12547785,54673,"Mushroom Sauce",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Pack,medium,3,37100,2400,34700,37055,16,500,manual
+12556705,54673,"Mushroom Sauce",2026-06-18,RO-20260618-5F99,packing,"Justus Steak House Paskal 23",Pack,medium,10,37100,2400,34700,37055,16,500,manual
+12537009,54673,"Mushroom Sauce",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Pack,medium,5,37100,2400,34700,37055,16,500,manual
+12171302,52405,Nutmeg,2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,0.25,224000,224100,-100,224100,1,1000,auto
+12174839,52405,Nutmeg,2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,0.5,224000,224100,-100,224100,1,1000,auto
+12460287,52405,Nutmeg,2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,0.25,224000,224100,-100,224100,1,1000,auto
+12455217,52405,Nutmeg,2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,0.25,224000,224100,-100,224100,1,1000,auto
+12225264,53111,Onion,2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12170903,53111,Onion,2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Kilogram,medium,4,37000,21300,15700,21300,1,1000,auto
+12174805,53111,Onion,2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,7,37000,21300,15700,21300,1,1000,auto
+12222287,53111,Onion,2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12165885,53111,Onion,2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Kilogram,medium,10,37000,21300,15700,21300,1,1000,auto
+12260784,53111,Onion,2026-06-13,RO-20260614-CB79,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12253602,53111,Onion,2026-06-13,RO-20260613-7756,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,15,22400,21300,1100,21300,1,1000,auto
+12234076,53111,Onion,2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12228610,53111,Onion,2026-06-13,RO-20260613-EF11,packing,"Justus Steak House Bintaro",Kilogram,medium,15,22400,21300,1100,21300,1,1000,auto
+12337909,53111,Onion,2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12330339,53111,Onion,2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Kilogram,medium,7,22400,21300,1100,21300,1,1000,auto
+12348103,53111,Onion,2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12428326,53111,Onion,2026-06-16,RO-20260616-9240,packing,"Melt Steak d'Botanica",Kilogram,medium,1,22400,21300,1100,21300,1,1000,auto
+12446139,53111,Onion,2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Kilogram,medium,1,22400,21300,1100,21300,1,1000,auto
+12365037,53111,Onion,2026-06-16,RO-20260616-6E25,approved,"Justus Steak House Miko Mall",Kilogram,medium,5,22400,21300,1100,21300,1,1000,auto
+12434366,53111,Onion,2026-06-16,RO-20260616-C6C8,packing,"Justus Steak House Festival Citylink",Kilogram,medium,6,22400,21300,1100,21300,1,1000,auto
+12442036,53111,Onion,2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Kilogram,medium,5,22400,21300,1100,21300,1,1000,auto
+12460245,53111,Onion,2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12425939,53111,Onion,2026-06-16,RO-20260616-12B8,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,3,22400,21300,1100,21300,1,1000,auto
+12434533,53111,Onion,2026-06-16,RO-20260616-410E,packing,"JUSTUS BIP",Kilogram,medium,3,22400,21300,1100,21300,1,1000,auto
+12437023,53111,Onion,2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Kilogram,medium,6,22400,21300,1100,21300,1,1000,auto
+12436977,53111,Onion,2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Kilogram,medium,5,22400,21300,1100,21300,1,1000,auto
+12485299,53111,Onion,2026-06-16,RO-20260617-280D,packing,"Justus Steak House Paris Van Java",Kilogram,medium,5,22400,21300,1100,21300,1,1000,auto
+12455187,53111,Onion,2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,5,22400,21300,1100,21300,1,1000,auto
+12429763,53111,Onion,2026-06-16,RO-20260616-93F7,packing,"ASIAN GRILL BIP",Kilogram,medium,1,22400,21300,1100,21300,1,1000,auto
+12429396,53111,Onion,2026-06-16,RO-20260616-A930,packing,"JUSTUS FCL",Kilogram,medium,2,22400,21300,1100,21300,1,1000,auto
+12460392,53111,Onion,2026-06-16,RO-20260616-C4CD,packing,"ASIAN GRILL BEC",Kilogram,medium,0.5,22400,21300,1100,21300,1,1000,auto
+12460101,53111,Onion,2026-06-16,RO-20260616-7DB3,packing,"Justus Steak House Cimanuk",Kilogram,medium,3,22400,21300,1100,21300,1,1000,auto
+12464763,53111,Onion,2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Kilogram,medium,25,22400,21300,1100,21300,1,1000,auto
+12452963,53111,Onion,2026-06-16,RO-20260616-B9F9,packing,"JUSTUS BEC",Kilogram,medium,1,22400,21300,1100,21300,1,1000,auto
+12519640,53111,Onion,2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Kilogram,medium,6,22500,21300,1200,21300,1,1000,auto
+12496335,53111,Onion,2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Kilogram,medium,5,22500,21300,1200,21300,1,1000,auto
+12511823,53111,Onion,2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Kilogram,medium,15,22500,21300,1200,21300,1,1000,auto
+12484601,53111,Onion,2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Kilogram,medium,15,22400,21300,1100,21300,1,1000,auto
+12473983,53111,Onion,2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12477786,53111,Onion,2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Kilogram,medium,10,22400,21300,1100,21300,1,1000,auto
+12571765,53111,Onion,2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Kilogram,medium,15,22500,21300,1200,21300,1,1000,auto
+12542878,53111,Onion,2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Kilogram,medium,2,22500,21300,1200,21300,1,1000,auto
+12559761,53111,Onion,2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Kilogram,medium,5,22500,21300,1200,21300,1,1000,auto
+12538422,53111,Onion,2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Kilogram,medium,1,22500,21300,1200,21300,1,1000,auto
+12542324,53111,Onion,2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Kilogram,medium,2,22500,21300,1200,21300,1,1000,auto
+12554392,53111,Onion,2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Kilogram,medium,16,22500,21300,1200,21300,1,1000,auto
+12542747,53111,Onion,2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,4,22500,21300,1200,21300,1,1000,auto
+12552771,53111,Onion,2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Kilogram,medium,3,22500,21300,1200,21300,1,1000,auto
+12525288,53111,Onion,2026-06-18,RO-20260618-DAE4,packing,"ASIAN GRILL BEC",Kilogram,medium,0.5,22500,21300,1200,21300,1,1000,auto
+12536801,53111,Onion,2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Kilogram,medium,1,22500,21300,1200,21300,1,1000,auto
+12575443,53111,Onion,2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,10,22500,21300,1200,21300,1,1000,auto
+12532422,53111,Onion,2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Kilogram,medium,8,22500,21300,1200,21300,1,1000,auto
+12536693,53111,Onion,2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Kilogram,medium,3,22500,21300,1200,21300,1,1000,auto
+12572157,53111,Onion,2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Kilogram,medium,6,22500,21300,1200,21300,1,1000,auto
+12536989,53111,Onion,2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Kilogram,medium,7,22500,21300,1200,21300,1,1000,auto
+12547731,53111,Onion,2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Kilogram,medium,40,22500,21300,1200,21300,1,1000,auto
+12563466,53111,Onion,2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Kilogram,medium,15,22500,21300,1200,21300,1,1000,auto
+12165926,52407,Oregano,2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Kilogram,medium,0.1,257600,257700,-100,257700,1,1000,auto
+12460288,52407,Oregano,2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Kilogram,medium,0.1,257600,257700,-100,257700,1,1000,auto
+12446126,52408,"Oyster Sauce",2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Can,medium,1,123200,123300,-100,123300,1,2200,auto
+12174997,52887,"Paper Cutleries Large",2026-06-12,RO-20260612-559B,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,5,44800,44900,-100,44900,1,100,auto
+12207545,52887,"Paper Cutleries Large",2026-06-12,RO-20260612-2357,packing,"Justus Steak House Alam Sutera",Pack,medium,4,44800,44900,-100,44900,1,100,auto
+12234256,52887,"Paper Cutleries Large",2026-06-13,RO-20260613-B870,packing,"Justus Steakhouse SMB",Pack,medium,10,44800,44900,-100,44900,1,100,auto
+12324661,52887,"Paper Cutleries Large",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,5,44800,44900,-100,44900,1,100,auto
+12336819,52887,"Paper Cutleries Large",2026-06-15,RO-20260615-5B6E,packing,"Justus Steakhouse SMB",Pack,medium,5,44800,44900,-100,44900,1,100,auto
+12430582,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-368A,packing,"Justus Steak House Paskal 23",Pack,medium,4,30800,44900,-14100,44900,1,100,auto
+12424455,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,3,30800,44900,-14100,44900,1,100,auto
+12447222,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-4C1E,packing,"Justus Steak House Miko Mall",Pack,medium,2,30800,44900,-14100,44900,1,100,auto
+12424127,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,2,30800,44900,-14100,44900,1,100,auto
+12422822,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-386E,packing,"Justus Steak House Dago",Pack,medium,4,30800,44900,-14100,44900,1,100,auto
+12423577,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-EB2C,packing,"Justus Steak House Buah Batu",Pack,medium,3,30800,44900,-14100,44900,1,100,auto
+12460412,52887,"Paper Cutleries Large",2026-06-16,RO-20260616-6953,packing,"Justus Steak House Ciwalk",Pack,medium,4,30800,44900,-14100,44900,1,100,auto
+12483072,52887,"Paper Cutleries Large",2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,medium,6,30800,44900,-14100,44900,1,100,auto
+12487577,52887,"Paper Cutleries Large",2026-06-17,RO-20260617-887D,packing,"Justus Steakhouse The Barn",Pack,medium,5,30900,44900,-14000,44900,1,100,auto
+12484730,52887,"Paper Cutleries Large",2026-06-17,RO-20260617-2B0B,packing,"Justus Steakhouse SMB",Pack,medium,5,30800,44900,-14100,44900,1,100,auto
+12485439,52887,"Paper Cutleries Large",2026-06-17,RO-20260617-9E98,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,30800,44900,-14100,44900,1,100,auto
+12488802,52887,"Paper Cutleries Large",2026-06-17,RO-20260617-CC7B,packing,"Justus Steak House Bintaro",Pack,medium,10,30900,44900,-14000,44900,1,100,auto
+12522190,52887,"Paper Cutleries Large",2026-06-18,RO-20260618-9A11,packing,"Justus Steak House Alam Sutera",Pack,medium,5,30900,44900,-14000,44900,1,100,auto
+12488803,52886,"Paper Cutleries Small",2026-06-17,RO-20260617-CC7B,packing,"Justus Steak House Bintaro",Pack,medium,2,39800,28100,11700,28100,1,100,auto
+12522189,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-9A11,packing,"Justus Steak House Alam Sutera",Pack,medium,2,39800,28100,11700,28100,1,100,auto
+12555341,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-4880,packing,"Justus Steak House Paskal 23",Pack,medium,1,39800,28100,11700,28100,1,100,auto
+12545386,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-1466,packing,"Justus Steak House Metro Indah Mall",Pack,medium,1,39800,28100,11700,28100,1,100,auto
+12527007,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-B547,packing,"Justus Steak House Jawa",Pack,medium,2,39800,28100,11700,28100,1,100,auto
+12531567,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-2AB2,packing,"Justus Steak House Miko Mall",Pack,medium,1,39800,28100,11700,28100,1,100,auto
+12567260,52886,"Paper Cutleries Small",2026-06-18,RO-20260618-D082,packing,"Justus Steak House Ciwalk",Pack,medium,3,39800,28100,11700,28100,1,100,auto
+12511866,54694,"Paste Merah Garang Asam",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12519686,54694,"Paste Merah Garang Asam",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12507715,54694,"Paste Merah Garang Asam",2026-06-17,RO-20260617-F35F,packing,"Tempayan Citarum",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12509230,54694,"Paste Merah Garang Asam",2026-06-17,RO-20260617-1FA2,packing,"Justus Steak House Cimanuk",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12542342,54694,"Paste Merah Garang Asam",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Pack,medium,2,45800,7700,38100,45767,6,200,manual
+12522953,54694,"Paste Merah Garang Asam",2026-06-18,RO-20260618-9171,packing,"Justus Steak House Cimanuk",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12572216,54694,"Paste Merah Garang Asam",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Pack,medium,1,45800,7700,38100,45767,6,200,manual
+12234351,52774,Placemate,2026-06-13,RO-20260613-EBEC,packing,"Justus Steak House Bintaro",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12348428,52774,Placemate,2026-06-15,RO-20260615-4D9A,packing,"Justus Steak House Cipete",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12348187,52774,Placemate,2026-06-15,RO-20260615-3F3D,packing,"Justus Steakhouse SMB",Pack,medium,1,470400,470500,-100,470500,1,1000,auto
+12425855,52774,Placemate,2026-06-16,RO-20260616-6E6E,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,470400,470500,-100,470500,1,1000,auto
+12424445,52774,Placemate,2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12430573,52774,Placemate,2026-06-16,RO-20260616-368A,packing,"Justus Steak House Paskal 23",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12424125,52774,Placemate,2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,1,470400,470500,-100,470500,1,1000,auto
+12423572,52774,Placemate,2026-06-16,RO-20260616-EB2C,packing,"Justus Steak House Buah Batu",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12422862,52774,Placemate,2026-06-16,RO-20260616-A6B1,packing,"Justus Steak House Metro Indah Mall",Pack,medium,0.5,470400,470500,-100,470500,1,1000,auto
+12485430,52774,Placemate,2026-06-17,RO-20260617-9E98,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,470400,470500,-100,470500,1,1000,auto
+12524599,55465,"Placemate Kids Pink",2026-06-18,RO-20260618-4A73,packing,"Justus Steak House Lebak Bulus",Pack,medium,0.5,240800,240900,-100,240900,1,500,auto
+12234129,52828,"Plastik Roll Buah 30x45",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Kilogram,small,2,100800,100900,-100,100900,1,1,auto
+12174992,52790,"Salad Bowl",2026-06-12,RO-20260612-559B,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12324651,52790,"Salad Bowl",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12336817,52790,"Salad Bowl",2026-06-15,RO-20260615-5B6E,packing,"Justus Steakhouse SMB",Pack,medium,2,38700,54800,-16100,54800,1,25,auto
+12424447,52790,"Salad Bowl",2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12424140,52790,"Salad Bowl",2026-06-16,RO-20260616-0A2B,packing,"Justus Steak House Paris Van Java",Pack,medium,2,38700,54800,-16100,54800,1,25,auto
+12425843,52790,"Salad Bowl",2026-06-16,RO-20260616-3CE9,packing,"Justus Steak House Festival Citylink",Pack,medium,2,38700,54800,-16100,54800,1,25,auto
+12441968,52790,"Salad Bowl",2026-06-16,RO-20260616-7244,packing,"Tempayan Citarum",Pack,medium,2,38700,54800,-16100,54800,1,25,auto
+12422825,52790,"Salad Bowl",2026-06-16,RO-20260616-386E,packing,"Justus Steak House Dago",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12485431,52790,"Salad Bowl",2026-06-17,RO-20260617-9E98,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,38700,54800,-16100,54800,1,25,auto
+12483066,52790,"Salad Bowl",2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12484726,52790,"Salad Bowl",2026-06-17,RO-20260617-2B0B,packing,"Justus Steakhouse SMB",Pack,medium,1,38700,54800,-16100,54800,1,25,auto
+12222253,52429,"Salad Oil",2026-06-12,RO-20260612-2207,packing,"Justus Steak House Alam Sutera",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12225225,52429,"Salad Oil",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12165928,52429,"Salad Oil",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12170924,52429,"Salad Oil",2026-06-12,RO-20260612-0DD8,packing,"Justus Steak House Cimanuk",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12171303,52429,"Salad Oil",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12260752,52429,"Salad Oil",2026-06-13,RO-20260614-CB79,packing,"Justus Steak House Lebak Bulus",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12253639,52429,"Salad Oil",2026-06-13,RO-20260613-7756,packing,"Justus Steakhouse Ampera - Kemang",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12234116,52429,"Salad Oil",2026-06-13,RO-20260613-F9A1,packing,"Justus Steakhouse SMB",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12348060,52429,"Salad Oil",2026-06-15,RO-20260615-F684,packing,"Justus Steakhouse SMB",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12337869,52429,"Salad Oil",2026-06-15,RO-20260615-5FBE,packing,"Justus Steakhouse The Barn",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12330331,52429,"Salad Oil",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12460291,52429,"Salad Oil",2026-06-16,RO-20260616-782B,packing,"Justus Steak House Dago",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12436950,52429,"Salad Oil",2026-06-16,RO-20260616-F244,packing,"Justus Steak House Jawa",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12442056,52429,"Salad Oil",2026-06-16,RO-20260616-604F,packing,"Justus Steak House Buah Batu",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12464802,52429,"Salad Oil",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12455220,52429,"Salad Oil",2026-06-16,RO-20260616-E5CF,packing,"Justus Steak House Lebak Bulus",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12484562,52429,"Salad Oil",2026-06-17,RO-20260617-B7B0,packing,"Justus Steak House Cipete",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12477827,52429,"Salad Oil",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Galon,medium,2,896000,169700,726300,169700,1,3000,auto
+12474022,52429,"Salad Oil",2026-06-17,RO-20260617-7F85,packing,"Justus Steakhouse Ampera - Kemang",Galon,medium,1,896000,169700,726300,169700,1,3000,auto
+12160769,52574,Sarsaparilla,2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,10,9600,5500,4100,5451,1,250,manual
+12180833,52574,Sarsaparilla,2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Botol,medium,6,9600,5500,4100,5451,1,250,manual
+12186993,52574,Sarsaparilla,2026-06-12,RO-20260612-CE31,packing,"Justus Steakhouse SMB",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12177860,52574,Sarsaparilla,2026-06-12,RO-20260612-7D06,packing,"Justus Steakhouse The Barn",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12201674,52574,Sarsaparilla,2026-06-12,RO-20260612-9958,packing,"Justus Steak House Bintaro",Botol,medium,8,9600,5500,4100,5451,1,250,manual
+12327979,52574,Sarsaparilla,2026-06-15,RO-20260615-0968,packing,"Justus Steakhouse SMB",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12457244,52574,Sarsaparilla,2026-06-16,RO-20260616-7120,packing,"Justus Steak House Cimanuk",Botol,medium,2,9600,5500,4100,5451,1,250,manual
+12458555,52574,Sarsaparilla,2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Botol,medium,3,9600,5500,4100,5451,1,250,manual
+12425190,52574,Sarsaparilla,2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12455550,52574,Sarsaparilla,2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,10,9600,5500,4100,5451,1,250,manual
+12421195,52574,Sarsaparilla,2026-06-16,RO-20260616-76C2,packing,"Justus Steak House Metro Indah Mall",Botol,medium,3,9600,5500,4100,5451,1,250,manual
+12425792,52574,Sarsaparilla,2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Botol,medium,12,9600,5500,4100,5451,1,250,manual
+12440812,52574,Sarsaparilla,2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12424217,52574,Sarsaparilla,2026-06-16,RO-20260616-F35B,packing,"Justus Steak House Ciwalk",Botol,medium,4,9600,5500,4100,5451,1,250,manual
+12448054,52574,Sarsaparilla,2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Botol,medium,4,9600,5500,4100,5451,1,250,manual
+12489355,52574,Sarsaparilla,2026-06-17,RO-20260617-B844,packing,"Justus Steak House Alam Sutera",Botol,medium,6,9600,5500,4100,5451,1,250,manual
+12488225,52574,Sarsaparilla,2026-06-17,RO-20260617-6301,packing,"Justus Steakhouse The Barn",Botol,medium,5,9600,5500,4100,5451,1,250,manual
+12545160,52574,Sarsaparilla,2026-06-18,RO-20260618-66BC,packing,"Justus Steak House Miko Mall",Botol,medium,2,9600,5500,4100,5451,1,250,manual
+12527069,52574,Sarsaparilla,2026-06-18,RO-20260618-A4C8,packing,"Justus Steak House Lebak Bulus",Botol,medium,12,9600,5500,4100,5451,1,250,manual
+12540182,52574,Sarsaparilla,2026-06-18,RO-20260618-CEEB,packing,"Justus Steak House Cimanuk",Botol,medium,2,9600,5500,4100,5451,1,250,manual
+12541349,52574,Sarsaparilla,2026-06-18,RO-20260618-312F,approved,"Justus Steak House Metro Indah Mall",Botol,medium,2,9600,5500,4100,5451,1,250,manual
+12521245,52574,Sarsaparilla,2026-06-18,RO-20260618-DC4D,packing,"Justus Steak House Bintaro",Botol,medium,8,9600,5500,4100,5451,1,250,manual
+12526380,52574,Sarsaparilla,2026-06-18,RO-20260618-DE25,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,10,9600,5500,4100,5451,1,250,manual
+12556876,52574,Sarsaparilla,2026-06-18,RO-20260618-0298,approved,"Justus Steak House Buah Batu",Botol,medium,4,9600,5500,4100,5451,1,250,manual
+12537833,52574,Sarsaparilla,2026-06-18,RO-20260618-FA13,packing,"Justus Steak House Festival Citylink",Botol,medium,4,9600,5500,4100,5451,1,250,manual
+12554722,52574,Sarsaparilla,2026-06-18,RO-20260618-A7FA,packing,"Justus Steak House Paskal 23",Botol,medium,4,9600,5500,4100,5451,1,250,manual
+12177551,54675,"Sauce Blueberry",2026-06-12,RO-20260612-8766,packing,"Justus Steak House Paskal 23",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12160772,54675,"Sauce Blueberry",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,9500,10000,-500,89955,9,250,manual
+12201685,54675,"Sauce Blueberry",2026-06-12,RO-20260612-9958,packing,"Justus Steak House Bintaro",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12180841,54675,"Sauce Blueberry",2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12187011,54675,"Sauce Blueberry",2026-06-12,RO-20260612-CE31,packing,"Justus Steakhouse SMB",Pack,medium,3,1100,10000,-8900,89955,9,250,manual
+12177863,54675,"Sauce Blueberry",2026-06-12,RO-20260612-7D06,packing,"Justus Steakhouse The Barn",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12178709,54675,"Sauce Blueberry",2026-06-12,RO-20260612-BEA3,packing,"Justus Steak House Cimanuk",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12189643,54675,"Sauce Blueberry",2026-06-12,RO-20260612-6143,packing,"Justus Steak House Buah Batu",Pack,medium,3,1100,10000,-8900,89955,9,250,manual
+12250727,54675,"Sauce Blueberry",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12240957,54675,"Sauce Blueberry",2026-06-13,RO-20260613-88A1,packing,"Justus Steak House Paris Van Java",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12235414,54675,"Sauce Blueberry",2026-06-13,RO-20260613-7E36,packing,"Justus Steak House Ciwalk",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12238747,54675,"Sauce Blueberry",2026-06-13,RO-20260613-9358,packing,"Justus Steak House Festival Citylink",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12235461,54675,"Sauce Blueberry",2026-06-13,RO-20260613-9E46,packing,"Justus Steak House Metro Indah Mall",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12242273,54675,"Sauce Blueberry",2026-06-13,RO-20260613-10E1,packing,"Justus Steak House Dago",Pack,medium,3,1100,10000,-8900,89955,9,250,manual
+12322032,54675,"Sauce Blueberry",2026-06-14,RO-20260614-93B0,packing,"Justus Steak House Alam Sutera",Pack,medium,3,1100,10000,-8900,89955,9,250,manual
+12261413,54675,"Sauce Blueberry",2026-06-14,RO-20260614-C373,packing,"Justus Steak House Paris Van Java",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12278266,54675,"Sauce Blueberry",2026-06-14,RO-20260614-2B02,packing,"Justus Steakhouse The Barn",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12286579,54675,"Sauce Blueberry",2026-06-14,RO-20260614-5406,packing,"Justus Steak House Bintaro",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12271406,54675,"Sauce Blueberry",2026-06-14,RO-20260614-8C44,approved,"Justus Steak House Buah Batu",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12279756,54675,"Sauce Blueberry",2026-06-14,RO-20260614-8327,packing,"Justus Steak House Jawa",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12260004,54675,"Sauce Blueberry",2026-06-14,RO-20260614-035F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12353584,54675,"Sauce Blueberry",2026-06-15,RO-20260615-3505,packing,"Justus Steak House Paskal 23",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12349162,54675,"Sauce Blueberry",2026-06-15,RO-20260615-5E04,packing,"Justus Steak House Paris Van Java",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12359331,54675,"Sauce Blueberry",2026-06-15,RO-20260615-871E,packing,"Justus Steak House Dago",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12352405,54675,"Sauce Blueberry",2026-06-15,RO-20260615-D419,packing,"Justus Steak House Miko Mall",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12327977,54675,"Sauce Blueberry",2026-06-15,RO-20260615-0968,packing,"Justus Steakhouse SMB",Pack,medium,5,1100,10000,-8900,89955,9,250,manual
+12365130,54675,"Sauce Blueberry",2026-06-15,RO-20260616-0C0A,packing,"Justus Steak House Buah Batu",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12433389,54675,"Sauce Blueberry",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12365116,54675,"Sauce Blueberry",2026-06-16,RO-20260616-168C,packing,"Justus Steak House Buah Batu",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12425203,54675,"Sauce Blueberry",2026-06-16,RO-20260616-99D8,packing,"Justus Steakhouse SMB",Pack,medium,5,1100,10000,-8900,89955,9,250,manual
+12425797,54675,"Sauce Blueberry",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12364615,54675,"Sauce Blueberry",2026-06-16,RO-20260616-D393,packing,"Justus Steak House Cimanuk",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12436866,54675,"Sauce Blueberry",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12458571,54675,"Sauce Blueberry",2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12455559,54675,"Sauce Blueberry",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,6,1100,10000,-8900,89955,9,250,manual
+12439027,54675,"Sauce Blueberry",2026-06-16,RO-20260616-DC3A,packing,"Justus Steak House Miko Mall",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12448059,54675,"Sauce Blueberry",2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12485538,54675,"Sauce Blueberry",2026-06-17,RO-20260617-04C3,packing,"Justus Steak House Ciwalk",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12488229,54675,"Sauce Blueberry",2026-06-17,RO-20260617-6301,packing,"Justus Steakhouse The Barn",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12486299,54675,"Sauce Blueberry",2026-06-17,RO-20260617-D9FB,packing,"Justus Steak House Paris Van Java",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12489351,54675,"Sauce Blueberry",2026-06-17,RO-20260617-B844,packing,"Justus Steak House Alam Sutera",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12488888,54675,"Sauce Blueberry",2026-06-17,RO-20260617-33A4,packing,"Justus Steak House Jawa",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12540179,54675,"Sauce Blueberry",2026-06-18,RO-20260618-CEEB,packing,"Justus Steak House Cimanuk",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12526942,54675,"Sauce Blueberry",2026-06-18,RO-20260618-02EB,packing,"Justus Steak House Ciwalk",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12541351,54675,"Sauce Blueberry",2026-06-18,RO-20260618-312F,approved,"Justus Steak House Metro Indah Mall",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12524928,54675,"Sauce Blueberry",2026-06-18,RO-20260618-DFFC,packing,"Justus Steak House Paris Van Java",Pack,medium,2,1100,10000,-8900,89955,9,250,manual
+12521252,54675,"Sauce Blueberry",2026-06-18,RO-20260618-DC4D,packing,"Justus Steak House Bintaro",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12526384,54675,"Sauce Blueberry",2026-06-18,RO-20260618-DE25,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12554841,54675,"Sauce Blueberry",2026-06-18,RO-20260618-6010,packing,"Justus Steak House Jawa",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12530026,54675,"Sauce Blueberry",2026-06-18,RO-20260618-CA15,packing,"Justus Steak House Dago",Pack,medium,4,1100,10000,-8900,89955,9,250,manual
+12527071,54675,"Sauce Blueberry",2026-06-18,RO-20260618-A4C8,packing,"Justus Steak House Lebak Bulus",Pack,medium,1,1100,10000,-8900,89955,9,250,manual
+12174988,52502,"Sea Salt Baby Pyramid",2026-06-12,RO-20260612-559B,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,3,26600,26700,-100,26700,1,45,auto
+12234252,52502,"Sea Salt Baby Pyramid",2026-06-13,RO-20260613-B870,packing,"Justus Steakhouse SMB",Pack,medium,5,26600,26700,-100,26700,1,45,auto
+12324635,52502,"Sea Salt Baby Pyramid",2026-06-15,RO-20260615-3CE0,packing,"Justus Steakhouse The Barn",Pack,medium,2,26600,26700,-100,26700,1,45,auto
+12424439,52502,"Sea Salt Baby Pyramid",2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,2,26600,26700,-100,26700,1,45,auto
+12536819,54688,"Seasoning Vegetable",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Pack,medium,1,12700,3200,9500,12679,4,250,manual
+12430576,52796,"Sedotan Bubble",2026-06-16,RO-20260616-368A,packing,"Justus Steak House Paskal 23",Pack,medium,1,56000,56100,-100,56100,1,500,auto
+12424449,52796,"Sedotan Bubble",2026-06-16,RO-20260616-7726,packing,"Justus Steak House Jawa",Pack,medium,1,56000,56100,-100,56100,1,500,auto
+12483069,52796,"Sedotan Bubble",2026-06-17,RO-20260617-5C2E,packing,"Justus Steak House Cipete",Pack,medium,1,56000,56100,-100,56100,1,500,auto
+12535829,52796,"Sedotan Bubble",2026-06-18,RO-20260618-2B20,packing,"Justus Steak House Paris Van Java",Pack,medium,1,56000,56100,-100,56100,1,500,auto
+12180831,52510,"Skewer Rotan Simpul",2026-06-12,RO-20260612-5F0C,packing,"Justus Steak House Alam Sutera",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12186994,52510,"Skewer Rotan Simpul",2026-06-12,RO-20260612-CE31,packing,"Justus Steakhouse SMB",Pack,medium,3,50400,50500,-100,50500,1,100,auto
+12250719,52510,"Skewer Rotan Simpul",2026-06-13,RO-20260613-97C8,packing,"Justus Steak House Cipete",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12440811,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12423810,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-2619,packing,"Justus Steak House Jawa",Pack,medium,2,50400,50500,-100,50500,1,100,auto
+12448053,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12436841,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Pack,medium,2,50400,50500,-100,50500,1,100,auto
+12421205,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-76C2,packing,"Justus Steak House Metro Indah Mall",Pack,medium,2,50400,50500,-100,50500,1,100,auto
+12455551,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12433412,52510,"Skewer Rotan Simpul",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Pack,medium,1,50400,50500,-100,50500,1,100,auto
+12201675,52432,"SKM Putih",2026-06-12,RO-20260612-9958,packing,"Justus Steak House Bintaro",Can,medium,3,14000,14100,-100,14100,1,260,auto
+12455552,52432,"SKM Putih",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Can,medium,3,14000,14100,-100,14100,1,260,auto
+12433413,52432,"SKM Putih",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Can,medium,3,14000,14100,-100,14100,1,260,auto
+12448048,52432,"SKM Putih",2026-06-16,RO-20260616-5A16,packing,"Justus Steak House Festival Citylink",Can,medium,2,14000,14100,-100,14100,1,260,auto
+12421386,52432,"SKM Putih",2026-06-16,RO-20260616-D381,packing,"JUSTUS BEC",Can,medium,1,14000,14100,-100,14100,1,260,auto
+12424214,52432,"SKM Putih",2026-06-16,RO-20260616-F35B,packing,"Justus Steak House Ciwalk",Can,medium,2,14000,14100,-100,14100,1,260,auto
+12434430,52432,"SKM Putih",2026-06-16,RO-20260616-F152,packing,"Melt Steak d'Botanica",Can,medium,1,14000,14100,-100,14100,1,260,auto
+12421201,52432,"SKM Putih",2026-06-16,RO-20260616-76C2,packing,"Justus Steak House Metro Indah Mall",Can,medium,4,14000,14100,-100,14100,1,260,auto
+12165971,54731,"Smoked Chicken",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Pack,small,1,21800,10900,10900,21792,2,1,manual
+12174876,54731,"Smoked Chicken",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Pack,small,2,21800,10900,10900,21792,2,1,manual
+12171338,54731,"Smoked Chicken",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,small,2,21800,10900,10900,21792,2,1,manual
+12540181,52853,"Sticker Doppio",2026-06-18,RO-20260618-CEEB,packing,"Justus Steak House Cimanuk",Pcs,small,5,13500,1400,12100,13440,1,10,manual
+12458539,52436,Sunquick,2026-06-16,RO-20260616-D516,packing,"Justus Steak House Cipete",Botol,medium,1,168000,168100,-100,168100,1,2000,auto
+12440813,52436,Sunquick,2026-06-16,RO-20260616-AD07,packing,"Justus Steak House Buah Batu",Botol,medium,1,168000,168100,-100,168100,1,2000,auto
+12436844,52436,Sunquick,2026-06-16,RO-20260616-95B3,packing,"Justus Steak House Paskal 23",Botol,medium,1,168000,168100,-100,168100,1,2000,auto
+12160770,52399,"Syrup Mint",2026-06-12,RO-20260612-AD9A,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12163379,52399,"Syrup Mint",2026-06-12,RO-20260612-B74F,packing,"Tempayan Citarum",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12455557,52399,"Syrup Mint",2026-06-16,RO-20260616-C2E2,packing,"Justus Steakhouse Ampera - Kemang",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12421207,52399,"Syrup Mint",2026-06-16,RO-20260616-76C2,packing,"Justus Steak House Metro Indah Mall",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12425788,52399,"Syrup Mint",2026-06-16,RO-20260616-625E,packing,"Justus Steak House Lebak Bulus",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12433419,52464,"Syrup Peach",2026-06-16,RO-20260616-0D40,packing,"Justus Steak House Dago",Botol,medium,1,123200,123300,-100,123300,1,1000,auto
+12485280,52447,"Tepung Roti Kasar",2026-06-16,RO-20260617-280D,packing,"Justus Steak House Paris Van Java",Kilogram,medium,2,22400,22200,200,22200,1,1000,auto
+12519615,52447,"Tepung Roti Kasar",2026-06-17,RO-20260618-59A7,packing,"Justus Steak House Alam Sutera",Kilogram,medium,2,22500,22200,300,22200,1,1000,auto
+12511773,52447,"Tepung Roti Kasar",2026-06-17,RO-20260617-3F63,packing,"Justus Steak House Bintaro",Kilogram,medium,3,22500,22200,300,22200,1,1000,auto
+12547766,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Kilogram,medium,1.5,22500,22200,300,22200,1,1000,auto
+12575468,52447,"Tepung Roti Kasar",2026-06-18,RO-20260619-63A0,packing,"Justus Steak House Lebak Bulus",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12538431,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-9D9D,packing,"JUSTUS FCL",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12542888,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-06C0,packing,"JUSTUS BIP",Kilogram,medium,1.5,22500,22200,300,22200,1,1000,auto
+12563503,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-9B4E,packing,"Justus Steak House Cipete",Kilogram,medium,2,22500,22200,300,22200,1,1000,auto
+12554433,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Kilogram,medium,1.5,22500,22200,300,22200,1,1000,auto
+12571803,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-06E7,packing,"Justus Steak House Dago",Kilogram,medium,3,22500,22200,300,22200,1,1000,auto
+12542732,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-9242,packing,"Justus Steak House Metro Indah Mall",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12552812,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-3425,packing,"Justus Steak House Ciwalk",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12536808,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-18EB,packing,"ASIAN GRILL BIP",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12572191,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-92A2,packing,"Justus Steak House Buah Batu",Kilogram,medium,3,22400,22200,200,22200,1,1000,auto
+12559782,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-EEBA,packing,"Justus Steak House Cimanuk",Kilogram,medium,2.5,22500,22200,300,22200,1,1000,auto
+12536962,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-0773,packing,"Justus Steak House Miko Mall",Kilogram,medium,2,22500,22200,300,22200,1,1000,auto
+12536703,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-453E,packing,"Melt Steak d'Botanica",Kilogram,medium,0.5,22500,22200,300,22200,1,1000,auto
+12549812,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-5FE4,packing,"JUSTUS BEC",Kilogram,medium,0.5,22500,22200,300,22200,1,1000,auto
+12522764,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-9BDE,packing,"Justus Steak House Ciwalk",Kilogram,medium,1,22500,22200,300,22200,1,1000,auto
+12532457,52447,"Tepung Roti Kasar",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Kilogram,medium,2,22500,22200,300,22200,1,1000,auto
+12225227,52449,Terasi,2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Pack,medium,1,8400,8500,-100,8500,1,84,auto
+12446132,52449,Terasi,2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Pack,medium,2,8400,8500,-100,8500,1,84,auto
+12171330,54700,"Thai Dressing",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Pack,medium,2,30200,1700,28500,30194,18,500,manual
+12490460,53230,"Thousand Island",2026-06-17,RO-20260617-BDC2,packing,"Melt Steak d'Botanica",Kilogram,medium,1,46700,11700,35000,46620,4,1000,manual
+12490730,53230,"Thousand Island",2026-06-17,RO-20260617-D694,packing,"JUSTUS BIP",Kilogram,medium,1,46700,11700,35000,46620,4,1000,manual
+12165932,52455,"Vetcin Powder",2026-06-12,RO-20260612-9E90,packing,"Justus Steak House Cipete",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12171306,52455,"Vetcin Powder",2026-06-12,RO-20260612-958F,packing,"Justus Steakhouse Ampera - Kemang",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12225228,52455,"Vetcin Powder",2026-06-12,RO-20260613-8063,packing,"Justus Steakhouse The Barn",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12174842,52455,"Vetcin Powder",2026-06-12,RO-20260612-0F70,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12330336,52455,"Vetcin Powder",2026-06-15,RO-20260615-DB2A,packing,"Justus Steak House Alam Sutera",Kilogram,medium,0.5,39200,50900,-11700,50900,1,1000,auto
+12464806,52455,"Vetcin Powder",2026-06-16,RO-20260617-5DEA,packing,"Justus Steak House Paskal 23",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12437048,52455,"Vetcin Powder",2026-06-16,RO-20260616-E027,packing,"Justus Steak House Miko Mall",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12446133,52455,"Vetcin Powder",2026-06-16,RO-20260616-81A5,packing,"Tempayan Citarum",Kilogram,medium,1,39200,50900,-11700,50900,1,1000,auto
+12496369,52455,"Vetcin Powder",2026-06-17,RO-20260617-53B8,packing,"Justus Steakhouse The Barn",Kilogram,medium,0.25,39300,50900,-11600,50900,1,1000,auto
+12477831,52455,"Vetcin Powder",2026-06-17,RO-20260617-744A,packing,"Justus Steakhouse SMB",Kilogram,medium,0.25,39200,50900,-11700,50900,1,1000,auto
+12554435,52455,"Vetcin Powder",2026-06-18,RO-20260618-52E7,packing,"Justus Steak House Paris Van Java",Kilogram,medium,0.25,39300,50900,-11600,50900,1,1000,auto
+12547767,52455,"Vetcin Powder",2026-06-18,RO-20260618-C27F,packing,"Justus Steak House Jawa",Kilogram,medium,0.25,39300,50900,-11600,50900,1,1000,auto
+12542322,52455,"Vetcin Powder",2026-06-18,RO-20260618-688B,packing,"Tempayan Citarum",Kilogram,medium,1.5,39300,50900,-11600,50900,1,1000,auto
+12532459,52455,"Vetcin Powder",2026-06-18,RO-20260618-8B1B,packing,"Justus Steak House Festival Citylink",Kilogram,medium,0.25,39300,50900,-11600,50900,1,1000,auto
+12174898,52821,"Wrapping Burger",2026-06-12,RO-20260612-8BA3,packing,"JUSTUS BEC",Pack,medium,1,44800,44900,-100,44900,1,100,auto

@@ -191,13 +191,13 @@
                     </div>
 
                     <!-- Approval Flow -->
-                    <div v-if="selectedResignation.approval_flows && selectedResignation.approval_flows.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                    <div v-if="sortedApprovalFlows.length > 0" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                         <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
                             <i class="fa fa-users mr-2 text-blue-500"></i>
                             Approval Flow
                         </h4>
                         <div class="space-y-2">
-                            <div v-for="flow in selectedResignation.approval_flows" :key="flow.id"
+                            <div v-for="flow in sortedApprovalFlows" :key="flow.id"
                                 class="flex items-center justify-between p-3 rounded-lg"
                                 :class="flow.status === 'APPROVED' ? 'bg-green-100 dark:bg-green-900/30' : flow.status === 'REJECTED' ? 'bg-red-100 dark:bg-red-900/30' : 'bg-gray-100 dark:bg-gray-700'">
                                 <div class="flex items-center gap-3">
@@ -491,6 +491,15 @@ async function loadPendingApprovals() {
 const showDetailModal = ref(false);
 const selectedResignation = ref(null);
 const loadingDetail = ref(false);
+
+const sortedApprovalFlows = computed(() => {
+    const flows = selectedResignation.value?.approval_flows;
+    if (!flows || !Array.isArray(flows) || flows.length === 0) {
+        return [];
+    }
+
+    return [...flows].sort((a, b) => (Number(a.approval_level) || 0) - (Number(b.approval_level) || 0));
+});
 
 async function showDetails(resignationId) {
     try {

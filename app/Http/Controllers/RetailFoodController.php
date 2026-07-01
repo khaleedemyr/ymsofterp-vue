@@ -457,6 +457,7 @@ class RetailFoodController extends Controller
                 $mac = OutletInventoryCostResolver::weightedAverageMacPerSmall($qty_lama, $mac_lama, $qty_baru, $cost_small);
                 $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
                 $nilai_baru = $qty_baru * $cost_small;
+                [$macSmall, $macMedium, $macLarge] = OutletInventoryCostResolver::macRatesPerSmallMediumLarge($mac, $itemMaster);
                 if ($existingStock) {
                     \Log::info('RETAIL_FOOD_STORE: Update existing stock', ['stock_id' => $existingStock->id]);
                     DB::table('outlet_food_inventory_stocks')
@@ -466,9 +467,9 @@ class RetailFoodController extends Controller
                             'qty_medium' => $existingStock->qty_medium + $qty_medium,
                             'qty_large' => $existingStock->qty_large + $qty_large,
                             'value' => $total_nilai,
-                            'last_cost_small' => $mac,
-                            'last_cost_medium' => $cost_medium,
-                            'last_cost_large' => $cost_large,
+                            'last_cost_small' => $macSmall,
+                            'last_cost_medium' => $macMedium,
+                            'last_cost_large' => $macLarge,
                             'updated_at' => now(),
                         ]);
                 } else {
@@ -479,10 +480,10 @@ class RetailFoodController extends Controller
                         'qty_small' => $qty_small,
                         'qty_medium' => $qty_medium,
                         'qty_large' => $qty_large,
-                        'value' => $nilai_baru,
-                        'last_cost_small' => $mac,
-                        'last_cost_medium' => $cost_medium,
-                        'last_cost_large' => $cost_large,
+                        'value' => $total_nilai,
+                        'last_cost_small' => $macSmall,
+                        'last_cost_medium' => $macMedium,
+                        'last_cost_large' => $macLarge,
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
@@ -527,7 +528,7 @@ class RetailFoodController extends Controller
                     'out_qty_small' => 0,
                     'out_qty_medium' => 0,
                     'out_qty_large' => 0,
-                    'cost_per_small' => $mac,
+                    'cost_per_small' => $cost_small,
                     'cost_per_medium' => $cost_medium,
                     'cost_per_large' => $cost_large,
                     'value_in' => $nilai_baru,
