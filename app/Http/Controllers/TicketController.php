@@ -1638,6 +1638,222 @@ class TicketController extends Controller
     }
 
     /**
+     * Detail PR / ticket untuk card Expenses di dashboard.
+     */
+    public function dashboardExpenseDetail(Request $request)
+    {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
+        $type = (string) $request->get('type', 'est');
+        $allowedTypes = ['est', 'paid', 'pending', 'no_pr', 'with_pr', 'paid_pr'];
+        if (! in_array($type, $allowedTypes, true)) {
+            return response()->json(['success' => false, 'message' => 'Tipe tidak valid.'], 422);
+        }
+
+        $year = max(2000, min(2100, (int) $request->get('year', now()->year)));
+        $month = max(1, min(12, (int) $request->get('month', now()->month)));
+        $division = (string) $request->get('division', 'all');
+
+        $periodStart = Carbon::create($year, $month, 1)->startOfDay();
+        $periodEnd = $periodStart->copy()->endOfMonth()->endOfDay();
+
+        $filters = [
+            'search' => '',
+            'status' => 'all',
+            'priority' => 'all',
+            'category' => 'all',
+            'outlet' => 'all',
+            'issue_type' => 'all',
+            'division' => $division,
+            'date_from' => $periodStart->toDateString(),
+            'date_to' => $periodEnd->toDateString(),
+        ];
+
+        $tickets = $this->fetchTicketsForReport($request, $filters)
+            ->load(['outlet:id_outlet,nama_outlet', 'status:id,name']);
+
+        if ($type === 'no_pr') {
+            $rows = $tickets
+                ->filter(fn (Ticket $ticket) => $ticket->purchaseRequisitions->isEmpty())
+                ->map(fn (Ticket $ticket) => [
+                    'row_type' => 'ticket',
+                    'ticket_id' => $ticket->id,
+                    'ticket_number' => $ticket->ticket_number,
+                    'ticket_title' => $ticket->title,
+                    'outlet' => $ticket->outlet?->nama_outlet ?? '-',
+                    'ticket_status' => $ticket->status?->name ?? '-',
+                    'ticket_created_at' => $ticket->created_at?->format('d M Y'),
+                ])
+                ->values()
+                ->all();
+
+            return response()->json([
+                'success' => true,
+                'type' => $type,
+                'title' => 'Ticket Tanpa PR',
+                'rows' => $rows,
+                'total' => count($rows),
+            ]);
+        }
+
+        $prs = PurchaseRequisition::query()
+            ->with(['creator:id,nama_lengkap'])
+            ->whereIn('ticket_id', $tickets->pluck('id')->all())
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($prs->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'type' => $type,
+                'title' => $this->dashboardExpenseDetailTitle($type),
+                'rows' => [],
+                'total' => 0,
+            ]);
+        }
+
+        $prIds = $prs->pluck('id')->all();
+        $paymentStatsByPr = $this->loadTicketDashboardPaymentStats(
+            $tickets->filter(fn (Ticket $t) => $t->purchaseRequisitions->isNotEmpty())
+        );
+
+        $poByPr = DB::table('purchase_order_ops_items as poi')
+            ->join('purchase_order_ops as po', 'poi.purchase_order_ops_id', '=', 'po.id')
+            ->leftJoin('users as creator', 'po.created_by', '=', 'creator.id')
+            ->where('poi.source_type', 'purchase_requisition_ops')
+            ->whereIn('poi.source_id', $prIds)
+            ->select(
+                'poi.source_id as pr_id',
+                'po.id as po_id',
+                'po.number as po_number',
+                'po.created_at as po_created_at',
+                'creator.nama_lengkap as po_creator'
+            )
+            ->orderByDesc('po.created_at')
+            ->get()
+            ->groupBy('pr_id');
+
+        $poIds = $poByPr->flatten()->pluck('po_id')->unique()->values()->all();
+
+        $nfpDirectByPr = DB::table('non_food_payments as nfp')
+            ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+            ->whereIn('nfp.purchase_requisition_id', $prIds)
+            ->where('nfp.status', '!=', 'cancelled')
+            ->select(
+                'nfp.purchase_requisition_id as pr_id',
+                'nfp.payment_number',
+                'nfp.payment_date',
+                'nfp.created_at',
+                'nfp.status',
+                'nfp.amount',
+                'creator.nama_lengkap as creator_name'
+            )
+            ->orderByDesc('nfp.created_at')
+            ->get()
+            ->groupBy('pr_id');
+
+        $nfpByPo = collect();
+        if (! empty($poIds)) {
+            $nfpByPo = DB::table('non_food_payments as nfp')
+                ->leftJoin('users as creator', 'nfp.created_by', '=', 'creator.id')
+                ->whereIn('nfp.purchase_order_ops_id', $poIds)
+                ->where('nfp.status', '!=', 'cancelled')
+                ->select(
+                    'nfp.purchase_order_ops_id as po_id',
+                    'nfp.payment_number',
+                    'nfp.payment_date',
+                    'nfp.created_at',
+                    'nfp.status',
+                    'nfp.amount',
+                    'creator.nama_lengkap as creator_name'
+                )
+                ->orderByDesc('nfp.created_at')
+                ->get()
+                ->groupBy('po_id');
+        }
+
+        $ticketMap = $tickets->keyBy('id');
+        $rows = [];
+
+        foreach ($prs as $pr) {
+            $isPaid = $this->isDashboardPrPaid($pr, $paymentStatsByPr);
+            $ticket = $ticketMap->get($pr->ticket_id);
+
+            if ($type === 'paid' || $type === 'paid_pr') {
+                if (! $isPaid) {
+                    continue;
+                }
+            } elseif ($type === 'pending') {
+                if ($isPaid) {
+                    continue;
+                }
+            }
+
+            $pos = ($poByPr->get($pr->id) ?? collect())->unique('po_id')->values();
+            $nfps = collect();
+
+            foreach ($pos as $po) {
+                foreach ($nfpByPo->get($po->po_id) ?? [] as $nfp) {
+                    $nfps->push($nfp);
+                }
+            }
+            foreach ($nfpDirectByPr->get($pr->id) ?? [] as $nfp) {
+                $nfps->push($nfp);
+            }
+            $nfps = $nfps->unique('payment_number')->values();
+
+            $rows[] = [
+                'row_type' => 'pr',
+                'pr_id' => $pr->id,
+                'pr_number' => $pr->pr_number,
+                'pr_date' => $pr->date?->format('d M Y') ?? ($pr->created_at?->format('d M Y') ?? '-'),
+                'pr_creator' => $pr->creator?->nama_lengkap ?? '-',
+                'pr_status' => $pr->status,
+                'amount' => (float) $pr->amount,
+                'is_paid' => $isPaid,
+                'ticket_id' => $pr->ticket_id,
+                'ticket_number' => $ticket?->ticket_number ?? '-',
+                'ticket_title' => $ticket?->title ?? '-',
+                'outlet' => $ticket?->outlet?->nama_outlet ?? '-',
+                'has_po' => $pos->isNotEmpty(),
+                'po_list' => $pos->map(fn ($po) => [
+                    'number' => $po->po_number,
+                    'date' => $po->po_created_at ? Carbon::parse($po->po_created_at)->format('d M Y') : '-',
+                    'creator' => $po->po_creator ?? '-',
+                ])->values()->all(),
+                'nfp_list' => $nfps->map(fn ($nfp) => [
+                    'number' => $nfp->payment_number,
+                    'date' => $nfp->payment_date
+                        ? Carbon::parse($nfp->payment_date)->format('d M Y')
+                        : ($nfp->created_at ? Carbon::parse($nfp->created_at)->format('d M Y') : '-'),
+                    'status' => $nfp->status,
+                    'amount' => (float) $nfp->amount,
+                    'creator' => $nfp->creator_name ?? '-',
+                ])->values()->all(),
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'type' => $type,
+            'title' => $this->dashboardExpenseDetailTitle($type),
+            'rows' => $rows,
+            'total' => count($rows),
+        ]);
+    }
+
+    private function dashboardExpenseDetailTitle(string $type): string
+    {
+        return match ($type) {
+            'paid', 'paid_pr' => 'PR Sudah Dibayar',
+            'pending' => 'PR Pending / Belum Lunas',
+            'with_pr' => 'Ticket dengan PR',
+            default => 'Semua PR (Est. Expense)',
+        };
+    }
+
+    /**
      * Dashboard analitik ticket bulanan (hanya outlet pusat).
      */
     public function dashboard(Request $request)
@@ -1710,7 +1926,7 @@ class TicketController extends Controller
         Carbon $periodEnd
     ): array {
         $tickets = $this->fetchTicketsForReport($request, $filters)
-            ->load(['divisi:id,nama_divisi']);
+            ->load(['divisi:id,nama_divisi', 'assignedUsers:id,nama_lengkap,avatar']);
 
         $prevTickets = $this->fetchTicketsForReport($request, $prevFilters);
 
@@ -1830,12 +2046,14 @@ class TicketController extends Controller
         $expenseByOutlet = [];
         $expenseByCategory = [];
         $topExpenseTickets = [];
+        $teamStats = [];
 
         $today = now()->startOfDay();
 
         foreach ($tickets as $ticket) {
             $slug = $ticket->status?->slug ?? 'unknown';
             $isFinal = (bool) ($ticket->status?->is_final ?? false);
+            $isClosed = $isFinal || in_array($slug, ['closed', 'resolved', 'done'], true);
 
             if ($slug === 'open') {
                 $open++;
@@ -1843,7 +2061,7 @@ class TicketController extends Controller
             } elseif ($slug === 'in_progress') {
                 $inProgress++;
                 $bucket = 'In Progress';
-            } elseif ($isFinal || in_array($slug, ['closed', 'resolved', 'done'], true)) {
+            } elseif ($isClosed) {
                 $closed++;
                 $bucket = 'Closed';
             } else {
@@ -1929,7 +2147,11 @@ class TicketController extends Controller
                     'status' => $ticket->status?->name ?? '-',
                 ];
             }
+
+            $this->accumulateDashboardTeamStats($teamStats, $ticket, $slug, $isClosed);
         }
+
+        $completionByTeam = $this->buildDashboardCompletionByTeam($teamStats);
 
         $total = $tickets->count();
         $completionRate = $total > 0 ? round(($closed / $total) * 100, 1) : 0.0;
@@ -1973,6 +2195,7 @@ class TicketController extends Controller
                 'paid_expense' => round($paidExpense, 2),
                 'pending_expense' => round(max(0, $estExpense - $paidExpense), 2),
             ],
+            'completion_by_team' => $completionByTeam,
         ];
 
         if (! $withCharts) {
@@ -2009,10 +2232,79 @@ class TicketController extends Controller
                 ['label' => 'PR On Process', 'value' => $onProcessPrCount],
                 ['label' => 'PR Paid', 'value' => $paidPrCount],
             ],
+            'team_completion_rate' => array_map(
+                fn (array $row) => ['label' => $row['name'], 'value' => $row['completion_rate']],
+                $completionByTeam
+            ),
+            'team_workload' => $completionByTeam,
         ];
         $result['top_expense_tickets'] = $topExpenseTickets;
 
         return $result;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $teamStats
+     */
+    private function accumulateDashboardTeamStats(array &$teamStats, Ticket $ticket, string $slug, bool $isClosed): void
+    {
+        $assignees = $ticket->relationLoaded('assignedUsers')
+            ? $ticket->assignedUsers
+            : collect();
+
+        $targets = $assignees->isNotEmpty()
+            ? $assignees->map(fn ($user) => ['id' => (int) $user->id, 'name' => $user->nama_lengkap ?? 'User #' . $user->id])
+            : collect([['id' => 0, 'name' => 'Belum di-assign']]);
+
+        foreach ($targets as $target) {
+            $key = (int) $target['id'];
+            if (! isset($teamStats[$key])) {
+                $teamStats[$key] = [
+                    'user_id' => $key,
+                    'name' => (string) $target['name'],
+                    'total' => 0,
+                    'closed' => 0,
+                    'open' => 0,
+                    'in_progress' => 0,
+                ];
+            }
+
+            $teamStats[$key]['total']++;
+            if ($isClosed) {
+                $teamStats[$key]['closed']++;
+            } elseif ($slug === 'in_progress') {
+                $teamStats[$key]['in_progress']++;
+            } else {
+                $teamStats[$key]['open']++;
+            }
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $teamStats
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDashboardCompletionByTeam(array $teamStats): array
+    {
+        $rows = [];
+        foreach ($teamStats as $stat) {
+            $total = (int) $stat['total'];
+            $closed = (int) $stat['closed'];
+            $rows[] = array_merge($stat, [
+                'completion_rate' => $total > 0 ? round(($closed / $total) * 100, 1) : 0.0,
+            ]);
+        }
+
+        usort($rows, function (array $a, array $b) {
+            $rateCmp = $b['completion_rate'] <=> $a['completion_rate'];
+            if ($rateCmp !== 0) {
+                return $rateCmp;
+            }
+
+            return $b['total'] <=> $a['total'];
+        });
+
+        return array_values($rows);
     }
 
     /**
@@ -2091,7 +2383,7 @@ class TicketController extends Controller
     {
         $query = Ticket::with([
             'category:id,name',
-            'status:id,name,slug',
+            'status:id,name,slug,is_final',
             'priority:id,name,level',
             'outlet:id_outlet,nama_outlet',
             'attachments',

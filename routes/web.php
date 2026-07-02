@@ -482,6 +482,7 @@ Route::middleware(['auth'])->group(function () {
     // Ticketing System routes
     Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/dashboard', [\App\Http\Controllers\TicketController::class, 'dashboard'])->name('tickets.dashboard');
+    Route::get('/tickets/dashboard/expense-detail', [\App\Http\Controllers\TicketController::class, 'dashboardExpenseDetail'])->name('tickets.dashboard.expense-detail');
     Route::get('/tickets/calendar', [\App\Http\Controllers\TicketController::class, 'calendar'])->name('tickets.calendar');
     Route::get('/tickets/report', [\App\Http\Controllers\TicketController::class, 'downloadReport'])->name('tickets.report');
     Route::get('/tickets/report-per-categories', [\App\Http\Controllers\TicketController::class, 'reportPerCategories'])->name('tickets.report-per-categories');

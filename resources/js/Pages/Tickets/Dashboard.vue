@@ -120,34 +120,55 @@
             <i class="fa-solid fa-money-bill-wave text-emerald-500"></i> Expenses (PR)
           </h2>
           <div class="space-y-4">
-            <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
+            <button
+              type="button"
+              class="w-full text-left rounded-xl bg-emerald-50 border border-emerald-100 p-4 hover:bg-emerald-100/80 hover:border-emerald-200 transition-colors cursor-pointer"
+              @click="openExpenseDetail('est')"
+            >
               <div class="text-xs font-semibold text-emerald-700 uppercase">Est. Expense</div>
               <div class="text-2xl font-extrabold text-emerald-800">{{ formatCurrency(dashboard.expenses?.est_expense) }}</div>
               <DeltaBadge v-if="dashboard.comparison?.est_expense" :delta="dashboard.comparison.est_expense" class="mt-1" />
-            </div>
-            <div class="rounded-xl bg-blue-50 border border-blue-100 p-4">
+              <div class="text-[10px] text-emerald-600 mt-2">Klik untuk lihat detail PR</div>
+            </button>
+            <button
+              type="button"
+              class="w-full text-left rounded-xl bg-blue-50 border border-blue-100 p-4 hover:bg-blue-100/80 hover:border-blue-200 transition-colors cursor-pointer"
+              @click="openExpenseDetail('paid')"
+            >
               <div class="text-xs font-semibold text-blue-700 uppercase">Sudah Dibayar</div>
               <div class="text-xl font-bold text-blue-800">{{ formatCurrency(dashboard.expenses?.paid_expense) }}</div>
               <div class="text-xs text-blue-600 mt-1">{{ dashboard.progress?.paid_expense_rate || 0 }}% dari est. expense</div>
-            </div>
-            <div class="rounded-xl bg-amber-50 border border-amber-100 p-4">
+              <div class="text-[10px] text-blue-500 mt-2">Klik untuk lihat PR yang sudah dibayar</div>
+            </button>
+            <button
+              type="button"
+              class="w-full text-left rounded-xl bg-amber-50 border border-amber-100 p-4 hover:bg-amber-100/80 hover:border-amber-200 transition-colors cursor-pointer"
+              @click="openExpenseDetail('pending')"
+            >
               <div class="text-xs font-semibold text-amber-700 uppercase">Pending</div>
               <div class="text-xl font-bold text-amber-800">{{ formatCurrency(dashboard.expenses?.pending_expense) }}</div>
-            </div>
-            <ProgressBar label="Payment Progress" :percent="dashboard.progress?.paid_expense_rate || 0" color="bg-emerald-500" />
+              <div class="text-[10px] text-amber-600 mt-2">Klik untuk lihat PR pending</div>
+            </button>
+            <button
+              type="button"
+              class="w-full text-left rounded-xl hover:bg-gray-50 transition-colors"
+              @click="openExpenseDetail('paid')"
+            >
+              <ProgressBar label="Payment Progress" :percent="dashboard.progress?.paid_expense_rate || 0" color="bg-emerald-500" />
+            </button>
             <div class="grid grid-cols-3 gap-2 text-center text-xs">
-              <div class="rounded-lg bg-gray-50 p-2">
+              <button type="button" class="rounded-lg bg-gray-50 p-2 hover:bg-gray-100 transition-colors" @click="openExpenseDetail('no_pr')">
                 <div class="font-bold text-gray-800">{{ dashboard.no_pr }}</div>
                 <div class="text-gray-500">Tanpa PR</div>
-              </div>
-              <div class="rounded-lg bg-gray-50 p-2">
+              </button>
+              <button type="button" class="rounded-lg bg-gray-50 p-2 hover:bg-gray-100 transition-colors" @click="openExpenseDetail('with_pr')">
                 <div class="font-bold text-gray-800">{{ dashboard.with_pr }}</div>
                 <div class="text-gray-500">Dengan PR</div>
-              </div>
-              <div class="rounded-lg bg-gray-50 p-2">
+              </button>
+              <button type="button" class="rounded-lg bg-gray-50 p-2 hover:bg-gray-100 transition-colors" @click="openExpenseDetail('paid_pr')">
                 <div class="font-bold text-gray-800">{{ dashboard.paid_pr_count }}</div>
                 <div class="text-gray-500">PR Paid</div>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -184,6 +205,82 @@
         <ChartCard title="Dikerjakan Oleh" icon="fa-user-gear">
           <apexchart type="pie" height="320" :options="executorPieOptions" :series="executorPieSeries" />
         </ChartCard>
+      </div>
+
+      <!-- Completion per Team -->
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+        <ChartCard title="Completion Rate per Tim" icon="fa-users">
+          <div v-if="!(dashboard.completion_by_team?.length)">
+            <p class="text-sm text-gray-400 text-center py-16">Belum ada data assign tim pada periode ini</p>
+          </div>
+          <apexchart
+            v-else
+            type="bar"
+            height="360"
+            :options="teamCompletionOptions"
+            :series="teamCompletionSeries"
+          />
+        </ChartCard>
+
+        <ChartCard title="Workload Tim (Open / In Progress / Closed)" icon="fa-layer-group">
+          <div v-if="!(dashboard.charts?.team_workload?.length)">
+            <p class="text-sm text-gray-400 text-center py-16">Belum ada data assign tim pada periode ini</p>
+          </div>
+          <apexchart
+            v-else
+            type="bar"
+            height="360"
+            :options="teamWorkloadOptions"
+            :series="teamWorkloadSeries"
+          />
+        </ChartCard>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-6">
+        <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <i class="fa-solid fa-user-check text-violet-500"></i> Detail Completion per Tim
+        </h2>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-xs uppercase text-gray-500 border-b">
+                <th class="py-2 pr-3">Anggota Tim</th>
+                <th class="py-2 pr-3 text-center">Total</th>
+                <th class="py-2 pr-3 text-center">Closed</th>
+                <th class="py-2 pr-3 text-center">In Progress</th>
+                <th class="py-2 pr-3 text-center">Open</th>
+                <th class="py-2 pr-3">Completion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!(dashboard.completion_by_team?.length)">
+                <td colspan="6" class="py-8 text-center text-gray-400">Belum ada data assign tim</td>
+              </tr>
+              <tr
+                v-for="row in dashboard.completion_by_team"
+                :key="row.user_id"
+                class="border-b border-gray-50"
+              >
+                <td class="py-3 pr-3 font-semibold text-gray-800">{{ row.name }}</td>
+                <td class="py-3 pr-3 text-center">{{ row.total }}</td>
+                <td class="py-3 pr-3 text-center text-emerald-700 font-semibold">{{ row.closed }}</td>
+                <td class="py-3 pr-3 text-center text-amber-700">{{ row.in_progress }}</td>
+                <td class="py-3 pr-3 text-center text-blue-700">{{ row.open }}</td>
+                <td class="py-3 pr-3 min-w-[200px]">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        class="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+                        :style="{ width: `${Math.min(100, row.completion_rate)}%` }"
+                      />
+                    </div>
+                    <span class="text-xs font-bold text-gray-800 w-10 text-right">{{ row.completion_rate }}%</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Expense charts -->
@@ -240,6 +337,146 @@
         </div>
       </div>
     </div>
+
+    <!-- Expense Detail Modal -->
+    <Teleport to="body">
+      <div
+        v-if="expenseModal.open"
+        class="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50"
+        @click.self="closeExpenseModal"
+      >
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+          <div class="flex items-center justify-between px-6 py-4 border-b">
+            <div>
+              <h3 class="text-lg font-bold text-gray-900">{{ expenseModal.title }}</h3>
+              <p class="text-xs text-gray-500">{{ dashboard.period?.label }} · {{ dashboard.division_label }}</p>
+            </div>
+            <button type="button" class="text-gray-400 hover:text-gray-600 text-xl" @click="closeExpenseModal">
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-auto p-6">
+            <div v-if="expenseModal.loading" class="py-16 text-center text-gray-500">
+              <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data...
+            </div>
+            <div v-else-if="expenseModal.error" class="py-16 text-center text-rose-600">{{ expenseModal.error }}</div>
+            <div v-else-if="!expenseModal.rows.length" class="py-16 text-center text-gray-400">Tidak ada data</div>
+
+            <!-- Ticket tanpa PR -->
+            <table v-else-if="expenseModal.type === 'no_pr'" class="min-w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs uppercase text-gray-500 border-b">
+                  <th class="py-2 pr-3">Ticket</th>
+                  <th class="py-2 pr-3">Outlet</th>
+                  <th class="py-2 pr-3">Status</th>
+                  <th class="py-2">Tanggal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in expenseModal.rows"
+                  :key="row.ticket_id"
+                  class="border-b border-gray-50 hover:bg-gray-50 cursor-pointer"
+                  @click="openTicket(row.ticket_id)"
+                >
+                  <td class="py-2 pr-3">
+                    <div class="font-semibold text-indigo-700">{{ row.ticket_number }}</div>
+                    <div class="text-xs text-gray-500">{{ row.ticket_title }}</div>
+                  </td>
+                  <td class="py-2 pr-3">{{ row.outlet }}</td>
+                  <td class="py-2 pr-3">{{ row.ticket_status }}</td>
+                  <td class="py-2">{{ row.ticket_created_at }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Detail PR -->
+            <table v-else class="min-w-full text-sm">
+              <thead>
+                <tr class="text-left text-xs uppercase text-gray-500 border-b">
+                  <th class="py-2 pr-2">PR</th>
+                  <th class="py-2 pr-2">Ticket</th>
+                  <th class="py-2 pr-2">Creator PR</th>
+                  <th class="py-2 pr-2">Tgl PR</th>
+                  <th class="py-2 pr-2">PO</th>
+                  <th class="py-2 pr-2">Tgl PO</th>
+                  <th class="py-2 pr-2">NFP</th>
+                  <th class="py-2 pr-2">Tgl NFP</th>
+                  <th class="py-2 pr-2 text-right">Amount</th>
+                  <th class="py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in expenseModal.rows"
+                  :key="row.pr_id"
+                  class="border-b border-gray-50 hover:bg-gray-50 align-top"
+                >
+                  <td class="py-2 pr-2">
+                    <a :href="`/purchase-requisitions/${row.pr_id}`" class="font-semibold text-indigo-700 hover:underline" target="_blank">
+                      {{ row.pr_number }}
+                    </a>
+                    <div class="text-[10px] text-gray-500">{{ row.pr_status }}</div>
+                  </td>
+                  <td class="py-2 pr-2">
+                    <button type="button" class="text-left text-indigo-600 hover:underline text-xs" @click="openTicket(row.ticket_id)">
+                      {{ row.ticket_number }}
+                    </button>
+                    <div class="text-[10px] text-gray-500 truncate max-w-[120px]">{{ row.ticket_title }}</div>
+                  </td>
+                  <td class="py-2 pr-2 text-xs">{{ row.pr_creator }}</td>
+                  <td class="py-2 pr-2 text-xs whitespace-nowrap">{{ row.pr_date }}</td>
+                  <td class="py-2 pr-2 text-xs">
+                    <template v-if="row.has_po">
+                      <div v-for="(po, i) in row.po_list" :key="i">{{ po.number }}</div>
+                      <div class="text-[10px] text-gray-500">{{ row.po_list[0]?.creator }}</div>
+                    </template>
+                    <span v-else class="text-rose-600 font-semibold">Belum PO</span>
+                  </td>
+                  <td class="py-2 pr-2 text-xs whitespace-nowrap">
+                    <template v-if="row.has_po">
+                      <div v-for="(po, i) in row.po_list" :key="i">{{ po.date }}</div>
+                    </template>
+                    <span v-else>-</span>
+                  </td>
+                  <td class="py-2 pr-2 text-xs">
+                    <template v-if="row.nfp_list?.length">
+                      <div v-for="(nfp, i) in row.nfp_list" :key="i">
+                        {{ nfp.number }}
+                        <span class="text-[10px] text-gray-500">({{ nfp.status }})</span>
+                      </div>
+                    </template>
+                    <span v-else class="text-gray-400">-</span>
+                  </td>
+                  <td class="py-2 pr-2 text-xs whitespace-nowrap">
+                    <template v-if="row.nfp_list?.length">
+                      <div v-for="(nfp, i) in row.nfp_list" :key="i">{{ nfp.date }}</div>
+                      <div v-if="row.nfp_list[0]?.creator" class="text-[10px] text-gray-500">{{ row.nfp_list[0].creator }}</div>
+                    </template>
+                    <span v-else>-</span>
+                  </td>
+                  <td class="py-2 pr-2 text-right font-semibold whitespace-nowrap">{{ formatCurrency(row.amount) }}</td>
+                  <td class="py-2">
+                    <span
+                      class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      :class="row.is_paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                    >
+                      {{ row.is_paid ? 'Paid' : 'Pending' }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="px-6 py-3 border-t text-xs text-gray-500 flex justify-between">
+            <span>Total: {{ expenseModal.rows.length }} item</span>
+            <button type="button" class="text-indigo-600 font-semibold hover:underline" @click="closeExpenseModal">Tutup</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -248,6 +485,7 @@ import { computed, reactive, ref, defineComponent, h } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueApexCharts from 'vue3-apexcharts';
+import axios from 'axios';
 
 const apexchart = VueApexCharts;
 
@@ -258,6 +496,15 @@ const props = defineProps({
 });
 
 const loading = ref(false);
+const expenseModal = reactive({
+  open: false,
+  loading: false,
+  error: null,
+  type: 'est',
+  title: '',
+  rows: [],
+});
+
 const localFilters = reactive({
   year: props.filters.year || new Date().getFullYear(),
   month: props.filters.month || new Date().getMonth() + 1,
@@ -301,7 +548,42 @@ function goBack() {
   router.visit('/tickets');
 }
 
+async function openExpenseDetail(type) {
+  expenseModal.open = true;
+  expenseModal.loading = true;
+  expenseModal.error = null;
+  expenseModal.type = type;
+  expenseModal.rows = [];
+  expenseModal.title = 'Memuat...';
+
+  try {
+    const res = await axios.get('/tickets/dashboard/expense-detail', {
+      params: {
+        type,
+        year: localFilters.year,
+        month: localFilters.month,
+        division: localFilters.division,
+      },
+    });
+    if (res.data?.success !== true) {
+      expenseModal.error = res.data?.message || 'Gagal memuat data';
+      return;
+    }
+    expenseModal.title = res.data.title || 'Detail Expense';
+    expenseModal.rows = res.data.rows || [];
+  } catch (e) {
+    expenseModal.error = e?.response?.data?.message || 'Gagal memuat detail expense';
+  } finally {
+    expenseModal.loading = false;
+  }
+}
+
+function closeExpenseModal() {
+  expenseModal.open = false;
+}
+
 function openTicket(id) {
+  closeExpenseModal();
   router.visit(`/tickets/${id}`);
 }
 
@@ -378,6 +660,47 @@ const funnelOptions = computed(() => ({
   xaxis: { categories: (props.dashboard.charts?.payment_funnel || []).map((d) => d.label) },
   legend: { show: false },
   dataLabels: { enabled: true },
+}));
+
+const teamCompletionSeries = computed(() => [{
+  name: 'Completion %',
+  data: (props.dashboard.charts?.team_completion_rate || []).map((d) => d.value),
+}]);
+
+const teamCompletionOptions = computed(() => ({
+  chart: { toolbar: { show: false } },
+  plotOptions: { bar: { borderRadius: 6, horizontal: true, dataLabels: { position: 'center' } } },
+  colors: ['#7C3AED'],
+  xaxis: {
+    categories: (props.dashboard.charts?.team_completion_rate || []).map((d) => d.label),
+    max: 100,
+    labels: { formatter: (v) => `${v}%` },
+  },
+  dataLabels: {
+    enabled: true,
+    formatter: (v) => `${v}%`,
+    style: { fontSize: '11px' },
+  },
+  tooltip: { y: { formatter: (v) => `${v}%` } },
+}));
+
+const teamWorkloadSeries = computed(() => {
+  const rows = props.dashboard.charts?.team_workload || [];
+  return [
+    { name: 'Closed', data: rows.map((r) => r.closed) },
+    { name: 'In Progress', data: rows.map((r) => r.in_progress) },
+    { name: 'Open', data: rows.map((r) => r.open) },
+  ];
+});
+
+const teamWorkloadOptions = computed(() => ({
+  chart: { toolbar: { show: false }, stacked: true, stackType: '100%' },
+  plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
+  colors: ['#10B981', '#F59E0B', '#3B82F6'],
+  xaxis: { categories: (props.dashboard.charts?.team_workload || []).map((r) => r.name) },
+  legend: { position: 'top' },
+  dataLabels: { enabled: false },
+  tooltip: { y: { formatter: (v) => `${Math.round(v)}%` } },
 }));
 
 // Sub-components (inline) — DeltaBadge harus didefinisikan dulu
