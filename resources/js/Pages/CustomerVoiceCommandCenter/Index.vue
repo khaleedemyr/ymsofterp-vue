@@ -540,6 +540,16 @@
                       >
                         Timeline
                       </button>
+                      <button
+                        type="button"
+                        class="rounded-lg border border-[#25D366]/30 bg-[#25D366]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#128C7E] transition hover:bg-[#25D366]/20 disabled:opacity-60"
+                        :disabled="sharingCaseId === row.id"
+                        title="Share ke WhatsApp"
+                        @click="shareToWhatsApp(row)"
+                      >
+                        <i :class="sharingCaseId === row.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'" class="mr-0.5"></i>
+                        WA
+                      </button>
                       <a
                         :href="capaExportPdfUrl(row.id)"
                         target="_blank"
@@ -614,13 +624,25 @@
             <h3 class="truncate text-base font-bold text-slate-900">Case Detail #{{ selectedCase.id }}</h3>
             <p class="truncate text-xs text-slate-500">{{ sourceLabel(selectedCase.source_type) }} · {{ formatDate(selectedCase.event_at) }}</p>
           </div>
-          <button
-            type="button"
-            class="min-h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200"
-            @click="closeDetail"
-          >
-            Tutup
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-[#25D366]/30 bg-[#25D366]/10 px-4 py-2 text-sm font-semibold text-[#128C7E] hover:bg-[#25D366]/20 disabled:opacity-60"
+              :disabled="sharingCaseId === selectedCase.id"
+              title="Share ke WhatsApp"
+              @click="shareToWhatsApp(selectedCase)"
+            >
+              <i :class="sharingCaseId === selectedCase.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i>
+              Share WA
+            </button>
+            <button
+              type="button"
+              class="min-h-11 shrink-0 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200"
+              @click="closeDetail"
+            >
+              Tutup
+            </button>
+          </div>
         </div>
 
         <div class="space-y-5 px-4 py-4 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-5">
@@ -1065,6 +1087,7 @@ import CapaUserPicker from '@/Pages/CustomerVoiceCommandCenter/CapaUserPicker.vu
 import NotifyUserMultiPicker from '@/Pages/CustomerVoiceCommandCenter/NotifyUserMultiPicker.vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import { computed, onMounted, ref, watch } from 'vue'
+import axios from 'axios'
 import Swal from 'sweetalert2'
 
 const page = usePage()
@@ -1109,6 +1132,7 @@ const assigneeNameMap = computed(() => {
 
 const syncing = ref(false)
 const updatingCaseId = ref(null)
+const sharingCaseId = ref(null)
 const openedActivityCaseId = ref(null)
 const detailCaseId = ref(null)
 const capaSaving = ref(false)
@@ -1350,6 +1374,31 @@ function capaExportPdfUrl(id) {
 
 function capaExportExcelUrl(id) {
   return route('customer-voice-command-center.cases.capa.export-excel', id)
+}
+
+async function shareToWhatsApp(row) {
+  const caseId = Number(row?.id)
+  if (!Number.isFinite(caseId) || caseId <= 0) return
+  if (sharingCaseId.value === caseId) return
+
+  try {
+    sharingCaseId.value = caseId
+    const response = await axios.post(route('customer-voice-command-center.cases.share-link', caseId))
+    const url = response.data?.url
+    if (!url) {
+      throw new Error('Link tidak tersedia')
+    }
+
+    const outlet = row?.nama_outlet ? ` - ${row.nama_outlet}` : ''
+    const summary = row?.summary_id ? `: ${row.summary_id}` : ''
+    const fallback = `Customer Voice Case #${caseId}${outlet}${summary}\n${url}`
+    const message = response.data?.message || fallback
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank')
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error')
+  } finally {
+    sharingCaseId.value = null
+  }
 }
 
 const exportPdfHref = computed(() => {

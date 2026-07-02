@@ -209,6 +209,56 @@ class CustomerVoiceCommandCenterController extends Controller
         ]);
     }
 
+    /**
+     * Landing page publik — tanpa login, via share token.
+     */
+    public function publicShow(string $token): Response
+    {
+        $row = DB::table('feedback_cases')->where('share_token', $token)->first(['id']);
+        if ($row === null) {
+            abort(404);
+        }
+
+        $payload = $this->prepareCapaExport((int) $row->id);
+        if ($payload === null) {
+            abort(404);
+        }
+
+        $case = $this->sanitizeCaseForPublicShare($payload['presented']);
+        $activities = $this->loadPublicShareActivities((int) $row->id);
+
+        return Inertia::render('CustomerVoiceCommandCenter/PublicShow', [
+            'case' => $case,
+            'capa_grouped_sections' => $payload['capa_grouped_sections'],
+            'capa_evidence_images' => $payload['capa_evidence_pdf_images'],
+            'activities' => $activities,
+            'generated_at' => $payload['generated_at'],
+        ]);
+    }
+
+    /**
+     * Generate / kembalikan link share untuk WhatsApp.
+     */
+    public function generateShareLink(Request $request, int $id): JsonResponse
+    {
+        $payload = $this->prepareCapaExport($id);
+        if ($payload === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Case tidak ditemukan.',
+            ], 404);
+        }
+
+        $shareToken = $this->ensureFeedbackCaseShareToken($id);
+        $url = route('customer-voice-command-center.public.show', $shareToken);
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $this->buildFeedbackCaseShareMessage($payload['presented'], $url),
+        ]);
+    }
+
     public function apiIndex(Request $request)
     {
         return response()->json([
@@ -2471,5 +2521,78 @@ class CustomerVoiceCommandCenterController extends Controller
         }
 
         return round((($rows[$mid - 1] + $rows[$mid]) / 2), 2);
+    }
+
+    private function ensureFeedbackCaseShareToken(int $id): string
+    {
+        $row = DB::table('feedback_cases')->where('id', $id)->first(['id', 'share_token']);
+        if ($row === null) {
+            abort(404);
+        }
+
+        if (! empty($row->share_token)) {
+            return (string) $row->share_token;
+        }
+
+        $token = Str::random(48);
+        DB::table('feedback_cases')->where('id', $id)->update([
+            'share_token' => $token,
+            'updated_at' => now(),
+        ]);
+
+        return $token;
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     */
+    private function buildFeedbackCaseShareMessage(array $case, string $url): string
+    {
+        $outletName = trim((string) ($case['nama_outlet'] ?? ''));
+        $summary = trim((string) ($case['summary_id'] ?? ''));
+        $line = 'Customer Voice Case #'.(int) ($case['id'] ?? 0);
+        if ($outletName !== '') {
+            $line .= ' - '.$outletName;
+        }
+        if ($summary !== '') {
+            $line .= ': '.Str::limit($summary, 120);
+        }
+
+        return $line."\n".$url;
+    }
+
+    /**
+     * @param  array<string, mixed>  $case
+     * @return array<string, mixed>
+     */
+    private function sanitizeCaseForPublicShare(array $case): array
+    {
+        unset($case['notify_follower_user_ids'], $case['regional_user_ids']);
+
+        return $case;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function loadPublicShareActivities(int $caseId): array
+    {
+        return DB::table('feedback_case_activities as a')
+            ->leftJoin('users as u', 'u.id', '=', 'a.actor_user_id')
+            ->where('a.case_id', $caseId)
+            ->orderByDesc('a.id')
+            ->limit(30)
+            ->get([
+                'a.id',
+                'a.activity_type',
+                'a.from_status',
+                'a.to_status',
+                'a.note',
+                'a.created_at',
+                'u.nama_lengkap as actor_name',
+            ])
+            ->reverse()
+            ->values()
+            ->all();
     }
 }

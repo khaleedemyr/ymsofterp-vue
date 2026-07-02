@@ -147,6 +147,10 @@ Route::get('/kebijakan-privasi', function () {
 Route::get('/tickets/share/{token}', [\App\Http\Controllers\TicketController::class, 'publicShow'])
     ->name('tickets.public.show');
 
+// Customer Voice case share — publik tanpa login
+Route::get('/customer-voice/share/{token}', [CustomerVoiceCommandCenterController::class, 'publicShow'])
+    ->name('customer-voice-command-center.public.show');
+
 Route::get('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
     ->name('external.login');
 Route::post('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
@@ -247,6 +251,8 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.cases.capa.submit-approval');
     Route::post('/customer-voice-command-center/cases/{id}/capa/approve', [CustomerVoiceCommandCenterController::class, 'approveCapa'])
         ->name('customer-voice-command-center.cases.capa.approve');
+    Route::post('/customer-voice-command-center/cases/{id}/share-link', [CustomerVoiceCommandCenterController::class, 'generateShareLink'])
+        ->name('customer-voice-command-center.cases.share-link');
 
     // Backward-compatibility for old menu/link path
     Route::redirect('/scrapper-google-review', '/google-review')->name('scrapper-google-review.index');
