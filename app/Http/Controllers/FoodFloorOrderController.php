@@ -17,6 +17,7 @@ use App\Models\WarehouseOutlet;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use App\Support\FloorOrderItemPriceResolver;
+use App\Support\FloorOrderPriceAuditor;
 
 class FoodFloorOrderController extends Controller
 {
@@ -412,6 +413,11 @@ class FoodFloorOrderController extends Controller
     public function submit(Request $request, $id)
     {
         $order = FoodFloorOrder::findOrFail($id);
+
+        // Pastikan harga baris FO = item_prices / FGR +12% terkini sebelum budget & approve
+        app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
+        $order->refresh();
+        $order->load('items');
         
         // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
         if ($order->fo_mode !== 'RO Khusus') {
@@ -563,6 +569,10 @@ class FoodFloorOrderController extends Controller
         
         // Budget checking hanya untuk approve, bukan reject
         if (!$isReject) {
+            app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
+            $order->refresh();
+            $order->load('items');
+
             $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
             if (!$budgetCheckResult['success']) {
                 \Log::error('FO_APPROVE: Budget check failed', [

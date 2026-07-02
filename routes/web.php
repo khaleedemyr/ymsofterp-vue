@@ -483,6 +483,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tickets', [\App\Http\Controllers\TicketController::class, 'index'])->name('tickets.index');
     Route::get('/tickets/calendar', [\App\Http\Controllers\TicketController::class, 'calendar'])->name('tickets.calendar');
     Route::get('/tickets/report', [\App\Http\Controllers\TicketController::class, 'downloadReport'])->name('tickets.report');
+    Route::get('/tickets/report-per-categories', [\App\Http\Controllers\TicketController::class, 'reportPerCategories'])->name('tickets.report-per-categories');
+    Route::get('/tickets/report-per-categories/export', [\App\Http\Controllers\TicketController::class, 'exportReportPerCategories'])->name('tickets.report-per-categories.export');
     Route::get('/tickets/timeline', function () {
         return redirect()->route('tickets.calendar', request()->query());
     })->name('tickets.timeline');

@@ -23,6 +23,13 @@
             </button>
             <button
               type="button"
+              @click="openReportPerCategories"
+              class="bg-white/90 text-amber-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
+              <i class="fa-solid fa-table-list mr-2"></i> Report Per Categories
+            </button>
+            <button
+              type="button"
               @click="downloadReport"
               class="bg-white/90 text-sky-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
             >
@@ -291,7 +298,7 @@
                 <td class="px-6 py-4 align-top">
                   <div class="space-y-1.5">
                     <select
-                      v-if="can_manage_tickets && ticketStatuses.length"
+                      v-if="ticket.can_update_status && ticketStatuses.length"
                       :value="String(ticket.status_id)"
                       :disabled="statusUpdatingId === ticket.id"
                       title="Ubah status tanpa buka halaman edit"
@@ -716,6 +723,101 @@
         </div>
       </div>
     </div>
+
+    <!-- Close ticket evidence modal (optional) -->
+    <div
+      v-if="closeTicketModal.open"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      @click.self="cancelCloseTicket"
+    >
+      <div class="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+        <div class="border-b border-gray-200 px-5 py-4">
+          <h3 class="text-lg font-semibold text-gray-900">Tutup Ticket</h3>
+          <p class="mt-1 text-sm text-gray-500">
+            {{ closeTicketModal.ticket?.ticket_number }} — {{ closeTicketModal.ticket?.title }}
+          </p>
+        </div>
+        <div class="px-5 py-4">
+          <p class="mb-3 text-sm text-gray-600">
+            Upload evidence penutupan (foto before/after, dll) bersifat <strong>opsional</strong>.
+          </p>
+          <label class="mb-1 block text-sm font-medium text-gray-700">Catatan penutupan (opsional)</label>
+          <textarea
+            v-model="closeTicketModal.closeNote"
+            rows="3"
+            class="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+            placeholder="Contoh: Lampu sudah diganti, kabel sudah dirapikan..."
+          ></textarea>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="rounded-md bg-gray-100 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-200"
+              @click="openCloseEvidenceFileUpload"
+            >
+              <i class="fa-solid fa-upload mr-1"></i> Upload Evidence
+            </button>
+            <button
+              type="button"
+              class="rounded-md bg-blue-100 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-200"
+              @click="openCloseEvidenceCamera"
+            >
+              <i class="fa-solid fa-camera mr-1"></i> Camera
+            </button>
+            <input
+              ref="closeEvidenceFileInput"
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx"
+              class="hidden"
+              @change="handleCloseEvidenceFileUpload"
+            />
+          </div>
+          <div v-if="closeTicketModal.attachments.length > 0" class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">
+            <div
+              v-for="(attachment, idx) in closeTicketModal.attachments"
+              :key="`close-evidence-${idx}`"
+              class="relative rounded-lg border border-gray-200 p-2"
+            >
+              <button
+                type="button"
+                class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white"
+                @click="removeCloseEvidenceAttachment(idx)"
+              >
+                <i class="fa-solid fa-times"></i>
+              </button>
+              <img
+                v-if="attachment.type.startsWith('image/')"
+                :src="attachment.preview"
+                :alt="attachment.name"
+                class="h-20 w-full rounded object-cover"
+              />
+              <div v-else class="break-words text-xs text-gray-700">
+                <i class="fa-solid fa-file mr-1"></i>{{ attachment.name }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+          <button
+            type="button"
+            class="rounded-md bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200"
+            :disabled="closeTicketModal.saving"
+            @click="cancelCloseTicket"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            class="rounded-md bg-green-600 px-4 py-2 text-sm text-white hover:bg-green-700 disabled:bg-gray-300"
+            :disabled="closeTicketModal.saving"
+            @click="confirmCloseTicket"
+          >
+            <i v-if="closeTicketModal.saving" class="fa-solid fa-spinner fa-spin mr-1"></i>
+            Tutup Ticket
+          </button>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -776,6 +878,17 @@ const commentModal = ref({
   attachments: []
 });
 const indexCommentFileInput = ref(null);
+const closeEvidenceFileInput = ref(null);
+const closeTicketModal = ref({
+  open: false,
+  saving: false,
+  ticket: null,
+  statusId: null,
+  previousStatusId: null,
+  selectEl: null,
+  closeNote: '',
+  attachments: [],
+});
 const hasActiveFilters = computed(() => {
   return (
     status.value !== 'all' ||
@@ -870,6 +983,10 @@ function openCreate() {
 
 function openCalendar() {
   router.visit('/tickets/calendar');
+}
+
+function openReportPerCategories() {
+  router.visit('/tickets/report-per-categories');
 }
 
 function downloadReport() {
@@ -969,9 +1086,170 @@ async function quickUpdateStatus(ticket, event) {
   if (String(newId) === String(ticket.status_id)) return;
 
   const previousId = String(ticket.status_id);
-  statusUpdatingId.value = ticket.id;
+  const newStatus = ticketStatuses.value.find((s) => String(s.id) === String(newId));
+
+  if (newStatus?.slug === 'closed' && ticket.status?.slug !== 'closed') {
+    closeTicketModal.value = {
+      open: true,
+      saving: false,
+      ticket,
+      statusId: newId,
+      previousStatusId: previousId,
+      selectEl: select,
+      closeNote: '',
+      attachments: [],
+    };
+    return;
+  }
+
+  await submitTicketStatusChange(ticket.id, newId, select, previousId);
+}
+
+function cancelCloseTicket() {
+  if (closeTicketModal.value.selectEl) {
+    closeTicketModal.value.selectEl.value = closeTicketModal.value.previousStatusId;
+  }
+  closeTicketModal.value.open = false;
+  closeTicketModal.value.attachments = [];
+}
+
+function openCloseEvidenceFileUpload() {
+  closeEvidenceFileInput.value?.click();
+}
+
+function handleCloseEvidenceFileUpload(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach((file) => {
+    if (file.size > 10 * 1024 * 1024) return;
+    const attachment = {
+      file,
+      name: file.name,
+      type: file.type || '',
+      preview: null,
+    };
+    if (file.type?.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        attachment.preview = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+    closeTicketModal.value.attachments.push(attachment);
+  });
+  event.target.value = '';
+}
+
+function removeCloseEvidenceAttachment(index) {
+  closeTicketModal.value.attachments.splice(index, 1);
+}
+
+function openCloseEvidenceCamera() {
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[70]';
+  modal.innerHTML = `
+    <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-lg font-semibold">Capture Evidence</h3>
+        <button id="close-evidence-camera-close" class="text-gray-500 hover:text-gray-700"><i class="fas fa-times"></i></button>
+      </div>
+      <video id="close-evidence-camera-video" class="w-full h-64 bg-gray-200 rounded" autoplay></video>
+      <div class="mt-3 flex gap-2">
+        <button id="close-evidence-camera-capture" class="flex-1 bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600">Capture</button>
+        <button id="close-evidence-camera-cancel" class="flex-1 bg-gray-500 text-white py-2 px-4 rounded hover:bg-gray-600">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  let streamRef = null;
+
+  const closeModal = () => {
+    if (streamRef) streamRef.getTracks().forEach((track) => track.stop());
+    modal.remove();
+  };
+
+  modal.querySelector('#close-evidence-camera-close')?.addEventListener('click', closeModal);
+  modal.querySelector('#close-evidence-camera-cancel')?.addEventListener('click', closeModal);
+
+  navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+    streamRef = stream;
+    const video = modal.querySelector('#close-evidence-camera-video');
+    video.srcObject = stream;
+    modal.querySelector('#close-evidence-camera-capture')?.addEventListener('click', () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const file = new File([blob], `close-evidence-${Date.now()}.jpg`, { type: 'image/jpeg' });
+        closeTicketModal.value.attachments.push({
+          file,
+          name: file.name,
+          type: file.type,
+          preview: canvas.toDataURL('image/jpeg', 0.8),
+        });
+        closeModal();
+      }, 'image/jpeg', 0.8);
+    });
+  }).catch(() => {
+    Swal.fire('Error', 'Camera tidak dapat diakses', 'error');
+    closeModal();
+  });
+}
+
+async function confirmCloseTicket() {
+  const modal = closeTicketModal.value;
+  if (!modal.ticket || !modal.statusId) return;
+
+  modal.saving = true;
+  statusUpdatingId.value = modal.ticket.id;
   try {
-    const response = await axios.patch(`/tickets/${ticket.id}/status`, {
+    const formData = new FormData();
+    formData.append('status_id', modal.statusId);
+    if (modal.closeNote?.trim()) {
+      formData.append('close_note', modal.closeNote.trim());
+    }
+    modal.attachments.forEach((attachment, index) => {
+      formData.append(`attachments[${index}]`, attachment.file);
+    });
+
+    const response = await axios.patch(`/tickets/${modal.ticket.id}/status`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    if (response.data?.success) {
+      closeTicketModal.value.open = false;
+      closeTicketModal.value.attachments = [];
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        title: response.data.message || 'Ticket ditutup',
+        showConfirmButton: false,
+        timer: 1800,
+      });
+      router.reload({ preserveScroll: true });
+    }
+  } catch (error) {
+    if (modal.selectEl) {
+      modal.selectEl.value = modal.previousStatusId;
+    }
+    const msg =
+      error.response?.data?.message ||
+      (error.response?.data?.errors?.status_id?.[0] ?? null) ||
+      'Gagal menutup ticket';
+    Swal.fire('Error', msg, 'error');
+  } finally {
+    modal.saving = false;
+    statusUpdatingId.value = null;
+  }
+}
+
+async function submitTicketStatusChange(ticketId, newId, select, previousId) {
+  statusUpdatingId.value = ticketId;
+  try {
+    const response = await axios.patch(`/tickets/${ticketId}/status`, {
       status_id: newId,
     });
     if (response.data?.success) {
@@ -986,7 +1264,7 @@ async function quickUpdateStatus(ticket, event) {
       router.reload({ preserveScroll: true });
     }
   } catch (error) {
-    select.value = previousId;
+    if (select) select.value = previousId;
     const msg =
       error.response?.data?.message ||
       (error.response?.data?.errors?.status_id?.[0] ?? null) ||

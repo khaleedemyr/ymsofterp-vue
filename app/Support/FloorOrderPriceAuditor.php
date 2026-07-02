@@ -177,6 +177,83 @@ final class FloorOrderPriceAuditor
         return ['updated' => $updated, 'orders_recalculated' => $ordersRecalculated];
     }
 
+    /**
+     * Sinkronkan harga semua baris satu FO dengan item_prices / FGR +12% terkini.
+     *
+     * @return array{updated: int, lines_checked: int}
+     */
+    public function refreshOrder(int $floorOrderId): array
+    {
+        $header = DB::table('food_floor_orders as ffo')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
+            ->where('ffo.id', $floorOrderId)
+            ->select('ffo.id', 'ffo.id_outlet', 'o.region_id')
+            ->first();
+
+        if (! $header) {
+            return ['updated' => 0, 'lines_checked' => 0];
+        }
+
+        $rows = DB::table('food_floor_order_items as ffoi')
+            ->join('items as i', 'i.id', '=', 'ffoi.item_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'i.category_id')
+            ->where('ffoi.floor_order_id', $floorOrderId)
+            ->where(function ($q) {
+                $q->whereNull('c.is_asset')->orWhere('c.is_asset', '!=', '1');
+            })
+            ->select(
+                'ffoi.id',
+                'ffoi.floor_order_id',
+                'ffoi.item_id',
+                'ffoi.qty',
+                'ffoi.price',
+                'ffoi.unit',
+            )
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return ['updated' => 0, 'lines_checked' => 0];
+        }
+
+        $this->preloadMasters($rows->pluck('item_id')->unique()->values()->all());
+
+        $regionId = $header->region_id ? (int) $header->region_id : null;
+        $outletId = $header->id_outlet ? (string) $header->id_outlet : null;
+        $fixes = [];
+
+        foreach ($rows as $row) {
+            $resolved = $this->resolveExpected(
+                (int) $row->item_id,
+                (string) ($row->unit ?? ''),
+                $regionId,
+                $outletId,
+            );
+            $expected = $resolved['expected'];
+            if ($expected <= 0) {
+                continue;
+            }
+            $current = (float) $row->price;
+            if (abs($expected - $current) < 0.01) {
+                continue;
+            }
+
+            $fixes[] = [
+                'line_id' => (int) $row->id,
+                'floor_order_id' => (int) $row->floor_order_id,
+                'expected_price' => $expected,
+                'expected_subtotal' => round($expected * (float) $row->qty, 2),
+            ];
+        }
+
+        if ($fixes === []) {
+            return ['updated' => 0, 'lines_checked' => $rows->count()];
+        }
+
+        $stats = $this->applyFixes($fixes);
+
+        return ['updated' => $stats['updated'], 'lines_checked' => $rows->count()];
+    }
+
     /** @param  list<int>  $itemIds */
     private function preloadMasters(array $itemIds): void
     {

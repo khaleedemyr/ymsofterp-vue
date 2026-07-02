@@ -109,6 +109,35 @@
               <p v-if="errors.status_id" class="text-red-500 text-xs mt-1">{{ errors.status_id[0] }}</p>
             </div>
 
+            <!-- Close evidence (optional, when setting status to Closed) -->
+            <div v-if="isClosingTicket" class="md:col-span-2 rounded-xl border border-green-200 bg-green-50 p-4">
+              <h4 class="text-sm font-semibold text-green-800">Evidence Penutupan (Opsional)</h4>
+              <p class="mt-1 text-xs text-green-700">
+                Upload foto before/after atau dokumen pendukung saat menutup ticket. Boleh dikosongkan.
+              </p>
+              <textarea
+                v-model="closeNote"
+                rows="3"
+                class="mt-3 w-full rounded-lg border border-green-200 px-3 py-2 text-sm focus:border-green-400 focus:ring-2 focus:ring-green-200"
+                placeholder="Catatan penutupan (opsional)..."
+              ></textarea>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <button type="button" class="rounded-md bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100" @click="openEditCloseFileUpload">
+                  <i class="fa-solid fa-upload mr-1"></i> Upload
+                </button>
+                <input ref="editCloseFileInput" type="file" multiple accept="image/*,.pdf,.doc,.docx" class="hidden" @change="handleEditCloseFileUpload" />
+              </div>
+              <div v-if="closeAttachments.length > 0" class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div v-for="(attachment, idx) in closeAttachments" :key="`edit-close-${idx}`" class="relative rounded-lg border border-green-200 bg-white p-2">
+                  <button type="button" class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white" @click="removeEditCloseAttachment(idx)">
+                    <i class="fa-solid fa-times"></i>
+                  </button>
+                  <img v-if="attachment.type.startsWith('image/')" :src="attachment.preview" :alt="attachment.name" class="h-16 w-full rounded object-cover" />
+                  <div v-else class="break-words text-xs text-gray-700"><i class="fa-solid fa-file mr-1"></i>{{ attachment.name }}</div>
+                </div>
+              </div>
+            </div>
+
             <!-- Divisi -->
             <div>
               <label for="divisi_id" class="block text-sm font-medium text-gray-700 mb-1">Divisi *</label>
@@ -320,7 +349,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -357,6 +386,14 @@ const lightbox = ref({
 });
 const calculatedDueDate = ref('');
 const issueType = ref('');
+const closeNote = ref('');
+const closeAttachments = ref([]);
+const editCloseFileInput = ref(null);
+
+const isClosingTicket = computed(() => {
+  const newStatus = props.statuses.find((s) => String(s.id) === String(form.value.status_id));
+  return newStatus?.slug === 'closed' && props.ticket.status?.slug !== 'closed';
+});
 
 onMounted(() => {
   // Initialize form with ticket data
@@ -440,12 +477,57 @@ function onIssueTypeChange() {
   }
 }
 
+function openEditCloseFileUpload() {
+  editCloseFileInput.value?.click();
+}
+
+function handleEditCloseFileUpload(event) {
+  const files = Array.from(event.target.files || []);
+  files.forEach((file) => {
+    if (file.size > 10 * 1024 * 1024) return;
+    const attachment = { file, name: file.name, type: file.type || '', preview: null };
+    if (file.type?.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => { attachment.preview = e.target.result; };
+      reader.readAsDataURL(file);
+    }
+    closeAttachments.value.push(attachment);
+  });
+  event.target.value = '';
+}
+
+function removeEditCloseAttachment(index) {
+  closeAttachments.value.splice(index, 1);
+}
+
 async function submitForm() {
   loading.value = true;
   errors.value = {};
 
   try {
-    const response = await axios.put(`/tickets/${props.ticket.id}`, form.value);
+    const useCloseFormData = isClosingTicket.value
+      && (closeNote.value.trim() || closeAttachments.value.length > 0);
+
+    let response;
+    if (useCloseFormData) {
+      const formData = new FormData();
+      Object.entries(form.value).forEach(([key, value]) => {
+        formData.append(key, value ?? '');
+      });
+      if (closeNote.value.trim()) {
+        formData.append('close_note', closeNote.value.trim());
+      }
+      closeAttachments.value.forEach((attachment, index) => {
+        formData.append(`attachments[${index}]`, attachment.file);
+      });
+      formData.append('_method', 'PUT');
+      response = await axios.post(`/tickets/${props.ticket.id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    } else {
+      response = await axios.put(`/tickets/${props.ticket.id}`, form.value);
+    }
+
     if (response.data.success) {
       Swal.fire('Berhasil!', response.data.message, 'success');
       router.visit(`/tickets/${props.ticket.id}`);

@@ -39,7 +39,7 @@ class TicketController extends Controller
     public const TICKET_MANAGER_JABATAN_ID = 343;
 
     /**
-     * Superadmin, division 20, atau jabatan 343: ubah status, assign tim, edit, payment/PR, hapus.
+     * Superadmin, division 20, atau jabatan 343: edit penuh, assign tim, payment/PR, hapus.
      * Membuat ticket (form, API store, import Excel, dari daily report) boleh semua user yang sudah login.
      */
     public static function userCanManageTickets($user): bool
@@ -60,11 +60,36 @@ class TicketController extends Controller
         return false;
     }
 
+    /**
+     * Ubah status ticket: admin global ATAU user divisi yang sama dengan divisi concern ticket.
+     */
+    public static function userCanUpdateTicketStatus($user, Ticket $ticket): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        if (self::userCanManageTickets($user)) {
+            return true;
+        }
+        $userDivisionId = (int) ($user->division_id ?? 0);
+        $ticketDivisiId = (int) ($ticket->divisi_id ?? 0);
+
+        return $userDivisionId > 0 && $userDivisionId === $ticketDivisiId;
+    }
+
+    protected function ticketStatusUpdateDeniedJsonResponse()
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Anda tidak memiliki izin mengubah status ticket ini. Hanya divisi terkait ticket, superadmin, atau jabatan terkait yang dapat mengubah status.',
+        ], 403);
+    }
+
     protected function ticketManageDeniedJsonResponse()
     {
         return response()->json([
             'success' => false,
-            'message' => 'Anda tidak memiliki izin untuk aksi ini. Hanya superadmin, divisi terkait, atau jabatan terkait yang dapat mengubah ticket.',
+            'message' => 'Anda tidak memiliki izin untuk aksi ini. Hanya superadmin, divisi 20, atau jabatan terkait yang dapat mengelola ticket.',
         ], 403);
     }
 
@@ -685,6 +710,8 @@ class TicketController extends Controller
         $issueType = $request->get('issue_type', 'all');
         $perPage = $request->get('per_page', 15);
 
+        $user = $request->user();
+
         $query = Ticket::with([
             'category',
             'priority', 
@@ -793,7 +820,7 @@ class TicketController extends Controller
             }
         }
 
-        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr) {
+        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr, $user) {
             $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
 
             $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
@@ -826,6 +853,8 @@ class TicketController extends Controller
                 'prs' => $prSummaries,
             ];
 
+            $ticket->can_update_status = self::userCanUpdateTicketStatus($user, $ticket);
+
             return $ticket;
         });
 
@@ -834,7 +863,6 @@ class TicketController extends Controller
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = $this->selectableTicketStatuses();
 
-        $user = $request->user();
         // Get only divisions that have tickets (terbatas outlet user bila bukan pusat)
         $divisis = Divisi::whereHas('tickets', function ($q) use ($user) {
             $this->applyTicketOutletVisibility($q, $user);
@@ -1125,6 +1153,388 @@ class TicketController extends Controller
     }
 
     /**
+     * Report ticket per kategori — tampilan grid (NO, TANGGAL, FINDING, COMPLAIN, RESULT, REMARK).
+     */
+    public function reportPerCategories(Request $request)
+    {
+        $filters = $this->parseTicketReportFilters($request);
+        $groups = $this->buildReportPerCategoriesData($request, $filters);
+
+        return Inertia::render('Tickets/ReportPerCategories', [
+            'groups' => $groups,
+            'filters' => $filters,
+            'filterOptions' => $this->ticketReportFilterOptions(),
+        ]);
+    }
+
+    /**
+     * Export Report Ticket Per Categories ke XLSX (dengan gambar complain/result).
+     */
+    public function exportReportPerCategories(Request $request)
+    {
+        $filters = $this->parseTicketReportFilters($request);
+        $groups = $this->buildReportPerCategoriesData($request, $filters);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Report Per Categories');
+
+        $headers = ['NO', 'TANGGAL', 'FINDING PROBLEM', 'COMPLAIN', 'RESULT', 'REMARK'];
+        $lastCol = Coordinate::stringFromColumnIndex(count($headers));
+        $row = 1;
+
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Report Ticket Per Categories');
+        $sheet->getStyle("A{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 16],
+            'alignment' => ['horizontal' => 'center'],
+        ]);
+        $row++;
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Generated: ' . now()->format('d M Y H:i:s'));
+        $row += 2;
+
+        foreach ($groups as $group) {
+            $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+            $sheet->setCellValue("A{$row}", '[' . strtoupper((string) $group['category_name']) . ']');
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 12],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'FFFF00'],
+                ],
+                'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+            ]);
+            $sheet->getRowDimension($row)->setRowHeight(22);
+            $row++;
+
+            $col = 1;
+            foreach ($headers as $h) {
+                $sheet->setCellValueByColumnAndRow($col, $row, $h);
+                $col++;
+            }
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                'font' => ['bold' => true],
+                'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    ],
+                ],
+            ]);
+            $row++;
+
+            foreach ($group['rows'] as $ticketRow) {
+                $sheet->setCellValue("A{$row}", $ticketRow['no']);
+                $sheet->setCellValue("B{$row}", $ticketRow['tanggal']);
+                $sheet->setCellValue("C{$row}", $ticketRow['finding_problem']);
+                $sheet->setCellValue("F{$row}", $ticketRow['remark']);
+                $sheet->getStyle("A{$row}:F{$row}")->getAlignment()->setVertical('top')->setWrapText(true);
+                $sheet->getStyle("A{$row}:F{$row}")->applyFromArray([
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        ],
+                    ],
+                ]);
+                $sheet->getStyle("A{$row}")->getAlignment()->setHorizontal('center');
+                $sheet->getStyle("B{$row}")->getAlignment()->setHorizontal('center');
+
+                $imageRowHeight = 95;
+                $sheet->getRowDimension($row)->setRowHeight($imageRowHeight);
+
+                $this->embedTicketReportImage($sheet, 'D', $row, $ticketRow['complain_image_path'] ?? null);
+                $this->embedTicketReportImage($sheet, 'E', $row, $ticketRow['result_image_path'] ?? null);
+
+                $row++;
+            }
+
+            $row++;
+        }
+
+        $sheet->getColumnDimension('A')->setWidth(6);
+        $sheet->getColumnDimension('B')->setWidth(12);
+        $sheet->getColumnDimension('C')->setWidth(34);
+        $sheet->getColumnDimension('D')->setWidth(24);
+        $sheet->getColumnDimension('E')->setWidth(24);
+        $sheet->getColumnDimension('F')->setWidth(28);
+
+        $fileName = 'report-ticket-per-categories-' . now()->format('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function parseTicketReportFilters(Request $request): array
+    {
+        return [
+            'search' => (string) $request->get('search', ''),
+            'status' => (string) $request->get('status', 'all'),
+            'priority' => (string) $request->get('priority', 'all'),
+            'category' => (string) $request->get('category', 'all'),
+            'division' => (string) $request->get('division', 'all'),
+            'outlet' => (string) $request->get('outlet', 'all'),
+            'issue_type' => (string) $request->get('issue_type', 'all'),
+            'date_from' => (string) $request->get('date_from', ''),
+            'date_to' => (string) $request->get('date_to', ''),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ticketReportFilterOptions(): array
+    {
+        return [
+            'categories' => TicketCategory::active()->orderBy('name')->get(['id', 'name']),
+            'priorities' => TicketPriority::active()->orderBy('level', 'desc')->get(['id', 'name']),
+            'statuses' => $this->selectableTicketStatuses(),
+            'divisions' => Divisi::orderBy('nama_divisi')->get(['id', 'nama_divisi']),
+            'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildReportPerCategoriesData(Request $request, array $filters): array
+    {
+        $query = Ticket::with([
+            'category:id,name',
+            'status:id,name,slug',
+            'attachments',
+            'comments' => function ($q) {
+                $q->orderBy('created_at');
+            },
+        ]);
+
+        $this->applyTicketOutletVisibility($query, $request->user());
+        $this->applyTicketIssueTypeFilter($query, (string) ($filters['issue_type'] ?? 'all'));
+
+        if (! empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('ticket_number', 'like', "%{$search}%")
+                    ->orWhere('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+        if (($filters['status'] ?? 'all') !== 'all') {
+            $this->applyTicketStatusFilter($query, (string) $filters['status']);
+        }
+        if (($filters['priority'] ?? 'all') !== 'all') {
+            $query->where('priority_id', $filters['priority']);
+        }
+        if (($filters['category'] ?? 'all') !== 'all') {
+            $query->where('category_id', $filters['category']);
+        }
+        if (($filters['division'] ?? 'all') !== 'all') {
+            $query->where('divisi_id', $filters['division']);
+        }
+        if (($filters['outlet'] ?? 'all') !== 'all') {
+            $query->where('outlet_id', $filters['outlet']);
+        }
+        if (! empty($filters['date_from'])) {
+            $query->whereDate('created_at', '>=', $filters['date_from']);
+        }
+        if (! empty($filters['date_to'])) {
+            $query->whereDate('created_at', '<=', $filters['date_to']);
+        }
+
+        $tickets = $query
+            ->orderBy('category_id')
+            ->orderBy('created_at')
+            ->get();
+
+        $grouped = $tickets->groupBy(fn (Ticket $ticket) => (int) ($ticket->category_id ?? 0));
+
+        $groups = [];
+        foreach ($grouped as $categoryId => $categoryTickets) {
+            $categoryName = $categoryTickets->first()->category?->name ?? 'Uncategorized';
+            $rows = [];
+            $no = 1;
+            foreach ($categoryTickets as $ticket) {
+                $rows[] = $this->mapTicketToCategoryReportRow($ticket, $no++);
+            }
+            $groups[] = [
+                'category_id' => $categoryId,
+                'category_name' => $categoryName,
+                'rows' => $rows,
+            ];
+        }
+
+        usort($groups, fn ($a, $b) => strcasecmp((string) $a['category_name'], (string) $b['category_name']));
+
+        return $groups;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapTicketToCategoryReportRow(Ticket $ticket, int $no): array
+    {
+        $complainAttachment = $this->firstTicketReportImageAttachment($ticket, 'complain');
+        $resultAttachment = $this->firstTicketReportImageAttachment($ticket, 'result');
+
+        return [
+            'no' => $no,
+            'ticket_id' => $ticket->id,
+            'ticket_number' => $ticket->ticket_number,
+            'tanggal' => optional($ticket->created_at)->format('j/n/Y'),
+            'finding_problem' => trim((string) ($ticket->title ?: $ticket->description)),
+            'complain_image' => $this->ticketAttachmentPublicUrl($complainAttachment),
+            'complain_image_path' => $complainAttachment?->file_path,
+            'result_image' => $this->ticketAttachmentPublicUrl($resultAttachment),
+            'result_image_path' => $resultAttachment?->file_path,
+            'remark' => $this->buildTicketCategoryReportRemark($ticket),
+            'status_name' => $ticket->status?->name,
+            'status_slug' => $ticket->status?->slug,
+            'notes' => $this->extractTicketCloseNote($ticket),
+            'closed_at' => $ticket->closed_at?->format('d/m/Y H:i'),
+        ];
+    }
+
+    private function buildTicketCategoryReportRemark(Ticket $ticket): string
+    {
+        $lines = [];
+        $statusName = trim((string) ($ticket->status?->name ?? '-'));
+        if ($statusName !== '') {
+            $lines[] = $statusName;
+        }
+
+        $notes = $this->extractTicketCloseNote($ticket);
+        if ($notes !== null && $notes !== '') {
+            $lines[] = $notes;
+        }
+
+        if ($ticket->status?->slug === 'closed' && $ticket->closed_at) {
+            $lines[] = $ticket->closed_at->format('d/m/Y H:i');
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function extractTicketCloseNote(Ticket $ticket): ?string
+    {
+        foreach ($ticket->comments as $comment) {
+            $text = trim((string) $comment->comment);
+            if (str_starts_with($text, 'Ticket ditutup:')) {
+                $note = trim(substr($text, strlen('Ticket ditutup:')));
+                return $note !== '' ? $note : null;
+            }
+        }
+
+        return null;
+    }
+
+    private function firstTicketReportImageAttachment(Ticket $ticket, string $type): ?TicketAttachment
+    {
+        $attachments = $ticket->attachments ?? collect();
+
+        if ($type === 'complain') {
+            $candidate = $attachments->first(function (TicketAttachment $att) {
+                if ($att->comment_id !== null) {
+                    return false;
+                }
+                $path = (string) $att->file_path;
+                if (str_contains($path, 'ticket-close-evidence')) {
+                    return false;
+                }
+
+                return $this->isImageTicketAttachment($att);
+            });
+
+            if ($candidate) {
+                return $candidate;
+            }
+
+            return $attachments->first(function (TicketAttachment $att) {
+                $path = (string) $att->file_path;
+                if (str_contains($path, 'ticket-close-evidence')) {
+                    return false;
+                }
+
+                return $this->isImageTicketAttachment($att);
+            });
+        }
+
+        return $attachments->first(function (TicketAttachment $att) {
+            return str_contains((string) $att->file_path, 'ticket-close-evidence')
+                && $this->isImageTicketAttachment($att);
+        });
+    }
+
+    private function isImageTicketAttachment(TicketAttachment $attachment): bool
+    {
+        $mime = strtolower((string) ($attachment->mime_type ?? ''));
+        if (str_starts_with($mime, 'image/')) {
+            return true;
+        }
+
+        $name = strtolower((string) ($attachment->file_name ?: $attachment->file_path));
+        return (bool) preg_match('/\.(jpe?g|png|webp|gif|heic)$/i', $name);
+    }
+
+    private function ticketAttachmentPublicUrl(?TicketAttachment $attachment): ?string
+    {
+        if (! $attachment || ! $attachment->file_path) {
+            return null;
+        }
+        $path = ltrim((string) $attachment->file_path, '/');
+        if (str_starts_with($path, 'storage/')) {
+            return '/' . $path;
+        }
+
+        return '/storage/' . $path;
+    }
+
+    private function ticketAttachmentFilesystemPath(?string $filePath): ?string
+    {
+        if (! $filePath) {
+            return null;
+        }
+        $path = ltrim($filePath, '/');
+        if (str_starts_with($path, 'storage/')) {
+            $path = substr($path, 8);
+        }
+        $full = storage_path('app/public/' . $path);
+
+        return is_file($full) ? $full : null;
+    }
+
+    private function embedTicketReportImage(
+        \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet,
+        string $column,
+        int $row,
+        ?string $filePath
+    ): void {
+        $fullPath = $this->ticketAttachmentFilesystemPath($filePath);
+        if (! $fullPath) {
+            return;
+        }
+
+        try {
+            $drawing = new \PhpOffice\PhpSpreadsheet\Worksheet\Drawing();
+            $drawing->setPath($fullPath);
+            $drawing->setCoordinates($column . $row);
+            $drawing->setOffsetX(4);
+            $drawing->setOffsetY(4);
+            $drawing->setHeight(88);
+            $drawing->setWorksheet($sheet);
+        } catch (\Throwable $e) {
+            // Skip broken/missing image files in export.
+        }
+    }
+
+    /**
      * Kalender bulanan: ticket di tanggal due & tanggal dibuat (bulan berjalan).
      */
     public function calendar(Request $request)
@@ -1394,6 +1804,63 @@ class TicketController extends Controller
         return [];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function closeEvidenceValidationRules(): array
+    {
+        return [
+            'close_note' => 'nullable|string|max:1000',
+            'attachments' => 'nullable|array|max:5',
+            'attachments.*' => 'file|max:10240|mimes:jpg,jpeg,png,webp,pdf,doc,docx',
+        ];
+    }
+
+    /**
+     * Optional evidence when closing a ticket (files and/or note).
+     */
+    private function handleCloseEvidence(Ticket $ticket, Request $request): void
+    {
+        $closeNote = trim((string) $request->input('close_note', ''));
+        $hasFiles = $request->hasFile('attachments');
+
+        if ($closeNote === '' && ! $hasFiles) {
+            return;
+        }
+
+        $commentText = 'Ticket ditutup';
+        if ($closeNote !== '') {
+            $commentText .= ': ' . $closeNote;
+        }
+
+        $comment = \App\Models\TicketComment::create([
+            'ticket_id' => $ticket->id,
+            'user_id' => auth()->id(),
+            'comment' => $commentText,
+            'is_internal' => false,
+        ]);
+
+        if ($hasFiles) {
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('ticket-close-evidence', 'public');
+                TicketAttachment::create([
+                    'ticket_id' => $ticket->id,
+                    'comment_id' => $comment->id,
+                    'uploaded_by' => auth()->id(),
+                    'file_path' => $path,
+                    'file_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'file_size' => $file->getSize(),
+                ]);
+            }
+        }
+
+        $historyDescription = $hasFiles
+            ? 'Ticket ditutup dengan evidence (' . count($request->file('attachments')) . ' file)'
+            : 'Ticket ditutup dengan catatan penutupan';
+        $this->createTicketHistory($ticket, 'closed', null, null, $historyDescription);
+    }
+
     private function selectableTicketStatuses()
     {
         return TicketStatus::active()->selectable()->ordered()->get();
@@ -1624,10 +2091,10 @@ class TicketController extends Controller
             abort(404);
         }
 
-        return $this->enrichTicketDetailPayload($ticket);
+        return $this->enrichTicketDetailPayload($ticket, $user);
     }
 
-    protected function enrichTicketDetailPayload(Ticket $ticket): array
+    protected function enrichTicketDetailPayload(Ticket $ticket, $user = null): array
     {
         if ($ticket->source === 'daily_report' && $ticket->source_id) {
             $dailyReport = \App\Models\DailyReport::find($ticket->source_id);
@@ -1730,6 +2197,10 @@ class TicketController extends Controller
             ];
         })->values();
 
+        if ($user) {
+            $ticketData['can_update_status'] = self::userCanUpdateTicketStatus($user, $ticket);
+        }
+
         return $ticketData;
     }
 
@@ -1795,6 +2266,8 @@ class TicketController extends Controller
         if ($perPage < 1 || $perPage > 100) {
             $perPage = 15;
         }
+
+        $apiUser = $request->user();
 
         $query = Ticket::with([
             'category',
@@ -1902,7 +2375,7 @@ class TicketController extends Controller
             }
         }
 
-        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr) {
+        $tickets->getCollection()->transform(function ($ticket) use ($prsByTicket, $paymentStatsByPr, $apiUser) {
             $relatedPrs = collect($prsByTicket->get($ticket->id, collect()));
 
             $prSummaries = $relatedPrs->map(function ($pr) use ($paymentStatsByPr) {
@@ -1935,13 +2408,14 @@ class TicketController extends Controller
                 'prs' => $prSummaries,
             ];
 
+            $ticket->can_update_status = self::userCanUpdateTicketStatus($apiUser, $ticket);
+
             return $ticket;
         });
 
         $categories = TicketCategory::active()->orderBy('name')->get();
         $priorities = TicketPriority::active()->orderBy('level', 'desc')->get();
         $statuses = $this->selectableTicketStatuses();
-        $apiUser = $request->user();
         $divisis = Divisi::whereHas('tickets', function ($q) use ($apiUser) {
             $this->applyTicketOutletVisibility($q, $apiUser);
         })->active()->orderBy('nama_divisi')->get();
@@ -2044,7 +2518,7 @@ class TicketController extends Controller
             return $this->ticketViewDeniedJsonResponse();
         }
 
-        $validator = Validator::make($request->all(), [
+        $validator = Validator::make($request->all(), array_merge([
             'title' => 'required|string|max:255',
             'description' => 'required|string',
             'category_id' => 'required|exists:ticket_categories,id',
@@ -2052,7 +2526,7 @@ class TicketController extends Controller
             'status_id' => 'required|exists:ticket_statuses,id',
             'divisi_id' => 'required|exists:tbl_data_divisi,id',
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-        ]);
+        ], $this->closeEvidenceValidationRules()));
 
         if ($validator->fails()) {
             return response()->json([
@@ -2074,6 +2548,11 @@ class TicketController extends Controller
                 ], 422);
             }
 
+            if ((int) $oldData['status_id'] !== (int) $newStatus->id
+                && ! self::userCanUpdateTicketStatus($request->user(), $ticket)) {
+                return $this->ticketStatusUpdateDeniedJsonResponse();
+            }
+
             // Recalculate due date if priority changed
             $dueDate = $ticket->due_date;
             if ($oldData['priority_id'] != $request->priority_id) {
@@ -2093,6 +2572,10 @@ class TicketController extends Controller
                 'outlet_id' => $request->outlet_id,
                 'due_date' => $dueDate,
             ], $closedAtAttrs));
+
+            if ($oldStatusSlug !== 'closed' && $newStatus->slug === 'closed') {
+                $this->handleCloseEvidence($ticket, $request);
+            }
 
             // Create ticket history for changes
             $this->createTicketHistory($ticket, 'updated', null, null, 'Ticket updated');
@@ -2120,19 +2603,19 @@ class TicketController extends Controller
      */
     public function updateStatus(Request $request, $id)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $ticket = Ticket::with('status')->findOrFail($id);
 
         if (! self::userCanViewTicket($request->user(), $ticket)) {
             return $this->ticketViewDeniedJsonResponse();
         }
 
-        $validator = Validator::make($request->all(), [
+        if (! self::userCanUpdateTicketStatus($request->user(), $ticket)) {
+            return $this->ticketStatusUpdateDeniedJsonResponse();
+        }
+
+        $validator = Validator::make($request->all(), array_merge([
             'status_id' => 'required|exists:ticket_statuses,id',
-        ]);
+        ], $this->closeEvidenceValidationRules()));
 
         if ($validator->fails()) {
             return response()->json([
@@ -2173,6 +2656,11 @@ class TicketController extends Controller
                 (string) $previousStatusId,
                 'Status diubah dari ' . $oldLabel . ' ke ' . $newStatus->name
             );
+
+            if ($oldStatusSlug !== 'closed' && $newStatus->slug === 'closed') {
+                $this->handleCloseEvidence($ticket, $request);
+            }
+
             DB::commit();
 
             return response()->json([
