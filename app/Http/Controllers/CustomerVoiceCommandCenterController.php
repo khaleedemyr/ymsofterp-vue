@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -214,7 +215,13 @@ class CustomerVoiceCommandCenterController extends Controller
      */
     public function publicShow(string $token): Response
     {
-        $row = DB::table('feedback_cases')->where('share_token', $token)->first(['id']);
+        $row = null;
+        if ($this->feedbackCasesHasShareTokenColumn()) {
+            $row = DB::table('feedback_cases')->where('share_token', $token)->first(['id']);
+        }
+        if ($row === null) {
+            $row = $this->findFeedbackCaseByMetaShareToken($token);
+        }
         if ($row === null) {
             abort(404);
         }
@@ -2525,22 +2532,66 @@ class CustomerVoiceCommandCenterController extends Controller
 
     private function ensureFeedbackCaseShareToken(int $id): string
     {
-        $row = DB::table('feedback_cases')->where('id', $id)->first(['id', 'share_token']);
+        $columns = ['id', 'meta'];
+        if ($this->feedbackCasesHasShareTokenColumn()) {
+            $columns[] = 'share_token';
+        }
+        $row = DB::table('feedback_cases')->where('id', $id)->first($columns);
         if ($row === null) {
             abort(404);
         }
 
-        if (! empty($row->share_token)) {
+        if ($this->feedbackCasesHasShareTokenColumn() && ! empty($row->share_token)) {
             return (string) $row->share_token;
         }
 
+        $meta = [];
+        if (! empty($row->meta)) {
+            $meta = json_decode((string) $row->meta, true) ?: [];
+        }
+        $metaToken = trim((string) ($meta['share_token'] ?? ''));
+        if ($metaToken !== '') {
+            return $metaToken;
+        }
+
         $token = Str::random(48);
-        DB::table('feedback_cases')->where('id', $id)->update([
-            'share_token' => $token,
-            'updated_at' => now(),
-        ]);
+        $update = ['updated_at' => now()];
+        if ($this->feedbackCasesHasShareTokenColumn()) {
+            $update['share_token'] = $token;
+        }
+        $meta['share_token'] = $token;
+        $update['meta'] = json_encode($meta, JSON_UNESCAPED_UNICODE);
+        DB::table('feedback_cases')->where('id', $id)->update($update);
 
         return $token;
+    }
+
+    private function feedbackCasesHasShareTokenColumn(): bool
+    {
+        static $hasColumn = null;
+        if ($hasColumn !== null) {
+            return $hasColumn;
+        }
+
+        $hasColumn = Schema::hasTable('feedback_cases') && Schema::hasColumn('feedback_cases', 'share_token');
+
+        return $hasColumn;
+    }
+
+    private function findFeedbackCaseByMetaShareToken(string $token): ?object
+    {
+        $rows = DB::table('feedback_cases')->whereNotNull('meta')->get(['id', 'meta']);
+        foreach ($rows as $row) {
+            $meta = json_decode((string) ($row->meta ?? ''), true);
+            if (! is_array($meta)) {
+                continue;
+            }
+            if (hash_equals((string) ($meta['share_token'] ?? ''), $token)) {
+                return (object) ['id' => (int) $row->id];
+            }
+        }
+
+        return null;
     }
 
     /**
