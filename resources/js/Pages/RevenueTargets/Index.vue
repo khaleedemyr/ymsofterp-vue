@@ -18,6 +18,7 @@ const selectedOutletId = ref(props.selectedOutletId || 0)
 const selectedMonth = ref(props.selectedMonth || new Date().toISOString().slice(0, 7))
 const monthlyTarget = ref(props.monthlyTarget ?? '')
 const saving = ref(false)
+const uploadingTemplate = ref(false)
 const suggesting = ref(false)
 const suggestError = ref('')
 const suggestInfo = ref(null)
@@ -35,6 +36,7 @@ const bulkEndDate = ref('')
 const bulkMode = ref('set')
 const bulkValue = ref('')
 const bulkPercent = ref('')
+const importFileInput = ref(null)
 
 const forecasts = ref([])
 
@@ -286,6 +288,61 @@ function save() {
   )
 }
 
+async function downloadTemplate() {
+  try {
+    const response = await axios.get(route('outlet-revenue-targets.template.download'), {
+      params: {
+        outlet_id: selectedOutletId.value,
+        month: selectedMonth.value,
+      },
+      responseType: 'blob',
+    })
+
+    const contentDisposition = response.headers['content-disposition'] || ''
+    const matched = contentDisposition.match(/filename="?([^"]+)"?/)
+    const fileName = matched?.[1] || 'revenue_targets_template.xlsx'
+
+    const blob = new Blob([response.data], { type: response.headers['content-type'] || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', fileName)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    suggestError.value = error?.response?.data?.message || 'Gagal download template.'
+  }
+}
+
+function triggerImportFile() {
+  if (!importFileInput.value) return
+  importFileInput.value.value = ''
+  importFileInput.value.click()
+}
+
+function importFromExcel(event) {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+  uploadingTemplate.value = true
+  suggestError.value = ''
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  router.post(route('outlet-revenue-targets.template.import'), formData, {
+    preserveScroll: true,
+    forceFormData: true,
+    onError: (errors) => {
+      suggestError.value = errors?.file || 'Import gagal. Cek file template dan format data.'
+    },
+    onFinish: () => {
+      uploadingTemplate.value = false
+    },
+  })
+}
+
 async function suggestAI() {
   suggestError.value = ''
   suggestInfo.value = null
@@ -508,6 +565,28 @@ fetchHolidays()
             >
               Load
             </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              @click="downloadTemplate"
+            >
+              Download Template
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="uploadingTemplate"
+              @click="triggerImportFile"
+            >
+              {{ uploadingTemplate ? 'Uploading...' : 'Upload from Excel' }}
+            </button>
+            <input
+              ref="importFileInput"
+              type="file"
+              accept=".xlsx,.xls"
+              class="hidden"
+              @change="importFromExcel"
+            />
             <button
               type="button"
               class="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"

@@ -6,6 +6,13 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class OutletRevenueTargetController extends Controller
 {
@@ -767,6 +774,329 @@ class OutletRevenueTargetController extends Controller
                 ],
             ],
         ]);
+    }
+
+    public function downloadTemplate(Request $request): StreamedResponse
+    {
+        $user = auth()->user();
+        $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
+        $selectedOutletId = (int) $request->input('outlet_id', 0);
+        if (!$isAdminOutlet) {
+            $selectedOutletId = (int) ($user->id_outlet ?? 0);
+        }
+        $selectedMonth = (string) $request->input('month', now()->format('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $selectedMonth)) {
+            $selectedMonth = now()->format('Y-m');
+        }
+
+        $spreadsheet = new Spreadsheet();
+
+        $instructionSheet = $spreadsheet->getActiveSheet();
+        $instructionSheet->setTitle('Instruction');
+        $instructionSheet->fromArray([
+            ['Revenue Targets - Upload Template'],
+            [''],
+            ['Cara pakai'],
+            ['1. Isi sheet "Template_Data" (kolom A-F).'],
+            ['2. Month wajib format YYYY-MM. Contoh: 2026-07.'],
+            ['3. Forecast Date wajib format YYYY-MM-DD dan harus sesuai month pada baris yang sama.'],
+            ['4. Untuk 1 kombinasi outlet + month, monthly_target cukup diisi pada baris pertama.'],
+            ['5. Data diimport dengan mode REPLACE per outlet+month (detail lama dihapus, diganti data baru dari file).'],
+            ['6. Jika user bukan HO, outlet_id dipaksa ke outlet user walau isi file berbeda.'],
+            [''],
+            ['Sheet Master_Outlets berisi data outlet valid.'],
+            [''],
+            ['Kolom Template_Data:'],
+            ['A outlet_id (wajib, numeric)'],
+            ['B outlet_name (opsional, hanya referensi)'],
+            ['C month (wajib, YYYY-MM)'],
+            ['D monthly_target (opsional, numeric >= 0)'],
+            ['E forecast_date (wajib, YYYY-MM-DD)'],
+            ['F forecast_revenue (wajib, numeric >= 0)'],
+        ]);
+        $instructionSheet->mergeCells('A1:F1');
+        $instructionSheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $instructionSheet->getStyle('A3')->getFont()->setBold(true);
+        $instructionSheet->getColumnDimension('A')->setWidth(95);
+        $instructionSheet->getColumnDimension('B')->setWidth(40);
+        $instructionSheet->getColumnDimension('C')->setWidth(30);
+        $instructionSheet->getColumnDimension('D')->setWidth(45);
+        $instructionSheet->getColumnDimension('E')->setWidth(35);
+        $instructionSheet->getColumnDimension('F')->setWidth(35);
+        $instructionSheet->getStyle('A1:F30')->getAlignment()->setVertical(Alignment::VERTICAL_TOP);
+        $instructionSheet->getStyle('A1:F30')->getAlignment()->setWrapText(true);
+
+        $masterSheet = $spreadsheet->createSheet();
+        $masterSheet->setTitle('Master_Outlets');
+        $masterSheet->fromArray([['outlet_id', 'outlet_name']], null, 'A1');
+        $masterSheet->getStyle('A1:B1')->getFont()->setBold(true);
+        $masterSheet->getStyle('A1:B1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FFE2E8F0');
+
+        $outletsQuery = DB::table('tbl_data_outlet')
+            ->select('id_outlet', 'nama_outlet')
+            ->orderBy('nama_outlet');
+        if (!$isAdminOutlet) {
+            $outletsQuery->where('id_outlet', $selectedOutletId);
+        }
+        $outlets = $outletsQuery->get();
+        $rowMaster = 2;
+        foreach ($outlets as $outlet) {
+            $masterSheet->setCellValue("A{$rowMaster}", (int) $outlet->id_outlet);
+            $masterSheet->setCellValue("B{$rowMaster}", (string) $outlet->nama_outlet);
+            $rowMaster++;
+        }
+        $masterSheet->getColumnDimension('A')->setWidth(15);
+        $masterSheet->getColumnDimension('B')->setWidth(45);
+
+        $dataSheet = $spreadsheet->createSheet();
+        $dataSheet->setTitle('Template_Data');
+        $dataSheet->fromArray([
+            ['outlet_id', 'outlet_name', 'month', 'monthly_target', 'forecast_date', 'forecast_revenue'],
+        ], null, 'A1');
+        $dataSheet->getStyle('A1:F1')->getFont()->setBold(true);
+        $dataSheet->getStyle('A1:F1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FFDBEAFE');
+        $dataSheet->getColumnDimension('A')->setWidth(12);
+        $dataSheet->getColumnDimension('B')->setWidth(30);
+        $dataSheet->getColumnDimension('C')->setWidth(12);
+        $dataSheet->getColumnDimension('D')->setWidth(18);
+        $dataSheet->getColumnDimension('E')->setWidth(16);
+        $dataSheet->getColumnDimension('F')->setWidth(18);
+
+        $sampleOutlet = $outlets->first();
+        $sampleOutletId = (int) ($sampleOutlet->id_outlet ?? max(1, $selectedOutletId));
+        $sampleOutletName = (string) ($sampleOutlet->nama_outlet ?? '');
+        $start = Carbon::createFromFormat('Y-m', $selectedMonth)->startOfMonth();
+        $end = $start->copy()->endOfMonth();
+        $r = 2;
+        $cursor = $start->copy();
+        while ($cursor->lte($end)) {
+            $dataSheet->setCellValue("A{$r}", $sampleOutletId);
+            $dataSheet->setCellValue("B{$r}", $sampleOutletName);
+            $dataSheet->setCellValue("C{$r}", $selectedMonth);
+            $dataSheet->setCellValue("D{$r}", $r === 2 ? 0 : '');
+            $dataSheet->setCellValue("E{$r}", $cursor->toDateString());
+            $dataSheet->setCellValue("F{$r}", 0);
+            $cursor->addDay();
+            $r++;
+        }
+
+        $fileName = 'revenue_targets_template_' . now()->format('Ymd_His') . '.xlsx';
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName);
+    }
+
+    public function importFromExcel(Request $request)
+    {
+        $user = auth()->user();
+        $isAdminOutlet = (int) ($user->id_outlet ?? 0) === 1;
+
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        $sheetRows = IOFactory::load($request->file('file')->getRealPath())->getSheetByName('Template_Data');
+        if (!$sheetRows) {
+            return redirect()->back()->withErrors([
+                'file' => 'Sheet "Template_Data" tidak ditemukan di file Excel.',
+            ]);
+        }
+
+        $rows = $sheetRows->toArray(null, true, true, true);
+        if (count($rows) <= 1) {
+            return redirect()->back()->withErrors([
+                'file' => 'Sheet "Template_Data" kosong. Isi minimal 1 baris data.',
+            ]);
+        }
+
+        $errors = [];
+        $grouped = [];
+        foreach ($rows as $rowNumber => $row) {
+            if ($rowNumber === 1) {
+                continue;
+            }
+
+            $outletIdRaw = trim((string) ($row['A'] ?? ''));
+            $monthRaw = trim((string) ($row['C'] ?? ''));
+            $monthlyTargetRaw = trim((string) ($row['D'] ?? ''));
+            $forecastDateRaw = trim((string) ($row['E'] ?? ''));
+            $forecastRevenueRaw = trim((string) ($row['F'] ?? ''));
+
+            if ($outletIdRaw === '' && $monthRaw === '' && $forecastDateRaw === '' && $forecastRevenueRaw === '') {
+                continue;
+            }
+
+            $outletId = (int) $outletIdRaw;
+            if ($outletId <= 0) {
+                $errors[] = "Baris {$rowNumber}: outlet_id wajib diisi angka valid.";
+                continue;
+            }
+            if (!$isAdminOutlet) {
+                $outletId = (int) ($user->id_outlet ?? 0);
+            }
+
+            if (!preg_match('/^\d{4}-\d{2}$/', $monthRaw)) {
+                $errors[] = "Baris {$rowNumber}: month harus format YYYY-MM.";
+                continue;
+            }
+            $monthDate = Carbon::createFromFormat('Y-m', $monthRaw)->startOfMonth()->toDateString();
+
+            $forecastDate = $this->normalizeExcelDateValue($forecastDateRaw);
+            if (!$forecastDate) {
+                $errors[] = "Baris {$rowNumber}: forecast_date tidak valid.";
+                continue;
+            }
+
+            if (!str_starts_with($forecastDate, $monthRaw . '-')) {
+                $errors[] = "Baris {$rowNumber}: forecast_date harus berada di month yang sama ({$monthRaw}).";
+                continue;
+            }
+
+            if ($forecastRevenueRaw === '' || !is_numeric(str_replace(',', '', $forecastRevenueRaw))) {
+                $errors[] = "Baris {$rowNumber}: forecast_revenue wajib numeric >= 0.";
+                continue;
+            }
+            $forecastRevenue = (float) str_replace(',', '', $forecastRevenueRaw);
+            if ($forecastRevenue < 0) {
+                $errors[] = "Baris {$rowNumber}: forecast_revenue tidak boleh negatif.";
+                continue;
+            }
+
+            $monthlyTarget = null;
+            if ($monthlyTargetRaw !== '') {
+                if (!is_numeric(str_replace(',', '', $monthlyTargetRaw))) {
+                    $errors[] = "Baris {$rowNumber}: monthly_target harus numeric >= 0.";
+                    continue;
+                }
+                $monthlyTarget = (float) str_replace(',', '', $monthlyTargetRaw);
+                if ($monthlyTarget < 0) {
+                    $errors[] = "Baris {$rowNumber}: monthly_target tidak boleh negatif.";
+                    continue;
+                }
+            }
+
+            $groupKey = $outletId . '|' . $monthRaw;
+            if (!isset($grouped[$groupKey])) {
+                $grouped[$groupKey] = [
+                    'outlet_id' => $outletId,
+                    'month' => $monthRaw,
+                    'month_date' => $monthDate,
+                    'monthly_target' => $monthlyTarget,
+                    'forecasts' => [],
+                ];
+            }
+            if ($monthlyTarget !== null) {
+                $grouped[$groupKey]['monthly_target'] = $monthlyTarget;
+            }
+
+            if (isset($grouped[$groupKey]['forecasts'][$forecastDate])) {
+                $errors[] = "Baris {$rowNumber}: duplikat forecast_date {$forecastDate} untuk outlet+month yang sama.";
+                continue;
+            }
+            $grouped[$groupKey]['forecasts'][$forecastDate] = $forecastRevenue;
+        }
+
+        if (!empty($errors)) {
+            return redirect()->back()->withErrors([
+                'file' => implode("\n", array_slice($errors, 0, 15)) . (count($errors) > 15 ? "\n..." : ''),
+            ]);
+        }
+        if (empty($grouped)) {
+            return redirect()->back()->withErrors([
+                'file' => 'Tidak ada data valid untuk diimport.',
+            ]);
+        }
+
+        $outletIds = array_values(array_unique(array_map(fn ($g) => (int) $g['outlet_id'], $grouped)));
+        $validOutletIds = DB::table('tbl_data_outlet')->whereIn('id_outlet', $outletIds)->pluck('id_outlet')->map(fn ($x) => (int) $x)->all();
+        $validOutletSet = array_flip($validOutletIds);
+        foreach ($grouped as $groupKey => $group) {
+            if (!isset($validOutletSet[(int) $group['outlet_id']])) {
+                $errors[] = "Outlet ID {$group['outlet_id']} tidak ditemukan.";
+            }
+        }
+        if (!empty($errors)) {
+            return redirect()->back()->withErrors([
+                'file' => implode("\n", $errors),
+            ]);
+        }
+
+        DB::transaction(function () use ($grouped, $user) {
+            foreach ($grouped as $group) {
+                $header = DB::table('outlet_revenue_target_headers')
+                    ->where('outlet_id', (int) $group['outlet_id'])
+                    ->where('target_month', $group['month_date'])
+                    ->first();
+
+                $monthlyTarget = $group['monthly_target'] ?? 0;
+                if ($header) {
+                    DB::table('outlet_revenue_target_headers')
+                        ->where('id', $header->id)
+                        ->update([
+                            'monthly_target' => $monthlyTarget,
+                            'updated_by' => $user->id,
+                            'updated_at' => now(),
+                        ]);
+                    $headerId = $header->id;
+                } else {
+                    $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
+                        'outlet_id' => (int) $group['outlet_id'],
+                        'target_month' => $group['month_date'],
+                        'monthly_target' => $monthlyTarget,
+                        'created_by' => $user->id,
+                        'updated_by' => $user->id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
+
+                $rows = [];
+                foreach ($group['forecasts'] as $forecastDate => $forecastRevenue) {
+                    $rows[] = [
+                        'header_id' => $headerId,
+                        'forecast_date' => $forecastDate,
+                        'forecast_revenue' => $forecastRevenue,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                }
+                if (!empty($rows)) {
+                    DB::table('outlet_revenue_target_details')->insert($rows);
+                }
+            }
+        });
+
+        $first = collect($grouped)->first();
+        return redirect()
+            ->route('outlet-revenue-targets.index', [
+                'outlet_id' => $first['outlet_id'] ?? ($user->id_outlet ?? 0),
+                'month' => $first['month'] ?? now()->format('Y-m'),
+            ])
+            ->with('success', 'Import revenue targets berhasil. Data outlet+bulan di file sudah diperbarui.');
+    }
+
+    private function normalizeExcelDateValue(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            try {
+                return ExcelDate::excelToDateTimeObject((float) $value)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+
+        try {
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function average(array $values): float
