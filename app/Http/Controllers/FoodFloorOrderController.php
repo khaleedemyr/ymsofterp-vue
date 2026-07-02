@@ -22,9 +22,8 @@ use App\Support\FloorOrderPriceAuditor;
 class FoodFloorOrderController extends Controller
 {
     use WritesActivityLogTrait;
-    private const FORECAST_KITCHEN_BAR_RATIO = 0.40;
-
-    private const FORECAST_SERVICE_RATIO = 0.05;
+    private const FORECAST_AFTER_RESERVE_RATIO = 0.80; // 100% - 20%
+    private const FORECAST_LOCK_RATIO_OF_REST = 0.40; // 40% dari 80% (efektif 32%)
 
     protected $floorOrderService;
 
@@ -923,104 +922,75 @@ class FoodFloorOrderController extends Controller
     private function checkBudgetForFloorOrder($order)
     {
         try {
-
             $budgetViolations = [];
             $budgetInfo = [];
-
             // Load items dengan relasi
             $order->load('items');
-            
+            if ($order->items->isEmpty()) {
+                return ['success' => true, 'budget_info' => []];
+            }
+
+            $month = now()->format('Y-m');
+            $monthStart = now()->startOfMonth()->toDateString();
+            $monthlyBudget = $this->resolveMonthlyForecastBudget((int) $order->id_outlet, $monthStart);
+            if ($monthlyBudget === null) {
+                return ['success' => true, 'budget_info' => []];
+            }
+
+            $itemIds = $order->items->pluck('item_id')->filter()->map(fn ($v) => (int) $v)->unique()->values()->all();
+            $itemRows = DB::table('items')->whereIn('id', $itemIds)->get(['id', 'sub_category_id']);
+            $subCategoryByItem = [];
+            foreach ($itemRows as $row) {
+                $subCategoryByItem[(int) $row->id] = $row->sub_category_id !== null ? (int) $row->sub_category_id : null;
+            }
+
+            $newSubtotalBySubCategory = [];
             foreach ($order->items as $item) {
-                // Cari item master untuk mendapatkan sub_category_id
-                $itemMaster = \DB::table('items')->where('id', $item->item_id)->first();
-                
-                if (!$itemMaster || !$itemMaster->sub_category_id) {
+                $subCategoryId = $subCategoryByItem[(int) $item->item_id] ?? null;
+                if ($subCategoryId === null || $subCategoryId <= 0) {
                     continue;
                 }
+                $newSubtotalBySubCategory[$subCategoryId] = ($newSubtotalBySubCategory[$subCategoryId] ?? 0.0) + ((float) $item->qty * (float) $item->price);
+            }
 
-                // Cek apakah ada budget lock untuk sub_category_id ini
-                $lockedBudget = \DB::table('locked_budget_food_categories')
-                    ->where('sub_category_id', $itemMaster->sub_category_id)
-                    ->where('outlet_id', $order->id_outlet)
-                    ->first();
-
-                if (!$lockedBudget) {
-                    continue;
-                }
-
-                // Ambil informasi sub category dan category
-                $subCategoryInfo = \DB::table('sub_categories as sc')
+            foreach ($newSubtotalBySubCategory as $subCategoryId => $newItemsTotal) {
+                $subCategoryInfo = DB::table('sub_categories as sc')
                     ->join('categories as c', 'sc.category_id', '=', 'c.id')
-                    ->where('sc.id', $itemMaster->sub_category_id)
+                    ->where('sc.id', $subCategoryId)
                     ->select('sc.name as sub_category_name', 'c.name as category_name')
                     ->first();
 
+                $usage = $this->monthlyUsageContraBonAndRo((int) $order->id_outlet, (int) $subCategoryId, $month, (int) $order->id);
+                $monthlyTotal = $usage['retail_food_total'] + $usage['food_floor_order_total'];
+                $totalAfterNewItem = $monthlyTotal + (float) $newItemsTotal;
 
-                // Hitung total transaksi bulan berjalan
-                $currentMonth = date('Y-m');
-                
-                // 1. Total dari retail_food_items
-                $retailFoodTotal = \DB::table('retail_food_items as rfi')
-                    ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
-                    ->join('items as i', \DB::raw('TRIM(i.name)'), '=', \DB::raw('TRIM(rfi.item_name)'))
-                    ->where('i.sub_category_id', $itemMaster->sub_category_id)
-                    ->where('rf.outlet_id', $order->id_outlet)
-                    ->where('rf.status', 'approved')
-                    ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$currentMonth])
-                    ->sum('rfi.subtotal');
-
-                // 2. Total dari food_floor_order_items (exclude current order)
-                $foodFloorOrderTotal = \DB::table('food_floor_order_items as ffoi')
-                    ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
-                    ->join('items as i', 'ffoi.item_id', '=', 'i.id')
-                    ->where('i.sub_category_id', $itemMaster->sub_category_id)
-                    ->where('ffo.id_outlet', $order->id_outlet)
-                    ->whereIn('ffo.status', ['approved', 'received'])
-                    ->where('ffo.id', '!=', $order->id) // Exclude current order
-                    ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$currentMonth])
-                    ->sum('ffoi.subtotal');
-
-                // 3. Total gabungan
-                $monthlyTotal = $retailFoodTotal + $foodFloorOrderTotal;
-                
-                // Hitung subtotal item baru
-                $newItemSubtotal = $item->qty * $item->price;
-                
-                // Total setelah ditambah item baru
-                $totalAfterNewItem = $monthlyTotal + $newItemSubtotal;
-
-
-                // Cek apakah melebihi budget
-                if ($totalAfterNewItem > $lockedBudget->budget) {
+                if ($totalAfterNewItem > $monthlyBudget['lock_budget']) {
                     $violation = [
-                        'item_name' => $item->item_name,
                         'category_name' => $subCategoryInfo->category_name ?? 'N/A',
                         'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
-                        'budget_amount' => $lockedBudget->budget,
-                        'retail_food_total' => $retailFoodTotal,
-                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
+                        'budget_amount' => $monthlyBudget['lock_budget'],
+                        'retail_food_total' => $usage['retail_food_total'],
+                        'food_floor_order_total' => $usage['food_floor_order_total'],
                         'monthly_total' => $monthlyTotal,
-                        'new_item_subtotal' => $newItemSubtotal,
+                        'new_item_subtotal' => (float) $newItemsTotal,
                         'total_after_new_item' => $totalAfterNewItem,
-                        'excess_amount' => $totalAfterNewItem - $lockedBudget->budget
+                        'excess_amount' => $totalAfterNewItem - $monthlyBudget['lock_budget'],
                     ];
-                    
                     $budgetViolations[] = $violation;
-                    
-                    \Log::error('FO_BUDGET_CHECK: Budget terlampaui', $violation);
                 } else {
                     $budgetInfo[] = [
-                        'item_name' => $item->item_name,
                         'category_name' => $subCategoryInfo->category_name ?? 'N/A',
                         'sub_category_name' => $subCategoryInfo->sub_category_name ?? 'N/A',
-                        'budget_amount' => $lockedBudget->budget,
-                        'retail_food_total' => $retailFoodTotal,
-                        'food_floor_order_total' => $foodFloorOrderTotal,
+                        'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
+                        'budget_amount' => $monthlyBudget['lock_budget'],
+                        'retail_food_total' => $usage['retail_food_total'],
+                        'food_floor_order_total' => $usage['food_floor_order_total'],
                         'monthly_total' => $monthlyTotal,
-                        'new_item_subtotal' => $newItemSubtotal,
+                        'new_item_subtotal' => (float) $newItemsTotal,
                         'total_after_new_item' => $totalAfterNewItem,
-                        'remaining_budget' => $lockedBudget->budget - $totalAfterNewItem,
-                        'budget_percentage' => $totalAfterNewItem > 0 ? round(($totalAfterNewItem / $lockedBudget->budget) * 100, 2) : 0
+                        'remaining_budget' => $monthlyBudget['lock_budget'] - $totalAfterNewItem,
+                        'budget_percentage' => $monthlyBudget['lock_budget'] > 0 ? round(($totalAfterNewItem / $monthlyBudget['lock_budget']) * 100, 2) : 0,
                     ];
                 }
             }
@@ -1031,8 +1001,9 @@ class FoodFloorOrderController extends Controller
                 
                 foreach ($budgetViolations as $violation) {
                     $message .= "📊 {$violation['sub_category_name']} (Kategori: {$violation['category_name']}):\n";
+                    $message .= "• Total Forecast Bulan Ini: Rp " . number_format((float) $violation['forecast_monthly_total'], 0, ',', '.') . "\n";
                     $message .= "• Budget yang ditetapkan: Rp " . number_format((float)$violation['budget_amount'], 0, ',', '.') . "\n";
-                    $message .= "• Total Retail Food (bulan ini): Rp " . number_format((float)$violation['retail_food_total'], 0, ',', '.') . "\n";
+                    $message .= "• Total Retail Food CONTRA BON (bulan ini): Rp " . number_format((float)$violation['retail_food_total'], 0, ',', '.') . "\n";
                     $message .= "• Total Food Floor Order (bulan ini): Rp " . number_format((float)$violation['food_floor_order_total'], 0, ',', '.') . "\n";
                     $message .= "• Total Gabungan: Rp " . number_format((float)$violation['monthly_total'], 0, ',', '.') . "\n";
                     $message .= "• Item baru: Rp " . number_format((float)$violation['new_item_subtotal'], 0, ',', '.') . "\n";
@@ -1066,6 +1037,75 @@ class FoodFloorOrderController extends Controller
                 'message' => 'Terjadi kesalahan saat mengecek budget: ' . $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Budget lock berbasis forecast bulanan:
+     * 100% forecast -> kurangi 20% => 80%, lalu ambil 40% dari 80% (efektif 32% dari forecast).
+     *
+     * @return array{forecast_monthly_total: float, lock_budget: float}|null
+     */
+    private function resolveMonthlyForecastBudget(int $outletId, string $monthStart): ?array
+    {
+        $header = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->where('target_month', $monthStart)
+            ->first(['id']);
+        if (! $header) {
+            return null;
+        }
+
+        $forecastMonthlyTotal = (float) (DB::table('outlet_revenue_target_details')
+            ->where('header_id', $header->id)
+            ->sum('forecast_revenue') ?? 0);
+        if ($forecastMonthlyTotal <= 0) {
+            return null;
+        }
+
+        $usableAfterReserve = $forecastMonthlyTotal * self::FORECAST_AFTER_RESERVE_RATIO;
+        $lockBudget = round($usableAfterReserve * self::FORECAST_LOCK_RATIO_OF_REST, 2);
+
+        return [
+            'forecast_monthly_total' => round($forecastMonthlyTotal, 2),
+            'lock_budget' => $lockBudget,
+        ];
+    }
+
+    /**
+     * Retail Food dihitung khusus payment_method = contra_bon.
+     *
+     * @return array{retail_food_total: float, food_floor_order_total: float}
+     */
+    private function monthlyUsageContraBonAndRo(int $outletId, int $subCategoryId, string $monthYm, ?int $excludeFloorOrderId = null): array
+    {
+        $retailFoodTotal = (float) (DB::table('retail_food_items as rfi')
+            ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+            ->join('items as i', DB::raw('TRIM(i.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+            ->where('i.sub_category_id', $subCategoryId)
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->where('rf.payment_method', 'contra_bon')
+            ->whereRaw("DATE_FORMAT(rf.transaction_date, '%Y-%m') = ?", [$monthYm])
+            ->sum('rfi.subtotal') ?? 0);
+
+        $foQuery = DB::table('food_floor_order_items as ffoi')
+            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->join('items as i', 'ffoi.item_id', '=', 'i.id')
+            ->where('i.sub_category_id', $subCategoryId)
+            ->where('ffo.id_outlet', $outletId)
+            ->whereIn('ffo.status', ['approved', 'received'])
+            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$monthYm]);
+
+        if ($excludeFloorOrderId !== null) {
+            $foQuery->where('ffo.id', '!=', $excludeFloorOrderId);
+        }
+
+        $foodFloorOrderTotal = (float) ($foQuery->sum('ffoi.subtotal') ?? 0);
+
+        return [
+            'retail_food_total' => round($retailFoodTotal, 2),
+            'food_floor_order_total' => round($foodFloorOrderTotal, 2),
+        ];
     }
 
     // API: Get pending RO Khusus approvals
@@ -1267,8 +1307,8 @@ class FoodFloorOrderController extends Controller
     }
 
     /**
-     * Forecast harian + plafon vs RO lain & input form (satu tanggal kedatangan + warehouse outlet).
-     * Selaras dengan laporan RO vs Forecast: nama warehouse harus persis kitchen/bar/service (lower trim).
+     * Info sisa budget bulan berjalan berbasis forecast bulanan.
+     * Budget lock = 40% dari (forecast bulanan setelah dikurangi 20%).
      */
     public function forecastBudgetVsInput(Request $request)
     {
@@ -1285,7 +1325,6 @@ class FoodFloorOrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Outlet tidak valid'], 422);
         }
 
-        $arrival = Carbon::parse($validated['arrival_date'])->toDateString();
         $monthStart = Carbon::parse($validated['arrival_date'])->copy()->startOfMonth()->toDateString();
         $whId = (int) $validated['warehouse_outlet_id'];
 
@@ -1294,84 +1333,51 @@ class FoodFloorOrderController extends Controller
             return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak ditemukan'], 422);
         }
 
-        $nameNorm = strtolower(trim((string) ($wo->name ?? '')));
-        $bucket = 'other';
-        if (in_array($nameNorm, ['kitchen', 'bar'], true)) {
-            $bucket = 'kitchen_bar';
-        } elseif ($nameNorm === 'service') {
-            $bucket = 'service';
+        $monthlyBudget = $this->resolveMonthlyForecastBudget($outletId, $monthStart);
+        if ($monthlyBudget === null) {
+            return response()->json([
+                'success' => true,
+                'budget_lock_active' => false,
+                'message' => 'Forecast bulan berjalan belum ada. Locking budget di-skip.',
+            ]);
         }
 
-        $bucketLabels = [
-            'kitchen_bar' => 'Kitchen + Bar (40% dari forecast)',
-            'service' => 'Service (5% dari forecast)',
-            'other' => 'Lainnya (tanpa plafon K+B / Service)',
-        ];
-
-        $forecastForDay = 0.0;
-        $hasHeader = false;
-
-        $header = DB::table('outlet_revenue_target_headers')
+        $monthYm = Carbon::parse($monthStart)->format('Y-m');
+        // Untuk endpoint ini gunakan total global outlet bulan berjalan.
+        $retailFoodTotal = (float) (DB::table('retail_food')
             ->where('outlet_id', $outletId)
-            ->where('target_month', $monthStart)
-            ->first(['id']);
+            ->where('status', 'approved')
+            ->where('payment_method', 'contra_bon')
+            ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$monthYm])
+            ->sum('total_amount') ?? 0);
 
-        if ($header) {
-            $hasHeader = true;
-            $detail = DB::table('outlet_revenue_target_details')
-                ->where('header_id', $header->id)
-                ->whereDate('forecast_date', $arrival)
-                ->first(['forecast_revenue']);
-            if ($detail) {
-                $forecastForDay = (float) $detail->forecast_revenue;
-            }
-        }
-
-        $capKb = round($forecastForDay * self::FORECAST_KITCHEN_BAR_RATIO, 2);
-        $capSvc = round($forecastForDay * self::FORECAST_SERVICE_RATIO, 2);
-
-        $plafon = match ($bucket) {
-            'kitchen_bar' => $capKb,
-            'service' => $capSvc,
-            default => null,
-        };
-
-        $committedQuery = DB::table('food_floor_orders as ffo')
-            ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
+        $foQuery = DB::table('food_floor_order_items as ffoi')
+            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
             ->where('ffo.id_outlet', $outletId)
-            ->whereDate('ffo.arrival_date', $arrival)
-            ->where('ffo.warehouse_outlet_id', $whId)
-            ->whereNotIn('ffo.status', ['draft', 'rejected']);
-
+            ->whereIn('ffo.status', ['approved', 'received'])
+            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$monthYm]);
         if (!empty($validated['exclude_floor_order_id'])) {
-            $committedQuery->where('ffo.id', '!=', (int) $validated['exclude_floor_order_id']);
+            $foQuery->where('ffo.id', '!=', (int) $validated['exclude_floor_order_id']);
         }
+        $foodFloorOrderTotal = (float) ($foQuery->sum('ffoi.subtotal') ?? 0);
 
-        $committed = (float) ($committedQuery
-            ->selectRaw('SUM(COALESCE(ffoi.subtotal, (COALESCE(ffoi.qty, 0) * COALESCE(ffoi.price, 0)))) AS total')
-            ->value('total') ?? 0);
+        $committed = $retailFoodTotal + $foodFloorOrderTotal;
 
         $currentInput = round((float) ($validated['current_input_total'] ?? 0), 2);
-
-        $sisaPlafon = null;
-        $overCap = null;
-        if ($plafon !== null) {
-            $sisaPlafon = round((float) $plafon - $committed - $currentInput, 2);
-            $overCap = $sisaPlafon < 0;
-        }
+        $sisaPlafon = round((float) $monthlyBudget['lock_budget'] - $committed - $currentInput, 2);
+        $overCap = $sisaPlafon < 0;
 
         return response()->json([
             'success' => true,
-            'has_revenue_target_header' => $hasHeader,
-            'forecast_revenue' => round($forecastForDay, 2),
-            'cap_kitchen_bar' => $capKb,
-            'cap_service' => $capSvc,
-            'bucket' => $bucket,
-            'bucket_label' => $bucketLabels[$bucket] ?? $bucket,
-            'plafon' => $plafon !== null ? round((float) $plafon, 2) : null,
-            'committed_other_fo' => round($committed, 2),
+            'budget_lock_active' => true,
+            'warehouse_outlet_name' => (string) ($wo->name ?? ''),
+            'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
+            'plafon' => $monthlyBudget['lock_budget'],
+            'retail_food_contra_bon_total' => round($retailFoodTotal, 2),
+            'food_floor_order_total' => round($foodFloorOrderTotal, 2),
+            'committed_total' => round($committed, 2),
             'current_input_total' => $currentInput,
-            'sisa_plafon' => $sisaPlafon !== null ? round((float) $sisaPlafon, 2) : null,
+            'sisa_plafon' => $sisaPlafon,
             'over_cap' => $overCap,
         ]);
     }

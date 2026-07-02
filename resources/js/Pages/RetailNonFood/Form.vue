@@ -64,6 +64,57 @@
           </div>
 
           <!-- Budget Information Section -->
+          <div v-if="pettyCashInfo || pettyCashLockMessage" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
+              <i class="fa-solid fa-wallet text-yellow-600"></i>
+              Informasi Budget Lock Petty Cash
+            </h3>
+            <div v-if="pettyCashLockMessage" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {{ pettyCashLockMessage }}
+            </div>
+            <div v-if="pettyCashInfo" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Forecast Bulanan</div>
+                <div class="font-semibold text-gray-800">{{ formatRupiah(pettyCashInfo.forecast_monthly_total) }}</div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Budget Petty Cash</div>
+                <div class="font-semibold text-green-600">{{ formatRupiah(pettyCashInfo.budget_amount) }}</div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Total Digunakan</div>
+                <div class="font-semibold text-blue-600">{{ formatRupiah(pettyCashInfo.monthly_total) }}</div>
+                <div class="text-xs text-gray-500 mt-1">
+                  RO: {{ formatRupiah(pettyCashInfo.food_floor_order_total) }}
+                </div>
+                <div class="text-xs text-gray-500">
+                  RF non-contra: {{ formatRupiah(pettyCashInfo.retail_food_non_contra_bon_total) }}
+                </div>
+                <div class="text-xs text-gray-500">
+                  RNF non-contra: {{ formatRupiah(pettyCashInfo.retail_non_food_non_contra_bon_total) }}
+                </div>
+              </div>
+              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
+                <div class="text-sm text-gray-600 mb-1">Sisa Budget</div>
+                <div :class="pettyCashInfo.remaining_budget > 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
+                  {{ formatRupiah(pettyCashInfo.remaining_budget) }}
+                </div>
+                <div class="mt-2">
+                  <div class="flex justify-between text-xs mb-1">
+                    <span>Penggunaan</span>
+                    <span>{{ pettyCashInfo.budget_percentage }}%</span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div :class="pettyCashInfo.budget_percentage >= 90 ? 'bg-red-500' : pettyCashInfo.budget_percentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'"
+                         class="h-2 rounded-full transition-all duration-300"
+                         :style="{ width: Math.min(pettyCashInfo.budget_percentage, 100) + '%' }">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div v-if="budgetInfo" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
             <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
               <i class="fa-solid fa-chart-pie text-yellow-600"></i>
@@ -248,6 +299,8 @@ const loading = ref(false)
 const dailyTotal = ref(0)
 const showLimitAlert = computed(() => (dailyTotal.value + totalAmount.value) >= 500000)
 const budgetInfo = ref(null)
+const pettyCashInfo = ref(null)
+const pettyCashLockMessage = ref('')
 const categoryBudgets = ref(props.categoryBudgets || [])
 const loadingCategories = ref(false)
 
@@ -348,14 +401,43 @@ async function fetchCategoryBudgets() {
 async function fetchBudgetInfo() {
   if (!form.value.category_budget_id) {
     budgetInfo.value = null
-    return
+  }
+
+  if (form.value.payment_method !== 'contra_bon' && form.value.outlet_id) {
+    try {
+      const pettyRes = await axios.post('/retail-non-food/get-budget-info', {
+        outlet_id: form.value.outlet_id,
+        payment_method: form.value.payment_method || 'cash',
+        category_budget_id: form.value.category_budget_id || null
+      })
+      pettyCashInfo.value = pettyRes.data.petty_cash_info?.budget_lock_active ? pettyRes.data.petty_cash_info : null
+      pettyCashLockMessage.value = pettyRes.data.petty_cash_info?.budget_lock_active === false
+        ? (pettyRes.data.petty_cash_info?.message || 'Locking budget petty cash tidak aktif.')
+        : ''
+      if (!form.value.category_budget_id) return
+    } catch (error) {
+      console.error('Error fetching petty cash info:', error)
+      pettyCashInfo.value = null
+      pettyCashLockMessage.value = ''
+      if (!form.value.category_budget_id) return
+    }
+  } else {
+    pettyCashInfo.value = null
+    pettyCashLockMessage.value = ''
+    if (!form.value.category_budget_id) return
   }
   
   try {
     const res = await axios.post('/retail-non-food/get-budget-info', {
-      category_budget_id: form.value.category_budget_id
+      category_budget_id: form.value.category_budget_id,
+      outlet_id: form.value.outlet_id,
+      payment_method: form.value.payment_method || 'cash'
     })
     budgetInfo.value = res.data.budget_info
+    pettyCashInfo.value = res.data.petty_cash_info?.budget_lock_active ? res.data.petty_cash_info : pettyCashInfo.value
+    if (res.data.petty_cash_info?.budget_lock_active === false) {
+      pettyCashLockMessage.value = res.data.petty_cash_info?.message || 'Locking budget petty cash tidak aktif.'
+    }
   } catch (error) {
     console.error('Error fetching budget info:', error)
     budgetInfo.value = null
@@ -381,12 +463,16 @@ watch(() => form.value.outlet_id, (newOutletId, oldOutletId) => {
 // Watch untuk fetch budget info ketika category budget atau total amount berubah
 watch([
   () => form.value.category_budget_id,
-  () => totalAmount.value
+  () => totalAmount.value,
+  () => form.value.payment_method,
+  () => form.value.outlet_id
 ], () => {
-  if (form.value.category_budget_id) {
+  if (form.value.category_budget_id || (form.value.payment_method && form.value.payment_method !== 'contra_bon')) {
     fetchBudgetInfo()
   } else {
     budgetInfo.value = null
+    pettyCashInfo.value = null
+    pettyCashLockMessage.value = ''
   }
 }, { immediate: true })
 

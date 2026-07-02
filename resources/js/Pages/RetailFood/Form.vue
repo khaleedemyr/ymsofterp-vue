@@ -37,11 +37,14 @@
          </div>
 
          <!-- Budget Information Section -->
-         <div v-if="budgetInfo.length > 0" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+         <div v-if="form.payment_method && (budgetInfo.length > 0 || budgetLockMessage)" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
            <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
              <i class="fa-solid fa-chart-pie text-yellow-600"></i>
-             Informasi Budget Sub Category
+             {{ budgetLockType === 'petty_cash' ? 'Informasi Budget Lock Petty Cash' : 'Informasi Budget Lock Contra Bon' }}
            </h3>
+           <div v-if="budgetLockMessage" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+             {{ budgetLockMessage }}
+           </div>
            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              <div v-for="budget in budgetInfo" :key="budget.sub_category_id" 
                   class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
@@ -58,9 +61,13 @@
                    <span class="font-semibold text-green-600">{{ formatRupiah(budget.budget_amount) }}</span>
                  </div>
                  <div class="flex justify-between">
-                   <span class="text-gray-600">Retail Food:</span>
+                  <span class="text-gray-600">{{ budgetLockType === 'petty_cash' ? 'Retail Food (non-contra bon)' : 'Retail Food (contra bon)' }}:</span>
                    <span class="text-blue-600">{{ formatRupiah(budget.retail_food_total) }}</span>
                  </div>
+                <div v-if="budget.retail_non_food_total !== undefined" class="flex justify-between">
+                  <span class="text-gray-600">Retail Non Food (non-contra bon):</span>
+                  <span class="text-indigo-600">{{ formatRupiah(budget.retail_non_food_total) }}</span>
+                </div>
                  <div class="flex justify-between">
                    <span class="text-gray-600">Food Floor Order:</span>
                    <span class="text-purple-600">{{ formatRupiah(budget.food_floor_order_total) }}</span>
@@ -95,6 +102,9 @@
                      </div>
                    </div>
                  </div>
+               </div>
+               <div v-if="budget.forecast_monthly_total !== undefined" class="mt-2 text-xs text-slate-600">
+                 Forecast bulanan: {{ formatRupiah(budget.forecast_monthly_total) }}
                </div>
              </div>
            </div>
@@ -353,6 +363,8 @@ const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
 const budgetInfo = ref([])
+const budgetLockMessage = ref('')
+const budgetLockType = ref('contra_bon')
 const priceViolations = ref([])
 const showLimitAlert = computed(() => {
   // Hanya tampilkan alert jika metode pembayaran adalah cash
@@ -565,6 +577,12 @@ async function fetchDailyTotal() {
 async function fetchBudgetInfo() {
   if (!form.value.outlet_id) {
     budgetInfo.value = []
+    budgetLockMessage.value = ''
+    return
+  }
+  if (!form.value.payment_method) {
+    budgetInfo.value = []
+    budgetLockMessage.value = ''
     return
   }
   
@@ -582,13 +600,18 @@ async function fetchBudgetInfo() {
         qty: item.qty || 0,
         price: item.price || 0
       })),
-      outlet_id: form.value.outlet_id
+      outlet_id: form.value.outlet_id,
+      payment_method: form.value.payment_method
     })
     
     budgetInfo.value = res.data.budget_info || []
+    budgetLockType.value = res.data.budget_lock_type || (form.value.payment_method === 'contra_bon' ? 'contra_bon' : 'petty_cash')
+    budgetLockMessage.value = res.data.budget_lock_active === false ? (res.data.message || 'Locking budget tidak aktif untuk bulan ini.') : ''
   } catch (error) {
     console.error('Error fetching budget info:', error)
     budgetInfo.value = []
+    budgetLockMessage.value = ''
+    budgetLockType.value = form.value.payment_method === 'contra_bon' ? 'contra_bon' : 'petty_cash'
   }
 }
 

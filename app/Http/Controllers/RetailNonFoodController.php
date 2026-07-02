@@ -15,6 +15,76 @@ use Inertia\Inertia;
 
 class RetailNonFoodController extends Controller
 {
+    private const FORECAST_AFTER_RESERVE_RATIO = 0.80;
+    private const FORECAST_PETTY_CASH_RATIO_OF_REST = 0.008;
+
+    /**
+     * @return array{forecast_monthly_total: float, lock_budget: float}|null
+     */
+    private function resolveMonthlyForecastBudget(int $outletId, string $monthStart): ?array
+    {
+        $header = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->where('target_month', $monthStart)
+            ->first(['id']);
+        if (! $header) {
+            return null;
+        }
+
+        $forecastMonthlyTotal = (float) (DB::table('outlet_revenue_target_details')
+            ->where('header_id', $header->id)
+            ->sum('forecast_revenue') ?? 0);
+        if ($forecastMonthlyTotal <= 0) {
+            return null;
+        }
+
+        $lockBudget = round(
+            $forecastMonthlyTotal * self::FORECAST_AFTER_RESERVE_RATIO * self::FORECAST_PETTY_CASH_RATIO_OF_REST,
+            2
+        );
+
+        return [
+            'forecast_monthly_total' => round($forecastMonthlyTotal, 2),
+            'lock_budget' => $lockBudget,
+        ];
+    }
+
+    /**
+     * Usage petty cash bulan berjalan: RO + RF non-contra + RNF non-contra.
+     */
+    private function monthlyUsagePettyCashOutlet(int $outletId, string $monthYm): array
+    {
+        $retailFoodNonContraBonTotal = (float) (DB::table('retail_food')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'approved')
+            ->where('payment_method', '!=', 'contra_bon')
+            ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$monthYm])
+            ->sum('total_amount') ?? 0);
+
+        $retailNonFoodNonContraBonTotal = (float) (DB::table('retail_non_food')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'approved')
+            ->where('payment_method', '!=', 'contra_bon')
+            ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$monthYm])
+            ->sum('total_amount') ?? 0);
+
+        $foodFloorOrderTotal = (float) (DB::table('food_floor_order_items as ffoi')
+            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->where('ffo.id_outlet', $outletId)
+            ->whereIn('ffo.status', ['approved', 'received'])
+            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$monthYm])
+            ->sum('ffoi.subtotal') ?? 0);
+
+        $monthlyTotal = $retailFoodNonContraBonTotal + $retailNonFoodNonContraBonTotal + $foodFloorOrderTotal;
+
+        return [
+            'retail_food_non_contra_bon_total' => round($retailFoodNonContraBonTotal, 2),
+            'retail_non_food_non_contra_bon_total' => round($retailNonFoodNonContraBonTotal, 2),
+            'food_floor_order_total' => round($foodFloorOrderTotal, 2),
+            'monthly_total' => round($monthlyTotal, 2),
+        ];
+    }
+
     private function generateRetailNumber()
     {
         $prefix = 'RNF';
@@ -185,6 +255,33 @@ class RetailNonFoodController extends Controller
             $totalAmount = collect($request->items)->sum(function ($item) {
                 return (float)($item['qty'] ?? 0) * (float)($item['price'] ?? 0);
             });
+
+            // Locking budget petty cash untuk mode selain contra bon.
+            if ($request->payment_method !== 'contra_bon') {
+                $monthStart = now()->startOfMonth()->toDateString();
+                $monthlyBudget = $this->resolveMonthlyForecastBudget((int) $request->outlet_id, $monthStart);
+                if ($monthlyBudget !== null) {
+                    $monthYm = now()->format('Y-m');
+                    $usage = $this->monthlyUsagePettyCashOutlet((int) $request->outlet_id, $monthYm);
+                    $totalAfterNew = $usage['monthly_total'] + $totalAmount;
+                    if ($totalAfterNew > $monthlyBudget['lock_budget']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Transaksi ditolak! Budget petty cash outlet bulan ini terlampaui.\n\n" .
+                                "📊 Detail Budget:\n" .
+                                "• Total Forecast Bulanan: Rp " . number_format($monthlyBudget['forecast_monthly_total'], 0, ',', '.') . "\n" .
+                                "• Budget Petty Cash (0.8% × 80% forecast): Rp " . number_format($monthlyBudget['lock_budget'], 0, ',', '.') . "\n" .
+                                "• RO (bulan ini): Rp " . number_format($usage['food_floor_order_total'], 0, ',', '.') . "\n" .
+                                "• Retail Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
+                                "• Retail Non Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_non_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
+                                "• Total terpakai sebelum transaksi: Rp " . number_format($usage['monthly_total'], 0, ',', '.') . "\n" .
+                                "• Transaksi baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n" .
+                                "• Total setelah transaksi: Rp " . number_format($totalAfterNew, 0, ',', '.') . "\n" .
+                                "• Kelebihan: Rp " . number_format($totalAfterNew - $monthlyBudget['lock_budget'], 0, ',', '.')
+                        ], 422);
+                    }
+                }
+            }
 
             // Validasi budget sebelum simpan menggunakan BudgetCalculationService
             if ($request->category_budget_id) {
@@ -753,11 +850,42 @@ class RetailNonFoodController extends Controller
         try {
             $request->validate([
                 'category_budget_id' => 'nullable|exists:purchase_requisition_categories,id',
+                'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+                'payment_method' => 'nullable|in:cash,contra_bon',
             ]);
+
+            $paymentMethod = (string) $request->input('payment_method', 'cash');
+            $outletId = (int) $request->input('outlet_id', 0);
+
+            $pettyCashInfo = null;
+            if ($paymentMethod !== 'contra_bon' && $outletId > 0) {
+                $monthStart = now()->startOfMonth()->toDateString();
+                $monthlyBudget = $this->resolveMonthlyForecastBudget($outletId, $monthStart);
+                if ($monthlyBudget === null) {
+                    $pettyCashInfo = [
+                        'budget_lock_active' => false,
+                        'message' => 'Forecast bulan berjalan belum ada. Locking budget petty cash di-skip.',
+                    ];
+                } else {
+                    $usage = $this->monthlyUsagePettyCashOutlet($outletId, now()->format('Y-m'));
+                    $pettyCashInfo = [
+                        'budget_lock_active' => true,
+                        'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
+                        'budget_amount' => $monthlyBudget['lock_budget'],
+                        'retail_food_non_contra_bon_total' => $usage['retail_food_non_contra_bon_total'],
+                        'retail_non_food_non_contra_bon_total' => $usage['retail_non_food_non_contra_bon_total'],
+                        'food_floor_order_total' => $usage['food_floor_order_total'],
+                        'monthly_total' => $usage['monthly_total'],
+                        'remaining_budget' => $monthlyBudget['lock_budget'] - $usage['monthly_total'],
+                        'budget_percentage' => $monthlyBudget['lock_budget'] > 0 ? round(($usage['monthly_total'] / $monthlyBudget['lock_budget']) * 100, 2) : 0,
+                    ];
+                }
+            }
 
             if (!$request->category_budget_id) {
                 return response()->json([
-                    'budget_info' => null
+                    'budget_info' => null,
+                    'petty_cash_info' => $pettyCashInfo,
                 ]);
             }
 
@@ -885,7 +1013,8 @@ class RetailNonFoodController extends Controller
                     'current_year' => $currentYear,
                     // Include breakdown from BudgetCalculationService for consistency
                     'breakdown' => $budgetInfo['breakdown'] ?? [],
-                ]
+                ],
+                'petty_cash_info' => $pettyCashInfo,
             ]);
 
         } catch (\Exception $e) {

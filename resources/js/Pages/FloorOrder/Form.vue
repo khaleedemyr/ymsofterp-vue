@@ -1228,31 +1228,30 @@ watch(selectedWarehouseOutlet, (val) => {
         v-if="jadwalSiap && form.arrival_date && selectedWarehouseOutlet"
         class="mb-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-50 to-slate-50 p-4 text-sm shadow-sm"
       >
-        <div class="font-semibold text-indigo-900 mb-2">Forecast &amp; plafon (tanggal kedatangan &amp; warehouse ini)</div>
+        <div class="font-semibold text-indigo-900 mb-2">Forecast &amp; budget lock bulanan (outlet ini)</div>
         <div v-if="forecastBudgetLoading" class="text-gray-600 flex items-center gap-2">
           <i class="fas fa-spinner fa-spin"></i>
           Menghitung…
         </div>
         <div v-else-if="forecastBudgetErr" class="text-red-600">{{ forecastBudgetErr }}</div>
         <template v-else-if="forecastBudget">
-          <div v-if="!forecastBudget.has_revenue_target_header" class="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            Belum ada Revenue Targets untuk bulan tanggal kedatangan ini — forecast harian tidak tersedia.
+          <div v-if="forecastBudget.budget_lock_active === false" class="text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            {{ forecastBudget.message || 'Forecast bulan berjalan belum ada. Locking budget di-skip.' }}
           </div>
           <div v-else class="space-y-2">
             <div class="flex flex-wrap gap-x-6 gap-y-1">
-              <span>Forecast harian: <strong>{{ formatRupiah(forecastBudget.forecast_revenue) }}</strong></span>
-              <span class="text-gray-700">{{ forecastBudget.bucket_label }}</span>
+              <span>Total forecast bulanan: <strong>{{ formatRupiah(forecastBudget.forecast_monthly_total) }}</strong></span>
+              <span v-if="forecastBudget.warehouse_outlet_name" class="text-gray-700">Warehouse: {{ forecastBudget.warehouse_outlet_name }}</span>
             </div>
             <div class="flex flex-wrap gap-x-6 gap-y-1 text-gray-800">
-              <span v-if="forecastBudget.plafon !== null">
-                Plafon bucket: <strong>{{ formatRupiah(forecastBudget.plafon) }}</strong>
-              </span>
-              <span v-else class="text-gray-600">
-                Referensi cap K+B: {{ formatRupiah(forecastBudget.cap_kitchen_bar) }} · Service: {{ formatRupiah(forecastBudget.cap_service) }}
+              <span v-if="forecastBudget.plafon !== null && forecastBudget.plafon !== undefined">
+                Budget lock (32% forecast): <strong>{{ formatRupiah(forecastBudget.plafon) }}</strong>
               </span>
             </div>
             <div class="flex flex-wrap gap-x-6 gap-y-1 border-t border-indigo-100 pt-2 mt-2">
-              <span>RO lain (tanggal &amp; warehouse sama): <strong>{{ formatRupiah(forecastBudget.committed_other_fo) }}</strong></span>
+              <span>Retail Food CONTRA BON (bulan ini): <strong>{{ formatRupiah(forecastBudget.retail_food_contra_bon_total) }}</strong></span>
+              <span>RO (bulan ini): <strong>{{ formatRupiah(forecastBudget.food_floor_order_total) }}</strong></span>
+              <span>Total terpakai: <strong>{{ formatRupiah(forecastBudget.committed_total) }}</strong></span>
               <span>Input Anda sekarang: <strong>{{ formatRupiah(forecastBudget.current_input_total) }}</strong></span>
             </div>
             <div
@@ -1260,12 +1259,9 @@ watch(selectedWarehouseOutlet, (val) => {
               :class="forecastBudget.over_cap ? 'text-red-700 bg-red-50 border border-red-200' : 'text-green-800 bg-green-50 border border-green-200'"
               class="rounded-lg px-3 py-2 font-semibold"
             >
-              Sisa plafon (plafon − RO lain − input Anda): {{ formatRupiah(forecastBudget.sisa_plafon) }}
-              <span v-if="forecastBudget.over_cap" class="block text-sm font-normal mt-1">Melebihi plafon untuk bucket ini.</span>
+              Sisa budget (budget lock − total terpakai − input Anda): {{ formatRupiah(forecastBudget.sisa_plafon) }}
+              <span v-if="forecastBudget.over_cap" class="block text-sm font-normal mt-1">Melebihi budget lock. Submit akan ditolak.</span>
             </div>
-            <p v-if="forecastBudget.bucket === 'other'" class="text-xs text-gray-600">
-              Nama warehouse bukan Kitchen/Bar/Service persis — perbandingan plafon K+B atau Service tidak dipakai (sama seperti laporan RO vs Forecast).
-            </p>
           </div>
         </template>
       </div>
