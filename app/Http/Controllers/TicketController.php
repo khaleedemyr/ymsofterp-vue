@@ -77,6 +77,59 @@ class TicketController extends Controller
         return $userDivisionId > 0 && $userDivisionId === $ticketDivisiId;
     }
 
+    /**
+     * Isi dikerjakan oleh (internal / external vendor): hanya divisi concern ticket.
+     */
+    public static function userCanSetWorkExecutorType($user, Ticket $ticket): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        $userDivisionId = (int) ($user->division_id ?? 0);
+        $ticketDivisiId = (int) ($ticket->divisi_id ?? 0);
+
+        return $userDivisionId > 0 && $userDivisionId === $ticketDivisiId;
+    }
+
+    protected function ticketWorkExecutorDeniedJsonResponse()
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Hanya divisi terkait ticket yang dapat mengisi dikerjakan oleh.',
+        ], 403);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function workExecutorTypeOptions(): array
+    {
+        return Ticket::workExecutorTypeOptions();
+    }
+
+    protected function workExecutorTypeLabel(?string $type): ?string
+    {
+        if (! $type) {
+            return null;
+        }
+
+        return $this->workExecutorTypeOptions()[$type] ?? $type;
+    }
+
+    protected function enrichTicketWorkExecutorFields(Ticket $ticket, $user = null): void
+    {
+        $ticket->setAttribute(
+            'work_executor_type_label',
+            $this->workExecutorTypeLabel($ticket->work_executor_type)
+        );
+        if ($user) {
+            $ticket->setAttribute(
+                'can_set_work_executor_type',
+                self::userCanSetWorkExecutorType($user, $ticket)
+            );
+        }
+    }
+
     protected function ticketStatusUpdateDeniedJsonResponse()
     {
         return response()->json([
@@ -854,6 +907,7 @@ class TicketController extends Controller
             ];
 
             $ticket->can_update_status = self::userCanUpdateTicketStatus($user, $ticket);
+            $this->enrichTicketWorkExecutorFields($ticket, $user);
 
             return $ticket;
         });
@@ -1270,6 +1324,148 @@ class TicketController extends Controller
     }
 
     /**
+     * Report ticket per outlet — grid maintenance style per lokasi outlet.
+     */
+    public function reportPerOutlet(Request $request)
+    {
+        $filters = $this->parseTicketReportFilters($request);
+        $groups = $this->buildReportPerOutletsData($request, $filters);
+
+        return Inertia::render('Tickets/ReportPerOutlet', [
+            'groups' => $groups,
+            'filters' => $filters,
+            'filterOptions' => $this->ticketReportFilterOptions(),
+        ]);
+    }
+
+    /**
+     * Export Report Ticket Per Outlet ke XLSX.
+     */
+    public function exportReportPerOutlet(Request $request)
+    {
+        $filters = $this->parseTicketReportFilters($request);
+        $groups = $this->buildReportPerOutletsData($request, $filters);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Report Per Outlet');
+
+        $lastCol = 'I';
+        $row = 1;
+
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Report Ticket Per Outlet');
+        $sheet->getStyle("A{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 16],
+            'alignment' => ['horizontal' => 'center'],
+        ]);
+        $row++;
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Generated: ' . now()->format('d M Y H:i:s'));
+        $row += 2;
+
+        foreach ($groups as $group) {
+            $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+            $sheet->setCellValue("A{$row}", strtoupper((string) $group['outlet_name']));
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '334155'],
+                ],
+                'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+            ]);
+            $row++;
+
+            $sheet->setCellValue("A{$row}", 'NO');
+            $sheet->setCellValue("B{$row}", 'FINDING PROBLEM');
+            $sheet->setCellValue("C{$row}", 'DOCUMENTATION');
+            $sheet->mergeCells("D{$row}:E{$row}");
+            $sheet->setCellValue("D{$row}", 'HANDLED BY');
+            $sheet->setCellValue("F{$row}", 'EST EXPENSE');
+            $sheet->setCellValue("G{$row}", 'PRIORITY');
+            $sheet->setCellValue("H{$row}", 'RESULT');
+            $sheet->setCellValue("I{$row}", 'STATUS');
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '1E293B'],
+                ],
+                'alignment' => ['horizontal' => 'center', 'vertical' => 'center'],
+            ]);
+            $row++;
+            $sheet->setCellValue("D{$row}", 'ENGINEERING');
+            $sheet->setCellValue("E{$row}", 'VENDOR');
+            $sheet->getStyle("D{$row}:E{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => '475569'],
+                ],
+                'alignment' => ['horizontal' => 'center'],
+            ]);
+            $row++;
+
+            foreach ($group['rows'] as $ticketRow) {
+                $sheet->setCellValue("A{$row}", $ticketRow['no']);
+                $sheet->setCellValue("B{$row}", $ticketRow['finding_problem']);
+                $sheet->setCellValue("D{$row}", $ticketRow['handled_internal'] ? 'v' : '');
+                $sheet->setCellValue("E{$row}", $ticketRow['handled_vendor'] ? 'v' : '');
+                $sheet->setCellValue("F{$row}", $ticketRow['est_expense'] > 0 ? $ticketRow['est_expense'] : '-');
+                $sheet->setCellValue("G{$row}", $ticketRow['priority_name'] ?? '-');
+                $sheet->setCellValue("I{$row}", $ticketRow['remark']);
+                $sheet->getStyle("A{$row}:{$lastCol}{$row}")->getAlignment()->setVertical('top')->setWrapText(true);
+                $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        ],
+                    ],
+                ]);
+                if ($ticketRow['handled_internal']) {
+                    $sheet->getStyle("D{$row}")->getFill()
+                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('FFFF00');
+                }
+                if ($ticketRow['handled_vendor']) {
+                    $sheet->getStyle("E{$row}")->getFill()
+                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('FFFF00');
+                }
+
+                $imageRowHeight = 95;
+                $sheet->getRowDimension($row)->setRowHeight($imageRowHeight);
+                $docPath = $ticketRow['documentation_images'][0]['path'] ?? $ticketRow['complain_image_path'] ?? null;
+                $this->embedTicketReportImage($sheet, 'C', $row, $docPath);
+                $this->embedTicketReportImage($sheet, 'H', $row, $ticketRow['result_image_path'] ?? null);
+                $row++;
+            }
+
+            $row++;
+        }
+
+        $sheet->getColumnDimension('A')->setWidth(6);
+        $sheet->getColumnDimension('B')->setWidth(34);
+        $sheet->getColumnDimension('C')->setWidth(24);
+        $sheet->getColumnDimension('D')->setWidth(14);
+        $sheet->getColumnDimension('E')->setWidth(12);
+        $sheet->getColumnDimension('F')->setWidth(14);
+        $sheet->getColumnDimension('G')->setWidth(14);
+        $sheet->getColumnDimension('H')->setWidth(24);
+        $sheet->getColumnDimension('I')->setWidth(28);
+
+        $fileName = 'report-ticket-per-outlet-' . now()->format('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function parseTicketReportFilters(Request $request): array
@@ -1303,17 +1499,20 @@ class TicketController extends Controller
 
     /**
      * @param  array<string, mixed>  $filters
-     * @return array<int, array<string, mixed>>
+     * @return \Illuminate\Support\Collection<int, Ticket>
      */
-    private function buildReportPerCategoriesData(Request $request, array $filters): array
+    private function fetchTicketsForReport(Request $request, array $filters)
     {
         $query = Ticket::with([
             'category:id,name',
             'status:id,name,slug',
+            'priority:id,name,level',
+            'outlet:id_outlet,nama_outlet',
             'attachments',
             'comments' => function ($q) {
                 $q->orderBy('created_at');
             },
+            'purchaseRequisitions:id,ticket_id,amount',
         ]);
 
         $this->applyTicketOutletVisibility($query, $request->user());
@@ -1349,10 +1548,21 @@ class TicketController extends Controller
             $query->whereDate('created_at', '<=', $filters['date_to']);
         }
 
-        $tickets = $query
-            ->orderBy('category_id')
-            ->orderBy('created_at')
-            ->get();
+        return $query->get();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildReportPerCategoriesData(Request $request, array $filters): array
+    {
+        $tickets = $this->fetchTicketsForReport($request, $filters)
+            ->sortBy([
+                ['category_id', 'asc'],
+                ['created_at', 'asc'],
+            ])
+            ->values();
 
         $grouped = $tickets->groupBy(fn (Ticket $ticket) => (int) ($ticket->category_id ?? 0));
 
@@ -1372,6 +1582,41 @@ class TicketController extends Controller
         }
 
         usort($groups, fn ($a, $b) => strcasecmp((string) $a['category_name'], (string) $b['category_name']));
+
+        return $groups;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildReportPerOutletsData(Request $request, array $filters): array
+    {
+        $tickets = $this->fetchTicketsForReport($request, $filters)
+            ->sortBy([
+                fn (Ticket $t) => $t->outlet?->nama_outlet ?? '',
+                ['created_at', 'asc'],
+            ])
+            ->values();
+
+        $grouped = $tickets->groupBy(fn (Ticket $ticket) => (int) ($ticket->outlet_id ?? 0));
+
+        $groups = [];
+        foreach ($grouped as $outletId => $outletTickets) {
+            $outletName = $outletTickets->first()->outlet?->nama_outlet ?? 'Uncategorized';
+            $rows = [];
+            $no = 1;
+            foreach ($outletTickets as $ticket) {
+                $rows[] = $this->mapTicketToOutletReportRow($ticket, $no++);
+            }
+            $groups[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => $outletName,
+                'rows' => $rows,
+            ];
+        }
+
+        usort($groups, fn ($a, $b) => strcasecmp((string) $a['outlet_name'], (string) $b['outlet_name']));
 
         return $groups;
     }
@@ -1400,6 +1645,58 @@ class TicketController extends Controller
             'notes' => $this->extractTicketCloseNote($ticket),
             'closed_at' => $ticket->closed_at?->format('d/m/Y H:i'),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapTicketToOutletReportRow(Ticket $ticket, int $no): array
+    {
+        $base = $this->mapTicketToCategoryReportRow($ticket, $no);
+        $documentationImages = $this->ticketReportComplainImages($ticket);
+        $estExpense = (float) $ticket->purchaseRequisitions->sum('amount');
+
+        return array_merge($base, [
+            'documentation_images' => $documentationImages,
+            'handled_internal' => $ticket->work_executor_type === Ticket::WORK_EXECUTOR_INTERNAL,
+            'handled_vendor' => $ticket->work_executor_type === Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR,
+            'work_executor_type' => $ticket->work_executor_type,
+            'work_executor_type_label' => $this->workExecutorTypeLabel($ticket->work_executor_type),
+            'est_expense' => $estExpense,
+            'est_expense_formatted' => $estExpense > 0
+                ? 'Rp ' . number_format($estExpense, 0, ',', '.')
+                : '-',
+            'priority_name' => $ticket->priority?->name,
+            'priority_level' => $ticket->priority?->level,
+            'category_name' => $ticket->category?->name,
+        ]);
+    }
+
+    /**
+     * @return array<int, array{url: string|null, path: string|null}>
+     */
+    private function ticketReportComplainImages(Ticket $ticket): array
+    {
+        $attachments = $ticket->attachments ?? collect();
+
+        return $attachments
+            ->filter(function (TicketAttachment $att) {
+                if ($att->comment_id !== null) {
+                    return false;
+                }
+                $path = (string) $att->file_path;
+                if (str_contains($path, 'ticket-close-evidence')) {
+                    return false;
+                }
+
+                return $this->isImageTicketAttachment($att);
+            })
+            ->map(fn (TicketAttachment $att) => [
+                'url' => $this->ticketAttachmentPublicUrl($att),
+                'path' => $att->file_path,
+            ])
+            ->values()
+            ->all();
     }
 
     private function buildTicketCategoryReportRemark(Ticket $ticket): string
@@ -2199,7 +2496,9 @@ class TicketController extends Controller
 
         if ($user) {
             $ticketData['can_update_status'] = self::userCanUpdateTicketStatus($user, $ticket);
+            $ticketData['can_set_work_executor_type'] = self::userCanSetWorkExecutorType($user, $ticket);
         }
+        $ticketData['work_executor_type_label'] = $this->workExecutorTypeLabel($ticket->work_executor_type);
 
         return $ticketData;
     }
@@ -2409,6 +2708,7 @@ class TicketController extends Controller
             ];
 
             $ticket->can_update_status = self::userCanUpdateTicketStatus($apiUser, $ticket);
+            $this->enrichTicketWorkExecutorFields($ticket, $apiUser);
 
             return $ticket;
         });
@@ -2596,6 +2896,67 @@ class TicketController extends Controller
                 'message' => 'Gagal memperbarui ticket: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Set dikerjakan oleh: internal atau external vendor (divisi terkait saja).
+     */
+    public function updateWorkExecutorType(Request $request, $id)
+    {
+        $ticket = Ticket::findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
+        if (! self::userCanSetWorkExecutorType($request->user(), $ticket)) {
+            return $this->ticketWorkExecutorDeniedJsonResponse();
+        }
+
+        $validator = Validator::make($request->all(), [
+            'work_executor_type' => 'nullable|in:internal,external_vendor',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $oldType = $ticket->work_executor_type;
+        $newType = $request->input('work_executor_type');
+        $newType = $newType === '' ? null : $newType;
+
+        if ($oldType === $newType) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tidak ada perubahan',
+                'data' => $ticket,
+            ]);
+        }
+
+        $ticket->update(['work_executor_type' => $newType]);
+
+        $oldLabel = $this->workExecutorTypeLabel($oldType) ?? '-';
+        $newLabel = $this->workExecutorTypeLabel($newType) ?? '-';
+        $this->createTicketHistory(
+            $ticket,
+            'updated',
+            'work_executor_type',
+            $oldLabel,
+            "Dikerjakan oleh: {$oldLabel} → {$newLabel}"
+        );
+
+        $ticket->refresh();
+        $this->enrichTicketWorkExecutorFields($ticket, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dikerjakan oleh berhasil diperbarui',
+            'data' => $ticket,
+        ]);
     }
 
     /**

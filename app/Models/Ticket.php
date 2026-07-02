@@ -12,6 +12,10 @@ class Ticket extends Model
 
     protected $table = 'tickets';
 
+    public const WORK_EXECUTOR_INTERNAL = 'internal';
+
+    public const WORK_EXECUTOR_EXTERNAL_VENDOR = 'external_vendor';
+
     protected $fillable = [
         'ticket_number',
         'title',
@@ -20,6 +24,7 @@ class Ticket extends Model
         'priority_id',
         'status_id',
         'divisi_id',
+        'work_executor_type',
         'outlet_id',
         'created_by',
         'due_date',
@@ -265,5 +270,25 @@ class Ticket extends Model
         }
 
         return $this->share_token;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function workExecutorTypeOptions(): array
+    {
+        return [
+            self::WORK_EXECUTOR_INTERNAL => 'Internal',
+            self::WORK_EXECUTOR_EXTERNAL_VENDOR => 'External Vendor',
+        ];
+    }
+
+    public function getWorkExecutorTypeLabelAttribute(): ?string
+    {
+        if (! $this->work_executor_type) {
+            return null;
+        }
+
+        return self::workExecutorTypeOptions()[$this->work_executor_type] ?? $this->work_executor_type;
     }
 }

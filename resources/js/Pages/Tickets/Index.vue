@@ -23,6 +23,13 @@
             </button>
             <button
               type="button"
+              @click="openReportPerOutlet"
+              class="bg-white/90 text-teal-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
+              <i class="fa-solid fa-store mr-2"></i> Report Per Outlet
+            </button>
+            <button
+              type="button"
               @click="openReportPerCategories"
               class="bg-white/90 text-amber-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
             >
@@ -251,6 +258,7 @@
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dikerjakan Oleh</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Divisi / Outlet</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned Team</th>
@@ -322,6 +330,27 @@
                       {{ formatDateTime(ticket.closed_at) }}
                     </div>
                   </div>
+                </td>
+                <td class="px-6 py-4 align-top">
+                  <select
+                    v-if="ticket.can_set_work_executor_type"
+                    :value="ticket.work_executor_type || ''"
+                    :disabled="workExecutorUpdatingId === ticket.id"
+                    title="Diisi oleh divisi terkait"
+                    @change="quickUpdateWorkExecutorType(ticket, $event)"
+                    class="max-w-[10rem] cursor-pointer rounded-lg border border-gray-200/80 py-1.5 pl-2 pr-8 text-xs font-semibold shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    <option value="">— Pilih —</option>
+                    <option value="internal">Internal</option>
+                    <option value="external_vendor">External Vendor</option>
+                  </select>
+                  <span
+                    v-else
+                    class="inline-flex max-w-[10rem] rounded-full px-2 py-1 text-[11px] font-semibold"
+                    :class="getWorkExecutorBadgeClass(ticket.work_executor_type)"
+                  >
+                    {{ ticket.work_executor_type_label || '-' }}
+                  </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div class="space-y-1">
@@ -866,6 +895,7 @@ const issueType = ref(props.filters?.issue_type || 'all');
 const perPage = ref(props.filters?.per_page || 15);
 const importFileInput = ref(null);
 const statusUpdatingId = ref(null);
+const workExecutorUpdatingId = ref(null);
 const sharingTicketId = ref(null);
 const ticketStatuses = computed(() => props.filterOptions?.statuses ?? []);
 const commentModal = ref({
@@ -987,6 +1017,10 @@ function openCalendar() {
 
 function openReportPerCategories() {
   router.visit('/tickets/report-per-categories');
+}
+
+function openReportPerOutlet() {
+  router.visit('/tickets/report-per-outlet');
 }
 
 function downloadReport() {
@@ -1272,6 +1306,43 @@ async function submitTicketStatusChange(ticketId, newId, select, previousId) {
     Swal.fire('Error', msg, 'error');
   } finally {
     statusUpdatingId.value = null;
+  }
+}
+
+async function quickUpdateWorkExecutorType(ticket, event) {
+  const select = event?.target;
+  if (!select) return;
+  const newType = select.value;
+  const previousType = ticket.work_executor_type || '';
+
+  if (newType === previousType) return;
+
+  workExecutorUpdatingId.value = ticket.id;
+  try {
+    const response = await axios.patch(`/tickets/${ticket.id}/work-executor-type`, {
+      work_executor_type: newType || null,
+    });
+    if (response.data?.success) {
+      ticket.work_executor_type = newType || null;
+      ticket.work_executor_type_label = newType === 'internal'
+        ? 'Internal'
+        : newType === 'external_vendor'
+          ? 'External Vendor'
+          : null;
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        title: response.data.message || 'Dikerjakan oleh diperbarui',
+        showConfirmButton: false,
+        timer: 1800,
+      });
+    }
+  } catch (error) {
+    select.value = previousType;
+    Swal.fire('Error', error.response?.data?.message || 'Gagal memperbarui dikerjakan oleh', 'error');
+  } finally {
+    workExecutorUpdatingId.value = null;
   }
 }
 
@@ -1577,6 +1648,12 @@ function getStatusColor(status) {
     'closed': 'bg-gray-100 text-gray-800',
     'cancelled': 'bg-red-100 text-red-800'
   }[status] || 'bg-gray-100 text-gray-800';
+}
+
+function getWorkExecutorBadgeClass(type) {
+  if (type === 'internal') return 'bg-indigo-100 text-indigo-800';
+  if (type === 'external_vendor') return 'bg-orange-100 text-orange-800';
+  return 'bg-gray-100 text-gray-500';
 }
 
 function getCommentBadgeClass(commentCount) {

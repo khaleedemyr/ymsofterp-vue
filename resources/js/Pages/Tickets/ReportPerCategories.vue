@@ -103,21 +103,41 @@
                   </td>
                   <td class="border border-gray-400 p-2 align-top">
                     <div v-if="row.complain_image" class="flex justify-center">
-                      <img
-                        :src="row.complain_image"
-                        alt="Complain"
-                        class="max-h-36 w-full max-w-[220px] rounded object-contain"
-                      />
+                      <button
+                        type="button"
+                        class="group relative max-w-[220px] cursor-zoom-in rounded border-0 bg-transparent p-0 print:cursor-default"
+                        title="Klik untuk perbesar"
+                        @click="openReportImage(row, 'complain')"
+                      >
+                        <img
+                          :src="row.complain_image"
+                          alt="Complain"
+                          class="max-h-36 w-full rounded object-contain transition group-hover:opacity-90"
+                        />
+                        <span class="pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-black/0 opacity-0 transition group-hover:bg-black/25 group-hover:opacity-100 print:hidden">
+                          <i class="fa-solid fa-search-plus text-lg text-white drop-shadow"></i>
+                        </span>
+                      </button>
                     </div>
                     <div v-else class="flex h-28 items-center justify-center text-xs text-gray-400">-</div>
                   </td>
                   <td class="border border-gray-400 p-2 align-top">
                     <div v-if="row.result_image" class="flex justify-center">
-                      <img
-                        :src="row.result_image"
-                        alt="Result"
-                        class="max-h-36 w-full max-w-[220px] rounded object-contain"
-                      />
+                      <button
+                        type="button"
+                        class="group relative max-w-[220px] cursor-zoom-in rounded border-0 bg-transparent p-0 print:cursor-default"
+                        title="Klik untuk perbesar"
+                        @click="openReportImage(row, 'result')"
+                      >
+                        <img
+                          :src="row.result_image"
+                          alt="Result"
+                          class="max-h-36 w-full rounded object-contain transition group-hover:opacity-90"
+                        />
+                        <span class="pointer-events-none absolute inset-0 flex items-center justify-center rounded bg-black/0 opacity-0 transition group-hover:bg-black/25 group-hover:opacity-100 print:hidden">
+                          <i class="fa-solid fa-search-plus text-lg text-white drop-shadow"></i>
+                        </span>
+                      </button>
                     </div>
                     <div v-else class="flex h-28 items-center justify-center text-xs text-gray-400">-</div>
                   </td>
@@ -135,11 +155,19 @@
         </section>
       </div>
     </div>
+
+    <VueEasyLightbox
+      :visible="visibleRef"
+      :imgs="imgsRef"
+      :index="indexRef"
+      @hide="hideLightbox"
+    />
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 import { reactive, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 
@@ -165,6 +193,9 @@ const props = defineProps({
 });
 
 const loading = ref(false);
+const visibleRef = ref(false);
+const indexRef = ref(0);
+const imgsRef = ref([]);
 const localFilters = reactive({
   search: props.filters.search || '',
   status: props.filters.status || 'all',
@@ -199,6 +230,25 @@ function printReport() {
 
 function goBack() {
   router.visit('/tickets');
+}
+
+function showLightbox(images, index = 0) {
+  imgsRef.value = images;
+  indexRef.value = index;
+  visibleRef.value = true;
+}
+
+function hideLightbox() {
+  visibleRef.value = false;
+}
+
+function openReportImage(row, type) {
+  const images = [row.complain_image, row.result_image].filter(Boolean);
+  if (!images.length) return;
+
+  const target = type === 'complain' ? row.complain_image : row.result_image;
+  const index = Math.max(0, images.indexOf(target));
+  showLightbox(images, index);
 }
 </script>
 

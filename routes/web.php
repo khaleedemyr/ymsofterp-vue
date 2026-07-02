@@ -485,6 +485,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tickets/report', [\App\Http\Controllers\TicketController::class, 'downloadReport'])->name('tickets.report');
     Route::get('/tickets/report-per-categories', [\App\Http\Controllers\TicketController::class, 'reportPerCategories'])->name('tickets.report-per-categories');
     Route::get('/tickets/report-per-categories/export', [\App\Http\Controllers\TicketController::class, 'exportReportPerCategories'])->name('tickets.report-per-categories.export');
+    Route::get('/tickets/report-per-outlet', [\App\Http\Controllers\TicketController::class, 'reportPerOutlet'])->name('tickets.report-per-outlet');
+    Route::get('/tickets/report-per-outlet/export', [\App\Http\Controllers\TicketController::class, 'exportReportPerOutlet'])->name('tickets.report-per-outlet.export');
     Route::get('/tickets/timeline', function () {
         return redirect()->route('tickets.calendar', request()->query());
     })->name('tickets.timeline');
@@ -500,6 +502,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tickets/from-daily-report', [\App\Http\Controllers\TicketController::class, 'createFromDailyReport'])->name('tickets.from-daily-report');
     Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->name('tickets.assign-team');
     Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
+    Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->name('tickets.update-work-executor-type');
     
     // Ticket Comments routes
     Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->name('tickets.comments.store');

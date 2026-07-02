@@ -312,6 +312,25 @@
                 <p class="mt-1 text-sm text-gray-900">{{ ticket.divisi?.nama_divisi || '-' }}</p>
               </div>
 
+              <!-- Dikerjakan Oleh -->
+              <div>
+                <label class="text-sm font-medium text-gray-600">Dikerjakan Oleh</label>
+                <div v-if="ticket.can_set_work_executor_type" class="mt-1">
+                  <select
+                    :value="ticket.work_executor_type || ''"
+                    :disabled="workExecutorSaving"
+                    class="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                    @change="updateWorkExecutorType($event)"
+                  >
+                    <option value="">— Pilih —</option>
+                    <option value="internal">Internal</option>
+                    <option value="external_vendor">External Vendor</option>
+                  </select>
+                  <p class="mt-1 text-xs text-gray-500">Hanya divisi terkait yang dapat mengisi.</p>
+                </div>
+                <p v-else class="mt-1 text-sm text-gray-900">{{ ticket.work_executor_type_label || '-' }}</p>
+              </div>
+
               <!-- Outlet -->
               <div>
                 <label class="text-sm font-medium text-gray-600">Outlet</label>
@@ -517,6 +536,7 @@ const props = defineProps({
 
 
 const newComment = ref('');
+const workExecutorSaving = ref(false);
 const commentAttachments = ref([]);
 const commentFileInput = ref(null);
 const canSubmitComment = computed(() => {
@@ -565,6 +585,40 @@ function openAttachmentLightbox(attachment) {
 
 function editTicket() {
   router.visit(`/tickets/${props.ticket.id}/edit`);
+}
+
+async function updateWorkExecutorType(event) {
+  const newType = event?.target?.value ?? '';
+  const previousType = props.ticket.work_executor_type || '';
+  if (newType === previousType) return;
+
+  workExecutorSaving.value = true;
+  try {
+    const response = await axios.patch(`/tickets/${props.ticket.id}/work-executor-type`, {
+      work_executor_type: newType || null,
+    });
+    if (response.data?.success) {
+      props.ticket.work_executor_type = newType || null;
+      props.ticket.work_executor_type_label = newType === 'internal'
+        ? 'Internal'
+        : newType === 'external_vendor'
+          ? 'External Vendor'
+          : null;
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        title: response.data.message || 'Dikerjakan oleh diperbarui',
+        showConfirmButton: false,
+        timer: 1800,
+      });
+    }
+  } catch (error) {
+    if (event?.target) event.target.value = previousType;
+    Swal.fire('Error', error.response?.data?.message || 'Gagal memperbarui dikerjakan oleh', 'error');
+  } finally {
+    workExecutorSaving.value = false;
+  }
 }
 
 function openCreatePayment() {
