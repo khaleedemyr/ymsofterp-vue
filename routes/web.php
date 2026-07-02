@@ -3723,6 +3723,8 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'index'])->name('quizzes.index');
     Route::get('/quizzes/create', [\App\Http\Controllers\JustAcademy\QuizController::class, 'create'])->name('quizzes.create');
     Route::post('/quizzes', [\App\Http\Controllers\JustAcademy\QuizController::class, 'store'])->name('quizzes.store');
+    Route::get('/quizzes/template/download', [\App\Http\Controllers\JustAcademy\QuizController::class, 'downloadTemplate'])->name('quizzes.template.download');
+    Route::post('/quizzes/template/import', [\App\Http\Controllers\JustAcademy\QuizController::class, 'importFromExcel'])->name('quizzes.template.import');
     Route::get('/quizzes/{quiz}/edit', [\App\Http\Controllers\JustAcademy\QuizController::class, 'edit'])->name('quizzes.edit');
     Route::put('/quizzes/{quiz}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'update'])->name('quizzes.update');
     Route::delete('/quizzes/{id}', [\App\Http\Controllers\JustAcademy\QuizController::class, 'destroy'])->whereNumber('id')->name('quizzes.destroy');

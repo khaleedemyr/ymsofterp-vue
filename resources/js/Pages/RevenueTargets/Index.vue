@@ -520,7 +520,7 @@ fetchHolidays()
       </div>
 
       <div class="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:shadow-md">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div>
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Outlet</label>
             <div
@@ -537,7 +537,7 @@ fetchHolidays()
               <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </div>
-          <div>
+          <div class="md:col-span-3">
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Bulan</label>
             <input
               v-model="selectedMonth"
@@ -545,7 +545,7 @@ fetchHolidays()
               class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
-          <div>
+          <div class="md:col-span-3">
             <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Target</label>
             <input
               v-model="monthlyTarget"
@@ -557,7 +557,9 @@ fetchHolidays()
               @blur="onMonthlyTargetBlur"
             />
           </div>
-          <div class="flex items-end gap-2">
+          <div class="md:col-span-4">
+            <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</label>
+            <div class="flex flex-wrap items-center gap-2 md:justify-end">
             <button
               type="button"
               class="rounded-lg bg-slate-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
@@ -603,6 +605,7 @@ fetchHolidays()
             >
               {{ saving ? 'Saving...' : 'Simpan' }}
             </button>
+            </div>
           </div>
         </div>
 
