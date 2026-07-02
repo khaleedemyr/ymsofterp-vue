@@ -510,6 +510,7 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->where('id', '[0-9]+');
         Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->where('id', '[0-9]+');
         Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->where('id', '[0-9]+');
+        Route::patch('/tickets/{id}/vendor-name', [\App\Http\Controllers\TicketController::class, 'updateVendorName'])->where('id', '[0-9]+');
         Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->where('id', '[0-9]+');
         Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->where('id', '[0-9]+');
         Route::post('/tickets/{id}/share-link', [\App\Http\Controllers\TicketController::class, 'generateShareLink'])->where('id', '[0-9]+');

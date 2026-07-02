@@ -38,6 +38,8 @@ class TicketController extends Controller
 
     public const TICKET_MANAGER_JABATAN_ID = 343;
 
+    public const TICKET_VENDOR_DIVISION_ID = 18;
+
     /**
      * Superadmin, division 20, atau jabatan 343: edit penuh, assign tim, payment/PR, hapus.
      * Membuat ticket (form, API store, import Excel, dari daily report) boleh semua user yang sudah login.
@@ -71,10 +73,40 @@ class TicketController extends Controller
         if (self::userCanManageTickets($user)) {
             return true;
         }
+        if (self::userCanManageVendorExternalTicket($user, $ticket)) {
+            return true;
+        }
         $userDivisionId = (int) ($user->division_id ?? 0);
         $ticketDivisiId = (int) ($ticket->divisi_id ?? 0);
 
         return $userDivisionId > 0 && $userDivisionId === $ticketDivisiId;
+    }
+
+    /**
+     * Divisi 18 dapat mengelola ticket yang dikerjakan external vendor.
+     */
+    public static function userCanManageVendorExternalTicket($user, Ticket $ticket): bool
+    {
+        if (! $user || ! $ticket->isExternalVendorTicket()) {
+            return false;
+        }
+
+        return (int) ($user->division_id ?? 0) === self::TICKET_VENDOR_DIVISION_ID;
+    }
+
+    /**
+     * Edit, assign tim, dll: admin global ATAU divisi 18 pada ticket external vendor.
+     */
+    public static function userCanManageTicket($user, Ticket $ticket): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        if (self::userCanManageTickets($user)) {
+            return true;
+        }
+
+        return self::userCanManageVendorExternalTicket($user, $ticket);
     }
 
     /**
@@ -89,6 +121,24 @@ class TicketController extends Controller
         $ticketDivisiId = (int) ($ticket->divisi_id ?? 0);
 
         return $userDivisionId > 0 && $userDivisionId === $ticketDivisiId;
+    }
+
+    /**
+     * Nama vendor (opsional): divisi concern, divisi 18, atau admin global — hanya ticket external vendor.
+     */
+    public static function userCanUpdateVendorName($user, Ticket $ticket): bool
+    {
+        if (! $user || ! $ticket->isExternalVendorTicket()) {
+            return false;
+        }
+        if (self::userCanManageTickets($user)) {
+            return true;
+        }
+        if (self::userCanManageVendorExternalTicket($user, $ticket)) {
+            return true;
+        }
+
+        return self::userCanSetWorkExecutorType($user, $ticket);
     }
 
     protected function ticketWorkExecutorDeniedJsonResponse()
@@ -127,6 +177,14 @@ class TicketController extends Controller
                 'can_set_work_executor_type',
                 self::userCanSetWorkExecutorType($user, $ticket)
             );
+            $ticket->setAttribute(
+                'can_update_vendor_name',
+                self::userCanUpdateVendorName($user, $ticket)
+            );
+            $ticket->setAttribute(
+                'can_manage_ticket',
+                self::userCanManageTicket($user, $ticket)
+            );
         }
     }
 
@@ -164,6 +222,19 @@ class TicketController extends Controller
         }
 
         return (int) ($user->id_outlet ?? 0) === self::TICKET_VIEW_ALL_OUTLETS_ID;
+    }
+
+    /** Laporan ticket (report per categories/outlet/vendor & export) hanya outlet pusat. */
+    public static function userCanAccessTicketReports($user): bool
+    {
+        return self::userSeesAllTicketOutlets($user);
+    }
+
+    protected function ensureUserCanAccessTicketReports($user): void
+    {
+        if (! self::userCanAccessTicketReports($user)) {
+            abort(403, 'Laporan ticket hanya tersedia untuk user outlet pusat.');
+        }
     }
 
     public static function userCanViewTicket($user, Ticket $ticket): bool
@@ -977,6 +1048,8 @@ class TicketController extends Controller
      */
     public function downloadReport(Request $request)
     {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
         $search = $request->get('search', '');
         $status = $request->get('status', 'all');
         $priority = $request->get('priority', 'all');
@@ -1211,6 +1284,8 @@ class TicketController extends Controller
      */
     public function reportPerCategories(Request $request)
     {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
         $filters = $this->parseTicketReportFilters($request);
         $groups = $this->buildReportPerCategoriesData($request, $filters);
 
@@ -1226,6 +1301,8 @@ class TicketController extends Controller
      */
     public function exportReportPerCategories(Request $request)
     {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
         $filters = $this->parseTicketReportFilters($request);
         $groups = $this->buildReportPerCategoriesData($request, $filters);
 
@@ -1328,6 +1405,8 @@ class TicketController extends Controller
      */
     public function reportPerOutlet(Request $request)
     {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
         $filters = $this->parseTicketReportFilters($request);
         $groups = $this->buildReportPerOutletsData($request, $filters);
 
@@ -1343,6 +1422,8 @@ class TicketController extends Controller
      */
     public function exportReportPerOutlet(Request $request)
     {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
         $filters = $this->parseTicketReportFilters($request);
         $groups = $this->buildReportPerOutletsData($request, $filters);
 
@@ -1466,6 +1547,511 @@ class TicketController extends Controller
     }
 
     /**
+     * Report khusus ticket dikerjakan external vendor.
+     */
+    public function reportExternalVendor(Request $request)
+    {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
+        $filters = $this->parseTicketReportFilters($request);
+        $report = $this->buildReportExternalVendorData($request, $filters);
+
+        return Inertia::render('Tickets/ReportExternalVendor', [
+            'rows' => $report['rows'],
+            'total' => $report['total'],
+            'filters' => $filters,
+            'filterOptions' => $this->ticketReportFilterOptions(),
+        ]);
+    }
+
+    /**
+     * Export report external vendor ke XLSX.
+     */
+    public function exportReportExternalVendor(Request $request)
+    {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
+        $filters = $this->parseTicketReportFilters($request);
+        $report = $this->buildReportExternalVendorData($request, $filters);
+        $rows = $report['rows'];
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('External Vendor');
+
+        $headers = ['NO', 'OUTLET', 'TICKET', 'FINDING PROBLEM', 'VENDOR', 'PRIORITY', 'EST EXPENSE', 'STATUS', 'TANGGAL'];
+        $lastCol = Coordinate::stringFromColumnIndex(count($headers));
+        $row = 1;
+
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Report Ticket External Vendor');
+        $sheet->getStyle("A{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'size' => 16],
+            'alignment' => ['horizontal' => 'center'],
+        ]);
+        $row++;
+        $sheet->mergeCells("A{$row}:{$lastCol}{$row}");
+        $sheet->setCellValue("A{$row}", 'Generated: ' . now()->format('d M Y H:i:s'));
+        $row += 2;
+
+        $col = 1;
+        foreach ($headers as $h) {
+            $sheet->setCellValueByColumnAndRow($col, $row, $h);
+            $col++;
+        }
+        $sheet->getStyle("A{$row}:{$lastCol}{$row}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['rgb' => '1E293B'],
+            ],
+            'alignment' => ['horizontal' => 'center'],
+        ]);
+        $row++;
+
+        foreach ($rows as $ticketRow) {
+            $sheet->setCellValue("A{$row}", $ticketRow['no']);
+            $sheet->setCellValue("B{$row}", $ticketRow['outlet_name'] ?? '-');
+            $sheet->setCellValue("C{$row}", $ticketRow['ticket_number'] ?? '');
+            $sheet->setCellValue("D{$row}", $ticketRow['finding_problem']);
+            $sheet->setCellValue("E{$row}", $ticketRow['vendor_name'] ?? '-');
+            $sheet->setCellValue("F{$row}", $ticketRow['priority_name'] ?? '-');
+            $sheet->setCellValue("G{$row}", $ticketRow['est_expense'] > 0 ? $ticketRow['est_expense'] : '-');
+            $sheet->setCellValue("H{$row}", $ticketRow['remark']);
+            $sheet->setCellValue("I{$row}", $ticketRow['tanggal'] ?? '');
+            $row++;
+        }
+
+        for ($i = 1; $i <= count($headers); $i++) {
+            $colLetter = Coordinate::stringFromColumnIndex($i);
+            $sheet->getColumnDimension($colLetter)->setAutoSize(true);
+        }
+
+        $fileName = 'report-ticket-external-vendor-' . now()->format('Ymd-His') . '.xlsx';
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Dashboard analitik ticket bulanan (hanya outlet pusat).
+     */
+    public function dashboard(Request $request)
+    {
+        $this->ensureUserCanAccessTicketReports($request->user());
+
+        $year = max(2000, min(2100, (int) $request->get('year', now()->year)));
+        $month = max(1, min(12, (int) $request->get('month', now()->month)));
+        $division = (string) $request->get('division', 'all');
+
+        $periodStart = Carbon::create($year, $month, 1)->startOfDay();
+        $periodEnd = $periodStart->copy()->endOfMonth()->endOfDay();
+
+        $prevStart = $periodStart->copy()->subMonth()->startOfMonth();
+        $prevEnd = $prevStart->copy()->endOfMonth()->endOfDay();
+
+        $baseFilters = [
+            'search' => '',
+            'status' => 'all',
+            'priority' => 'all',
+            'category' => 'all',
+            'outlet' => 'all',
+            'issue_type' => 'all',
+            'division' => $division,
+        ];
+
+        $currentFilters = array_merge($baseFilters, [
+            'date_from' => $periodStart->toDateString(),
+            'date_to' => $periodEnd->toDateString(),
+        ]);
+
+        $prevFilters = array_merge($baseFilters, [
+            'date_from' => $prevStart->toDateString(),
+            'date_to' => $prevEnd->toDateString(),
+        ]);
+
+        $dashboard = $this->buildTicketDashboardData(
+            $request,
+            $currentFilters,
+            $prevFilters,
+            $periodStart,
+            $periodEnd
+        );
+
+        $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
+
+        return Inertia::render('Tickets/Dashboard', [
+            'dashboard' => $dashboard,
+            'filters' => [
+                'year' => $year,
+                'month' => $month,
+                'division' => $division,
+            ],
+            'filterOptions' => [
+                'divisions' => $divisions,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @param  array<string, mixed>  $prevFilters
+     * @return array<string, mixed>
+     */
+    private function buildTicketDashboardData(
+        Request $request,
+        array $filters,
+        array $prevFilters,
+        Carbon $periodStart,
+        Carbon $periodEnd
+    ): array {
+        $tickets = $this->fetchTicketsForReport($request, $filters)
+            ->load(['divisi:id,nama_divisi']);
+
+        $prevTickets = $this->fetchTicketsForReport($request, $prevFilters);
+
+        $paymentStatsByPr = $this->loadTicketDashboardPaymentStats($tickets);
+        $prevPaymentStatsByPr = $this->loadTicketDashboardPaymentStats($prevTickets);
+
+        $current = $this->aggregateTicketDashboardPeriod($tickets, $paymentStatsByPr, $periodStart, $periodEnd);
+        $previous = $this->aggregateTicketDashboardPeriod($prevTickets, $prevPaymentStatsByPr, null, null, false);
+
+        $closedInMonthQuery = Ticket::query()
+            ->whereNotNull('closed_at')
+            ->whereBetween('closed_at', [$periodStart, $periodEnd]);
+        $this->applyTicketOutletVisibility($closedInMonthQuery, $request->user());
+        if (($filters['division'] ?? 'all') !== 'all') {
+            $closedInMonthQuery->where('divisi_id', $filters['division']);
+        }
+        $current['closed_in_month'] = $closedInMonthQuery->count();
+
+        $current['comparison'] = [
+            'total_tickets' => $this->dashboardDelta($current['total_tickets'], $previous['total_tickets']),
+            'closed' => $this->dashboardDelta($current['closed'], $previous['closed']),
+            'est_expense' => $this->dashboardDelta($current['expenses']['est_expense'], $previous['expenses']['est_expense']),
+            'completion_rate' => $this->dashboardDelta($current['progress']['completion_rate'], $previous['progress']['completion_rate']),
+        ];
+
+        $current['period'] = [
+            'label' => $periodStart->translatedFormat('F Y'),
+            'year' => (int) $periodStart->year,
+            'month' => (int) $periodStart->month,
+            'date_from' => $periodStart->toDateString(),
+            'date_to' => $periodEnd->toDateString(),
+        ];
+
+        if (($filters['division'] ?? 'all') !== 'all') {
+            $divisi = Divisi::find($filters['division']);
+            $current['division_label'] = $divisi?->nama_divisi ?? 'Divisi #' . $filters['division'];
+        } else {
+            $current['division_label'] = 'Semua Divisi';
+        }
+
+        return $current;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Ticket>  $tickets
+     * @return \Illuminate\Support\Collection<int|string, object>
+     */
+    private function loadTicketDashboardPaymentStats($tickets)
+    {
+        $prIds = $tickets
+            ->flatMap(fn (Ticket $ticket) => $ticket->purchaseRequisitions->pluck('id'))
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($prIds)) {
+            return collect();
+        }
+
+        return DB::table('non_food_payments')
+            ->whereIn('purchase_requisition_id', $prIds)
+            ->select(
+                'purchase_requisition_id as pr_id',
+                DB::raw('COUNT(*) as total_payments'),
+                DB::raw("SUM(CASE WHEN status IN ('paid', 'approved') AND status != 'cancelled' THEN 1 ELSE 0 END) as paid_payments")
+            )
+            ->groupBy('purchase_requisition_id')
+            ->get()
+            ->keyBy('pr_id');
+    }
+
+    private function isDashboardPrPaid($pr, $paymentStatsByPr): bool
+    {
+        if (strtoupper((string) $pr->status) === 'PAID') {
+            return true;
+        }
+
+        $stat = $paymentStatsByPr->get($pr->id);
+
+        return ((int) ($stat->paid_payments ?? 0)) > 0;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, Ticket>  $tickets
+     * @param  \Illuminate\Support\Collection<int|string, object>  $paymentStatsByPr
+     * @return array<string, mixed>
+     */
+    private function aggregateTicketDashboardPeriod(
+        $tickets,
+        $paymentStatsByPr,
+        ?Carbon $periodStart = null,
+        ?Carbon $periodEnd = null,
+        bool $withCharts = true
+    ): array {
+        $open = 0;
+        $inProgress = 0;
+        $closed = 0;
+        $overdue = 0;
+        $withPr = 0;
+        $noPr = 0;
+        $paidPrCount = 0;
+        $onProcessPrCount = 0;
+        $internal = 0;
+        $externalVendor = 0;
+        $unsetExecutor = 0;
+        $estExpense = 0.0;
+        $paidExpense = 0.0;
+        $closeDurations = [];
+
+        $byCategory = [];
+        $byPriority = [];
+        $byOutlet = [];
+        $byDivisi = [];
+        $byStatusChart = [];
+        $byExecutor = [];
+        $dailyMap = [];
+        $expenseByOutlet = [];
+        $expenseByCategory = [];
+        $topExpenseTickets = [];
+
+        $today = now()->startOfDay();
+
+        foreach ($tickets as $ticket) {
+            $slug = $ticket->status?->slug ?? 'unknown';
+            $isFinal = (bool) ($ticket->status?->is_final ?? false);
+
+            if ($slug === 'open') {
+                $open++;
+                $bucket = 'Open';
+            } elseif ($slug === 'in_progress') {
+                $inProgress++;
+                $bucket = 'In Progress';
+            } elseif ($isFinal || in_array($slug, ['closed', 'resolved', 'done'], true)) {
+                $closed++;
+                $bucket = 'Closed';
+            } else {
+                $bucket = ucfirst(str_replace('_', ' ', $slug));
+            }
+
+            $byStatusChart[$bucket] = ($byStatusChart[$bucket] ?? 0) + 1;
+
+            if (! $isFinal && $ticket->due_date && $ticket->due_date->lt($today)) {
+                $overdue++;
+            }
+
+            if ($ticket->closed_at && $ticket->created_at) {
+                $closeDurations[] = $ticket->created_at->diffInDays($ticket->closed_at);
+            }
+
+            $ticketExpense = (float) $ticket->purchaseRequisitions->sum('amount');
+            $estExpense += $ticketExpense;
+
+            $ticketPaidExpense = 0.0;
+            $hasPr = $ticket->purchaseRequisitions->isNotEmpty();
+
+            foreach ($ticket->purchaseRequisitions as $pr) {
+                $amount = (float) $pr->amount;
+                if ($this->isDashboardPrPaid($pr, $paymentStatsByPr)) {
+                    $paidPrCount++;
+                    $ticketPaidExpense += $amount;
+                } else {
+                    $stat = $paymentStatsByPr->get($pr->id);
+                    if (((int) ($stat->total_payments ?? 0)) > 0) {
+                        $onProcessPrCount++;
+                    }
+                }
+            }
+
+            $paidExpense += $ticketPaidExpense;
+
+            if ($hasPr) {
+                $withPr++;
+            } else {
+                $noPr++;
+            }
+
+            if ($ticket->work_executor_type === Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR) {
+                $externalVendor++;
+                $byExecutor['External Vendor'] = ($byExecutor['External Vendor'] ?? 0) + 1;
+            } elseif ($ticket->work_executor_type === Ticket::WORK_EXECUTOR_INTERNAL) {
+                $internal++;
+                $byExecutor['Internal'] = ($byExecutor['Internal'] ?? 0) + 1;
+            } else {
+                $unsetExecutor++;
+                $byExecutor['Belum diisi'] = ($byExecutor['Belum diisi'] ?? 0) + 1;
+            }
+
+            $catName = $ticket->category?->name ?? 'Tanpa Kategori';
+            $byCategory[$catName] = ($byCategory[$catName] ?? 0) + 1;
+            $expenseByCategory[$catName] = ($expenseByCategory[$catName] ?? 0) + $ticketExpense;
+
+            $priName = $ticket->priority?->name ?? 'Tanpa Prioritas';
+            $byPriority[$priName] = ($byPriority[$priName] ?? 0) + 1;
+
+            $outName = $ticket->outlet?->nama_outlet ?? 'Tanpa Outlet';
+            $byOutlet[$outName] = ($byOutlet[$outName] ?? 0) + 1;
+            $expenseByOutlet[$outName] = ($expenseByOutlet[$outName] ?? 0) + $ticketExpense;
+
+            $divName = $ticket->divisi?->nama_divisi ?? 'Tanpa Divisi';
+            $byDivisi[$divName] = ($byDivisi[$divName] ?? 0) + 1;
+
+            if ($ticket->created_at) {
+                $dayKey = $ticket->created_at->format('Y-m-d');
+                $dailyMap[$dayKey] = ($dailyMap[$dayKey] ?? 0) + 1;
+            }
+
+            if ($ticketExpense > 0) {
+                $topExpenseTickets[] = [
+                    'id' => $ticket->id,
+                    'ticket_number' => $ticket->ticket_number,
+                    'title' => $ticket->title,
+                    'outlet' => $outName,
+                    'divisi' => $divName,
+                    'est_expense' => $ticketExpense,
+                    'paid_expense' => $ticketPaidExpense,
+                    'status' => $ticket->status?->name ?? '-',
+                ];
+            }
+        }
+
+        $total = $tickets->count();
+        $completionRate = $total > 0 ? round(($closed / $total) * 100, 1) : 0.0;
+        $openRate = $total > 0 ? round(($open / $total) * 100, 1) : 0.0;
+        $inProgressRate = $total > 0 ? round(($inProgress / $total) * 100, 1) : 0.0;
+        $closedRate = $completionRate;
+        $overdueRate = $total > 0 ? round(($overdue / $total) * 100, 1) : 0.0;
+        $prCoverageRate = $total > 0 ? round(($withPr / $total) * 100, 1) : 0.0;
+        $paidExpenseRate = $estExpense > 0 ? round(($paidExpense / $estExpense) * 100, 1) : 0.0;
+
+        usort($topExpenseTickets, fn ($a, $b) => $b['est_expense'] <=> $a['est_expense']);
+        $topExpenseTickets = array_slice($topExpenseTickets, 0, 10);
+
+        $result = [
+            'total_tickets' => $total,
+            'open' => $open,
+            'in_progress' => $inProgress,
+            'closed' => $closed,
+            'overdue' => $overdue,
+            'with_pr' => $withPr,
+            'no_pr' => $noPr,
+            'paid_pr_count' => $paidPrCount,
+            'on_process_pr_count' => $onProcessPrCount,
+            'internal_executor' => $internal,
+            'external_vendor_executor' => $externalVendor,
+            'unset_executor' => $unsetExecutor,
+            'avg_close_days' => count($closeDurations) > 0
+                ? round(array_sum($closeDurations) / count($closeDurations), 1)
+                : 0,
+            'progress' => [
+                'completion_rate' => $completionRate,
+                'open_rate' => $openRate,
+                'in_progress_rate' => $inProgressRate,
+                'closed_rate' => $closedRate,
+                'overdue_rate' => $overdueRate,
+                'pr_coverage_rate' => $prCoverageRate,
+                'paid_expense_rate' => $paidExpenseRate,
+            ],
+            'expenses' => [
+                'est_expense' => round($estExpense, 2),
+                'paid_expense' => round($paidExpense, 2),
+                'pending_expense' => round(max(0, $estExpense - $paidExpense), 2),
+            ],
+        ];
+
+        if (! $withCharts) {
+            return $result;
+        }
+
+        $dailyTrend = [];
+        if ($periodStart && $periodEnd) {
+            $cursor = $periodStart->copy();
+            while ($cursor->lte($periodEnd)) {
+                $key = $cursor->toDateString();
+                $dailyTrend[] = [
+                    'date' => $key,
+                    'label' => $cursor->format('d M'),
+                    'count' => (int) ($dailyMap[$key] ?? 0),
+                ];
+                $cursor->addDay();
+            }
+        }
+
+        $result['charts'] = [
+            'status_distribution' => $this->dashboardChartPairs($byStatusChart),
+            'daily_trend' => $dailyTrend,
+            'by_category' => $this->dashboardChartPairs($byCategory),
+            'by_priority' => $this->dashboardChartPairs($byPriority),
+            'by_outlet' => $this->dashboardChartPairs($byOutlet, 12),
+            'by_divisi' => $this->dashboardChartPairs($byDivisi),
+            'by_executor' => $this->dashboardChartPairs($byExecutor),
+            'expense_by_outlet' => $this->dashboardChartPairs($expenseByOutlet, 12, true),
+            'expense_by_category' => $this->dashboardChartPairs($expenseByCategory, 10, true),
+            'payment_funnel' => [
+                ['label' => 'Tanpa PR', 'value' => $noPr],
+                ['label' => 'Dengan PR', 'value' => $withPr],
+                ['label' => 'PR On Process', 'value' => $onProcessPrCount],
+                ['label' => 'PR Paid', 'value' => $paidPrCount],
+            ],
+        ];
+        $result['top_expense_tickets'] = $topExpenseTickets;
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, int|float>  $map
+     * @return array<int, array<string, mixed>>
+     */
+    private function dashboardChartPairs(array $map, int $limit = 0, bool $sortByValue = false): array
+    {
+        $pairs = [];
+        foreach ($map as $label => $value) {
+            $pairs[] = ['label' => (string) $label, 'value' => round((float) $value, 2)];
+        }
+
+        usort($pairs, fn ($a, $b) => $b['value'] <=> $a['value']);
+
+        if ($limit > 0) {
+            $pairs = array_slice($pairs, 0, $limit);
+        }
+
+        return array_values($pairs);
+    }
+
+    /**
+     * @return array<string, float|int|null>
+     */
+    private function dashboardDelta(float|int $current, float|int $previous): array
+    {
+        $diff = $current - $previous;
+        $pct = $previous != 0 ? round(($diff / $previous) * 100, 1) : ($current > 0 ? 100.0 : 0.0);
+
+        return [
+            'current' => $current,
+            'previous' => $previous,
+            'diff' => $diff,
+            'pct' => $pct,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function parseTicketReportFilters(Request $request): array
@@ -1547,6 +2133,9 @@ class TicketController extends Controller
         if (! empty($filters['date_to'])) {
             $query->whereDate('created_at', '<=', $filters['date_to']);
         }
+        if (($filters['work_executor_type'] ?? 'all') !== 'all') {
+            $query->where('work_executor_type', $filters['work_executor_type']);
+        }
 
         return $query->get();
     }
@@ -1622,6 +2211,32 @@ class TicketController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function buildReportExternalVendorData(Request $request, array $filters): array
+    {
+        $filters['work_executor_type'] = Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR;
+        $tickets = $this->fetchTicketsForReport($request, $filters)
+            ->sortBy([
+                fn (Ticket $t) => $t->outlet?->nama_outlet ?? '',
+                ['created_at', 'asc'],
+            ])
+            ->values();
+
+        $rows = [];
+        $no = 1;
+        foreach ($tickets as $ticket) {
+            $rows[] = $this->mapTicketToOutletReportRow($ticket, $no++);
+        }
+
+        return [
+            'rows' => $rows,
+            'total' => count($rows),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function mapTicketToCategoryReportRow(Ticket $ticket, int $no): array
@@ -1662,6 +2277,8 @@ class TicketController extends Controller
             'handled_vendor' => $ticket->work_executor_type === Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR,
             'work_executor_type' => $ticket->work_executor_type,
             'work_executor_type_label' => $this->workExecutorTypeLabel($ticket->work_executor_type),
+            'vendor_name' => $ticket->vendor_name,
+            'outlet_name' => $ticket->outlet?->nama_outlet,
             'est_expense' => $estExpense,
             'est_expense_formatted' => $estExpense > 0
                 ? 'Rp ' . number_format($estExpense, 0, ',', '.')
@@ -2497,6 +3114,8 @@ class TicketController extends Controller
         if ($user) {
             $ticketData['can_update_status'] = self::userCanUpdateTicketStatus($user, $ticket);
             $ticketData['can_set_work_executor_type'] = self::userCanSetWorkExecutorType($user, $ticket);
+            $ticketData['can_update_vendor_name'] = self::userCanUpdateVendorName($user, $ticket);
+            $ticketData['can_manage_ticket'] = self::userCanManageTicket($user, $ticket);
         }
         $ticketData['work_executor_type_label'] = $this->workExecutorTypeLabel($ticket->work_executor_type);
 
@@ -2769,10 +3388,6 @@ class TicketController extends Controller
      */
     public function edit($id)
     {
-        if (!self::userCanManageTickets(auth()->user())) {
-            abort(403, 'Anda tidak memiliki izin mengedit ticket.');
-        }
-
         $ticket = Ticket::with([
             'category',
             'priority',
@@ -2785,6 +3400,10 @@ class TicketController extends Controller
 
         if (! self::userCanViewTicket(auth()->user(), $ticket)) {
             abort(404);
+        }
+
+        if (! self::userCanManageTicket(auth()->user(), $ticket)) {
+            abort(403, 'Anda tidak memiliki izin mengedit ticket.');
         }
 
         $categories = TicketCategory::active()->orderBy('name')->get();
@@ -2808,14 +3427,14 @@ class TicketController extends Controller
      */
     public function update(Request $request, $id)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $ticket = Ticket::with('status')->findOrFail($id);
 
         if (! self::userCanViewTicket($request->user(), $ticket)) {
             return $this->ticketViewDeniedJsonResponse();
+        }
+
+        if (! self::userCanManageTicket($request->user(), $ticket)) {
+            return $this->ticketManageDeniedJsonResponse();
         }
 
         $validator = Validator::make($request->all(), array_merge([
@@ -2915,6 +3534,7 @@ class TicketController extends Controller
 
         $validator = Validator::make($request->all(), [
             'work_executor_type' => 'nullable|in:internal,external_vendor',
+            'vendor_name' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -2926,10 +3546,27 @@ class TicketController extends Controller
         }
 
         $oldType = $ticket->work_executor_type;
+        $oldVendorName = $ticket->vendor_name;
         $newType = $request->input('work_executor_type');
         $newType = $newType === '' ? null : $newType;
+        $vendorName = trim((string) $request->input('vendor_name', ''));
+        $vendorName = $vendorName !== '' ? $vendorName : null;
 
-        if ($oldType === $newType) {
+        $typeChanged = $oldType !== $newType;
+        $vendorChanged = false;
+
+        if (! $typeChanged && $newType === Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR) {
+            $oldVendor = $ticket->vendor_name;
+            $vendorChanged = $oldVendor !== $vendorName;
+            if ($vendorChanged && ! self::userCanUpdateVendorName($request->user(), $ticket)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki izin mengubah nama vendor.',
+                ], 403);
+            }
+        }
+
+        if (! $typeChanged && ! $vendorChanged) {
             return response()->json([
                 'success' => true,
                 'message' => 'Tidak ada perubahan',
@@ -2937,17 +3574,40 @@ class TicketController extends Controller
             ]);
         }
 
-        $ticket->update(['work_executor_type' => $newType]);
+        $updateData = [];
+        if ($typeChanged) {
+            $updateData['work_executor_type'] = $newType;
+            if ($newType === Ticket::WORK_EXECUTOR_EXTERNAL_VENDOR) {
+                $updateData['vendor_name'] = $vendorName;
+            } else {
+                $updateData['vendor_name'] = null;
+            }
+        } elseif ($vendorChanged) {
+            $updateData['vendor_name'] = $vendorName;
+        }
 
-        $oldLabel = $this->workExecutorTypeLabel($oldType) ?? '-';
-        $newLabel = $this->workExecutorTypeLabel($newType) ?? '-';
-        $this->createTicketHistory(
-            $ticket,
-            'updated',
-            'work_executor_type',
-            $oldLabel,
-            "Dikerjakan oleh: {$oldLabel} → {$newLabel}"
-        );
+        $ticket->update($updateData);
+
+        if ($typeChanged) {
+            $oldLabel = $this->workExecutorTypeLabel($oldType) ?? '-';
+            $newLabel = $this->workExecutorTypeLabel($newType) ?? '-';
+            $this->createTicketHistory(
+                $ticket,
+                'updated',
+                'work_executor_type',
+                $oldLabel,
+                "Dikerjakan oleh: {$oldLabel} → {$newLabel}"
+            );
+        }
+        if ($vendorChanged) {
+            $this->createTicketHistory(
+                $ticket,
+                'updated',
+                'vendor_name',
+                $oldVendorName ?? '-',
+                'Nama vendor: ' . ($vendorName ?? '-')
+            );
+        }
 
         $ticket->refresh();
         $this->enrichTicketWorkExecutorFields($ticket, $request->user());
@@ -2955,6 +3615,74 @@ class TicketController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Dikerjakan oleh berhasil diperbarui',
+            'data' => $ticket,
+        ]);
+    }
+
+    /**
+     * Update nama vendor (opsional) — ticket external vendor saja.
+     */
+    public function updateVendorName(Request $request, $id)
+    {
+        $ticket = Ticket::findOrFail($id);
+
+        if (! self::userCanViewTicket($request->user(), $ticket)) {
+            return $this->ticketViewDeniedJsonResponse();
+        }
+
+        if (! $ticket->isExternalVendorTicket()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nama vendor hanya untuk ticket external vendor.',
+            ], 422);
+        }
+
+        if (! self::userCanUpdateVendorName($request->user(), $ticket)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki izin mengubah nama vendor.',
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'vendor_name' => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $vendorName = trim((string) $request->input('vendor_name', ''));
+        $vendorName = $vendorName !== '' ? $vendorName : null;
+        $oldVendor = $ticket->vendor_name;
+
+        if ($oldVendor === $vendorName) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Tidak ada perubahan',
+                'data' => $ticket,
+            ]);
+        }
+
+        $ticket->update(['vendor_name' => $vendorName]);
+        $this->createTicketHistory(
+            $ticket,
+            'updated',
+            'vendor_name',
+            $oldVendor ?? '-',
+            'Nama vendor: ' . ($vendorName ?? '-')
+        );
+
+        $ticket->refresh();
+        $this->enrichTicketWorkExecutorFields($ticket, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Nama vendor berhasil diperbarui',
             'data' => $ticket,
         ]);
     }
@@ -3351,14 +4079,14 @@ class TicketController extends Controller
      */
     public function assignTeam(Request $request, $id)
     {
-        if (!self::userCanManageTickets($request->user())) {
-            return $this->ticketManageDeniedJsonResponse();
-        }
-
         $ticket = Ticket::findOrFail($id);
 
         if (! self::userCanViewTicket($request->user(), $ticket)) {
             return $this->ticketViewDeniedJsonResponse();
+        }
+
+        if (! self::userCanManageTicket($request->user(), $ticket)) {
+            return $this->ticketManageDeniedJsonResponse();
         }
 
         $validator = Validator::make($request->all(), [

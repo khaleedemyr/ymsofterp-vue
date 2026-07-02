@@ -16,6 +16,8 @@ class Ticket extends Model
 
     public const WORK_EXECUTOR_EXTERNAL_VENDOR = 'external_vendor';
 
+    public const TICKET_VENDOR_DIVISION_ID = 18;
+
     protected $fillable = [
         'ticket_number',
         'title',
@@ -25,6 +27,7 @@ class Ticket extends Model
         'status_id',
         'divisi_id',
         'work_executor_type',
+        'vendor_name',
         'outlet_id',
         'created_by',
         'due_date',
@@ -290,5 +293,10 @@ class Ticket extends Model
         }
 
         return self::workExecutorTypeOptions()[$this->work_executor_type] ?? $this->work_executor_type;
+    }
+
+    public function isExternalVendorTicket(): bool
+    {
+        return $this->work_executor_type === self::WORK_EXECUTOR_EXTERNAL_VENDOR;
     }
 }

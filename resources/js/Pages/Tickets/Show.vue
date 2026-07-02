@@ -14,7 +14,7 @@
             <i class="fa-solid fa-money-bill-wave mr-2"></i> Create Payment
           </button>
           <button
-            v-if="can_manage_tickets"
+            v-if="canManageTicket"
             @click="editTicket"
             class="bg-green-600 text-white px-4 py-2 rounded-xl hover:bg-green-700 transition-colors"
           >
@@ -329,6 +329,22 @@
                   <p class="mt-1 text-xs text-gray-500">Hanya divisi terkait yang dapat mengisi.</p>
                 </div>
                 <p v-else class="mt-1 text-sm text-gray-900">{{ ticket.work_executor_type_label || '-' }}</p>
+                <div v-if="ticket.work_executor_type === 'external_vendor'" class="mt-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div>
+                      <div class="text-xs font-semibold text-orange-800">Nama Vendor</div>
+                      <div class="text-sm text-gray-900">{{ ticket.vendor_name || '— belum diisi —' }}</div>
+                    </div>
+                    <button
+                      v-if="ticket.can_update_vendor_name"
+                      type="button"
+                      class="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700"
+                      @click="promptVendorName"
+                    >
+                      {{ ticket.vendor_name ? 'Ubah' : 'Input' }}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <!-- Outlet -->
@@ -543,6 +559,10 @@ const canSubmitComment = computed(() => {
   return !!newComment.value?.trim() || commentAttachments.value.length > 0;
 });
 
+const canManageTicket = computed(() => {
+  return props.can_manage_tickets || props.ticket?.can_manage_ticket;
+});
+
 // Lightbox state for VueEasyLightbox
 const visibleRef = ref(false);
 const indexRef = ref(0);
@@ -592,10 +612,29 @@ async function updateWorkExecutorType(event) {
   const previousType = props.ticket.work_executor_type || '';
   if (newType === previousType) return;
 
+  let vendorName = props.ticket.vendor_name || '';
+  if (newType === 'external_vendor') {
+    const result = await Swal.fire({
+      title: 'External Vendor',
+      text: 'Nama vendor (opsional, bisa diubah nanti)',
+      input: 'text',
+      inputValue: vendorName,
+      inputPlaceholder: 'Contoh: PT Vendor ABC',
+      showCancelButton: true,
+      confirmButtonText: 'Simpan',
+    });
+    if (!result.isConfirmed) {
+      if (event?.target) event.target.value = previousType;
+      return;
+    }
+    vendorName = result.value?.trim() || null;
+  }
+
   workExecutorSaving.value = true;
   try {
     const response = await axios.patch(`/tickets/${props.ticket.id}/work-executor-type`, {
       work_executor_type: newType || null,
+      vendor_name: newType === 'external_vendor' ? vendorName : null,
     });
     if (response.data?.success) {
       props.ticket.work_executor_type = newType || null;
@@ -604,6 +643,7 @@ async function updateWorkExecutorType(event) {
         : newType === 'external_vendor'
           ? 'External Vendor'
           : null;
+      props.ticket.vendor_name = newType === 'external_vendor' ? vendorName : null;
       Swal.fire({
         toast: true,
         position: 'top-end',
@@ -618,6 +658,30 @@ async function updateWorkExecutorType(event) {
     Swal.fire('Error', error.response?.data?.message || 'Gagal memperbarui dikerjakan oleh', 'error');
   } finally {
     workExecutorSaving.value = false;
+  }
+}
+
+async function promptVendorName() {
+  const result = await Swal.fire({
+    title: 'Nama Vendor',
+    input: 'text',
+    inputValue: props.ticket.vendor_name || '',
+    inputPlaceholder: 'Opsional',
+    showCancelButton: true,
+    confirmButtonText: 'Simpan',
+  });
+  if (!result.isConfirmed) return;
+
+  try {
+    const response = await axios.patch(`/tickets/${props.ticket.id}/vendor-name`, {
+      vendor_name: result.value?.trim() || null,
+    });
+    if (response.data?.success) {
+      props.ticket.vendor_name = result.value?.trim() || null;
+      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Nama vendor diperbarui', showConfirmButton: false, timer: 1800 });
+    }
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || 'Gagal menyimpan nama vendor', 'error');
   }
 }
 

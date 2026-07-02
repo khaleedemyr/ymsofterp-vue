@@ -21,27 +21,43 @@
             >
               <i class="fa-solid fa-calendar-days mr-2"></i> Kalender
             </button>
-            <button
-              type="button"
-              @click="openReportPerOutlet"
-              class="bg-white/90 text-teal-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
-            >
-              <i class="fa-solid fa-store mr-2"></i> Report Per Outlet
-            </button>
-            <button
-              type="button"
-              @click="openReportPerCategories"
-              class="bg-white/90 text-amber-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
-            >
-              <i class="fa-solid fa-table-list mr-2"></i> Report Per Categories
-            </button>
-            <button
-              type="button"
-              @click="downloadReport"
-              class="bg-white/90 text-sky-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
-            >
-              <i class="fa-solid fa-file-lines mr-2"></i> Report
-            </button>
+            <template v-if="tickets_view_all_outlets">
+              <button
+                type="button"
+                @click="openDashboard"
+                class="bg-white/90 text-indigo-800 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+              >
+                <i class="fa-solid fa-chart-pie mr-2"></i> Dashboard
+              </button>
+              <button
+                type="button"
+                @click="openReportExternalVendor"
+                class="bg-white/90 text-orange-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+              >
+                <i class="fa-solid fa-truck-field mr-2"></i> Report External Vendor
+              </button>
+              <button
+                type="button"
+                @click="openReportPerOutlet"
+                class="bg-white/90 text-teal-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+              >
+                <i class="fa-solid fa-store mr-2"></i> Report Per Outlet
+              </button>
+              <button
+                type="button"
+                @click="openReportPerCategories"
+                class="bg-white/90 text-amber-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+              >
+                <i class="fa-solid fa-table-list mr-2"></i> Report Per Categories
+              </button>
+              <button
+                type="button"
+                @click="downloadReport"
+                class="bg-white/90 text-sky-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+              >
+                <i class="fa-solid fa-file-lines mr-2"></i> Report
+              </button>
+            </template>
             <button
               type="button"
               @click="downloadImportTemplate"
@@ -351,6 +367,19 @@
                   >
                     {{ ticket.work_executor_type_label || '-' }}
                   </span>
+                  <div v-if="ticket.work_executor_type === 'external_vendor'" class="mt-1 max-w-[10rem]">
+                    <div class="text-[10px] text-gray-600 truncate" :title="ticket.vendor_name || 'Belum ada nama vendor'">
+                      {{ ticket.vendor_name || '— vendor —' }}
+                    </div>
+                    <button
+                      v-if="ticket.can_update_vendor_name"
+                      type="button"
+                      class="mt-0.5 text-[10px] font-semibold text-orange-600 hover:text-orange-800"
+                      @click="promptVendorName(ticket)"
+                    >
+                      {{ ticket.vendor_name ? 'Ubah vendor' : 'Input vendor' }}
+                    </button>
+                  </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                   <div class="space-y-1">
@@ -486,7 +515,7 @@
                       <i :class="sharingTicketId === ticket.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i>
                     </button>
                     <button
-                      v-if="can_manage_tickets"
+                      v-if="ticketCanManage(ticket)"
                       @click="editTicket(ticket)"
                       class="text-green-600 hover:text-green-900"
                       title="Edit"
@@ -494,7 +523,7 @@
                       <i class="fa-solid fa-edit"></i>
                     </button>
                     <button
-                      v-if="can_manage_tickets"
+                      v-if="ticketCanManage(ticket)"
                       @click="openAssignTeam(ticket)"
                       class="text-indigo-600 hover:text-indigo-900"
                       title="Assign Team"
@@ -868,7 +897,7 @@ const props = defineProps({
   },
   tickets_view_all_outlets: {
     type: Boolean,
-    default: true,
+    default: false,
   },
   assignableUsers: {
     type: Array,
@@ -1015,12 +1044,20 @@ function openCalendar() {
   router.visit('/tickets/calendar');
 }
 
+function openDashboard() {
+  router.visit('/tickets/dashboard');
+}
+
 function openReportPerCategories() {
   router.visit('/tickets/report-per-categories');
 }
 
 function openReportPerOutlet() {
   router.visit('/tickets/report-per-outlet');
+}
+
+function openReportExternalVendor() {
+  router.visit('/tickets/report-external-vendor');
 }
 
 function downloadReport() {
@@ -1317,10 +1354,30 @@ async function quickUpdateWorkExecutorType(ticket, event) {
 
   if (newType === previousType) return;
 
+  let vendorName = ticket.vendor_name || '';
+  if (newType === 'external_vendor') {
+    const result = await Swal.fire({
+      title: 'External Vendor',
+      text: 'Nama vendor (opsional, bisa diubah nanti)',
+      input: 'text',
+      inputValue: vendorName,
+      inputPlaceholder: 'Contoh: PT Vendor ABC',
+      showCancelButton: true,
+      confirmButtonText: 'Simpan',
+      cancelButtonText: 'Batal',
+    });
+    if (!result.isConfirmed) {
+      select.value = previousType;
+      return;
+    }
+    vendorName = result.value?.trim() || null;
+  }
+
   workExecutorUpdatingId.value = ticket.id;
   try {
     const response = await axios.patch(`/tickets/${ticket.id}/work-executor-type`, {
       work_executor_type: newType || null,
+      vendor_name: newType === 'external_vendor' ? vendorName : null,
     });
     if (response.data?.success) {
       ticket.work_executor_type = newType || null;
@@ -1329,6 +1386,11 @@ async function quickUpdateWorkExecutorType(ticket, event) {
         : newType === 'external_vendor'
           ? 'External Vendor'
           : null;
+      if (newType !== 'external_vendor') {
+        ticket.vendor_name = null;
+      } else {
+        ticket.vendor_name = vendorName;
+      }
       Swal.fire({
         toast: true,
         position: 'top-end',
@@ -1343,6 +1405,34 @@ async function quickUpdateWorkExecutorType(ticket, event) {
     Swal.fire('Error', error.response?.data?.message || 'Gagal memperbarui dikerjakan oleh', 'error');
   } finally {
     workExecutorUpdatingId.value = null;
+  }
+}
+
+function ticketCanManage(ticket) {
+  return props.can_manage_tickets || ticket.can_manage_ticket;
+}
+
+async function promptVendorName(ticket) {
+  const result = await Swal.fire({
+    title: 'Nama Vendor',
+    input: 'text',
+    inputValue: ticket.vendor_name || '',
+    inputPlaceholder: 'Opsional',
+    showCancelButton: true,
+    confirmButtonText: 'Simpan',
+  });
+  if (!result.isConfirmed) return;
+
+  try {
+    const response = await axios.patch(`/tickets/${ticket.id}/vendor-name`, {
+      vendor_name: result.value?.trim() || null,
+    });
+    if (response.data?.success) {
+      ticket.vendor_name = result.value?.trim() || null;
+      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Nama vendor diperbarui', showConfirmButton: false, timer: 1800 });
+    }
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || 'Gagal menyimpan nama vendor', 'error');
   }
 }
 
