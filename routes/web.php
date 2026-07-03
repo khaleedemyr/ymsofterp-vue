@@ -1060,7 +1060,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::resource('manual-cogs-deviation-catcost', \App\Http\Controllers\ManualCogsDeviationCatcostController::class);
 
-    Route::resource('asset-manual-monthly-lost-breakage', \App\Http\Controllers\AssetManualMonthlyLostBreakageController::class);
+    Route::resource('asset-manual-monthly-lost-breakage', \App\Http\Controllers\AssetManualMonthlyLostBreakageController::class)
+        ->parameters(['asset-manual-monthly-lost-breakage' => 'ammlb']);
 
     Route::resource('manual-monthly-labor-cost', \App\Http\Controllers\ManualMonthlyLaborCostController::class);
 });

@@ -91,35 +91,35 @@ class AssetManualMonthlyLostBreakageController extends Controller
             ->with('success', 'Asset Manual Monthly Lost & Breakage berhasil disimpan.');
     }
 
-    public function show(AssetManualMonthlyLostBreakage $assetManualMonthlyLostBreakage): Response
+    public function show(AssetManualMonthlyLostBreakage $ammlb): Response
     {
-        $assetManualMonthlyLostBreakage->load(['creator', 'items.outlet']);
+        $ammlb->load(['creator', 'items.outlet']);
 
         return Inertia::render('AssetManualMonthlyLostBreakage/Show', [
-            'record' => $assetManualMonthlyLostBreakage,
-            'monthLabel' => $this->monthLabel((int) $assetManualMonthlyLostBreakage->month),
+            'record' => $ammlb,
+            'monthLabel' => $this->monthLabel((int) $ammlb->month),
         ]);
     }
 
-    public function edit(AssetManualMonthlyLostBreakage $assetManualMonthlyLostBreakage): Response
+    public function edit(AssetManualMonthlyLostBreakage $ammlb): Response
     {
-        $assetManualMonthlyLostBreakage->load(['items.outlet']);
+        $ammlb->load(['items.outlet']);
 
         return Inertia::render('AssetManualMonthlyLostBreakage/Form', [
-            'record' => $assetManualMonthlyLostBreakage,
+            'record' => $ammlb,
             'outlets' => $this->outletOptions(),
             'monthOptions' => $this->monthOptions(),
             'yearOptions' => $this->yearOptions(),
         ]);
     }
 
-    public function update(Request $request, AssetManualMonthlyLostBreakage $assetManualMonthlyLostBreakage)
+    public function update(Request $request, AssetManualMonthlyLostBreakage $ammlb)
     {
         $validated = $this->validatePayload($request);
 
         $exists = AssetManualMonthlyLostBreakage::where('month', $validated['month'])
             ->where('year', $validated['year'])
-            ->where('id', '!=', $assetManualMonthlyLostBreakage->id)
+            ->where('id', '!=', $ammlb->id)
             ->exists();
 
         if ($exists) {
@@ -130,14 +130,14 @@ class AssetManualMonthlyLostBreakageController extends Controller
 
         DB::beginTransaction();
         try {
-            $assetManualMonthlyLostBreakage->update([
+            $ammlb->update([
                 'month' => $validated['month'],
                 'year' => $validated['year'],
                 'updated_by' => auth()->id(),
             ]);
 
-            $assetManualMonthlyLostBreakage->items()->delete();
-            $this->syncItems($assetManualMonthlyLostBreakage, $validated['items']);
+            $ammlb->items()->delete();
+            $this->syncItems($ammlb, $validated['items']);
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -150,9 +150,9 @@ class AssetManualMonthlyLostBreakageController extends Controller
             ->with('success', 'Asset Manual Monthly Lost & Breakage berhasil diperbarui.');
     }
 
-    public function destroy(AssetManualMonthlyLostBreakage $assetManualMonthlyLostBreakage)
+    public function destroy(AssetManualMonthlyLostBreakage $ammlb)
     {
-        $assetManualMonthlyLostBreakage->delete();
+        $ammlb->delete();
 
         return redirect()
             ->route('asset-manual-monthly-lost-breakage.index')
