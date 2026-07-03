@@ -8,12 +8,15 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import { useLoading } from '@/Composables/useLoading';
 import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/formatKpiNumber';
+import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
   evaluation: Object,
   outlets: Array,
   erpScopeOptions: Array,
 });
+
+const breakdownModal = ref(null);
 
 const page = usePage();
 const evaluation = ref({ ...props.evaluation });
@@ -137,6 +140,23 @@ watch(selectedMultipleOutlets, (list) => {
 });
 
 const groupedStrategies = computed(() => evaluation.value.strategies || []);
+
+const scopeOutletCount = computed(() => {
+  if (erpDiagnostics.value?.scope_outlet_count != null) {
+    return erpDiagnostics.value.scope_outlet_count;
+  }
+  if (evaluation.value.scope_outlet_count != null) {
+    return evaluation.value.scope_outlet_count;
+  }
+  if (evaluation.value.erp_data_scope === 'all_outlets') {
+    return props.outlets?.length ?? 0;
+  }
+  return Math.max(1, evaluation.value.erp_scope_outlet_ids?.length ?? 1);
+});
+
+function openOutletBreakdown(item) {
+  breakdownModal.value?.show(item);
+}
 
 function pvRow(id) {
   return form.parameter_values.find((r) => r.id === id);
@@ -514,6 +534,7 @@ onMounted(() => {
                 <th class="px-4 py-2 text-left">Level</th>
                 <th class="px-4 py-2 text-right">Skor</th>
                 <th class="px-4 py-2 text-right">Bobot</th>
+                <th class="px-4 py-2 text-center w-24">Detail</th>
                 <th class="px-4 py-2 text-left">Improvement Plan</th>
               </tr>
             </thead>
@@ -529,6 +550,18 @@ onMounted(() => {
                 </td>
                 <td class="px-4 py-2 text-right font-semibold">{{ formatNum(item.score) }}</td>
                 <td class="px-4 py-2 text-right">{{ item.weight_percent }}%</td>
+                <td class="px-4 py-2 text-center">
+                  <button
+                    v-if="item.formula && scopeOutletCount >= 2"
+                    type="button"
+                    class="text-xs px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    title="Lihat achievement per outlet"
+                    @click="openOutletBreakdown(item)"
+                  >
+                    <i class="fa-solid fa-store mr-1"></i> Outlet
+                  </button>
+                  <span v-else class="text-xs text-gray-300">—</span>
+                </td>
                 <td class="px-4 py-2">
                   <textarea v-model="itemRow(item.id).improvement_plan" rows="2" class="w-full rounded border-gray-300 text-sm" placeholder="Rencana perbaikan..." />
                 </td>
@@ -561,5 +594,11 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <KpiOutletBreakdownModal
+      ref="breakdownModal"
+      :evaluation-id="evaluation.id"
+      :outlet-count="scopeOutletCount"
+    />
   </AppLayout>
 </template>

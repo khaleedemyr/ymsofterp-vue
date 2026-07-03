@@ -92,6 +92,7 @@ class KpiEvaluationController extends Controller
 
         return Inertia::render('KpiEvaluations/Show', [
             'evaluation' => $this->formatEvaluation($evaluation),
+            'outlets' => $this->evaluationService->outletOptions(),
         ]);
     }
 
@@ -229,6 +230,22 @@ class KpiEvaluationController extends Controller
             ->with('success', 'Data ERP berhasil di-refresh.');
     }
 
+    public function itemOutletBreakdown(KpiEvaluation $kpiEvaluation, int $item)
+    {
+        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+        $evaluationItem = $evaluation->items->firstWhere('id', $item);
+
+        if (! $evaluationItem) {
+            return response()->json(['message' => 'Item KPI tidak ditemukan.'], 404);
+        }
+
+        @set_time_limit(180);
+
+        return response()->json(
+            $this->evaluationService->getItemOutletBreakdown($evaluation, $evaluationItem),
+        );
+    }
+
     public function recalculate(Request $request, KpiEvaluation $kpiEvaluation)
     {
         if (!$kpiEvaluation->isEditable()) {
@@ -331,6 +348,7 @@ class KpiEvaluationController extends Controller
             'division_name' => $evaluation->division_name,
             'erp_data_scope' => $evaluation->erp_data_scope ?? 'employee_outlet',
             'erp_scope_outlet_ids' => $evaluation->erp_scope_outlet_ids ?? [],
+            'scope_outlet_count' => count($this->evaluationService->resolveErpOutletIds($evaluation)),
             'period_month' => $evaluation->period_month,
             'period_start' => $evaluation->period_start?->toDateString(),
             'period_end' => $evaluation->period_end?->toDateString(),

@@ -1,14 +1,32 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
+import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
   evaluation: Object,
+  outlets: Array,
 });
 
+const breakdownModal = ref(null);
+
 const groupedStrategies = computed(() => props.evaluation.strategies || []);
+
+const scopeOutletCount = computed(() => {
+  if (props.evaluation.scope_outlet_count != null) {
+    return props.evaluation.scope_outlet_count;
+  }
+  if (props.evaluation.erp_data_scope === 'all_outlets') {
+    return props.outlets?.length ?? 0;
+  }
+  return Math.max(1, props.evaluation.erp_scope_outlet_ids?.length ?? 1);
+});
+
+function openOutletBreakdown(item) {
+  breakdownModal.value?.show(item);
+}
 
 function sourceLabel(type) {
   return { erp: 'ERP', manual: 'Manual', hybrid: 'Hybrid' }[type] || type;
@@ -100,6 +118,7 @@ function back() {
                 <th class="px-4 py-2 text-left">Level</th>
                 <th class="px-4 py-2 text-right">Skor</th>
                 <th class="px-4 py-2 text-right">Bobot</th>
+                <th class="px-4 py-2 text-center w-24">Detail</th>
                 <th class="px-4 py-2 text-left">Improvement Plan</th>
               </tr>
             </thead>
@@ -113,6 +132,18 @@ function back() {
                 </td>
                 <td class="px-4 py-2 text-right font-semibold">{{ formatNum(item.score) }}</td>
                 <td class="px-4 py-2 text-right">{{ item.weight_percent }}%</td>
+                <td class="px-4 py-2 text-center">
+                  <button
+                    v-if="item.formula && scopeOutletCount >= 2"
+                    type="button"
+                    class="text-xs px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+                    title="Lihat achievement per outlet"
+                    @click="openOutletBreakdown(item)"
+                  >
+                    <i class="fa-solid fa-store mr-1"></i> Outlet
+                  </button>
+                  <span v-else class="text-xs text-gray-300">—</span>
+                </td>
                 <td class="px-4 py-2 text-gray-600 whitespace-pre-wrap">{{ item.improvement_plan || '—' }}</td>
               </tr>
             </tbody>
@@ -131,5 +162,11 @@ function back() {
         </div>
       </div>
     </div>
+
+    <KpiOutletBreakdownModal
+      ref="breakdownModal"
+      :evaluation-id="evaluation.id"
+      :outlet-count="scopeOutletCount"
+    />
   </AppLayout>
 </template>
