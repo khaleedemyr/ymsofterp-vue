@@ -551,6 +551,12 @@ const menuGroups = [
                 code: 'stock_cut_variance_report',
             },
             {
+                name: () => t('sidebar.menus.manual_cogs_deviation_catcost'),
+                icon: 'fa-solid fa-calculator',
+                route: '/manual-cogs-deviation-catcost',
+                code: 'manual_cogs_deviation_catcost',
+            },
+            {
                 name: () => t('sidebar.menus.report_rekap_diskon'),
                 icon: 'fa-solid fa-tags',
                 route: '/report-rekap-diskon',
