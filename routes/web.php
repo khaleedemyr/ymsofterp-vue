@@ -1059,6 +1059,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
 
     Route::resource('manual-cogs-deviation-catcost', \App\Http\Controllers\ManualCogsDeviationCatcostController::class);
+
+    Route::resource('asset-manual-monthly-lost-breakage', \App\Http\Controllers\AssetManualMonthlyLostBreakageController::class);
 });
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);

@@ -54,6 +54,7 @@ export default {
     "depreciations": "Depresiasi",
     "reports": "Laporan",
     "lost_breakage": "Asset Hilang & Rusak",
+    "asset_manual_monthly_lost_breakage": "Asset Manual Monthly Lost & Breakage",
     "lost_breakage_replacement_backlog": "Asset Replacement",
     "asset_good_receive": "Penerimaan Barang Aset",
     "asset_inventory_transfer": "Transfer Inventori Aset",
