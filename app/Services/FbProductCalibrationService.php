@@ -267,9 +267,18 @@ class FbProductCalibrationService
                 'calibration_product_id' => $productId,
             ];
 
+            $rowComplete = true;
             foreach (self::PARAMETER_CODES as $code) {
                 $value = $row[$code] ?? null;
-                $payload[$code] = in_array($value, ['C', 'NC'], true) ? $value : null;
+                if (! in_array($value, ['C', 'NC'], true)) {
+                    $rowComplete = false;
+                    break;
+                }
+                $payload[$code] = $value;
+            }
+
+            if (! $rowComplete) {
+                continue;
             }
 
             FbProductCalibrationResult::create($payload);

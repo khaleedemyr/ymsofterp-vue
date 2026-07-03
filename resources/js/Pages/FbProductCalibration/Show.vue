@@ -108,7 +108,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="product in record.products" :key="product.id">
+              <tr v-for="product in productsForParticipant(participant.user_id)" :key="product.id">
                 <td class="fbc-td-product">
                   <div class="font-semibold text-gray-900">{{ product.item_name }}</div>
                   <div class="text-[11px] text-gray-500 leading-snug">
@@ -157,6 +157,10 @@ const resultMap = {};
 function getResult(userId, productId, paramCode) {
   const row = resultMap[`${userId}_${productId}`];
   return row?.[paramCode] || null;
+}
+
+function productsForParticipant(userId) {
+  return (props.record.products || []).filter((product) => resultMap[`${userId}_${product.id}`]);
 }
 
 function formatDate(value) {

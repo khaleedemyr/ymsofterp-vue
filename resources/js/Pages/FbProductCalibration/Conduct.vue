@@ -31,7 +31,9 @@
             track-by="user_id"
             @search-change="searchParticipants"
           />
-          <p class="text-xs text-gray-500 mt-2">Bisa pilih beberapa user sekaligus.</p>
+          <p class="text-xs text-gray-500 mt-2">
+            Bisa pilih beberapa user sekaligus. Setiap user tidak wajib diisi semua product — cukup isi product yang di-calibration saja.
+          </p>
         </div>
 
         <div v-if="participants.length" class="space-y-6">
@@ -229,12 +231,28 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+function productRowValues(userId, productId) {
+  return props.parameterOptions.map((param) => getValue(userId, productId, param.code));
+}
+
+function isProductRowStarted(userId, productId) {
+  return productRowValues(userId, productId).some((val) => val);
+}
+
+function isProductRowComplete(userId, productId) {
+  return productRowValues(userId, productId).every((val) => val);
+}
+
 function buildPayload() {
   form.participants = participants.value.map((p) => ({ user_id: p.user_id }));
 
   const results = [];
   participants.value.forEach((participant) => {
     props.record.products.forEach((product) => {
+      if (!isProductRowStarted(participant.user_id, product.id)) {
+        return;
+      }
+
       const key = resultKey(participant.user_id, product.id);
       const row = resultState.value[key] || {};
       const entry = {
@@ -257,20 +275,39 @@ function validateClient() {
   }
 
   for (const participant of participants.value) {
+    let calibratedProductCount = 0;
+
     for (const product of props.record.products) {
-      for (const param of props.parameterOptions) {
-        const val = getValue(participant.user_id, product.id, param.code);
-        if (!val) {
-          Swal.fire({
-            icon: 'warning',
-            title: 'Lengkapi semua parameter',
-            text: `User ${participant.user_name || participant.nama_lengkap}, product ${product.item_name}, parameter ${param.label}`,
-          });
-          return false;
-        }
+      const started = isProductRowStarted(participant.user_id, product.id);
+      if (!started) {
+        continue;
       }
+
+      if (!isProductRowComplete(participant.user_id, product.id)) {
+        const missingParam = props.parameterOptions.find(
+          (param) => !getValue(participant.user_id, product.id, param.code),
+        );
+        Swal.fire({
+          icon: 'warning',
+          title: 'Lengkapi semua parameter product',
+          text: `User ${participant.user_name || participant.nama_lengkap}, product ${product.item_name}${missingParam ? `, parameter ${missingParam.label}` : ''}`,
+        });
+        return false;
+      }
+
+      calibratedProductCount += 1;
+    }
+
+    if (calibratedProductCount === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Minimal satu product',
+        text: `User ${participant.user_name || participant.nama_lengkap} belum memiliki product yang di-calibration.`,
+      });
+      return false;
     }
   }
+
   return true;
 }
 

@@ -664,22 +664,39 @@ class FbProductCalibrationController extends Controller
             'results.*.calibration_product_id' => ['required', 'integer', Rule::in($productIds)],
         ], $parameterRules), [
             'participants.required' => 'Tambahkan minimal satu user yang di-calibration.',
-            'results.required' => 'Lengkapi parameter calibration untuk setiap product.',
+            'results.required' => 'Lengkapi minimal satu product untuk setiap user yang di-calibration.',
         ]);
 
         $participantIds = collect($validated['participants'])->pluck('user_id')->map(fn ($id) => (int) $id)->unique()->values();
-        $expectedRows = $participantIds->count() * count($productIds);
+        $seenPairs = [];
 
-        if (count($validated['results']) < $expectedRows) {
-            throw ValidationException::withMessages([
-                'results' => 'Lengkapi semua parameter C/NC untuk setiap user dan product.',
-            ]);
-        }
+        foreach ($validated['results'] as $index => $row) {
+            $userId = (int) $row['user_id'];
+            $productId = (int) $row['calibration_product_id'];
+            $pairKey = "{$userId}_{$productId}";
 
-        foreach ($validated['results'] as $row) {
-            if (! $participantIds->contains((int) $row['user_id'])) {
+            if (! $participantIds->contains($userId)) {
                 throw ValidationException::withMessages([
                     'results' => 'Data result mengandung user yang tidak terdaftar sebagai participant.',
+                ]);
+            }
+
+            if (isset($seenPairs[$pairKey])) {
+                throw ValidationException::withMessages([
+                    'results' => 'Terdapat data product ganda untuk user yang sama.',
+                ]);
+            }
+            $seenPairs[$pairKey] = true;
+        }
+
+        foreach ($participantIds as $participantId) {
+            $productCount = collect($validated['results'])
+                ->where('user_id', $participantId)
+                ->count();
+
+            if ($productCount < 1) {
+                throw ValidationException::withMessages([
+                    'results' => 'Setiap user wajib memiliki minimal satu product yang di-calibration.',
                 ]);
             }
         }
