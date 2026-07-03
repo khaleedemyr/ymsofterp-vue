@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\KpiParameter;
 use App\Models\UserRegional;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class KpiParameterResolverService
@@ -31,6 +33,11 @@ class KpiParameterResolverService
     /** @var array<string, array<int, float>> */
     private array $ticketCountCache = [];
 
+    /** @var array<string, array<int, float>> */
+    private array $pettyCashBudgetByOutletCache = [];
+
+    private const PERSISTENT_ANALYZER_CACHE_TTL_MINUTES = 120;
+
     private ?bool $hasTicketsTable = null;
 
     private ?bool $hasTicketCategoriesTable = null;
@@ -53,36 +60,134 @@ class KpiParameterResolverService
      */
     public function prefetch(array $context, iterable $parameters): void
     {
+        $this->prefetchForParameters($context, $parameters);
+    }
+
+    /**
+     * Pre-load hanya data yang dibutuhkan parameter terkait (lebih ringan dari prefetch penuh).
+     *
+     * @param  array{outlet_ids?: list<int>, outlet_id?: int|null, user_id?: int|null, period_month: string}  $context
+     * @param  iterable<KpiParameter>  $parameters
+     */
+    public function prefetchForParameters(array $context, iterable $parameters): void
+    {
         $outletIds = $this->outletIdsFromContext($context);
         $periodMonth = (string) ($context['period_month'] ?? '');
 
-        if (empty($outletIds) || !preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+        if (empty($outletIds) || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return;
         }
 
-        $needsAnalyzer = false;
+        $resolverKeys = [];
         foreach ($parameters as $param) {
             $key = $param->erpMapping?->resolver_key ?? '';
-            if (in_array($key, self::ANALYZER_RESOLVER_KEYS, true)) {
-                $needsAnalyzer = true;
-                break;
+            if ($key !== '') {
+                $resolverKeys[$key] = true;
             }
         }
 
-        if ($needsAnalyzer) {
+        if ($resolverKeys === []) {
+            return;
+        }
+
+        if (! empty(array_intersect(array_keys($resolverKeys), self::ANALYZER_RESOLVER_KEYS))) {
             $this->prefetchAnalyzers($outletIds, $periodMonth);
         }
 
-        $this->queryOrderRevenue($outletIds, $periodMonth, true);
+        if (isset($resolverKeys['daily_revenue_forecast']) || isset($resolverKeys['pos_order_count'])) {
+            $this->queryOrderRevenue($outletIds, $periodMonth, true);
+        }
 
         $year = (int) substr($periodMonth, 0, 4);
         $month = (int) substr($periodMonth, 5, 2);
-        $this->resolveMonthlyBudget($outletIds, $month, $year);
+
+        if (isset($resolverKeys['daily_revenue_forecast_budget'])) {
+            $this->resolveMonthlyBudget($outletIds, $month, $year);
+        }
+
+        if (isset($resolverKeys['petty_cash_lock_budget'])) {
+            $this->prefetchPettyCashLockBudgets($outletIds, $year, $month);
+        }
 
         $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
-        $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'complaint', null);
-        $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', null);
-        $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', true);
+        if (isset($resolverKeys['ticket_complaint_count'])) {
+            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'complaint', null);
+        }
+        if (isset($resolverKeys['ticket_improvement_closed'])) {
+            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', true);
+        }
+        if (isset($resolverKeys['ticket_improvement_total'])) {
+            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', false);
+        }
+    }
+
+    /**
+     * Resolve semua parameter untuk tiap outlet — satu prefetch, lalu baca cache.
+     *
+     * @param  list<int>  $outletIds
+     * @param  iterable<KpiParameter>  $parameters
+     * @param  array<string, mixed>  $baseContext
+     * @return array<int, array<string, ?float>>
+     */
+    public function resolveParameterGridForOutlets(array $outletIds, iterable $parameters, array $baseContext): array
+    {
+        $params = $parameters instanceof Collection ? $parameters : collect($parameters);
+        $grid = [];
+
+        foreach ($outletIds as $outletId) {
+            $grid[(int) $outletId] = [];
+        }
+
+        if ($params->isEmpty() || $outletIds === []) {
+            return $grid;
+        }
+
+        $this->prefetchForParameters($baseContext, $params);
+
+        foreach ($outletIds as $outletId) {
+            $outletId = (int) $outletId;
+            $context = array_merge($baseContext, [
+                'outlet_ids' => [$outletId],
+                'outlet_id' => $outletId,
+            ]);
+
+            foreach ($params as $param) {
+                $grid[$outletId][$param->code] = $this->resolve($param, $context);
+            }
+        }
+
+        return $grid;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    public function clearPersistentCaches(array $outletIds, string $periodMonth): void
+    {
+        foreach (array_unique(array_filter(array_map('intval', $outletIds))) as $outletId) {
+            if ($outletId > 0) {
+                Cache::forget($this->persistentAnalyzerCacheKey($outletId, $periodMonth));
+            }
+        }
+    }
+
+    private function persistentAnalyzerCacheKey(int $outletId, string $periodMonth): string
+    {
+        return 'kpi_outlet_analyzer:' . $outletId . ':' . $periodMonth;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function prefetchPettyCashLockBudgets(array $outletIds, int $year, int $month): void
+    {
+        $cacheKey = $this->scopeCacheKey($outletIds, sprintf('%04d-%02d', $year, $month)) . ':petty_lock';
+        if (isset($this->pettyCashBudgetByOutletCache[$cacheKey])) {
+            return;
+        }
+
+        $this->pettyCashBudgetByOutletCache[$cacheKey] = $this->pettyCashLockBudget
+            ->lockBudgetsByOutlet($outletIds, $year, $month);
     }
 
     /**
@@ -521,6 +626,7 @@ class KpiParameterResolverService
         $this->revenueCache = [];
         $this->budgetCache = [];
         $this->ticketCountCache = [];
+        $this->pettyCashBudgetByOutletCache = [];
     }
 
     /**
@@ -533,7 +639,13 @@ class KpiParameterResolverService
             return $this->analyzerCache[$cacheKey];
         }
 
-        $data = $this->outletAnalyzer->analyzeForKpi($outletId, $periodMonth);
+        $persistentKey = $this->persistentAnalyzerCacheKey($outletId, $periodMonth);
+        $data = Cache::remember(
+            $persistentKey,
+            now()->addMinutes(self::PERSISTENT_ANALYZER_CACHE_TTL_MINUTES),
+            fn () => $this->outletAnalyzer->analyzeForKpi($outletId, $periodMonth),
+        );
+
         if ($data === null) {
             return null;
         }

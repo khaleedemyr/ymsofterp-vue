@@ -246,6 +246,17 @@ class KpiEvaluationController extends Controller
         );
     }
 
+    public function bulkOutletBreakdowns(KpiEvaluation $kpiEvaluation)
+    {
+        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+
+        @set_time_limit(300);
+
+        $bulk = $this->evaluationService->getBulkItemOutletBreakdowns($evaluation);
+
+        return response()->json($bulk);
+    }
+
     public function recalculate(Request $request, KpiEvaluation $kpiEvaluation)
     {
         if (!$kpiEvaluation->isEditable()) {
@@ -358,6 +369,7 @@ class KpiEvaluationController extends Controller
             'employee_comments' => $evaluation->employee_comments,
             'assessor_comments' => $evaluation->assessor_comments,
             'submitted_at' => $evaluation->submitted_at?->toDateTimeString(),
+            'updated_at' => $evaluation->updated_at?->toDateTimeString(),
             'is_editable' => $evaluation->isEditable(),
             'template' => $evaluation->template ? [
                 'id' => $evaluation->template->id,

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
@@ -48,6 +48,12 @@ function formatNum(val) {
 function back() {
   router.visit(route('kpi-evaluations.index'));
 }
+
+onMounted(() => {
+  if (scopeOutletCount.value >= 2) {
+    setTimeout(() => breakdownModal.value?.preload(), 500);
+  }
+});
 </script>
 
 <template>
@@ -167,6 +173,7 @@ function back() {
       ref="breakdownModal"
       :evaluation-id="evaluation.id"
       :outlet-count="scopeOutletCount"
+      :cache-version="evaluation.updated_at || ''"
     />
   </AppLayout>
 </template>

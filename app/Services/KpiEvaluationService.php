@@ -12,6 +12,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -187,6 +188,8 @@ class KpiEvaluationService
         $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();
+        $this->resolver->clearPersistentCaches($context['outlet_ids'] ?? [], (string) $evaluation->period_month);
+        Cache::forget($this->bulkBreakdownCacheKey($evaluation));
 
         $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
 
@@ -855,89 +858,166 @@ class KpiEvaluationService
      */
     public function getItemOutletBreakdown(KpiEvaluation $evaluation, KpiEvaluationItem $item): array
     {
+        $bulk = $this->getBulkItemOutletBreakdowns($evaluation);
+
+        return $bulk['items'][$item->id] ?? $this->unavailableItemBreakdown($item, 'Data breakdown tidak tersedia.');
+    }
+
+    /**
+     * @return array{items: array<int, array<string, mixed>>, generated_at: string|null}
+     */
+    public function getBulkItemOutletBreakdowns(KpiEvaluation $evaluation): array
+    {
+        return Cache::remember(
+            $this->bulkBreakdownCacheKey($evaluation),
+            now()->addHours(6),
+            fn () => $this->buildBulkItemOutletBreakdowns($evaluation),
+        );
+    }
+
+    private function bulkBreakdownCacheKey(KpiEvaluation $evaluation): string
+    {
+        $version = $evaluation->updated_at?->getTimestamp() ?? 0;
+
+        return 'kpi_bulk_breakdown:' . $evaluation->id . ':' . $version;
+    }
+
+    /**
+     * @return array{items: array<int, array<string, mixed>>, generated_at: string}
+     */
+    private function buildBulkItemOutletBreakdowns(KpiEvaluation $evaluation): array
+    {
+        @set_time_limit(300);
+
         $outletIds = $this->resolveErpOutletIds($evaluation);
-        $base = [
-            'item_name' => $item->item_name,
-            'formula' => $item->formula,
-            'target_value' => $item->target_value,
-            'target_direction' => $item->target_direction,
-            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
-            'parameter_columns' => [],
-            'rows' => [],
-            'summary' => ['exceeding' => 0, 'meeting' => 0, 'below' => 0],
-        ];
+        $items = $evaluation->items()->get();
 
         if ($outletIds === []) {
-            return array_merge($base, [
-                'available' => false,
-                'message' => 'Tidak ada outlet dalam scope evaluasi.',
-                'outlet_count' => 0,
-            ]);
+            $results = [];
+            foreach ($items as $item) {
+                $results[$item->id] = $this->unavailableItemBreakdown($item, 'Tidak ada outlet dalam scope evaluasi.', 0);
+            }
+
+            return [
+                'items' => $results,
+                'generated_at' => now()->toIso8601String(),
+            ];
         }
 
-        $formula = trim((string) ($item->formula ?? ''));
-        if ($formula === '') {
-            return array_merge($base, [
-                'available' => false,
-                'message' => 'KPI ini tidak punya formula.',
-                'outlet_count' => count($outletIds),
-            ]);
+        $itemMeta = [];
+        $allDCodes = [];
+
+        foreach ($items as $item) {
+            $formula = trim((string) ($item->formula ?? ''));
+            if ($formula === '') {
+                $itemMeta[$item->id] = ['unsupported' => true, 'message' => 'KPI ini tidak punya formula.'];
+                continue;
+            }
+
+            $codes = $this->extractCodes($formula);
+            $dCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
+            if ($dCodes === [] || count($dCodes) !== count($codes)) {
+                $itemMeta[$item->id] = ['unsupported' => true, 'message' => 'Breakdown per outlet belum mendukung formula yang memakai KPI lain.'];
+                continue;
+            }
+
+            $itemMeta[$item->id] = [
+                'item' => $item,
+                'formula' => $formula,
+                'd_codes' => $dCodes,
+            ];
+            $allDCodes = array_merge($allDCodes, $dCodes);
         }
 
-        $codes = $this->extractCodes($formula);
-        $dCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
+        $allDCodes = array_values(array_unique($allDCodes));
+        $parameters = $allDCodes === []
+            ? collect()
+            : KpiParameter::query()
+                ->whereIn('code', $allDCodes)
+                ->where('status', 'A')
+                ->with('erpMapping')
+                ->get();
 
-        if ($dCodes === [] || count($dCodes) !== count($codes)) {
-            return array_merge($base, [
-                'available' => false,
-                'message' => 'Breakdown per outlet belum mendukung formula yang memakai KPI lain.',
-                'outlet_count' => count($outletIds),
-            ]);
-        }
+        $baseContext = $this->buildErpContext($evaluation);
+        $parameterGrid = $outletIds !== [] && $parameters->isNotEmpty()
+            ? $this->resolver->resolveParameterGridForOutlets($outletIds, $parameters, $baseContext)
+            : [];
 
-        $parameters = KpiParameter::query()
-            ->whereIn('code', $dCodes)
-            ->where('status', 'A')
-            ->with('erpMapping')
-            ->get()
-            ->keyBy('code');
+        $outletRows = $outletIds === []
+            ? collect()
+            : DB::table('tbl_data_outlet')
+                ->whereIn('id_outlet', $outletIds)
+                ->orderBy('nama_outlet')
+                ->get(['id_outlet', 'nama_outlet', 'qr_code']);
 
-        $paramMeta = $evaluation->parameterValues()
-            ->whereIn('parameter_code', $dCodes)
+        $paramMetaByCode = $evaluation->parameterValues()
+            ->whereIn('parameter_code', $allDCodes)
             ->get()
             ->keyBy('parameter_code');
 
+        $results = [];
+        foreach ($items as $item) {
+            $meta = $itemMeta[$item->id] ?? null;
+            if ($meta === null) {
+                continue;
+            }
+
+            if (! empty($meta['unsupported'])) {
+                $results[$item->id] = $this->unavailableItemBreakdown($item, (string) $meta['message'], count($outletIds));
+                continue;
+            }
+
+            $results[$item->id] = $this->assembleItemBreakdownFromGrid(
+                $item,
+                $meta['formula'],
+                $meta['d_codes'],
+                $parameters->keyBy('code'),
+                $paramMetaByCode,
+                $outletRows,
+                $parameterGrid,
+                $evaluation,
+            );
+        }
+
+        return [
+            'items' => $results,
+            'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     * @param  Collection<string, KpiEvaluationParameterValue>  $paramMetaByCode
+     * @param  array<int, array<string, ?float>>  $parameterGrid
+     * @return array<string, mixed>
+     */
+    private function assembleItemBreakdownFromGrid(
+        KpiEvaluationItem $item,
+        string $formula,
+        array $dCodes,
+        Collection $parameters,
+        Collection $paramMetaByCode,
+        Collection $outletRows,
+        array $parameterGrid,
+        KpiEvaluation $evaluation,
+    ): array {
         $parameterColumns = [];
         foreach ($dCodes as $code) {
             $parameterColumns[] = [
                 'code' => $code,
-                'name' => $paramMeta[$code]->parameter_name ?? $parameters[$code]->name ?? $code,
+                'name' => $paramMetaByCode[$code]->parameter_name ?? $parameters[$code]->name ?? $code,
             ];
         }
-
-        $baseContext = $this->buildErpContext($evaluation);
-        $this->resolver->clearCache();
-        $this->resolver->prefetch($baseContext, $parameters->values());
-
-        $outletRows = DB::table('tbl_data_outlet')
-            ->whereIn('id_outlet', $outletIds)
-            ->orderBy('nama_outlet')
-            ->get(['id_outlet', 'nama_outlet', 'qr_code']);
 
         $rules = $evaluation->scoring_rules ?? $this->templateService->defaultScoringRules();
         $rows = [];
 
         foreach ($outletRows as $outlet) {
             $outletId = (int) $outlet->id_outlet;
-            $context = array_merge($baseContext, [
-                'outlet_ids' => [$outletId],
-                'outlet_id' => $outletId,
-            ]);
-
             $valueMap = [];
             foreach ($dCodes as $code) {
-                $param = $parameters[$code] ?? null;
-                $valueMap[$code] = $param ? $this->resolver->resolve($param, $context) : null;
+                $valueMap[$code] = $parameterGrid[$outletId][$code] ?? null;
             }
 
             $achievement = $this->evaluateFormula($formula, $valueMap);
@@ -969,9 +1049,14 @@ class KpiEvaluationService
             return ($a['achievement_percent'] ?? 0) <=> ($b['achievement_percent'] ?? 0);
         });
 
-        return array_merge($base, [
+        return [
             'available' => true,
-            'outlet_count' => count($outletIds),
+            'outlet_count' => $outletRows->count(),
+            'item_name' => $item->item_name,
+            'formula' => $formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
             'parameter_columns' => $parameterColumns,
             'rows' => $rows,
             'summary' => [
@@ -979,6 +1064,26 @@ class KpiEvaluationService
                 'meeting' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'meeting')),
                 'below' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'below')),
             ],
-        ]);
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function unavailableItemBreakdown(KpiEvaluationItem $item, string $message, ?int $outletCount = null): array
+    {
+        return [
+            'available' => false,
+            'message' => $message,
+            'outlet_count' => $outletCount ?? 0,
+            'item_name' => $item->item_name,
+            'formula' => $item->formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
+            'parameter_columns' => [],
+            'rows' => [],
+            'summary' => ['exceeding' => 0, 'meeting' => 0, 'below' => 0],
+        ];
     }
 }

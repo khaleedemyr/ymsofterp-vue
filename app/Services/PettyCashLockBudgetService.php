@@ -45,27 +45,57 @@ class PettyCashLockBudgetService
 
     /**
      * @param  list<int>  $outletIds
+     * @return array<int, float>
+     */
+    public function lockBudgetsByOutlet(array $outletIds, int $year, int $month): array
+    {
+        $outletIdList = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
+        if ($outletIdList === []) {
+            return [];
+        }
+
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $headers = DB::table('outlet_revenue_target_headers')
+            ->whereIn('outlet_id', $outletIdList)
+            ->where('target_month', $monthStart)
+            ->get(['id', 'outlet_id']);
+
+        if ($headers->isEmpty()) {
+            return [];
+        }
+
+        $forecastByHeader = DB::table('outlet_revenue_target_details')
+            ->whereIn('header_id', $headers->pluck('id'))
+            ->select('header_id', DB::raw('SUM(forecast_revenue) as forecast_total'))
+            ->groupBy('header_id')
+            ->pluck('forecast_total', 'header_id');
+
+        $result = [];
+        foreach ($headers as $header) {
+            $forecast = (float) ($forecastByHeader[$header->id] ?? 0);
+            if ($forecast <= 0) {
+                continue;
+            }
+
+            $result[(int) $header->outlet_id] = round(
+                $forecast * self::FORECAST_AFTER_RESERVE_RATIO * self::FORECAST_PETTY_CASH_RATIO_OF_REST,
+                2
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
      */
     public function sumLockBudgetForOutlets(array $outletIds, int $year, int $month): ?float
     {
-        $monthStart = sprintf('%04d-%02d-01', $year, $month);
-        $total = 0.0;
-        $found = false;
-
-        foreach (array_values(array_unique(array_filter(array_map('intval', $outletIds)))) as $outletId) {
-            if ($outletId <= 0) {
-                continue;
-            }
-
-            $resolved = $this->resolveForOutlet($outletId, $monthStart);
-            if ($resolved === null) {
-                continue;
-            }
-
-            $total += (float) $resolved['lock_budget'];
-            $found = true;
+        $byOutlet = $this->lockBudgetsByOutlet($outletIds, $year, $month);
+        if ($byOutlet === []) {
+            return null;
         }
 
-        return $found ? round($total, 2) : null;
+        return round(array_sum($byOutlet), 2);
     }
 }

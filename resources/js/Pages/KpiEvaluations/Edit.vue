@@ -154,6 +154,12 @@ const scopeOutletCount = computed(() => {
   return Math.max(1, evaluation.value.erp_scope_outlet_ids?.length ?? 1);
 });
 
+function scheduleBreakdownPreload() {
+  if (scopeOutletCount.value >= 2) {
+    setTimeout(() => breakdownModal.value?.preload(), 300);
+  }
+}
+
 function openOutletBreakdown(item) {
   breakdownModal.value?.show(item);
 }
@@ -288,6 +294,7 @@ async function refreshErp() {
     applyEvaluation(data.evaluation);
     await finishProgress('Data ERP & skor KPI diperbarui.');
     loadDiagnostics();
+    scheduleBreakdownPreload();
   } catch (error) {
     const msg = error?.code === 'ECONNABORTED'
       ? 'Refresh ERP timeout — scope terlalu banyak outlet atau server lambat. Coba kurangi scope outlet.'
@@ -354,6 +361,7 @@ async function loadDiagnostics() {
     if (progressStarted) {
       await finishProgress('', 200);
     }
+    scheduleBreakdownPreload();
   } catch {
     erpDiagnostics.value = null;
     if (progressStarted) {
@@ -599,6 +607,7 @@ onMounted(() => {
       ref="breakdownModal"
       :evaluation-id="evaluation.id"
       :outlet-count="scopeOutletCount"
+      :cache-version="evaluation.updated_at || ''"
     />
   </AppLayout>
 </template>

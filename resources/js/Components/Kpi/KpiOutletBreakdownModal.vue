@@ -1,17 +1,21 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import axios from 'axios';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
 
 const props = defineProps({
   evaluationId: { type: Number, required: true },
   outletCount: { type: Number, default: 0 },
+  cacheVersion: { type: String, default: '' },
 });
 
 const open = ref(false);
 const loading = ref(false);
 const error = ref('');
 const data = ref(null);
+const bulkCache = ref({});
+const bulkLoading = ref(false);
+let bulkLoadPromise = null;
 
 function formatNum(val) {
   return formatKpiNumber(val);
@@ -30,17 +34,83 @@ function levelLabel(level) {
   return { exceeding: 'Achieve', meeting: 'Meeting', below: 'Below' }[level] || level;
 }
 
+function resetBulkCache() {
+  bulkCache.value = {};
+  bulkLoadPromise = null;
+}
+
+watch(() => props.cacheVersion, () => {
+  resetBulkCache();
+});
+
+async function ensureBulkLoaded() {
+  if (props.outletCount < 2) {
+    return;
+  }
+
+  if (Object.keys(bulkCache.value).length > 0) {
+    return;
+  }
+
+  if (bulkLoadPromise) {
+    await bulkLoadPromise;
+    return;
+  }
+
+  bulkLoading.value = true;
+  bulkLoadPromise = axios.get(
+    route('kpi-evaluations.outlet-breakdowns', props.evaluationId),
+    { headers: { Accept: 'application/json' }, timeout: 300000 },
+  ).then(({ data: res }) => {
+    bulkCache.value = res?.items ?? {};
+  }).catch(() => {
+    bulkCache.value = {};
+  }).finally(() => {
+    bulkLoading.value = false;
+  });
+
+  await bulkLoadPromise;
+}
+
+function preload() {
+  if (props.outletCount >= 2) {
+    ensureBulkLoaded();
+  }
+}
+
 async function show(item) {
   if (!item?.formula || props.outletCount < 2) {
     return;
   }
 
   open.value = true;
-  loading.value = true;
   error.value = '';
+
+  const cached = bulkCache.value[item.id];
+  if (cached) {
+    data.value = cached;
+    loading.value = false;
+    if (!cached.available) {
+      error.value = cached.message || 'Breakdown tidak tersedia.';
+    }
+    return;
+  }
+
+  loading.value = true;
   data.value = null;
 
   try {
+    await ensureBulkLoaded();
+
+    const fromBulk = bulkCache.value[item.id];
+    if (fromBulk) {
+      data.value = fromBulk;
+      if (!fromBulk.available) {
+        error.value = fromBulk.message || 'Breakdown tidak tersedia.';
+      }
+      return;
+    }
+
     const { data: res } = await axios.get(
       route('kpi-evaluations.items.outlet-breakdown', {
         kpiEvaluation: props.evaluationId,
@@ -49,6 +119,7 @@ async function show(item) {
       { headers: { Accept: 'application/json' }, timeout: 180000 },
     );
     data.value = res;
+    bulkCache.value[item.id] = res;
     if (!res.available) {
       error.value = res.message || 'Breakdown tidak tersedia.';
     }
@@ -63,7 +134,7 @@ function close() {
   open.value = false;
 }
 
-defineExpose({ show });
+defineExpose({ show, preload });
 </script>
 
 <template>
@@ -84,6 +155,7 @@ defineExpose({ show });
           <div v-if="loading" class="py-12 text-center text-gray-500">
             <i class="fa-solid fa-spinner fa-spin mr-2"></i>
             Menghitung per outlet...
+            <p v-if="bulkLoading" class="text-xs text-gray-400 mt-2">Memuat semua KPI sekaligus (hanya pertama kali)...</p>
           </div>
 
           <div v-else-if="error" class="py-8 text-center text-amber-700 bg-amber-50 rounded-xl">
