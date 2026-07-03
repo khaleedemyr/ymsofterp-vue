@@ -68,7 +68,7 @@
                   <span class="text-gray-600">Retail Non Food (non-contra bon):</span>
                   <span class="text-indigo-600">{{ formatRupiah(budget.retail_non_food_total) }}</span>
                 </div>
-                 <div class="flex justify-between">
+                 <div v-if="budgetLockType !== 'petty_cash'" class="flex justify-between">
                    <span class="text-gray-600">Food Floor Order:</span>
                    <span class="text-purple-600">{{ formatRupiah(budget.food_floor_order_total) }}</span>
                  </div>

@@ -53,7 +53,7 @@ class RetailFoodController extends Controller
     }
 
     /**
-     * Usage petty cash bulan berjalan: RO + RF non-contra + RNF non-contra.
+     * Usage petty cash bulan berjalan: RF non-contra + RNF non-contra.
      */
     private function monthlyUsagePettyCashOutlet(int $outletId, string $monthYm): array
     {
@@ -71,19 +71,11 @@ class RetailFoodController extends Controller
             ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$monthYm])
             ->sum('total_amount') ?? 0);
 
-        $foodFloorOrderTotal = (float) (DB::table('food_floor_order_items as ffoi')
-            ->join('food_floor_orders as ffo', 'ffoi.floor_order_id', '=', 'ffo.id')
-            ->where('ffo.id_outlet', $outletId)
-            ->whereIn('ffo.status', ['approved', 'received'])
-            ->whereRaw("DATE_FORMAT(ffo.tanggal, '%Y-%m') = ?", [$monthYm])
-            ->sum('ffoi.subtotal') ?? 0);
-
-        $monthlyTotal = $retailFoodNonContraBonTotal + $retailNonFoodNonContraBonTotal + $foodFloorOrderTotal;
+        $monthlyTotal = $retailFoodNonContraBonTotal + $retailNonFoodNonContraBonTotal;
 
         return [
             'retail_food_non_contra_bon_total' => round($retailFoodNonContraBonTotal, 2),
             'retail_non_food_non_contra_bon_total' => round($retailNonFoodNonContraBonTotal, 2),
-            'food_floor_order_total' => round($foodFloorOrderTotal, 2),
             'monthly_total' => round($monthlyTotal, 2),
         ];
     }
@@ -471,7 +463,6 @@ class RetailFoodController extends Controller
                                 "📊 Detail Budget:\n" .
                                 "• Total Forecast Bulanan: Rp " . number_format($monthlyBudget['forecast_monthly_total'], 0, ',', '.') . "\n" .
                                 "• Budget Petty Cash (0.8% × 80% forecast): Rp " . number_format($monthlyBudget['lock_budget'], 0, ',', '.') . "\n" .
-                                "• RO (bulan ini): Rp " . number_format($usage['food_floor_order_total'], 0, ',', '.') . "\n" .
                                 "• Retail Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
                                 "• Retail Non Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_non_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
                                 "• Total terpakai sebelum transaksi: Rp " . number_format($usage['monthly_total'], 0, ',', '.') . "\n" .
@@ -917,7 +908,6 @@ class RetailFoodController extends Controller
                     'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
                     'budget_amount' => $monthlyBudget['lock_budget'],
                     'retail_food_total' => $usage['retail_food_non_contra_bon_total'],
-                    'food_floor_order_total' => $usage['food_floor_order_total'],
                     'retail_non_food_total' => $usage['retail_non_food_non_contra_bon_total'],
                     'monthly_total' => $usage['monthly_total'],
                     'new_items_total' => $newItemsTotal,

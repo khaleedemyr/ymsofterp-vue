@@ -85,9 +85,6 @@
                 <div class="text-sm text-gray-600 mb-1">Total Digunakan</div>
                 <div class="font-semibold text-blue-600">{{ formatRupiah(pettyCashInfo.monthly_total) }}</div>
                 <div class="text-xs text-gray-500 mt-1">
-                  RO: {{ formatRupiah(pettyCashInfo.food_floor_order_total) }}
-                </div>
-                <div class="text-xs text-gray-500">
                   RF non-contra: {{ formatRupiah(pettyCashInfo.retail_food_non_contra_bon_total) }}
                 </div>
                 <div class="text-xs text-gray-500">
