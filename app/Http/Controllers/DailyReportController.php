@@ -277,6 +277,11 @@ class DailyReportController extends Controller
             'productivity',
             'visitTables',
             'summaries',
+            'comments' => function ($query) {
+                $query->whereNull('parent_id')
+                    ->with(['user.jabatan', 'replies.user.jabatan'])
+                    ->orderBy('created_at', 'desc');
+            },
         ]);
     }
 
