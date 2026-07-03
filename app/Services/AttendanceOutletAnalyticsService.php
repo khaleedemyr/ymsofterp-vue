@@ -12,6 +12,9 @@ class AttendanceOutletAnalyticsService
 {
     private const HARI_LABELS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
+    /** Lunch: jam <= 17:00, Dinner: jam > 17:00 (sama seperti Sales Outlet Dashboard). */
+    private const LUNCH_DINNER_CUTOFF_HOUR = 17;
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -118,6 +121,8 @@ class AttendanceOutletAnalyticsService
             $dt->modify('+1 day');
         }
 
+        $dailyReportIndex = $this->loadDailyReportIndex($userId, $outletId, $startDate, $endDate);
+
         $sessions = [];
         $totalMinutes = 0;
         $totalScanIn = 0;
@@ -148,17 +153,25 @@ class AttendanceOutletAnalyticsService
                 $isCrossDay = date('Y-m-d', strtotime($paired['jam_out'])) !== $tanggal;
             }
 
-            $scanDetails = $scans->map(function ($scan) {
+            $scanDetails = $scans->map(function ($scan) use ($dailyReportIndex) {
                 $isIn = (int) $scan['inoutmode'] === 1;
+                $scanDate = date('Y-m-d', strtotime($scan['scan_date']));
 
                 return [
                     'type' => $isIn ? 'IN' : 'OUT',
-                    'tanggal' => date('Y-m-d', strtotime($scan['scan_date'])),
+                    'tanggal' => $scanDate,
                     'hari' => self::HARI_LABELS[(int) date('w', strtotime($scan['scan_date']))],
                     'jam' => date('H:i:s', strtotime($scan['scan_date'])),
                     'datetime' => $scan['scan_date'],
+                    'daily_report' => $isIn
+                        ? $this->matchDailyReport($dailyReportIndex, $scanDate, $scan['scan_date'])
+                        : null,
                 ];
             })->values()->all();
+
+            $sessionDailyReport = $paired['jam_in']
+                ? $this->matchDailyReport($dailyReportIndex, $tanggal, $paired['jam_in'])
+                : null;
 
             $sessions[] = [
                 'tanggal' => $tanggal,
@@ -175,12 +188,15 @@ class AttendanceOutletAnalyticsService
                 'scan_in' => $scanInCount,
                 'scan_out' => $scanOutCount,
                 'scans' => $scanDetails,
+                'daily_report' => $sessionDailyReport,
             ];
 
             $totalScanIn += $scanInCount;
             $totalScanOut += $scanOutCount;
             $totalMinutes += $durasiMenit;
         }
+
+        $sessionsWithDailyReport = collect($sessions)->filter(fn ($s) => ! empty($s['daily_report']))->count();
 
         return [
             'outlet' => [
@@ -195,7 +211,93 @@ class AttendanceOutletAnalyticsService
                 'total_minutes' => $totalMinutes,
                 'total_hours' => round($totalMinutes / 60, 2),
                 'no_checkout_sessions' => collect($sessions)->where('has_no_checkout', true)->count(),
+                'sessions_with_daily_report' => $sessionsWithDailyReport,
+                'sessions_without_daily_report' => count($sessions) - $sessionsWithDailyReport,
             ],
+        ];
+    }
+
+    /**
+     * Index daily report by tanggal + shift (lunch/dinner) untuk lookup cepat.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function loadDailyReportIndex(int $userId, int $outletId, string $startDate, string $endDate): array
+    {
+        $rows = DB::table('daily_reports as dr')
+            ->leftJoin('departemens as dep', 'dr.department_id', '=', 'dep.id')
+            ->where('dr.user_id', $userId)
+            ->where('dr.outlet_id', $outletId)
+            ->whereDate('dr.created_at', '>=', $startDate)
+            ->whereDate('dr.created_at', '<=', $endDate)
+            ->select([
+                'dr.id',
+                'dr.inspection_time',
+                'dr.status',
+                'dr.department_id',
+                'dep.nama_departemen',
+                DB::raw('DATE(dr.created_at) as report_date'),
+                'dr.created_at',
+            ])
+            ->orderBy('dr.created_at')
+            ->get();
+
+        $index = [];
+        foreach ($rows as $row) {
+            $key = $row->report_date . '_' . $row->inspection_time;
+            $index[$key] = $this->formatDailyReportMatch($row);
+        }
+
+        return $index;
+    }
+
+    /**
+     * Cocokkan absensi dengan daily report: tanggal + outlet + shift (lunch/dinner dari jam absen).
+     *
+     * @param  array<string, array<string, mixed>>  $index
+     * @return array<string, mixed>|null
+     */
+    private function matchDailyReport(array $index, string $tanggal, ?string $datetime): ?array
+    {
+        if (! $datetime) {
+            return null;
+        }
+
+        $inspectionTime = $this->resolveInspectionTimeFromDatetime($datetime);
+        if (! $inspectionTime) {
+            return null;
+        }
+
+        $key = $tanggal . '_' . $inspectionTime;
+
+        return $index[$key] ?? null;
+    }
+
+    private function resolveInspectionTimeFromDatetime(string $datetime): string
+    {
+        $hour = (int) date('H', strtotime($datetime));
+
+        return $hour <= self::LUNCH_DINNER_CUTOFF_HOUR ? 'lunch' : 'dinner';
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatDailyReportMatch(object $row): array
+    {
+        $inspectionTime = $row->inspection_time;
+
+        return [
+            'id' => (int) $row->id,
+            'inspection_time' => $inspectionTime,
+            'inspection_time_label' => $inspectionTime === 'lunch' ? 'Lunch' : 'Dinner',
+            'status' => $row->status,
+            'status_label' => $row->status === 'completed' ? 'Selesai' : 'Draft',
+            'department_id' => (int) $row->department_id,
+            'nama_departemen' => $row->nama_departemen ?? '-',
+            'report_date' => $row->report_date,
+            'created_at' => $row->created_at,
+            'url' => route('daily-report.show', $row->id),
         ];
     }
 

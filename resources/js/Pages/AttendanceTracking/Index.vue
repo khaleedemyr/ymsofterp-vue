@@ -244,6 +244,12 @@ function toggleSessionScans(tanggal) {
   expandedSessions.value = next
 }
 
+function dailyReportStatusClass(status) {
+  return status === 'completed'
+    ? 'bg-emerald-100 text-emerald-700'
+    : 'bg-amber-100 text-amber-700'
+}
+
 async function fetchEmployees() {
   loadingEmployees.value = true
   try {
@@ -514,6 +520,10 @@ async function exportPdf() {
 watch([outletId, divisionId], async () => {
   await fetchEmployees()
   selectedEmployee.value = null
+})
+
+watch(showOutletModal, (open) => {
+  document.body.style.overflow = open ? 'hidden' : ''
 })
 
 onMounted(async () => {
@@ -791,155 +801,208 @@ onMounted(async () => {
         </template>
       </div>
     </div>
+  </AppLayout>
 
-    <!-- Modal Detail Outlet -->
-    <Teleport to="body">
-      <div v-if="showOutletModal" class="fixed inset-0 z-[100] overflow-y-auto">
-        <div class="flex min-h-screen items-center justify-center p-4">
-          <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]" @click="closeOutletModal"></div>
-
-          <div class="relative z-10 w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-slate-200 max-h-[90vh] flex flex-col">
-            <div class="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900">
-                  Detail Absensi — {{ outletModalData?.outlet?.nama_outlet || '...' }}
-                </h3>
-                <p v-if="periodLabel" class="text-sm text-slate-500 mt-1">{{ periodLabel }}</p>
-                <p v-if="employee" class="text-xs text-slate-400 mt-0.5">{{ employee.nama_lengkap }} · {{ employee.nik }}</p>
-              </div>
-              <button
-                type="button"
-                class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                @click="closeOutletModal"
-              >
-                <i class="fas fa-times"></i>
-              </button>
-            </div>
-
-            <div class="px-6 py-4 flex-1 overflow-y-auto">
-              <div v-if="outletModalLoading" class="text-center py-12 text-slate-500">
-                <i class="fas fa-spinner fa-spin text-2xl text-indigo-500 mb-3"></i>
-                <p class="text-sm">Memuat detail absensi...</p>
-              </div>
-
-              <div v-else-if="outletModalError" class="text-center py-12">
-                <i class="fas fa-exclamation-circle text-2xl text-rose-500 mb-3"></i>
-                <p class="text-sm text-rose-600">{{ outletModalError }}</p>
-              </div>
-
-              <template v-else-if="outletModalData">
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
-                    <p class="text-xs text-indigo-600 font-medium">Scan IN</p>
-                    <p class="text-xl font-bold text-indigo-800">{{ outletModalData.summary.total_scan_in }}</p>
-                  </div>
-                  <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <p class="text-xs text-emerald-600 font-medium">Scan OUT</p>
-                    <p class="text-xl font-bold text-emerald-800">{{ outletModalData.summary.total_scan_out }}</p>
-                  </div>
-                  <div class="rounded-xl border border-violet-200 bg-violet-50 p-3">
-                    <p class="text-xs text-violet-600 font-medium">Total Jam</p>
-                    <p class="text-xl font-bold text-violet-800">{{ outletModalData.summary.total_hours }} jam</p>
-                  </div>
-                  <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                    <p class="text-xs text-rose-600 font-medium">Tanpa Checkout</p>
-                    <p class="text-xl font-bold text-rose-800">{{ outletModalData.summary.no_checkout_sessions }}</p>
-                  </div>
-                </div>
-
-                <div v-if="outletModalData.sessions.length" class="overflow-x-auto rounded-xl border border-slate-200">
-                  <table class="min-w-full text-sm">
-                    <thead>
-                      <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                        <th class="px-4 py-2.5 text-left font-semibold w-8"></th>
-                        <th class="px-4 py-2.5 text-left font-semibold">Hari</th>
-                        <th class="px-4 py-2.5 text-left font-semibold">Tanggal</th>
-                        <th class="px-4 py-2.5 text-left font-semibold">Jam Masuk</th>
-                        <th class="px-4 py-2.5 text-left font-semibold">Jam Keluar</th>
-                        <th class="px-4 py-2.5 text-right font-semibold">Durasi</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                      <template v-for="session in outletModalData.sessions" :key="session.tanggal">
-                        <tr class="hover:bg-indigo-50/30 transition-colors">
-                          <td class="px-4 py-3">
-                            <button
-                              v-if="session.scans?.length"
-                              type="button"
-                              class="text-slate-400 hover:text-indigo-600"
-                              @click="toggleSessionScans(session.tanggal)"
-                            >
-                              <i :class="['fas', expandedSessions.has(session.tanggal) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
-                            </button>
-                          </td>
-                          <td class="px-4 py-3 font-medium text-slate-800">{{ session.hari }}</td>
-                          <td class="px-4 py-3 text-slate-700">{{ session.tanggal_label }}</td>
-                          <td class="px-4 py-3 text-emerald-700 font-medium">
-                            {{ session.jam_masuk_display || '—' }}
-                            <span v-if="session.is_cross_day && session.jam_masuk_display" class="text-xs text-amber-600 ml-1">*</span>
-                          </td>
-                          <td class="px-4 py-3 text-rose-700 font-medium">
-                            <span v-if="session.has_no_checkout" class="text-amber-600 text-xs font-semibold">Belum checkout</span>
-                            <template v-else>{{ session.jam_keluar_display || '—' }}</template>
-                            <span v-if="session.is_cross_day && session.jam_keluar_display" class="text-xs text-amber-600 ml-1">+1 hari</span>
-                          </td>
-                          <td class="px-4 py-3 text-right text-slate-700">{{ session.durasi_label || '—' }}</td>
-                        </tr>
-                        <tr v-if="expandedSessions.has(session.tanggal) && session.scans?.length" class="bg-slate-50">
-                          <td colspan="6" class="px-4 py-3">
-                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Riwayat Scan</p>
-                            <div class="space-y-1.5">
-                              <div
-                                v-for="(scan, scanIdx) in session.scans"
-                                :key="scanIdx"
-                                class="flex flex-wrap items-center gap-2 text-xs"
-                              >
-                                <span
-                                  class="inline-flex items-center px-2 py-0.5 rounded font-semibold"
-                                  :class="scan.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
-                                >
-                                  {{ scan.type }}
-                                </span>
-                                <span class="text-slate-600">{{ scan.hari }}, {{ scan.tanggal }}</span>
-                                <span class="font-mono font-medium text-slate-800">{{ scan.jam }}</span>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      </template>
-                    </tbody>
-                  </table>
-                </div>
-                <p v-else class="text-center py-10 text-sm text-slate-500">Tidak ada sesi absensi di outlet ini pada periode terpilih.</p>
-
-                <p v-if="outletModalData.sessions.some(s => s.is_cross_day)" class="text-xs text-amber-600 mt-3">
-                  <i class="fas fa-info-circle mr-1"></i>
-                  * Sesi cross-day: checkout tercatat di hari berikutnya.
-                </p>
-              </template>
-            </div>
-
-            <div class="px-6 py-4 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                class="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors"
-                @click="closeOutletModal"
-              >
-                Tutup
-              </button>
-            </div>
+  <!-- Modal Detail Outlet -->
+  <Teleport to="body">
+    <div
+      v-if="showOutletModal"
+      class="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-[2px]"
+      role="dialog"
+      aria-modal="true"
+      @click.self="closeOutletModal"
+    >
+      <div
+        class="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200"
+        @click.stop
+      >
+        <div class="px-6 py-4 border-b border-slate-200 flex items-start justify-between gap-4 shrink-0">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">
+              Detail Absensi — {{ outletModalData?.outlet?.nama_outlet || '...' }}
+            </h3>
+            <p v-if="periodLabel" class="text-sm text-slate-500 mt-1">{{ periodLabel }}</p>
+            <p v-if="employee" class="text-xs text-slate-400 mt-0.5">{{ employee.nama_lengkap }} · {{ employee.nik }}</p>
           </div>
+          <button
+            type="button"
+            class="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            @click="closeOutletModal"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 flex-1 overflow-y-auto min-h-0">
+          <div v-if="outletModalLoading" class="text-center py-12 text-slate-500">
+            <i class="fas fa-spinner fa-spin text-2xl text-indigo-500 mb-3"></i>
+            <p class="text-sm">Memuat detail absensi...</p>
+          </div>
+
+          <div v-else-if="outletModalError" class="text-center py-12">
+            <i class="fas fa-exclamation-circle text-2xl text-rose-500 mb-3"></i>
+            <p class="text-sm text-rose-600">{{ outletModalError }}</p>
+          </div>
+
+          <template v-else-if="outletModalData">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+              <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+                <p class="text-xs text-indigo-600 font-medium">Scan IN</p>
+                <p class="text-xl font-bold text-indigo-800">{{ outletModalData.summary.total_scan_in }}</p>
+              </div>
+              <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <p class="text-xs text-emerald-600 font-medium">Scan OUT</p>
+                <p class="text-xl font-bold text-emerald-800">{{ outletModalData.summary.total_scan_out }}</p>
+              </div>
+              <div class="rounded-xl border border-violet-200 bg-violet-50 p-3">
+                <p class="text-xs text-violet-600 font-medium">Total Jam</p>
+                <p class="text-xl font-bold text-violet-800">{{ outletModalData.summary.total_hours }} jam</p>
+              </div>
+              <div class="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                <p class="text-xs text-rose-600 font-medium">Tanpa Checkout</p>
+                <p class="text-xl font-bold text-rose-800">{{ outletModalData.summary.no_checkout_sessions }}</p>
+              </div>
+              <div class="rounded-xl border border-teal-200 bg-teal-50 p-3">
+                <p class="text-xs text-teal-600 font-medium">Ada Daily Report</p>
+                <p class="text-xl font-bold text-teal-800">{{ outletModalData.summary.sessions_with_daily_report ?? 0 }}</p>
+              </div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <p class="text-xs text-slate-600 font-medium">Tanpa Daily Report</p>
+                <p class="text-xl font-bold text-slate-800">{{ outletModalData.summary.sessions_without_daily_report ?? 0 }}</p>
+              </div>
+            </div>
+
+            <div v-if="outletModalData.sessions.length" class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
+                    <th class="px-4 py-2.5 text-left font-semibold w-8"></th>
+                    <th class="px-4 py-2.5 text-left font-semibold">Hari</th>
+                    <th class="px-4 py-2.5 text-left font-semibold">Tanggal</th>
+                    <th class="px-4 py-2.5 text-left font-semibold">Jam Masuk</th>
+                    <th class="px-4 py-2.5 text-left font-semibold">Jam Keluar</th>
+                    <th class="px-4 py-2.5 text-right font-semibold">Durasi</th>
+                    <th class="px-4 py-2.5 text-left font-semibold">Daily Report</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <template v-for="session in outletModalData.sessions" :key="session.tanggal">
+                    <tr class="hover:bg-indigo-50/30 transition-colors">
+                      <td class="px-4 py-3">
+                        <button
+                          v-if="session.scans?.length"
+                          type="button"
+                          class="text-slate-400 hover:text-indigo-600"
+                          @click="toggleSessionScans(session.tanggal)"
+                        >
+                          <i :class="['fas', expandedSessions.has(session.tanggal) ? 'fa-chevron-down' : 'fa-chevron-right', 'text-xs']"></i>
+                        </button>
+                      </td>
+                      <td class="px-4 py-3 font-medium text-slate-800">{{ session.hari }}</td>
+                      <td class="px-4 py-3 text-slate-700">{{ session.tanggal_label }}</td>
+                      <td class="px-4 py-3 text-emerald-700 font-medium">
+                        {{ session.jam_masuk_display || '—' }}
+                        <span v-if="session.is_cross_day && session.jam_masuk_display" class="text-xs text-amber-600 ml-1">*</span>
+                      </td>
+                      <td class="px-4 py-3 text-rose-700 font-medium">
+                        <span v-if="session.has_no_checkout" class="text-amber-600 text-xs font-semibold">Belum checkout</span>
+                        <template v-else>{{ session.jam_keluar_display || '—' }}</template>
+                        <span v-if="session.is_cross_day && session.jam_keluar_display" class="text-xs text-amber-600 ml-1">+1 hari</span>
+                      </td>
+                      <td class="px-4 py-3 text-right text-slate-700">{{ session.durasi_label || '—' }}</td>
+                      <td class="px-4 py-3">
+                        <template v-if="session.daily_report">
+                          <a
+                            :href="session.daily_report.url"
+                            target="_blank"
+                            class="inline-flex flex-col gap-0.5 text-xs hover:opacity-80 transition-opacity"
+                          >
+                            <span class="font-semibold text-indigo-600 hover:underline">
+                              #{{ session.daily_report.id }} · {{ session.daily_report.inspection_time_label }}
+                            </span>
+                            <span class="text-slate-500">{{ session.daily_report.nama_departemen }}</span>
+                            <span
+                              class="inline-flex w-fit items-center px-1.5 py-0.5 rounded font-medium"
+                              :class="dailyReportStatusClass(session.daily_report.status)"
+                            >
+                              {{ session.daily_report.status_label }}
+                            </span>
+                          </a>
+                        </template>
+                        <span v-else class="text-xs text-slate-400 italic">Tidak ada</span>
+                      </td>
+                    </tr>
+                    <tr v-if="expandedSessions.has(session.tanggal) && session.scans?.length" class="bg-slate-50">
+                      <td colspan="7" class="px-4 py-3">
+                        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Riwayat Scan</p>
+                        <div class="space-y-1.5">
+                          <div
+                            v-for="(scan, scanIdx) in session.scans"
+                            :key="scanIdx"
+                            class="flex flex-wrap items-center gap-2 text-xs"
+                          >
+                            <span
+                              class="inline-flex items-center px-2 py-0.5 rounded font-semibold"
+                              :class="scan.type === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+                            >
+                              {{ scan.type }}
+                            </span>
+                            <span class="text-slate-600">{{ scan.hari }}, {{ scan.tanggal }}</span>
+                            <span class="font-mono font-medium text-slate-800">{{ scan.jam }}</span>
+                            <template v-if="scan.type === 'IN'">
+                              <span v-if="scan.daily_report" class="text-indigo-600">
+                                ·
+                                <a
+                                  :href="scan.daily_report.url"
+                                  target="_blank"
+                                  class="font-medium hover:underline"
+                                >
+                                  DR #{{ scan.daily_report.id }} ({{ scan.daily_report.inspection_time_label }})
+                                </a>
+                              </span>
+                              <span v-else class="text-slate-400 italic">· tidak ada DR</span>
+                            </template>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="text-center py-10 text-sm text-slate-500">Tidak ada sesi absensi di outlet ini pada periode terpilih.</p>
+
+            <p v-if="outletModalData.sessions.some(s => s.is_cross_day)" class="text-xs text-amber-600 mt-3">
+              <i class="fas fa-info-circle mr-1"></i>
+              * Sesi cross-day: checkout tercatat di hari berikutnya.
+            </p>
+            <p class="text-xs text-slate-500 mt-2">
+              <i class="fas fa-link mr-1"></i>
+              Daily report dicocokkan berdasarkan tanggal, outlet, dan shift (Lunch ≤17:00 / Dinner &gt;17:00) dari jam masuk.
+            </p>
+          </template>
+        </div>
+
+        <div class="px-6 py-4 border-t border-slate-200 flex justify-end shrink-0">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors"
+            @click="closeOutletModal"
+          >
+            Tutup
+          </button>
         </div>
       </div>
-    </Teleport>
+    </div>
+  </Teleport>
 
-    <VueEasyLightbox
-      :visible="avatarLightboxVisible"
-      :imgs="avatarLightboxImages"
-      :index="0"
-      @hide="avatarLightboxVisible = false"
-    />
-  </AppLayout>
+  <VueEasyLightbox
+    teleport="body"
+    :visible="avatarLightboxVisible"
+    :imgs="avatarLightboxImages"
+    :index="0"
+    @hide="avatarLightboxVisible = false"
+  />
 </template>
 
 <style scoped>
