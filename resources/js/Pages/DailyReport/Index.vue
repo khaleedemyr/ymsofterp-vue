@@ -32,6 +32,7 @@ const status = ref(props.filters?.status || 'all');
 const dateFrom = ref(props.filters?.date_from || '');
 const dateTo = ref(props.filters?.date_to || '');
 const perPage = ref(props.filters?.per_page || 15);
+const sharingReportId = ref(null);
 
 // Lightbox functionality
 const showImageModal = ref(false);
@@ -132,6 +133,30 @@ function openCreate() {
 
 function viewReport(report) {
   router.visit(`/daily-report/${report.id}`);
+}
+
+async function shareToWhatsApp(report) {
+  if (sharingReportId.value === report.id) return;
+
+  try {
+    sharingReportId.value = report.id;
+    const response = await axios.post(`/daily-report/${report.id}/share-link`);
+    const url = response.data?.url;
+    if (!url) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    const outletName = report.outlet?.nama_outlet || '';
+    const inspectionTime = report.inspection_time === 'lunch' ? 'Lunch' : 'Dinner';
+    const message = response.data?.message
+      || `Daily Report - ${outletName} (${inspectionTime})\n${url}`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingReportId.value = null;
+  }
 }
 
 function inspectReport(report) {
@@ -905,6 +930,17 @@ watch([status, perPage], () => {
                    >
                      <i class="fa-solid fa-eye"></i>
                      View
+                   </button>
+
+                   <button
+                     type="button"
+                     @click="shareToWhatsApp(report)"
+                     :disabled="sharingReportId === report.id"
+                     class="bg-[#25D366] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#128C7E] transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                     title="Share ke WhatsApp"
+                   >
+                     <i :class="sharingReportId === report.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i>
+                     Share
                    </button>
                    
                    <button 

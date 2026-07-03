@@ -190,18 +190,7 @@ class DailyReportController extends Controller
 
     public function show($id)
     {
-        $dailyReport = DailyReport::with([
-            'outlet', 
-            'department', 
-            'user.jabatan',
-            'progress.area',
-            'reportAreas.area',
-            'reportAreas.deptConcern',
-            'briefing',
-            'productivity',
-            'visitTables',
-            'summaries'
-        ])->findOrFail($id);
+        $dailyReport = $this->loadDailyReportForDetail()->findOrFail($id);
 
         // Get inspection statistics
         $inspectionStats = $dailyReport->getInspectionStats();
@@ -219,6 +208,75 @@ class DailyReportController extends Controller
                 'can_edit' => $canEdit,
                 'current_user_id' => $currentUser->id ?? null,
             ],
+        ]);
+    }
+
+    /**
+     * Landing page publik — tanpa login, via share token.
+     */
+    public function publicShow(string $token)
+    {
+        $dailyReport = $this->loadDailyReportForDetail()
+            ->where('share_token', $token)
+            ->firstOrFail();
+
+        return Inertia::render('DailyReport/PublicShow', [
+            'report' => $dailyReport,
+            'inspectionStats' => $dailyReport->getInspectionStats(),
+        ]);
+    }
+
+    /**
+     * Generate / kembalikan link share untuk WhatsApp.
+     */
+    public function generateShareLink(Request $request, $id)
+    {
+        $dailyReport = DailyReport::with(['outlet', 'department', 'user'])->findOrFail($id);
+
+        $shareToken = $dailyReport->ensureShareToken();
+        $url = route('daily-report.public.show', $shareToken);
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $this->buildDailyReportShareMessage($dailyReport, $url),
+        ]);
+    }
+
+    protected function buildDailyReportShareMessage(DailyReport $dailyReport, string $url): string
+    {
+        $outletName = trim((string) ($dailyReport->outlet?->nama_outlet ?? ''));
+        $inspectionTime = $dailyReport->inspection_time === 'lunch' ? 'Lunch' : 'Dinner';
+        $line = 'Daily Report';
+        if ($outletName !== '') {
+            $line .= ' - '.$outletName;
+        }
+        $line .= ' ('.$inspectionTime.')';
+
+        $creator = trim((string) ($dailyReport->user?->nama_lengkap ?? ''));
+        if ($creator !== '') {
+            $line .= "\nOleh: ".$creator;
+        }
+
+        return $line."\n".$url;
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<\App\Models\DailyReport>
+     */
+    protected function loadDailyReportForDetail()
+    {
+        return DailyReport::with([
+            'outlet',
+            'department',
+            'user.jabatan',
+            'progress.area',
+            'reportAreas.area',
+            'reportAreas.deptConcern',
+            'briefing',
+            'productivity',
+            'visitTables',
+            'summaries',
         ]);
     }
 

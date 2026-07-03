@@ -147,6 +147,10 @@ Route::get('/kebijakan-privasi', function () {
 Route::get('/tickets/share/{token}', [\App\Http\Controllers\TicketController::class, 'publicShow'])
     ->name('tickets.public.show');
 
+// Daily Report share — publik tanpa login
+Route::get('/daily-report/share/{token}', [\App\Http\Controllers\DailyReportController::class, 'publicShow'])
+    ->name('daily-report.public.show');
+
 // Customer Voice case share — publik tanpa login
 Route::get('/customer-voice/share/{token}', [CustomerVoiceCommandCenterController::class, 'publicShow'])
     ->name('customer-voice-command-center.public.show');
@@ -461,6 +465,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/daily-report/areas', [\App\Http\Controllers\DailyReportController::class, 'getAreas'])->name('daily-report.areas');
     Route::post('/daily-report/upload-documentation', [\App\Http\Controllers\DailyReportController::class, 'uploadDocumentation'])->name('daily-report.upload-documentation');
     Route::get('/daily-report/{id}', [\App\Http\Controllers\DailyReportController::class, 'show'])->name('daily-report.show');
+    Route::post('/daily-report/{id}/share-link', [\App\Http\Controllers\DailyReportController::class, 'generateShareLink'])->name('daily-report.share-link');
     Route::get('/daily-report/{id}/inspect', [\App\Http\Controllers\DailyReportController::class, 'inspect'])->name('daily-report.inspect');
     Route::post('/daily-report/{id}/auto-save', [\App\Http\Controllers\DailyReportController::class, 'autoSave'])->name('daily-report.auto-save');
     Route::post('/daily-report/{id}/save-area', [\App\Http\Controllers\DailyReportController::class, 'saveArea'])->name('daily-report.save-area');

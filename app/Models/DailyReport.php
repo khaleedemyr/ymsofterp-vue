@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Str;
 
 class DailyReport extends Model
 {
@@ -16,7 +17,8 @@ class DailyReport extends Model
         'inspection_time',
         'department_id',
         'user_id',
-        'status'
+        'status',
+        'share_token',
     ];
 
     protected $casts = [
@@ -133,6 +135,16 @@ class DailyReport extends Model
     public function isDraft()
     {
         return $this->status === 'draft';
+    }
+
+    public function ensureShareToken(): string
+    {
+        if (! $this->share_token) {
+            $this->share_token = Str::random(48);
+            $this->save();
+        }
+
+        return $this->share_token;
     }
 
     /**

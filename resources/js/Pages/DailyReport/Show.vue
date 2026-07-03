@@ -3,6 +3,8 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   report: Object,
@@ -20,6 +22,7 @@ const props = defineProps({
 const visibleRef = ref(false);
 const indexRef = ref(0);
 const imgsRef = ref([]);
+const sharingReport = ref(false);
 
 // Computed properties
 const inspectionTimeText = computed(() => {
@@ -68,6 +71,28 @@ function editReport() {
   router.visit(`/daily-report/${props.report.id}/inspect`);
 }
 
+async function shareToWhatsApp() {
+  if (sharingReport.value) return;
+
+  try {
+    sharingReport.value = true;
+    const response = await axios.post(`/daily-report/${props.report.id}/share-link`);
+    const url = response.data?.url;
+    if (!url) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    const message = response.data?.message
+      || `Daily Report - ${props.report.outlet?.nama_outlet || ''}\n${url}`;
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingReport.value = false;
+  }
+}
+
 
 // Lightbox functions
 function showLightbox(images, index = 0) {
@@ -97,6 +122,15 @@ function hideLightbox() {
           <button @click="goBack" class="btn btn-secondary">
             <i class="fa-solid fa-arrow-left"></i>
             Back to Reports
+          </button>
+          <button
+            type="button"
+            @click="shareToWhatsApp"
+            :disabled="sharingReport"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-[#25D366] text-white hover:bg-[#128C7E] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i :class="sharingReport ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i>
+            Share WA
           </button>
           <button v-if="report.status === 'draft' && canEditReport" @click="editReport" class="btn btn-primary">
             <i class="fa-solid fa-edit"></i>
