@@ -42,6 +42,7 @@ class KpiParameterResolverService
     public function __construct(
         private OutletAnalyzerService $outletAnalyzer,
         private RegionalVisitAnalyticsService $regionalVisits,
+        private PettyCashLockBudgetService $pettyCashLockBudget,
     ) {}
 
     /**
@@ -234,6 +235,7 @@ class KpiParameterResolverService
             'daily_revenue_forecast' => $this->resolveOrderPosMetric($outletIds, $periodMonth, $aggregation),
             'pos_order_count' => $this->resolveOrderPosMetric($outletIds, $periodMonth, 'count'),
             'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletIds, $month, $year),
+            'petty_cash_lock_budget' => $this->pettyCashLockBudget->sumLockBudgetForOutlets($outletIds, $year, $month),
             'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $period['start_date'], $period['end_date']),
             'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
             'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
@@ -252,6 +254,7 @@ class KpiParameterResolverService
             'daily_revenue_forecast',
             'pos_order_count',
             'daily_revenue_forecast_budget',
+            'petty_cash_lock_budget',
             'training_compliance',
             'ticket_complaint_count',
             'ticket_improvement_closed',

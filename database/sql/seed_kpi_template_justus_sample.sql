@@ -106,6 +106,7 @@ JOIN (
     SELECT 'D006', 'outlet_internal_use_waste', 'sum' UNION ALL
     SELECT 'D007', 'lost_breakage', 'sum' UNION ALL
     SELECT 'D008', 'outlet_analyzer_petty_cash', 'sum' UNION ALL
+    SELECT 'D009', 'petty_cash_lock_budget', 'sum' UNION ALL
     SELECT 'D010', 'outlet_analyzer_payroll', 'sum' UNION ALL
     SELECT 'D013', 'guest_comment_gsi', 'count' UNION ALL
     SELECT 'D014', 'ticket_complaint_count', 'count' UNION ALL

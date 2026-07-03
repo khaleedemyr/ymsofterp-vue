@@ -9,44 +9,29 @@ use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionOutletBudget;
 use App\Models\PurchaseRequisition;
 use App\Services\BudgetCalculationService;
+use App\Services\PettyCashLockBudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class RetailNonFoodController extends Controller
 {
-    private const FORECAST_AFTER_RESERVE_RATIO = 0.80;
-    private const FORECAST_PETTY_CASH_RATIO_OF_REST = 0.008;
+    public function __construct(
+        private PettyCashLockBudgetService $pettyCashLockBudget,
+    ) {}
+
+    private const FORECAST_PETTY_CASH_RATIO_OF_REST = PettyCashLockBudgetService::FORECAST_PETTY_CASH_RATIO_OF_REST;
 
     /**
      * @return array{forecast_monthly_total: float, lock_budget: float}|null
      */
     private function resolveMonthlyForecastBudget(int $outletId, string $monthStart): ?array
     {
-        $header = DB::table('outlet_revenue_target_headers')
-            ->where('outlet_id', $outletId)
-            ->where('target_month', $monthStart)
-            ->first(['id']);
-        if (! $header) {
-            return null;
-        }
-
-        $forecastMonthlyTotal = (float) (DB::table('outlet_revenue_target_details')
-            ->where('header_id', $header->id)
-            ->sum('forecast_revenue') ?? 0);
-        if ($forecastMonthlyTotal <= 0) {
-            return null;
-        }
-
-        $lockBudget = round(
-            $forecastMonthlyTotal * self::FORECAST_AFTER_RESERVE_RATIO * self::FORECAST_PETTY_CASH_RATIO_OF_REST,
-            2
+        return $this->pettyCashLockBudget->resolveForOutlet(
+            $outletId,
+            $monthStart,
+            self::FORECAST_PETTY_CASH_RATIO_OF_REST,
         );
-
-        return [
-            'forecast_monthly_total' => round($forecastMonthlyTotal, 2),
-            'lock_budget' => $lockBudget,
-        ];
     }
 
     /**

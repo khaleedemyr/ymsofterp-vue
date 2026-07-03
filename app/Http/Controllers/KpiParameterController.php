@@ -213,6 +213,7 @@ class KpiParameterController extends Controller
                 ['value' => 'daily_revenue_forecast', 'label' => 'POS Orders — Revenue MTD (aggregation: sum)'],
                 ['value' => 'pos_order_count', 'label' => 'POS Orders — Jumlah Order MTD (aggregation: count)'],
                 ['value' => 'daily_revenue_forecast_budget', 'label' => 'Daily Revenue Forecast (Budget MTD)'],
+                ['value' => 'petty_cash_lock_budget', 'label' => 'Petty Cash Lock Budget (0.8% × 80% Target Pendapatan)'],
                 ['value' => 'outlet_analyzer_payroll', 'label' => 'Outlet Analyzer - Payroll'],
                 ['value' => 'outlet_analyzer_petty_cash', 'label' => 'Outlet Analyzer - Petty Cash'],
                 ['value' => 'outlet_internal_use_waste', 'label' => 'Outlet Internal Use & Waste'],

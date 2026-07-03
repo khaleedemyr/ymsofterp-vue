@@ -11,6 +11,7 @@ use App\Support\ItemUnitCost;
 use App\Support\ItemUnitQtyConverter;
 use App\Support\OutletInventoryCostGuard;
 use App\Support\OutletInventoryCostResolver;
+use App\Services\PettyCashLockBudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -19,37 +20,21 @@ class RetailFoodController extends Controller
 {
     /** Sementara nonaktif — guard hanya peringatan di UI, tidak memblokir simpan. */
     private const ENFORCE_RETAIL_FOOD_PRICE_GUARD = false;
-    private const FORECAST_AFTER_RESERVE_RATIO = 0.80;
+
     private const FORECAST_LOCK_RATIO_OF_REST = 0.40;
-    private const FORECAST_PETTY_CASH_RATIO_OF_REST = 0.008;
+
+    private const FORECAST_PETTY_CASH_RATIO_OF_REST = PettyCashLockBudgetService::FORECAST_PETTY_CASH_RATIO_OF_REST;
+
+    public function __construct(
+        private PettyCashLockBudgetService $pettyCashLockBudget,
+    ) {}
 
     /**
      * @return array{forecast_monthly_total: float, lock_budget: float}|null
      */
     private function resolveMonthlyForecastBudget(int $outletId, string $monthStart, float $lockRatioOfRest = self::FORECAST_LOCK_RATIO_OF_REST): ?array
     {
-        $header = DB::table('outlet_revenue_target_headers')
-            ->where('outlet_id', $outletId)
-            ->where('target_month', $monthStart)
-            ->first(['id']);
-        if (! $header) {
-            return null;
-        }
-
-        $forecastMonthlyTotal = (float) (DB::table('outlet_revenue_target_details')
-            ->where('header_id', $header->id)
-            ->sum('forecast_revenue') ?? 0);
-        if ($forecastMonthlyTotal <= 0) {
-            return null;
-        }
-
-        $usableAfterReserve = $forecastMonthlyTotal * self::FORECAST_AFTER_RESERVE_RATIO;
-        $lockBudget = round($usableAfterReserve * $lockRatioOfRest, 2);
-
-        return [
-            'forecast_monthly_total' => round($forecastMonthlyTotal, 2),
-            'lock_budget' => $lockBudget,
-        ];
+        return $this->pettyCashLockBudget->resolveForOutlet($outletId, $monthStart, $lockRatioOfRest);
     }
 
     /**
