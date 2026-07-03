@@ -301,7 +301,7 @@
                 <th class="px-3 py-3 text-left font-semibold min-w-[180px]">Outlet / Source</th>
                 <th
                   class="px-3 py-3 text-left font-semibold min-w-[200px]"
-                  title="Pilih satu atau lebih user regional. Saat Simpan, notifikasi FU &amp; CAPA otomatis ke user terpilih (bukan ke akun yang sedang login)."
+                  title="Pilih satu atau lebih user regional. Notifikasi FU &amp; CAPA otomatis terkirim saat user dipilih (bukan ke akun yang sedang login)."
                 >
                   Regional
                 </th>
@@ -340,10 +340,11 @@
                   </td>
                   <td class="px-3 py-3 align-top min-w-[200px]">
                     <NotifyUserMultiPicker
-                      v-model="caseForms[row.id].regional_user_ids"
+                      :model-value="caseForms[row.id].regional_user_ids"
                       :assignees="assignees"
-                      :disabled="updatingCaseId === row.id"
+                      :disabled="updatingCaseId === row.id || regionalSavingCaseId === row.id"
                       placeholder="Cari nama…"
+                      @update:model-value="(ids) => onRegionalUsersChange(row.id, ids)"
                     />
                   </td>
                   <td class="px-3 py-3 max-w-[200px]">
@@ -1132,6 +1133,7 @@ const assigneeNameMap = computed(() => {
 
 const syncing = ref(false)
 const updatingCaseId = ref(null)
+const regionalSavingCaseId = ref(null)
 const sharingCaseId = ref(null)
 const openedActivityCaseId = ref(null)
 const detailCaseId = ref(null)
@@ -1142,6 +1144,7 @@ const capaResetKey = ref(0)
 const capaDetailFocusSection = ref(null)
 const capaFormDirty = ref(false)
 const caseForms = ref({})
+const regionalPersistedByCase = ref({})
 const q = ref(props.filters?.q || '')
 const status = ref(props.filters?.status || '')
 const followUpStatus = ref(props.filters?.follow_up_status || '')
@@ -1302,18 +1305,22 @@ function toggleTopicPicker(caseId) {
 
 function initCaseForms() {
   const next = {}
+  const regionalNext = {}
   for (const row of props.cases?.data || []) {
+    const regionalIds = normalizeUserIdList(row, 'regional_user_ids')
     next[row.id] = {
       status: canonicalVoiceCaseStatus(row.status),
       follow_up_status: row.follow_up_status || 'new',
       assigned_to: row.assigned_to != null ? Number(row.assigned_to) : null,
-      regional_user_ids: normalizeUserIdList(row, 'regional_user_ids'),
+      regional_user_ids: regionalIds,
       follow_up_target: row.follow_up_target || '',
       severity: normalizeEditSeverity(row.severity),
       topics: normalizeTopicSlugs(row.topics),
     }
+    regionalNext[row.id] = [...regionalIds]
   }
   caseForms.value = next
+  regionalPersistedByCase.value = regionalNext
 }
 
 initCaseForms()
@@ -1540,6 +1547,51 @@ function firstInertiaErrorMessage(errors) {
   }
   const vals = Object.values(errors).flat().filter(Boolean)
   return vals.length ? String(vals[0]) : 'Terjadi kesalahan.'
+}
+
+async function onRegionalUsersChange(caseId, newIds) {
+  const form = caseForms.value[caseId]
+  if (!form) return
+
+  const normalized = [...new Set((newIds || []).map((x) => Number(x)).filter((n) => n > 0))]
+  form.regional_user_ids = normalized
+
+  const prev = regionalPersistedByCase.value[caseId] || []
+  const unchanged =
+    normalized.length === prev.length &&
+    normalized.every((id) => prev.includes(id))
+  if (unchanged) {
+    return
+  }
+
+  regionalSavingCaseId.value = caseId
+  try {
+    const { data } = await axios.post(route('customer-voice-command-center.cases.regional', caseId), {
+      regional_user_ids: normalized,
+    })
+    regionalPersistedByCase.value[caseId] = [...normalized]
+    const notified = Number(data?.notified_count) || 0
+    if (notified > 0) {
+      Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        title: `Notifikasi terkirim ke ${notified} regional`,
+        showConfirmButton: false,
+        timer: 2200,
+        timerProgressBar: true,
+      })
+    }
+  } catch (err) {
+    form.regional_user_ids = [...prev]
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal menyimpan regional',
+      text: err?.response?.data?.message || err?.message || 'Terjadi kesalahan.',
+    })
+  } finally {
+    regionalSavingCaseId.value = null
+  }
 }
 
 function updateCase(caseId) {

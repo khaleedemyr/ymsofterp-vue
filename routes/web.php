@@ -239,6 +239,8 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.sync');
     Route::post('/customer-voice-command-center/cases/{id}/update', [CustomerVoiceCommandCenterController::class, 'updateCase'])
         ->name('customer-voice-command-center.cases.update');
+    Route::post('/customer-voice-command-center/cases/{id}/regional', [CustomerVoiceCommandCenterController::class, 'assignRegionalUsers'])
+        ->name('customer-voice-command-center.cases.regional');
     Route::post('/customer-voice-command-center/cases/{id}/note', [CustomerVoiceCommandCenterController::class, 'addNote'])
         ->name('customer-voice-command-center.cases.note');
     Route::post('/customer-voice-command-center/cases/{id}/capa', [CustomerVoiceCommandCenterController::class, 'saveCapa'])

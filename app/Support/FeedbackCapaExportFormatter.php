@@ -21,9 +21,14 @@ class FeedbackCapaExportFormatter
         $ids = $this->collectCapaUserIds($capa);
         $userRows = $ids === []
             ? collect()
-            : User::whereIn('id', $ids)->get(['id', 'nama_lengkap', 'nama_jabatan']);
+            : User::query()
+                ->with('jabatan:id_jabatan,nama_jabatan')
+                ->whereIn('id', $ids)
+                ->get(['id', 'nama_lengkap', 'id_jabatan']);
         $names = $userRows->pluck('nama_lengkap', 'id')->all();
-        $jabatans = $userRows->pluck('nama_jabatan', 'id')->all();
+        $jabatans = $userRows->mapWithKeys(function ($user) {
+            return [$user->id => $user->jabatan?->nama_jabatan];
+        })->all();
 
         $rows = [];
 

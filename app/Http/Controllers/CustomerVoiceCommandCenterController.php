@@ -319,6 +319,33 @@ class CustomerVoiceCommandCenterController extends Controller
         return response()->json($response, $response['success'] ? 200 : 404);
     }
 
+    public function assignRegionalUsers(Request $request, int $id)
+    {
+        $exists = DB::table('feedback_cases')->where('id', $id)->exists();
+        if (! $exists) {
+            return response()->json(['success' => false, 'message' => 'Case tidak ditemukan.'], 404);
+        }
+
+        $payload = $request->validate([
+            'regional_user_ids' => 'nullable|array|max:30',
+            'regional_user_ids.*' => 'integer|exists:users,id',
+        ]);
+
+        $rawIds = isset($payload['regional_user_ids']) && is_array($payload['regional_user_ids'])
+            ? $payload['regional_user_ids']
+            : [];
+
+        $notifiedCount = $this->persistRegionalUsersMetaAndNotify($request, $id, $rawIds, true);
+
+        return response()->json([
+            'success' => true,
+            'message' => $notifiedCount > 0
+                ? 'Regional disimpan. Notifikasi dikirim ke '.$notifiedCount.' user.'
+                : 'Regional disimpan.',
+            'notified_count' => $notifiedCount,
+        ]);
+    }
+
     public function addNote(Request $request, int $id): RedirectResponse
     {
         $payload = $request->validate([
@@ -2026,7 +2053,7 @@ class CustomerVoiceCommandCenterController extends Controller
 
         if (array_key_exists('regional_user_ids', $payload)) {
             $regionalRaw = $payload['regional_user_ids'];
-            $this->persistRegionalUsersMetaAndNotify($request, $id, is_array($regionalRaw) ? $regionalRaw : []);
+            $this->persistRegionalUsersMetaAndNotify($request, $id, is_array($regionalRaw) ? $regionalRaw : [], true);
         }
 
         if (array_key_exists('follow_up_target', $payload)) {
@@ -2102,8 +2129,9 @@ class CustomerVoiceCommandCenterController extends Controller
 
     /**
      * @param  array<int, mixed>  $rawIds
+     * @return int Jumlah user yang menerima notifikasi baru
      */
-    private function persistRegionalUsersMetaAndNotify(Request $request, int $caseId, array $rawIds): void
+    private function persistRegionalUsersMetaAndNotify(Request $request, int $caseId, array $rawIds, bool $notifyOnlyNew = false): int
     {
         $ids = [];
         foreach ($rawIds as $x) {
@@ -2116,13 +2144,25 @@ class CustomerVoiceCommandCenterController extends Controller
 
         $fresh = DB::table('feedback_cases')->where('id', $caseId)->first();
         if ($fresh === null) {
-            return;
+            return 0;
         }
 
         $meta = [];
         if (! empty($fresh->meta)) {
             $meta = json_decode((string) $fresh->meta, true) ?: [];
         }
+
+        $previousIds = [];
+        if (isset($meta['regional_user_ids']) && is_array($meta['regional_user_ids'])) {
+            foreach ($meta['regional_user_ids'] as $x) {
+                $n = (int) $x;
+                if ($n > 0) {
+                    $previousIds[$n] = $n;
+                }
+            }
+        }
+        $previousIds = array_values($previousIds);
+
         $meta['regional_user_ids'] = $ids;
 
         DB::table('feedback_cases')->where('id', $caseId)->update([
@@ -2130,15 +2170,20 @@ class CustomerVoiceCommandCenterController extends Controller
             'updated_at' => now(),
         ]);
 
-        if ($ids === []) {
-            return;
+        $toNotify = $ids;
+        if ($notifyOnlyNew) {
+            $toNotify = array_values(array_filter($ids, fn (int $uid) => ! in_array($uid, $previousIds, true)));
+        }
+
+        if ($toNotify === []) {
+            return 0;
         }
 
         $actorId = (int) ($request->user()->id ?? 0);
         $summary = Str::limit(trim((string) ($fresh->summary_id ?? '')), 120);
         $url = url('/customer-voice-command-center?show_all=1&open_case='.$caseId);
         $lines = [];
-        foreach ($ids as $uid) {
+        foreach ($toNotify as $uid) {
             if ($uid === $actorId) {
                 continue;
             }
@@ -2155,6 +2200,8 @@ class CustomerVoiceCommandCenterController extends Controller
         if ($lines !== []) {
             NotificationService::createMany($lines);
         }
+
+        return count($lines);
     }
 
     private function severityToSlaMinutes(string $severity): ?int
