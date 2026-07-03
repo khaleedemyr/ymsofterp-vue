@@ -29,6 +29,7 @@
             {{ record.status === 'completed' ? 'Edit Conduct' : 'Conduct Calibration' }}
           </Link>
           <button
+            v-if="canDelete"
             type="button"
             class="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
             @click="confirmDelete"
@@ -146,6 +147,7 @@ const props = defineProps({
   record: { type: Object, required: true },
   parameterOptions: { type: Array, default: () => [] },
   canConduct: { type: Boolean, default: false },
+  canDelete: { type: Boolean, default: false },
   conductPayload: { type: Object, default: null },
 });
 

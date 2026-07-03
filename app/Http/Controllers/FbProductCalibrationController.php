@@ -22,6 +22,8 @@ class FbProductCalibrationController extends Controller
         private readonly FbProductCalibrationService $service
     ) {}
 
+    private const SUPERADMIN_ROLE_ID = '5af56935b011a';
+
     public function index(Request $request): Response
     {
         $year = (int) $request->get('year', date('Y'));
@@ -29,7 +31,9 @@ class FbProductCalibrationController extends Controller
         $month = max(1, min(12, $month));
 
         return Inertia::render('FbProductCalibration/Index', [
-            'calendarEvents' => $this->service->calendarEvents($year, $month),
+            'calendarEvents' => $this->enrichCalendarEvents(
+                $this->service->calendarEvents($year, $month)
+            ),
             'year' => $year,
             'month' => $month,
         ]);
@@ -104,6 +108,7 @@ class FbProductCalibrationController extends Controller
             'record' => $fbProductCalibration,
             'parameterOptions' => $this->service->parameterOptions(),
             'canConduct' => $canConduct,
+            'canDelete' => $this->canDeleteCalibration($fbProductCalibration),
             'conductPayload' => $conductPayload,
         ]);
     }
@@ -171,6 +176,7 @@ class FbProductCalibrationController extends Controller
 
     public function destroy(Request $request, FbProductCalibration $fbProductCalibration)
     {
+        $this->ensureDeletable($fbProductCalibration);
         $oldSnapshot = $this->enrichDeleteSnapshot($this->service->snapshot($fbProductCalibration->load('products')));
         $fbProductCalibration->delete();
 
@@ -289,7 +295,9 @@ class FbProductCalibrationController extends Controller
 
         return response()->json([
             'success' => true,
-            'calendar_events' => $this->service->calendarEvents($year, $month),
+            'calendar_events' => $this->enrichCalendarEvents(
+                $this->service->calendarEvents($year, $month)
+            ),
             'year' => $year,
             'month' => $month,
         ]);
@@ -379,6 +387,7 @@ class FbProductCalibrationController extends Controller
     public function apiDestroy(Request $request, int $id)
     {
         $record = FbProductCalibration::with('products')->findOrFail($id);
+        $this->ensureDeletable($record);
         $oldSnapshot = $this->enrichDeleteSnapshot($this->service->snapshot($record));
         $record->delete();
 
@@ -611,7 +620,9 @@ class FbProductCalibrationController extends Controller
 
         if ($withMeta) {
             $data['created_at'] = $record->created_at?->toIso8601String();
+            $data['created_by'] = $record->created_by;
             $data['created_by_name'] = $record->creator?->nama_lengkap ?? $record->creator?->name;
+            $data['can_delete'] = $this->canDeleteCalibration($record);
         }
 
         return $data;
@@ -702,6 +713,45 @@ class FbProductCalibrationController extends Controller
         }
 
         return $validated;
+    }
+
+    private function isSuperAdmin(): bool
+    {
+        return (string) (auth()->user()?->id_role ?? '') === self::SUPERADMIN_ROLE_ID;
+    }
+
+    private function canDeleteCalibration(FbProductCalibration|int|null $calibrationOrCreatedBy): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $createdBy = $calibrationOrCreatedBy instanceof FbProductCalibration
+            ? (int) $calibrationOrCreatedBy->created_by
+            : (int) $calibrationOrCreatedBy;
+
+        return $createdBy > 0 && (int) auth()->id() === $createdBy;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $events
+     * @return list<array<string, mixed>>
+     */
+    private function enrichCalendarEvents(array $events): array
+    {
+        return array_map(function (array $event) {
+            $createdBy = (int) ($event['extendedProps']['created_by'] ?? 0);
+            $event['extendedProps']['can_delete'] = $this->canDeleteCalibration($createdBy);
+
+            return $event;
+        }, $events);
+    }
+
+    private function ensureDeletable(FbProductCalibration $calibration): void
+    {
+        if (! $this->canDeleteCalibration($calibration)) {
+            abort(403, 'Anda tidak memiliki akses untuk menghapus jadwal calibration ini.');
+        }
     }
 
     private function ensureEditable(FbProductCalibration $calibration): void

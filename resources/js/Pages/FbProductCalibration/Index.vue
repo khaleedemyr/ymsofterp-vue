@@ -432,6 +432,7 @@ onBeforeUnmount(() => {
               <i class="fa-solid fa-pen mr-1"></i> Edit
             </Link>
             <button
+              v-if="detail.event?.can_delete"
               type="button"
               class="px-4 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200"
               @click="confirmDelete"

@@ -72,6 +72,7 @@ class FbProductCalibrationService
                     'outlet_name' => $record->outlet_name,
                     'conductor_name' => $record->conductor_name,
                     'status' => $record->status,
+                    'created_by' => $record->created_by,
                     'product_count' => $productCount,
                     'products' => $record->products->map(fn ($p) => $p->item_name)->values()->all(),
                 ],
