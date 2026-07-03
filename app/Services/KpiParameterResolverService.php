@@ -159,7 +159,7 @@ class KpiParameterResolverService
             $month = (int) substr($periodMonth, 5, 2);
             $budgetAmount = $this->resolveMonthlyBudget($outletIds, $month, $year);
             if ($budgetAmount === 0.0) {
-                $hints[] = "Budget belum di-set di outlet_monthly_budgets untuk {$periodMonth} — D002 akan 0.";
+                $hints[] = "Budget belum di-set di Revenue Targets (Target Pendapatan) atau outlet_monthly_budgets untuk {$periodMonth} — D002 akan 0.";
                 $budgetAmount = null;
             }
         }
@@ -565,8 +565,44 @@ class KpiParameterResolverService
             return $this->budgetCache[$cacheKey];
         }
 
+        $outletIdList = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+
+        $revenueTargetTotal = 0.0;
+        $hasRevenueTarget = false;
+        foreach ($outletIdList as $outletId) {
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $header = DB::table('outlet_revenue_target_headers')
+                ->where('outlet_id', $outletId)
+                ->where('target_month', $monthStart)
+                ->first(['id', 'monthly_target']);
+
+            if ($header === null) {
+                continue;
+            }
+
+            $amount = (float) ($header->monthly_target ?? 0);
+            if ($amount <= 0) {
+                $amount = (float) (DB::table('outlet_revenue_target_details')
+                    ->where('header_id', $header->id)
+                    ->sum('forecast_revenue') ?? 0);
+            }
+
+            if ($amount > 0) {
+                $hasRevenueTarget = true;
+                $revenueTargetTotal += $amount;
+            }
+        }
+
+        if ($hasRevenueTarget) {
+            return $this->budgetCache[$cacheKey] = round($revenueTargetTotal, 2);
+        }
+
         $qrCodes = DB::table('tbl_data_outlet')
-            ->whereIn('id_outlet', array_unique(array_filter(array_map('intval', $outletIds))))
+            ->whereIn('id_outlet', $outletIdList)
             ->pluck('qr_code')
             ->map(fn ($qr) => trim((string) $qr))
             ->filter()
