@@ -206,6 +206,7 @@ export default {
     "report_rekap_fj": "Report Rekap FJ",
     "rekap_pb1_outlet": "Rekap PB1 Outlet",
     "payroll_finance_report": "Payroll Report",
+    "manual_monthly_labor_cost": "Manual Monthly Labor Cost",
     "rekap_payroll": "Payroll Recap",
     "report_hutang": "Report Hutang",
     "partner_ledger": "Payables & Receivables",

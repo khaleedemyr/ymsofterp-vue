@@ -373,6 +373,12 @@ const menuGroups = [
                 code: 'payroll_finance_report',
             },
             {
+                name: () => t('sidebar.menus.manual_monthly_labor_cost'),
+                icon: 'fa-solid fa-user-clock',
+                route: '/manual-monthly-labor-cost',
+                code: 'manual_monthly_labor_cost',
+            },
+            {
                 name: () => t('sidebar.menus.rekap_payroll'),
                 icon: 'fa-solid fa-table-list',
                 route: '/payroll/rekap',
