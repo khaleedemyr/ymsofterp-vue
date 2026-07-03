@@ -146,6 +146,36 @@ class OutletAnalyzerService
     }
 
     /**
+     * Versi ringan untuk KPI resolver — hanya slice data yang dipakai parameter ERP.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function analyzeForKpi(int $outletId, string $month): ?array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->where('status', 'A')
+            ->select('id_outlet', 'nama_outlet')
+            ->first();
+
+        if (! $outlet) {
+            return null;
+        }
+
+        $period = $this->calendarPeriod($month);
+        $start = $period['start_date'];
+        $end = $period['end_date'];
+
+        return [
+            'fj_inventory' => $this->getFjInventory((int) $outlet->id_outlet, (string) $outlet->nama_outlet, $start, $end),
+            'petty_cash' => $this->getPettyCash((int) $outlet->id_outlet, $start, $end),
+            'payroll' => $this->getPayroll((int) $outlet->id_outlet, $month),
+            'category_cost_outlet' => $this->getCategoryCostOutlet((int) $outlet->id_outlet, $start, $end),
+            'guest_comment_gsi' => $this->getGuestCommentGsi((int) $outlet->id_outlet, $start, $end),
+        ];
+    }
+
+    /**
      * Ringkasan arus kas outlet — revenue vs total pengeluaran operasional periode.
      *
      * @return array{

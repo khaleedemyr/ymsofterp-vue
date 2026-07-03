@@ -182,6 +182,8 @@ class KpiEvaluationService
             throw ValidationException::withMessages(['eval_status' => 'Evaluasi sudah disubmit.']);
         }
 
+        @set_time_limit(600);
+
         $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();

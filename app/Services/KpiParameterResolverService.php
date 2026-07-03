@@ -530,7 +530,7 @@ class KpiParameterResolverService
             return $this->analyzerCache[$cacheKey];
         }
 
-        $data = $this->outletAnalyzer->analyze($outletId, $periodMonth);
+        $data = $this->outletAnalyzer->analyzeForKpi($outletId, $periodMonth);
         if ($data === null) {
             return null;
         }

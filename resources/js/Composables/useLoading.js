@@ -56,11 +56,19 @@ function createLoadingApi(isLoading, message, subMessage, progress) {
 
     progressTimer = setInterval(() => {
       const elapsed = Date.now() - progressStartTime;
-      const ratio = Math.min(1, elapsed / progressEstimatedMs);
-      const eased = ratio < 0.5
-        ? ratio * 1.4
-        : 0.7 + (ratio - 0.5) * 0.44;
-      const pct = Math.min(92, Math.round(eased * 92));
+      const ratio = elapsed / progressEstimatedMs;
+      let pct;
+
+      if (ratio >= 1) {
+        // Setelah estimasi habis, naik perlahan agar user tahu proses masih jalan.
+        const overtimeSec = (elapsed - progressEstimatedMs) / 1000;
+        pct = Math.min(98, 92 + Math.floor(overtimeSec / 8));
+      } else {
+        const eased = ratio < 0.5
+          ? ratio * 1.4
+          : 0.7 + (ratio - 0.5) * 0.44;
+        pct = Math.min(92, Math.round(eased * 92));
+      }
 
       setProgress(pct);
 

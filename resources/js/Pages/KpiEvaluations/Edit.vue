@@ -240,11 +240,16 @@ async function refreshErp() {
   });
   if (!result.isConfirmed) return;
 
+  const outletCount = form.erp_data_scope === 'all_outlets'
+    ? (props.outlets?.length ?? 24)
+    : Math.max(1, form.erp_scope_outlet_ids?.length ?? 1);
+  const estimatedMs = Math.min(600000, 12000 + outletCount * 10000);
+
   startProgressSimulation('Refresh data ERP...', {
-    estimatedMs: 90000,
+    estimatedMs,
     steps: [
       { at: 5, message: 'Menyimpan scope outlet...' },
-      { at: 18, message: 'Memuat data outlet analyzer...' },
+      { at: 18, message: `Memuat outlet analyzer (${outletCount} outlet)...` },
       { at: 40, message: 'Mengambil revenue, budget, dan ticket...' },
       { at: 62, message: 'Menghitung parameter ERP...' },
       { at: 82, message: 'Menghitung skor KPI...' },
@@ -258,13 +263,16 @@ async function refreshErp() {
         erp_data_scope: form.erp_data_scope,
         erp_scope_outlet_ids: form.erp_scope_outlet_ids,
       },
-      { headers: { Accept: 'application/json' } },
+      { headers: { Accept: 'application/json' }, timeout: 600000 },
     );
     applyEvaluation(data.evaluation);
     await finishProgress('Data ERP & skor KPI diperbarui.');
     loadDiagnostics();
-  } catch {
-    failProgress('Gagal refresh data ERP.');
+  } catch (error) {
+    const msg = error?.code === 'ECONNABORTED'
+      ? 'Refresh ERP timeout — scope terlalu banyak outlet atau server lambat. Coba kurangi scope outlet.'
+      : 'Gagal refresh data ERP.';
+    failProgress(msg);
   }
 }
 
