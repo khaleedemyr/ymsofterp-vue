@@ -25,11 +25,19 @@ class KpiEvaluationService
 
     public function loadForEdit(int $id): KpiEvaluation
     {
-        return KpiEvaluation::with([
+        $evaluation = KpiEvaluation::with([
             'template:id,code,name,version',
+            'template.strategies.items.itemParameters.parameter',
             'parameterValues',
             'items',
         ])->findOrFail($id);
+
+        if ($evaluation->isEditable()) {
+            $this->syncParameterValuesFromTemplate($evaluation);
+            $evaluation->load('parameterValues');
+        }
+
+        return $evaluation;
     }
 
     /**
@@ -185,6 +193,9 @@ class KpiEvaluationService
 
         @set_time_limit(600);
 
+        $this->syncParameterValuesFromTemplate($evaluation);
+        $evaluation->load('parameterValues');
+
         $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();
@@ -255,9 +266,11 @@ class KpiEvaluationService
      */
     public function erpDiagnostics(KpiEvaluation $evaluation, ?string $scopeOverride = null, ?array $outletIdsOverride = null): array
     {
-        return $this->erpDiagnosticsFromContext(
+        $result = $this->erpDiagnosticsFromContext(
             $this->buildErpContext($evaluation, $scopeOverride, $outletIdsOverride),
         );
+
+        return $this->appendParameterSyncHints($evaluation, $result);
     }
 
     public function applyErpScope(KpiEvaluation $evaluation, string $scope, array $outletIds): KpiEvaluation
@@ -645,7 +658,7 @@ class KpiEvaluationService
                     $formula = $param?->formula ?? $formula;
                 }
                 foreach ($this->extractCodes($formula) as $code) {
-                    if (str_starts_with($code, 'D')) {
+                    if (str_starts_with($code, 'D') || str_starts_with($code, 'KPI')) {
                         $codes[] = $code;
                     }
                 }
@@ -658,6 +671,78 @@ class KpiEvaluationService
     /**
      * @param  list<string>  $codes
      */
+    /**
+     * Tambah baris parameter evaluasi yang belum ada vs template aktif.
+     */
+    protected function syncParameterValuesFromTemplate(KpiEvaluation $evaluation): void
+    {
+        $evaluation->loadMissing([
+            'template.strategies.items.itemParameters.parameter',
+        ]);
+
+        $template = $evaluation->template;
+        if (! $template) {
+            return;
+        }
+
+        $requiredCodes = $this->collectDataParameterCodes($template);
+        $existingCodes = $evaluation->parameterValues()
+            ->pluck('parameter_code')
+            ->all();
+
+        $missingCodes = array_values(array_diff($requiredCodes, $existingCodes));
+        if ($missingCodes === []) {
+            return;
+        }
+
+        $this->seedParameterValues($evaluation, $missingCodes, fetchErp: false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $diagnostics
+     * @return array<string, mixed>
+     */
+    protected function appendParameterSyncHints(KpiEvaluation $evaluation, array $diagnostics): array
+    {
+        $evaluation->loadMissing([
+            'template.strategies.items.itemParameters.parameter',
+        ]);
+
+        $template = $evaluation->template;
+        if (! $template) {
+            return $diagnostics;
+        }
+
+        $requiredCodes = $this->collectDataParameterCodes($template);
+        $existingCodes = $evaluation->parameterValues()->pluck('parameter_code')->all();
+        $missingEvalCodes = array_values(array_diff($requiredCodes, $existingCodes));
+
+        $activeMasterCodes = KpiParameter::query()
+            ->whereIn('code', $requiredCodes)
+            ->where('status', 'A')
+            ->pluck('code')
+            ->all();
+
+        $missingMasterCodes = array_values(array_diff($requiredCodes, $activeMasterCodes));
+        $hints = $diagnostics['hints'] ?? [];
+
+        if ($missingMasterCodes !== []) {
+            $hints[] = 'Parameter master belum ada di database: '
+                . implode(', ', $missingMasterCodes)
+                . ' — jalankan seed_kpi_template_justus_sample.sql lalu Refresh ERP.';
+        }
+
+        if ($missingEvalCodes !== []) {
+            $hints[] = 'Baris parameter evaluasi belum lengkap (' . count($missingEvalCodes) . ' kode) — buka ulang halaman atau klik Refresh ERP.';
+        }
+
+        $diagnostics['hints'] = $hints;
+        $diagnostics['missing_master_codes'] = $missingMasterCodes;
+        $diagnostics['missing_eval_codes'] = $missingEvalCodes;
+
+        return $diagnostics;
+    }
+
     protected function seedParameterValues(KpiEvaluation $evaluation, array $codes, bool $fetchErp = true): void
     {
         if (empty($codes)) {

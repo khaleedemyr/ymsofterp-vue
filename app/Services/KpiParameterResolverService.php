@@ -46,10 +46,16 @@ class KpiParameterResolverService
 
     private ?bool $hasTrainingTable = null;
 
+    /** @var list<string> */
+    private const CVCC_NEGATIVE_SEVERITIES = [
+        'minor', 'major', 'critical', 'mild_negative', 'negative', 'severe',
+    ];
+
     public function __construct(
         private OutletAnalyzerService $outletAnalyzer,
         private RegionalVisitAnalyticsService $regionalVisits,
         private PettyCashLockBudgetService $pettyCashLockBudget,
+        private FeedbackCapaService $feedbackCapaService,
     ) {}
 
     /**
@@ -118,6 +124,10 @@ class KpiParameterResolverService
         }
         if (isset($resolverKeys['ticket_improvement_total'])) {
             $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', false);
+        }
+
+        if (isset($resolverKeys['retail_petty_cash_usage'])) {
+            $this->resolveRetailPettyCashUsage($outletIds, $periodMonth);
         }
     }
 
@@ -342,6 +352,15 @@ class KpiParameterResolverService
             'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletIds, $month, $year),
             'petty_cash_lock_budget' => $this->pettyCashLockBudget->sumLockBudgetForOutlets($outletIds, $year, $month),
             'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $period['start_date'], $period['end_date']),
+            'just_academy_training_completion' => $this->resolveJustAcademyTrainingCompletion(
+                (int) ($context['user_id'] ?? 0),
+                $periodMonth,
+            ),
+            'qa2_audit1_score' => $this->resolveQa2Audit1Score(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
             'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
             'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
             'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
@@ -352,6 +371,62 @@ class KpiParameterResolverService
                 $period['end_date'],
                 (int) ($context['user_id'] ?? 0),
             ),
+            'retail_petty_cash_usage' => $this->resolveRetailPettyCashUsage($outletIds, $periodMonth),
+            'manual_cogs_percent' => $this->resolveManualOutletPercent(
+                'manual_cogs_deviation_catcost',
+                'manual_cogs_deviation_catcost_items',
+                'cogs_percent',
+                $outletIds,
+                $month,
+                $year,
+            ),
+            'manual_deviation_percent' => $this->resolveManualOutletPercent(
+                'manual_cogs_deviation_catcost',
+                'manual_cogs_deviation_catcost_items',
+                'deviation_percent',
+                $outletIds,
+                $month,
+                $year,
+            ),
+            'manual_catcost_percent' => $this->resolveManualOutletPercent(
+                'manual_cogs_deviation_catcost',
+                'manual_cogs_deviation_catcost_items',
+                'catcost_percent',
+                $outletIds,
+                $month,
+                $year,
+            ),
+            'manual_lost_breakage_percent' => $this->resolveManualOutletPercent(
+                'asset_manual_monthly_lost_breakage',
+                'asset_manual_monthly_lost_breakage_items',
+                'lost_breakage_percent',
+                $outletIds,
+                $month,
+                $year,
+            ),
+            'manual_labor_cost_percent' => $this->resolveManualOutletPercent(
+                'manual_monthly_labor_cost',
+                'manual_monthly_labor_cost_items',
+                'labor_cost_percent',
+                $outletIds,
+                $month,
+                $year,
+            ),
+            'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
+            'cvcc_service_negative_complaint_count' => $this->resolveCvccServiceNegativeComplaintCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
+            'cvcc_total_review_count' => $this->resolveCvccTotalReviewCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
             default => null,
         };
 
@@ -361,11 +436,22 @@ class KpiParameterResolverService
             'daily_revenue_forecast_budget',
             'petty_cash_lock_budget',
             'training_compliance',
+            'just_academy_training_completion',
+            'qa2_audit1_score',
             'ticket_complaint_count',
             'ticket_improvement_closed',
             'ticket_improvement_total',
             'regional_target_outlet_visits',
             'regional_visit_report',
+            'retail_petty_cash_usage',
+            'manual_cogs_percent',
+            'manual_deviation_percent',
+            'manual_catcost_percent',
+            'manual_lost_breakage_percent',
+            'manual_labor_cost_percent',
+            'cvcc_avg_resolution_hours',
+            'cvcc_service_negative_complaint_count',
+            'cvcc_total_review_count',
         ], true)) {
             return $standalone;
         }
@@ -811,6 +897,128 @@ class KpiParameterResolverService
     }
 
     /**
+     * Just Academy — % modul wajib (materi + quiz lulus) selesai pada jadwal training bulan evaluasi.
+     */
+    private function resolveJustAcademyTrainingCompletion(int $userId, string $periodMonth): ?float
+    {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        if (! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
+            return null;
+        }
+
+        $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        $scheduleIds = DB::table('ja_schedule_participants as sp')
+            ->join('ja_schedules as s', 's.id', '=', 'sp.schedule_id')
+            ->where('sp.user_id', $userId)
+            ->whereIn('s.status', ['published', 'ongoing', 'completed'])
+            ->where('s.start_at', '>=', $rangeStart)
+            ->where('s.start_at', '<=', $rangeEnd)
+            ->pluck('s.id');
+
+        if ($scheduleIds->isEmpty()) {
+            return null;
+        }
+
+        $requiredItems = DB::table('ja_program_items as pi')
+            ->join('ja_schedules as s', 's.program_id', '=', 'pi.program_id')
+            ->whereIn('s.id', $scheduleIds)
+            ->where('pi.is_required', 1)
+            ->select('s.id as schedule_id', 'pi.item_type', 'pi.material_id', 'pi.quiz_id')
+            ->get();
+
+        if ($requiredItems->isEmpty()) {
+            return null;
+        }
+
+        $totalRequired = 0;
+        $totalCompleted = 0;
+
+        foreach ($requiredItems as $item) {
+            $totalRequired++;
+
+            if ($item->item_type === 'material' && $item->material_id) {
+                $done = DB::table('ja_material_progress')
+                    ->where('schedule_id', $item->schedule_id)
+                    ->where('user_id', $userId)
+                    ->where('material_id', $item->material_id)
+                    ->exists();
+                if ($done) {
+                    $totalCompleted++;
+                }
+
+                continue;
+            }
+
+            if ($item->item_type === 'quiz' && $item->quiz_id) {
+                $done = DB::table('ja_quiz_attempts')
+                    ->where('schedule_id', $item->schedule_id)
+                    ->where('user_id', $userId)
+                    ->where('quiz_id', $item->quiz_id)
+                    ->whereNotNull('submitted_at')
+                    ->where('passed', 1)
+                    ->exists();
+                if ($done) {
+                    $totalCompleted++;
+                }
+            }
+        }
+
+        if ($totalRequired === 0) {
+            return null;
+        }
+
+        return round(($totalCompleted / $totalRequired) * 100, 2);
+    }
+
+    /**
+     * QA Audit 1 (QA2 Audits) — rata-rata skor C / (C + NC) audit submitted per outlet scope.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveQa2Audit1Score(array $outletIds, string $startDate, string $endDate): ?float
+    {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
+            return null;
+        }
+
+        $auditIds = DB::table('qa2_audits as a')
+            ->join('qa2_templates as t', 't.id', '=', 'a.template_id')
+            ->whereIn('a.outlet_id', array_map('intval', $outletIds))
+            ->where('a.status', 'submitted')
+            ->whereBetween('a.audit_datetime', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->where(function ($q) {
+                $q->where('t.name', 'like', '%Audit 1%')
+                    ->orWhere('t.name', 'like', '%Audit1%')
+                    ->orWhere('t.code', 'like', '%AUDIT1%')
+                    ->orWhere('t.code', 'like', '%AUDIT_1%');
+            })
+            ->pluck('a.id');
+
+        if ($auditIds->isEmpty()) {
+            return null;
+        }
+
+        $stats = DB::table('qa2_audit_items')
+            ->whereIn('audit_id', $auditIds)
+            ->whereIn('result', ['C', 'NC'])
+            ->selectRaw("SUM(CASE WHEN result = 'C' THEN 1 ELSE 0 END) as compliant")
+            ->selectRaw('COUNT(*) as total')
+            ->first();
+
+        $total = (int) ($stats->total ?? 0);
+        if ($total === 0) {
+            return null;
+        }
+
+        return round(((int) ($stats->compliant ?? 0) / $total) * 100, 2);
+    }
+
+    /**
      * @param  list<int>  $outletIds
      */
     private function resolveTicketCount(array $outletIds, string $start, string $end, string $kind, ?bool $closedOnly = null): ?float
@@ -905,5 +1113,169 @@ class KpiParameterResolverService
     private function hasTrainingTable(): bool
     {
         return $this->hasTrainingTable ??= DB::getSchemaBuilder()->hasTable('training_assignments');
+    }
+
+    /**
+     * Retail Food + Retail Non Food (approved, non contra_bon) — sama seperti Retail Food lock budget.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveRetailPettyCashUsage(array $outletIds, string $periodMonth): ?float
+    {
+        if (empty($outletIds) || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        $total = 0.0;
+        $found = false;
+
+        foreach ($outletIds as $outletId) {
+            $outletId = (int) $outletId;
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $retailFood = (float) (DB::table('retail_food')
+                ->where('outlet_id', $outletId)
+                ->where('status', 'approved')
+                ->where('payment_method', '!=', 'contra_bon')
+                ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$periodMonth])
+                ->sum('total_amount') ?? 0);
+
+            $retailNonFood = (float) (DB::table('retail_non_food')
+                ->where('outlet_id', $outletId)
+                ->where('status', 'approved')
+                ->where('payment_method', '!=', 'contra_bon')
+                ->whereRaw("DATE_FORMAT(transaction_date, '%Y-%m') = ?", [$periodMonth])
+                ->sum('total_amount') ?? 0);
+
+            if ($retailFood > 0 || $retailNonFood > 0) {
+                $found = true;
+            }
+
+            $total += $retailFood + $retailNonFood;
+        }
+
+        return $found ? round($total, 2) : null;
+    }
+
+    /**
+     * Rata-rata persen per outlet dari menu manual bulanan (COGS / Deviation / Catcost / L&B / Labor).
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveManualOutletPercent(
+        string $headerTable,
+        string $itemsTable,
+        string $percentColumn,
+        array $outletIds,
+        int $month,
+        int $year,
+    ): ?float {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable($headerTable)) {
+            return null;
+        }
+
+        $headerId = DB::table($headerTable)
+            ->where('month', $month)
+            ->where('year', $year)
+            ->value('id');
+
+        if (! $headerId) {
+            return null;
+        }
+
+        $fk = match ($headerTable) {
+            'manual_cogs_deviation_catcost' => 'manual_cogs_deviation_catcost_id',
+            'asset_manual_monthly_lost_breakage' => 'asset_manual_monthly_lost_breakage_id',
+            'manual_monthly_labor_cost' => 'manual_monthly_labor_cost_id',
+            default => null,
+        };
+
+        if ($fk === null) {
+            return null;
+        }
+
+        $values = DB::table($itemsTable)
+            ->where($fk, $headerId)
+            ->whereIn('outlet_id', array_map('intval', $outletIds))
+            ->whereNotNull($percentColumn)
+            ->pluck($percentColumn)
+            ->map(fn ($v) => (float) $v);
+
+        if ($values->isEmpty()) {
+            return null;
+        }
+
+        return round($values->avg(), 4);
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveCvccAvgResolutionHours(array $outletIds, string $startDate, string $endDate): ?float
+    {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+            return null;
+        }
+
+        $avg = DB::table('feedback_cases')
+            ->whereIn('id_outlet', array_map('intval', $outletIds))
+            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->whereNotNull('resolved_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, event_at, resolved_at)) AS avg_hours')
+            ->value('avg_hours');
+
+        return $avg !== null ? round((float) $avg, 2) : null;
+    }
+
+    /**
+     * Negative comment CVCC dengan CAPA division Service yang sudah diisi.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveCvccServiceNegativeComplaintCount(array $outletIds, string $startDate, string $endDate): ?float
+    {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+            return null;
+        }
+
+        $rows = DB::table('feedback_cases')
+            ->whereIn('id_outlet', array_map('intval', $outletIds))
+            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->whereIn('severity', self::CVCC_NEGATIVE_SEVERITIES)
+            ->get(['meta']);
+
+        $count = 0;
+        foreach ($rows as $row) {
+            $meta = json_decode((string) ($row->meta ?? ''), true);
+            if (! is_array($meta)) {
+                continue;
+            }
+
+            $serviceCapa = $meta['capa_divisions']['service'] ?? null;
+            if ($this->feedbackCapaService->storedCapaHasUserInput(is_array($serviceCapa) ? $serviceCapa : null)) {
+                $count++;
+            }
+        }
+
+        return $count > 0 ? (float) $count : ($rows->isEmpty() ? null : 0.0);
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveCvccTotalReviewCount(array $outletIds, string $startDate, string $endDate): ?float
+    {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+            return null;
+        }
+
+        $count = (int) DB::table('feedback_cases')
+            ->whereIn('id_outlet', array_map('intval', $outletIds))
+            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->count();
+
+        return $count > 0 ? (float) $count : null;
     }
 }

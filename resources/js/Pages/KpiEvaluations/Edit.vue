@@ -34,8 +34,24 @@ watch(
 );
 
 function applyEvaluation(data) {
-  evaluation.value = data;
-  data.parameter_values?.forEach((pv) => {
+  evaluation.value = {
+    ...data,
+    parameter_values: (data.parameter_values ?? []).map((pv) => ({ ...pv })),
+    items: (data.items ?? []).map((item) => ({ ...item })),
+  };
+
+  const formIds = new Set(form.parameter_values.map((row) => row.id));
+  (data.parameter_values ?? []).forEach((pv) => {
+    if (!formIds.has(pv.id)) {
+      form.parameter_values.push({
+        id: pv.id,
+        manual_value: pv.manual_value,
+        is_overridden: pv.is_overridden ?? false,
+        override_reason: pv.override_reason,
+      });
+      return;
+    }
+
     const row = pvRow(pv.id);
     if (row) {
       row.manual_value = pv.manual_value;
@@ -43,6 +59,7 @@ function applyEvaluation(data) {
       row.override_reason = pv.override_reason;
     }
   });
+
   initManualRaw();
 }
 
@@ -293,7 +310,7 @@ async function refreshErp() {
     );
     applyEvaluation(data.evaluation);
     await finishProgress('Data ERP & skor KPI diperbarui.');
-    loadDiagnostics();
+    loadDiagnostics({ silent: true });
     scheduleBreakdownPreload();
   } catch (error) {
     const msg = error?.code === 'ECONNABORTED'
@@ -330,7 +347,8 @@ function back() {
   router.visit(route('kpi-evaluations.index'));
 }
 
-async function loadDiagnostics() {
+async function loadDiagnostics(options = {}) {
+  const { silent = false } = options;
   if (diagnosticsDelayTimer) {
     clearTimeout(diagnosticsDelayTimer);
     diagnosticsDelayTimer = null;
@@ -339,16 +357,18 @@ async function loadDiagnostics() {
   diagnosticsLoading.value = true;
   let progressStarted = false;
 
-  diagnosticsDelayTimer = setTimeout(() => {
-    progressStarted = true;
-    startProgressSimulation('Memuat probe ERP...', {
-      estimatedMs: 12000,
-      steps: [
-        { at: 20, message: 'Memeriksa scope outlet...' },
-        { at: 55, message: 'Menghitung revenue & order POS...' },
-      ],
-    });
-  }, 400);
+  if (!silent) {
+    diagnosticsDelayTimer = setTimeout(() => {
+      progressStarted = true;
+      startProgressSimulation('Memuat probe ERP...', {
+        estimatedMs: 12000,
+        steps: [
+          { at: 20, message: 'Memeriksa scope outlet...' },
+          { at: 55, message: 'Menghitung revenue & order POS...' },
+        ],
+      });
+    }, 400);
+  }
 
   try {
     const { data } = await axios.get(route('kpi-evaluations.erp-diagnostics', evaluation.value.id), {
