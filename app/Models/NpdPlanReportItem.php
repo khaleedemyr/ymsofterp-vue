@@ -12,10 +12,12 @@ class NpdPlanReportItem extends Model
         'sort_order',
         'product_name',
         'category',
+        'category_id',
         'development_date',
         'purpose',
         'proposed_launch_date',
         'proposed_launch_area_outlet',
+        'pics',
         'fb_cost',
         'selling_price',
     ];
@@ -23,6 +25,8 @@ class NpdPlanReportItem extends Model
     protected $casts = [
         'development_date' => 'date:Y-m-d',
         'proposed_launch_date' => 'date:Y-m-d',
+        'proposed_launch_area_outlet' => 'array',
+        'pics' => 'array',
         'fb_cost' => 'decimal:2',
         'selling_price' => 'decimal:2',
     ];

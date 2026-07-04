@@ -1940,7 +1940,7 @@ async function rejectCoaching(coachingId, approverId) {
 async function approveNpdPlanReport(reportId) {
     try {
         const response = await axios.post(`/npd-plan-report/${reportId}/approve`, {
-            approved: true,
+            action: 'approve',
             comments: '',
         });
         if (response.data.success) {
@@ -1954,22 +1954,22 @@ async function approveNpdPlanReport(reportId) {
 
 async function rejectNpdPlanReport(reportId) {
     const { value: comments } = await Swal.fire({
-        title: 'Tolak NPD Report',
+        title: 'Not Approved — NPD Report',
         input: 'textarea',
-        inputLabel: 'Alasan Penolakan',
-        inputPlaceholder: 'Masukkan alasan penolakan...',
+        inputLabel: 'Alasan',
+        inputPlaceholder: 'Masukkan alasan...',
         showCancelButton: true,
-        confirmButtonText: 'Tolak',
+        confirmButtonText: 'Not Approved',
         cancelButtonText: 'Batal',
         confirmButtonColor: '#dc3545',
-        inputValidator: (value) => (!value ? 'Alasan penolakan harus diisi!' : undefined),
+        inputValidator: (value) => (!value ? 'Alasan wajib diisi!' : undefined),
     });
 
     if (!comments) return;
 
     try {
         const response = await axios.post(`/npd-plan-report/${reportId}/approve`, {
-            approved: false,
+            action: 'reject',
             comments,
         });
         if (response.data.success) {
@@ -1977,7 +1977,36 @@ async function rejectNpdPlanReport(reportId) {
             loadAllPendingApprovalsOptimized();
         }
     } catch (error) {
-        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal reject report' });
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses approval' });
+    }
+}
+
+async function requiresRevisionNpdPlanReport(reportId) {
+    const { value: comments } = await Swal.fire({
+        title: 'Requires Revision — NPD Report',
+        input: 'textarea',
+        inputLabel: 'Catatan Revisi',
+        inputPlaceholder: 'Masukkan catatan revisi...',
+        showCancelButton: true,
+        confirmButtonText: 'Requires Revision',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#f59e0b',
+        inputValidator: (value) => (!value ? 'Catatan revisi wajib diisi!' : undefined),
+    });
+
+    if (!comments) return;
+
+    try {
+        const response = await axios.post(`/npd-plan-report/${reportId}/approve`, {
+            action: 'requires_revision',
+            comments,
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses revisi' });
     }
 }
 
@@ -7399,6 +7428,13 @@ watch(locale, () => {
                                             class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white"
                                         >
                                             Setujui
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="requiresRevisionNpdPlanReport(report.id)"
+                                            class="px-3 py-1 text-xs rounded-full bg-amber-500 hover:bg-amber-600 text-white"
+                                        >
+                                            Revisi
                                         </button>
                                         <button
                                             type="button"

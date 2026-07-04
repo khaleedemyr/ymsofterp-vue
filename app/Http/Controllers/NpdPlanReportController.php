@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\NpdPlanReport;
 use App\Models\NpdPlanReportApprovalFlow;
 use App\Models\NpdPlanReportItem;
@@ -65,16 +66,15 @@ class NpdPlanReportController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('NpdPlanReport/Form', [
-            'record' => null,
-            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
-            'purposeOptions' => $this->purposeOptions(),
-        ]);
+        return Inertia::render('NpdPlanReport/Form', array_merge(
+            $this->formOptions(),
+            ['record' => null]
+        ));
     }
 
     public function store(Request $request)
     {
-        $validated = $this->validatePayload($request);
+        $validated = $this->validatePayload($request, true);
 
         DB::beginTransaction();
         try {
@@ -84,13 +84,14 @@ class NpdPlanReportController extends Controller
                 'report_month' => $validated['report_month'].'-01',
                 'outlet_id' => $outlet->id_outlet,
                 'outlet_name' => (string) $outlet->nama_outlet,
-                'status' => 'draft',
+                'status' => 'submitted',
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => Auth::id(),
                 'updated_by' => Auth::id(),
             ]);
 
             $this->syncItems($report, $validated['items']);
+            $this->syncApprovalFlows($report, $validated['approvers']);
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -100,7 +101,7 @@ class NpdPlanReportController extends Controller
 
         return redirect()
             ->route('npd-plan-report.show', $report->id)
-            ->with('success', 'NPD Plan & Report berhasil dibuat.');
+            ->with('success', 'NPD Plan & Report berhasil disimpan dan diajukan untuk approval.');
     }
 
     public function show(NpdPlanReport $npdPlanReport): Response
@@ -114,9 +115,8 @@ class NpdPlanReportController extends Controller
         return Inertia::render('NpdPlanReport/Show', [
             'record' => $npdPlanReport,
             'purposeOptions' => $this->purposeOptions(),
-            'canEdit' => $npdPlanReport->status === 'draft' && $this->canManage($npdPlanReport),
-            'canDelete' => $npdPlanReport->status === 'draft' && $this->canManage($npdPlanReport),
-            'canSubmitApproval' => $npdPlanReport->status === 'draft' && $this->canManage($npdPlanReport),
+            'canEdit' => in_array($npdPlanReport->status, ['rejected', 'requires_revision'], true) && $this->canManage($npdPlanReport),
+            'canDelete' => in_array($npdPlanReport->status, ['rejected', 'requires_revision'], true) && $this->canManage($npdPlanReport),
             'canApprove' => $this->canApprove($npdPlanReport),
             'currentApprovalFlow' => $this->currentApprovalFlow($npdPlanReport),
         ]);
@@ -124,20 +124,19 @@ class NpdPlanReportController extends Controller
 
     public function edit(NpdPlanReport $npdPlanReport): Response
     {
-        $this->ensureDraftEditable($npdPlanReport);
+        $this->ensureRejectedEditable($npdPlanReport);
         $npdPlanReport->load('items');
 
-        return Inertia::render('NpdPlanReport/Form', [
-            'record' => $npdPlanReport,
-            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
-            'purposeOptions' => $this->purposeOptions(),
-        ]);
+        return Inertia::render('NpdPlanReport/Form', array_merge(
+            $this->formOptions(),
+            ['record' => $npdPlanReport]
+        ));
     }
 
     public function update(Request $request, NpdPlanReport $npdPlanReport)
     {
-        $this->ensureDraftEditable($npdPlanReport);
-        $validated = $this->validatePayload($request);
+        $this->ensureRejectedEditable($npdPlanReport);
+        $validated = $this->validatePayload($request, true);
 
         DB::beginTransaction();
         try {
@@ -147,10 +146,12 @@ class NpdPlanReportController extends Controller
                 'outlet_id' => $outlet->id_outlet,
                 'outlet_name' => (string) $outlet->nama_outlet,
                 'notes' => $validated['notes'] ?? null,
+                'status' => 'submitted',
                 'updated_by' => Auth::id(),
             ]);
 
             $this->syncItems($npdPlanReport, $validated['items']);
+            $this->syncApprovalFlows($npdPlanReport, $validated['approvers']);
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -160,12 +161,12 @@ class NpdPlanReportController extends Controller
 
         return redirect()
             ->route('npd-plan-report.show', $npdPlanReport->id)
-            ->with('success', 'NPD Plan & Report berhasil diperbarui.');
+            ->with('success', 'NPD Plan & Report berhasil diperbarui dan diajukan ulang untuk approval.');
     }
 
     public function destroy(NpdPlanReport $npdPlanReport)
     {
-        $this->ensureDraftEditable($npdPlanReport);
+        $this->ensureRejectedEditable($npdPlanReport);
         $npdPlanReport->delete();
 
         return redirect()
@@ -201,8 +202,8 @@ class NpdPlanReportController extends Controller
 
     public function submitForApproval(Request $request, NpdPlanReport $npdPlanReport)
     {
-        if ($npdPlanReport->status !== 'draft') {
-            return response()->json(['success' => false, 'message' => 'Hanya draft yang dapat diajukan untuk approval.'], 400);
+        if (! in_array($npdPlanReport->status, ['rejected', 'requires_revision'], true)) {
+            return response()->json(['success' => false, 'message' => 'Hanya report ditolak/perlu revisi yang dapat diajukan ulang.'], 400);
         }
 
         if (! $this->canManage($npdPlanReport)) {
@@ -216,32 +217,8 @@ class NpdPlanReportController extends Controller
 
         DB::beginTransaction();
         try {
-            NpdPlanReportApprovalFlow::where('report_id', $npdPlanReport->id)->delete();
-
-            foreach ($request->approvers as $index => $approverId) {
-                NpdPlanReportApprovalFlow::create([
-                    'report_id' => $npdPlanReport->id,
-                    'approver_id' => (int) $approverId,
-                    'approval_level' => $index + 1,
-                    'status' => 'PENDING',
-                ]);
-            }
-
+            $this->syncApprovalFlows($npdPlanReport, $request->approvers);
             $npdPlanReport->update(['status' => 'submitted', 'updated_by' => Auth::id()]);
-
-            $first = NpdPlanReportApprovalFlow::where('report_id', $npdPlanReport->id)
-                ->where('approval_level', 1)
-                ->first();
-
-            if ($first) {
-                $this->notifyUsers(
-                    [$first->approver_id],
-                    'npd_plan_report_approval_required',
-                    'NPD Plan & Report Approval',
-                    "Report {$npdPlanReport->number} menunggu approval Anda.",
-                    route('npd-plan-report.show', $npdPlanReport->id)
-                );
-            }
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -250,7 +227,7 @@ class NpdPlanReportController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
 
-        return response()->json(['success' => true, 'message' => 'Report berhasil diajukan untuk approval.']);
+        return response()->json(['success' => true, 'message' => 'Report berhasil diajukan ulang untuk approval.']);
     }
 
     public function approve(Request $request, NpdPlanReport $npdPlanReport)
@@ -261,28 +238,52 @@ class NpdPlanReportController extends Controller
         }
 
         $request->validate([
-            'approved' => 'required|boolean',
+            'action' => 'nullable|in:approve,reject,requires_revision',
+            'approved' => 'nullable|boolean',
             'comments' => 'nullable|string|max:1000',
             'comment' => 'nullable|string|max:1000',
         ]);
 
-        $comments = $request->input('comments') ?? $request->input('comment');
+        $comments = trim((string) ($request->input('comments') ?? $request->input('comment') ?? ''));
+        $action = $request->input('action');
+        if (! $action) {
+            $action = $request->boolean('approved') ? 'approve' : 'reject';
+        }
+
+        if (in_array($action, ['reject', 'requires_revision'], true) && $comments === '') {
+            return response()->json([
+                'success' => false,
+                'message' => $action === 'requires_revision'
+                    ? 'Catatan revisi wajib diisi.'
+                    : 'Alasan penolakan wajib diisi.',
+            ], 422);
+        }
+
         $isSuperadmin = $this->isSuperAdmin();
 
         DB::beginTransaction();
         try {
-            $update = [
-                'status' => $request->boolean('approved') ? 'APPROVED' : 'REJECTED',
-                'approved_at' => $request->boolean('approved') ? now() : null,
-                'rejected_at' => $request->boolean('approved') ? null : now(),
-                'comments' => $comments,
+            $flowUpdate = [
+                'comments' => $comments !== '' ? $comments : null,
             ];
-            if ($isSuperadmin) {
-                $update['approver_id'] = Auth::id();
-            }
-            $flow->update($update);
 
-            if ($request->boolean('approved')) {
+            if ($action === 'approve') {
+                $flowUpdate['status'] = 'APPROVED';
+                $flowUpdate['approved_at'] = now();
+                $flowUpdate['rejected_at'] = null;
+            } elseif ($action === 'requires_revision') {
+                $flowUpdate['status'] = 'REQUIRES_REVISION';
+                $flowUpdate['approved_at'] = null;
+                $flowUpdate['rejected_at'] = now();
+            } else {
+                $flowUpdate['status'] = 'REJECTED';
+                $flowUpdate['approved_at'] = null;
+                $flowUpdate['rejected_at'] = now();
+            }
+
+            $flow->update($flowUpdate);
+
+            if ($action === 'approve') {
                 $pending = NpdPlanReportApprovalFlow::where('report_id', $npdPlanReport->id)
                     ->where('status', 'PENDING')
                     ->count();
@@ -311,6 +312,15 @@ class NpdPlanReportController extends Controller
                         );
                     }
                 }
+            } elseif ($action === 'requires_revision') {
+                $npdPlanReport->update(['status' => 'requires_revision', 'updated_by' => Auth::id()]);
+                $this->notifyUsers(
+                    [$npdPlanReport->created_by],
+                    'npd_plan_report_requires_revision',
+                    'NPD Plan & Report Perlu Revisi',
+                    "Report {$npdPlanReport->number} memerlukan revisi.".($comments ? " Catatan: {$comments}" : ''),
+                    route('npd-plan-report.show', $npdPlanReport->id)
+                );
             } else {
                 $npdPlanReport->update(['status' => 'rejected', 'updated_by' => Auth::id()]);
                 $this->notifyUsers(
@@ -329,9 +339,15 @@ class NpdPlanReportController extends Controller
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
 
+        $messages = [
+            'approve' => 'Report berhasil diapprove.',
+            'reject' => 'Report berhasil ditolak (Not Approved).',
+            'requires_revision' => 'Report dikembalikan untuk revisi.',
+        ];
+
         return response()->json([
             'success' => true,
-            'message' => $request->boolean('approved') ? 'Report berhasil diapprove.' : 'Report berhasil ditolak.',
+            'message' => $messages[$action] ?? 'Status approval berhasil diperbarui.',
         ]);
     }
 
@@ -341,8 +357,8 @@ class NpdPlanReportController extends Controller
         $isSuperadmin = $this->isSuperAdmin();
 
         $query = NpdPlanReport::query()
-            ->whereNotIn('status', ['approved', 'rejected', 'cancelled'])
-            ->whereDoesntHave('approvalFlows', fn ($q) => $q->where('status', 'REJECTED'))
+            ->whereNotIn('status', ['approved', 'rejected', 'requires_revision', 'cancelled'])
+            ->whereDoesntHave('approvalFlows', fn ($q) => $q->whereIn('status', ['REJECTED', 'REQUIRES_REVISION']))
             ->whereHas('approvalFlows', fn ($q) => $q->where('status', 'PENDING'));
 
         if (! $isSuperadmin) {
@@ -369,24 +385,39 @@ class NpdPlanReportController extends Controller
         return response()->json(['success' => true, 'data' => $reports]);
     }
 
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, bool $requireApprovers = false): array
     {
-        return $request->validate([
+        $rules = [
             'report_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'notes' => 'nullable|string|max:2000',
             'items' => 'required|array|min:1',
             'items.*.product_name' => 'required|string|max:255',
-            'items.*.category' => 'nullable|string|max:255',
+            'items.*.category_id' => 'required|integer|exists:categories,id',
             'items.*.development_date' => 'nullable|date',
             'items.*.purpose' => ['required', Rule::in(['enhancement', 'new_product', 'adjustment'])],
             'items.*.proposed_launch_date' => 'nullable|date',
-            'items.*.proposed_launch_area_outlet' => 'nullable|string|max:255',
+            'items.*.proposed_launch_outlet_ids' => 'required|array|min:1',
+            'items.*.proposed_launch_outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
+            'items.*.pic_user_ids' => 'nullable|array',
+            'items.*.pic_user_ids.*' => 'integer|exists:users,id',
             'items.*.fb_cost' => 'nullable|numeric|min:0',
             'items.*.selling_price' => 'nullable|numeric|min:0',
-        ], [
+        ];
+
+        if ($requireApprovers) {
+            $rules['approvers'] = 'required|array|min:1';
+            $rules['approvers.*'] = 'required|integer|exists:users,id';
+        }
+
+        return $request->validate($rules, [
             'items.required' => 'Tambahkan minimal satu product.',
             'items.min' => 'Tambahkan minimal satu product.',
+            'items.*.category_id.required' => 'Category wajib dipilih.',
+            'items.*.proposed_launch_outlet_ids.required' => 'Area/outlet launch wajib dipilih.',
+            'items.*.proposed_launch_outlet_ids.min' => 'Pilih minimal satu outlet launch.',
+            'approvers.required' => 'Pilih minimal satu approver.',
+            'approvers.min' => 'Pilih minimal satu approver.',
         ]);
     }
 
@@ -394,20 +425,95 @@ class NpdPlanReportController extends Controller
     {
         NpdPlanReportItem::where('report_id', $report->id)->delete();
 
+        $categoryNames = Category::whereIn('id', collect($items)->pluck('category_id')->filter()->unique())
+            ->pluck('name', 'id');
+        $launchOutlets = Outlet::whereIn('id_outlet', collect($items)->flatMap(fn ($item) => $item['proposed_launch_outlet_ids'] ?? [])->unique())
+            ->get(['id_outlet', 'nama_outlet'])
+            ->keyBy('id_outlet');
+        $picUsers = User::query()
+            ->whereIn('users.id', collect($items)->flatMap(fn ($item) => $item['pic_user_ids'] ?? [])->unique())
+            ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+            ->get([
+                'users.id',
+                'users.nama_lengkap',
+                DB::raw('j.nama_jabatan as jabatan'),
+            ])
+            ->keyBy('id');
+
         foreach ($items as $index => $item) {
+            $categoryId = (int) $item['category_id'];
+            $launchOutletPayload = collect($item['proposed_launch_outlet_ids'] ?? [])
+                ->map(fn ($outletId) => [
+                    'id' => (int) $outletId,
+                    'name' => (string) ($launchOutlets[(int) $outletId]->nama_outlet ?? ''),
+                ])
+                ->values()
+                ->all();
+            $picPayload = collect($item['pic_user_ids'] ?? [])
+                ->map(fn ($userId) => [
+                    'id' => (int) $userId,
+                    'name' => (string) ($picUsers[(int) $userId]->nama_lengkap ?? ''),
+                    'jabatan' => (string) ($picUsers[(int) $userId]->jabatan ?? ''),
+                ])
+                ->values()
+                ->all();
+
             NpdPlanReportItem::create([
                 'report_id' => $report->id,
                 'sort_order' => $index,
                 'product_name' => $item['product_name'],
-                'category' => $item['category'] ?? null,
+                'category_id' => $categoryId,
+                'category' => (string) ($categoryNames[$categoryId] ?? ''),
                 'development_date' => $item['development_date'] ?? null,
                 'purpose' => $item['purpose'],
                 'proposed_launch_date' => $item['proposed_launch_date'] ?? null,
-                'proposed_launch_area_outlet' => $item['proposed_launch_area_outlet'] ?? null,
+                'proposed_launch_area_outlet' => $launchOutletPayload,
+                'pics' => $picPayload,
                 'fb_cost' => (float) ($item['fb_cost'] ?? 0),
                 'selling_price' => (float) ($item['selling_price'] ?? 0),
             ]);
         }
+    }
+
+    /**
+     * @param  list<int>  $approverIds
+     */
+    private function syncApprovalFlows(NpdPlanReport $report, array $approverIds): void
+    {
+        NpdPlanReportApprovalFlow::where('report_id', $report->id)->delete();
+
+        foreach ($approverIds as $index => $approverId) {
+            NpdPlanReportApprovalFlow::create([
+                'report_id' => $report->id,
+                'approver_id' => (int) $approverId,
+                'approval_level' => $index + 1,
+                'status' => 'PENDING',
+            ]);
+        }
+
+        $first = NpdPlanReportApprovalFlow::where('report_id', $report->id)
+            ->where('approval_level', 1)
+            ->first();
+
+        if ($first) {
+            $this->notifyUsers(
+                [$first->approver_id],
+                'npd_plan_report_approval_required',
+                'NPD Plan & Report Approval',
+                "Report {$report->number} menunggu approval Anda.",
+                route('npd-plan-report.show', $report->id)
+            );
+        }
+    }
+
+    private function formOptions(): array
+    {
+        return [
+            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'launchOutlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'categories' => Category::where('show_pos', '1')->orderBy('name')->get(['id', 'name']),
+            'purposeOptions' => $this->purposeOptions(),
+        ];
     }
 
     private function generateNumber(string $reportMonth): string
@@ -445,10 +551,10 @@ class NpdPlanReportController extends Controller
         return $this->isSuperAdmin() || (int) Auth::id() === (int) $report->created_by;
     }
 
-    private function ensureDraftEditable(NpdPlanReport $report): void
+    private function ensureRejectedEditable(NpdPlanReport $report): void
     {
-        if ($report->status !== 'draft') {
-            abort(403, 'Report hanya dapat diubah saat status draft.');
+        if (! in_array($report->status, ['rejected', 'requires_revision'], true)) {
+            abort(403, 'Report hanya dapat diubah saat status rejected atau requires revision.');
         }
         if (! $this->canManage($report)) {
             abort(403, 'Anda tidak memiliki akses untuk mengubah report ini.');

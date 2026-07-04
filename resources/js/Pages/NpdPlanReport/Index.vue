@@ -53,7 +53,8 @@
               <option value="draft">Draft</option>
               <option value="submitted">Submitted</option>
               <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
+              <option value="rejected">Not Approved</option>
+              <option value="requires_revision">Requires Revision</option>
             </select>
           </div>
           <div class="md:col-span-5 flex gap-2 justify-end">
@@ -97,8 +98,8 @@
                 </span>
               </td>
               <td class="px-4 py-3">
-                <span :class="statusClass(row.status)" class="px-2.5 py-1 rounded-full text-xs font-semibold capitalize">
-                  {{ row.status }}
+                <span :class="statusClass(row.status)" class="px-2.5 py-1 rounded-full text-xs font-semibold">
+                  {{ statusLabel(row.status) }}
                 </span>
               </td>
               <td class="px-4 py-3">{{ row.creator?.nama_lengkap || '-' }}</td>
@@ -112,7 +113,7 @@
                     <i class="fa-solid fa-eye"></i>
                   </Link>
                   <Link
-                    v-if="row.status === 'draft'"
+                    v-if="['rejected', 'requires_revision'].includes(row.status)"
                     :href="route('npd-plan-report.edit', row.id)"
                     class="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
                     title="Edit"
@@ -182,8 +183,21 @@ function statusClass(status) {
     submitted: 'bg-blue-100 text-blue-700',
     approved: 'bg-green-100 text-green-700',
     rejected: 'bg-red-100 text-red-700',
+    requires_revision: 'bg-amber-100 text-amber-800',
     cancelled: 'bg-slate-100 text-slate-600',
   };
   return map[status] || 'bg-gray-100 text-gray-700';
+}
+
+function statusLabel(status) {
+  const map = {
+    draft: 'Draft',
+    submitted: 'Submitted',
+    approved: 'Approved',
+    rejected: 'Not Approved',
+    requires_revision: 'Requires Revision',
+    cancelled: 'Cancelled',
+  };
+  return map[status] || status;
 }
 </script>

@@ -7,7 +7,7 @@
             <i class="fa-solid fa-lightbulb text-amber-500"></i>
             {{ isEdit ? 'Edit NPD Plan & Report' : 'Buat NPD Plan & Report' }}
           </h1>
-          <p class="text-sm text-gray-500 mt-1">Isi header report dan daftar produk yang dikembangkan</p>
+          <p class="text-sm text-gray-500 mt-1">Isi data report, produk, dan pilih approver sebelum simpan</p>
         </div>
         <Link
           :href="isEdit ? route('npd-plan-report.show', record.id) : route('npd-plan-report.index')"
@@ -46,7 +46,7 @@
               </select>
               <p v-if="form.errors.outlet_id" class="text-xs text-red-500 mt-1">{{ form.errors.outlet_id }}</p>
             </div>
-            <div class="md:col-span-1">
+            <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Catatan</label>
               <input
                 v-model="form.notes"
@@ -62,7 +62,7 @@
           <div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-amber-50 to-white">
             <div>
               <h2 class="text-lg font-semibold text-gray-800">Daftar Produk</h2>
-              <p class="text-xs text-gray-500">Tambahkan produk yang direncanakan atau dilaporkan</p>
+              <p class="text-xs text-gray-500">Category searchable, area/outlet bisa multi-select</p>
             </div>
             <button
               type="button"
@@ -76,11 +76,14 @@
 
           <p v-if="form.errors.items" class="px-6 pt-4 text-sm text-red-500">{{ form.errors.items }}</p>
 
-          <div class="hidden lg:grid lg:grid-cols-12 gap-3 px-6 py-3 bg-gray-50 border-b text-xs font-bold text-gray-600 uppercase">
+          <div class="overflow-x-auto">
+          <div class="min-w-[1280px]">
+          <div class="hidden xl:grid xl:grid-cols-14 gap-3 px-6 py-3 bg-gray-50 border-b text-xs font-bold text-gray-600 uppercase">
             <div class="col-span-2">Product Name</div>
-            <div class="col-span-1">Category</div>
+            <div class="col-span-2">Category</div>
+            <div class="col-span-2">PIC</div>
             <div class="col-span-1">Dev. Date</div>
-            <div class="col-span-2">Purpose</div>
+            <div class="col-span-1">Purpose</div>
             <div class="col-span-1">Launch Date</div>
             <div class="col-span-2">Area / Outlet</div>
             <div class="col-span-1">F&B Cost</div>
@@ -88,25 +91,21 @@
             <div class="col-span-1 text-center">Aksi</div>
           </div>
 
-          <div v-if="form.items.length === 0" class="px-6 py-12 text-center text-gray-500">
-            Belum ada produk. Klik "Tambah Produk" untuk memulai.
-          </div>
-
           <div
             v-for="(item, index) in form.items"
             :key="index"
             class="px-6 py-4 border-b last:border-b-0 hover:bg-amber-50/30 transition-colors"
           >
-            <div class="flex items-center gap-2 mb-3 lg:hidden">
+            <div class="flex items-center gap-2 mb-3 xl:hidden">
               <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
                 {{ index + 1 }}
               </span>
               <span class="text-sm font-semibold text-gray-700">Product #{{ index + 1 }}</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
-              <div class="lg:col-span-2">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Product Name *</label>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-14 gap-3 items-start">
+              <div class="xl:col-span-2">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Product Name *</label>
                 <input
                   v-model="item.product_name"
                   type="text"
@@ -115,25 +114,60 @@
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
-              <div class="lg:col-span-1">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Category</label>
-                <input
+
+              <div class="xl:col-span-2">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Category *</label>
+                <Multiselect
                   v-model="item.category"
-                  type="text"
-                  placeholder="Food / Beverage"
-                  class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
+                  :options="categories"
+                  label="name"
+                  track-by="id"
+                  :searchable="true"
+                  :allow-empty="false"
+                  :show-labels="false"
+                  placeholder="Cari category..."
+                  class="text-sm"
                 />
               </div>
-              <div class="lg:col-span-1">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Development Date</label>
+
+              <div class="xl:col-span-2">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">PIC</label>
+                <Multiselect
+                  v-model="item.pics"
+                  :options="item.picOptions"
+                  label="name"
+                  track-by="id"
+                  :multiple="true"
+                  :searchable="true"
+                  :internal-search="false"
+                  :close-on-select="false"
+                  :show-labels="false"
+                  :loading="item.picLoading"
+                  placeholder="Cari user PIC..."
+                  class="text-sm"
+                  @search-change="(query) => searchPicUsers(index, query)"
+                  @open="searchPicUsers(index, '')"
+                >
+                  <template #option="{ option }">
+                    <div>
+                      <div class="font-medium text-sm">{{ option.name }}</div>
+                      <div class="text-xs text-gray-500">{{ option.jabatan || option.email || '-' }}</div>
+                    </div>
+                  </template>
+                </Multiselect>
+              </div>
+
+              <div class="xl:col-span-1">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Development Date</label>
                 <input
                   v-model="item.development_date"
                   type="date"
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
-              <div class="lg:col-span-2">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Purpose *</label>
+
+              <div class="xl:col-span-1">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Purpose *</label>
                 <select
                   v-model="item.purpose"
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
@@ -143,25 +177,34 @@
                   </option>
                 </select>
               </div>
-              <div class="lg:col-span-1">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Launch Date</label>
+
+              <div class="xl:col-span-1">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Launch Date</label>
                 <input
                   v-model="item.proposed_launch_date"
                   type="date"
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
-              <div class="lg:col-span-2">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Area / Outlet</label>
-                <input
-                  v-model="item.proposed_launch_area_outlet"
-                  type="text"
-                  placeholder="Area atau outlet launch"
-                  class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
+
+              <div class="xl:col-span-2">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Area / Outlet *</label>
+                <Multiselect
+                  v-model="item.launch_outlets"
+                  :options="launchOutlets"
+                  label="nama_outlet"
+                  track-by="id_outlet"
+                  :multiple="true"
+                  :searchable="true"
+                  :close-on-select="false"
+                  :show-labels="false"
+                  placeholder="Pilih outlet launch..."
+                  class="text-sm"
                 />
               </div>
-              <div class="lg:col-span-1">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">F&B Cost</label>
+
+              <div class="xl:col-span-1">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">F&B Cost</label>
                 <input
                   v-model.number="item.fb_cost"
                   type="number"
@@ -170,8 +213,9 @@
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
-              <div class="lg:col-span-1">
-                <label class="lg:hidden text-xs font-semibold text-gray-500 mb-1 block">Selling Price</label>
+
+              <div class="xl:col-span-1">
+                <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Selling Price</label>
                 <input
                   v-model.number="item.selling_price"
                   type="number"
@@ -180,7 +224,8 @@
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
-              <div class="lg:col-span-1 flex lg:justify-center">
+
+              <div class="xl:col-span-1 flex xl:justify-center">
                 <button
                   type="button"
                   @click="removeItem(index)"
@@ -193,6 +238,60 @@
               </div>
             </div>
           </div>
+          </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow p-6 mb-6">
+          <h2 class="text-lg font-semibold text-gray-800 mb-1">Approval Flow *</h2>
+          <p class="text-sm text-gray-500 mb-4">Pilih approver secara berurutan (level 1 = pertama disetujui)</p>
+          <p v-if="form.errors.approvers" class="text-sm text-red-500 mb-3">{{ form.errors.approvers }}</p>
+
+          <div class="relative mb-4 max-w-xl">
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Cari Approver</label>
+            <input
+              v-model="approverSearch"
+              type="text"
+              placeholder="Nama, email, atau jabatan..."
+              class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              @input="onApproverSearch"
+            />
+            <div
+              v-if="showApproverDropdown && approverResults.length"
+              class="absolute z-20 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto"
+            >
+              <button
+                v-for="user in approverResults"
+                :key="user.id"
+                type="button"
+                class="w-full text-left px-4 py-2 hover:bg-blue-50 text-sm border-b last:border-b-0"
+                @click="addApprover(user)"
+              >
+                <div class="font-medium">{{ user.name }}</div>
+                <div class="text-xs text-gray-500">{{ user.jabatan || user.email }}</div>
+              </button>
+            </div>
+          </div>
+
+          <div v-if="selectedApprovers.length" class="space-y-2 max-w-xl">
+            <div
+              v-for="(approver, index) in selectedApprovers"
+              :key="approver.id"
+              class="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100"
+            >
+              <span class="w-7 h-7 rounded-full bg-blue-500 text-white text-xs font-bold flex items-center justify-center">
+                {{ index + 1 }}
+              </span>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-sm truncate">{{ approver.name }}</div>
+                <div class="text-xs text-gray-500 truncate">{{ approver.jabatan || approver.email }}</div>
+              </div>
+              <button type="button" class="text-red-500 hover:text-red-700" @click="removeApprover(index)">
+                <i class="fa-solid fa-times"></i>
+              </button>
+            </div>
+          </div>
+          <p v-else class="text-sm text-gray-400">Belum ada approver dipilih.</p>
         </div>
 
         <div class="flex justify-end gap-3">
@@ -208,7 +307,7 @@
             class="px-5 py-2.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition inline-flex items-center gap-2"
           >
             <i v-if="form.processing" class="fa fa-spinner fa-spin"></i>
-            {{ isEdit ? 'Simpan Perubahan' : 'Simpan Draft' }}
+            Simpan
           </button>
         </div>
       </form>
@@ -219,24 +318,39 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import axios from 'axios';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   record: { type: Object, default: null },
   outlets: { type: Array, default: () => [] },
+  launchOutlets: { type: Array, default: () => [] },
+  categories: { type: Array, default: () => [] },
   purposeOptions: { type: Array, default: () => [] },
 });
 
 const isEdit = computed(() => Boolean(props.record?.id));
 
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+const selectedApprovers = ref([]);
+let searchTimer = null;
+
 function emptyItem() {
   return {
     product_name: '',
-    category: '',
+    category: null,
+    pics: [],
+    picOptions: [],
+    picLoading: false,
     development_date: '',
     purpose: 'new_product',
     proposed_launch_date: '',
-    proposed_launch_area_outlet: '',
+    launch_outlets: [],
     fb_cost: 0,
     selling_price: 0,
   };
@@ -247,18 +361,84 @@ function extractMonth(value) {
   return String(value).slice(0, 7);
 }
 
+function resolveCategory(item) {
+  if (item.category_id) {
+    return props.categories.find((c) => c.id === item.category_id) || { id: item.category_id, name: item.category || '' };
+  }
+  if (item.category) {
+    return props.categories.find((c) => c.name === item.category) || { id: null, name: item.category };
+  }
+  return null;
+}
+
+function resolveLaunchOutlets(item) {
+  const stored = item.proposed_launch_area_outlet;
+  if (Array.isArray(stored) && stored.length) {
+    return stored
+      .map((entry) => {
+        const id = entry?.id ?? entry?.id_outlet;
+        const found = props.launchOutlets.find((o) => o.id_outlet === id);
+        return found || { id_outlet: id, nama_outlet: entry?.name || entry?.nama_outlet || `#${id}` };
+      })
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function resolvePics(stored) {
+  if (!Array.isArray(stored)) return [];
+  return stored
+    .map((entry) => ({
+      id: entry?.id,
+      name: entry?.name || entry?.nama_lengkap || `#${entry?.id || ''}`,
+      jabatan: entry?.jabatan || '',
+    }))
+    .filter((entry) => entry.id);
+}
+
 function mapRecordItems(items) {
   if (!items?.length) return [emptyItem()];
-  return items.map((item) => ({
-    product_name: item.product_name || '',
-    category: item.category || '',
-    development_date: item.development_date ? String(item.development_date).slice(0, 10) : '',
-    purpose: item.purpose || 'new_product',
-    proposed_launch_date: item.proposed_launch_date ? String(item.proposed_launch_date).slice(0, 10) : '',
-    proposed_launch_area_outlet: item.proposed_launch_area_outlet || '',
-    fb_cost: Number(item.fb_cost || 0),
-    selling_price: Number(item.selling_price || 0),
-  }));
+  return items.map((item) => {
+    const pics = resolvePics(item.pics);
+    return {
+      product_name: item.product_name || '',
+      category: resolveCategory(item),
+      pics,
+      picOptions: [...pics],
+      picLoading: false,
+      development_date: item.development_date ? String(item.development_date).slice(0, 10) : '',
+      purpose: item.purpose || 'new_product',
+      proposed_launch_date: item.proposed_launch_date ? String(item.proposed_launch_date).slice(0, 10) : '',
+      launch_outlets: resolveLaunchOutlets(item),
+      fb_cost: Number(item.fb_cost || 0),
+      selling_price: Number(item.selling_price || 0),
+    };
+  });
+}
+
+async function searchPicUsers(index, query = '') {
+  const item = form.items[index];
+  if (!item) return;
+
+  item.picLoading = true;
+  try {
+    const { data } = await axios.get(route('npd-plan-report.approvers'), { params: { search: query || '' } });
+    const selectedIds = new Set((item.pics || []).map((pic) => pic.id));
+    const fetched = (data.users || []).map((user) => ({
+      id: user.id,
+      name: user.name,
+      jabatan: user.jabatan || '',
+      email: user.email || '',
+    }));
+    item.picOptions = [
+      ...(item.pics || []),
+      ...fetched.filter((user) => !selectedIds.has(user.id)),
+    ];
+  } catch {
+    item.picOptions = [...(item.pics || [])];
+  } finally {
+    item.picLoading = false;
+  }
 }
 
 const form = useForm({
@@ -266,10 +446,12 @@ const form = useForm({
   outlet_id: props.record?.outlet_id || '',
   notes: props.record?.notes || '',
   items: mapRecordItems(props.record?.items),
+  approvers: [],
 });
 
 function addItem() {
   form.items.push(emptyItem());
+  searchPicUsers(form.items.length - 1, '');
 }
 
 function removeItem(index) {
@@ -277,11 +459,97 @@ function removeItem(index) {
   form.items.splice(index, 1);
 }
 
-function submit() {
-  if (isEdit.value) {
-    form.put(route('npd-plan-report.update', props.record.id));
-  } else {
-    form.post(route('npd-plan-report.store'));
+function onApproverSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadApprovers(approverSearch.value), 300);
+}
+
+async function loadApprovers(search = '') {
+  try {
+    const { data } = await axios.get(route('npd-plan-report.approvers'), { params: { search } });
+    approverResults.value = data.users || [];
+    showApproverDropdown.value = approverResults.value.length > 0;
+  } catch {
+    approverResults.value = [];
+    showApproverDropdown.value = false;
   }
 }
+
+function addApprover(user) {
+  if (!selectedApprovers.value.find((a) => a.id === user.id)) {
+    selectedApprovers.value.push(user);
+  }
+  approverSearch.value = '';
+  showApproverDropdown.value = false;
+}
+
+function removeApprover(index) {
+  selectedApprovers.value.splice(index, 1);
+}
+
+function buildPayload() {
+  return {
+    report_month: form.report_month,
+    outlet_id: form.outlet_id,
+    notes: form.notes,
+    approvers: selectedApprovers.value.map((a) => a.id),
+    items: form.items.map((item) => ({
+      product_name: item.product_name,
+      category_id: item.category?.id,
+      development_date: item.development_date || null,
+      purpose: item.purpose,
+      proposed_launch_date: item.proposed_launch_date || null,
+      proposed_launch_outlet_ids: (item.launch_outlets || []).map((o) => o.id_outlet),
+      pic_user_ids: (item.pics || []).map((pic) => pic.id),
+      fb_cost: item.fb_cost,
+      selling_price: item.selling_price,
+    })),
+  };
+}
+
+function submit() {
+  if (!selectedApprovers.value.length) {
+    Swal.fire('Error', 'Pilih minimal satu approver.', 'error');
+    return;
+  }
+
+  for (const item of form.items) {
+    if (!item.category?.id) {
+      Swal.fire('Error', 'Semua produk wajib memiliki category.', 'error');
+      return;
+    }
+    if (!item.launch_outlets?.length) {
+      Swal.fire('Error', 'Semua produk wajib memiliki area/outlet launch.', 'error');
+      return;
+    }
+  }
+
+  const payload = buildPayload();
+
+  if (isEdit.value) {
+    form.transform(() => payload).put(route('npd-plan-report.update', props.record.id));
+  } else {
+    form.transform(() => payload).post(route('npd-plan-report.store'));
+  }
+}
+
+onMounted(() => {
+  form.items.forEach((_, index) => searchPicUsers(index, ''));
+});
 </script>
+
+<style scoped>
+:deep(.multiselect) {
+  min-height: 42px;
+}
+:deep(.multiselect__tags) {
+  border-radius: 0.5rem;
+  border-color: rgb(209 213 219);
+  min-height: 42px;
+}
+@media (min-width: 1280px) {
+  .xl\:grid-cols-14 {
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+  }
+}
+</style>
