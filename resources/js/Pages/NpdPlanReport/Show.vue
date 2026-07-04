@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
+    <div class="w-full max-w-none py-6 px-4 sm:px-6 lg:px-8">
       <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
         <div>
           <div class="flex items-center gap-3 flex-wrap">

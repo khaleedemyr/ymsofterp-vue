@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-4">
+    <div class="w-full max-w-none py-6 px-4 sm:px-6 lg:px-8">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -77,7 +77,7 @@
           <p v-if="form.errors.items" class="px-6 pt-4 text-sm text-red-500">{{ form.errors.items }}</p>
 
           <div class="overflow-x-auto overflow-y-visible pb-4">
-          <div class="min-w-[1280px]">
+          <div class="w-full">
           <div class="hidden xl:grid xl:grid-cols-14 gap-3 px-6 py-3 bg-gray-50 border-b text-xs font-bold text-gray-600 uppercase">
             <div class="col-span-2">Product Name</div>
             <div class="col-span-2">Category</div>
