@@ -87,7 +87,7 @@ WHERE `code` = 'D021';
 
 UPDATE `kpi_parameters` SET
     `name` = 'Target Outlet Visits / Month',
-    `description` = 'Target kunjungan outlet/bulan from Regional Management',
+    `description` = 'Target total kunjungan keseluruhan per bulan (bukan per outlet) — Regional Management',
     `scope_type` = 'employee',
     `updated_at` = NOW()
 WHERE `code` = 'D022';

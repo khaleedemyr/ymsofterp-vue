@@ -1052,21 +1052,172 @@ class KpiEvaluationService
                 continue;
             }
 
-            $results[$item->id] = $this->assembleItemBreakdownFromGrid(
+            $paramByCode = $parameters->keyBy('code');
+            $assembler = $this->isPortfolioBreakdownFormula($meta['d_codes'], $paramByCode)
+                ? 'assemblePortfolioItemBreakdownFromGrid'
+                : 'assembleItemBreakdownFromGrid';
+
+            $results[$item->id] = $this->{$assembler}(
                 $item,
                 $meta['formula'],
                 $meta['d_codes'],
-                $parameters->keyBy('code'),
+                $paramByCode,
                 $paramMetaByCode,
                 $outletRows,
                 $parameterGrid,
                 $evaluation,
+                $baseContext,
             );
         }
 
         return [
             'items' => $results,
             'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Formula campuran scope outlet + employee (mis. D021/D022) — target tidak per outlet.
+     *
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     */
+    protected function isPortfolioBreakdownFormula(array $dCodes, Collection $parameters): bool
+    {
+        $hasOutlet = false;
+        $hasEmployee = false;
+
+        foreach ($dCodes as $code) {
+            $param = $parameters[$code] ?? null;
+            if (! $param) {
+                continue;
+            }
+            $scope = $param->scope_type ?? 'outlet';
+            if ($scope === 'employee') {
+                $hasEmployee = true;
+            } elseif ($scope === 'outlet') {
+                $hasOutlet = true;
+            }
+        }
+
+        return $hasOutlet && $hasEmployee;
+    }
+
+    /**
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     * @param  Collection<string, KpiEvaluationParameterValue>  $paramMetaByCode
+     * @param  array<int, array<string, ?float>>  $parameterGrid
+     * @param  array<string, mixed>  $baseContext
+     * @return array<string, mixed>
+     */
+    private function assemblePortfolioItemBreakdownFromGrid(
+        KpiEvaluationItem $item,
+        string $formula,
+        array $dCodes,
+        Collection $parameters,
+        Collection $paramMetaByCode,
+        Collection $outletRows,
+        array $parameterGrid,
+        KpiEvaluation $evaluation,
+        array $baseContext,
+    ): array {
+        $portfolioValues = [];
+        foreach ($dCodes as $code) {
+            $param = $parameters[$code] ?? null;
+            if ($param && $param->scope_type === 'employee') {
+                $portfolioValues[$code] = $this->resolver->resolve($param, $baseContext);
+            }
+        }
+
+        $parameterColumns = [];
+        foreach ($dCodes as $code) {
+            $param = $parameters[$code] ?? null;
+            $parameterColumns[] = [
+                'code' => $code,
+                'name' => $paramMetaByCode[$code]->parameter_name ?? $param->name ?? $code,
+                'scope_type' => $param->scope_type ?? 'outlet',
+            ];
+        }
+
+        $outletScopedCodes = [];
+        foreach ($dCodes as $code) {
+            if (($parameters[$code]->scope_type ?? 'outlet') === 'outlet') {
+                $outletScopedCodes[] = $code;
+            }
+        }
+        $primaryOutletCode = $outletScopedCodes[0] ?? null;
+
+        $rows = [];
+        $totalVisits = 0.0;
+
+        foreach ($outletRows as $outlet) {
+            $outletId = (int) $outlet->id_outlet;
+            $valueMap = [];
+            $outletContribution = 0.0;
+
+            foreach ($dCodes as $code) {
+                $param = $parameters[$code] ?? null;
+                if ($param && $param->scope_type === 'employee') {
+                    $valueMap[$code] = null;
+                    continue;
+                }
+
+                $value = $parameterGrid[$outletId][$code] ?? null;
+                $valueMap[$code] = $value;
+                if ($code === $primaryOutletCode && $value !== null) {
+                    $outletContribution = (float) $value;
+                }
+            }
+
+            $totalVisits += $outletContribution;
+            $visited = $outletContribution > 0;
+
+            $rows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => (string) $outlet->nama_outlet,
+                'outlet_label' => trim($outlet->nama_outlet . ($outlet->qr_code ? " ({$outlet->qr_code})" : '')),
+                'parameter_values' => $valueMap,
+                'achievement_percent' => null,
+                'performance_level' => $visited ? 'visited' : 'not_visited',
+                'score' => null,
+            ];
+        }
+
+        usort($rows, function (array $a, array $b): int {
+            $visitedOrder = ['not_visited' => 0, 'visited' => 1];
+            $la = $visitedOrder[$a['performance_level']] ?? 0;
+            $lb = $visitedOrder[$b['performance_level']] ?? 0;
+            if ($la !== $lb) {
+                return $lb <=> $la;
+            }
+
+            return strcmp((string) $a['outlet_name'], (string) $b['outlet_name']);
+        });
+
+        $visitedOutlets = count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'visited'));
+
+        return [
+            'available' => true,
+            'breakdown_mode' => 'portfolio',
+            'outlet_count' => $outletRows->count(),
+            'item_name' => $item->item_name,
+            'formula' => $formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
+            'parameter_columns' => $parameterColumns,
+            'portfolio_values' => $portfolioValues,
+            'portfolio_note' => 'Target kunjungan (D022) adalah total keseluruhan per bulan, bukan target per outlet.',
+            'rows' => $rows,
+            'summary' => [
+                'exceeding' => 0,
+                'meeting' => 0,
+                'below' => 0,
+                'visited_outlets' => $visitedOutlets,
+                'total_visits' => round($totalVisits, 2),
+                'portfolio_target' => $portfolioValues['D022'] ?? null,
+            ],
         ];
     }
 
@@ -1086,6 +1237,7 @@ class KpiEvaluationService
         Collection $outletRows,
         array $parameterGrid,
         KpiEvaluation $evaluation,
+        array $baseContext = [],
     ): array {
         $parameterColumns = [];
         foreach ($dCodes as $code) {
@@ -1136,6 +1288,7 @@ class KpiEvaluationService
 
         return [
             'available' => true,
+            'breakdown_mode' => 'per_outlet',
             'outlet_count' => $outletRows->count(),
             'item_name' => $item->item_name,
             'formula' => $formula,

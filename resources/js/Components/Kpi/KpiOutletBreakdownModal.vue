@@ -26,12 +26,27 @@ function levelBadge(level) {
     exceeding: 'bg-green-100 text-green-800',
     meeting: 'bg-blue-100 text-blue-800',
     below: 'bg-red-100 text-red-800',
+    visited: 'bg-green-100 text-green-800',
+    not_visited: 'bg-gray-100 text-gray-600',
   };
   return map[level] || 'bg-gray-100 text-gray-700';
 }
 
 function levelLabel(level) {
-  return { exceeding: 'Achieve', meeting: 'Meeting', below: 'Below' }[level] || level;
+  return {
+    exceeding: 'Achieve',
+    meeting: 'Meeting',
+    below: 'Below',
+    visited: 'Dikunjungi',
+    not_visited: 'Belum',
+  }[level] || level;
+}
+
+function paramCellValue(row, col) {
+  if (col.scope_type === 'employee') {
+    return '—';
+  }
+  return formatNum(row.parameter_values?.[col.code]);
 }
 
 function resetBulkCache() {
@@ -163,7 +178,26 @@ defineExpose({ show, preload });
           </div>
 
           <template v-else-if="data?.available">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+            <div v-if="data.breakdown_mode === 'portfolio'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-gray-500 text-xs">Total Outlet</div>
+                <div class="font-bold text-lg">{{ data.outlet_count }}</div>
+              </div>
+              <div class="bg-green-50 rounded-lg p-3">
+                <div class="text-green-700 text-xs">Outlet Dikunjungi</div>
+                <div class="font-bold text-lg text-green-800">{{ data.summary.visited_outlets ?? 0 }}</div>
+              </div>
+              <div class="bg-blue-50 rounded-lg p-3">
+                <div class="text-blue-700 text-xs">Total Kunjungan</div>
+                <div class="font-bold text-lg text-blue-800">{{ formatNum(data.summary.total_visits) }}</div>
+              </div>
+              <div class="bg-amber-50 rounded-lg p-3">
+                <div class="text-amber-800 text-xs">Target Total / Bulan</div>
+                <div class="font-bold text-lg text-amber-900">{{ formatNum(data.summary.portfolio_target) }}</div>
+              </div>
+            </div>
+
+            <div v-else class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-gray-500 text-xs">Total Outlet</div>
                 <div class="font-bold text-lg">{{ data.outlet_count }}</div>
@@ -183,8 +217,18 @@ defineExpose({ show, preload });
             </div>
 
             <p class="text-xs text-gray-500 mb-3">
-              Nilai per outlet dihitung dari data ERP per outlet (bukan agregat scope).
-              Achievement agregat evaluasi: <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+              <template v-if="data.breakdown_mode === 'portfolio'">
+                {{ data.portfolio_note }}
+                Achievement agregat evaluasi:
+                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
+                  ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan)
+                </span>
+              </template>
+              <template v-else>
+                Nilai per outlet dihitung dari data ERP per outlet (bukan agregat scope).
+                Achievement agregat evaluasi: <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+              </template>
             </p>
 
             <div class="overflow-x-auto border rounded-xl">
@@ -198,11 +242,14 @@ defineExpose({ show, preload });
                       class="px-3 py-2 text-right whitespace-nowrap"
                     >
                       {{ col.code }}
-                      <div class="text-[10px] font-normal text-gray-400 truncate max-w-[8rem]">{{ col.name }}</div>
+                      <div class="text-[10px] font-normal text-gray-400 truncate max-w-[8rem]">
+                        {{ col.name }}
+                        <span v-if="col.scope_type === 'employee'"> (total)</span>
+                      </div>
                     </th>
-                    <th class="px-3 py-2 text-right">Achievement</th>
-                    <th class="px-3 py-2 text-center">Level</th>
-                    <th class="px-3 py-2 text-right">Skor</th>
+                    <th v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">Achievement</th>
+                    <th class="px-3 py-2 text-center">{{ data.breakdown_mode === 'portfolio' ? 'Status' : 'Level' }}</th>
+                    <th v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">Skor</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y">
@@ -213,9 +260,9 @@ defineExpose({ show, preload });
                       :key="col.code"
                       class="px-3 py-2 text-right text-gray-700"
                     >
-                      {{ formatNum(row.parameter_values?.[col.code]) }}
+                      {{ paramCellValue(row, col) }}
                     </td>
-                    <td class="px-3 py-2 text-right font-semibold">
+                    <td v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right font-semibold">
                       {{ formatNum(row.achievement_percent) }}<template v-if="row.achievement_percent != null">%</template>
                     </td>
                     <td class="px-3 py-2 text-center">
@@ -223,7 +270,7 @@ defineExpose({ show, preload });
                         {{ levelLabel(row.performance_level) }}
                       </span>
                     </td>
-                    <td class="px-3 py-2 text-right">{{ formatNum(row.score) }}</td>
+                    <td v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">{{ formatNum(row.score) }}</td>
                   </tr>
                 </tbody>
               </table>

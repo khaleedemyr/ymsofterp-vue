@@ -162,6 +162,12 @@ class KpiParameterResolverService
             ]);
 
             foreach ($params as $param) {
+                // Parameter employee-scope (mis. target kunjungan total) bukan nilai per outlet.
+                if ($param->scope_type === 'employee') {
+                    $grid[$outletId][$param->code] = null;
+                    continue;
+                }
+
                 $grid[$outletId][$param->code] = $this->resolve($param, $context);
             }
         }
