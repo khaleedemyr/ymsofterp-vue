@@ -266,9 +266,12 @@ class KpiEvaluationService
      */
     public function erpDiagnostics(KpiEvaluation $evaluation, ?string $scopeOverride = null, ?array $outletIdsOverride = null): array
     {
-        $result = $this->erpDiagnosticsFromContext(
-            $this->buildErpContext($evaluation, $scopeOverride, $outletIdsOverride),
-        );
+        $context = $this->buildErpContext($evaluation, $scopeOverride, $outletIdsOverride);
+        $context['parameter_codes'] = $evaluation->parameterValues()
+            ->pluck('parameter_code')
+            ->all();
+
+        $result = $this->resolver->diagnose($context);
 
         return $this->appendParameterSyncHints($evaluation, $result);
     }

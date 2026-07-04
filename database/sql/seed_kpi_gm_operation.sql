@@ -22,7 +22,9 @@
 --   D018  Training           → Just Academy (modul wajib selesai)
 --   D016  QA Score           → QA2 Audit 1 (C / (C+NC))
 --   D021  Visit Actual       → absensi scan IN di outlet (Regional Visit Report)
---   D022  Visit Target       → Regional Management target_outlet_visits/bulan
+--   D022  Visit Target       → Regional Management target_outlet_visits/bulan (total)
+--   D023  Closed tickets     → Ticketing System (status Closed)
+--   D024  Total tickets      → Ticketing System (semua ticket aktif, excl. cancelled)
 -- =====================================================
 
 START TRANSACTION;

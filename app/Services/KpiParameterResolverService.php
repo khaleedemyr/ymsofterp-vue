@@ -243,6 +243,11 @@ class KpiParameterResolverService
         $outletIds = $this->outletIdsFromContext($context);
         $periodMonth = (string) ($context['period_month'] ?? '');
         $erpDataScope = (string) ($context['erp_data_scope'] ?? 'employee_outlet');
+        /** @var list<string> $parameterCodes */
+        $parameterCodes = array_values(array_unique(array_filter(
+            array_map('strval', $context['parameter_codes'] ?? []),
+        )));
+        $usesParameter = static fn (string $code): bool => $parameterCodes === [] || in_array($code, $parameterCodes, true);
 
         $issues = [];
         $hints = [];
@@ -272,7 +277,7 @@ class KpiParameterResolverService
             $revenueMatch = $revenueProbe['match'];
             $orderCount = $revenueProbe['count'];
 
-            if ($orderCount === 0) {
+            if ($orderCount === 0 && $usesParameter('D001')) {
                 $hints[] = 'Tidak ada order POS untuk scope outlet di periode ' . $periodMonth
                     . ' — pastikan outlet yang dipilih benar dan punya transaksi.';
             }
@@ -280,13 +285,13 @@ class KpiParameterResolverService
             $year = (int) substr($periodMonth, 0, 4);
             $month = (int) substr($periodMonth, 5, 2);
             $budgetAmount = $this->resolveMonthlyBudget($outletIds, $month, $year);
-            if ($budgetAmount === 0.0) {
+            if ($budgetAmount === 0.0 && $usesParameter('D002')) {
                 $hints[] = "Budget belum di-set di Revenue Targets (Target Pendapatan) atau outlet_monthly_budgets untuk {$periodMonth} — D002 akan 0.";
                 $budgetAmount = null;
             }
         }
 
-        if ($this->hasTicketCategoriesTable()) {
+        if ($usesParameter('D014') && $this->hasTicketCategoriesTable()) {
             $complaintCats = (int) DB::table('ticket_categories')
                 ->where(function ($q) {
                     $q->where('name', 'like', '%complaint%')
@@ -1053,7 +1058,20 @@ class KpiParameterResolverService
         }
 
         $empty = array_fill_keys($ids, 0.0);
-        if (!$this->hasTicketsTable() || !$this->hasTicketCategoriesTable()) {
+        if (! $this->hasTicketsTable()) {
+            return $this->ticketCountCache[$cacheKey] = $empty;
+        }
+
+        if ($kind === 'improvement') {
+            return $this->ticketCountCache[$cacheKey] = $this->countTicketingTicketsByOutlet(
+                $ids,
+                $start,
+                $end,
+                $closedOnly === true,
+            );
+        }
+
+        if (! $this->hasTicketCategoriesTable()) {
             return $this->ticketCountCache[$cacheKey] = $empty;
         }
 
@@ -1070,14 +1088,6 @@ class KpiParameterResolverService
                     ->orWhere('tc.name', 'like', '%keluhan%')
                     ->orWhere('tc.description', 'like', '%complaint%')
                     ->orWhere('tc.description', 'like', '%komplain%');
-            });
-        } else {
-            $query->where(function ($q) {
-                $q->where('tc.name', 'like', '%improvement%')
-                    ->orWhere('tc.name', 'like', '%perbaikan%')
-                    ->orWhere('tc.name', 'like', '%action%')
-                    ->orWhere('tc.description', 'like', '%improvement%')
-                    ->orWhere('tc.description', 'like', '%perbaikan%');
             });
 
             if ($closedOnly === true && $this->hasTicketStatusesTable()) {
@@ -1099,6 +1109,46 @@ class KpiParameterResolverService
         }
 
         return $this->ticketCountCache[$cacheKey] = $empty;
+    }
+
+    /**
+     * Semua ticket Ticketing System (exclude cancelled) — dipakai KPI D023/D024.
+     *
+     * @param  list<int>  $outletIds
+     * @return array<int, float>
+     */
+    private function countTicketingTicketsByOutlet(
+        array $outletIds,
+        string $start,
+        string $end,
+        bool $closedOnly,
+    ): array {
+        $counts = array_fill_keys($outletIds, 0.0);
+
+        $query = DB::table('tickets as t')
+            ->whereIn('t.outlet_id', $outletIds)
+            ->whereDate('t.created_at', '>=', $start)
+            ->whereDate('t.created_at', '<=', $end);
+
+        if ($this->hasTicketStatusesTable()) {
+            $query->join('ticket_statuses as ts', 't.status_id', '=', 'ts.id')
+                ->where('ts.slug', '!=', 'cancelled');
+
+            if ($closedOnly) {
+                $query->where('ts.slug', 'closed');
+            }
+        }
+
+        $rows = $query
+            ->select('t.outlet_id', DB::raw('COUNT(t.id) as cnt'))
+            ->groupBy('t.outlet_id')
+            ->pluck('cnt', 'outlet_id');
+
+        foreach ($outletIds as $id) {
+            $counts[$id] = (float) ($rows[$id] ?? 0);
+        }
+
+        return $counts;
     }
 
     private function hasTicketsTable(): bool

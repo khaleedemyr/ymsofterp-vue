@@ -477,7 +477,9 @@ onMounted(() => {
         <ul class="list-disc list-inside space-y-1">
           <li v-for="(hint, i) in erpDiagnostics.hints" :key="'hint-' + i">{{ hint }}</li>
         </ul>
-        <p class="mt-2 text-xs text-amber-800">Tip: bandingkan dengan menu <strong>Outlet Analyzer</strong> untuk outlet &amp; periode yang sama.</p>
+        <p v-if="erpDiagnostics?.hints?.length" class="mt-2 text-xs text-amber-800">
+          Tip: bandingkan dengan menu <strong>Outlet Analyzer</strong> untuk outlet &amp; periode yang sama.
+        </p>
       </div>
 
       <!-- Data Parameters -->
