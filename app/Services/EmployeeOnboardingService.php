@@ -499,7 +499,33 @@ class EmployeeOnboardingService
             'notes' => $onboarding->notes,
             'weeks' => $weeks,
             'can_manage' => $this->canManageOnboarding($onboarding),
+            'template_week_approvers' => $this->getTemplateWeekApproversMap($onboarding->template_id),
         ];
+    }
+
+    /**
+     * @return array<int, list<array{approver_user_id: int, approver_name: string|null, approval_level: int}>>
+     */
+    public function getTemplateWeekApproversMap(int $templateId): array
+    {
+        $rows = OnboardingTemplateWeekApprover::query()
+            ->with('approver:id,nama_lengkap')
+            ->where('template_id', $templateId)
+            ->orderBy('week_number')
+            ->orderBy('approval_level')
+            ->get();
+
+        $map = [];
+        foreach ($rows as $row) {
+            $weekNumber = (int) $row->week_number;
+            $map[$weekNumber][] = [
+                'approver_user_id' => (int) $row->approver_user_id,
+                'approver_name' => $row->approver?->nama_lengkap,
+                'approval_level' => (int) $row->approval_level,
+            ];
+        }
+
+        return $map;
     }
 
     /**

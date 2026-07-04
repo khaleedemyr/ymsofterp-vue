@@ -22,11 +22,11 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-600 mb-1">Karyawan *</label>
-            <input v-model="employeeSearch" type="text" placeholder="Cari karyawan..." class="w-full rounded-lg border-gray-300 mb-2" @input="searchEmployees" />
-            <select v-model="form.employee_user_id" required class="w-full rounded-lg border-gray-300">
-              <option value="">Pilih karyawan</option>
-              <option v-for="user in employeeOptions" :key="user.id" :value="user.id">{{ user.name }} — {{ user.jabatan || user.email }}</option>
-            </select>
+            <OnboardingUserSelect
+              v-model="form.employee_user_id"
+              search-route="employee-onboarding.search-employees"
+              placeholder="Cari karyawan..."
+            />
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-600 mb-1">Outlet</label>
@@ -55,20 +55,32 @@
                   <div class="font-medium text-gray-800">{{ area.area_name }}</div>
                   <div class="flex-1"></div>
                   <div class="flex items-center gap-2">
-                    <select v-model="bulkPic[`${week.week_number}::${area.area_name}`]" class="rounded-lg border-gray-300 text-sm">
-                      <option value="">Bulk PIC area</option>
-                      <option v-for="user in userOptions" :key="user.id" :value="user.id">{{ user.name }}</option>
-                    </select>
+                    <OnboardingUserSelect
+                      v-model="bulkPic[`${week.week_number}::${area.area_name}`]"
+                      search-route="employee-onboarding.search-users"
+                      placeholder="Cari nama PIC (bulk)..."
+                      class="min-w-[260px]"
+                      @user-selected="cachePicUser"
+                    />
                     <button type="button" class="px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-sm" @click="applyBulkPic(week.week_number, area.area_name)">Terapkan</button>
                   </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2 px-1 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <div class="md:col-span-7">Checklist</div>
+                  <div class="md:col-span-2">Role Hint</div>
+                  <div class="md:col-span-3">PIC (Nama)</div>
                 </div>
                 <div v-for="item in area.items" :key="item.id" class="grid grid-cols-1 md:grid-cols-12 gap-2 mb-2 items-center">
                   <div class="md:col-span-7 text-sm">{{ item.checklist_text }}</div>
                   <div class="md:col-span-2 text-xs text-gray-500">{{ item.pic_role_hint || '-' }}</div>
-                  <select v-model="assignments[item.id]" class="md:col-span-3 rounded-lg border-gray-300 text-sm">
-                    <option value="">Pilih PIC</option>
-                    <option v-for="user in userOptions" :key="user.id" :value="user.id">{{ user.name }}</option>
-                  </select>
+                  <OnboardingUserSelect
+                    v-model="assignments[item.id]"
+                    search-route="employee-onboarding.search-users"
+                    placeholder="Cari nama PIC..."
+                    class="md:col-span-3"
+                    :initial-user="picUserCache[assignments[item.id]] || null"
+                    @user-selected="cachePicUser"
+                  />
                 </div>
               </div>
             </div>
@@ -86,21 +98,25 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import OnboardingUserSelect from '@/Components/EmployeeOnboarding/OnboardingUserSelect.vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import { onMounted, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 
 defineProps({
   templates: { type: Array, default: () => [] },
   outlets: { type: Array, default: () => [] },
 });
 
-const employeeSearch = ref('');
-const employeeOptions = ref([]);
-const userOptions = ref([]);
 const templateStructure = ref(null);
 const assignments = reactive({});
 const bulkPic = reactive({});
+const picUserCache = reactive({});
+
+function cachePicUser(user) {
+  if (!user?.id) return;
+  picUserCache[user.id] = { id: user.id, name: user.name, jabatan: user.jabatan };
+}
 
 const form = useForm({
   template_id: '',
@@ -109,16 +125,6 @@ const form = useForm({
   start_date: new Date().toISOString().slice(0, 10),
   notes: '',
 });
-
-async function searchEmployees() {
-  const { data } = await axios.get(route('employee-onboarding.search-employees'), { params: { search: employeeSearch.value } });
-  employeeOptions.value = data.users || [];
-}
-
-async function loadUsers() {
-  const { data } = await axios.get(route('employee-onboarding.search-users'));
-  userOptions.value = data.users || [];
-}
 
 async function loadTemplate() {
   if (!form.template_id) {
@@ -150,8 +156,4 @@ function submit() {
 
   form.transform((data) => ({ ...data, item_assignments })).post(route('employee-onboarding.store'));
 }
-
-onMounted(async () => {
-  await Promise.all([searchEmployees(), loadUsers()]);
-});
 </script>

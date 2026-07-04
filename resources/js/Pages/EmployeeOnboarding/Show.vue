@@ -75,10 +75,13 @@
                 <td class="px-3 py-3 whitespace-nowrap">{{ item.area_name }}</td>
                 <td class="px-3 py-3">{{ item.checklist_text }}</td>
                 <td class="px-3 py-3">
-                  <select v-if="record.can_manage && weekEditable" v-model="item.assigned_pic_user_id" class="rounded-lg border-gray-300 text-sm">
-                    <option :value="null">-</option>
-                    <option v-for="user in userOptions" :key="user.id" :value="user.id">{{ user.name }}</option>
-                  </select>
+                  <OnboardingUserSelect
+                    v-if="record.can_manage && weekEditable"
+                    v-model="item.assigned_pic_user_id"
+                    search-route="employee-onboarding.search-users"
+                    placeholder="Cari PIC..."
+                    :initial-user="item.assigned_pic_user_id ? { id: item.assigned_pic_user_id, name: item.assigned_pic_name } : null"
+                  />
                   <span v-else>{{ item.assigned_pic_name || '-' }}</span>
                 </td>
                 <td class="px-3 py-3">
@@ -108,13 +111,20 @@
       <div v-if="showSubmitModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
           <h3 class="text-lg font-semibold mb-2">Submit Minggu {{ activeWeek }}</h3>
-          <p class="text-sm text-gray-500 mb-4">Override approver (opsional). Kosongkan untuk pakai default dari template.</p>
+          <p class="text-sm text-gray-500 mb-2">Approver default dari template sudah terisi. Tambah approver variabel (mis. Regional Manager) jika diperlukan untuk minggu ini.</p>
+          <p class="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-4">
+            Regional Manager dipilih per submit — tidak pakai default template.
+          </p>
           <div v-for="(approverId, idx) in submitApprovers" :key="idx" class="flex items-center gap-2 mb-2">
             <span class="w-8 text-center text-xs font-bold bg-gray-100 rounded">{{ idx + 1 }}</span>
-            <select v-model="submitApprovers[idx]" class="flex-1 rounded-lg border-gray-300">
-              <option value="">Pilih approver</option>
-              <option v-for="user in userOptions" :key="user.id" :value="user.id">{{ user.name }}</option>
-            </select>
+            <OnboardingUserSelect
+              v-model="submitApprovers[idx]"
+              search-route="employee-onboarding.search-users"
+              placeholder="Cari approver..."
+              class="flex-1"
+              :initial-user="submitApproverUsers[approverId] || null"
+              @user-selected="cacheSubmitApprover"
+            />
             <button type="button" class="text-red-500" @click="submitApprovers.splice(idx, 1)"><i class="fa-solid fa-trash"></i></button>
           </div>
           <button type="button" class="text-sm text-indigo-600 mb-4" @click="submitApprovers.push('')"><i class="fa-solid fa-plus"></i> Tambah Approver</button>
@@ -130,9 +140,10 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import OnboardingUserSelect from '@/Components/EmployeeOnboarding/OnboardingUserSelect.vue';
 import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -142,10 +153,10 @@ const props = defineProps({
 
 const localRecord = ref(JSON.parse(JSON.stringify(props.record)));
 const activeWeek = ref(props.record.unlocked_week || 1);
-const userOptions = ref([]);
 const saving = ref(false);
 const showSubmitModal = ref(false);
 const submitApprovers = ref(['']);
+const submitApproverUsers = reactive({});
 
 const currentWeekData = computed(() => localRecord.value.weeks.find((w) => w.week_number === activeWeek.value));
 const editableItems = computed(() => currentWeekData.value?.items || []);
@@ -175,11 +186,6 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString('id-ID');
 }
 
-async function loadUsers() {
-  const { data } = await axios.get(route('employee-onboarding.search-users'));
-  userOptions.value = data.users || [];
-}
-
 async function saveItems() {
   saving.value = true;
   try {
@@ -205,16 +211,36 @@ async function saveItems() {
 }
 
 function openSubmitModal() {
-  submitApprovers.value = [''];
+  const defaults = localRecord.value.template_week_approvers?.[activeWeek.value] || [];
+  if (defaults.length) {
+    submitApprovers.value = defaults.map((row) => row.approver_user_id);
+    defaults.forEach((row) => {
+      submitApproverUsers[row.approver_user_id] = {
+        id: row.approver_user_id,
+        name: row.approver_name,
+      };
+    });
+  } else {
+    submitApprovers.value = [''];
+  }
   showSubmitModal.value = true;
+}
+
+function cacheSubmitApprover(user) {
+  if (!user?.id) return;
+  submitApproverUsers[user.id] = { id: user.id, name: user.name, jabatan: user.jabatan };
 }
 
 async function submitWeek() {
   try {
     const approvers = submitApprovers.value.filter(Boolean).map(Number);
+    if (!approvers.length) {
+      Swal.fire({ icon: 'warning', title: 'Approver wajib', text: 'Pilih minimal satu approver.' });
+      return;
+    }
     const { data } = await axios.post(route('employee-onboarding.submit-week', localRecord.value.id), {
       week_number: activeWeek.value,
-      approvers: approvers.length ? approvers : undefined,
+      approvers,
     });
     if (data.success) {
       localRecord.value = data.record;
@@ -260,6 +286,4 @@ async function processApproval(action) {
     Swal.fire({ icon: 'error', title: 'Gagal', text: e?.response?.data?.message || 'Gagal approval.' });
   }
 }
-
-onMounted(loadUsers);
 </script>

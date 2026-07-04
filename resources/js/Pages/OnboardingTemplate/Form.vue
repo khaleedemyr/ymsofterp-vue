@@ -72,15 +72,21 @@
           </div>
 
           <div v-show="tab === 'approvers'" class="p-6">
-            <p class="text-sm text-gray-500 mb-4">Default approver per minggu. Bisa di-override saat submit minggu di instance onboarding.</p>
+            <p class="text-sm text-gray-500 mb-2">Default approver per minggu untuk approver tetap (mis. SPV, Outlet Manager).</p>
+            <p class="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-4">
+              Approver variabel seperti <strong>Regional Manager</strong> jangan disimpan di template — pilih saat submit minggu per karyawan/outlet.
+            </p>
             <div v-for="weekNum in form.total_weeks" :key="weekNum" class="mb-6 border rounded-lg p-4">
               <div class="font-semibold mb-3">Minggu {{ weekNum }}</div>
               <div v-for="(approver, idx) in approversForWeek(weekNum)" :key="idx" class="flex items-center gap-2 mb-2">
                 <span class="w-8 text-center text-xs font-bold bg-gray-100 rounded">{{ idx + 1 }}</span>
-                <select v-model="approver.approver_user_id" class="flex-1 rounded-lg border-gray-300">
-                  <option value="">Pilih approver</option>
-                  <option v-for="user in userOptions" :key="user.id" :value="user.id">{{ user.name }} — {{ user.jabatan || user.email }}</option>
-                </select>
+                <OnboardingUserSelect
+                  v-model="approver.approver_user_id"
+                  search-route="onboarding-templates.search-users"
+                  placeholder="Cari approver..."
+                  class="flex-1"
+                  :initial-user="approver.approver_user_id ? { id: approver.approver_user_id, name: approver.approver_name } : null"
+                />
                 <button type="button" class="text-red-500" @click="removeApprover(weekNum, idx)"><i class="fa-solid fa-trash"></i></button>
               </div>
               <button type="button" class="text-sm text-indigo-600" @click="addApprover(weekNum)"><i class="fa-solid fa-plus"></i> Tambah Approver</button>
@@ -101,9 +107,9 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import OnboardingUserSelect from '@/Components/EmployeeOnboarding/OnboardingUserSelect.vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
   record: { type: Object, default: null },
@@ -111,7 +117,6 @@ const props = defineProps({
 
 const isEdit = computed(() => Boolean(props.record?.id));
 const tab = ref('structure');
-const userOptions = ref([]);
 
 function emptyItem() {
   return { checklist_text: '', pic_role_hint: '' };
@@ -174,11 +179,6 @@ function reindexApprovers(weekNum) {
   });
 }
 
-async function loadUsers() {
-  const { data } = await axios.get(route('onboarding-templates.search-users'));
-  userOptions.value = data.users || [];
-}
-
 function submit() {
   const payload = {
     ...form.data(),
@@ -191,6 +191,4 @@ function submit() {
     form.transform(() => payload).post(route('onboarding-templates.store'));
   }
 }
-
-onMounted(loadUsers);
 </script>
