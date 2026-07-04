@@ -7,7 +7,7 @@
             <i class="fa-solid fa-chart-line text-teal-600"></i>
             {{ record.number }}
           </h1>
-          <p class="text-sm text-gray-500 mt-1">{{ formatMonth(record.report_month) }} · {{ record.outlet_name }}</p>
+          <p class="text-sm text-gray-500 mt-1">{{ formatMonth(record.report_month) }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <Link :href="route('competitor-benchmark-report.index')" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 transition">
@@ -27,7 +27,6 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div><div class="text-gray-500 text-xs uppercase tracking-wide">Nomor</div><div class="font-semibold text-gray-900 mt-1">{{ record.number }}</div></div>
           <div><div class="text-gray-500 text-xs uppercase tracking-wide">Bulan Report</div><div class="font-semibold text-gray-900 mt-1">{{ formatMonth(record.report_month) }}</div></div>
-          <div><div class="text-gray-500 text-xs uppercase tracking-wide">Outlet</div><div class="font-semibold text-gray-900 mt-1">{{ record.outlet_name }}</div></div>
           <div><div class="text-gray-500 text-xs uppercase tracking-wide">PIC</div><div class="font-semibold text-gray-900 mt-1">{{ formatPics(record.pics) }}</div></div>
           <div><div class="text-gray-500 text-xs uppercase tracking-wide">Dibuat Oleh</div><div class="font-semibold text-gray-900 mt-1">{{ record.creator?.nama_lengkap || '-' }}</div></div>
           <div v-if="record.notes" class="sm:col-span-2"><div class="text-gray-500 text-xs uppercase tracking-wide">Catatan</div><div class="text-gray-900 mt-1">{{ record.notes }}</div></div>

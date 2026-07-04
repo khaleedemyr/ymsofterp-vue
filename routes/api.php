@@ -864,6 +864,10 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/competitor-benchmark-report/{id}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::delete('/competitor-benchmark-report/{id}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // Competitor Benchmark Report — Laporan (mobile app)
+        Route::get('/competitor-benchmark-report-report', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'apiReport']);
+        Route::get('/competitor-benchmark-report-report/export', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'apiExport']);
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);

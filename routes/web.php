@@ -2438,6 +2438,13 @@ Route::get('/report/npd-plan-report/export', [\App\Http\Controllers\Report\NpdPl
 Route::get('/report/npd-plan-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'index'])
     ->middleware(['auth'])
     ->name('report.npd-plan-report.index');
+Route::get('/api/report/competitor-benchmark-report', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'report']);
+Route::get('/report/competitor-benchmark-report/export', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'export'])
+    ->middleware(['auth'])
+    ->name('report.competitor-benchmark-report.export');
+Route::get('/report/competitor-benchmark-report', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('report.competitor-benchmark-report.index');
 Route::get('/report/outlet-revenue-recap/export', [\App\Http\Controllers\Report\OutletRevenueRecapController::class, 'export'])
     ->middleware(['auth'])
     ->name('report.outlet-revenue-recap.export');

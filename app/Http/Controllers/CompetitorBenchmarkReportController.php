@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\CompetitorBenchmarkReport;
 use App\Models\CompetitorBenchmarkReportItem;
-use App\Models\Outlet;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,10 +25,8 @@ class CompetitorBenchmarkReportController extends Controller
             'filters' => [
                 'search' => $request->get('search', ''),
                 'month' => $request->get('month', ''),
-                'outlet_id' => $request->get('outlet_id', ''),
                 'perPage' => $request->get('perPage', 15),
             ],
-            'outlets' => $this->outletOptions(),
         ]);
     }
 
@@ -131,7 +128,6 @@ class CompetitorBenchmarkReportController extends Controller
                 'per_page' => $paginator->perPage(),
                 'total' => $paginator->total(),
             ],
-            'outlets' => $this->outletOptions(),
         ]);
     }
 
@@ -259,14 +255,14 @@ class CompetitorBenchmarkReportController extends Controller
                 ->whereDate('report_month', '<=', date('Y-m-t', strtotime($month.'-01')));
         }
 
-        if ($request->filled('outlet_id')) {
-            $query->where('outlet_id', (int) $request->outlet_id);
-        }
-
         if ($search = trim((string) $request->get('search', ''))) {
             $query->where(function ($q) use ($search) {
                 $q->where('number', 'like', "%{$search}%")
-                    ->orWhere('outlet_name', 'like', "%{$search}%");
+                    ->orWhereHas('creator', fn ($creator) => $creator->where('nama_lengkap', 'like', "%{$search}%"))
+                    ->orWhereHas('items', function ($items) use ($search) {
+                        $items->where('brand_restaurant_visited', 'like', "%{$search}%")
+                            ->orWhere('location', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -277,7 +273,6 @@ class CompetitorBenchmarkReportController extends Controller
     {
         return $request->validate([
             'report_month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
-            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'notes' => 'nullable|string|max:2000',
             'pic_user_ids' => 'nullable|array',
             'pic_user_ids.*' => 'integer|exists:users,id',
@@ -300,12 +295,11 @@ class CompetitorBenchmarkReportController extends Controller
 
     private function createReport(array $validated): CompetitorBenchmarkReport
     {
-        $outlet = Outlet::findOrFail($validated['outlet_id']);
         $report = CompetitorBenchmarkReport::create([
             'number' => $this->generateNumber($validated['report_month']),
             'report_month' => $validated['report_month'].'-01',
-            'outlet_id' => $outlet->id_outlet,
-            'outlet_name' => (string) $outlet->nama_outlet,
+            'outlet_id' => null,
+            'outlet_name' => null,
             'pics' => $this->buildPicPayload($validated['pic_user_ids'] ?? []),
             'status' => 'approved',
             'notes' => $validated['notes'] ?? null,
@@ -320,11 +314,8 @@ class CompetitorBenchmarkReportController extends Controller
 
     private function updateReport(CompetitorBenchmarkReport $report, array $validated): void
     {
-        $outlet = Outlet::findOrFail($validated['outlet_id']);
         $report->update([
             'report_month' => $validated['report_month'].'-01',
-            'outlet_id' => $outlet->id_outlet,
-            'outlet_name' => (string) $outlet->nama_outlet,
             'pics' => $this->buildPicPayload($validated['pic_user_ids'] ?? []),
             'notes' => $validated['notes'] ?? null,
             'status' => 'approved',
@@ -408,14 +399,7 @@ class CompetitorBenchmarkReportController extends Controller
 
     private function formOptions(): array
     {
-        return [
-            'outlets' => $this->outletOptions(),
-        ];
-    }
-
-    private function outletOptions()
-    {
-        return Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']);
+        return [];
     }
 
     private function generateNumber(string $reportMonth): string
@@ -484,8 +468,6 @@ class CompetitorBenchmarkReportController extends Controller
             'id' => $report->id,
             'number' => $report->number,
             'report_month' => $report->report_month?->format('Y-m'),
-            'outlet_id' => $report->outlet_id,
-            'outlet_name' => $report->outlet_name,
             'items_count' => $report->items_count ?? $report->items()->count(),
             'creator_name' => $report->creator?->nama_lengkap,
             'created_by' => $report->created_by,
@@ -503,8 +485,6 @@ class CompetitorBenchmarkReportController extends Controller
             'id' => $report->id,
             'number' => $report->number,
             'report_month' => $report->report_month?->format('Y-m'),
-            'outlet_id' => $report->outlet_id,
-            'outlet_name' => $report->outlet_name,
             'notes' => $report->notes,
             'pics' => $report->pics ?? [],
             'created_by' => $report->created_by,

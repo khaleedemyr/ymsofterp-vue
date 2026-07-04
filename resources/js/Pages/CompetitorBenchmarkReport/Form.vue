@@ -21,17 +21,10 @@
       <form @submit.prevent="submit">
         <div class="bg-white rounded-xl shadow p-6 mb-6">
           <h2 class="text-lg font-semibold text-gray-800 mb-4">Informasi Report</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Bulan *</label>
               <input v-model="form.report_month" type="month" required class="w-full rounded-lg border-gray-300 focus:border-teal-500 focus:ring-teal-500" />
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-gray-600 mb-1">Outlet *</label>
-              <select v-model="form.outlet_id" required class="w-full rounded-lg border-gray-300 focus:border-teal-500 focus:ring-teal-500">
-                <option value="">Pilih outlet</option>
-                <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">{{ outlet.nama_outlet }}</option>
-              </select>
             </div>
             <div class="md:col-span-2 xl:col-span-2 cbr-ms-field">
               <label class="block text-xs font-semibold text-gray-600 mb-1">PIC</label>
@@ -141,7 +134,6 @@ import 'vue-multiselect/dist/vue-multiselect.min.css';
 
 const props = defineProps({
   record: { type: Object, default: null },
-  outlets: { type: Array, default: () => [] },
 });
 
 const isEdit = computed(() => Boolean(props.record?.id));
@@ -222,7 +214,6 @@ function onPicOpen() {
 
 const form = useForm({
   report_month: extractMonth(props.record?.report_month),
-  outlet_id: props.record?.outlet_id || '',
   notes: props.record?.notes || '',
   items: mapRecordItems(props.record?.items),
 });
@@ -239,7 +230,6 @@ function removeItem(index) {
 function buildPayload() {
   return {
     report_month: form.report_month,
-    outlet_id: form.outlet_id,
     notes: form.notes,
     pic_user_ids: (selectedPics.value || []).map((pic) => pic.id),
     items: form.items.map((item) => ({
