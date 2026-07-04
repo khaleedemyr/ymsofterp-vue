@@ -104,6 +104,8 @@ export default {
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",
     "employee_coaching": "Employee Coaching",
+    "onboarding_template": "Onboarding Template",
+    "employee_onboarding": "Employee Onboarding",
     "fb_product_calibration": "F&B Product Calibration",
     "fb_product_calibration_report": "F&B Product Calibration Report",
     "npd_plan_report": "NPD Plan & Report",

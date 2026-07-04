@@ -73,6 +73,7 @@ class PendingApprovalController extends Controller
                 'asset_disposal' => [],
                 'asset_owner_transfer' => [],
                 'npd_plan_reports' => [],
+                'employee_onboardings' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -501,6 +502,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading NPD Plan Report approvals: ' . $e->getMessage());
+            }
+
+            // 26. Employee Onboarding
+            try {
+                $onboardingController = app(\App\Http\Controllers\EmployeeOnboardingController::class);
+                $onboardingResponse = $onboardingController->getPendingApprovals();
+                if ($onboardingResponse->getStatusCode() === 200) {
+                    $onboardingData = json_decode($onboardingResponse->getContent(), true);
+                    $data['employee_onboardings'] = $onboardingData['data'] ?? [];
+                    if ($limit > 0 && count($data['employee_onboardings']) > $limit) {
+                        $data['employee_onboardings'] = array_slice($data['employee_onboardings'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Employee Onboarding approvals: ' . $e->getMessage());
             }
 
                 return $data;

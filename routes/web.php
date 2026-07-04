@@ -1050,6 +1050,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('employee-coaching.search-employees');
     Route::resource('employee-coaching', \App\Http\Controllers\EmployeeCoachingController::class);
 
+    Route::get('/onboarding-templates/search-users', [\App\Http\Controllers\OnboardingTemplateController::class, 'searchUsers'])->name('onboarding-templates.search-users');
+    Route::resource('onboarding-templates', \App\Http\Controllers\OnboardingTemplateController::class)->except(['show']);
+
+    Route::get('/employee-onboarding/search-employees', [\App\Http\Controllers\EmployeeOnboardingController::class, 'searchEmployees'])->name('employee-onboarding.search-employees');
+    Route::get('/employee-onboarding/search-users', [\App\Http\Controllers\EmployeeOnboardingController::class, 'searchUsers'])->name('employee-onboarding.search-users');
+    Route::get('/employee-onboarding/pending-approvals', [\App\Http\Controllers\EmployeeOnboardingController::class, 'getPendingApprovals'])->name('employee-onboarding.pending-approvals');
+    Route::get('/employee-onboarding/template/{templateId}/structure', [\App\Http\Controllers\EmployeeOnboardingController::class, 'getTemplateStructure'])->name('employee-onboarding.template-structure');
+    Route::post('/employee-onboarding/{employeeOnboarding}/items', [\App\Http\Controllers\EmployeeOnboardingController::class, 'updateItems'])->name('employee-onboarding.update-items');
+    Route::post('/employee-onboarding/{employeeOnboarding}/bulk-assign-pic', [\App\Http\Controllers\EmployeeOnboardingController::class, 'bulkAssignPic'])->name('employee-onboarding.bulk-assign-pic');
+    Route::post('/employee-onboarding/{employeeOnboarding}/submit-week', [\App\Http\Controllers\EmployeeOnboardingController::class, 'submitWeek'])->name('employee-onboarding.submit-week');
+    Route::post('/employee-onboarding/{employeeOnboarding}/approve', [\App\Http\Controllers\EmployeeOnboardingController::class, 'approve'])->name('employee-onboarding.approve');
+    Route::resource('employee-onboarding', \App\Http\Controllers\EmployeeOnboardingController::class)->except(['edit', 'update']);
+
     Route::get('/api/fb-product-calibration/search-conductors', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchConductors'])
         ->name('fb-product-calibration.search-conductors');
     Route::get('/api/fb-product-calibration/search-participants', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchParticipants'])

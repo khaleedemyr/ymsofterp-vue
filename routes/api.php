@@ -868,6 +868,16 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/competitor-benchmark-report-report', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'apiReport']);
         Route::get('/competitor-benchmark-report-report/export', [\App\Http\Controllers\Report\CompetitorBenchmarkReportReportController::class, 'apiExport']);
 
+        // Employee Onboarding (mobile app)
+        Route::get('/employee-onboarding', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiIndex']);
+        Route::get('/employee-onboarding/my-tasks', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiMyTasks']);
+        Route::get('/employee-onboarding/pending-approvals', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiPendingApprovals']);
+        Route::get('/employee-onboarding/search-users', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiSearchUsers']);
+        Route::get('/employee-onboarding/{id}', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/employee-onboarding/{id}/items', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiUpdateItems'])->where('id', '[0-9]+');
+        Route::post('/employee-onboarding/{id}/submit-week', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiSubmitWeek'])->where('id', '[0-9]+');
+        Route::post('/employee-onboarding/{id}/approve', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiApprove'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
