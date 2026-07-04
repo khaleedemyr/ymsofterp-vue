@@ -58,7 +58,7 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow overflow-hidden mb-6">
+        <div class="bg-white rounded-xl shadow mb-6 overflow-visible">
           <div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-amber-50 to-white">
             <div>
               <h2 class="text-lg font-semibold text-gray-800">Daftar Produk</h2>
@@ -76,7 +76,7 @@
 
           <p v-if="form.errors.items" class="px-6 pt-4 text-sm text-red-500">{{ form.errors.items }}</p>
 
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto overflow-y-visible pb-4">
           <div class="min-w-[1280px]">
           <div class="hidden xl:grid xl:grid-cols-14 gap-3 px-6 py-3 bg-gray-50 border-b text-xs font-bold text-gray-600 uppercase">
             <div class="col-span-2">Product Name</div>
@@ -94,7 +94,7 @@
           <div
             v-for="(item, index) in form.items"
             :key="index"
-            class="px-6 py-4 border-b last:border-b-0 hover:bg-amber-50/30 transition-colors"
+            class="px-6 py-4 border-b last:border-b-0 hover:bg-amber-50/30 transition-colors overflow-visible"
           >
             <div class="flex items-center gap-2 mb-3 xl:hidden">
               <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
@@ -103,8 +103,8 @@
               <span class="text-sm font-semibold text-gray-700">Product #{{ index + 1 }}</span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-14 gap-3 items-start">
-              <div class="xl:col-span-2">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-14 gap-3 items-start overflow-visible">
+              <div class="xl:col-span-2 overflow-visible">
                 <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Product Name *</label>
                 <input
                   v-model="item.product_name"
@@ -115,7 +115,7 @@
                 />
               </div>
 
-              <div class="xl:col-span-2">
+              <div class="xl:col-span-2 overflow-visible npd-ms-field">
                 <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Category *</label>
                 <Multiselect
                   v-model="item.category"
@@ -127,10 +127,12 @@
                   :show-labels="false"
                   placeholder="Cari category..."
                   class="text-sm"
+                  @open="onMultiselectOpen"
+                  @close="onMultiselectClose"
                 />
               </div>
 
-              <div class="xl:col-span-2">
+              <div class="xl:col-span-2 overflow-visible npd-ms-field">
                 <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">PIC</label>
                 <Multiselect
                   v-model="item.pics"
@@ -146,7 +148,8 @@
                   placeholder="Cari user PIC..."
                   class="text-sm"
                   @search-change="(query) => searchPicUsers(index, query)"
-                  @open="searchPicUsers(index, '')"
+                  @open="() => onPicMultiselectOpen(index)"
+                  @close="onMultiselectClose"
                 >
                   <template #option="{ option }">
                     <div>
@@ -187,7 +190,7 @@
                 />
               </div>
 
-              <div class="xl:col-span-2">
+              <div class="xl:col-span-2 overflow-visible npd-ms-field">
                 <label class="xl:hidden text-xs font-semibold text-gray-500 mb-1 block">Area / Outlet *</label>
                 <Multiselect
                   v-model="item.launch_outlets"
@@ -200,6 +203,8 @@
                   :show-labels="false"
                   placeholder="Pilih outlet launch..."
                   class="text-sm"
+                  @open="onMultiselectOpen"
+                  @close="onMultiselectClose"
                 />
               </div>
 
@@ -318,7 +323,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import axios from 'axios';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
@@ -441,6 +446,60 @@ async function searchPicUsers(index, query = '') {
   }
 }
 
+function applyMultiselectDropdownPosition(root) {
+  if (!root) return;
+  const wrapper = root.querySelector('.multiselect__content-wrapper');
+  if (!wrapper) return;
+
+  const rect = root.getBoundingClientRect();
+  const isAbove = root.classList.contains('multiselect--above');
+
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = `${rect.left}px`;
+  wrapper.style.width = `${Math.max(rect.width, 220)}px`;
+  wrapper.style.zIndex = '99999';
+  wrapper.style.maxHeight = '240px';
+
+  if (isAbove) {
+    wrapper.style.top = 'auto';
+    wrapper.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+  } else {
+    wrapper.style.top = `${rect.bottom + 4}px`;
+    wrapper.style.bottom = 'auto';
+  }
+}
+
+function resetMultiselectDropdownPosition(root) {
+  if (!root) return;
+  const wrapper = root.querySelector('.multiselect__content-wrapper');
+  if (!wrapper) return;
+
+  wrapper.style.position = '';
+  wrapper.style.left = '';
+  wrapper.style.top = '';
+  wrapper.style.bottom = '';
+  wrapper.style.width = '';
+  wrapper.style.zIndex = '';
+  wrapper.style.maxHeight = '';
+}
+
+function onMultiselectOpen() {
+  nextTick(() => {
+    document.querySelectorAll('.multiselect.multiselect--active').forEach(applyMultiselectDropdownPosition);
+  });
+}
+
+function onMultiselectClose() {
+  nextTick(() => {
+    document.querySelectorAll('.multiselect').forEach(resetMultiselectDropdownPosition);
+  });
+}
+
+async function onPicMultiselectOpen(index) {
+  await searchPicUsers(index, '');
+  onMultiselectOpen();
+}
+
 const form = useForm({
   report_month: extractMonth(props.record?.report_month),
   outlet_id: props.record?.outlet_id || '',
@@ -546,6 +605,20 @@ onMounted(() => {
   border-radius: 0.5rem;
   border-color: rgb(209 213 219);
   min-height: 42px;
+}
+:deep(.multiselect--active) {
+  z-index: 40;
+}
+:deep(.multiselect__content-wrapper) {
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+}
+.npd-ms-field {
+  position: relative;
+  z-index: 1;
+}
+.npd-ms-field:focus-within {
+  z-index: 50;
 }
 @media (min-width: 1280px) {
   .xl\:grid-cols-14 {
