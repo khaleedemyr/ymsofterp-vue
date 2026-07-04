@@ -625,4 +625,293 @@ class NpdPlanReportController extends Controller
             ]);
         }
     }
+
+    public function apiIndex(Request $request)
+    {
+        $query = NpdPlanReport::query()
+            ->with(['creator:id,nama_lengkap'])
+            ->withCount('items')
+            ->orderByDesc('report_month')
+            ->orderByDesc('id');
+
+        if ($request->filled('month')) {
+            $month = $request->string('month')->toString();
+            $query->whereDate('report_month', '>=', $month.'-01')
+                ->whereDate('report_month', '<=', date('Y-m-t', strtotime($month.'-01')));
+        }
+
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', (int) $request->outlet_id);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->string('status')->toString());
+        }
+
+        if ($search = trim((string) $request->get('search', ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('outlet_name', 'like', "%{$search}%");
+            });
+        }
+
+        $paginator = $query->paginate((int) $request->get('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'reports' => collect($paginator->items())->map(fn (NpdPlanReport $report) => $this->serializeListRecord($report))->values()->all(),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+        ]);
+    }
+
+    public function apiCreateData(?int $id = null)
+    {
+        $record = null;
+        if ($id !== null) {
+            $record = NpdPlanReport::with(['items', 'approvalFlows.approver:id,nama_lengkap'])->findOrFail($id);
+            try {
+                $this->ensureRejectedEditable($record);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage() ?: 'Data tidak dapat diubah.',
+                ], 403);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'record' => $record ? $this->serializeDetailRecord($record, true) : null,
+            ...$this->formOptions(),
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $report = NpdPlanReport::with([
+            'items',
+            'creator:id,nama_lengkap',
+            'approvalFlows.approver:id,nama_lengkap',
+        ])->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'record' => $this->serializeDetailRecord($report, true),
+            'purpose_options' => $this->purposeOptions(),
+            'can_edit' => in_array($report->status, ['rejected', 'requires_revision'], true) && $this->canManage($report),
+            'can_delete' => in_array($report->status, ['rejected', 'requires_revision'], true) && $this->canManage($report),
+            'can_approve' => $this->canApprove($report),
+            'current_approval_flow' => $this->currentApprovalFlow($report)?->only([
+                'id', 'approval_level', 'status', 'approver_id', 'comments',
+            ]),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $validated = $this->validatePayload($request, true);
+            $report = $this->persistReport($request, null, $validated);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'NPD Plan & Report berhasil disimpan dan diajukan untuk approval.',
+                'id' => $report->id,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $report = NpdPlanReport::findOrFail($id);
+
+        try {
+            $this->ensureRejectedEditable($report);
+            $validated = $this->validatePayload($request, true);
+            $report = $this->persistReport($request, $report, $validated);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'NPD Plan & Report berhasil diperbarui dan diajukan ulang untuk approval.',
+                'id' => $report->id,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage() ?: 'Data tidak dapat diubah.',
+            ], 403);
+        }
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $report = NpdPlanReport::findOrFail($id);
+
+        try {
+            $this->ensureRejectedEditable($report);
+            $report->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'NPD Plan & Report berhasil dihapus.',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage() ?: 'Gagal menghapus.',
+            ], 403);
+        }
+    }
+
+    public function apiSearchApprovers(Request $request)
+    {
+        return $this->getApprovers($request);
+    }
+
+    public function apiApprove(Request $request, int $id)
+    {
+        $report = NpdPlanReport::findOrFail($id);
+
+        return $this->approve($request, $report);
+    }
+
+    public function apiPendingApprovals()
+    {
+        return $this->getPendingApprovals();
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function persistReport(Request $request, ?NpdPlanReport $existing, array $validated): NpdPlanReport
+    {
+        DB::beginTransaction();
+        try {
+            $outlet = Outlet::findOrFail($validated['outlet_id']);
+
+            if ($existing) {
+                $existing->update([
+                    'report_month' => $validated['report_month'].'-01',
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'notes' => $validated['notes'] ?? null,
+                    'status' => 'submitted',
+                    'updated_by' => Auth::id(),
+                ]);
+                $this->syncItems($existing, $validated['items']);
+                $this->syncApprovalFlows($existing, $validated['approvers']);
+                DB::commit();
+
+                return $existing->fresh(['items', 'approvalFlows']);
+            }
+
+            $report = NpdPlanReport::create([
+                'number' => $this->generateNumber($validated['report_month']),
+                'report_month' => $validated['report_month'].'-01',
+                'outlet_id' => $outlet->id_outlet,
+                'outlet_name' => (string) $outlet->nama_outlet,
+                'status' => 'submitted',
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+
+            $this->syncItems($report, $validated['items']);
+            $this->syncApprovalFlows($report, $validated['approvers']);
+
+            DB::commit();
+
+            return $report->fresh(['items', 'approvalFlows']);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeListRecord(NpdPlanReport $report): array
+    {
+        return [
+            'id' => $report->id,
+            'number' => $report->number,
+            'report_month' => $report->report_month?->format('Y-m'),
+            'outlet_id' => $report->outlet_id,
+            'outlet_name' => $report->outlet_name,
+            'status' => $report->status,
+            'items_count' => $report->items_count ?? $report->items()->count(),
+            'creator_name' => $report->creator?->nama_lengkap,
+            'created_by' => $report->created_by,
+            'updated_at' => $report->updated_at?->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeDetailRecord(NpdPlanReport $report, bool $withFlows = false): array
+    {
+        $data = [
+            'id' => $report->id,
+            'number' => $report->number,
+            'report_month' => $report->report_month?->format('Y-m'),
+            'outlet_id' => $report->outlet_id,
+            'outlet_name' => $report->outlet_name,
+            'status' => $report->status,
+            'notes' => $report->notes,
+            'created_by' => $report->created_by,
+            'creator' => $report->creator ? [
+                'id' => $report->creator->id,
+                'nama_lengkap' => $report->creator->nama_lengkap,
+            ] : null,
+            'items' => $report->items->map(fn ($item) => [
+                'id' => $item->id,
+                'product_name' => $item->product_name,
+                'category_id' => $item->category_id,
+                'category' => $item->category,
+                'development_date' => $item->development_date?->format('Y-m-d'),
+                'purpose' => $item->purpose,
+                'proposed_launch_date' => $item->proposed_launch_date?->format('Y-m-d'),
+                'proposed_launch_area_outlet' => $item->proposed_launch_area_outlet,
+                'pics' => $item->pics,
+                'fb_cost' => (float) $item->fb_cost,
+                'selling_price' => (float) $item->selling_price,
+            ])->values()->all(),
+        ];
+
+        if ($withFlows) {
+            $data['approval_flows'] = $report->approvalFlows->map(fn ($flow) => [
+                'id' => $flow->id,
+                'approval_level' => $flow->approval_level,
+                'status' => $flow->status,
+                'comments' => $flow->comments,
+                'approver_id' => $flow->approver_id,
+                'approver' => $flow->approver ? [
+                    'id' => $flow->approver->id,
+                    'nama_lengkap' => $flow->approver->nama_lengkap,
+                ] : null,
+            ])->values()->all();
+        }
+
+        return $data;
+    }
 }

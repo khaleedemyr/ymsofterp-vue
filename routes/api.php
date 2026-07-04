@@ -839,6 +839,17 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/fb-product-calibration-report', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiReport']);
         Route::get('/fb-product-calibration-report/export', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiExport']);
 
+        // NPD Plan & Report (mobile app)
+        Route::get('/npd-plan-report', [\App\Http\Controllers\NpdPlanReportController::class, 'apiIndex']);
+        Route::get('/npd-plan-report/pending-approvals', [\App\Http\Controllers\NpdPlanReportController::class, 'apiPendingApprovals']);
+        Route::get('/npd-plan-report/search-approvers', [\App\Http\Controllers\NpdPlanReportController::class, 'apiSearchApprovers']);
+        Route::get('/npd-plan-report/create-data/{id?}', [\App\Http\Controllers\NpdPlanReportController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::post('/npd-plan-report', [\App\Http\Controllers\NpdPlanReportController::class, 'apiStore']);
+        Route::get('/npd-plan-report/{id}', [\App\Http\Controllers\NpdPlanReportController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/npd-plan-report/{id}', [\App\Http\Controllers\NpdPlanReportController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/npd-plan-report/{id}', [\App\Http\Controllers\NpdPlanReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
+        Route::post('/npd-plan-report/{id}/approve', [\App\Http\Controllers\NpdPlanReportController::class, 'apiApprove'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
