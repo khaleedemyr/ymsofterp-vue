@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Outlet;
 use App\Services\FbProductCalibrationService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -26,6 +27,11 @@ class FbProductCalibrationReportController extends Controller
                 ->where('is_outlet', 1)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet']),
+            'modeOptions' => [
+                ['value' => '', 'label' => 'Semua Mode'],
+                ['value' => FbProductCalibrationService::MODE_KITCHEN, 'label' => 'Kitchen'],
+                ['value' => FbProductCalibrationService::MODE_BAR, 'label' => 'Bar'],
+            ],
         ]);
     }
 
@@ -37,7 +43,8 @@ class FbProductCalibrationReportController extends Controller
             $validated['date_from'],
             $validated['date_to'],
             isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
-            $validated['employee_search'] ?? null
+            $validated['employee_search'] ?? null,
+            $validated['mode'] ?? null
         ));
     }
 
@@ -50,6 +57,11 @@ class FbProductCalibrationReportController extends Controller
                 ->where('is_outlet', 1)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet']),
+            'modeOptions' => [
+                ['value' => '', 'label' => 'Semua Mode'],
+                ['value' => FbProductCalibrationService::MODE_KITCHEN, 'label' => 'Kitchen'],
+                ['value' => FbProductCalibrationService::MODE_BAR, 'label' => 'Bar'],
+            ],
         ]);
     }
 
@@ -61,7 +73,8 @@ class FbProductCalibrationReportController extends Controller
                 $validated['date_from'],
                 $validated['date_to'],
                 isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
-                $validated['employee_search'] ?? null
+                $validated['employee_search'] ?? null,
+                $validated['mode'] ?? null
             );
 
             return response()->json([
@@ -86,7 +99,8 @@ class FbProductCalibrationReportController extends Controller
                 $validated['date_from'],
                 $validated['date_to'],
                 isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
-                $validated['employee_search'] ?? null
+                $validated['employee_search'] ?? null,
+                $validated['mode'] ?? null
             );
 
             $filename = sprintf(
@@ -114,7 +128,8 @@ class FbProductCalibrationReportController extends Controller
             $validated['date_from'],
             $validated['date_to'],
             isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
-            $validated['employee_search'] ?? null
+            $validated['employee_search'] ?? null,
+            $validated['mode'] ?? null
         );
 
         $filename = sprintf(
@@ -137,6 +152,7 @@ class FbProductCalibrationReportController extends Controller
             'date_to' => 'required|date|after_or_equal:date_from',
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'employee_search' => 'nullable|string|max:120',
+            'mode' => ['nullable', Rule::in(['', FbProductCalibrationService::MODE_KITCHEN, FbProductCalibrationService::MODE_BAR])],
         ]);
     }
 }

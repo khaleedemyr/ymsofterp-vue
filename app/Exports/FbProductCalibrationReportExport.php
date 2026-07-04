@@ -59,7 +59,7 @@ class FbProductCalibrationReportExport implements FromCollection, WithCustomStar
                 $row['conducted_by'] ?? '',
             ];
 
-            foreach (FbProductCalibrationService::PARAMETER_CODES as $code) {
+            foreach ($this->parameterCodesFromPayload() as $code) {
                 $value = $row['parameters'][$code] ?? null;
                 $line[] = $value === 'C' ? '✓' : '';
                 $line[] = $value === 'NC' ? '✓' : '';
@@ -117,7 +117,7 @@ class FbProductCalibrationReportExport implements FromCollection, WithCustomStar
             AfterSheet::class => function (AfterSheet $event): void {
                 $sheet = $event->sheet->getDelegate();
                 $lastColumn = $this->lastColumnLetter();
-                $paramCount = count(FbProductCalibrationService::PARAMETER_CODES);
+                $paramCount = count($this->parameterCodesFromPayload());
 
                 foreach (self::FIXED_HEADERS as $index => $label) {
                     $column = Coordinate::stringFromColumnIndex($index + 1);
@@ -176,9 +176,19 @@ class FbProductCalibrationReportExport implements FromCollection, WithCustomStar
         ];
     }
 
+    private function parameterCodesFromPayload(): array
+    {
+        $codes = $this->payload['parameter_codes'] ?? null;
+        if (is_array($codes) && $codes !== []) {
+            return $codes;
+        }
+
+        return FbProductCalibrationService::ALL_PARAMETER_CODES;
+    }
+
     private function lastColumnLetter(): string
     {
-        $totalColumns = count(self::FIXED_HEADERS) + (count(FbProductCalibrationService::PARAMETER_CODES) * 2);
+        $totalColumns = count(self::FIXED_HEADERS) + (count($this->parameterCodesFromPayload()) * 2);
 
         return Coordinate::stringFromColumnIndex($totalColumns);
     }

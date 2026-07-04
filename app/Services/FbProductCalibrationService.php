@@ -11,7 +11,12 @@ use Illuminate\Support\Facades\DB;
 
 class FbProductCalibrationService
 {
-    public const PARAMETER_CODES = [
+    public const MODE_KITCHEN = 'kitchen';
+
+    public const MODE_BAR = 'bar';
+
+    /** @var list<string> */
+    public const KITCHEN_PARAMETER_CODES = [
         'presentation',
         'taste_profile',
         'portion_size',
@@ -21,20 +26,109 @@ class FbProductCalibrationService
         'temperature',
     ];
 
+    /** @var list<string> */
+    public const BAR_PARAMETER_CODES = [
+        'presentation',
+        'taste_profile',
+        'portion_size',
+        'recipe_compliance',
+        'beverage_method',
+        'texture',
+        'thickness',
+        'freshness',
+    ];
+
+    /** @var list<string> */
+    public const ALL_PARAMETER_CODES = [
+        'presentation',
+        'taste_profile',
+        'portion_size',
+        'recipe_compliance',
+        'cooking_method',
+        'beverage_method',
+        'texture',
+        'temperature',
+        'thickness',
+        'freshness',
+    ];
+
+    /** @deprecated Use parameterCodesForMode() */
+    public const PARAMETER_CODES = self::KITCHEN_PARAMETER_CODES;
+
+    public function resolveMode(?string $mode): string
+    {
+        return $mode === self::MODE_BAR ? self::MODE_BAR : self::MODE_KITCHEN;
+    }
+
+    public function modeLabel(?string $mode): string
+    {
+        return $this->resolveMode($mode) === self::MODE_BAR ? 'Bar' : 'Kitchen';
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function parameterCodesForMode(?string $mode): array
+    {
+        return $this->resolveMode($mode) === self::MODE_BAR
+            ? self::BAR_PARAMETER_CODES
+            : self::KITCHEN_PARAMETER_CODES;
+    }
+
+    /**
+     * @return list<array{code: string, label: string}>
+     */
+    public function parameterOptionsForMode(?string $mode): array
+    {
+        $labels = [
+            'presentation' => 'Presentation',
+            'taste_profile' => 'Taste Profile',
+            'portion_size' => 'Portion Size',
+            'recipe_compliance' => 'Recipe Compliance',
+            'cooking_method' => 'Cooking Method',
+            'beverage_method' => 'Beverage Method',
+            'texture' => 'Texture',
+            'temperature' => 'Temperature',
+            'thickness' => 'Thickness',
+            'freshness' => 'Freshness',
+        ];
+
+        return array_map(
+            fn (string $code) => ['code' => $code, 'label' => $labels[$code]],
+            $this->parameterCodesForMode($mode)
+        );
+    }
+
+    /**
+     * @return list<array{code: string, label: string}>
+     */
+    public function parameterOptionsAll(): array
+    {
+        $labels = [
+            'presentation' => 'Presentation',
+            'taste_profile' => 'Taste Profile',
+            'portion_size' => 'Portion Size',
+            'recipe_compliance' => 'Recipe Compliance',
+            'cooking_method' => 'Cooking Method',
+            'beverage_method' => 'Beverage Method',
+            'texture' => 'Texture',
+            'temperature' => 'Temperature',
+            'thickness' => 'Thickness',
+            'freshness' => 'Freshness',
+        ];
+
+        return array_map(
+            fn (string $code) => ['code' => $code, 'label' => $labels[$code]],
+            self::ALL_PARAMETER_CODES
+        );
+    }
+
     /**
      * @return list<array{code: string, label: string}>
      */
     public function parameterOptions(): array
     {
-        return [
-            ['code' => 'presentation', 'label' => 'Presentation'],
-            ['code' => 'taste_profile', 'label' => 'Taste Profile'],
-            ['code' => 'portion_size', 'label' => 'Portion Size'],
-            ['code' => 'recipe_compliance', 'label' => 'Recipe Compliance'],
-            ['code' => 'cooking_method', 'label' => 'Cooking Method'],
-            ['code' => 'texture', 'label' => 'Texture'],
-            ['code' => 'temperature', 'label' => 'Temperature'],
-        ];
+        return $this->parameterOptionsForMode(self::MODE_KITCHEN);
     }
 
     /**
@@ -72,6 +166,8 @@ class FbProductCalibrationService
                     'outlet_name' => $record->outlet_name,
                     'conductor_name' => $record->conductor_name,
                     'status' => $record->status,
+                    'mode' => $this->resolveMode($record->mode ?? null),
+                    'mode_label' => $this->modeLabel($record->mode ?? null),
                     'created_by' => $record->created_by,
                     'product_count' => $productCount,
                     'products' => $record->products->map(fn ($p) => $p->item_name)->values()->all(),
@@ -269,13 +365,20 @@ class FbProductCalibrationService
             ];
 
             $rowComplete = true;
-            foreach (self::PARAMETER_CODES as $code) {
+            $modeCodes = $this->parameterCodesForMode($calibration->mode ?? null);
+            foreach ($modeCodes as $code) {
                 $value = $row[$code] ?? null;
                 if (! in_array($value, ['C', 'NC'], true)) {
                     $rowComplete = false;
                     break;
                 }
                 $payload[$code] = $value;
+            }
+
+            foreach (self::ALL_PARAMETER_CODES as $code) {
+                if (! in_array($code, $modeCodes, true)) {
+                    $payload[$code] = null;
+                }
             }
 
             if (! $rowComplete) {
@@ -330,7 +433,7 @@ class FbProductCalibrationService
                 'user_id' => (int) $participant->user_id,
                 'calibration_product_id' => (int) $result->calibration_product_id,
             ];
-            foreach (self::PARAMETER_CODES as $code) {
+            foreach ($this->parameterCodesForMode($calibration->mode ?? null) as $code) {
                 $resultMap[$key][$code] = $result->{$code};
             }
         }
@@ -353,14 +456,17 @@ class FbProductCalibrationService
         string $dateFrom,
         string $dateTo,
         ?int $outletId = null,
-        ?string $employeeSearch = null
+        ?string $employeeSearch = null,
+        ?string $mode = null
     ): array {
         $employeeSearch = trim((string) $employeeSearch);
+        $modeFilter = $mode !== null && $mode !== '' ? $this->resolveMode($mode) : null;
 
         $calibrations = FbProductCalibration::query()
             ->where('status', 'completed')
             ->whereBetween('scheduled_date', [$dateFrom, $dateTo])
             ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
+            ->when($modeFilter, fn ($q) => $q->where('mode', $modeFilter))
             ->orderBy('scheduled_date')
             ->orderBy('outlet_name')
             ->with(['products', 'participants', 'results'])
@@ -394,8 +500,14 @@ class FbProductCalibrationService
                 }
 
                 $parameters = [];
-                foreach (self::PARAMETER_CODES as $code) {
-                    $parameters[$code] = $result->{$code};
+                $rowMode = $this->resolveMode($calibration->mode ?? null);
+                $reportCodes = $modeFilter
+                    ? $this->parameterCodesForMode($modeFilter)
+                    : self::ALL_PARAMETER_CODES;
+                foreach ($reportCodes as $code) {
+                    $parameters[$code] = in_array($code, $this->parameterCodesForMode($rowMode), true)
+                        ? $result->{$code}
+                        : null;
                 }
 
                 $rows[] = [
@@ -405,6 +517,8 @@ class FbProductCalibrationService
                     'employee_name' => $participant->user_name,
                     'outlet' => $calibration->outlet_name,
                     'conducted_by' => $calibration->conductor_name,
+                    'mode' => $rowMode,
+                    'mode_label' => $this->modeLabel($rowMode),
                     'parameters' => $parameters,
                 ];
             }
@@ -426,8 +540,14 @@ class FbProductCalibrationService
                 'date_to' => $dateTo,
                 'outlet_id' => $outletId,
                 'employee_search' => $employeeSearch !== '' ? $employeeSearch : null,
+                'mode' => $modeFilter,
             ],
-            'parameter_options' => $this->parameterOptions(),
+            'parameter_options' => $modeFilter
+                ? $this->parameterOptionsForMode($modeFilter)
+                : $this->parameterOptionsAll(),
+            'parameter_codes' => $modeFilter
+                ? $this->parameterCodesForMode($modeFilter)
+                : self::ALL_PARAMETER_CODES,
             'rows' => $rows,
             'total' => count($rows),
         ];
@@ -447,6 +567,7 @@ class FbProductCalibrationService
             'scheduled_date' => $calibration->scheduled_date?->format('Y-m-d'),
             'conductor_id' => $calibration->conductor_id,
             'conductor_name' => $calibration->conductor_name,
+            'mode' => $this->resolveMode($calibration->mode ?? null),
             'status' => $calibration->status,
             'products' => $calibration->products->map(fn ($p) => [
                 'item_id' => $p->item_id,

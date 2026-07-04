@@ -62,6 +62,7 @@ class FbProductCalibrationController extends Controller
                 'scheduled_date' => $validated['scheduled_date'],
                 'conductor_id' => $conductor->id,
                 'conductor_name' => (string) $conductor->nama_lengkap,
+                'mode' => $this->service->resolveMode($validated['mode'] ?? null),
                 'status' => 'scheduled',
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => auth()->id(),
@@ -106,7 +107,7 @@ class FbProductCalibrationController extends Controller
 
         return Inertia::render('FbProductCalibration/Show', [
             'record' => $fbProductCalibration,
-            'parameterOptions' => $this->service->parameterOptions(),
+            'parameterOptions' => $this->service->parameterOptionsForMode($fbProductCalibration->mode),
             'canConduct' => $canConduct,
             'canDelete' => $this->canDeleteCalibration($fbProductCalibration),
             'conductPayload' => $conductPayload,
@@ -143,6 +144,7 @@ class FbProductCalibrationController extends Controller
                 'scheduled_date' => $validated['scheduled_date'],
                 'conductor_id' => $conductor->id,
                 'conductor_name' => (string) $conductor->nama_lengkap,
+                'mode' => $this->service->resolveMode($validated['mode'] ?? null),
                 'notes' => $validated['notes'] ?? null,
                 'updated_by' => auth()->id(),
             ]);
@@ -205,7 +207,7 @@ class FbProductCalibrationController extends Controller
 
         return Inertia::render('FbProductCalibration/Conduct', [
             'record' => $fbProductCalibration,
-            'parameterOptions' => $this->service->parameterOptions(),
+            'parameterOptions' => $this->service->parameterOptionsForMode($fbProductCalibration->mode),
             'initialParticipants' => $existing['participants'],
             'initialResults' => $existing['results'],
         ]);
@@ -337,7 +339,7 @@ class FbProductCalibrationController extends Controller
         return response()->json([
             'success' => true,
             'record' => $this->serializeDetailRecord($calibration, true),
-            'parameter_options' => $this->service->parameterOptions(),
+            'parameter_options' => $this->service->parameterOptionsForMode($calibration->mode),
             'can_conduct' => $canConduct,
             'conduct_payload' => $conductPayload,
         ]);
@@ -431,7 +433,7 @@ class FbProductCalibrationController extends Controller
         return response()->json([
             'success' => true,
             'record' => $this->serializeDetailRecord($calibration),
-            'parameter_options' => $this->service->parameterOptions(),
+            'parameter_options' => $this->service->parameterOptionsForMode($calibration->mode),
             'initial_participants' => $existing['participants'],
             'initial_results' => $existing['results'],
         ]);
@@ -536,6 +538,7 @@ class FbProductCalibrationController extends Controller
                     'scheduled_date' => $validated['scheduled_date'],
                     'conductor_id' => $conductor->id,
                     'conductor_name' => (string) $conductor->nama_lengkap,
+                    'mode' => $this->service->resolveMode($validated['mode'] ?? null),
                     'notes' => $validated['notes'] ?? null,
                     'updated_by' => auth()->id(),
                 ]);
@@ -567,6 +570,7 @@ class FbProductCalibrationController extends Controller
                 'scheduled_date' => $validated['scheduled_date'],
                 'conductor_id' => $conductor->id,
                 'conductor_name' => (string) $conductor->nama_lengkap,
+                'mode' => $this->service->resolveMode($validated['mode'] ?? null),
                 'status' => 'scheduled',
                 'notes' => $validated['notes'] ?? null,
                 'created_by' => auth()->id(),
@@ -607,6 +611,8 @@ class FbProductCalibrationController extends Controller
             'scheduled_date' => $record->scheduled_date?->format('Y-m-d'),
             'conductor_id' => $record->conductor_id,
             'conductor_name' => $record->conductor_name,
+            'mode' => $this->service->resolveMode($record->mode ?? null),
+            'mode_label' => $this->service->modeLabel($record->mode ?? null),
             'status' => $record->status,
             'notes' => $record->notes,
             'products' => $record->products->map(fn ($p) => [
@@ -634,6 +640,7 @@ class FbProductCalibrationController extends Controller
             'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'scheduled_date' => 'required|date',
             'conductor_id' => 'required|integer|exists:users,id',
+            'mode' => ['required', Rule::in([FbProductCalibrationService::MODE_KITCHEN, FbProductCalibrationService::MODE_BAR])],
             'notes' => 'nullable|string|max:2000',
             'products' => 'required|array|min:1',
             'products.*.item_id' => 'required|integer|exists:items,id',
@@ -663,7 +670,7 @@ class FbProductCalibrationController extends Controller
         $calibration->load('products');
         $productIds = $calibration->products->pluck('id')->all();
         $parameterRules = [];
-        foreach (FbProductCalibrationService::PARAMETER_CODES as $code) {
+        foreach ($this->service->parameterCodesForMode($calibration->mode) as $code) {
             $parameterRules["results.*.{$code}"] = ['required', Rule::in(['C', 'NC'])];
         }
 

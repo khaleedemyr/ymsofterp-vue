@@ -16,6 +16,7 @@ class FbProductCalibration extends Model
         'scheduled_date',
         'conductor_id',
         'conductor_name',
+        'mode',
         'status',
         'notes',
         'created_by',

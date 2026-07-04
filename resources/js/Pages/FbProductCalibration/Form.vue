@@ -16,6 +16,22 @@
       <form @submit.prevent="submit" class="space-y-6">
         <div class="bg-white rounded-xl shadow p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Mode Calibration <span class="text-red-500">*</span></label>
+            <div class="flex flex-wrap gap-4 mt-1">
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input v-model="form.mode" type="radio" value="kitchen" class="text-violet-600 focus:ring-violet-500" />
+                <span class="text-sm font-medium text-gray-800">Kitchen</span>
+              </label>
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input v-model="form.mode" type="radio" value="bar" class="text-violet-600 focus:ring-violet-500" />
+                <span class="text-sm font-medium text-gray-800">Bar</span>
+              </label>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+              Kitchen: Cooking Method &amp; Temperature. Bar: Beverage Method, Thickness &amp; Freshness.
+            </p>
+          </div>
+          <div>
             <label class="block text-sm font-semibold text-gray-700 mb-1">Outlet <span class="text-red-500">*</span></label>
             <select
               v-model="form.outlet_id"
@@ -175,6 +191,7 @@ const minScheduleDate = computed(() => {
 const form = useForm({
   outlet_id: props.record?.outlet_id || '',
   scheduled_date: props.record?.scheduled_date?.slice?.(0, 10) || props.scheduledDate || '',
+  mode: props.record?.mode || 'kitchen',
   conductor_id: props.record?.conductor_id || '',
   products: [],
 });

@@ -8,7 +8,7 @@
             Conduct Calibration
           </h1>
           <p class="text-sm text-gray-500 mt-1">
-            {{ record.outlet_name }} · {{ formatDate(record.scheduled_date) }} · Conducted by {{ record.conductor_name }}
+            {{ record.outlet_name }} · {{ formatDate(record.scheduled_date) }} · {{ modeLabel(record.mode) }} · Conducted by {{ record.conductor_name }}
           </p>
         </div>
         <Link :href="route('fb-product-calibration.show', record.id)" class="text-gray-600 hover:text-gray-800">
@@ -229,6 +229,10 @@ function searchParticipants(query) {
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function modeLabel(mode) {
+  return mode === 'bar' ? 'Bar' : 'Kitchen';
 }
 
 function productRowValues(userId, productId) {

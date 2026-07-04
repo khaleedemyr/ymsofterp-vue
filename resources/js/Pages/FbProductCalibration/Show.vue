@@ -39,7 +39,11 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-xl shadow p-6 mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+      <div class="bg-white rounded-xl shadow p-6 mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 text-sm">
+        <div>
+          <div class="text-gray-500">Mode</div>
+          <div class="font-semibold">{{ modeLabel(record.mode) }}</div>
+        </div>
         <div>
           <div class="text-gray-500">Outlet</div>
           <div class="font-semibold">{{ record.outlet_name }}</div>
@@ -168,6 +172,10 @@ function productsForParticipant(userId) {
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+function modeLabel(mode) {
+  return mode === 'bar' ? 'Bar' : 'Kitchen';
 }
 
 function statusLabel(status) {

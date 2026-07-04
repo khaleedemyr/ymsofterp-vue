@@ -7,7 +7,7 @@
       </h1>
 
       <div class="bg-white rounded-xl shadow p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal From</label>
             <input
@@ -45,7 +45,18 @@
               class="w-full rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500"
             />
           </div>
-          <div class="flex justify-end gap-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
+            <select
+              v-model="filters.mode"
+              class="w-full rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500"
+            >
+              <option v-for="opt in modeOptions" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <div class="flex justify-end gap-2 md:col-span-2">
             <button
               type="button"
               @click="fetchReport"
@@ -90,13 +101,14 @@
               <th rowspan="3" class="fbc-th-fixed">EMPLOYEE NAME</th>
               <th rowspan="3" class="fbc-th-fixed">OUTLET</th>
               <th rowspan="3" class="fbc-th-fixed">CONDUCTED BY</th>
-              <th :colspan="parameterOptions.length * 2" class="fbc-th-group">
+              <th v-if="showModeColumn" rowspan="3" class="fbc-th-fixed">MODE</th>
+              <th :colspan="activeParameterOptions.length * 2" class="fbc-th-group">
                 CALIBRATION PARAMETER
               </th>
             </tr>
             <tr>
               <th
-                v-for="param in parameterOptions"
+                v-for="param in activeParameterOptions"
                 :key="param.code"
                 colspan="2"
                 class="fbc-th-param"
@@ -105,7 +117,7 @@
               </th>
             </tr>
             <tr>
-              <template v-for="param in parameterOptions" :key="`${param.code}-sub`">
+              <template v-for="param in activeParameterOptions" :key="`${param.code}-sub`">
                 <th class="fbc-th-choice">C</th>
                 <th class="fbc-th-choice">NC</th>
               </template>
@@ -122,7 +134,8 @@
               <td class="fbc-td-fixed">{{ row.employee_name }}</td>
               <td class="fbc-td-fixed">{{ row.outlet }}</td>
               <td class="fbc-td-fixed">{{ row.conducted_by }}</td>
-              <template v-for="param in parameterOptions" :key="`${row.no}-${param.code}`">
+              <td v-if="showModeColumn" class="fbc-td-fixed">{{ row.mode_label || row.mode }}</td>
+              <template v-for="param in activeParameterOptions" :key="`${row.no}-${param.code}`">
                 <td class="fbc-td-choice">
                   <span v-if="row.parameters[param.code] === 'C'" class="font-bold text-green-700 text-sm">✓</span>
                 </td>
@@ -141,12 +154,13 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
   parameterOptions: { type: Array, default: () => [] },
   outlets: { type: Array, default: () => [] },
+  modeOptions: { type: Array, default: () => [] },
 });
 
 const filters = reactive({
@@ -154,11 +168,21 @@ const filters = reactive({
   date_to: '',
   outlet_id: '',
   employee_search: '',
+  mode: '',
 });
 
 const loading = ref(false);
 const showReport = ref(false);
-const report = ref({ rows: [], total: 0 });
+const report = ref({ rows: [], total: 0, parameter_options: [], parameter_codes: [] });
+
+const activeParameterOptions = computed(() => {
+  if (report.value.parameter_options?.length) {
+    return report.value.parameter_options;
+  }
+  return props.parameterOptions;
+});
+
+const showModeColumn = computed(() => !filters.mode);
 
 function formatDate(value) {
   if (!value) return '-';
@@ -180,6 +204,7 @@ async function fetchReport() {
     };
     if (filters.outlet_id) params.outlet_id = filters.outlet_id;
     if (filters.employee_search.trim()) params.employee_search = filters.employee_search.trim();
+    if (filters.mode) params.mode = filters.mode;
 
     const res = await axios.get('/api/report/fb-product-calibration', { params });
     report.value = res.data;
@@ -204,6 +229,7 @@ function exportExcel() {
   });
   if (filters.outlet_id) query.set('outlet_id', filters.outlet_id);
   if (filters.employee_search.trim()) query.set('employee_search', filters.employee_search.trim());
+  if (filters.mode) query.set('mode', filters.mode);
 
   window.open(`/report/fb-product-calibration/export?${query.toString()}`, '_blank');
 }

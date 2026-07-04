@@ -76,6 +76,10 @@ function statusLabel(status) {
   return map[status] || status;
 }
 
+function modeLabel(mode) {
+  return mode === 'bar' ? 'Bar' : 'Kitchen';
+}
+
 function goCreate(dateStr) {
   if (!canCreateOnDate(dateStr)) return;
   router.get(route('fb-product-calibration.create'), { date: dateStr });
@@ -407,6 +411,10 @@ onBeforeUnmount(() => {
           </button>
         </div>
         <div class="p-5 space-y-3 text-sm">
+          <div>
+            <span class="text-gray-500">Mode:</span>
+            <span class="ml-2 font-semibold">{{ detail.event?.mode_label || modeLabel(detail.event?.mode) }}</span>
+          </div>
           <div>
             <span class="text-gray-500">Status:</span>
             <span class="ml-2 font-semibold">{{ statusLabel(detail.event?.status) }}</span>

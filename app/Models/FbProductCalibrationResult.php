@@ -16,8 +16,11 @@ class FbProductCalibrationResult extends Model
         'portion_size',
         'recipe_compliance',
         'cooking_method',
+        'beverage_method',
         'texture',
         'temperature',
+        'thickness',
+        'freshness',
     ];
 
     public function calibration(): BelongsTo
