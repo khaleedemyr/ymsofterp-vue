@@ -15,6 +15,7 @@ use App\Models\Outlet;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -298,7 +299,10 @@ class EmployeeOnboardingService
 
         $onboarding->update(['current_week' => $weekNumber, 'updated_by' => Auth::id()]);
 
-        return $submission->fresh('approvalFlows.approver');
+        $freshSubmission = $submission->fresh('approvalFlows');
+        $this->forgetPendingApprovalCacheForUsers($approverIds);
+
+        return $freshSubmission->load('approvalFlows.approver');
     }
 
     public function approveWeekSubmission(EmployeeOnboardingWeekSubmission $submission, string $action, ?string $comments = null): void
@@ -364,6 +368,31 @@ class EmployeeOnboardingService
                 $submission->update(['status' => 'rejected']);
             }
         });
+
+        $this->forgetPendingApprovalCacheForSubmission($submission->fresh('approvalFlows'));
+    }
+
+    public function forgetPendingApprovalCacheForSubmission(EmployeeOnboardingWeekSubmission $submission): void
+    {
+        $userIds = $submission->approvalFlows
+            ->pluck('approver_id')
+            ->push(Auth::id())
+            ->filter()
+            ->unique()
+            ->all();
+
+        $this->forgetPendingApprovalCacheForUsers($userIds);
+    }
+
+    /**
+     * @param  list<int|string|null>  $userIds
+     */
+    public function forgetPendingApprovalCacheForUsers(array $userIds): void
+    {
+        foreach (array_unique(array_filter($userIds)) as $userId) {
+            Cache::forget('all_pending_approvals_v2_'.$userId);
+            Cache::forget('all_pending_approvals_'.$userId);
+        }
     }
 
     public function getPendingApprovals(): Collection

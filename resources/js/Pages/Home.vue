@@ -196,6 +196,7 @@ const loadingNpdPlanReportApprovals = ref(false);
 // Employee Onboarding approvals
 const pendingEmployeeOnboardingApprovals = ref([]);
 const loadingEmployeeOnboardingApprovals = ref(false);
+const processingEoApprovalId = ref(null);
 
 // QA2 CAP approvals
 const pendingQa2CapApprovals = ref([]);
@@ -2024,6 +2025,8 @@ function openNpdPlanReportDetail(reportId) {
 }
 
 async function approveEmployeeOnboarding(approval) {
+    if (processingEoApprovalId.value === approval.submission_id) return;
+    processingEoApprovalId.value = approval.submission_id;
     try {
         const response = await axios.post(route('employee-onboarding.approve', approval.id), {
             week_number: approval.week_number,
@@ -2031,15 +2034,28 @@ async function approveEmployeeOnboarding(approval) {
             comments: '',
         });
         if (response.data.success) {
+            pendingEmployeeOnboardingApprovals.value = pendingEmployeeOnboardingApprovals.value.filter(
+                (row) => row.submission_id !== approval.submission_id,
+            );
+            try {
+                await axios.post(route('pending-approvals.clear-cache'));
+            } catch (_) {
+                // ignore cache clear failure
+            }
             Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
-            loadAllPendingApprovalsOptimized();
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire({ icon: 'error', title: 'Gagal', text: response.data.message || 'Gagal approve onboarding' });
         }
     } catch (error) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal approve onboarding' });
+    } finally {
+        processingEoApprovalId.value = null;
     }
 }
 
 async function rejectEmployeeOnboarding(approval) {
+    if (processingEoApprovalId.value === approval.submission_id) return;
     const { value: comments } = await Swal.fire({
         title: 'Tolak — Employee Onboarding',
         input: 'textarea',
@@ -2054,6 +2070,7 @@ async function rejectEmployeeOnboarding(approval) {
 
     if (!comments) return;
 
+    processingEoApprovalId.value = approval.submission_id;
     try {
         const response = await axios.post(route('employee-onboarding.approve', approval.id), {
             week_number: approval.week_number,
@@ -2061,15 +2078,26 @@ async function rejectEmployeeOnboarding(approval) {
             comments,
         });
         if (response.data.success) {
+            pendingEmployeeOnboardingApprovals.value = pendingEmployeeOnboardingApprovals.value.filter(
+                (row) => row.submission_id !== approval.submission_id,
+            );
+            try {
+                await axios.post(route('pending-approvals.clear-cache'));
+            } catch (_) {}
             Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
-            loadAllPendingApprovalsOptimized();
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire({ icon: 'error', title: 'Gagal', text: response.data.message || 'Gagal memproses approval' });
         }
     } catch (error) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses approval' });
+    } finally {
+        processingEoApprovalId.value = null;
     }
 }
 
 async function requiresRevisionEmployeeOnboarding(approval) {
+    if (processingEoApprovalId.value === approval.submission_id) return;
     const { value: comments } = await Swal.fire({
         title: 'Requires Revision — Employee Onboarding',
         input: 'textarea',
@@ -2084,6 +2112,7 @@ async function requiresRevisionEmployeeOnboarding(approval) {
 
     if (!comments) return;
 
+    processingEoApprovalId.value = approval.submission_id;
     try {
         const response = await axios.post(route('employee-onboarding.approve', approval.id), {
             week_number: approval.week_number,
@@ -2091,11 +2120,21 @@ async function requiresRevisionEmployeeOnboarding(approval) {
             comments,
         });
         if (response.data.success) {
+            pendingEmployeeOnboardingApprovals.value = pendingEmployeeOnboardingApprovals.value.filter(
+                (row) => row.submission_id !== approval.submission_id,
+            );
+            try {
+                await axios.post(route('pending-approvals.clear-cache'));
+            } catch (_) {}
             Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
-            loadAllPendingApprovalsOptimized();
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire({ icon: 'error', title: 'Gagal', text: response.data.message || 'Gagal memproses revisi' });
         }
     } catch (error) {
         Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses revisi' });
+    } finally {
+        processingEoApprovalId.value = null;
     }
 }
 
@@ -7587,22 +7626,25 @@ watch(locale, () => {
                                     <div class="flex flex-col gap-1">
                                         <button
                                             type="button"
+                                            :disabled="processingEoApprovalId === approval.submission_id"
                                             @click="approveEmployeeOnboarding(approval)"
-                                            class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white"
+                                            class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white disabled:opacity-50"
                                         >
-                                            Setujui
+                                            {{ processingEoApprovalId === approval.submission_id ? '...' : 'Setujui' }}
                                         </button>
                                         <button
                                             type="button"
+                                            :disabled="processingEoApprovalId === approval.submission_id"
                                             @click="requiresRevisionEmployeeOnboarding(approval)"
-                                            class="px-3 py-1 text-xs rounded-full bg-amber-500 hover:bg-amber-600 text-white"
+                                            class="px-3 py-1 text-xs rounded-full bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
                                         >
                                             Revisi
                                         </button>
                                         <button
                                             type="button"
+                                            :disabled="processingEoApprovalId === approval.submission_id"
                                             @click="rejectEmployeeOnboarding(approval)"
-                                            class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white"
+                                            class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white disabled:opacity-50"
                                         >
                                             Tolak
                                         </button>
