@@ -189,6 +189,10 @@ const loadingLostBreakageApprovals = ref(false);
 const showLostBreakageApprovalModal = ref(false);
 const selectedLostBreakageApproval = ref(null);
 
+// NPD Plan & Report approvals
+const pendingNpdPlanReportApprovals = ref([]);
+const loadingNpdPlanReportApprovals = ref(false);
+
 // QA2 CAP approvals
 const pendingQa2CapApprovals = ref([]);
 const loadingQa2CapApprovals = ref(false);
@@ -1090,6 +1094,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingOutletTransferApprovals.value = true;
     loadingWarehouseStockOpnameApprovals.value = true;
     loadingLostBreakageApprovals.value = true;
+    loadingNpdPlanReportApprovals.value = true;
     loadingQa2CapApprovals.value = true;
     loadingApprovals.value = true;
     loadingMovementApprovals.value = true;
@@ -1119,6 +1124,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
+            pendingNpdPlanReportApprovals.value = data.npd_plan_reports || [];
             pendingQa2CapApprovals.value = data.qa2_cap || [];
             pendingPosVoidItemApprovals.value = data.pos_void_items || [];
             pendingAssetTransferApprovals.value = data.asset_inventory_transfer || [];
@@ -1142,6 +1148,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
+            loadingNpdPlanReportApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             loadingAssetTransferApprovals.value = false;
             loadingAssetAdjustmentApprovals.value = false;
@@ -1165,6 +1172,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCoachingApprovals.value = false;
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
+            loadingNpdPlanReportApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             return false;
         }
@@ -1184,6 +1192,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingCoachingApprovals.value = false;
         loadingCorrectionApprovals.value = false;
         loadingLostBreakageApprovals.value = false;
+        loadingNpdPlanReportApprovals.value = false;
         loadingQa2CapApprovals.value = false;
         return false;
     }
@@ -1926,6 +1935,54 @@ async function rejectCoaching(coachingId, approverId) {
             });
         }
     }
+}
+
+async function approveNpdPlanReport(reportId) {
+    try {
+        const response = await axios.post(`/npd-plan-report/${reportId}/approve`, {
+            approved: true,
+            comments: '',
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal approve report' });
+    }
+}
+
+async function rejectNpdPlanReport(reportId) {
+    const { value: comments } = await Swal.fire({
+        title: 'Tolak NPD Report',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#dc3545',
+        inputValidator: (value) => (!value ? 'Alasan penolakan harus diisi!' : undefined),
+    });
+
+    if (!comments) return;
+
+    try {
+        const response = await axios.post(`/npd-plan-report/${reportId}/approve`, {
+            approved: false,
+            comments,
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal reject report' });
+    }
+}
+
+function openNpdPlanReportDetail(reportId) {
+    router.visit(`/npd-plan-report/${reportId}`);
 }
 
 // Show PR approval details
@@ -7285,6 +7342,73 @@ watch(locale, () => {
                                 <button class="text-sm text-rose-500 hover:text-rose-700 font-medium">
                                     Lihat {{ pendingLostBreakageApprovals.length - 3 }} lainnya...
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NPD Plan & Report Approval Section -->
+                <div v-if="pendingNpdPlanReportApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-lightbulb mr-2 text-amber-500"></i>
+                                    NPD Plan & Report Approval
+                                </h3>
+                            </div>
+                            <div class="bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingNpdPlanReportApprovals.length }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingNpdPlanReportApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-amber-500"></div>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="report in pendingNpdPlanReportApprovals.slice(0, 3)"
+                                :key="'npd-approval-' + report.id"
+                                class="p-3 rounded-lg border transition-all duration-200"
+                                :class="isNight ? 'bg-slate-700/50 border-slate-600' : 'bg-amber-50 border-amber-200'"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <div class="flex-1 min-w-0">
+                                        <button
+                                            type="button"
+                                            class="font-semibold text-sm text-left hover:underline"
+                                            :class="isNight ? 'text-white' : 'text-slate-800'"
+                                            @click="openNpdPlanReportDetail(report.id)"
+                                        >
+                                            {{ report.number }}
+                                        </button>
+                                        <div class="text-xs mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ report.outlet_name }} · {{ report.items_count }} produk
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ report.creator_name || '-' }}
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <button
+                                            type="button"
+                                            @click="approveNpdPlanReport(report.id)"
+                                            class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white"
+                                        >
+                                            Setujui
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="rejectNpdPlanReport(report.id)"
+                                            class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white"
+                                        >
+                                            Tolak
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

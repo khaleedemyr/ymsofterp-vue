@@ -1062,6 +1062,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('fb-product-calibration.conduct.store');
     Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
 
+    Route::get('/npd-plan-report/approvers', [\App\Http\Controllers\NpdPlanReportController::class, 'getApprovers'])->name('npd-plan-report.approvers');
+    Route::get('/npd-plan-report/pending-approvals', [\App\Http\Controllers\NpdPlanReportController::class, 'getPendingApprovals'])->name('npd-plan-report.pending-approvals');
+    Route::post('/npd-plan-report/{npdPlanReport}/submit-approval', [\App\Http\Controllers\NpdPlanReportController::class, 'submitForApproval'])->name('npd-plan-report.submit-approval');
+    Route::post('/npd-plan-report/{npdPlanReport}/approve', [\App\Http\Controllers\NpdPlanReportController::class, 'approve'])->name('npd-plan-report.approve');
+    Route::resource('npd-plan-report', \App\Http\Controllers\NpdPlanReportController::class);
+
     Route::resource('manual-cogs-deviation-catcost', \App\Http\Controllers\ManualCogsDeviationCatcostController::class);
 
     Route::resource('asset-manual-monthly-lost-breakage', \App\Http\Controllers\AssetManualMonthlyLostBreakageController::class)

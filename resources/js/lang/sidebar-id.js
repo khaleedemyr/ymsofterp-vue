@@ -106,6 +106,7 @@ export default {
     "employee_coaching": "Employee Coaching",
     "fb_product_calibration": "F&B Product Calibration",
     "fb_product_calibration_report": "F&B Product Calibration Report",
+    "npd_plan_report": "NPD Plan & Report",
     "modal_x_engineering": "Modal x Engineering",
     "outlet_revenue_recap": "Rekap Revenue Outlet",
     "data_level": "Data Level",

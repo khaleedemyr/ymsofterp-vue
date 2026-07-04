@@ -72,6 +72,7 @@ class PendingApprovalController extends Controller
                 'asset_service_order' => [],
                 'asset_disposal' => [],
                 'asset_owner_transfer' => [],
+                'npd_plan_reports' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -485,6 +486,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Asset Owner Transfer approvals: ' . $e->getMessage());
+            }
+
+            // 25. NPD Plan & Report
+            try {
+                $npdController = app(\App\Http\Controllers\NpdPlanReportController::class);
+                $npdResponse = $npdController->getPendingApprovals();
+                if ($npdResponse->getStatusCode() === 200) {
+                    $npdData = json_decode($npdResponse->getContent(), true);
+                    $data['npd_plan_reports'] = $npdData['data'] ?? [];
+                    if ($limit > 0 && count($data['npd_plan_reports']) > $limit) {
+                        $data['npd_plan_reports'] = array_slice($data['npd_plan_reports'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading NPD Plan Report approvals: ' . $e->getMessage());
             }
 
                 return $data;

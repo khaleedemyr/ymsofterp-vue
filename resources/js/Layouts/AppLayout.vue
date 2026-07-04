@@ -222,6 +222,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.employee_coaching'), icon: 'fa-solid fa-user-graduate', route: '/employee-coaching', code: 'employee_coaching' },
             { name: () => t('sidebar.menus.fb_product_calibration'), icon: 'fa-solid fa-utensils', route: '/fb-product-calibration', code: 'fb_product_calibration' },
             { name: () => t('sidebar.menus.fb_product_calibration_report'), icon: 'fa-solid fa-clipboard-list', route: '/report/fb-product-calibration', code: 'fb_product_calibration_report' },
+            { name: () => t('sidebar.menus.npd_plan_report'), icon: 'fa-solid fa-lightbulb', route: '/npd-plan-report', code: 'npd_plan_report' },
           ],
         },
     {
