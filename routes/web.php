@@ -2427,6 +2427,14 @@ Route::get('/report/fb-product-calibration/export', [\App\Http\Controllers\Repor
     ->middleware(['auth'])
     ->name('report.fb-product-calibration.export');
 Route::get('/report/fb-product-calibration', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'index'])->middleware(['auth']);
+
+Route::get('/api/report/npd-plan-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'report']);
+Route::get('/report/npd-plan-report/export', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'export'])
+    ->middleware(['auth'])
+    ->name('report.npd-plan-report.export');
+Route::get('/report/npd-plan-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('report.npd-plan-report.index');
 Route::get('/report/outlet-revenue-recap/export', [\App\Http\Controllers\Report\OutletRevenueRecapController::class, 'export'])
     ->middleware(['auth'])
     ->name('report.outlet-revenue-recap.export');

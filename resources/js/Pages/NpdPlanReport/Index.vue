@@ -9,13 +9,22 @@
           </h1>
           <p class="text-sm text-gray-500 mt-1">Rencana dan laporan pengembangan produk F&B per outlet</p>
         </div>
-        <Link
-          :href="route('npd-plan-report.create')"
-          class="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-2 rounded-lg shadow hover:bg-amber-600 transition"
-        >
-          <i class="fa-solid fa-plus"></i>
-          Buat Report
-        </Link>
+        <div class="flex flex-wrap gap-2">
+          <Link
+            :href="route('report.npd-plan-report.index')"
+            class="inline-flex items-center gap-2 bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-lg shadow-sm hover:bg-amber-50 transition"
+          >
+            <i class="fa-solid fa-chart-bar"></i>
+            Report
+          </Link>
+          <Link
+            :href="route('npd-plan-report.create')"
+            class="inline-flex items-center gap-2 bg-amber-500 text-white px-4 py-2 rounded-lg shadow hover:bg-amber-600 transition"
+          >
+            <i class="fa-solid fa-plus"></i>
+            Buat Report
+          </Link>
+        </div>
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-6">

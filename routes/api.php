@@ -850,6 +850,11 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/npd-plan-report/{id}', [\App\Http\Controllers\NpdPlanReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
         Route::post('/npd-plan-report/{id}/approve', [\App\Http\Controllers\NpdPlanReportController::class, 'apiApprove'])->where('id', '[0-9]+');
 
+        // NPD Plan & Report — Laporan (mobile app)
+        Route::get('/npd-plan-report-report/filters', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'apiFilters']);
+        Route::get('/npd-plan-report-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'apiReport']);
+        Route::get('/npd-plan-report-report/export', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'apiExport']);
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);
