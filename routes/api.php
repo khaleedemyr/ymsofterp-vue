@@ -855,6 +855,15 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/npd-plan-report-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'apiReport']);
         Route::get('/npd-plan-report-report/export', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'apiExport']);
 
+        // Competitor Benchmark Report (mobile app)
+        Route::get('/competitor-benchmark-report', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiIndex']);
+        Route::get('/competitor-benchmark-report/search-pic-users', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiSearchPicUsers']);
+        Route::get('/competitor-benchmark-report/create-data/{id?}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::post('/competitor-benchmark-report', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiStore']);
+        Route::get('/competitor-benchmark-report/{id}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/competitor-benchmark-report/{id}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/competitor-benchmark-report/{id}', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);

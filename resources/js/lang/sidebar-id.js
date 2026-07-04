@@ -107,6 +107,7 @@ export default {
     "fb_product_calibration": "F&B Product Calibration",
     "fb_product_calibration_report": "F&B Product Calibration Report",
     "npd_plan_report": "NPD Plan & Report",
+    "competitor_benchmark_report": "Competitor Benchmark Report",
     "modal_x_engineering": "Modal x Engineering",
     "outlet_revenue_recap": "Rekap Revenue Outlet",
     "data_level": "Data Level",

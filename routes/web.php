@@ -1068,6 +1068,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/npd-plan-report/{npdPlanReport}/approve', [\App\Http\Controllers\NpdPlanReportController::class, 'approve'])->name('npd-plan-report.approve');
     Route::resource('npd-plan-report', \App\Http\Controllers\NpdPlanReportController::class);
 
+    Route::get('/competitor-benchmark-report/pic-users', [\App\Http\Controllers\CompetitorBenchmarkReportController::class, 'getPicUsers'])->name('competitor-benchmark-report.pic-users');
+    Route::resource('competitor-benchmark-report', \App\Http\Controllers\CompetitorBenchmarkReportController::class);
+
     Route::resource('manual-cogs-deviation-catcost', \App\Http\Controllers\ManualCogsDeviationCatcostController::class);
 
     Route::resource('asset-manual-monthly-lost-breakage', \App\Http\Controllers\AssetManualMonthlyLostBreakageController::class)
