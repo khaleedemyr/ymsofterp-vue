@@ -193,6 +193,10 @@ const selectedLostBreakageApproval = ref(null);
 const pendingNpdPlanReportApprovals = ref([]);
 const loadingNpdPlanReportApprovals = ref(false);
 
+// Employee Onboarding approvals
+const pendingEmployeeOnboardingApprovals = ref([]);
+const loadingEmployeeOnboardingApprovals = ref(false);
+
 // QA2 CAP approvals
 const pendingQa2CapApprovals = ref([]);
 const loadingQa2CapApprovals = ref(false);
@@ -1095,6 +1099,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingWarehouseStockOpnameApprovals.value = true;
     loadingLostBreakageApprovals.value = true;
     loadingNpdPlanReportApprovals.value = true;
+    loadingEmployeeOnboardingApprovals.value = true;
     loadingQa2CapApprovals.value = true;
     loadingApprovals.value = true;
     loadingMovementApprovals.value = true;
@@ -1125,6 +1130,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
             pendingNpdPlanReportApprovals.value = data.npd_plan_reports || [];
+            pendingEmployeeOnboardingApprovals.value = data.employee_onboardings || [];
             pendingQa2CapApprovals.value = data.qa2_cap || [];
             pendingPosVoidItemApprovals.value = data.pos_void_items || [];
             pendingAssetTransferApprovals.value = data.asset_inventory_transfer || [];
@@ -1149,6 +1155,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
             loadingNpdPlanReportApprovals.value = false;
+            loadingEmployeeOnboardingApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             loadingAssetTransferApprovals.value = false;
             loadingAssetAdjustmentApprovals.value = false;
@@ -1173,6 +1180,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
             loadingNpdPlanReportApprovals.value = false;
+            loadingEmployeeOnboardingApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             return false;
         }
@@ -1193,6 +1201,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingCorrectionApprovals.value = false;
         loadingLostBreakageApprovals.value = false;
         loadingNpdPlanReportApprovals.value = false;
+        loadingEmployeeOnboardingApprovals.value = false;
         loadingQa2CapApprovals.value = false;
         return false;
     }
@@ -2012,6 +2021,86 @@ async function requiresRevisionNpdPlanReport(reportId) {
 
 function openNpdPlanReportDetail(reportId) {
     router.visit(`/npd-plan-report/${reportId}`);
+}
+
+async function approveEmployeeOnboarding(approval) {
+    try {
+        const response = await axios.post(route('employee-onboarding.approve', approval.id), {
+            week_number: approval.week_number,
+            action: 'approve',
+            comments: '',
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal approve onboarding' });
+    }
+}
+
+async function rejectEmployeeOnboarding(approval) {
+    const { value: comments } = await Swal.fire({
+        title: 'Tolak — Employee Onboarding',
+        input: 'textarea',
+        inputLabel: 'Alasan',
+        inputPlaceholder: 'Masukkan alasan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#dc3545',
+        inputValidator: (value) => (!value ? 'Alasan wajib diisi!' : undefined),
+    });
+
+    if (!comments) return;
+
+    try {
+        const response = await axios.post(route('employee-onboarding.approve', approval.id), {
+            week_number: approval.week_number,
+            action: 'reject',
+            comments,
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses approval' });
+    }
+}
+
+async function requiresRevisionEmployeeOnboarding(approval) {
+    const { value: comments } = await Swal.fire({
+        title: 'Requires Revision — Employee Onboarding',
+        input: 'textarea',
+        inputLabel: 'Catatan Revisi',
+        inputPlaceholder: 'Masukkan catatan revisi...',
+        showCancelButton: true,
+        confirmButtonText: 'Requires Revision',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#f59e0b',
+        inputValidator: (value) => (!value ? 'Catatan revisi wajib diisi!' : undefined),
+    });
+
+    if (!comments) return;
+
+    try {
+        const response = await axios.post(route('employee-onboarding.approve', approval.id), {
+            week_number: approval.week_number,
+            action: 'requires_revision',
+            comments,
+        });
+        if (response.data.success) {
+            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
+            loadAllPendingApprovalsOptimized();
+        }
+    } catch (error) {
+        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memproses revisi' });
+    }
+}
+
+function openEmployeeOnboardingDetail(approval) {
+    router.visit(`/employee-onboarding/${approval.id}`);
 }
 
 // Show PR approval details
@@ -7445,6 +7534,85 @@ watch(locale, () => {
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Employee Onboarding Approval Section -->
+                <div v-if="pendingEmployeeOnboardingApprovals.length > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-user-check mr-2 text-indigo-500"></i>
+                                    Employee Onboarding Approval
+                                </h3>
+                            </div>
+                            <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ pendingEmployeeOnboardingApprovals.length }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingEmployeeOnboardingApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="approval in pendingEmployeeOnboardingApprovals.slice(0, 3)"
+                                :key="'eo-approval-' + approval.submission_id"
+                                class="p-3 rounded-lg border transition-all duration-200"
+                                :class="isNight ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-200'"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <div class="flex-1 min-w-0">
+                                        <button
+                                            type="button"
+                                            class="font-semibold text-sm text-left hover:underline"
+                                            :class="isNight ? 'text-white' : 'text-slate-800'"
+                                            @click="openEmployeeOnboardingDetail(approval)"
+                                        >
+                                            {{ approval.number }}
+                                        </button>
+                                        <div class="text-xs mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            Minggu {{ approval.week_number }} · {{ approval.employee_name || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            {{ approval.template_name || '-' }}<span v-if="approval.outlet_name"> · {{ approval.outlet_name }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <button
+                                            type="button"
+                                            @click="approveEmployeeOnboarding(approval)"
+                                            class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white"
+                                        >
+                                            Setujui
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="requiresRevisionEmployeeOnboarding(approval)"
+                                            class="px-3 py-1 text-xs rounded-full bg-amber-500 hover:bg-amber-600 text-white"
+                                        >
+                                            Revisi
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="rejectEmployeeOnboarding(approval)"
+                                            class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white"
+                                        >
+                                            Tolak
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="pendingEmployeeOnboardingApprovals.length > 3" class="text-center pt-2">
+                                <button class="text-sm text-indigo-500 hover:text-indigo-700 font-medium">
+                                    Lihat {{ pendingEmployeeOnboardingApprovals.length - 3 }} lainnya...
+                                </button>
                             </div>
                         </div>
                     </div>
