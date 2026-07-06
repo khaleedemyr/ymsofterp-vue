@@ -7,8 +7,6 @@ use App\Models\RetailNonFoodItem;
 use App\Models\Outlet;
 use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionOutletBudget;
-use App\Models\PurchaseRequisition;
-use App\Services\BudgetCalculationService;
 use App\Services\PettyCashLockBudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,18 +18,12 @@ class RetailNonFoodController extends Controller
         private PettyCashLockBudgetService $pettyCashLockBudget,
     ) {}
 
-    private const FORECAST_PETTY_CASH_RATIO_OF_REST = PettyCashLockBudgetService::FORECAST_PETTY_CASH_RATIO_OF_REST;
-
     /**
-     * @return array{forecast_monthly_total: float, lock_budget: float}|null
+     * @return array{monthly_target: float, usable_after_reserve: float, lock_budget: float}|null
      */
-    private function resolveMonthlyForecastBudget(int $outletId, string $monthStart): ?array
+    private function resolveMonthlyPettyCashBudget(int $outletId, string $monthStart): ?array
     {
-        return $this->pettyCashLockBudget->resolveForOutlet(
-            $outletId,
-            $monthStart,
-            self::FORECAST_PETTY_CASH_RATIO_OF_REST,
-        );
+        return $this->pettyCashLockBudget->resolveForOutlet($outletId, $monthStart);
     }
 
     /**
@@ -236,354 +228,19 @@ class RetailNonFoodController extends Controller
             // Locking budget petty cash untuk mode selain contra bon.
             if ($request->payment_method !== 'contra_bon') {
                 $monthStart = now()->startOfMonth()->toDateString();
-                $monthlyBudget = $this->resolveMonthlyForecastBudget((int) $request->outlet_id, $monthStart);
+                $monthlyBudget = $this->resolveMonthlyPettyCashBudget((int) $request->outlet_id, $monthStart);
                 if ($monthlyBudget !== null) {
                     $monthYm = now()->format('Y-m');
                     $usage = $this->monthlyUsagePettyCashOutlet((int) $request->outlet_id, $monthYm);
                     $totalAfterNew = $usage['monthly_total'] + $totalAmount;
                     if ($totalAfterNew > $monthlyBudget['lock_budget']) {
                         DB::rollBack();
-                        return response()->json([
-                            'message' => "Transaksi ditolak! Budget petty cash outlet bulan ini terlampaui.\n\n" .
-                                "📊 Detail Budget:\n" .
-                                "• Total Forecast Bulanan: Rp " . number_format($monthlyBudget['forecast_monthly_total'], 0, ',', '.') . "\n" .
-                                "• Budget Petty Cash (0.8% × 80% forecast): Rp " . number_format($monthlyBudget['lock_budget'], 0, ',', '.') . "\n" .
-                                "• Retail Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
-                                "• Retail Non Food non-contra bon (bulan ini): Rp " . number_format($usage['retail_non_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
-                                "• Total terpakai sebelum transaksi: Rp " . number_format($usage['monthly_total'], 0, ',', '.') . "\n" .
-                                "• Transaksi baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n" .
-                                "• Total setelah transaksi: Rp " . number_format($totalAfterNew, 0, ',', '.') . "\n" .
-                                "• Kelebihan: Rp " . number_format($totalAfterNew - $monthlyBudget['lock_budget'], 0, ',', '.')
-                        ], 422);
-                    }
-                }
-            }
 
-            // Validasi budget sebelum simpan menggunakan BudgetCalculationService
-            if ($request->category_budget_id) {
-                $category = PurchaseRequisitionCategory::find($request->category_budget_id);
-                if (!$category) {
-                    DB::rollBack();
-                    return response()->json([
-                        'message' => 'Category budget tidak valid'
-                    ], 422);
-                }
-
-                // Hitung budget yang sudah digunakan (bulan berjalan)
-                $currentMonth = date('n'); // 1-12
-                $currentYear = date('Y');
-                $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-                $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-                
-                // Use BudgetCalculationService for consistent validation
-                $budgetService = new BudgetCalculationService();
-                $validation = $budgetService->validateBudget(
-                    categoryId: $request->category_budget_id,
-                    outletId: $request->outlet_id, // For PER_OUTLET budget
-                    currentAmount: $totalAmount,
-                    dateFrom: $dateFrom,
-                    dateTo: $dateTo
-                );
-                
-                if (!$validation['valid']) {
-                    DB::rollBack();
-                    
-                    // Get category and outlet info for better error message
-                    $categoryName = $category->name ?? 'Unknown';
-                    $outletName = 'All Outlets';
-                    if ($request->outlet_id && $category->isPerOutletBudget()) {
-                        $outlet = Outlet::find($request->outlet_id);
-                        $outletName = $outlet ? $outlet->nama_outlet : 'Unknown';
-                    }
-                    
-                    // Format error message with details
-                    $budgetInfo = $validation['budget_info'] ?? [];
-                    $budgetLimit = $budgetInfo['budget_type'] === 'PER_OUTLET' 
-                        ? ($budgetInfo['outlet_budget'] ?? 0)
-                        : ($budgetInfo['category_budget'] ?? 0);
-                    $usedAmount = $budgetInfo['budget_type'] === 'PER_OUTLET'
-                        ? ($budgetInfo['outlet_used_amount'] ?? 0)
-                        : ($budgetInfo['category_used_amount'] ?? 0);
-                    
-                    $errorMessage = "Transaksi ditolak! Budget untuk kategori '{$categoryName}'";
-                    if ($category->isPerOutletBudget()) {
-                        $errorMessage .= " di outlet '{$outletName}'";
-                    }
-                    $errorMessage .= " telah terlampaui.\n\n";
-                    $errorMessage .= "📊 Detail Budget:\n";
-                    $errorMessage .= "• Budget yang ditetapkan: Rp " . number_format($budgetLimit, 0, ',', '.') . "\n";
-                    $errorMessage .= "• Sudah Digunakan: Rp " . number_format($usedAmount, 0, ',', '.') . "\n";
-                    $errorMessage .= "• Transaksi Baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n";
-                    $errorMessage .= "• Total Setelah Transaksi Baru: Rp " . number_format($budgetInfo['total_with_current'] ?? ($usedAmount + $totalAmount), 0, ',', '.') . "\n";
-                    $errorMessage .= "• Kelebihan: Rp " . number_format(($budgetInfo['total_with_current'] ?? ($usedAmount + $totalAmount)) - $budgetLimit, 0, ',', '.');
-                    
-                    return response()->json([
-                        'message' => $errorMessage
-                    ], 422);
-                }
-                
-                // OLD CODE - DEPRECATED (keeping for reference, can be removed later)
-                /*
-                if ($category->isGlobalBudget()) {
-                    // GLOBAL BUDGET: Calculate across all outlets
-                    // Get PR IDs in this category for the month
-                    $prIds = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                        ->whereYear('created_at', $currentYear)
-                        ->whereMonth('created_at', $currentMonth)
-                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                        ->pluck('id')
-                        ->toArray();
-                    
-                    // Get PO IDs that are linked to PRs in this category
-                    $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->whereIn('poi.source_id', $prIds)
-                        ->distinct()
-                        ->pluck('poi.purchase_order_ops_id')
-                        ->toArray();
-                    
-                    // Get paid amount from non_food_payments (same logic as Opex Report)
-                    $paidAmountFromPo = DB::table('non_food_payments as nfp')
-                        ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                        ->whereIn('nfp.status', ['paid', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->sum('nfp.amount');
-                    
-                    // Get Retail Non Food amounts
-                    $retailNonFoodApproved = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                        ->whereYear('transaction_date', $currentYear)
-                        ->whereMonth('transaction_date', $currentMonth)
-                        ->where('status', 'approved')
-                        ->sum('total_amount');
-                    
-                    $retailNonFoodPending = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                        ->whereYear('transaction_date', $currentYear)
-                        ->whereMonth('transaction_date', $currentMonth)
-                        ->where('status', 'pending')
-                        ->sum('total_amount');
-                    
-                    // Add Retail Non Food approved amount (directly paid, same as Opex Report)
-                    $paidAmount = $paidAmountFromPo + $retailNonFoodApproved;
-                    
-                    // Get all PRs in this category for the month (exclude held PRs)
-                    $allPrs = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                        ->whereYear('created_at', $currentYear)
-                        ->whereMonth('created_at', $currentMonth)
-                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                        ->where('is_held', false) // Exclude held PRs
-                        ->get();
-                    
-                    // Get PO totals per PR
-                    // Exclude held PRs from unpaid calculation
-                    $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->where('pr.category_id', $request->category_budget_id)
-                        ->where('pr.is_held', false) // Exclude held PRs
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->where('poo.status', 'approved')
-                        ->whereYear('poo.date', $currentYear)
-                        ->whereMonth('poo.date', $currentMonth)
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                        ->pluck('po_total', 'pr_id')
-                        ->toArray();
-                    
-                    // Get total paid per PR
-                    // Exclude held PRs from unpaid calculation
-                    $paidTotalsByPr = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->where('pr.category_id', $request->category_budget_id)
-                        ->where('pr.is_held', false) // Exclude held PRs
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->whereIn('nfp.status', ['paid', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(nfp.amount) as total_paid'))
-                        ->pluck('total_paid', 'pr_id')
-                        ->toArray();
-                    
-                    // Calculate unpaid for each PR (exclude held PRs)
-                    $unpaidAmount = 0;
-                    foreach ($allPrs as $pr) {
-                        // Skip held PRs
-                        if ($pr->is_held) {
-                            continue;
-                        }
-                        
-                        $prId = $pr->id;
-                        $poTotal = $poTotalsByPr[$prId] ?? 0;
-                        $totalPaid = $paidTotalsByPr[$prId] ?? 0;
-                        
-                        // If PR hasn't been converted to PO, use PR amount
-                        // If PR has been converted to PO, use PO total
-                        $prTotalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                        $unpaidAmount += max(0, $prTotalAmount - $totalPaid);
-                    }
-                    
-                    // Calculate category used amount = Paid (from non_food_payments) + Unpaid PR + Retail Non Food pending
-                    // Same logic as Opex Report
-                    $categoryUsedAmount = $paidAmount + $unpaidAmount + $retailNonFoodPending;
-                    
-                    // Total setelah ditambah transaksi baru (asumsi status pending)
-                    $totalAfterNew = $categoryUsedAmount + $totalAmount;
-                    
-                    // Validasi budget
-                    if ($totalAfterNew > $category->budget_limit) {
-                        DB::rollBack();
                         return response()->json([
-                            'message' => "Transaksi ditolak! Budget untuk kategori '{$category->name}' telah terlampaui.\n\n" .
-                                       "📊 Detail Budget:\n" .
-                                       "• Budget yang ditetapkan: Rp " . number_format($category->budget_limit, 0, ',', '.') . "\n" .
-                                       "• Sudah Digunakan: Rp " . number_format($categoryUsedAmount, 0, ',', '.') . "\n" .
-                                       "• Transaksi Baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n" .
-                                       "• Total Setelah Transaksi Baru: Rp " . number_format($totalAfterNew, 0, ',', '.') . "\n" .
-                                       "• Kelebihan: Rp " . number_format($totalAfterNew - $category->budget_limit, 0, ',', '.')
-                        ], 422);
-                    }
-                } else if ($category->isPerOutletBudget()) {
-                    // PER_OUTLET BUDGET: Calculate per specific outlet
-                    if (!$request->outlet_id) {
-                        DB::rollBack();
-                        return response()->json([
-                            'message' => 'Outlet ID diperlukan untuk budget per outlet'
-                        ], 422);
-                    }
-                    
-                    // Get outlet budget allocation
-                    $outletBudget = PurchaseRequisitionOutletBudget::where('category_id', $request->category_budget_id)
-                        ->where('outlet_id', $request->outlet_id)
-                        ->first();
-                    
-                    if (!$outletBudget) {
-                        DB::rollBack();
-                        return response()->json([
-                            'message' => 'Budget outlet tidak dikonfigurasi untuk kategori ini'
-                        ], 422);
-                    }
-                    
-                    // Get PR IDs for this outlet and category
-                    $prIds = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                        ->where('outlet_id', $request->outlet_id)
-                        ->whereYear('created_at', $currentYear)
-                        ->whereMonth('created_at', $currentMonth)
-                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                        ->pluck('id')
-                        ->toArray();
-                    
-                    // Get PO IDs linked to PRs in this outlet
-                    $poIdsInCategory = DB::table('purchase_order_ops_items as poi')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->whereIn('poi.source_id', $prIds)
-                        ->distinct()
-                        ->pluck('poi.purchase_order_ops_id')
-                        ->toArray();
-                    
-                    // Get paid amount from non_food_payments for this outlet
-                    $paidAmountFromPo = DB::table('non_food_payments as nfp')
-                        ->whereIn('nfp.purchase_order_ops_id', $poIdsInCategory)
-                        ->whereIn('nfp.status', ['paid', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->sum('nfp.amount');
-                    
-                    // Get Retail Non Food for this outlet
-                    $outletRetailNonFoodApproved = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                        ->where('outlet_id', $request->outlet_id)
-                        ->whereYear('transaction_date', $currentYear)
-                        ->whereMonth('transaction_date', $currentMonth)
-                        ->where('status', 'approved')
-                        ->sum('total_amount');
-                    
-                    $outletRetailNonFoodPending = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                        ->where('outlet_id', $request->outlet_id)
-                        ->whereYear('transaction_date', $currentYear)
-                        ->whereMonth('transaction_date', $currentMonth)
-                        ->where('status', 'pending')
-                        ->sum('total_amount');
-                    
-                    // Get all PRs for this outlet (exclude held PRs)
-                    $allPrs = PurchaseRequisition::where('category_id', $request->category_budget_id)
-                        ->where('outlet_id', $request->outlet_id)
-                        ->whereYear('created_at', $currentYear)
-                        ->whereMonth('created_at', $currentMonth)
-                        ->whereIn('status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                        ->where('is_held', false)
-                        ->get();
-                    
-                    // Get PO totals per PR for this outlet
-                    $poTotalsByPr = DB::table('purchase_order_ops_items as poi')
-                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->where('pr.category_id', $request->category_budget_id)
-                        ->where('pr.outlet_id', $request->outlet_id)
-                        ->where('pr.is_held', false)
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->where('poo.status', 'approved')
-                        ->whereYear('poo.date', $currentYear)
-                        ->whereMonth('poo.date', $currentMonth)
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(poi.total) as po_total'))
-                        ->pluck('po_total', 'pr_id')
-                        ->toArray();
-                    
-                    // Get total paid per PR for this outlet
-                    $paidTotalsByPr = DB::table('non_food_payments as nfp')
-                        ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                        ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                        ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                        ->where('pr.category_id', $request->category_budget_id)
-                        ->where('pr.outlet_id', $request->outlet_id)
-                        ->where('pr.is_held', false)
-                        ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-                        ->whereIn('nfp.status', ['paid', 'approved'])
-                        ->where('nfp.status', '!=', 'cancelled')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->groupBy('pr.id')
-                        ->select('pr.id as pr_id', DB::raw('SUM(nfp.amount) as total_paid'))
-                        ->pluck('total_paid', 'pr_id')
-                        ->toArray();
-                    
-                    // Calculate unpaid for each PR
-                    $unpaidAmount = 0;
-                    foreach ($allPrs as $pr) {
-                        $prId = $pr->id;
-                        $poTotal = $poTotalsByPr[$prId] ?? 0;
-                        $totalPaid = $paidTotalsByPr[$prId] ?? 0;
-                        
-                        $prTotalAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                        $unpaidAmount += max(0, $prTotalAmount - $totalPaid);
-                    }
-                    
-                    // Total used = Paid (from non_food_payments + RNF approved) + Unpaid PR + RNF pending
-                    $paidAmount = $paidAmountFromPo + $outletRetailNonFoodApproved;
-                    $outletUsedAmount = $paidAmount + $unpaidAmount + $outletRetailNonFoodPending;
-                    
-                    // Total setelah ditambah transaksi baru (asumsi status pending)
-                    $totalAfterNew = $outletUsedAmount + $totalAmount;
-                    
-                    // Validasi budget per outlet
-                    if ($totalAfterNew > $outletBudget->allocated_budget) {
-                        DB::rollBack();
-                        $outlet = Outlet::find($request->outlet_id);
-                        $outletName = $outlet ? $outlet->nama_outlet : 'Unknown';
-                        return response()->json([
-                            'message' => "Transaksi ditolak! Budget untuk kategori '{$category->name}' di outlet '{$outletName}' telah terlampaui.\n\n" .
-                                       "📊 Detail Budget:\n" .
-                                       "• Budget yang ditetapkan: Rp " . number_format($outletBudget->allocated_budget, 0, ',', '.') . "\n" .
-                                       "• Sudah Digunakan: Rp " . number_format($outletUsedAmount, 0, ',', '.') . "\n" .
-                                       "• Transaksi Baru: Rp " . number_format($totalAmount, 0, ',', '.') . "\n" .
-                                       "• Total Setelah Transaksi Baru: Rp " . number_format($totalAfterNew, 0, ',', '.') . "\n" .
-                                       "• Kelebihan: Rp " . number_format($totalAfterNew - $outletBudget->allocated_budget, 0, ',', '.')
+                            'message' => $this->pettyCashLockBudget->buildExceededMessage($monthlyBudget, $usage, $totalAmount),
                         ], 422);
                     }
                 }
-                */
-                // END OF OLD CODE - DEPRECATED
             }
 
             // Cek total transaksi hari ini
@@ -825,176 +482,57 @@ class RetailNonFoodController extends Controller
     {
         try {
             $request->validate([
-                'category_budget_id' => 'nullable|exists:purchase_requisition_categories,id',
-                'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+                'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'payment_method' => 'nullable|in:cash,contra_bon',
             ]);
 
             $paymentMethod = (string) $request->input('payment_method', 'cash');
             $outletId = (int) $request->input('outlet_id', 0);
 
-            $pettyCashInfo = null;
-            if ($paymentMethod !== 'contra_bon' && $outletId > 0) {
-                $monthStart = now()->startOfMonth()->toDateString();
-                $monthlyBudget = $this->resolveMonthlyForecastBudget($outletId, $monthStart);
-                if ($monthlyBudget === null) {
-                    $pettyCashInfo = [
+            if ($paymentMethod === 'contra_bon') {
+                return response()->json([
+                    'budget_info' => null,
+                    'petty_cash_info' => [
                         'budget_lock_active' => false,
-                        'message' => 'Forecast bulan berjalan belum ada. Locking budget petty cash di-skip.',
-                    ];
-                } else {
-                    $usage = $this->monthlyUsagePettyCashOutlet($outletId, now()->format('Y-m'));
-                    $pettyCashInfo = [
-                        'budget_lock_active' => true,
-                        'forecast_monthly_total' => $monthlyBudget['forecast_monthly_total'],
-                        'budget_amount' => $monthlyBudget['lock_budget'],
-                        'retail_food_non_contra_bon_total' => $usage['retail_food_non_contra_bon_total'],
-                        'retail_non_food_non_contra_bon_total' => $usage['retail_non_food_non_contra_bon_total'],
-                        'monthly_total' => $usage['monthly_total'],
-                        'remaining_budget' => $monthlyBudget['lock_budget'] - $usage['monthly_total'],
-                        'budget_percentage' => $monthlyBudget['lock_budget'] > 0 ? round(($usage['monthly_total'] / $monthlyBudget['lock_budget']) * 100, 2) : 0,
-                    ];
-                }
-            }
-
-            if (!$request->category_budget_id) {
-                return response()->json([
-                    'budget_info' => null,
-                    'petty_cash_info' => $pettyCashInfo,
+                        'message' => 'Locking budget tidak berlaku untuk Contra Bon.',
+                    ],
                 ]);
             }
 
-            $category = PurchaseRequisitionCategory::findOrFail($request->category_budget_id);
-            
-            if ($category->budget_type !== 'GLOBAL') {
+            $monthStart = now()->startOfMonth()->toDateString();
+            $monthlyBudget = $this->resolveMonthlyPettyCashBudget($outletId, $monthStart);
+            if ($monthlyBudget === null) {
                 return response()->json([
                     'budget_info' => null,
-                    'message' => 'Category budget harus GLOBAL'
+                    'petty_cash_info' => [
+                        'budget_lock_active' => false,
+                        'message' => 'Target pendapatan bulan berjalan belum ada. Locking budget petty cash di-skip.',
+                    ],
                 ]);
             }
 
-            // Use BudgetCalculationService for consistent calculation (same as PurchaseRequisitionController)
-            $currentMonth = date('n'); // 1-12
-            $currentYear = date('Y');
-            $dateFrom = date('Y-m-01', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-            $dateTo = date('Y-m-t', mktime(0, 0, 0, $currentMonth, 1, $currentYear));
-            
-            // For GLOBAL budget type, outletId must be null (no outlet filter)
-            $budgetService = new BudgetCalculationService();
-            $budgetInfoResult = $budgetService->getBudgetInfo(
-                categoryId: $category->id,
-                outletId: null, // GLOBAL budget: no outlet filter
-                dateFrom: $dateFrom,
-                dateTo: $dateTo,
-                currentAmount: 0 // No current amount for budget info
-            );
-            
-            if (!$budgetInfoResult['success']) {
-                return response()->json([
-                    'budget_info' => null,
-                    'error' => $budgetInfoResult['message'] ?? 'Failed to get budget information'
-                ], 500);
-            }
-            
-            // Get Retail Non Food pending amount (for display only, not included in used amount)
-            $retailNonFoodPending = RetailNonFood::where('category_budget_id', $request->category_budget_id)
-                ->whereBetween('transaction_date', [$dateFrom, $dateTo])
-                ->where('status', 'pending')
-                ->sum('total_amount');
-            
-            // Extract values from budget service result
-            $budgetInfo = $budgetInfoResult;
-            $retailNonFoodApproved = $budgetInfo['breakdown']['retail_non_food'] ?? 0;
-            $paidAmount = $budgetInfo['breakdown']['po_total'] + $retailNonFoodApproved; // PO total + RNF approved
-            $unpaidAmount = $budgetInfo['breakdown']['pr_unpaid'] ?? 0;
-            $categoryUsedAmount = $budgetInfo['category_used_amount'] ?? 0;
-            $remainingBudget = $budgetInfo['category_remaining_amount'] ?? 0;
-            
-            // Calculate approved and unapproved amounts for display (same logic as PurchaseRequisitionController)
-            // Support both old structure (category at PR level) and new structure (category at items level)
-            $prIds = DB::table('purchase_requisitions as pr')
-                ->leftJoin('purchase_requisition_items as pri', 'pr.id', '=', 'pri.purchase_requisition_id')
-                ->where(function($q) use ($category) {
-                    $q->where('pr.category_id', $category->id)
-                      ->orWhere('pri.category_id', $category->id);
-                })
-                ->whereYear('pr.created_at', $currentYear)
-                ->whereMonth('pr.created_at', $currentMonth)
-                ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                ->where('pr.is_held', false)
-                ->distinct()
-                ->pluck('pr.id')
-                ->toArray();
-            
-            $prsForStatus = PurchaseRequisition::whereIn('id', $prIds)->get();
-            $approvedAmount = 0;
-            $unapprovedAmount = 0;
-            
-            foreach ($prsForStatus as $pr) {
-                // For PR Ops mode: calculate based on items in this category
-                if (in_array($pr->mode, ['pr_ops', 'purchase_payment', 'pr_assets'])) {
-                    $categoryItemsSubtotal = DB::table('purchase_requisition_items')
-                        ->where('purchase_requisition_id', $pr->id)
-                        ->where('category_id', $category->id)
-                        ->sum('subtotal');
-                    $prAmount = $categoryItemsSubtotal ?? 0;
-                } else {
-                    // For other modes: use PR amount
-                    $prAmount = $pr->amount;
-                }
-                
-                if (in_array($pr->status, ['APPROVED', 'PROCESSED', 'COMPLETED'])) {
-                    $approvedAmount += $prAmount;
-                }
-                if ($pr->status === 'SUBMITTED') {
-                    $unapprovedAmount += $prAmount;
-                }
-            }
-            
-            $totalApprovedAmount = $approvedAmount + $retailNonFoodApproved;
-            $totalUnapprovedAmount = $unapprovedAmount + $retailNonFoodPending;
-            
-            // Persentase penggunaan
-            $budgetPercentage = $category->budget_limit > 0 
-                ? round(($categoryUsedAmount / $category->budget_limit) * 100, 2) 
-                : 0;
+            $usage = $this->monthlyUsagePettyCashOutlet($outletId, now()->format('Y-m'));
 
-            // Calculate purchase requisition used amount (paid + unpaid)
-            $purchaseRequisitionUsed = $budgetInfo['breakdown']['po_total'] + $unpaidAmount;
-            
-            // Calculate retail non food used amount (for display: approved + pending)
-            $retailNonFoodUsed = $retailNonFoodApproved + $retailNonFoodPending;
-            
             return response()->json([
-                'budget_info' => [
-                    'category_id' => $category->id,
-                    'category_name' => $category->name,
-                    'division' => $category->division,
-                    'subcategory' => $category->subcategory,
-                    'budget_limit' => $category->budget_limit,
-                    'category_used_amount' => $categoryUsedAmount, // Paid + Unpaid (from BudgetCalculationService)
-                    'total_used' => $categoryUsedAmount, // Alias for frontend compatibility
-                    'paid_amount' => $paidAmount, // PO total + RNF approved
-                    'unpaid_amount' => $unpaidAmount, // PR unpaid (from BudgetCalculationService)
-                    'retail_non_food_approved' => $retailNonFoodApproved,
-                    'retail_non_food_pending' => $retailNonFoodPending,
-                    'retail_non_food_used' => $retailNonFoodUsed, // For frontend display
-                    'purchase_requisition_used' => $purchaseRequisitionUsed, // For frontend display
-                    'approved_amount' => $totalApprovedAmount,
-                    'unapproved_amount' => $totalUnapprovedAmount,
-                    'remaining_budget' => $remainingBudget,
-                    'budget_percentage' => $budgetPercentage,
-                    'current_month' => $currentMonth,
-                    'current_year' => $currentYear,
-                    // Include breakdown from BudgetCalculationService for consistency
-                    'breakdown' => $budgetInfo['breakdown'] ?? [],
+                'budget_info' => null,
+                'petty_cash_info' => [
+                    'budget_lock_active' => true,
+                    'monthly_target' => $monthlyBudget['monthly_target'],
+                    'budget_amount' => $monthlyBudget['lock_budget'],
+                    'retail_food_non_contra_bon_total' => $usage['retail_food_non_contra_bon_total'],
+                    'retail_non_food_non_contra_bon_total' => $usage['retail_non_food_non_contra_bon_total'],
+                    'monthly_total' => $usage['monthly_total'],
+                    'remaining_budget' => $monthlyBudget['lock_budget'] - $usage['monthly_total'],
+                    'budget_percentage' => $monthlyBudget['lock_budget'] > 0
+                        ? round(($usage['monthly_total'] / $monthlyBudget['lock_budget']) * 100, 2)
+                        : 0,
                 ],
-                'petty_cash_info' => $pettyCashInfo,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'budget_info' => null,
+                'petty_cash_info' => null,
                 'error' => $e->getMessage()
             ], 500);
         }

@@ -20,7 +20,7 @@
             </div>
             <div>
               <label class="block text-xs font-bold text-gray-600 mb-2">Category Budget <span class="text-red-500 text-xs">*</span></label>
-              <select v-model="form.category_budget_id" @change="fetchBudgetInfo" :disabled="loadingCategories" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required>
+              <select v-model="form.category_budget_id" :disabled="loadingCategories" class="input input-bordered w-full shadow-inner rounded-xl focus:ring-2 focus:ring-green-300 transition-all duration-200" required>
                 <option value="">{{ loadingCategories ? 'Memuat...' : 'Pilih Category Budget' }}</option>
                 <option v-for="cb in categoryBudgets" :key="cb.id" :value="cb.id">
                   [{{ cb.division }}] {{ cb.name }}
@@ -64,7 +64,7 @@
           </div>
 
           <!-- Budget Information Section -->
-          <div v-if="pettyCashInfo || pettyCashLockMessage" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+          <div v-if="form.payment_method !== 'contra_bon' && (pettyCashInfo || pettyCashLockMessage)" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
             <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
               <i class="fa-solid fa-wallet text-yellow-600"></i>
               Informasi Budget Lock Petty Cash
@@ -74,8 +74,8 @@
             </div>
             <div v-if="pettyCashInfo" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
-                <div class="text-sm text-gray-600 mb-1">Forecast Bulanan</div>
-                <div class="font-semibold text-gray-800">{{ formatRupiah(pettyCashInfo.forecast_monthly_total) }}</div>
+                <div class="text-sm text-gray-600 mb-1">Target Pendapatan Bulanan</div>
+                <div class="font-semibold text-gray-800">{{ formatRupiah(pettyCashInfo.monthly_target) }}</div>
               </div>
               <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
                 <div class="text-sm text-gray-600 mb-1">Budget Petty Cash</div>
@@ -108,59 +108,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <div v-if="budgetInfo" class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
-            <h3 class="text-lg font-semibold text-yellow-800 mb-3 flex items-center gap-2">
-              <i class="fa-solid fa-chart-pie text-yellow-600"></i>
-              Informasi Budget Category
-            </h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
-                <div class="text-sm text-gray-600 mb-1">Category</div>
-                <div class="font-semibold text-gray-800">{{ budgetInfo.category_name }}</div>
-                <div class="text-xs text-gray-500 mt-1">{{ budgetInfo.division }} - {{ budgetInfo.subcategory }}</div>
-              </div>
-              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
-                <div class="text-sm text-gray-600 mb-1">Budget Limit</div>
-                <div class="font-semibold text-green-600">{{ formatRupiah(budgetInfo.budget_limit) }}</div>
-              </div>
-              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
-                <div class="text-sm text-gray-600 mb-1">Total Digunakan</div>
-                <div class="font-semibold text-blue-600">{{ formatRupiah(budgetInfo.total_used) }}</div>
-                <div class="text-xs text-gray-500 mt-1">
-                  RNF: {{ formatRupiah(budgetInfo.retail_non_food_used) }} | PR: {{ formatRupiah(budgetInfo.purchase_requisition_used) }}
-                </div>
-              </div>
-              <div class="bg-white p-3 rounded-lg border border-yellow-200 shadow-sm">
-                <div class="text-sm text-gray-600 mb-1">Sisa Budget</div>
-                <div :class="budgetInfo.remaining_budget > 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold">
-                  {{ formatRupiah(budgetInfo.remaining_budget) }}
-                </div>
-                <div class="mt-2">
-                  <div class="flex justify-between text-xs mb-1">
-                    <span>Penggunaan</span>
-                    <span>{{ budgetInfo.budget_percentage }}%</span>
-                  </div>
-                  <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div :class="budgetInfo.budget_percentage >= 90 ? 'bg-red-500' : budgetInfo.budget_percentage >= 70 ? 'bg-yellow-500' : 'bg-green-500'"
-                         class="h-2 rounded-full transition-all duration-300"
-                         :style="{ width: Math.min(budgetInfo.budget_percentage, 100) + '%' }">
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-if="budgetInfo.total_used + totalAmount > budgetInfo.budget_limit" class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <div class="flex items-center gap-2 text-red-800">
-                <i class="fa fa-exclamation-triangle"></i>
-                <span class="font-semibold">Peringatan: Total transaksi ini akan melebihi budget limit!</span>
-              </div>
-              <div class="text-sm text-red-700 mt-1">
-                Total setelah transaksi: {{ formatRupiah(budgetInfo.total_used + totalAmount) }} 
-                (Kelebihan: {{ formatRupiah((budgetInfo.total_used + totalAmount) - budgetInfo.budget_limit) }})
               </div>
             </div>
           </div>
@@ -295,7 +242,6 @@ const outletDisabled = computed(() => userOutletId.value != 1)
 const loading = ref(false)
 const dailyTotal = ref(0)
 const showLimitAlert = computed(() => (dailyTotal.value + totalAmount.value) >= 500000)
-const budgetInfo = ref(null)
 const pettyCashInfo = ref(null)
 const pettyCashLockMessage = ref('')
 const categoryBudgets = ref(props.categoryBudgets || [])
@@ -383,7 +329,6 @@ async function fetchCategoryBudgets() {
         const exists = categoryBudgets.value.find(cb => cb.id == form.value.category_budget_id)
         if (!exists) {
           form.value.category_budget_id = ''
-          budgetInfo.value = null
         }
       }
     }
@@ -396,48 +341,25 @@ async function fetchCategoryBudgets() {
 }
 
 async function fetchBudgetInfo() {
-  if (!form.value.category_budget_id) {
-    budgetInfo.value = null
-  }
-
-  if (form.value.payment_method !== 'contra_bon' && form.value.outlet_id) {
-    try {
-      const pettyRes = await axios.post('/retail-non-food/get-budget-info', {
-        outlet_id: form.value.outlet_id,
-        payment_method: form.value.payment_method || 'cash',
-        category_budget_id: form.value.category_budget_id || null
-      })
-      pettyCashInfo.value = pettyRes.data.petty_cash_info?.budget_lock_active ? pettyRes.data.petty_cash_info : null
-      pettyCashLockMessage.value = pettyRes.data.petty_cash_info?.budget_lock_active === false
-        ? (pettyRes.data.petty_cash_info?.message || 'Locking budget petty cash tidak aktif.')
-        : ''
-      if (!form.value.category_budget_id) return
-    } catch (error) {
-      console.error('Error fetching petty cash info:', error)
-      pettyCashInfo.value = null
-      pettyCashLockMessage.value = ''
-      if (!form.value.category_budget_id) return
-    }
-  } else {
+  if (form.value.payment_method === 'contra_bon' || !form.value.outlet_id) {
     pettyCashInfo.value = null
     pettyCashLockMessage.value = ''
-    if (!form.value.category_budget_id) return
+    return
   }
-  
+
   try {
     const res = await axios.post('/retail-non-food/get-budget-info', {
-      category_budget_id: form.value.category_budget_id,
       outlet_id: form.value.outlet_id,
-      payment_method: form.value.payment_method || 'cash'
+      payment_method: form.value.payment_method || 'cash',
     })
-    budgetInfo.value = res.data.budget_info
-    pettyCashInfo.value = res.data.petty_cash_info?.budget_lock_active ? res.data.petty_cash_info : pettyCashInfo.value
-    if (res.data.petty_cash_info?.budget_lock_active === false) {
-      pettyCashLockMessage.value = res.data.petty_cash_info?.message || 'Locking budget petty cash tidak aktif.'
-    }
+    pettyCashInfo.value = res.data.petty_cash_info?.budget_lock_active ? res.data.petty_cash_info : null
+    pettyCashLockMessage.value = res.data.petty_cash_info?.budget_lock_active === false
+      ? (res.data.petty_cash_info?.message || 'Locking budget petty cash tidak aktif.')
+      : ''
   } catch (error) {
-    console.error('Error fetching budget info:', error)
-    budgetInfo.value = null
+    console.error('Error fetching petty cash info:', error)
+    pettyCashInfo.value = null
+    pettyCashLockMessage.value = ''
   }
 }
 
@@ -449,29 +371,17 @@ watch([
 
 // Watch outlet_id untuk fetch category budgets
 watch(() => form.value.outlet_id, (newOutletId, oldOutletId) => {
-  // Reset category_budget_id dan budgetInfo ketika outlet berubah
   if (oldOutletId !== undefined && newOutletId !== oldOutletId) {
     form.value.category_budget_id = ''
-    budgetInfo.value = null
   }
   fetchCategoryBudgets()
 }, { immediate: true })
 
-// Watch untuk fetch budget info ketika category budget atau total amount berubah
 watch([
-  () => form.value.category_budget_id,
-  () => totalAmount.value,
   () => form.value.payment_method,
-  () => form.value.outlet_id
-], () => {
-  if (form.value.category_budget_id || (form.value.payment_method && form.value.payment_method !== 'contra_bon')) {
-    fetchBudgetInfo()
-  } else {
-    budgetInfo.value = null
-    pettyCashInfo.value = null
-    pettyCashLockMessage.value = ''
-  }
-}, { immediate: true })
+  () => form.value.outlet_id,
+  () => totalAmount.value,
+], fetchBudgetInfo, { immediate: true })
 
 // Watch untuk update subtotal setiap kali qty atau price berubah
 watch(() => form.value.items, () => {
