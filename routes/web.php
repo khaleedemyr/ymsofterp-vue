@@ -508,6 +508,12 @@ Route::middleware(['auth'])->group(function () {
         return redirect()->route('tickets.calendar', request()->query());
     })->name('tickets.timeline');
     Route::get('/tickets/import/template', [\App\Http\Controllers\TicketController::class, 'downloadImportTemplate'])->name('tickets.import.template');
+    Route::get('/tickets/team-settings', [\App\Http\Controllers\TicketTeamSettingController::class, 'index'])->name('tickets.team-settings.index');
+    Route::get('/tickets/team-settings/create', [\App\Http\Controllers\TicketTeamSettingController::class, 'create'])->name('tickets.team-settings.create');
+    Route::post('/tickets/team-settings', [\App\Http\Controllers\TicketTeamSettingController::class, 'store'])->name('tickets.team-settings.store');
+    Route::get('/tickets/team-settings/{id}/edit', [\App\Http\Controllers\TicketTeamSettingController::class, 'edit'])->name('tickets.team-settings.edit');
+    Route::put('/tickets/team-settings/{id}', [\App\Http\Controllers\TicketTeamSettingController::class, 'update'])->name('tickets.team-settings.update');
+    Route::delete('/tickets/team-settings/{id}', [\App\Http\Controllers\TicketTeamSettingController::class, 'destroy'])->name('tickets.team-settings.destroy');
     Route::post('/tickets/import', [\App\Http\Controllers\TicketController::class, 'importFromExcel'])->name('tickets.import');
     Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
     Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store'])->name('tickets.store');

@@ -14,6 +14,7 @@ use App\Models\Divisi;
 use App\Models\Outlet;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\TicketTeamAutoAssignService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -789,6 +790,8 @@ class TicketController extends Controller
                     null,
                     'Ticket created via Excel import'
                 );
+
+                $this->autoAssignTeamFromSetting($ticket);
 
                 $createdCount++;
             }
@@ -3191,6 +3194,8 @@ class TicketController extends Controller
             // Send notifications to users in the selected division
             $this->sendTicketCreatedNotifications($ticket);
 
+            $this->autoAssignTeamFromSetting($ticket);
+
             DB::commit();
 
             return response()->json([
@@ -4167,6 +4172,8 @@ class TicketController extends Controller
             $this->createTicketHistory($ticket, 'created', null, null, 
                 "Ticket created from Daily Report #{$dailyReport->id}");
 
+            $this->autoAssignTeamFromSetting($ticket);
+
             DB::commit();
 
             return response()->json([
@@ -4611,6 +4618,21 @@ class TicketController extends Controller
                 'ticket_id' => $ticket->id ?? null,
                 'assigned_user_ids' => $userIds,
                 'primary_user_id' => $primaryUserId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Auto-assign team from ticketing team settings (category + outlet/region).
+     */
+    protected function autoAssignTeamFromSetting(Ticket $ticket): void
+    {
+        try {
+            app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id());
+        } catch (\Throwable $e) {
+            \Log::error('Ticket auto-assign from team setting failed', [
+                'ticket_id' => $ticket->id,
                 'error' => $e->getMessage(),
             ]);
         }

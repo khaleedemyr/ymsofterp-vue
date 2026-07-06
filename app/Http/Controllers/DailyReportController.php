@@ -18,6 +18,7 @@ use App\Models\TicketCategory;
 use App\Models\TicketPriority;
 use App\Models\TicketStatus;
 use App\Services\NotificationService;
+use App\Services\TicketTeamAutoAssignService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -955,6 +956,8 @@ class DailyReportController extends Controller
             // Send notifications to users in the selected division
             $this->sendTicketCreatedNotifications($ticket);
 
+            app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id());
+
             DB::commit();
 
             return response()->json([
@@ -1035,6 +1038,8 @@ class DailyReportController extends Controller
 
             // Send notifications
             $this->sendTicketCreatedNotifications($ticket);
+
+            app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id() ?? 1);
 
             \Log::info('Ticket created from daily report area', [
                 'ticket_id' => $ticket->id,

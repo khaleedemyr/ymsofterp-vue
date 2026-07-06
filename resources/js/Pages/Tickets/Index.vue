@@ -21,6 +21,14 @@
             >
               <i class="fa-solid fa-calendar-days mr-2"></i> Kalender
             </button>
+            <button
+              v-if="can_manage_tickets"
+              type="button"
+              @click="openTeamSettings"
+              class="bg-white/90 text-fuchsia-800 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
+            >
+              <i class="fa-solid fa-users-gear mr-2"></i> Setting Team
+            </button>
             <template v-if="tickets_view_all_outlets">
               <button
                 type="button"
@@ -1042,6 +1050,10 @@ function openCreate() {
 
 function openCalendar() {
   router.visit('/tickets/calendar');
+}
+
+function openTeamSettings() {
+  router.visit('/tickets/team-settings');
 }
 
 function openDashboard() {
