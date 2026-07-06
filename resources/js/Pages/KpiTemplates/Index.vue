@@ -41,15 +41,26 @@ function openShow(row) {
   router.visit(route('kpi-templates.show', row.id));
 }
 
+function formatPublishError(errors) {
+  if (!errors) return 'Gagal publish template.';
+  const first = errors.strategies || errors.jabatan_ids || Object.values(errors).flat()[0];
+  return Array.isArray(first) ? first[0] : (first || 'Gagal publish template.');
+}
+
 async function publish(row) {
   const result = await Swal.fire({
     title: 'Publish template?',
-    text: 'Template akan aktif dan siap dipakai (evaluation fase 2).',
+    text: 'Template akan aktif dan siap dipakai evaluasi KPI.',
     icon: 'question',
     showCancelButton: true,
+    confirmButtonText: 'Publish',
+    cancelButtonText: 'Batal',
   });
   if (!result.isConfirmed) return;
-  router.post(route('kpi-templates.publish', row.id));
+  router.post(route('kpi-templates.publish', row.id), {}, {
+    onSuccess: () => Swal.fire('Berhasil', 'Template KPI berhasil dipublish.', 'success'),
+    onError: (errors) => Swal.fire('Gagal publish', formatPublishError(errors), 'error'),
+  });
 }
 
 async function hapus(row) {

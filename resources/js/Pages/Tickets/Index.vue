@@ -1276,18 +1276,27 @@ async function confirmCloseTicket() {
   modal.saving = true;
   statusUpdatingId.value = modal.ticket.id;
   try {
-    const formData = new FormData();
-    formData.append('status_id', modal.statusId);
-    if (modal.closeNote?.trim()) {
-      formData.append('close_note', modal.closeNote.trim());
-    }
-    modal.attachments.forEach((attachment, index) => {
-      formData.append(`attachments[${index}]`, attachment.file);
-    });
+    const hasClosePayload = Boolean(modal.closeNote?.trim()) || modal.attachments.length > 0;
+    let response;
 
-    const response = await axios.patch(`/tickets/${modal.ticket.id}/status`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    if (hasClosePayload) {
+      const formData = new FormData();
+      formData.append('status_id', modal.statusId);
+      if (modal.closeNote?.trim()) {
+        formData.append('close_note', modal.closeNote.trim());
+      }
+      modal.attachments.forEach((attachment, index) => {
+        formData.append(`attachments[${index}]`, attachment.file);
+      });
+      // PHP tidak mem-parse multipart pada PATCH; kirim POST (route menerima patch|post).
+      response = await axios.post(`/tickets/${modal.ticket.id}/status`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    } else {
+      response = await axios.patch(`/tickets/${modal.ticket.id}/status`, {
+        status_id: modal.statusId,
+      });
+    }
 
     if (response.data?.success) {
       closeTicketModal.value.open = false;

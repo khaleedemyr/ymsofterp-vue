@@ -508,7 +508,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store']);
         Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->where('id', '[0-9]+');
-        Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->where('id', '[0-9]+');
+        Route::match(['patch', 'post'], '/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->where('id', '[0-9]+');
         Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->where('id', '[0-9]+');
         Route::patch('/tickets/{id}/vendor-name', [\App\Http\Controllers\TicketController::class, 'updateVendorName'])->where('id', '[0-9]+');
         Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->where('id', '[0-9]+');

@@ -518,7 +518,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');
     Route::post('/tickets/from-daily-report', [\App\Http\Controllers\TicketController::class, 'createFromDailyReport'])->name('tickets.from-daily-report');
     Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->name('tickets.assign-team');
-    Route::patch('/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
+    Route::match(['patch', 'post'], '/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
     Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->name('tickets.update-work-executor-type');
     Route::patch('/tickets/{id}/vendor-name', [\App\Http\Controllers\TicketController::class, 'updateVendorName'])->name('tickets.update-vendor-name');
     
