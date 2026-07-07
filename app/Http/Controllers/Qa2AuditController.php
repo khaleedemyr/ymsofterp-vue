@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -99,6 +100,70 @@ class Qa2AuditController extends Controller
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
         ];
 
+        $fromMonth = (string) $request->input('from_month', now()->format('Y-m'));
+        $toMonth = (string) $request->input('to_month', now()->format('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $fromMonth)) {
+            $fromMonth = now()->format('Y-m');
+        }
+        if (!preg_match('/^\d{4}-\d{2}$/', $toMonth)) {
+            $toMonth = $fromMonth;
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m', $fromMonth)->startOfMonth();
+        $toDate = Carbon::createFromFormat('Y-m', $toMonth)->endOfMonth();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfMonth(), $fromDate->copy()->endOfMonth()];
+            $fromMonth = $fromDate->format('Y-m');
+            $toMonth = $toDate->format('Y-m');
+        }
+
+        $scorePerAuditQuery = DB::table('qa2_audits as a')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->where('a.status', 'submitted')
+            ->whereBetween('a.audit_datetime', [$fromDate->toDateTimeString(), $toDate->toDateTimeString()])
+            ->select([
+                'a.id',
+                'a.outlet_id',
+                'o.nama_outlet as outlet_name',
+            ])
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na");
+
+        if (!$isHo) {
+            $scorePerAuditQuery->where('a.outlet_id', (int) $user->id_outlet);
+        }
+
+        $scorePerAudit = $scorePerAuditQuery->get();
+
+        $reportByOutlet = collect($scorePerAudit)
+            ->groupBy('outlet_id')
+            ->map(function ($rows) {
+                $auditCount = $rows->count();
+                $totalC = (int) $rows->sum(fn ($r) => (int) ($r->count_c ?? 0));
+                $totalNc = (int) $rows->sum(fn ($r) => (int) ($r->count_nc ?? 0));
+                $totalNa = (int) $rows->sum(fn ($r) => (int) ($r->count_na ?? 0));
+                $avgScore = $rows->avg(function ($r) {
+                    $c = (float) ($r->count_c ?? 0);
+                    $nc = (float) ($r->count_nc ?? 0);
+                    $den = $c + $nc;
+                    return $den > 0 ? ($c / $den) * 100 : 0;
+                });
+
+                return [
+                    'outlet_id' => (int) $rows->first()->outlet_id,
+                    'outlet_name' => $rows->first()->outlet_name ?: '-',
+                    'audit_count' => $auditCount,
+                    'total_c' => $totalC,
+                    'total_nc' => $totalNc,
+                    'total_na' => $totalNa,
+                    'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
+                ];
+            })
+            ->sortBy('outlet_name')
+            ->values()
+            ->all();
+
         $outlets = $this->allowedOutlets($isHo, (int) $user->id_outlet);
 
         return Inertia::render('Qa2Audits/Index', [
@@ -107,9 +172,16 @@ class Qa2AuditController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'outlet_id' => $outletId,
+                'from_month' => $fromMonth,
+                'to_month' => $toMonth,
             ],
             'statistics' => $statistics,
             'outlets' => $outlets,
+            'summaryReport' => [
+                'from_month' => $fromMonth,
+                'to_month' => $toMonth,
+                'rows' => $reportByOutlet,
+            ],
             'permissions' => [
                 'can_manage' => $isHo,
             ],
