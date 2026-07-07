@@ -13,6 +13,7 @@ const props = defineProps({
 const outletId = ref(props.filters?.outlet_id || '');
 const fromMonth = ref(props.filters?.from_month || '');
 const toMonth = ref(props.filters?.to_month || '');
+const expanded = ref({});
 
 const debouncedFilter = debounce(() => {
   router.get(route('qa2-audits.report-summary'), {
@@ -60,6 +61,15 @@ function resetFilter() {
 
 function backToIndex() {
   router.visit(route('qa2-audits.index'));
+}
+
+function toggleExpand(outletIdValue) {
+  const key = String(outletIdValue);
+  expanded.value[key] = !expanded.value[key];
+}
+
+function isExpanded(outletIdValue) {
+  return !!expanded.value[String(outletIdValue)];
 }
 
 const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
@@ -138,11 +148,41 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 bg-white">
-              <tr v-for="row in (rows || [])" :key="row.outlet_id">
-                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
-                <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
-                <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</td>
-              </tr>
+              <template v-for="row in (rows || [])" :key="row.outlet_id">
+                <tr class="cursor-pointer hover:bg-gray-50" @click="toggleExpand(row.outlet_id)">
+                  <td class="px-4 py-3 text-sm font-medium text-gray-900">
+                    <span class="mr-2 inline-block w-4 text-center text-gray-500">{{ isExpanded(row.outlet_id) ? '▾' : '▸' }}</span>
+                    {{ row.outlet_name }}
+                  </td>
+                  <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
+                  <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</td>
+                </tr>
+                <tr v-if="isExpanded(row.outlet_id)">
+                  <td colspan="3" class="bg-gray-50 px-8 py-3">
+                    <div class="rounded-lg border border-gray-200 bg-white">
+                      <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-100">
+                          <tr>
+                            <th class="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Template</th>
+                            <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Jumlah Audit</th>
+                            <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Rata-rata Audit Result</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                          <tr v-for="t in (row.templates || [])" :key="`${row.outlet_id}-${t.template_id}`">
+                            <td class="px-3 py-2 text-sm text-gray-700">{{ t.template_name }}</td>
+                            <td class="px-3 py-2 text-sm text-right text-gray-700">{{ t.audit_count }}</td>
+                            <td class="px-3 py-2 text-sm text-right font-medium text-indigo-700">{{ formatScore(t.avg_audit_result) }}</td>
+                          </tr>
+                          <tr v-if="!(row.templates || []).length">
+                            <td colspan="3" class="px-3 py-3 text-center text-xs text-gray-500">Tidak ada detail template.</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              </template>
               <tr v-if="!(rows || []).length">
                 <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
               </tr>

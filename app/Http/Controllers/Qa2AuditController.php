@@ -225,12 +225,15 @@ class Qa2AuditController extends Controller
     ): array {
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
             ->where('a.status', 'submitted')
             ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
             ->select([
                 'a.id',
                 'a.outlet_id',
+                'a.template_id',
                 'o.nama_outlet as outlet_name',
+                't.name as template_name',
             ])
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
@@ -252,11 +255,34 @@ class Qa2AuditController extends Controller
                 });
 
                 $first = $group->first();
+                $perTemplate = $group
+                    ->groupBy('template_id')
+                    ->map(function ($templateRows) {
+                        $avgTemplateScore = $templateRows->avg(function ($r) {
+                            $c = (float) ($r->count_c ?? 0);
+                            $nc = (float) ($r->count_nc ?? 0);
+                            $den = $c + $nc;
+                            return $den > 0 ? ($c / $den) * 100 : 0;
+                        });
+
+                        $templateFirst = $templateRows->first();
+                        return [
+                            'template_id' => (int) ($templateFirst->template_id ?? 0),
+                            'template_name' => (string) ($templateFirst->template_name ?? '-'),
+                            'audit_count' => $templateRows->count(),
+                            'avg_audit_result' => round((float) ($avgTemplateScore ?? 0), 2),
+                        ];
+                    })
+                    ->sortBy('template_name')
+                    ->values()
+                    ->all();
+
                 return [
                     'outlet_id' => (int) ($first->outlet_id ?? 0),
                     'outlet_name' => (string) ($first->outlet_name ?? '-'),
                     'audit_count' => $group->count(),
                     'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
+                    'templates' => $perTemplate,
                 ];
             })
             ->sortBy('outlet_name')
