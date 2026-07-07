@@ -212,9 +212,11 @@ class Qa2AuditController extends Controller
             ->where('user_id', (int) $user->id)
             ->exists();
 
+        $canManage = $isHo && $audit->status === 'draft';
+
         return Inertia::render('Qa2Audits/Form', [
             'mode' => 'edit',
-            'audit' => $this->auditPayload($id),
+            'audit' => $this->auditPayload($id, !$canManage),
             'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
             'users' => $this->usersForSelector(),
             'templates' => DB::table('qa2_templates')
@@ -228,7 +230,7 @@ class Qa2AuditController extends Controller
                 ->get(['id', 'code', 'name']),
             'tree' => $this->auditTree($id),
             'permissions' => [
-                'can_manage' => $isHo && $audit->status === 'draft',
+                'can_manage' => $canManage,
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
                 'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
                 'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
@@ -753,7 +755,7 @@ class Qa2AuditController extends Controller
         }
     }
 
-    private function auditPayload(int $id): array
+    private function auditPayload(int $id, bool $onlyNc = false): array
     {
         $audit = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
@@ -808,11 +810,10 @@ class Qa2AuditController extends Controller
             ->values()
             ->all();
 
-        $items = DB::table('qa2_audit_items as i')
+        $itemsQuery = DB::table('qa2_audit_items as i')
             ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
             ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
             ->where('i.audit_id', $id)
-            ->orderBy('i.sort_order')
             ->select([
                 'i.id',
                 'i.category_id',
@@ -826,7 +827,14 @@ class Qa2AuditController extends Controller
                 'i.due_date',
                 'c.name as category_name',
                 's.name as subcategory_name',
-            ])
+            ]);
+
+        if ($onlyNc) {
+            $itemsQuery->where('i.result', 'NC');
+        }
+
+        $items = $itemsQuery
+            ->orderBy('i.sort_order')
             ->get()
             ->map(function ($row) {
                 $row->media = DB::table('qa2_audit_item_media')
@@ -1141,11 +1149,12 @@ class Qa2AuditController extends Controller
             ->where('audit_id', $id)
             ->where('user_id', (int) $user->id)
             ->exists();
+        $canManage = $isHo && $audit->status === 'draft';
 
         return response()->json([
             'success' => true,
             'mode' => 'edit',
-            'audit' => $this->auditPayload($id),
+            'audit' => $this->auditPayload($id, !$canManage),
             'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
             'users' => $this->usersForSelector(),
             'templates' => DB::table('qa2_templates')
@@ -1159,7 +1168,7 @@ class Qa2AuditController extends Controller
                 ->get(['id', 'code', 'name']),
             'tree' => $this->auditTree($id),
             'permissions' => [
-                'can_manage' => $isHo && $audit->status === 'draft',
+                'can_manage' => $canManage,
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
                 'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
                 'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),

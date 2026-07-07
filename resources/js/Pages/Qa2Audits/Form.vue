@@ -88,7 +88,14 @@ watch(() => [props.mode, props.audit?.id], () => {
   hydrateFromAudit();
 });
 
-const groupedItems = computed(() => buildGroupedItems(items.value));
+const detailItems = computed(() => {
+  if (canManage.value && props.audit?.status === 'draft') {
+    return items.value;
+  }
+  return items.value.filter((item) => item.result === 'NC');
+});
+
+const groupedItems = computed(() => buildGroupedItems(detailItems.value));
 const groupedCapItems = computed(() => buildGroupedItems(items.value.filter((item) => item.result === 'NC')));
 
 function buildGroupedItems(sourceItems) {
@@ -1153,7 +1160,7 @@ function formatUserLabel(user) {
             v-model="search"
             type="text"
             class="w-full rounded-lg border-gray-300 text-sm md:w-96"
-            placeholder="Cari parameter, kategori, subcategory..."
+            :placeholder="canManage && audit.status === 'draft' ? 'Cari parameter, kategori, subcategory...' : 'Cari parameter NC, kategori, subcategory...'"
           >
         </div>
 
@@ -1401,7 +1408,13 @@ function formatUserLabel(user) {
           </div>
 
           <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
-            {{ search.trim() ? 'Tidak ada parameter yang cocok dengan pencarian.' : 'Belum ada parameter audit dari template.' }}
+            {{
+              search.trim()
+                ? 'Tidak ada parameter NC yang cocok dengan pencarian.'
+                : (canManage && audit.status === 'draft'
+                    ? 'Belum ada parameter audit dari template.'
+                    : 'Tidak ada parameter NC pada audit ini.')
+            }}
           </div>
         </div>
       </div>
