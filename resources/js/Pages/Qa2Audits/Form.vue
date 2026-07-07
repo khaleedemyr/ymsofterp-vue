@@ -146,6 +146,10 @@ function buildGroupedItems(sourceItems) {
 }
 
 const categorySummaryRows = computed(() => {
+  if (Array.isArray(props.audit?.summary_rows) && props.audit.summary_rows.length) {
+    return props.audit.summary_rows;
+  }
+
   const map = new Map();
 
   for (const item of items.value) {
@@ -184,6 +188,15 @@ const categorySummaryRows = computed(() => {
 });
 
 const summaryTotal = computed(() => {
+  if (props.audit?.summary_total) {
+    return {
+      compliant: Number(props.audit.summary_total.compliant || 0),
+      non_compliant: Number(props.audit.summary_total.non_compliant || 0),
+      non_applicable: Number(props.audit.summary_total.non_applicable || 0),
+      score: Number(props.audit.summary_total.score || 0),
+    };
+  }
+
   const total = {
     compliant: 0,
     non_compliant: 0,

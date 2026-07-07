@@ -810,6 +810,46 @@ class Qa2AuditController extends Controller
             ->values()
             ->all();
 
+        $summaryRows = DB::table('qa2_audit_items as i')
+            ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
+            ->where('i.audit_id', $id)
+            ->groupBy('i.category_id', 'c.name')
+            ->selectRaw('COALESCE(i.category_id, 0) as id')
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as name")
+            ->selectRaw("SUM(CASE WHEN i.result = 'C' THEN 1 ELSE 0 END) as compliant")
+            ->selectRaw("SUM(CASE WHEN i.result = 'NC' THEN 1 ELSE 0 END) as non_compliant")
+            ->selectRaw("SUM(CASE WHEN i.result = 'NA' THEN 1 ELSE 0 END) as non_applicable")
+            ->orderBy('name')
+            ->get()
+            ->map(function ($row, $index) {
+                $compliant = (int) ($row->compliant ?? 0);
+                $nonCompliant = (int) ($row->non_compliant ?? 0);
+                $denominator = $compliant + $nonCompliant;
+                $score = $denominator > 0 ? round(($compliant / $denominator) * 100, 2) : 0;
+
+                return [
+                    'id' => (int) ($row->id ?? 0),
+                    'name' => (string) ($row->name ?? 'Tanpa Kategori'),
+                    'compliant' => $compliant,
+                    'non_compliant' => $nonCompliant,
+                    'non_applicable' => (int) ($row->non_applicable ?? 0),
+                    'score' => $score,
+                    'no' => $index + 1,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $summaryTotal = [
+            'compliant' => array_sum(array_column($summaryRows, 'compliant')),
+            'non_compliant' => array_sum(array_column($summaryRows, 'non_compliant')),
+            'non_applicable' => array_sum(array_column($summaryRows, 'non_applicable')),
+        ];
+        $summaryDenominator = $summaryTotal['compliant'] + $summaryTotal['non_compliant'];
+        $summaryTotal['score'] = $summaryDenominator > 0
+            ? round(($summaryTotal['compliant'] / $summaryDenominator) * 100, 2)
+            : 0;
+
         $itemsQuery = DB::table('qa2_audit_items as i')
             ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
             ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
@@ -903,6 +943,8 @@ class Qa2AuditController extends Controller
             'auditors' => $auditors,
             'auditees' => $auditees,
             'items' => $items,
+            'summary_rows' => $summaryRows,
+            'summary_total' => $summaryTotal,
         ];
     }
 
