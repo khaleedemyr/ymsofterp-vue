@@ -32,6 +32,17 @@ function formatScore(value) {
   return `${Number(value || 0).toFixed(0)}%`;
 }
 
+function resolveAuditResult(scoreValue) {
+  const score = Number(scoreValue || 0);
+  if (score >= 91) {
+    return { label: 'EXCELLENT', className: 'bg-emerald-100 text-emerald-700' };
+  }
+  if (score >= 85) {
+    return { label: 'SATISFACTORY', className: 'bg-yellow-100 text-yellow-700' };
+  }
+  return { label: 'TO IMPROVE', className: 'bg-rose-100 text-rose-700' };
+}
+
 function shiftMonth(base, delta) {
   const [year, month] = String(base || '').split('-').map(Number);
   if (!year || !month) return '';
@@ -155,7 +166,12 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
                     {{ row.outlet_name }}
                   </td>
                   <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
-                  <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</td>
+                  <td class="px-4 py-3 text-sm text-right">
+                    <span class="mr-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resolveAuditResult(row.avg_audit_result).className">
+                      {{ resolveAuditResult(row.avg_audit_result).label }}
+                    </span>
+                    <span class="font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</span>
+                  </td>
                 </tr>
                 <tr v-if="isExpanded(row.outlet_id)">
                   <td colspan="3" class="bg-gray-50 px-8 py-3">
@@ -172,7 +188,12 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
                           <tr v-for="t in (row.templates || [])" :key="`${row.outlet_id}-${t.template_id}`">
                             <td class="px-3 py-2 text-sm text-gray-700">{{ t.template_name }}</td>
                             <td class="px-3 py-2 text-sm text-right text-gray-700">{{ t.audit_count }}</td>
-                            <td class="px-3 py-2 text-sm text-right font-medium text-indigo-700">{{ formatScore(t.avg_audit_result) }}</td>
+                            <td class="px-3 py-2 text-sm text-right">
+                              <span class="mr-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resolveAuditResult(t.avg_audit_result).className">
+                                {{ resolveAuditResult(t.avg_audit_result).label }}
+                              </span>
+                              <span class="font-medium text-indigo-700">{{ formatScore(t.avg_audit_result) }}</span>
+                            </td>
                           </tr>
                           <tr v-if="!(row.templates || []).length">
                             <td colspan="3" class="px-3 py-3 text-center text-xs text-gray-500">Tidak ada detail template.</td>
