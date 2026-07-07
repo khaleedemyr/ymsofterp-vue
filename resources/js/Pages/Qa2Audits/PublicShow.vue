@@ -60,44 +60,45 @@ function openPhotoLightbox(mediaList, media) {
 <template>
   <Head :title="`QA Audit ${audit?.audit_number || ''}`" />
 
-  <div class="min-h-screen bg-gray-100">
+  <div class="min-h-screen bg-gray-50">
     <header class="border-b border-gray-200 bg-white shadow-sm">
-      <div class="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-4">
+      <div class="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
         <div class="min-w-0">
-          <p class="text-xs uppercase tracking-wide text-gray-500">Detail QA Audit</p>
-          <h1 class="truncate text-lg font-bold text-gray-800 sm:text-xl">{{ audit?.audit_number || '-' }}</h1>
+          <p class="text-xs uppercase tracking-wide text-gray-500">QA Audit</p>
+          <h1 class="truncate text-lg font-semibold text-gray-900 sm:text-xl">{{ audit?.audit_number || '-' }}</h1>
         </div>
         <span class="hidden flex-shrink-0 text-xs text-gray-400 sm:inline">YMSoft ERP</span>
       </div>
     </header>
 
-    <main class="mx-auto w-full max-w-6xl space-y-6 px-4 py-6">
-      <div class="rounded-2xl bg-white p-6 shadow-lg">
-        <div class="grid gap-4 md:grid-cols-2">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Outlet</p>
+    <main class="mx-auto w-full max-w-7xl space-y-6 p-4 sm:p-6">
+      <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <div class="grid gap-4 md:grid-cols-3">
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Outlet Name</p>
             <p class="mt-1 text-sm font-medium text-gray-900">{{ audit?.outlet_name || '-' }}</p>
           </div>
-          <div>
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Template</p>
             <p class="mt-1 text-sm font-medium text-gray-900">{{ audit?.template_name || '-' }}</p>
           </div>
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Tanggal Audit</p>
-            <p class="mt-1 text-sm font-medium text-gray-900">{{ audit?.audit_datetime || '-' }}</p>
-          </div>
-          <div>
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
             <span class="mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="audit?.status === 'submitted' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'">
               {{ audit?.status || '-' }}
             </span>
           </div>
         </div>
+        <div class="mt-3 text-xs text-gray-500">
+          Audit Date: {{ audit?.audit_datetime || '-' }} |
+          Time Start: {{ audit?.audit_time_start || '-' }} |
+          Time End: {{ audit?.audit_time_end || '-' }}
+        </div>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-2">
-        <div class="rounded-2xl bg-white p-6 shadow-lg">
-          <h2 class="mb-3 text-base font-semibold text-gray-900">Auditor</h2>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+          <h2 class="mb-3 text-sm font-semibold text-gray-900">Auditor</h2>
           <div v-if="audit?.auditors?.length" class="space-y-2">
             <div v-for="person in audit.auditors" :key="`auditor-${person.id}`" class="rounded-lg border border-gray-200 p-2">
               <div class="text-sm font-medium text-gray-900">{{ person.name }}</div>
@@ -107,8 +108,8 @@ function openPhotoLightbox(mediaList, media) {
           <p v-else class="text-sm text-gray-400">-</p>
         </div>
 
-        <div class="rounded-2xl bg-white p-6 shadow-lg">
-          <h2 class="mb-3 text-base font-semibold text-gray-900">Auditee</h2>
+        <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+          <h2 class="mb-3 text-sm font-semibold text-gray-900">Auditee</h2>
           <div v-if="audit?.auditees?.length" class="space-y-2">
             <div v-for="person in audit.auditees" :key="`auditee-${person.id}`" class="rounded-lg border border-gray-200 p-2">
               <div class="text-sm font-medium text-gray-900">{{ person.name }}</div>
@@ -119,49 +120,53 @@ function openPhotoLightbox(mediaList, media) {
         </div>
       </div>
 
-      <div class="rounded-2xl bg-white p-6 shadow-lg">
-        <h2 class="mb-4 text-base font-semibold text-gray-900">QA Audit Detail Summary</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-amber-900 text-white">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase">Category</th>
-                <th class="px-3 py-2 text-center text-xs font-semibold uppercase">C</th>
-                <th class="px-3 py-2 text-center text-xs font-semibold uppercase">NC</th>
-                <th class="px-3 py-2 text-center text-xs font-semibold uppercase">NA</th>
-                <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Score</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 bg-white">
-              <tr v-for="row in audit?.summary_rows || []" :key="row.id">
-                <td class="px-3 py-2 text-sm font-medium text-gray-900">{{ row.name }}</td>
-                <td class="px-3 py-2 text-center text-sm text-gray-700">{{ row.compliant }}</td>
-                <td class="px-3 py-2 text-center text-sm text-gray-700">{{ row.non_compliant }}</td>
-                <td class="px-3 py-2 text-center text-sm text-gray-700">{{ row.non_applicable }}</td>
-                <td class="px-3 py-2 text-center text-sm text-gray-700">{{ formatScore(row.score) }}</td>
-              </tr>
-            </tbody>
-            <tfoot class="bg-amber-900 text-white">
-              <tr>
-                <td class="px-3 py-2 text-sm font-semibold">TOTAL</td>
-                <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
-                <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_compliant || 0 }}</td>
-                <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_applicable || 0 }}</td>
-                <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(audit?.summary_total?.score || 0) }}</td>
-              </tr>
-            </tfoot>
-          </table>
+      <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-200">
+        <h2 class="mb-4 text-lg font-semibold text-gray-900">QA Audit Detail Summary</h2>
+        <div class="overflow-hidden rounded-lg border border-gray-200">
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-amber-900 text-white">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase">Category</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Compliant</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Compliant</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Applicable</th>
+                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Score</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white">
+                <tr v-for="row in audit?.summary_rows || []" :key="row.id">
+                  <td class="px-3 py-2 text-sm font-semibold uppercase text-gray-900">{{ row.name }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
+                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                </tr>
+              </tbody>
+              <tfoot class="bg-amber-900 text-white">
+                <tr>
+                  <td class="px-3 py-2 text-sm font-semibold">TOTAL</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_compliant || 0 }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_applicable || 0 }}</td>
+                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(audit?.summary_total?.score || 0) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
 
       <div class="space-y-4">
-        <div v-for="group in groupedItems" :key="group.key" class="rounded-2xl bg-white p-5 shadow-lg">
+        <div v-for="group in groupedItems" :key="group.key" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div class="mb-3">
-            <h3 class="text-sm font-semibold uppercase text-gray-900">{{ group.category }}</h3>
-            <p class="text-xs text-gray-500">{{ group.subcategory }}</p>
+            <div class="bg-gray-50 px-4 py-3">
+              <h3 class="text-sm font-semibold text-gray-900">{{ group.category }}</h3>
+              <p class="text-xs text-gray-500">{{ group.subcategory }}</p>
+            </div>
           </div>
 
-          <div class="space-y-3">
+          <div class="space-y-3 p-3">
             <div v-for="item in group.items" :key="item.id" class="rounded-lg border border-gray-200 p-3">
               <div class="mb-2 flex items-start justify-between gap-3">
                 <div>
@@ -172,8 +177,11 @@ function openPhotoLightbox(mediaList, media) {
                   {{ item.result || 'Belum diisi' }}
                 </span>
               </div>
-              <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ item.comment || '-' }}</p>
-              <p class="mt-1 text-xs text-gray-500">Due date: {{ item.due_date || '-' }}</p>
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Temuan Auditor</p>
+                <p class="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{{ item.comment || '-' }}</p>
+                <p class="mt-1 text-xs text-gray-500">Due date: {{ item.due_date || '-' }}</p>
+              </div>
 
               <div v-if="item.media?.length" class="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 <div v-for="media in item.media" :key="`item-media-${media.id}`" class="overflow-hidden rounded-lg border border-gray-200 bg-white">
