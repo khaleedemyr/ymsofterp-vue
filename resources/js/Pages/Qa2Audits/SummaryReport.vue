@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -61,6 +61,12 @@ function resetFilter() {
 function backToIndex() {
   router.visit(route('qa2-audits.index'));
 }
+
+const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
+  outlet_id: outletId.value || undefined,
+  from_month: fromMonth.value || undefined,
+  to_month: toMonth.value || undefined,
+}));
 </script>
 
 <template>
@@ -79,6 +85,12 @@ function backToIndex() {
           >
             Back to QA2 Audits
           </button>
+          <a
+            :href="exportUrl"
+            class="rounded-lg border border-emerald-300 px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+          >
+            Export Excel
+          </a>
         </div>
       </div>
 
@@ -121,20 +133,18 @@ function backToIndex() {
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Outlet</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Template</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Jumlah Audit</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Rata-rata Audit Result</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 bg-white">
-              <tr v-for="row in (rows || [])" :key="`${row.outlet_id}-${row.template_id}`">
+              <tr v-for="row in (rows || [])" :key="row.outlet_id">
                 <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700">{{ row.template_name }}</td>
                 <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
                 <td class="px-4 py-3 text-sm text-right font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</td>
               </tr>
               <tr v-if="!(rows || []).length">
-                <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
+                <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
               </tr>
             </tbody>
           </table>

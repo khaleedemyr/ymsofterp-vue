@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Concerns\FromCollection;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Facades\Excel;
 
 class Qa2AuditController extends Controller
 {
@@ -140,52 +143,13 @@ class Qa2AuditController extends Controller
             $toMonth = $toDate->format('Y-m');
         }
 
-        $query = DB::table('qa2_audits as a')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
-            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->where('a.status', 'submitted')
-            ->whereBetween('a.audit_datetime', [$fromDate->toDateTimeString(), $toDate->toDateTimeString()])
-            ->select([
-                'a.id',
-                'a.outlet_id',
-                'a.template_id',
-                'o.nama_outlet as outlet_name',
-                't.name as template_name',
-            ])
-            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
-            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
-
-        if (!$isHo) {
-            $query->where('a.outlet_id', (int) $user->id_outlet);
-        } elseif ($outletId > 0) {
-            $query->where('a.outlet_id', $outletId);
-        }
-
-        $rows = $query->get()
-            ->groupBy(function ($row) {
-                return ((int) $row->outlet_id) . '-' . ((int) $row->template_id);
-            })
-            ->map(function ($group) {
-                $avgScore = $group->avg(function ($r) {
-                    $c = (float) ($r->count_c ?? 0);
-                    $nc = (float) ($r->count_nc ?? 0);
-                    $den = $c + $nc;
-                    return $den > 0 ? ($c / $den) * 100 : 0;
-                });
-
-                $first = $group->first();
-                return [
-                    'outlet_id' => (int) ($first->outlet_id ?? 0),
-                    'outlet_name' => (string) ($first->outlet_name ?? '-'),
-                    'template_id' => (int) ($first->template_id ?? 0),
-                    'template_name' => (string) ($first->template_name ?? '-'),
-                    'audit_count' => $group->count(),
-                    'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
-                ];
-            })
-            ->sortBy(['outlet_name', 'template_name'])
-            ->values()
-            ->all();
+        $rows = $this->buildOutletSummaryRows(
+            $isHo,
+            (int) $user->id_outlet,
+            $outletId,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString()
+        );
 
         return Inertia::render('Qa2Audits/SummaryReport', [
             'filters' => [
@@ -199,6 +163,107 @@ class Qa2AuditController extends Controller
                 'can_manage' => $isHo,
             ],
         ]);
+    }
+
+    public function exportReportSummary(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('outlet_id', 0);
+        $fromMonth = (string) $request->input('from_month', now()->format('Y-m'));
+        $toMonth = (string) $request->input('to_month', now()->format('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $fromMonth)) {
+            $fromMonth = now()->format('Y-m');
+        }
+        if (!preg_match('/^\d{4}-\d{2}$/', $toMonth)) {
+            $toMonth = $fromMonth;
+        }
+        $fromDate = Carbon::createFromFormat('Y-m', $fromMonth)->startOfMonth();
+        $toDate = Carbon::createFromFormat('Y-m', $toMonth)->endOfMonth();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfMonth(), $fromDate->copy()->endOfMonth()];
+            $fromMonth = $fromDate->format('Y-m');
+            $toMonth = $toDate->format('Y-m');
+        }
+
+        $rows = $this->buildOutletSummaryRows(
+            $isHo,
+            (int) $user->id_outlet,
+            $outletId,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString()
+        );
+
+        $exportRows = collect($rows)->map(fn ($row) => [
+            'Outlet' => $row['outlet_name'],
+            'Jumlah Audit' => $row['audit_count'],
+            'Rata-rata Audit Result (%)' => $row['avg_audit_result'],
+        ]);
+
+        $fileName = sprintf('qa2_summary_%s_to_%s.xlsx', $fromMonth, $toMonth);
+
+        return Excel::download(new class($exportRows) implements FromCollection, WithHeadings {
+            public function __construct(private \Illuminate\Support\Collection $rows) {}
+            public function collection()
+            {
+                return $this->rows;
+            }
+            public function headings(): array
+            {
+                return ['Outlet', 'Jumlah Audit', 'Rata-rata Audit Result (%)'];
+            }
+        }, $fileName);
+    }
+
+    private function buildOutletSummaryRows(
+        bool $isHo,
+        int $userOutletId,
+        int $outletId,
+        string $fromDateTime,
+        string $toDateTime
+    ): array {
+        $query = DB::table('qa2_audits as a')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->where('a.status', 'submitted')
+            ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
+            ->select([
+                'a.id',
+                'a.outlet_id',
+                'o.nama_outlet as outlet_name',
+            ])
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
+
+        if (!$isHo) {
+            $query->where('a.outlet_id', $userOutletId);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
+        }
+
+        $rows = $query->get()
+            ->groupBy('outlet_id')
+            ->map(function ($group) {
+                $avgScore = $group->avg(function ($r) {
+                    $c = (float) ($r->count_c ?? 0);
+                    $nc = (float) ($r->count_nc ?? 0);
+                    $den = $c + $nc;
+                    return $den > 0 ? ($c / $den) * 100 : 0;
+                });
+
+                $first = $group->first();
+                return [
+                    'outlet_id' => (int) ($first->outlet_id ?? 0),
+                    'outlet_name' => (string) ($first->outlet_name ?? '-'),
+                    'audit_count' => $group->count(),
+                    'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
+                ];
+            })
+            ->sortBy('outlet_name')
+            ->values()
+            ->all();
+
+        return $rows;
     }
 
     public function create()
