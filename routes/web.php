@@ -2558,6 +2558,8 @@ Route::patch('qa2-parameters/{id}/toggle-status', [\App\Http\Controllers\Qa2Para
 Route::get('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'index'])->name('qa2-audits.index');
 Route::get('qa2-audits/report-summary', [\App\Http\Controllers\Qa2AuditController::class, 'reportSummary'])->name('qa2-audits.report-summary');
 Route::get('qa2-audits/report-summary/export', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportSummary'])->name('qa2-audits.report-summary.export');
+Route::get('qa2-audits/report-nc-detail', [\App\Http\Controllers\Qa2AuditController::class, 'reportNcDetail'])->name('qa2-audits.report-nc-detail');
+Route::get('qa2-audits/report-nc-detail/export', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportNcDetail'])->name('qa2-audits.report-nc-detail.export');
 Route::get('qa2-audits/create', [\App\Http\Controllers\Qa2AuditController::class, 'create'])->name('qa2-audits.create');
 Route::post('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'store'])->name('qa2-audits.store');
 Route::get('qa2-audits/{id}/edit', [\App\Http\Controllers\Qa2AuditController::class, 'edit'])->name('qa2-audits.edit');

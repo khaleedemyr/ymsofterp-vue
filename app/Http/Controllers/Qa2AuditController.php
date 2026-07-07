@@ -216,6 +216,137 @@ class Qa2AuditController extends Controller
         }, $fileName);
     }
 
+    public function reportNcDetail(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('outlet_id', 0);
+        $fromDateRaw = (string) $request->input('from_date', now()->startOfMonth()->toDateString());
+        $toDateRaw = (string) $request->input('to_date', now()->toDateString());
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDateRaw)) {
+            $fromDateRaw = now()->startOfMonth()->toDateString();
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDateRaw)) {
+            $toDateRaw = now()->toDateString();
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m-d', $fromDateRaw)->startOfDay();
+        $toDate = Carbon::createFromFormat('Y-m-d', $toDateRaw)->endOfDay();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
+            $fromDateRaw = $fromDate->toDateString();
+            $toDateRaw = $toDate->toDateString();
+        }
+
+        $rows = $this->buildNcDetailRows(
+            $isHo,
+            (int) $user->id_outlet,
+            $outletId,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString()
+        );
+
+        return Inertia::render('Qa2Audits/NcDetailReport', [
+            'filters' => [
+                'outlet_id' => $outletId > 0 ? (string) $outletId : '',
+                'from_date' => $fromDateRaw,
+                'to_date' => $toDateRaw,
+            ],
+            'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'rows' => $rows,
+            'permissions' => [
+                'can_manage' => $isHo,
+            ],
+        ]);
+    }
+
+    public function exportReportNcDetail(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('outlet_id', 0);
+        $fromDateRaw = (string) $request->input('from_date', now()->startOfMonth()->toDateString());
+        $toDateRaw = (string) $request->input('to_date', now()->toDateString());
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDateRaw)) {
+            $fromDateRaw = now()->startOfMonth()->toDateString();
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDateRaw)) {
+            $toDateRaw = now()->toDateString();
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m-d', $fromDateRaw)->startOfDay();
+        $toDate = Carbon::createFromFormat('Y-m-d', $toDateRaw)->endOfDay();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
+            $fromDateRaw = $fromDate->toDateString();
+            $toDateRaw = $toDate->toDateString();
+        }
+
+        $rows = collect($this->buildNcDetailRows(
+            $isHo,
+            (int) $user->id_outlet,
+            $outletId,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString()
+        ))->map(fn ($row) => [
+            'Tanggal Audit' => $row['audit_datetime'],
+            'Nomor Audit' => $row['audit_number'],
+            'Outlet' => $row['outlet_name'],
+            'Template' => $row['template_name'],
+            'Auditor' => $row['auditors'],
+            'Auditee' => $row['auditees'],
+            'Kategori' => $row['category_name'],
+            'Sub Kategori' => $row['subcategory_name'],
+            'Parameter Code' => $row['parameter_code'],
+            'Parameter' => $row['parameter_text'],
+            'Result' => $row['result'],
+            'Komentar' => $row['comment'],
+            'Due Date' => $row['due_date'],
+            'Attachment Item' => $row['item_attachments'],
+            'Action Plan CAP' => $row['cap_action_plan'],
+            'Target Date CAP' => $row['cap_target_date'],
+            'Status CAP' => $row['cap_status'],
+            'Attachment CAP' => $row['cap_attachments'],
+        ]);
+
+        $fileName = sprintf('qa2_nc_detail_%s_to_%s.xlsx', $fromDateRaw, $toDateRaw);
+
+        return Excel::download(new class($rows) implements FromCollection, WithHeadings {
+            public function __construct(private \Illuminate\Support\Collection $rows) {}
+            public function collection()
+            {
+                return $this->rows;
+            }
+            public function headings(): array
+            {
+                return [
+                    'Tanggal Audit',
+                    'Nomor Audit',
+                    'Outlet',
+                    'Template',
+                    'Auditor',
+                    'Auditee',
+                    'Kategori',
+                    'Sub Kategori',
+                    'Parameter Code',
+                    'Parameter',
+                    'Result',
+                    'Komentar',
+                    'Due Date',
+                    'Attachment Item',
+                    'Action Plan CAP',
+                    'Target Date CAP',
+                    'Status CAP',
+                    'Attachment CAP',
+                ];
+            }
+        }, $fileName);
+    }
+
     private function buildOutletSummaryRows(
         bool $isHo,
         int $userOutletId,
@@ -290,6 +421,93 @@ class Qa2AuditController extends Controller
             ->all();
 
         return $rows;
+    }
+
+    private function buildNcDetailRows(
+        bool $isHo,
+        int $userOutletId,
+        int $outletId,
+        string $fromDateTime,
+        string $toDateTime
+    ): array {
+        $query = DB::table('qa2_audit_items as i')
+            ->join('qa2_audits as a', 'a.id', '=', 'i.audit_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
+            ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
+            ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
+            ->leftJoin('qa2_audit_caps as cap', 'cap.audit_item_id', '=', 'i.id')
+            ->where('a.status', 'submitted')
+            ->where('i.result', 'NC')
+            ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
+            ->select([
+                'a.id as audit_id',
+                'a.audit_number',
+                'a.audit_datetime',
+                'o.nama_outlet as outlet_name',
+                't.name as template_name',
+                'c.name as category_name',
+                's.name as subcategory_name',
+                'i.parameter_code',
+                'i.parameter_text',
+                'i.result',
+                'i.comment',
+                'i.due_date',
+                'cap.action_plan as cap_action_plan',
+                'cap.target_date as cap_target_date',
+                'cap.status as cap_status',
+            ])
+            ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditors aa join users u on u.id = aa.user_id where aa.audit_id = a.id) as auditors")
+            ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditees ad join users u on u.id = ad.user_id where ad.audit_id = a.id) as auditees")
+            ->selectRaw("(select group_concat(concat(im.media_type, ': ', COALESCE(im.file_path, '')) separator ' | ') from qa2_audit_item_media im where im.audit_item_id = i.id) as item_attachments")
+            ->selectRaw("(select group_concat(concat(cm.media_type, ': ', COALESCE(cm.file_path, '')) separator ' | ') from qa2_audit_cap_media cm where cm.cap_id = cap.id) as cap_attachments")
+            ->orderByDesc('a.audit_datetime')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('c.name')
+            ->orderBy('s.name');
+
+        if (! $isHo) {
+            $query->where('a.outlet_id', $userOutletId);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
+        }
+
+        return $query->get()
+            ->map(function ($row) {
+                $itemAttachments = collect(explode(' | ', (string) ($row->item_attachments ?? '')))
+                    ->map(fn ($x) => trim((string) $x))
+                    ->filter()
+                    ->implode("\n");
+
+                $capAttachments = collect(explode(' | ', (string) ($row->cap_attachments ?? '')))
+                    ->map(fn ($x) => trim((string) $x))
+                    ->filter()
+                    ->implode("\n");
+
+                return [
+                    'audit_id' => (int) ($row->audit_id ?? 0),
+                    'audit_number' => (string) ($row->audit_number ?? '-'),
+                    'audit_datetime' => (string) ($row->audit_datetime ?? '-'),
+                    'outlet_name' => (string) ($row->outlet_name ?? '-'),
+                    'template_name' => (string) ($row->template_name ?? '-'),
+                    'auditors' => (string) ($row->auditors ?? '-'),
+                    'auditees' => (string) ($row->auditees ?? '-'),
+                    'category_name' => (string) ($row->category_name ?? '-'),
+                    'subcategory_name' => (string) ($row->subcategory_name ?? '-'),
+                    'parameter_code' => (string) ($row->parameter_code ?? '-'),
+                    'parameter_text' => (string) ($row->parameter_text ?? '-'),
+                    'result' => (string) ($row->result ?? '-'),
+                    'comment' => (string) ($row->comment ?? ''),
+                    'due_date' => (string) ($row->due_date ?? ''),
+                    'item_attachments' => $itemAttachments,
+                    'cap_action_plan' => (string) ($row->cap_action_plan ?? ''),
+                    'cap_target_date' => (string) ($row->cap_target_date ?? ''),
+                    'cap_status' => (string) ($row->cap_status ?? ''),
+                    'cap_attachments' => $capAttachments,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     public function create()
