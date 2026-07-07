@@ -953,9 +953,7 @@ class DailyReportController extends Controller
                 'description' => "Ticket created from Daily Report #{$dailyReport->id}",
             ]);
 
-            // Send notifications to users in the selected division
-            $this->sendTicketCreatedNotifications($ticket);
-
+            // Notification and assignment are now handled by team settings.
             app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id());
 
             DB::commit();
@@ -1036,9 +1034,7 @@ class DailyReportController extends Controller
 
             // Note: Attachments are displayed directly from daily report area in ticket show page
 
-            // Send notifications
-            $this->sendTicketCreatedNotifications($ticket);
-
+            // Notification and assignment are now handled by team settings.
             app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id() ?? 1);
 
             \Log::info('Ticket created from daily report area', [

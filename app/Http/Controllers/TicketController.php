@@ -3191,9 +3191,7 @@ class TicketController extends Controller
                 }
             }
 
-            // Send notifications to users in the selected division
-            $this->sendTicketCreatedNotifications($ticket);
-
+            // Notification and assignment are now handled by team settings.
             $this->autoAssignTeamFromSetting($ticket);
 
             DB::commit();

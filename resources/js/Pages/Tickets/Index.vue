@@ -531,14 +531,6 @@
                       <i class="fa-solid fa-edit"></i>
                     </button>
                     <button
-                      v-if="ticketCanManage(ticket)"
-                      @click="openAssignTeam(ticket)"
-                      class="text-indigo-600 hover:text-indigo-900"
-                      title="Assign Team"
-                    >
-                      <i class="fa-solid fa-users"></i>
-                    </button>
-                    <button
                       v-if="can_manage_tickets"
                       @click="openCreatePayment(ticket)"
                       class="text-emerald-600 hover:text-emerald-900"
@@ -1511,103 +1503,6 @@ async function deleteTicket(ticket) {
     }
   } catch (error) {
     Swal.fire('Error', error.response?.data?.message || 'Gagal menghapus ticket', 'error');
-  }
-}
-
-async function openAssignTeam(ticket) {
-  const divisionUsers = (props.assignableUsers || []).filter(
-    (user) => String(user.division_id) === String(ticket.divisi_id)
-  );
-  const users = divisionUsers.length ? divisionUsers : (props.assignableUsers || []);
-  const selectedIds = (ticket.assigned_users || []).map((user) => String(user.id));
-  const primarySelected = String(
-    (ticket.assigned_users || []).find((user) => user?.pivot?.is_primary)?.id || selectedIds[0] || ''
-  );
-
-  const usersHtml = users.map((user) => {
-    const checked = selectedIds.includes(String(user.id)) ? 'checked' : '';
-    const primaryChecked = String(user.id) === primarySelected ? 'checked' : '';
-    return `
-      <div class="assign-user-item" data-user-id="${user.id}" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;">
-        <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;">
-          <input type="checkbox" class="assign-user-checkbox" value="${user.id}" ${checked} />
-          <span style="font-size:13px;color:#111827;">${escapeHtml(user.nama_lengkap || 'Unknown')}</span>
-        </label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#4b5563;cursor:pointer;">
-          <input type="radio" name="assign-primary-user" class="assign-user-primary" value="${user.id}" ${primaryChecked} />
-          PIC
-        </label>
-      </div>
-    `;
-  }).join('');
-
-  const { isConfirmed, value } = await Swal.fire({
-    title: `Assign Team - ${ticket.ticket_number}`,
-    html: `
-      <div style="text-align:left">
-        <label style="display:block;font-size:12px;margin-bottom:8px;color:#6b7280;">Pilih anggota tim (klik biasa, tidak perlu Ctrl)</label>
-        <div id="assign-users-list" style="max-height:260px;overflow:auto;padding-right:4px;">
-          ${usersHtml || '<div style="font-size:12px;color:#6b7280;">Tidak ada user tersedia</div>'}
-        </div>
-      </div>
-    `,
-    focusConfirm: false,
-    didOpen: () => {
-      const checkboxes = Array.from(document.querySelectorAll('.assign-user-checkbox'));
-      const radios = Array.from(document.querySelectorAll('.assign-user-primary'));
-
-      const syncPrimaryState = () => {
-        const checkedIds = checkboxes.filter((cb) => cb.checked).map((cb) => String(cb.value));
-        radios.forEach((radio) => {
-          const isCheckedUser = checkedIds.includes(String(radio.value));
-          radio.disabled = !isCheckedUser;
-          if (!isCheckedUser) radio.checked = false;
-        });
-
-        const selectedPrimary = radios.find((radio) => radio.checked && !radio.disabled);
-        if (!selectedPrimary && checkedIds.length > 0) {
-          const firstCheckedRadio = radios.find((radio) => String(radio.value) === checkedIds[0]);
-          if (firstCheckedRadio) firstCheckedRadio.checked = true;
-        }
-      };
-
-      checkboxes.forEach((cb) => cb.addEventListener('change', syncPrimaryState));
-      syncPrimaryState();
-    },
-    preConfirm: () => {
-      const userIds = Array.from(document.querySelectorAll('.assign-user-checkbox'))
-        .filter((cb) => cb.checked)
-        .map((cb) => Number(cb.value));
-      const selectedPrimary = Array.from(document.querySelectorAll('.assign-user-primary'))
-        .find((radio) => radio.checked && !radio.disabled);
-      const primaryUserId = selectedPrimary ? Number(selectedPrimary.value) : null;
-
-      if (!userIds.length) {
-        Swal.showValidationMessage('Minimal pilih 1 anggota tim');
-        return null;
-      }
-
-      return {
-        user_ids: userIds,
-        primary_user_id: primaryUserId
-      };
-    },
-    showCancelButton: true,
-    confirmButtonText: 'Simpan Assign',
-    cancelButtonText: 'Batal'
-  });
-
-  if (!isConfirmed || !value) return;
-
-  try {
-    const response = await axios.post(`/tickets/${ticket.id}/assign-team`, value);
-    if (response.data.success) {
-      const updatedAssignedUsers = response.data.data?.assigned_users || [];
-      ticket.assigned_users = updatedAssignedUsers;
-      Swal.fire('Berhasil', response.data.message || 'Team berhasil di-assign', 'success');
-    }
-  } catch (error) {
-    Swal.fire('Error', error.response?.data?.message || 'Gagal assign team', 'error');
   }
 }
 
