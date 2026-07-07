@@ -21,6 +21,8 @@ const currentUser = computed(() => page.props.auth?.user || {});
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
 const outletId = ref(props.filters?.outlet_id || '');
+const fromMonth = ref(props.filters?.from_month || '');
+const toMonth = ref(props.filters?.to_month || '');
 const lightboxVisible = ref(false);
 const lightboxImages = ref([]);
 const lightboxIndex = ref(0);
@@ -31,18 +33,40 @@ const debouncedFilter = debounce(() => {
     search: search.value,
     status: status.value,
     outlet_id: outletId.value,
+    from_month: fromMonth.value,
+    to_month: toMonth.value,
   }, {
     preserveState: true,
     replace: true,
   });
 }, 300);
 
-watch([search, status, outletId], debouncedFilter);
+watch([search, status, outletId, fromMonth, toMonth], debouncedFilter);
 
 function clearFilters() {
   search.value = '';
   status.value = '';
   outletId.value = '';
+  fromMonth.value = '';
+  toMonth.value = '';
+}
+
+function applyQuickMonthRange(kind) {
+  const end = new Date();
+  const start = new Date(end);
+  if (kind === '1m') {
+    // bulan ini saja
+  } else if (kind === '3m') {
+    start.setMonth(start.getMonth() - 2);
+  } else if (kind === '6m') {
+    start.setMonth(start.getMonth() - 5);
+  } else if (kind === 'ytd') {
+    start.setMonth(0);
+    start.setDate(1);
+  }
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  fromMonth.value = fmt(start);
+  toMonth.value = fmt(end);
 }
 
 function goCreate() {
@@ -233,11 +257,11 @@ async function shareToWhatsApp(audit) {
       </div>
 
       <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
-        <div class="grid gap-3 md:grid-cols-4">
+        <div class="grid gap-3 md:grid-cols-6">
           <input
             v-model="search"
             type="text"
-            class="w-full rounded-lg border-gray-300 text-sm"
+            class="w-full rounded-lg border-gray-300 text-sm md:col-span-2"
             placeholder="Cari nomor audit, outlet, template, auditor, auditee..."
           >
 
@@ -254,7 +278,23 @@ async function shareToWhatsApp(audit) {
             </option>
           </select>
 
-          <button type="button" class="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="clearFilters">
+          <input v-model="fromMonth" type="month" class="w-full rounded-lg border-gray-300 text-sm" title="From Month">
+          <input v-model="toMonth" type="month" class="w-full rounded-lg border-gray-300 text-sm" title="To Month">
+        </div>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" class="rounded-lg border border-indigo-300 px-2 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50" @click="applyQuickMonthRange('1m')">
+            Bulan Ini
+          </button>
+          <button type="button" class="rounded-lg border border-indigo-300 px-2 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50" @click="applyQuickMonthRange('3m')">
+            3 Bulan
+          </button>
+          <button type="button" class="rounded-lg border border-indigo-300 px-2 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50" @click="applyQuickMonthRange('6m')">
+            6 Bulan
+          </button>
+          <button type="button" class="rounded-lg border border-indigo-300 px-2 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50" @click="applyQuickMonthRange('ytd')">
+            YTD
+          </button>
+          <button type="button" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50" @click="clearFilters">
             Reset Filter
           </button>
         </div>

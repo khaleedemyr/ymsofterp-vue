@@ -25,6 +25,9 @@ class Qa2AuditController extends Controller
         $search = $request->input('search');
         $status = $request->input('status');
         $outletId = $request->input('outlet_id');
+        $fromMonth = $request->input('from_month');
+        $toMonth = $request->input('to_month');
+        $monthRange = $this->normalizeMonthRangeForFilter($fromMonth, $toMonth);
 
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
@@ -89,6 +92,8 @@ class Qa2AuditController extends Controller
             });
         }
 
+        $this->applyAuditMonthFilter($query, $monthRange);
+
         $audits = $query->paginate(15)->withQueryString();
         $this->attachAuditPeople($audits);
 
@@ -96,6 +101,10 @@ class Qa2AuditController extends Controller
         if (!$isHo) {
             $statsQuery->where('outlet_id', (int) $user->id_outlet);
         }
+        if ($outletId) {
+            $statsQuery->where('outlet_id', (int) $outletId);
+        }
+        $this->applyAuditMonthFilter($statsQuery, $monthRange, 'audit_datetime');
 
         $statistics = [
             'total' => (clone $statsQuery)->count(),
@@ -111,6 +120,8 @@ class Qa2AuditController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'outlet_id' => $outletId,
+                'from_month' => $monthRange[0] ?? '',
+                'to_month' => $monthRange[1] ?? '',
             ],
             'statistics' => $statistics,
             'outlets' => $outlets,
@@ -740,6 +751,54 @@ class Qa2AuditController extends Controller
         }
 
         return [$fromDateRaw, $toDateRaw, $fromDate->toDateTimeString(), $toDate->toDateTimeString()];
+    }
+
+    private function normalizeMonthRangeForFilter($fromMonth, $toMonth): ?array
+    {
+        $fromMonth = trim((string) ($fromMonth ?? ''));
+        $toMonth = trim((string) ($toMonth ?? ''));
+
+        if ($fromMonth === '' && $toMonth === '') {
+            return null;
+        }
+
+        if ($fromMonth === '') {
+            $fromMonth = $toMonth;
+        }
+        if ($toMonth === '') {
+            $toMonth = $fromMonth;
+        }
+
+        if (! preg_match('/^\d{4}-\d{2}$/', $fromMonth)) {
+            $fromMonth = now()->format('Y-m');
+        }
+        if (! preg_match('/^\d{4}-\d{2}$/', $toMonth)) {
+            $toMonth = $fromMonth;
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m', $fromMonth)->startOfMonth();
+        $toDate = Carbon::createFromFormat('Y-m', $toMonth)->endOfMonth();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfMonth(), $fromDate->copy()->endOfMonth()];
+            $fromMonth = $fromDate->format('Y-m');
+            $toMonth = $toDate->format('Y-m');
+        }
+
+        return [
+            $fromMonth,
+            $toMonth,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString(),
+        ];
+    }
+
+    private function applyAuditMonthFilter($query, ?array $monthRange, string $column = 'a.audit_datetime'): void
+    {
+        if (! $monthRange) {
+            return;
+        }
+
+        $query->whereBetween($column, [$monthRange[2], $monthRange[3]]);
     }
 
     private function buildNcMonthlyOutletAggregates(
@@ -1962,6 +2021,9 @@ class Qa2AuditController extends Controller
         $search = $request->input('search');
         $status = $request->input('status');
         $outletId = $request->input('outlet_id');
+        $fromMonth = $request->input('from_month');
+        $toMonth = $request->input('to_month');
+        $monthRange = $this->normalizeMonthRangeForFilter($fromMonth, $toMonth);
 
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
@@ -2026,6 +2088,8 @@ class Qa2AuditController extends Controller
             });
         }
 
+        $this->applyAuditMonthFilter($query, $monthRange);
+
         $perPage = min(50, max(1, (int) $request->input('per_page', 15)));
         $audits = $query->paginate($perPage);
         $this->attachAuditPeople($audits);
@@ -2034,6 +2098,10 @@ class Qa2AuditController extends Controller
         if (!$isHo) {
             $statsQuery->where('outlet_id', (int) $user->id_outlet);
         }
+        if ($outletId) {
+            $statsQuery->where('outlet_id', (int) $outletId);
+        }
+        $this->applyAuditMonthFilter($statsQuery, $monthRange, 'audit_datetime');
 
         return response()->json([
             'success' => true,
@@ -2054,6 +2122,8 @@ class Qa2AuditController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'outlet_id' => $outletId,
+                'from_month' => $monthRange[0] ?? '',
+                'to_month' => $monthRange[1] ?? '',
             ],
             'permissions' => [
                 'can_manage' => $isHo,
