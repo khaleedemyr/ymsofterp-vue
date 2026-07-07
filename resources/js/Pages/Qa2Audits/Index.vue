@@ -2,8 +2,10 @@
 import { computed, ref, watch } from 'vue';
 import { router, usePage } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   audits: Object,
@@ -19,6 +21,10 @@ const currentUser = computed(() => page.props.auth?.user || {});
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
 const outletId = ref(props.filters?.outlet_id || '');
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
+const sharingAuditId = ref(null);
 
 const debouncedFilter = debounce(() => {
   router.get(route('qa2-audits.index'), {
@@ -100,6 +106,30 @@ function openCap(id) {
   router.visit(route('qa2-audits.edit', id));
 }
 
+function resolveAvatarUrl(person) {
+  if (!person) {
+    return null;
+  }
+  const raw = String(person.avatar_url || person.avatar || '').trim();
+  if (!raw) {
+    return null;
+  }
+  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) {
+    return raw;
+  }
+  return `/storage/${raw}`;
+}
+
+function openAvatarLightbox(person) {
+  const avatarUrl = resolveAvatarUrl(person);
+  if (!avatarUrl) {
+    return;
+  }
+  lightboxImages.value = [avatarUrl];
+  lightboxIndex.value = 0;
+  lightboxVisible.value = true;
+}
+
 async function removeAudit(id) {
   const result = await Swal.fire({
     title: 'Hapus QA Audit?',
@@ -115,6 +145,26 @@ async function removeAudit(id) {
   }
 
   router.delete(route('qa2-audits.destroy', id));
+}
+
+async function shareToWhatsApp(audit) {
+  if (sharingAuditId.value === audit.id) return;
+
+  try {
+    sharingAuditId.value = audit.id;
+    const response = await axios.post(route('qa2-audits.share-link', audit.id));
+    const url = response.data?.url;
+    if (!url) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    const message = response.data?.message || `QA Audit ${audit.audit_number}\n${url}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingAuditId.value = null;
+  }
 }
 </script>
 
@@ -214,18 +264,40 @@ async function removeAudit(id) {
                 <td class="px-4 py-3 text-sm text-gray-700">{{ audit.template_name || '-' }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700">
                   <div v-if="audit.auditors?.length" class="space-y-1">
-                    <div v-for="person in audit.auditors" :key="`auditor-${audit.id}-${person.id}`" class="text-xs leading-relaxed">
-                      <span class="font-medium text-gray-900">{{ person.name }}</span>
-                      <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                    <div v-for="person in audit.auditors" :key="`auditor-${audit.id}-${person.id}`" class="flex items-start gap-2 text-xs leading-relaxed">
+                      <button
+                        v-if="resolveAvatarUrl(person)"
+                        type="button"
+                        class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-200"
+                        title="Lihat avatar"
+                        @click="openAvatarLightbox(person)"
+                      >
+                        <img :src="resolveAvatarUrl(person)" :alt="person.name" class="h-full w-full object-cover">
+                      </button>
+                      <div class="min-w-0">
+                        <span class="font-medium text-gray-900">{{ person.name }}</span>
+                        <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                      </div>
                     </div>
                   </div>
                   <span v-else class="text-xs text-gray-400">-</span>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700">
                   <div v-if="audit.auditees?.length" class="space-y-1">
-                    <div v-for="person in audit.auditees" :key="`auditee-${audit.id}-${person.id}`" class="text-xs leading-relaxed">
-                      <span class="font-medium text-gray-900">{{ person.name }}</span>
-                      <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                    <div v-for="person in audit.auditees" :key="`auditee-${audit.id}-${person.id}`" class="flex items-start gap-2 text-xs leading-relaxed">
+                      <button
+                        v-if="resolveAvatarUrl(person)"
+                        type="button"
+                        class="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-200"
+                        title="Lihat avatar"
+                        @click="openAvatarLightbox(person)"
+                      >
+                        <img :src="resolveAvatarUrl(person)" :alt="person.name" class="h-full w-full object-cover">
+                      </button>
+                      <div class="min-w-0">
+                        <span class="font-medium text-gray-900">{{ person.name }}</span>
+                        <span v-if="person.jabatan" class="block text-[11px] text-indigo-600">{{ person.jabatan }}</span>
+                      </div>
                     </div>
                   </div>
                   <span v-else class="text-xs text-gray-400">-</span>
@@ -258,6 +330,15 @@ async function removeAudit(id) {
                   <div class="flex flex-wrap gap-2">
                     <button type="button" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700" @click="goView(audit.id)">
                       Lihat
+                    </button>
+                    <button
+                      type="button"
+                      class="rounded-md border border-green-300 px-2.5 py-1 text-xs text-green-700"
+                      :disabled="sharingAuditId === audit.id"
+                      @click="shareToWhatsApp(audit)"
+                    >
+                      <i :class="sharingAuditId === audit.id ? 'fas fa-spinner fa-spin mr-1' : 'fab fa-whatsapp mr-1'" />
+                      Share WA
                     </button>
                     <button
                       v-if="permissions?.can_manage"
@@ -296,5 +377,11 @@ async function removeAudit(id) {
         </div>
       </div>
     </div>
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImages"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
   </AppLayout>
 </template>

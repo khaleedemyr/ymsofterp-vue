@@ -414,6 +414,60 @@ class Qa2AuditController extends Controller
         ]);
     }
 
+    /**
+     * Landing page publik — tanpa login, via share token.
+     */
+    public function publicShow(string $token)
+    {
+        $auditId = (int) DB::table('qa2_audits')
+            ->where('share_token', $token)
+            ->value('id');
+
+        abort_if($auditId <= 0, 404);
+
+        return Inertia::render('Qa2Audits/PublicShow', [
+            'audit' => $this->auditPayload($auditId, false),
+        ]);
+    }
+
+    /**
+     * Generate / kembalikan link share untuk WhatsApp.
+     */
+    public function generateShareLink(Request $request, int $id)
+    {
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+
+        $user = $request->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        if (!$isHo && (int) $audit->outlet_id !== (int) $user->id_outlet) {
+            abort(403);
+        }
+
+        $shareToken = (string) ($audit->share_token ?? '');
+        if ($shareToken === '') {
+            do {
+                $shareToken = Str::random(48);
+                $exists = DB::table('qa2_audits')->where('share_token', $shareToken)->exists();
+            } while ($exists);
+
+            DB::table('qa2_audits')
+                ->where('id', $id)
+                ->update([
+                    'share_token' => $shareToken,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        $url = route('qa2-audits.public.show', $shareToken);
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $this->buildAuditShareMessage((object) $audit, $url),
+        ]);
+    }
+
     public function saveDraft(Request $request, int $id)
     {
         $this->ensureHo();
@@ -729,6 +783,27 @@ class Qa2AuditController extends Controller
         return DB::table('qa2_audits')->where('id', $id)->first();
     }
 
+    private function buildAuditShareMessage(object $audit, string $url): string
+    {
+        $outletName = (string) DB::table('tbl_data_outlet')
+            ->where('id_outlet', (int) ($audit->outlet_id ?? 0))
+            ->value('nama_outlet');
+
+        $templateName = (string) DB::table('qa2_templates')
+            ->where('id', (int) ($audit->template_id ?? 0))
+            ->value('name');
+
+        $line = 'QA Audit ' . (string) ($audit->audit_number ?? '-');
+        if (trim($outletName) !== '') {
+            $line .= ' - ' . trim($outletName);
+        }
+        if (trim($templateName) !== '') {
+            $line .= ' (' . trim($templateName) . ')';
+        }
+
+        return $line . "\n" . $url;
+    }
+
     private function ensureHo(): void
     {
         $isHo = (int) (auth()->user()->id_outlet ?? 0) === 1;
@@ -885,6 +960,7 @@ class Qa2AuditController extends Controller
                 'u.id',
                 'u.nama_lengkap',
                 'u.id_outlet',
+                'u.avatar',
                 'j.nama_jabatan as jabatan',
             ])
             ->where('u.status', 'A')
@@ -905,7 +981,7 @@ class Qa2AuditController extends Controller
             ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
             ->whereIn('aa.audit_id', $ids)
             ->orderBy('u.nama_lengkap')
-            ->get(['aa.audit_id', 'u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->get(['aa.audit_id', 'u.id', 'u.nama_lengkap', 'u.avatar', 'j.nama_jabatan as jabatan'])
             ->groupBy('audit_id');
 
         $auditees = DB::table('qa2_audit_auditees as ae')
@@ -913,7 +989,7 @@ class Qa2AuditController extends Controller
             ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
             ->whereIn('ae.audit_id', $ids)
             ->orderBy('u.nama_lengkap')
-            ->get(['ae.audit_id', 'u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->get(['ae.audit_id', 'u.id', 'u.nama_lengkap', 'u.avatar', 'j.nama_jabatan as jabatan'])
             ->groupBy('audit_id');
 
         foreach ($paginator->items() as $audit) {
@@ -922,11 +998,13 @@ class Qa2AuditController extends Controller
                 'id' => (int) $row->id,
                 'name' => $row->nama_lengkap,
                 'jabatan' => $row->jabatan,
+                'avatar_url' => $this->resolveUserAvatarUrl($row->avatar ?? null),
             ])->values()->all();
             $audit->auditees = ($auditees[$auditId] ?? collect())->map(fn ($row) => [
                 'id' => (int) $row->id,
                 'name' => $row->nama_lengkap,
                 'jabatan' => $row->jabatan,
+                'avatar_url' => $this->resolveUserAvatarUrl($row->avatar ?? null),
             ])->values()->all();
         }
     }
@@ -963,11 +1041,12 @@ class Qa2AuditController extends Controller
             ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
             ->where('aa.audit_id', $id)
             ->orderBy('u.nama_lengkap')
-            ->get(['u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->get(['u.id', 'u.nama_lengkap', 'u.avatar', 'j.nama_jabatan as jabatan'])
             ->map(fn ($row) => [
                 'id' => (int) $row->id,
                 'name' => $row->nama_lengkap,
                 'jabatan' => $row->jabatan,
+                'avatar_url' => $this->resolveUserAvatarUrl($row->avatar ?? null),
             ])
             ->values()
             ->all();
@@ -977,11 +1056,12 @@ class Qa2AuditController extends Controller
             ->leftJoin('tbl_data_jabatan as j', 'j.id_jabatan', '=', 'u.id_jabatan')
             ->where('ae.audit_id', $id)
             ->orderBy('u.nama_lengkap')
-            ->get(['u.id', 'u.nama_lengkap', 'j.nama_jabatan as jabatan'])
+            ->get(['u.id', 'u.nama_lengkap', 'u.avatar', 'j.nama_jabatan as jabatan'])
             ->map(fn ($row) => [
                 'id' => (int) $row->id,
                 'name' => $row->nama_lengkap,
                 'jabatan' => $row->jabatan,
+                'avatar_url' => $this->resolveUserAvatarUrl($row->avatar ?? null),
             ])
             ->values()
             ->all();
@@ -1122,6 +1202,20 @@ class Qa2AuditController extends Controller
             'summary_rows' => $summaryRows,
             'summary_total' => $summaryTotal,
         ];
+    }
+
+    private function resolveUserAvatarUrl(?string $avatar): ?string
+    {
+        $avatar = trim((string) ($avatar ?? ''));
+        if ($avatar === '') {
+            return null;
+        }
+
+        if (Str::startsWith($avatar, ['http://', 'https://', '/'])) {
+            return $avatar;
+        }
+
+        return Storage::url($avatar);
     }
 
     private function auditTree(int $id): array

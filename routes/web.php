@@ -155,6 +155,10 @@ Route::get('/daily-report/share/{token}', [\App\Http\Controllers\DailyReportCont
 Route::get('/customer-voice/share/{token}', [CustomerVoiceCommandCenterController::class, 'publicShow'])
     ->name('customer-voice-command-center.public.show');
 
+// QA2 Audit share — publik tanpa login
+Route::get('/qa2-audits/share/{token}', [\App\Http\Controllers\Qa2AuditController::class, 'publicShow'])
+    ->name('qa2-audits.public.show');
+
 Route::get('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
     ->name('external.login');
 Route::post('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
@@ -2555,6 +2559,7 @@ Route::get('qa2-audits/report-summary/export', [\App\Http\Controllers\Qa2AuditCo
 Route::get('qa2-audits/create', [\App\Http\Controllers\Qa2AuditController::class, 'create'])->name('qa2-audits.create');
 Route::post('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'store'])->name('qa2-audits.store');
 Route::get('qa2-audits/{id}/edit', [\App\Http\Controllers\Qa2AuditController::class, 'edit'])->name('qa2-audits.edit');
+Route::post('qa2-audits/{id}/share-link', [\App\Http\Controllers\Qa2AuditController::class, 'generateShareLink'])->name('qa2-audits.share-link');
 Route::post('qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->name('qa2-audits.save-draft');
 Route::post('qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController::class, 'submit'])->name('qa2-audits.submit');
 Route::post('qa2-audits/{id}/items/{itemId}/media', [\App\Http\Controllers\Qa2AuditController::class, 'uploadItemMedia'])->name('qa2-audits.items.upload-media');

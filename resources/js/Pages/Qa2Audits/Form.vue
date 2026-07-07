@@ -536,6 +536,29 @@ function openMediaLightbox(mediaList, index) {
   lightboxVisible.value = true;
 }
 
+function openImageLightbox(url) {
+  if (!url) {
+    return;
+  }
+  lightboxImages.value = [url];
+  lightboxIndex.value = 0;
+  lightboxVisible.value = true;
+}
+
+function resolveAvatarUrl(person) {
+  if (!person) {
+    return null;
+  }
+  const raw = String(person.avatar_url || person.avatar || '').trim();
+  if (!raw) {
+    return null;
+  }
+  if (raw.startsWith('http://') || raw.startsWith('https://') || raw.startsWith('/')) {
+    return raw;
+  }
+  return `/storage/${raw}`;
+}
+
 function setItemFileInput(itemId, el) {
   if (el) {
     itemFileInputs.value[itemId] = el;
@@ -860,6 +883,52 @@ function formatUserLabel(user) {
               class="w-full rounded-lg border-gray-300 text-sm"
               placeholder="Catatan tambahan..."
             />
+          </div>
+        </div>
+
+        <div v-if="!isCreate && (audit.auditors?.length || audit.auditees?.length)" class="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Auditor</p>
+            <div v-if="audit.auditors?.length" class="space-y-2">
+              <div v-for="person in audit.auditors" :key="`audit-auditor-${person.id}`" class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                <button
+                  v-if="resolveAvatarUrl(person)"
+                  type="button"
+                  class="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-200"
+                  title="Lihat avatar"
+                  @click="openImageLightbox(resolveAvatarUrl(person))"
+                >
+                  <img :src="resolveAvatarUrl(person)" :alt="person.name" class="h-full w-full object-cover">
+                </button>
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-gray-900">{{ person.name }}</div>
+                  <div v-if="person.jabatan" class="text-xs text-indigo-600">{{ person.jabatan }}</div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-xs text-gray-400">-</p>
+          </div>
+
+          <div>
+            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Auditee</p>
+            <div v-if="audit.auditees?.length" class="space-y-2">
+              <div v-for="person in audit.auditees" :key="`audit-auditee-${person.id}`" class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
+                <button
+                  v-if="resolveAvatarUrl(person)"
+                  type="button"
+                  class="h-9 w-9 shrink-0 overflow-hidden rounded-full ring-1 ring-gray-200"
+                  title="Lihat avatar"
+                  @click="openImageLightbox(resolveAvatarUrl(person))"
+                >
+                  <img :src="resolveAvatarUrl(person)" :alt="person.name" class="h-full w-full object-cover">
+                </button>
+                <div class="min-w-0">
+                  <div class="text-sm font-medium text-gray-900">{{ person.name }}</div>
+                  <div v-if="person.jabatan" class="text-xs text-indigo-600">{{ person.jabatan }}</div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-xs text-gray-400">-</p>
           </div>
         </div>
 
