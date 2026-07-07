@@ -100,6 +100,29 @@ class Qa2AuditController extends Controller
             'submitted' => (clone $statsQuery)->where('status', 'submitted')->count(),
         ];
 
+        $outlets = $this->allowedOutlets($isHo, (int) $user->id_outlet);
+
+        return Inertia::render('Qa2Audits/Index', [
+            'audits' => $audits,
+            'filters' => [
+                'search' => $search,
+                'status' => $status,
+                'outlet_id' => $outletId,
+            ],
+            'statistics' => $statistics,
+            'outlets' => $outlets,
+            'permissions' => [
+                'can_manage' => $isHo,
+            ],
+        ]);
+    }
+
+    public function reportSummary(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('outlet_id', 0);
         $fromMonth = (string) $request->input('from_month', now()->format('Y-m'));
         $toMonth = (string) $request->input('to_month', now()->format('Y-m'));
         if (!preg_match('/^\d{4}-\d{2}$/', $fromMonth)) {
@@ -117,71 +140,61 @@ class Qa2AuditController extends Controller
             $toMonth = $toDate->format('Y-m');
         }
 
-        $scorePerAuditQuery = DB::table('qa2_audits as a')
+        $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
             ->where('a.status', 'submitted')
             ->whereBetween('a.audit_datetime', [$fromDate->toDateTimeString(), $toDate->toDateTimeString()])
             ->select([
                 'a.id',
                 'a.outlet_id',
+                'a.template_id',
                 'o.nama_outlet as outlet_name',
+                't.name as template_name',
             ])
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
-            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
-            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na");
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
 
         if (!$isHo) {
-            $scorePerAuditQuery->where('a.outlet_id', (int) $user->id_outlet);
+            $query->where('a.outlet_id', (int) $user->id_outlet);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
         }
 
-        $scorePerAudit = $scorePerAuditQuery->get();
-
-        $reportByOutlet = collect($scorePerAudit)
-            ->groupBy('outlet_id')
-            ->map(function ($rows) {
-                $auditCount = $rows->count();
-                $totalC = (int) $rows->sum(fn ($r) => (int) ($r->count_c ?? 0));
-                $totalNc = (int) $rows->sum(fn ($r) => (int) ($r->count_nc ?? 0));
-                $totalNa = (int) $rows->sum(fn ($r) => (int) ($r->count_na ?? 0));
-                $avgScore = $rows->avg(function ($r) {
+        $rows = $query->get()
+            ->groupBy(function ($row) {
+                return ((int) $row->outlet_id) . '-' . ((int) $row->template_id);
+            })
+            ->map(function ($group) {
+                $avgScore = $group->avg(function ($r) {
                     $c = (float) ($r->count_c ?? 0);
                     $nc = (float) ($r->count_nc ?? 0);
                     $den = $c + $nc;
                     return $den > 0 ? ($c / $den) * 100 : 0;
                 });
 
+                $first = $group->first();
                 return [
-                    'outlet_id' => (int) $rows->first()->outlet_id,
-                    'outlet_name' => $rows->first()->outlet_name ?: '-',
-                    'audit_count' => $auditCount,
-                    'total_c' => $totalC,
-                    'total_nc' => $totalNc,
-                    'total_na' => $totalNa,
+                    'outlet_id' => (int) ($first->outlet_id ?? 0),
+                    'outlet_name' => (string) ($first->outlet_name ?? '-'),
+                    'template_id' => (int) ($first->template_id ?? 0),
+                    'template_name' => (string) ($first->template_name ?? '-'),
+                    'audit_count' => $group->count(),
                     'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
                 ];
             })
-            ->sortBy('outlet_name')
+            ->sortBy(['outlet_name', 'template_name'])
             ->values()
             ->all();
 
-        $outlets = $this->allowedOutlets($isHo, (int) $user->id_outlet);
-
-        return Inertia::render('Qa2Audits/Index', [
-            'audits' => $audits,
+        return Inertia::render('Qa2Audits/SummaryReport', [
             'filters' => [
-                'search' => $search,
-                'status' => $status,
-                'outlet_id' => $outletId,
+                'outlet_id' => $outletId > 0 ? (string) $outletId : '',
                 'from_month' => $fromMonth,
                 'to_month' => $toMonth,
             ],
-            'statistics' => $statistics,
-            'outlets' => $outlets,
-            'summaryReport' => [
-                'from_month' => $fromMonth,
-                'to_month' => $toMonth,
-                'rows' => $reportByOutlet,
-            ],
+            'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'rows' => $rows,
             'permissions' => [
                 'can_manage' => $isHo,
             ],

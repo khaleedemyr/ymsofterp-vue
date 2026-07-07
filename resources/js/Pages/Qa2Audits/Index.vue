@@ -10,7 +10,6 @@ const props = defineProps({
   filters: Object,
   statistics: Object,
   outlets: Array,
-  summaryReport: Object,
   permissions: Object,
 });
 
@@ -20,54 +19,32 @@ const currentUser = computed(() => page.props.auth?.user || {});
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
 const outletId = ref(props.filters?.outlet_id || '');
-const fromMonth = ref(props.filters?.from_month || '');
-const toMonth = ref(props.filters?.to_month || '');
 
 const debouncedFilter = debounce(() => {
   router.get(route('qa2-audits.index'), {
     search: search.value,
     status: status.value,
     outlet_id: outletId.value,
-    from_month: fromMonth.value,
-    to_month: toMonth.value,
   }, {
     preserveState: true,
     replace: true,
   });
 }, 300);
 
-watch([search, status, outletId, fromMonth, toMonth], debouncedFilter);
+watch([search, status, outletId], debouncedFilter);
 
 function clearFilters() {
   search.value = '';
   status.value = '';
   outletId.value = '';
-  fromMonth.value = '';
-  toMonth.value = '';
-}
-
-function shiftMonth(base, delta) {
-  const [year, month] = String(base || '').split('-').map(Number);
-  if (!year || !month) return '';
-  const date = new Date(year, month - 1 + delta, 1);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
-}
-
-function applyQuickRange(kind) {
-  const end = toMonth.value || fromMonth.value || new Date().toISOString().slice(0, 7);
-  if (kind === '3m') {
-    toMonth.value = end;
-    fromMonth.value = shiftMonth(end, -2);
-    return;
-  }
-  toMonth.value = end;
-  fromMonth.value = end;
 }
 
 function goCreate() {
   router.visit(route('qa2-audits.create'));
+}
+
+function goReportSummary() {
+  router.visit(route('qa2-audits.report-summary'));
 }
 
 function goEdit(id) {
@@ -158,6 +135,13 @@ async function removeAudit(id) {
           >
             Buat QA Audit
           </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-lg border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50"
+            @click="goReportSummary"
+          >
+            Report Summary
+          </button>
         </div>
       </div>
 
@@ -201,60 +185,6 @@ async function removeAudit(id) {
           <button type="button" class="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="clearFilters">
             Reset Filter
           </button>
-        </div>
-        <div class="mt-3 grid gap-3 md:grid-cols-4">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600">From Month</label>
-            <input v-model="fromMonth" type="month" class="w-full rounded-lg border-gray-300 text-sm">
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600">To Month</label>
-            <input v-model="toMonth" type="month" class="w-full rounded-lg border-gray-300 text-sm">
-          </div>
-          <div class="md:col-span-2 flex items-end gap-2">
-            <button type="button" class="rounded-lg border border-indigo-300 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50" @click="applyQuickRange('1m')">
-              Per 1 Bulan
-            </button>
-            <button type="button" class="rounded-lg border border-indigo-300 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-50" @click="applyQuickRange('3m')">
-              Per 3 Bulan
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200">
-        <div class="border-b border-gray-100 px-4 py-3">
-          <h2 class="text-base font-semibold text-gray-900">Report Summary QA2 Per Outlet</h2>
-          <p class="text-xs text-gray-500">
-            Periode {{ summaryReport?.from_month || '-' }} s/d {{ summaryReport?.to_month || '-' }}
-          </p>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Outlet</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Jumlah Audit</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Total C</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Total NC</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Total NA</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Rata-rata Audit Result</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100 bg-white">
-              <tr v-for="row in (summaryReport?.rows || [])" :key="row.outlet_id">
-                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
-                <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
-                <td class="px-4 py-3 text-sm text-right text-emerald-700 font-semibold">{{ row.total_c }}</td>
-                <td class="px-4 py-3 text-sm text-right text-rose-700 font-semibold">{{ row.total_nc }}</td>
-                <td class="px-4 py-3 text-sm text-right text-slate-700 font-semibold">{{ row.total_na }}</td>
-                <td class="px-4 py-3 text-sm text-right text-indigo-700 font-semibold">{{ formatScore(row.avg_audit_result) }}</td>
-              </tr>
-              <tr v-if="!(summaryReport?.rows || []).length">
-                <td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
