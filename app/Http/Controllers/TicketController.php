@@ -4708,8 +4708,11 @@ class TicketController extends Controller
         $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet', 'creator:id,nama_lengkap,email'])
             ->where('outlet_id', $outletId)
             ->where('title', 'like', '%'.$area->nama_area.'%')
-            ->whereHas('status', function ($q) {
-                $q->whereIn('slug', ['open', 'in_progress']);
+            ->where(function ($q) {
+                $q->whereDoesntHave('status')
+                    ->orWhereHas('status', function ($statusQuery) {
+                        $statusQuery->whereNotIn('slug', ['closed', 'resolved']);
+                    });
             })
             ->orderByDesc('created_at')
             ->limit(20)
@@ -4765,8 +4768,11 @@ class TicketController extends Controller
             'creator:id,nama_lengkap,email',
         ])
             ->where('outlet_id', $outletId)
-            ->whereHas('status', function ($q) {
-                $q->whereIn('slug', ['open', 'in_progress']);
+            ->where(function ($q) {
+                $q->whereDoesntHave('status')
+                    ->orWhereHas('status', function ($statusQuery) {
+                        $statusQuery->whereNotIn('slug', ['closed', 'resolved']);
+                    });
             });
 
         if ($search !== '') {
