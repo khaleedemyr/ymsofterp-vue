@@ -4728,6 +4728,70 @@ class TicketController extends Controller
         ]);
     }
 
+    /**
+     * Get open tickets by outlet with optional title search.
+     */
+    public function getTicketsByOutlet(Request $request)
+    {
+        $outletId = (int) $request->get('outlet_id');
+        if (! $outletId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Outlet ID is required',
+            ], 400);
+        }
+
+        if (! self::userSeesAllTicketOutlets($request->user())) {
+            $uid = $request->user()?->id_outlet;
+            if ($uid === null || $uid === '' || $outletId !== (int) $uid) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Akses ditolak',
+                ], 403);
+            }
+        }
+
+        $proposedTitle = $this->normalizeTicketTitle((string) $request->get('title', ''));
+        $search = trim((string) $request->get('q', ''));
+
+        $query = Ticket::with([
+            'status:id,name,slug',
+            'category:id,name',
+            'priority:id,name',
+            'divisi:id,nama_divisi',
+            'outlet:id_outlet,nama_outlet',
+            'creator:id,nama_lengkap,email',
+        ])
+            ->where('outlet_id', $outletId)
+            ->notFinal();
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('ticket_number', 'like', '%' . $search . '%')
+                    ->orWhere('title', 'like', '%' . $search . '%')
+                    ->orWhere('description', 'like', '%' . $search . '%');
+            });
+        }
+
+        $tickets = $query
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(function (Ticket $ticket) use ($proposedTitle) {
+                $normalizedTitle = $this->normalizeTicketTitle((string) $ticket->title);
+                $ticket->is_same_title = $proposedTitle !== '' && $normalizedTitle === $proposedTitle;
+
+                return $ticket;
+            })
+            ->values();
+
+        return response()->json([
+            'success' => true,
+            'tickets' => $tickets,
+            'duplicate_count' => $tickets->where('is_same_title', true)->count(),
+        ]);
+    }
+
     private function normalizeTicketTitle(string $title): string
     {
         $normalized = preg_replace('/\s+/', ' ', trim($title));

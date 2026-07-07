@@ -542,6 +542,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tickets/categories', [\App\Http\Controllers\TicketController::class, 'getCategories'])->name('tickets.categories');
     Route::get('/tickets/priorities', [\App\Http\Controllers\TicketController::class, 'getPriorities'])->name('tickets.priorities');
     Route::get('/tickets/by-area/{areaId}', [\App\Http\Controllers\TicketController::class, 'getTicketsByArea'])->name('tickets.by-area');
+    Route::get('/tickets/by-outlet', [\App\Http\Controllers\TicketController::class, 'getTicketsByOutlet'])->name('tickets.by-outlet');
 
     // Purchase Requisition API endpoints (must be before resource routes)
     Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories'])->name('purchase-requisitions.categories')->middleware('auth');
