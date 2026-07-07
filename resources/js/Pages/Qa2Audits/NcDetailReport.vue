@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import VueEasyLightbox from 'vue-easy-lightbox';
 
 const props = defineProps({
   filters: Object,
@@ -13,6 +14,9 @@ const props = defineProps({
 const outletId = ref(props.filters?.outlet_id || '');
 const fromDate = ref(props.filters?.from_date || '');
 const toDate = ref(props.filters?.to_date || '');
+const lightboxVisible = ref(false);
+const lightboxImages = ref([]);
+const lightboxIndex = ref(0);
 
 const debouncedFilter = debounce(() => {
   router.get(route('qa2-audits.report-nc-detail'), {
@@ -43,6 +47,21 @@ const exportUrl = computed(() => route('qa2-audits.report-nc-detail.export', {
   from_date: fromDate.value || undefined,
   to_date: toDate.value || undefined,
 }));
+
+function photoMediaList(mediaList = []) {
+  return (mediaList || []).filter((m) => String(m?.media_type || '').toLowerCase() === 'photo' && m?.url);
+}
+
+function openPhotoLightbox(mediaList, currentMedia) {
+  const photos = photoMediaList(mediaList);
+  if (!photos.length) return;
+  const urls = photos.map((m) => m.url);
+  const currentUrl = currentMedia?.url;
+  const currentIndex = Math.max(0, urls.findIndex((url) => url === currentUrl));
+  lightboxImages.value = urls;
+  lightboxIndex.value = currentIndex;
+  lightboxVisible.value = true;
+}
 </script>
 
 <template>
@@ -138,13 +157,35 @@ const exportUrl = computed(() => route('qa2-audits.report-nc-detail.export', {
                   <div class="mt-1 whitespace-pre-line">{{ row.parameter_text || '-' }}</div>
                 </td>
                 <td class="px-3 py-2 text-xs text-gray-700 whitespace-pre-line">{{ row.comment || '-' }}</td>
-                <td class="px-3 py-2 text-xs text-gray-700 whitespace-pre-line">{{ row.item_attachments || '-' }}</td>
+                <td class="px-3 py-2 text-xs text-gray-700">
+                  <div v-if="photoMediaList(row.item_media).length" class="grid grid-cols-2 gap-1">
+                    <img
+                      v-for="media in photoMediaList(row.item_media)"
+                      :key="`item-photo-${media.id}`"
+                      :src="media.url"
+                      class="h-14 w-14 cursor-pointer rounded border border-gray-200 object-cover"
+                      @click="openPhotoLightbox(row.item_media, media)"
+                    >
+                  </div>
+                  <div v-else>-</div>
+                </td>
                 <td class="px-3 py-2 text-xs text-gray-700">
                   <div class="font-semibold">Status: {{ row.cap_status || '-' }}</div>
                   <div class="mt-1">Target: {{ row.cap_target_date || '-' }}</div>
                   <div class="mt-1 whitespace-pre-line">{{ row.cap_action_plan || '-' }}</div>
                 </td>
-                <td class="px-3 py-2 text-xs text-gray-700 whitespace-pre-line">{{ row.cap_attachments || '-' }}</td>
+                <td class="px-3 py-2 text-xs text-gray-700">
+                  <div v-if="photoMediaList(row.cap_media).length" class="grid grid-cols-2 gap-1">
+                    <img
+                      v-for="media in photoMediaList(row.cap_media)"
+                      :key="`cap-photo-${media.id}`"
+                      :src="media.url"
+                      class="h-14 w-14 cursor-pointer rounded border border-gray-200 object-cover"
+                      @click="openPhotoLightbox(row.cap_media, media)"
+                    >
+                  </div>
+                  <div v-else>-</div>
+                </td>
               </tr>
               <tr v-if="!(rows || []).length">
                 <td colspan="11" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data NC pada filter ini.</td>
@@ -153,6 +194,13 @@ const exportUrl = computed(() => route('qa2-audits.report-nc-detail.export', {
           </table>
         </div>
       </div>
+
+      <VueEasyLightbox
+        :visible="lightboxVisible"
+        :imgs="lightboxImages"
+        :index="lightboxIndex"
+        @hide="lightboxVisible = false"
+      />
     </div>
   </AppLayout>
 </template>

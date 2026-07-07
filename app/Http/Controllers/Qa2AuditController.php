@@ -444,6 +444,8 @@ class Qa2AuditController extends Controller
                 'a.id as audit_id',
                 'a.audit_number',
                 'a.audit_datetime',
+                'i.id as audit_item_id',
+                'cap.id as cap_id',
                 'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'c.name as category_name',
@@ -459,8 +461,6 @@ class Qa2AuditController extends Controller
             ])
             ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditors aa join users u on u.id = aa.user_id where aa.audit_id = a.id) as auditors")
             ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditees ad join users u on u.id = ad.user_id where ad.audit_id = a.id) as auditees")
-            ->selectRaw("(select group_concat(concat(im.media_type, ': ', COALESCE(im.file_path, '')) separator ' | ') from qa2_audit_item_media im where im.audit_item_id = i.id) as item_attachments")
-            ->selectRaw("(select group_concat(concat(cm.media_type, ': ', COALESCE(cm.file_path, '')) separator ' | ') from qa2_audit_cap_media cm where cm.cap_id = cap.id) as cap_attachments")
             ->orderByDesc('a.audit_datetime')
             ->orderBy('o.nama_outlet')
             ->orderBy('c.name')
@@ -472,15 +472,56 @@ class Qa2AuditController extends Controller
             $query->where('a.outlet_id', $outletId);
         }
 
-        return $query->get()
-            ->map(function ($row) {
-                $itemAttachments = collect(explode(' | ', (string) ($row->item_attachments ?? '')))
-                    ->map(fn ($x) => trim((string) $x))
+        $rows = $query->get();
+
+        $itemIds = $rows->pluck('audit_item_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $capIds = $rows->pluck('cap_id')->filter()->map(fn ($id) => (int) $id)->unique()->values();
+
+        $itemMediaMap = DB::table('qa2_audit_item_media')
+            ->whereIn('audit_item_id', $itemIds->all())
+            ->orderBy('id')
+            ->get(['id', 'audit_item_id', 'media_type', 'file_path'])
+            ->groupBy('audit_item_id');
+
+        $capMediaMap = DB::table('qa2_audit_cap_media')
+            ->whereIn('cap_id', $capIds->all())
+            ->orderBy('id')
+            ->get(['id', 'cap_id', 'media_type', 'file_path'])
+            ->groupBy('cap_id');
+
+        return $rows
+            ->map(function ($row) use ($itemMediaMap, $capMediaMap) {
+                $itemMedia = collect($itemMediaMap->get((int) ($row->audit_item_id ?? 0), collect()))
+                    ->map(function ($media) {
+                        $path = (string) ($media->file_path ?? '');
+                        return [
+                            'id' => (int) ($media->id ?? 0),
+                            'media_type' => (string) ($media->media_type ?? ''),
+                            'file_path' => $path,
+                            'url' => $path !== '' ? Storage::url($path) : null,
+                        ];
+                    })
+                    ->values();
+
+                $capMedia = collect($capMediaMap->get((int) ($row->cap_id ?? 0), collect()))
+                    ->map(function ($media) {
+                        $path = (string) ($media->file_path ?? '');
+                        return [
+                            'id' => (int) ($media->id ?? 0),
+                            'media_type' => (string) ($media->media_type ?? ''),
+                            'file_path' => $path,
+                            'url' => $path !== '' ? Storage::url($path) : null,
+                        ];
+                    })
+                    ->values();
+
+                $itemAttachments = $itemMedia
+                    ->map(fn ($m) => trim(($m['media_type'] ?? '') . ': ' . ($m['file_path'] ?? '')))
                     ->filter()
                     ->implode("\n");
 
-                $capAttachments = collect(explode(' | ', (string) ($row->cap_attachments ?? '')))
-                    ->map(fn ($x) => trim((string) $x))
+                $capAttachments = $capMedia
+                    ->map(fn ($m) => trim(($m['media_type'] ?? '') . ': ' . ($m['file_path'] ?? '')))
                     ->filter()
                     ->implode("\n");
 
@@ -499,10 +540,12 @@ class Qa2AuditController extends Controller
                     'result' => (string) ($row->result ?? '-'),
                     'comment' => (string) ($row->comment ?? ''),
                     'due_date' => (string) ($row->due_date ?? ''),
+                    'item_media' => $itemMedia->all(),
                     'item_attachments' => $itemAttachments,
                     'cap_action_plan' => (string) ($row->cap_action_plan ?? ''),
                     'cap_target_date' => (string) ($row->cap_target_date ?? ''),
                     'cap_status' => (string) ($row->cap_status ?? ''),
+                    'cap_media' => $capMedia->all(),
                     'cap_attachments' => $capAttachments,
                 ];
             })
