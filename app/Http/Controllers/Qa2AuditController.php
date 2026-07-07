@@ -1372,6 +1372,53 @@ class Qa2AuditController extends Controller
         ]);
     }
 
+    public function apiReportSummary(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('outlet_id', 0);
+        $fromMonth = (string) $request->input('from_month', now()->format('Y-m'));
+        $toMonth = (string) $request->input('to_month', now()->format('Y-m'));
+
+        if (!preg_match('/^\d{4}-\d{2}$/', $fromMonth)) {
+            $fromMonth = now()->format('Y-m');
+        }
+        if (!preg_match('/^\d{4}-\d{2}$/', $toMonth)) {
+            $toMonth = $fromMonth;
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m', $fromMonth)->startOfMonth();
+        $toDate = Carbon::createFromFormat('Y-m', $toMonth)->endOfMonth();
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfMonth(), $fromDate->copy()->endOfMonth()];
+            $fromMonth = $fromDate->format('Y-m');
+            $toMonth = $toDate->format('Y-m');
+        }
+
+        $rows = $this->buildOutletSummaryRows(
+            $isHo,
+            (int) $user->id_outlet,
+            $outletId,
+            $fromDate->toDateTimeString(),
+            $toDate->toDateTimeString()
+        );
+
+        return response()->json([
+            'success' => true,
+            'rows' => $rows,
+            'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'filters' => [
+                'outlet_id' => $outletId > 0 ? (string) $outletId : '',
+                'from_month' => $fromMonth,
+                'to_month' => $toMonth,
+            ],
+            'permissions' => [
+                'can_manage' => $isHo,
+            ],
+        ]);
+    }
+
     public function apiCreateData()
     {
         $this->ensureHo();

@@ -549,6 +549,7 @@ Route::prefix('approval-app')->group(function () {
 
         // QA2 Audits (Approval App — selaras web /qa2-audits)
         Route::get('/qa2-audits/create-data', [\App\Http\Controllers\Qa2AuditController::class, 'apiCreateData']);
+        Route::get('/qa2-audits/report-summary', [\App\Http\Controllers\Qa2AuditController::class, 'apiReportSummary']);
         Route::get('/qa2-audits/cap-approvals/pending', [\App\Http\Controllers\Qa2AuditController::class, 'getPendingCapApprovals']);
         Route::get('/qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'apiIndex']);
         Route::post('/qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'apiStore']);
@@ -559,6 +560,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/qa2-audits/{id}/cap-reject', [\App\Http\Controllers\Qa2AuditController::class, 'rejectCap'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController::class, 'apiSubmit'])->where('id', '[0-9]+');
+        Route::post('/qa2-audits/{id}/share-link', [\App\Http\Controllers\Qa2AuditController::class, 'generateShareLink'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-cap', [\App\Http\Controllers\Qa2AuditController::class, 'saveCap'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/items/{itemId}/media', [\App\Http\Controllers\Qa2AuditController::class, 'uploadItemMedia'])->where('id', '[0-9]+')->where('itemId', '[0-9]+');
         Route::delete('/qa2-audits/{id}/items/{itemId}/media/{mediaId}', [\App\Http\Controllers\Qa2AuditController::class, 'deleteItemMedia'])->where('id', '[0-9]+')->where('itemId', '[0-9]+')->where('mediaId', '[0-9]+');

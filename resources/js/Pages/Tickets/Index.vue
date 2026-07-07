@@ -59,6 +59,7 @@
                 <i class="fa-solid fa-table-list mr-2"></i> Report Per Categories
               </button>
               <button
+                v-if="false"
                 type="button"
                 @click="downloadReport"
                 class="bg-white/90 text-sky-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
@@ -67,6 +68,7 @@
               </button>
             </template>
             <button
+              v-if="false"
               type="button"
               @click="downloadImportTemplate"
               class="bg-white/90 text-indigo-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
@@ -74,6 +76,7 @@
               <i class="fa-solid fa-file-excel mr-2"></i> Download Template
             </button>
             <button
+              v-if="false"
               type="button"
               @click="openImportFilePicker"
               class="bg-white/90 text-emerald-700 px-4 py-2 rounded-xl shadow hover:shadow-lg transition-all font-semibold"
