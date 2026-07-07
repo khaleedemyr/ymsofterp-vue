@@ -13,7 +13,7 @@ const lightboxIndex = ref(0);
 
 const groupedItems = computed(() => {
   const map = new Map();
-  for (const item of props.audit?.items || []) {
+  for (const item of (props.audit?.items || []).filter((x) => x.result === 'NC')) {
     const catName = item.category_name || 'Tanpa Kategori';
     const subName = item.subcategory_name || 'Tanpa Subcategory';
     const key = `${catName}__${subName}`;
@@ -33,6 +33,28 @@ const groupedItems = computed(() => {
 function formatScore(value) {
   return `${Number(value || 0).toFixed(0)}%`;
 }
+
+function resolveAuditResult(score) {
+  const numeric = Number(score || 0);
+  if (numeric >= 91) {
+    return {
+      label: 'EXCELLENT',
+      className: 'bg-emerald-500 text-white',
+    };
+  }
+  if (numeric >= 85) {
+    return {
+      label: 'SATISFACTORY',
+      className: 'bg-yellow-300 text-gray-900',
+    };
+  }
+  return {
+    label: 'TO IMPROVE',
+    className: 'bg-red-600 text-white',
+  };
+}
+
+const overallAuditResult = computed(() => resolveAuditResult(props.audit?.summary_total?.score || 0));
 
 function resultBadgeClass(result) {
   if (result === 'C') return 'bg-emerald-100 text-emerald-700';
@@ -157,6 +179,43 @@ function openPhotoLightbox(mediaList, media) {
         </div>
       </div>
 
+      <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div class="bg-gray-100 px-4 py-2 text-lg font-bold text-gray-900">AUDIT RESULT % :</div>
+        <div class="divide-y divide-gray-200">
+          <div class="grid grid-cols-12 items-center">
+            <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+              EXCELLENT
+              <span class="float-right">:</span>
+            </div>
+            <div class="col-span-4 bg-emerald-500 px-4 py-2 text-right text-2xl font-bold text-white">91 - 100%</div>
+          </div>
+
+          <div class="grid grid-cols-12 items-center">
+            <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+              SATISFACTORY
+              <span class="float-right">:</span>
+            </div>
+            <div class="col-span-4 bg-yellow-300 px-4 py-2 text-right text-2xl font-bold text-gray-900">85-90%</div>
+          </div>
+
+          <div class="grid grid-cols-12 items-center">
+            <div class="col-span-8 bg-gray-200 px-4 py-2 text-2xl font-bold text-gray-900">
+              TO IMPROVE
+              <span class="float-right">:</span>
+            </div>
+            <div class="col-span-4 bg-red-600 px-4 py-2 text-right text-2xl font-bold text-white">&lt;85%</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <div class="text-sm font-semibold text-gray-500">Overall Audit Result</div>
+        <div class="mt-2 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold" :class="overallAuditResult.className">
+          <span>{{ overallAuditResult.label }}</span>
+          <span>({{ formatScore(audit?.summary_total?.score || 0) }})</span>
+        </div>
+      </div>
+
       <div class="space-y-4">
         <div v-for="group in groupedItems" :key="group.key" class="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div class="mb-3">
@@ -177,7 +236,8 @@ function openPhotoLightbox(mediaList, media) {
                   {{ item.result || 'Belum diisi' }}
                 </span>
               </div>
-              <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+
+              <div class="rounded-lg border border-slate-200 bg-white p-3">
                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Temuan Auditor</p>
                 <p class="mt-2 text-sm text-gray-700 whitespace-pre-wrap">{{ item.comment || '-' }}</p>
                 <p class="mt-1 text-xs text-gray-500">Due date: {{ item.due_date || '-' }}</p>
@@ -196,8 +256,37 @@ function openPhotoLightbox(mediaList, media) {
                   </div>
                 </div>
               </div>
+
+              <div v-if="item.cap?.action_plan || item.cap?.media?.length" class="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-3">
+                <p class="mb-2 text-sm font-semibold text-rose-700">Corrective Action Plan</p>
+                <p v-if="item.cap?.action_plan" class="mb-2 whitespace-pre-wrap text-sm text-gray-800">{{ item.cap.action_plan }}</p>
+                <div class="grid gap-2 text-xs text-gray-600 md:grid-cols-2">
+                  <div v-if="item.cap?.target_date">Target: {{ item.cap.target_date }}</div>
+                  <div v-if="item.cap?.status">Status: {{ item.cap.status }}</div>
+                </div>
+                <div v-if="item.cap?.media?.length" class="mt-3">
+                  <p class="mb-2 text-xs font-semibold text-rose-700">Media CAP ({{ item.cap.media.length }})</p>
+                  <div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    <div v-for="media in item.cap.media" :key="`cap-media-${media.id}`" class="overflow-hidden rounded-lg border border-rose-200 bg-white">
+                      <img
+                        v-if="media.media_type === 'photo'"
+                        :src="media.url"
+                        class="h-24 w-full cursor-pointer object-cover"
+                        @click="openPhotoLightbox(item.cap.media, media)"
+                      >
+                      <div v-else class="relative h-24 w-full bg-gray-900">
+                        <video :src="media.url" class="h-24 w-full object-cover" controls />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
+
+        <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+          Tidak ada parameter NC pada audit ini.
         </div>
       </div>
     </main>
