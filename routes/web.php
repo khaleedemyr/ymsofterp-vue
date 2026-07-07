@@ -521,16 +521,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tickets/import', [\App\Http\Controllers\TicketController::class, 'importFromExcel'])->name('tickets.import');
     Route::get('/tickets/create', [\App\Http\Controllers\TicketController::class, 'create'])->name('tickets.create');
     Route::post('/tickets', [\App\Http\Controllers\TicketController::class, 'store'])->name('tickets.store');
-    Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'show'])->name('tickets.show');
-    Route::post('/tickets/{id}/share-link', [\App\Http\Controllers\TicketController::class, 'generateShareLink'])->name('tickets.share-link');
-    Route::get('/tickets/{id}/edit', [\App\Http\Controllers\TicketController::class, 'edit'])->name('tickets.edit');
-    Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->name('tickets.update');
-    Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');
     Route::post('/tickets/from-daily-report', [\App\Http\Controllers\TicketController::class, 'createFromDailyReport'])->name('tickets.from-daily-report');
-    Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->name('tickets.assign-team');
-    Route::match(['patch', 'post'], '/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
-    Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->name('tickets.update-work-executor-type');
-    Route::patch('/tickets/{id}/vendor-name', [\App\Http\Controllers\TicketController::class, 'updateVendorName'])->name('tickets.update-vendor-name');
     
     // Ticket Comments routes
     Route::post('/tickets/{id}/comments', [\App\Http\Controllers\TicketController::class, 'addComment'])->name('tickets.comments.store');
@@ -543,6 +534,16 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/tickets/priorities', [\App\Http\Controllers\TicketController::class, 'getPriorities'])->name('tickets.priorities');
     Route::get('/tickets/by-area/{areaId}', [\App\Http\Controllers\TicketController::class, 'getTicketsByArea'])->name('tickets.by-area');
     Route::get('/tickets/by-outlet', [\App\Http\Controllers\TicketController::class, 'getTicketsByOutlet'])->name('tickets.by-outlet');
+
+    Route::get('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'show'])->name('tickets.show');
+    Route::post('/tickets/{id}/share-link', [\App\Http\Controllers\TicketController::class, 'generateShareLink'])->name('tickets.share-link');
+    Route::get('/tickets/{id}/edit', [\App\Http\Controllers\TicketController::class, 'edit'])->name('tickets.edit');
+    Route::put('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'update'])->name('tickets.update');
+    Route::delete('/tickets/{id}', [\App\Http\Controllers\TicketController::class, 'destroy'])->name('tickets.destroy');
+    Route::post('/tickets/{id}/assign-team', [\App\Http\Controllers\TicketController::class, 'assignTeam'])->name('tickets.assign-team');
+    Route::match(['patch', 'post'], '/tickets/{id}/status', [\App\Http\Controllers\TicketController::class, 'updateStatus'])->name('tickets.update-status');
+    Route::patch('/tickets/{id}/work-executor-type', [\App\Http\Controllers\TicketController::class, 'updateWorkExecutorType'])->name('tickets.update-work-executor-type');
+    Route::patch('/tickets/{id}/vendor-name', [\App\Http\Controllers\TicketController::class, 'updateVendorName'])->name('tickets.update-vendor-name');
 
     // Purchase Requisition API endpoints (must be before resource routes)
     Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories'])->name('purchase-requisitions.categories')->middleware('auth');
