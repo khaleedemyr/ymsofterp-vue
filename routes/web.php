@@ -2560,6 +2560,9 @@ Route::get('qa2-audits/report-summary', [\App\Http\Controllers\Qa2AuditControlle
 Route::get('qa2-audits/report-summary/export', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportSummary'])->name('qa2-audits.report-summary.export');
 Route::get('qa2-audits/report-nc-detail', [\App\Http\Controllers\Qa2AuditController::class, 'reportNcDetail'])->name('qa2-audits.report-nc-detail');
 Route::get('qa2-audits/report-nc-detail/export', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportNcDetail'])->name('qa2-audits.report-nc-detail.export');
+Route::get('qa2-audits/report-nc-dashboard', [\App\Http\Controllers\Qa2AuditController::class, 'reportNcDashboard'])->name('qa2-audits.report-nc-dashboard');
+Route::get('qa2-audits/report-nc-dashboard/export', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportNcDashboard'])->name('qa2-audits.report-nc-dashboard.export');
+Route::get('qa2-audits/report-nc-dashboard/export-detail', [\App\Http\Controllers\Qa2AuditController::class, 'exportReportNcDashboardDetail'])->name('qa2-audits.report-nc-dashboard.export-detail');
 Route::get('qa2-audits/create', [\App\Http\Controllers\Qa2AuditController::class, 'create'])->name('qa2-audits.create');
 Route::post('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'store'])->name('qa2-audits.store');
 Route::get('qa2-audits/{id}/edit', [\App\Http\Controllers\Qa2AuditController::class, 'edit'])->name('qa2-audits.edit');

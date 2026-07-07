@@ -347,6 +347,304 @@ class Qa2AuditController extends Controller
         }, $fileName);
     }
 
+    public function reportNcDashboard(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        $outletId = (int) $request->input('outlet_id', 0);
+
+        [$fromDateRaw, $toDateRaw, $fromDateTime, $toDateTime] = $this->normalizeDateRangeForDashboard(
+            (string) $request->input('from_date', now()->startOfMonth()->toDateString()),
+            (string) $request->input('to_date', now()->toDateString())
+        );
+
+        $monthlyOutletRows = $this->buildNcMonthlyOutletAggregates(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        );
+
+        $categoryBreakdown = $this->buildNcCategoryBreakdown(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        );
+        $subcategoryBreakdown = $this->buildNcSubcategoryBreakdown(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        );
+
+        $monthlyTrend = $monthlyOutletRows
+            ->groupBy('month_key')
+            ->map(fn ($rows, $monthKey) => [
+                'month_key' => (string) $monthKey,
+                'nc_count' => (int) $rows->sum('nc_count'),
+                'audit_count' => (int) $rows->sum('audit_count'),
+                'nc_per_audit' => $rows->sum('audit_count') > 0
+                    ? round($rows->sum('nc_count') / $rows->sum('audit_count'), 2)
+                    : 0,
+            ])
+            ->sortBy('month_key')
+            ->values();
+
+        $outletComposition = $monthlyOutletRows
+            ->groupBy('outlet_id')
+            ->map(function ($rows) {
+                $first = $rows->first();
+                return [
+                    'outlet_id' => (int) ($first['outlet_id'] ?? 0),
+                    'outlet_name' => (string) ($first['outlet_name'] ?? '-'),
+                    'nc_count' => (int) $rows->sum('nc_count'),
+                ];
+            })
+            ->sortByDesc('nc_count')
+            ->values()
+            ->all();
+
+        $totalNc = (int) $monthlyOutletRows->sum('nc_count');
+        $totalAudit = (int) $monthlyOutletRows->sum('audit_count');
+        $avgNcPerAudit = $totalAudit > 0 ? round($totalNc / $totalAudit, 2) : 0;
+
+        $months = $monthlyTrend->pluck('month_key')->values();
+        $latestMonth = $months->last();
+        $previousMonth = $months->count() > 1 ? $months->get($months->count() - 2) : null;
+        $latestNc = $latestMonth ? (int) ($monthlyTrend->firstWhere('month_key', $latestMonth)['nc_count'] ?? 0) : 0;
+        $previousNc = $previousMonth ? (int) ($monthlyTrend->firstWhere('month_key', $previousMonth)['nc_count'] ?? 0) : 0;
+        $momDelta = $latestNc - $previousNc;
+        $momDeltaPct = $previousNc > 0 ? round(($momDelta / $previousNc) * 100, 2) : ($latestNc > 0 ? 100.0 : 0.0);
+
+        $highestOutlet = $outletComposition[0] ?? null;
+
+        $topOutletIds = collect($outletComposition)->take(5)->pluck('outlet_id')->all();
+        $outletTrendSeries = collect($topOutletIds)->map(function ($oid) use ($monthlyOutletRows, $months) {
+            $rows = $monthlyOutletRows->where('outlet_id', $oid);
+            $name = (string) ($rows->first()['outlet_name'] ?? '-');
+            $seriesData = $months->map(function ($month) use ($rows) {
+                $matched = $rows->firstWhere('month_key', $month);
+                return (int) ($matched['nc_count'] ?? 0);
+            })->values()->all();
+            $seriesPerAudit = $months->map(function ($month) use ($rows) {
+                $matched = $rows->firstWhere('month_key', $month);
+                $nc = (int) ($matched['nc_count'] ?? 0);
+                $audits = (int) ($matched['audit_count'] ?? 0);
+                return $audits > 0 ? round($nc / $audits, 2) : 0;
+            })->values()->all();
+            return [
+                'outlet_id' => (int) $oid,
+                'outlet_name' => $name,
+                'data' => $seriesData,
+                'data_per_audit' => $seriesPerAudit,
+            ];
+        })->values()->all();
+
+        $movementRows = $monthlyOutletRows
+            ->groupBy('outlet_id')
+            ->flatMap(function ($rowsByOutlet) {
+                $sorted = $rowsByOutlet->sortBy('month_key')->values();
+                $prevNc = null;
+                return $sorted->map(function ($row) use (&$prevNc) {
+                    $nc = (int) ($row['nc_count'] ?? 0);
+                    $prev = $prevNc;
+                    $delta = $prev === null ? $nc : ($nc - $prev);
+                    $deltaPct = $prev && $prev > 0 ? round(($delta / $prev) * 100, 2) : ($prev === 0 && $nc > 0 ? 100.0 : 0.0);
+                    $trend = $delta > 0 ? 'naik' : ($delta < 0 ? 'turun' : 'stagnan');
+                    $prevNc = $nc;
+
+                    return [
+                        'month_key' => (string) ($row['month_key'] ?? ''),
+                        'outlet_id' => (int) ($row['outlet_id'] ?? 0),
+                        'outlet_name' => (string) ($row['outlet_name'] ?? '-'),
+                        'nc_count' => $nc,
+                        'audit_count' => (int) ($row['audit_count'] ?? 0),
+                        'prev_nc_count' => (int) ($prev ?? 0),
+                        'delta' => (int) $delta,
+                        'delta_pct' => (float) $deltaPct,
+                        'trend' => $trend,
+                    ];
+                });
+            })
+            ->sortByDesc(fn ($row) => $row['month_key'] . '|' . str_pad((string) $row['nc_count'], 10, '0', STR_PAD_LEFT))
+            ->values()
+            ->all();
+
+        $detailRows = $this->buildNcDetailRows(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        );
+
+        return Inertia::render('Qa2Audits/NcDashboard', [
+            'filters' => [
+                'outlet_id' => $outletId > 0 ? (string) $outletId : '',
+                'from_date' => $fromDateRaw,
+                'to_date' => $toDateRaw,
+            ],
+            'outlets' => $this->allowedOutlets($isHo, $userOutletId),
+            'kpis' => [
+                'total_nc' => $totalNc,
+                'total_audits' => $totalAudit,
+                'avg_nc_per_audit' => $avgNcPerAudit,
+                'mom_delta' => $momDelta,
+                'mom_delta_pct' => $momDeltaPct,
+                'latest_month' => $latestMonth,
+                'previous_month' => $previousMonth,
+                'highest_outlet_name' => (string) ($highestOutlet['outlet_name'] ?? '-'),
+                'highest_outlet_nc' => (int) ($highestOutlet['nc_count'] ?? 0),
+            ],
+            'trend_months' => $months->all(),
+            'monthly_trend' => $monthlyTrend->values()->all(),
+            'outlet_trend_series' => $outletTrendSeries,
+            'category_breakdown' => $categoryBreakdown,
+            'subcategory_breakdown' => $subcategoryBreakdown,
+            'outlet_composition' => $outletComposition,
+            'movement_rows' => $movementRows,
+            'detail_rows' => $detailRows,
+            'permissions' => [
+                'can_manage' => $isHo,
+            ],
+        ]);
+    }
+
+    public function exportReportNcDashboard(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        $outletId = (int) $request->input('outlet_id', 0);
+
+        [$fromDateRaw, $toDateRaw, $fromDateTime, $toDateTime] = $this->normalizeDateRangeForDashboard(
+            (string) $request->input('from_date', now()->startOfMonth()->toDateString()),
+            (string) $request->input('to_date', now()->toDateString())
+        );
+
+        $monthlyOutletRows = $this->buildNcMonthlyOutletAggregates(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        );
+
+        $movementRows = $monthlyOutletRows
+            ->groupBy('outlet_id')
+            ->flatMap(function ($rowsByOutlet) {
+                $sorted = $rowsByOutlet->sortBy('month_key')->values();
+                $prevNc = null;
+                return $sorted->map(function ($row) use (&$prevNc) {
+                    $nc = (int) ($row['nc_count'] ?? 0);
+                    $prev = $prevNc;
+                    $delta = $prev === null ? $nc : ($nc - $prev);
+                    $deltaPct = $prev && $prev > 0 ? round(($delta / $prev) * 100, 2) : ($prev === 0 && $nc > 0 ? 100.0 : 0.0);
+                    $trend = $delta > 0 ? 'naik' : ($delta < 0 ? 'turun' : 'stagnan');
+                    $prevNc = $nc;
+                    return [
+                        'Bulan' => (string) ($row['month_key'] ?? ''),
+                        'Outlet' => (string) ($row['outlet_name'] ?? '-'),
+                        'Jumlah NC' => $nc,
+                        'Jumlah Audit' => (int) ($row['audit_count'] ?? 0),
+                        'NC Bulan Sebelumnya' => (int) ($prev ?? 0),
+                        'Delta NC' => (int) $delta,
+                        'Delta (%)' => (float) $deltaPct,
+                        'Trend' => $trend,
+                    ];
+                });
+            })
+            ->values();
+
+        $fileName = sprintf('qa2_nc_dashboard_%s_to_%s.xlsx', $fromDateRaw, $toDateRaw);
+
+        return Excel::download(new class($movementRows) implements FromCollection, WithHeadings {
+            public function __construct(private \Illuminate\Support\Collection $rows) {}
+            public function collection()
+            {
+                return $this->rows;
+            }
+            public function headings(): array
+            {
+                return ['Bulan', 'Outlet', 'Jumlah NC', 'Jumlah Audit', 'NC Bulan Sebelumnya', 'Delta NC', 'Delta (%)', 'Trend'];
+            }
+        }, $fileName);
+    }
+
+    public function exportReportNcDashboardDetail(Request $request)
+    {
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        $outletId = (int) $request->input('outlet_id', 0);
+
+        [$fromDateRaw, $toDateRaw, $fromDateTime, $toDateTime] = $this->normalizeDateRangeForDashboard(
+            (string) $request->input('from_date', now()->startOfMonth()->toDateString()),
+            (string) $request->input('to_date', now()->toDateString())
+        );
+
+        $rows = collect($this->buildNcDetailRows(
+            $isHo,
+            $userOutletId,
+            $outletId,
+            $fromDateTime,
+            $toDateTime
+        ))->map(fn ($row) => [
+            'Bulan' => $row['month_key'] ?? '',
+            'Tanggal Audit' => $row['audit_datetime'],
+            'Nomor Audit' => $row['audit_number'],
+            'Outlet' => $row['outlet_name'],
+            'Template' => $row['template_name'],
+            'Auditor' => $row['auditors'],
+            'Auditee' => $row['auditees'],
+            'Kategori' => $row['category_name'],
+            'Sub Kategori' => $row['subcategory_name'],
+            'Parameter Code' => $row['parameter_code'],
+            'Parameter' => $row['parameter_text'],
+            'Komentar' => $row['comment'],
+            'Due Date' => $row['due_date'],
+            'Action Plan CAP' => $row['cap_action_plan'],
+            'Target Date CAP' => $row['cap_target_date'],
+            'Status CAP' => $row['cap_status'],
+        ]);
+
+        $fileName = sprintf('qa2_nc_dashboard_detail_%s_to_%s.xlsx', $fromDateRaw, $toDateRaw);
+
+        return Excel::download(new class($rows) implements FromCollection, WithHeadings {
+            public function __construct(private \Illuminate\Support\Collection $rows) {}
+            public function collection()
+            {
+                return $this->rows;
+            }
+            public function headings(): array
+            {
+                return [
+                    'Bulan',
+                    'Tanggal Audit',
+                    'Nomor Audit',
+                    'Outlet',
+                    'Template',
+                    'Auditor',
+                    'Auditee',
+                    'Kategori',
+                    'Sub Kategori',
+                    'Parameter Code',
+                    'Parameter',
+                    'Komentar',
+                    'Due Date',
+                    'Action Plan CAP',
+                    'Target Date CAP',
+                    'Status CAP',
+                ];
+            }
+        }, $fileName);
+    }
+
     private function buildOutletSummaryRows(
         bool $isHo,
         int $userOutletId,
@@ -423,6 +721,126 @@ class Qa2AuditController extends Controller
         return $rows;
     }
 
+    private function normalizeDateRangeForDashboard(string $fromDateRaw, string $toDateRaw): array
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDateRaw)) {
+            $fromDateRaw = now()->startOfMonth()->toDateString();
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDateRaw)) {
+            $toDateRaw = now()->toDateString();
+        }
+
+        $fromDate = Carbon::createFromFormat('Y-m-d', $fromDateRaw)->startOfDay();
+        $toDate = Carbon::createFromFormat('Y-m-d', $toDateRaw)->endOfDay();
+
+        if ($fromDate->gt($toDate)) {
+            [$fromDate, $toDate] = [$toDate->copy()->startOfDay(), $fromDate->copy()->endOfDay()];
+            $fromDateRaw = $fromDate->toDateString();
+            $toDateRaw = $toDate->toDateString();
+        }
+
+        return [$fromDateRaw, $toDateRaw, $fromDate->toDateTimeString(), $toDate->toDateTimeString()];
+    }
+
+    private function buildNcMonthlyOutletAggregates(
+        bool $isHo,
+        int $userOutletId,
+        int $outletId,
+        string $fromDateTime,
+        string $toDateTime
+    ): \Illuminate\Support\Collection {
+        $query = DB::table('qa2_audits as a')
+            ->join('qa2_audit_items as i', 'i.audit_id', '=', 'a.id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
+            ->where('a.status', 'submitted')
+            ->where('i.result', 'NC')
+            ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
+            ->selectRaw("DATE_FORMAT(a.audit_datetime, '%Y-%m') as month_key")
+            ->selectRaw('a.outlet_id as outlet_id')
+            ->selectRaw('COALESCE(o.nama_outlet, "-") as outlet_name')
+            ->selectRaw('COUNT(i.id) as nc_count')
+            ->selectRaw('COUNT(DISTINCT a.id) as audit_count')
+            ->groupBy('month_key', 'a.outlet_id', 'o.nama_outlet');
+
+        if (! $isHo) {
+            $query->where('a.outlet_id', $userOutletId);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
+        }
+
+        return $query->get()
+            ->map(fn ($row) => [
+                'month_key' => (string) ($row->month_key ?? ''),
+                'outlet_id' => (int) ($row->outlet_id ?? 0),
+                'outlet_name' => (string) ($row->outlet_name ?? '-'),
+                'nc_count' => (int) ($row->nc_count ?? 0),
+                'audit_count' => (int) ($row->audit_count ?? 0),
+            ])
+            ->sortBy(fn ($row) => $row['month_key'] . '|' . str_pad((string) $row['outlet_id'], 10, '0', STR_PAD_LEFT))
+            ->values();
+    }
+
+    private function buildNcCategoryBreakdown(
+        bool $isHo,
+        int $userOutletId,
+        int $outletId,
+        string $fromDateTime,
+        string $toDateTime
+    ): array {
+        $query = DB::table('qa2_audits as a')
+            ->join('qa2_audit_items as i', 'i.audit_id', '=', 'a.id')
+            ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
+            ->where('a.status', 'submitted')
+            ->where('i.result', 'NC')
+            ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
+            ->selectRaw('COALESCE(c.name, "Tanpa Kategori") as label')
+            ->selectRaw('COUNT(i.id) as value')
+            ->groupBy('label')
+            ->orderByDesc('value');
+
+        if (! $isHo) {
+            $query->where('a.outlet_id', $userOutletId);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
+        }
+
+        return $query->get()
+            ->map(fn ($row) => ['label' => (string) ($row->label ?? '-'), 'value' => (int) ($row->value ?? 0)])
+            ->values()
+            ->all();
+    }
+
+    private function buildNcSubcategoryBreakdown(
+        bool $isHo,
+        int $userOutletId,
+        int $outletId,
+        string $fromDateTime,
+        string $toDateTime
+    ): array {
+        $query = DB::table('qa2_audits as a')
+            ->join('qa2_audit_items as i', 'i.audit_id', '=', 'a.id')
+            ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
+            ->where('a.status', 'submitted')
+            ->where('i.result', 'NC')
+            ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
+            ->selectRaw('COALESCE(s.name, "Tanpa Sub Kategori") as label')
+            ->selectRaw('COUNT(i.id) as value')
+            ->groupBy('label')
+            ->orderByDesc('value')
+            ->limit(15);
+
+        if (! $isHo) {
+            $query->where('a.outlet_id', $userOutletId);
+        } elseif ($outletId > 0) {
+            $query->where('a.outlet_id', $outletId);
+        }
+
+        return $query->get()
+            ->map(fn ($row) => ['label' => (string) ($row->label ?? '-'), 'value' => (int) ($row->value ?? 0)])
+            ->values()
+            ->all();
+    }
+
     private function buildNcDetailRows(
         bool $isHo,
         int $userOutletId,
@@ -444,6 +862,7 @@ class Qa2AuditController extends Controller
                 'a.id as audit_id',
                 'a.audit_number',
                 'a.audit_datetime',
+                'a.outlet_id',
                 'i.id as audit_item_id',
                 'cap.id as cap_id',
                 'o.nama_outlet as outlet_name',
@@ -529,6 +948,8 @@ class Qa2AuditController extends Controller
                     'audit_id' => (int) ($row->audit_id ?? 0),
                     'audit_number' => (string) ($row->audit_number ?? '-'),
                     'audit_datetime' => (string) ($row->audit_datetime ?? '-'),
+                    'month_key' => (string) Carbon::parse((string) ($row->audit_datetime ?? now()))->format('Y-m'),
+                    'outlet_id' => (int) ($row->outlet_id ?? 0),
                     'outlet_name' => (string) ($row->outlet_name ?? '-'),
                     'template_name' => (string) ($row->template_name ?? '-'),
                     'auditors' => (string) ($row->auditors ?? '-'),

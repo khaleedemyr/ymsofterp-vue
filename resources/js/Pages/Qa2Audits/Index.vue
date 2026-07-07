@@ -57,6 +57,10 @@ function goReportNcDetail() {
   router.visit(route('qa2-audits.report-nc-detail'));
 }
 
+function goReportNcDashboard() {
+  router.visit(route('qa2-audits.report-nc-dashboard'));
+}
+
 function goEdit(id) {
   router.visit(route('qa2-audits.edit', id));
 }
@@ -202,6 +206,13 @@ async function shareToWhatsApp(audit) {
             @click="goReportNcDetail"
           >
             Report NC Detail
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-lg border border-fuchsia-300 px-4 py-2 text-sm font-medium text-fuchsia-700 hover:bg-fuchsia-50"
+            @click="goReportNcDashboard"
+          >
+            NC Dashboard
           </button>
         </div>
       </div>
