@@ -92,7 +92,11 @@ const detailItems = computed(() => {
   if (canManage.value && props.audit?.status === 'draft') {
     return items.value;
   }
-  return items.value.filter((item) => item.result === 'NC');
+  return items.value.filter((item) => {
+    if (item.result === 'NC') return true;
+    if (item.result !== 'C') return false;
+    return String(item.comment || '').trim().length > 0;
+  });
 });
 
 const groupedItems = computed(() => buildGroupedItems(detailItems.value));

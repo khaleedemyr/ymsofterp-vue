@@ -1126,7 +1126,14 @@ class Qa2AuditController extends Controller
             ]);
 
         if ($onlyNc) {
-            $itemsQuery->where('i.result', 'NC');
+            $itemsQuery->where(function ($q) {
+                $q->where('i.result', 'NC')
+                    ->orWhere(function ($sub) {
+                        $sub->where('i.result', 'C')
+                            ->whereNotNull('i.comment')
+                            ->whereRaw("TRIM(i.comment) <> ''");
+                    });
+            });
         }
 
         $items = $itemsQuery

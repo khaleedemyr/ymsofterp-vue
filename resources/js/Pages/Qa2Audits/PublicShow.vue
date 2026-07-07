@@ -13,7 +13,11 @@ const lightboxIndex = ref(0);
 
 const groupedItems = computed(() => {
   const map = new Map();
-  for (const item of (props.audit?.items || []).filter((x) => x.result === 'NC')) {
+  for (const item of (props.audit?.items || []).filter((x) => {
+    if (x.result === 'NC') return true;
+    if (x.result !== 'C') return false;
+    return String(x.comment || '').trim().length > 0;
+  })) {
     const catName = item.category_name || 'Tanpa Kategori';
     const subName = item.subcategory_name || 'Tanpa Subcategory';
     const key = `${catName}__${subName}`;
