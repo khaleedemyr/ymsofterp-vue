@@ -378,7 +378,10 @@ async function fetchExistingTickets() {
 
   existingTicketsLoading.value = true;
   try {
-    const response = await axios.get('/tickets/by-outlet', {
+    const ticketsByOutletUrl =
+      typeof route === 'function' ? route('tickets.by-outlet') : '/tickets/by-outlet';
+
+    const response = await axios.get(ticketsByOutletUrl, {
       params: {
         outlet_id: form.value.outlet_id,
         title: form.value.title || '',
