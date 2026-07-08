@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Exports\AttendanceReportExport;
 use App\Exports\EmployeeSummaryExport;
+use App\Services\AttendanceWorkTimelineService;
 
 class AttendanceReportController extends Controller
 {
@@ -49,7 +50,8 @@ class AttendanceReportController extends Controller
                     'a.scan_date',
                     'a.inoutmode',
                     'u.id as user_id',
-                    'u.nama_lengkap'
+                    'u.nama_lengkap',
+                    'o.id_outlet as outlet_id'
                 )
                 ->where('a.scan_date', '>=', $start . ' 00:00:00')
                 ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
@@ -68,28 +70,7 @@ class AttendanceReportController extends Controller
             \Log::info('Raw data count: ' . $rawData->count());
             \Log::info('Raw data sample:', $rawData->take(5)->toArray());
 
-            // Proses data manual untuk menangani cross-day dengan benar
-            $processedData = [];
-            
-            // Step 1: Kelompokkan scan berdasarkan user dan tanggal
-            foreach ($rawData as $scan) {
-                $date = date('Y-m-d', strtotime($scan->scan_date));
-                $key = $scan->user_id . '_' . $date;
-                
-                if (!isset($processedData[$key])) {
-                    $processedData[$key] = [
-                        'tanggal' => $date,
-                        'user_id' => $scan->user_id,
-                        'nama_lengkap' => $scan->nama_lengkap,
-                        'scans' => []
-                    ];
-                }
-                
-                $processedData[$key]['scans'][] = [
-                    'scan_date' => $scan->scan_date,
-                    'inoutmode' => $scan->inoutmode
-                ];
-            }
+            $processedData = $this->groupAttendanceScansByUserDay($rawData);
             
             // Step 2: Proses setiap kelompok dengan logika cross-day yang lebih cerdas
             $finalData = [];
@@ -192,12 +173,13 @@ class AttendanceReportController extends Controller
             // Hitung lembur untuk setiap baris menggunakan perhitungan sederhana
             foreach ($dataRows as $row) {
                 if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
-                    // Ambil jam shift dari shift data
-                    $shiftStart = $shiftData->time_start ?? '08:00:00'; // Default jika tidak ada
-                    $shiftEnd = $shiftData->time_end ?? '17:00:00'; // Default jika tidak ada
-                    
-                    // Gunakan perhitungan lembur yang sederhana dan aman
-                    $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftEnd);
+                    $shiftStart = $shiftData->time_start ?? '08:00:00';
+                    $shiftEnd = $shiftData->time_end ?? '17:00:00';
+                    $row->lembur = $this->calculateWorkBasedOvertime(
+                        (int) ($row->work_minutes ?? 0),
+                        $shiftStart,
+                        $shiftEnd
+                    );
                 } else {
                     $row->lembur = 0;
                 }
@@ -266,11 +248,12 @@ class AttendanceReportController extends Controller
                                         }
                                     }
                                 }
-                                if ($shift && $shift->time_end && $jam_keluar) {
-                                    // Gunakan smart overtime calculation
-                                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
-                                    // Round down (bulatkan ke bawah)
-                                    $lembur = floor($lembur);
+                                if ($shift && $shift->time_end && ! empty($row->work_minutes)) {
+                                    $lembur = floor($this->workTimelineService()->calculateOvertimeHours(
+                                        (int) $row->work_minutes,
+                                        $shift->time_start,
+                                        $shift->time_end
+                                    ));
                                 }
                             } else {
                                 $jam_masuk = null;
@@ -700,7 +683,8 @@ class AttendanceReportController extends Controller
                     'a.scan_date',
                     'a.inoutmode',
                     'u.id as user_id',
-                    'u.nama_lengkap'
+                    'u.nama_lengkap',
+                    'o.id_outlet as outlet_id'
                 )
                 ->where('a.scan_date', '>=', $start . ' 00:00:00')
                 ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
@@ -715,28 +699,7 @@ class AttendanceReportController extends Controller
             }
             $rawData = $sub->orderBy('a.scan_date')->get();
 
-            // Proses data manual untuk menangani cross-day dengan benar
-            $processedData = [];
-            
-            // Step 1: Kelompokkan scan berdasarkan user dan tanggal
-            foreach ($rawData as $scan) {
-                $date = date('Y-m-d', strtotime($scan->scan_date));
-                $key = $scan->user_id . '_' . $date;
-                
-                if (!isset($processedData[$key])) {
-                    $processedData[$key] = [
-                        'tanggal' => $date,
-                        'user_id' => $scan->user_id,
-                        'nama_lengkap' => $scan->nama_lengkap,
-                        'scans' => []
-                    ];
-                }
-                
-                $processedData[$key]['scans'][] = [
-                    'scan_date' => $scan->scan_date,
-                    'inoutmode' => $scan->inoutmode
-                ];
-            }
+            $processedData = $this->groupAttendanceScansByUserDay($rawData);
             
             // Step 2: Proses setiap kelompok dengan smart cross-day processing
             $finalData = [];
@@ -841,12 +804,13 @@ class AttendanceReportController extends Controller
             // Hitung lembur untuk setiap baris menggunakan perhitungan sederhana
             foreach ($dataRows as $row) {
                 if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
-                    // Ambil jam shift dari shift data
-                    $shiftStart = $shiftData->time_start ?? '08:00:00'; // Default jika tidak ada
-                    $shiftEnd = $shiftData->time_end ?? '17:00:00'; // Default jika tidak ada
-                    
-                    // Gunakan perhitungan lembur yang sederhana dan aman
-                    $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftEnd);
+                    $shiftStart = $shiftData->time_start ?? '08:00:00';
+                    $shiftEnd = $shiftData->time_end ?? '17:00:00';
+                    $row->lembur = $this->calculateWorkBasedOvertime(
+                        (int) ($row->work_minutes ?? 0),
+                        $shiftStart,
+                        $shiftEnd
+                    );
                 } else {
                     $row->lembur = 0;
                 }
@@ -922,7 +886,11 @@ class AttendanceReportController extends Controller
                                 
                                 if ($shift && $shift->time_end && $jam_keluar) {
                                     // Gunakan smart overtime calculation
-                                    $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                                    $lembur = $this->calculateWorkBasedOvertime(
+                                        (int) ($row->work_minutes ?? 0),
+                                        $shift->time_start,
+                                        $shift->time_end
+                                    );
                                     
                                 }
                             } else {
@@ -1123,7 +1091,8 @@ class AttendanceReportController extends Controller
             }
             $processedData[$key]['scans'][] = [
                 'scan_date' => $scan->scan_date,
-                'inoutmode' => $scan->inoutmode
+                'inoutmode' => $scan->inoutmode,
+                'outlet_id' => $scan->outlet_id ?? null,
             ];
         }
 
@@ -1209,7 +1178,11 @@ class AttendanceReportController extends Controller
                             $telat += $earlyCheckoutTelat;
                             
                             // Gunakan smart overtime calculation - FIXED to use new logic
-                            $lembur = $this->calculateSimpleOvertime($jam_keluar, $shift->time_end);
+                            $lembur = $this->calculateWorkBasedOvertime(
+                                (int) ($row->work_minutes ?? 0),
+                                $shift->time_start,
+                                $shift->time_end
+                            );
                         }
                     } else { $jam_masuk = null; $jam_keluar = null; $telat = 0; $lembur = 0; }
 
@@ -1552,7 +1525,8 @@ class AttendanceReportController extends Controller
             
             $processedData[$key]['scans'][] = [
                 'scan_date' => $scan->scan_date,
-                'inoutmode' => $scan->inoutmode
+                'inoutmode' => $scan->inoutmode,
+                'outlet_id' => $scan->outlet_id ?? null,
             ];
         }
         
@@ -1865,7 +1839,11 @@ class AttendanceReportController extends Controller
                         
                         
                         // Gunakan smart overtime calculation
-                        $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftEnd);
+                        $row->lembur = $this->calculateWorkBasedOvertime(
+                            (int) ($row->work_minutes ?? 0),
+                            $shiftStart,
+                            $shiftEnd
+                        );
                         if ($row->lembur > 0) {
                             $overtimeCount++;
                             
@@ -2367,7 +2345,11 @@ class AttendanceReportController extends Controller
                         $scanOutTime = strtotime($scanOutDateTime);
                         
                         // Gunakan smart overtime calculation
-                        $row->lembur = $this->calculateSimpleOvertime($row->jam_keluar, $shiftEnd);
+                        $row->lembur = $this->calculateWorkBasedOvertime(
+                            (int) ($row->work_minutes ?? 0),
+                            $shiftStart,
+                            $shiftEnd
+                        );
                     } else {
                         $row->lembur = 0;
                     }
@@ -2961,6 +2943,20 @@ class AttendanceReportController extends Controller
      */
     public function calculateDailyTelatLembur(object $processedRow, ?object $shift, string $tanggal, ?bool $isOff = null): array
     {
+        if (! empty($processedRow->last_outlet_id) && ! empty($processedRow->user_id)) {
+            $outletShift = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->where('us.user_id', $processedRow->user_id)
+                ->where('us.tanggal', $tanggal)
+                ->where('us.outlet_id', $processedRow->last_outlet_id)
+                ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->first();
+
+            if ($outletShift) {
+                $shift = $outletShift;
+            }
+        }
+
         $isOff = $isOff ?? $this->isShiftOff($shift);
         if ($isOff) {
             return ['telat' => 0, 'lembur' => 0];
@@ -2985,128 +2981,72 @@ class AttendanceReportController extends Controller
             }
         }
 
-        if ($shift && $shift->time_end && $processedRow->jam_keluar) {
-            $lembur = floor($this->calculateSimpleOvertime($processedRow->jam_keluar, $shift->time_end));
+        if ($shift && $processedRow->jam_keluar) {
+            $workMinutes = (int) ($processedRow->work_minutes ?? 0);
+            if ($workMinutes > 0 && $shift->time_start && $shift->time_end) {
+                $lembur = floor(app(AttendanceWorkTimelineService::class)->calculateOvertimeHours(
+                    $workMinutes,
+                    $shift->time_start,
+                    $shift->time_end
+                ));
+            }
         }
 
         return ['telat' => $telat, 'lembur' => $lembur];
     }
 
     /**
+     * Kelompokkan raw scan att_log per user per hari (termasuk outlet scan).
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $rawData
+     * @return array<string, array<string, mixed>>
+     */
+    private function groupAttendanceScansByUserDay($rawData, array $extraFields = []): array
+    {
+        $processedData = [];
+
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id.'_'.$date;
+
+            if (! isset($processedData[$key])) {
+                $processedData[$key] = array_merge([
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap ?? null,
+                    'scans' => [],
+                ], $extraFields);
+            }
+
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode,
+                'outlet_id' => $scan->outlet_id ?? null,
+            ];
+        }
+
+        return $processedData;
+    }
+
+    private function workTimelineService(): AttendanceWorkTimelineService
+    {
+        return app(AttendanceWorkTimelineService::class);
+    }
+
+    private function calculateWorkBasedOvertime(?int $workMinutes, ?string $shiftStart, ?string $shiftEnd): int
+    {
+        if (! $workMinutes || ! $shiftStart || ! $shiftEnd) {
+            return 0;
+        }
+
+        return (int) floor($this->workTimelineService()->calculateOvertimeHours($workMinutes, $shiftStart, $shiftEnd));
+    }
+
+    /**
      * Smart cross-day attendance processing untuk multi-outlet scenarios
      */
     private function processSmartCrossDayAttendance($data, $allProcessedData) {
-        $scans = collect($data['scans'])->sortBy('scan_date');
-        $inScans = $scans->where('inoutmode', 1);
-        $outScans = $scans->where('inoutmode', 2);
-        
-        $totalMasuk = $inScans->count();
-        $totalKeluar = $outScans->count();
-        
-        // Ambil scan masuk pertama
-        $jamMasuk = $inScans->first()['scan_date'] ?? null;
-        $jamKeluar = null;
-        $isCrossDay = false;
-        
-        if ($jamMasuk) {
-            // SOLUSI TERBAIK: Logika sederhana dan konsisten dengan multi-outlet support
-            
-            // 1. Cari OUT scan di hari yang sama
-            $sameDayOuts = $outScans->where('scan_date', '>', $jamMasuk);
-            
-            // 2. Cari OUT scan di hari berikutnya (cross-day)
-            $nextDay = date('Y-m-d', strtotime($data['tanggal'] . ' +1 day'));
-            $nextDayKey = $data['user_id'] . '_' . $nextDay;
-            $nextDayOuts = collect();
-            
-            if (isset($allProcessedData[$nextDayKey])) {
-                $nextDayScans = collect($allProcessedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-            }
-            
-            
-            // 3. Tentukan OUT scan yang paling masuk akal - FIXED for multi-outlet
-            if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
-                // Ada both same-day dan cross-day OUT scan
-                $lastSameDayOut = $sameDayOuts->last()['scan_date'];
-                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
-                
-                // Cek durasi same-day OUT
-                $sameDayDuration = strtotime($lastSameDayOut) - strtotime($jamMasuk);
-                $outHour = (int)date('H', strtotime($firstNextDayOut));
-                
-                \Log::info('Multi-outlet cross-day decision', [
-                    'tanggal' => $data['tanggal'],
-                    'user_id' => $data['user_id'],
-                    'jam_masuk' => $jamMasuk,
-                    'same_day_out' => $lastSameDayOut,
-                    'cross_day_out' => $firstNextDayOut,
-                    'same_day_duration' => $sameDayDuration,
-                    'out_hour' => $outHour,
-                    'same_day_duration_hours' => round($sameDayDuration / 3600, 2)
-                ]);
-                
-                // Untuk multi-outlet cross-day, prioritas cross-day jika:
-                // 1. Same-day OUT terlalu pendek (< 5 jam) ATAU
-                // 2. Cross-day OUT di pagi sangat awal (00:00-06:00)
-                if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
-                    $jamKeluar = $firstNextDayOut;
-                    $isCrossDay = true;
-                    $totalKeluar = 1;
-                    
-                    \Log::info('Chose cross-day checkout', [
-                        'reason' => $sameDayDuration < 18000 ? 'same_day_too_short' : 'cross_day_early_morning',
-                        'chosen_out' => $jamKeluar
-                    ]);
-                    
-                    // Hapus scan keluar dari hari berikutnya
-                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
-                    
-                } else {
-                    $jamKeluar = $lastSameDayOut;
-                    $isCrossDay = false;
-                    
-                    \Log::info('Chose same-day checkout', [
-                        'reason' => 'same_day_long_enough',
-                        'chosen_out' => $jamKeluar
-                    ]);
-                }
-            } elseif ($sameDayOuts->isNotEmpty()) {
-                // Hanya ada same-day OUT scan
-                $jamKeluar = $sameDayOuts->last()['scan_date'];
-                $isCrossDay = false;
-                
-                
-            } elseif ($nextDayOuts->isNotEmpty()) {
-                // Hanya ada cross-day OUT scan
-                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
-                $outHour = (int)date('H', strtotime($firstNextDayOut));
-                
-                // Untuk cross-day, hanya gunakan jika di pagi sangat awal (00:00-12:00)
-                if ($outHour >= 0 && $outHour <= 12) {
-                    $jamKeluar = $firstNextDayOut;
-                    $isCrossDay = true;
-                    $totalKeluar = 1;
-                    
-                    
-                    // Hapus scan keluar dari hari berikutnya
-                    $allProcessedData[$nextDayKey]['scans'] = $nextDayScans->where('inoutmode', '!=', 2)->values()->toArray();
-                }
-            }
-            
-        }
-        
-        
-        return [
-            'tanggal' => $data['tanggal'],
-            'user_id' => $data['user_id'],
-            'nama_lengkap' => $data['nama_lengkap'],
-            'jam_masuk' => $jamMasuk,
-            'jam_keluar' => $jamKeluar,
-            'total_masuk' => $totalMasuk,
-            'total_keluar' => $totalKeluar,
-            'is_cross_day' => $isCrossDay
-        ];
+        return $this->workTimelineService()->processDay($data, $allProcessedData);
     }
 
     /**
