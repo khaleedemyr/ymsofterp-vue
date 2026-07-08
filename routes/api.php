@@ -274,6 +274,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList']);
         Route::get('/mk-production/{id}/serial-summary', [\App\Http\Controllers\MKProductionController::class, 'serialSummary']);
         Route::delete('/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'rollbackSerials']);
+        Route::get('/mk-serial/units', [\App\Http\Controllers\MKProductionController::class, 'getSerialUnits']);
 
         // Butcher Process API + serial routes
         Route::get('/butcher-processes', [\App\Http\Controllers\ButcherProcessController::class, 'apiIndex']);

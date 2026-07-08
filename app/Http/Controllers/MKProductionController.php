@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Support\InventorySerialInUse;
+use App\Support\InventorySerialRepackChunk;
 
 class MKProductionController extends Controller
 {
@@ -872,6 +873,7 @@ class MKProductionController extends Controller
     {
         $rows = DB::table('inventory_item_serials as s')
             ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
+            ->leftJoin('units as ru', 'ru.id', '=', 's.repack_unit_id')
             ->select(
                 's.id',
                 's.serial_number',
@@ -879,7 +881,10 @@ class MKProductionController extends Controller
                 's.ref_po_number',
                 's.ref_gr_number',
                 's.generated_at',
-                'u.name as unit_name'
+                's.repack_unit_id',
+                's.repack_qty',
+                'u.name as unit_name',
+                'ru.name as repack_unit_name'
             )
             ->where('s.source_type', 'mk_production')
             ->where('s.source_id', $id)
@@ -887,6 +892,19 @@ class MKProductionController extends Controller
             ->get();
 
         return response()->json($rows);
+    }
+
+    public function getSerialUnits()
+    {
+        $units = cache()->remember('active_units', 300, function () {
+            return DB::table('units')
+                ->where('status', 'active')
+                ->select('id', 'name')
+                ->orderBy('name')
+                ->get();
+        });
+
+        return response()->json($units);
     }
 
     public function rollbackSerials($id)
@@ -913,7 +931,7 @@ class MKProductionController extends Controller
         ]);
     }
 
-    public function generateSerials($id)
+    public function generateSerials(Request $request, $id)
     {
         $prod = DB::table('mk_productions as mp')
             ->join('items as i', 'i.id', '=', 'mp.item_id')
@@ -923,6 +941,7 @@ class MKProductionController extends Controller
                 'mp.unit_id',
                 'mp.qty_jadi',
                 'mp.warehouse_id',
+                'mp.batch_number',
                 'i.small_unit_id',
                 'i.medium_unit_id',
                 'i.large_unit_id',
@@ -937,11 +956,26 @@ class MKProductionController extends Controller
         }
 
         $qtyIn = (float) ($prod->qty_jadi ?: 0);
-        $serialCount = (int) round($qtyIn);
-        if ($serialCount <= 0 || abs($qtyIn - $serialCount) > 0.00001) {
+        $repackUnitId = $request->input('repack_unit_id');
+        $repackQty = (float) $request->input('repack_qty', 0);
+
+        if ($repackUnitId && $repackQty > 0) {
+            $serialCount = InventorySerialRepackChunk::serialCount($qtyIn, $repackQty);
+        } else {
+            $repackUnitId = null;
+            $repackQty = null;
+            $serialCount = (int) round($qtyIn);
+            if ($serialCount <= 0 || abs($qtyIn - $serialCount) > 0.00001) {
+                return response()->json([
+                    'message' => 'Qty In (qty jadi) harus bilangan bulat positif agar bisa generate serial.',
+                    'qty_in' => round($qtyIn, 4),
+                ], 422);
+            }
+        }
+
+        if ($serialCount <= 0) {
             return response()->json([
-                'message' => 'Qty In (qty jadi) harus bilangan bulat positif agar bisa generate serial.',
-                'qty_in' => round($qtyIn, 4),
+                'message' => 'Jumlah serial yang akan digenerate harus lebih dari 0.',
             ], 422);
         }
 
@@ -985,6 +1019,10 @@ class MKProductionController extends Controller
             $now = now();
             $rows = [];
             for ($i = 0; $i < $serialCount; $i++) {
+                $serialRepackQty = ($repackUnitId && $repackQty > 0)
+                    ? InventorySerialRepackChunk::qtyForIndex($qtyIn, $repackQty, $i)
+                    : $repackQty;
+
                 $rows[] = [
                     'source_type' => 'mk_production',
                     'source_id' => $prod->id,
@@ -1000,6 +1038,9 @@ class MKProductionController extends Controller
                     'cost_small' => $costSmall,
                     'cost_medium' => $costMedium,
                     'cost_large' => $costLarge,
+                    'ref_po_number' => $prod->batch_number,
+                    'repack_unit_id' => $repackUnitId,
+                    'repack_qty' => $serialRepackQty,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,
@@ -1010,10 +1051,20 @@ class MKProductionController extends Controller
             DB::table('inventory_item_serials')->insert($rows);
             DB::commit();
 
+            $repackUnitName = $repackUnitId
+                ? DB::table('units')->where('id', $repackUnitId)->value('name')
+                : null;
+            $fmtRepackQty = $repackQty !== null ? rtrim(rtrim(number_format($repackQty, 4, '.', ''), '0'), '.') : '';
+            $modeLabel = $repackUnitName
+                ? "(1 {$repackUnitName} = {$fmtRepackQty} unit asal)"
+                : '(tanpa konversi)';
+
             return response()->json([
                 'success' => true,
-                'message' => "Berhasil generate {$serialCount} serial MK Production.",
+                'message' => "Berhasil generate {$serialCount} serial MK Production {$modeLabel}.",
                 'total' => $serialCount,
+                'repack_unit_id' => $repackUnitId,
+                'repack_qty' => $repackQty,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();

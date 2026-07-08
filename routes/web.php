@@ -1409,6 +1409,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/api/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'serialList'])->name('mk-production.serial-list');
     Route::get('/api/mk-production/{id}/serial-summary', [\App\Http\Controllers\MKProductionController::class, 'serialSummary'])->name('mk-production.serial-summary');
     Route::delete('/api/mk-production/{id}/serials', [\App\Http\Controllers\MKProductionController::class, 'rollbackSerials'])->name('mk-production.rollback-serials');
+    Route::get('/api/mk-serial/units', [\App\Http\Controllers\MKProductionController::class, 'getSerialUnits'])->name('mk-serial.units');
     Route::get('/mk-production/test/bom-data', [\App\Http\Controllers\MKProductionController::class, 'testBomData'])->name('mk-production.test-bom-data');
     
     // Outlet WIP Production

@@ -525,19 +525,111 @@ const loadSerialSummary = async () => {
 }
 
 const generateSerial = async () => {
-  const confirm = await Swal.fire({
-    title: 'Generate serial MK Production?',
-    text: `Generate berdasarkan Qty In ${Number(props.prod?.qty_jadi || 0)} ${itemUnitName.value || ''}`,
+  const qtyIn = Number(props.prod?.qty_jadi || 0)
+  const itemName = props.item?.name || ''
+  const sourceUnitName = itemUnitName.value || 'unit'
+
+  let unitOptions = ''
+  try {
+    const { data: units } = await axios.get('/api/mk-serial/units')
+    unitOptions = (units || []).map((u) => `<option value="${u.id}">${u.name}</option>`).join('')
+  } catch (e) {
+    unitOptions = ''
+  }
+
+  const { value: formValues, isConfirmed } = await Swal.fire({
+    title: 'Generate Serial',
+    html: `
+      <div style="text-align:left;font-size:14px;">
+        <div style="margin-bottom:10px;">
+          <strong>Item:</strong> ${itemName}<br>
+          <strong>Qty In:</strong> ${qtyIn} ${sourceUnitName}
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-weight:600;display:block;margin-bottom:4px;">Mode:</label>
+          <div style="display:flex;gap:16px;">
+            <label style="cursor:pointer;"><input type="radio" name="swal-conv-mode" value="no" checked> Tanpa Konversi</label>
+            <label style="cursor:pointer;"><input type="radio" name="swal-conv-mode" value="yes"> Konversi Unit</label>
+          </div>
+        </div>
+        <div id="swal-conv-wrapper" style="display:none;margin-bottom:10px;">
+          <div style="margin-bottom:8px;">
+            <label style="font-weight:600;display:block;margin-bottom:4px;">Unit Tujuan Serial:</label>
+            <select id="swal-repack-unit" class="swal2-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;">
+              <option value="">-- Pilih Unit --</option>
+              ${unitOptions}
+            </select>
+          </div>
+          <div>
+            <label style="font-weight:600;display:block;margin-bottom:4px;">1 <span id="swal-target-unit-label">[unit tujuan]</span> = berapa ${sourceUnitName}?</label>
+            <input type="number" id="swal-repack-qty" min="0.01" step="0.01" value="1" class="swal2-input" style="width:100%;margin:0;">
+          </div>
+        </div>
+        <div style="margin-top:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
+          <span style="font-weight:600;">Jumlah serial:</span> <span id="swal-serial-count">${qtyIn}</span>
+        </div>
+      </div>
+    `,
     icon: 'question',
     showCancelButton: true,
     confirmButtonText: 'Ya, generate',
-    cancelButtonText: 'Batal'
+    cancelButtonText: 'Batal',
+    didOpen: () => {
+      const radios = document.querySelectorAll('input[name="swal-conv-mode"]')
+      const convWrapper = document.getElementById('swal-conv-wrapper')
+      const unitSelect = document.getElementById('swal-repack-unit')
+      const qtyInput = document.getElementById('swal-repack-qty')
+      const countDisplay = document.getElementById('swal-serial-count')
+      const targetUnitLabel = document.getElementById('swal-target-unit-label')
+
+      const updateCount = () => {
+        const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no'
+        if (mode === 'yes') {
+          const repackQty = Math.max(0.01, parseFloat(qtyInput.value) || 1)
+          countDisplay.textContent = Math.ceil(qtyIn / repackQty)
+        } else {
+          countDisplay.textContent = qtyIn
+        }
+      }
+
+      radios.forEach((r) => r.addEventListener('change', (e) => {
+        convWrapper.style.display = e.target.value === 'yes' ? 'block' : 'none'
+        updateCount()
+      }))
+
+      unitSelect.addEventListener('change', () => {
+        const selectedOption = unitSelect.options[unitSelect.selectedIndex]
+        targetUnitLabel.textContent = selectedOption?.text || '[unit tujuan]'
+      })
+
+      qtyInput.addEventListener('input', updateCount)
+    },
+    preConfirm: () => {
+      const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no'
+      if (mode === 'yes') {
+        const repackUnitId = document.getElementById('swal-repack-unit')?.value
+        const repackQty = parseFloat(document.getElementById('swal-repack-qty')?.value) || 0
+        if (!repackUnitId) {
+          Swal.showValidationMessage('Pilih unit tujuan terlebih dahulu')
+          return false
+        }
+        if (repackQty <= 0) {
+          Swal.showValidationMessage('Qty konversi harus lebih dari 0')
+          return false
+        }
+        return { repack_unit_id: parseInt(repackUnitId), repack_qty: repackQty }
+      }
+      return { repack_unit_id: null, repack_qty: null }
+    }
   })
 
-  if (!confirm.isConfirmed) return
+  if (!isConfirmed || !formValues) return
 
   try {
-    const { data } = await axios.post(`/api/mk-production/${props.prod.id}/generate-serials`)
+    const { data } = await axios.post(`/api/mk-production/${props.prod.id}/generate-serials`, {
+      repack_unit_id: formValues.repack_unit_id,
+      repack_qty: formValues.repack_qty,
+    })
     await Swal.fire('Berhasil', data?.message || 'Serial berhasil digenerate', 'success')
     await loadSerialSummary()
   } catch (error) {
@@ -554,24 +646,34 @@ const showSerials = async () => {
       return
     }
 
-    const rowsHtml = data.slice(0, 200).map((row, idx) => `
+    const fmtQty = (v) => (v != null ? parseFloat(Number(v).toFixed(4)).toString() : '')
+
+    const rowsHtml = data.slice(0, 200).map((row, idx) => {
+      const convInfo = row.repack_unit_id && row.repack_qty
+        ? `<span style="background:#f3e8ff;color:#7c3aed;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;">1 ${row.repack_unit_name || '?'} = ${fmtQty(row.repack_qty)} ${row.unit_name || ''}</span>`
+        : `<span style="background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:4px;font-size:10px;">Tanpa konversi</span>`
+      return `
       <tr>
         <td style="border:1px solid #ddd;padding:4px;text-align:center;">${idx + 1}</td>
         <td style="border:1px solid #ddd;padding:4px;">${row.serial_number}</td>
         <td style="border:1px solid #ddd;padding:4px;">${row.unit_name || '-'}</td>
+        <td style="border:1px solid #ddd;padding:4px;">${convInfo}</td>
         <td style="border:1px solid #ddd;padding:4px;">${row.generated_at || '-'}</td>
         <td style="border:1px solid #ddd;padding:4px;text-align:center;">
           <button
             type="button"
             class="serial-pdf-btn"
             data-serial="${row.serial_number}"
+            data-repack-unit-name="${row.repack_unit_name || ''}"
+            data-repack-qty="${row.repack_qty || ''}"
+            data-unit-name="${row.unit_name || ''}"
             style="padding:2px 8px;background:#dbeafe;color:#1d4ed8;border-radius:4px;border:0;cursor:pointer;"
           >
             PDF 10x5
           </button>
         </td>
-      </tr>
-    `).join('')
+      </tr>`
+    }).join('')
 
     await Swal.fire({
       title: `Serial - ${props.item?.name || ''}`,
@@ -592,7 +694,8 @@ const showSerials = async () => {
               <tr>
                 <th style="border:1px solid #ddd;padding:4px;">No</th>
                 <th style="border:1px solid #ddd;padding:4px;">Serial</th>
-                <th style="border:1px solid #ddd;padding:4px;">Unit</th>
+                <th style="border:1px solid #ddd;padding:4px;">Unit Asal</th>
+                <th style="border:1px solid #ddd;padding:4px;">Konversi</th>
                 <th style="border:1px solid #ddd;padding:4px;">Generated At</th>
                 <th style="border:1px solid #ddd;padding:4px;">Print</th>
               </tr>
@@ -606,7 +709,12 @@ const showSerials = async () => {
         if (downloadAllBtn) {
           downloadAllBtn.addEventListener('click', () => {
             downloadSerialPDF(
-              data.map((row) => row.serial_number),
+              data.map((row) => ({
+                serial: row.serial_number,
+                repackQty: row.repack_qty,
+                repackUnitName: row.repack_unit_name,
+                unitName: row.unit_name,
+              })),
               {
                 itemName: props.item?.name || '',
                 batch: props.prod?.batch_number || '-',
@@ -617,16 +725,21 @@ const showSerials = async () => {
           })
         }
 
-        const rowPdfButtons = document.querySelectorAll('.serial-pdf-btn')
-        rowPdfButtons.forEach((btn) => {
+        document.querySelectorAll('.serial-pdf-btn').forEach((btn) => {
           btn.addEventListener('click', (event) => {
             const serial = event.target?.getAttribute('data-serial')
+            const repackUnitName = event.target?.getAttribute('data-repack-unit-name') || null
+            const repackQty = event.target?.getAttribute('data-repack-qty') || null
+            const unitName = event.target?.getAttribute('data-unit-name') || ''
             if (serial) {
               downloadSerialPDF([serial], {
                 itemName: props.item?.name || '',
                 batch: props.prod?.batch_number || '-',
                 productionDate: props.prod?.production_date || null,
                 expDays: Number(props.item?.exp || 0),
+                repackQty: repackQty ? parseFloat(repackQty) : null,
+                repackUnitName,
+                unitName,
               })
             }
           })
@@ -642,7 +755,24 @@ const showSerials = async () => {
 const downloadSerialPDF = (serials, meta) => {
   if (!serials?.length) return
 
-  // Meniru Items > Manage Barcode > Download PDF (10x5cm)
+  const entries = serials.map((entry) => {
+    if (typeof entry === 'string') {
+      return {
+        serial: entry,
+        repackQty: meta?.repackQty ?? null,
+        repackUnitName: meta?.repackUnitName ?? null,
+        unitName: meta?.unitName ?? '',
+      }
+    }
+
+    return {
+      serial: entry.serial,
+      repackQty: entry.repackQty ?? meta?.repackQty ?? null,
+      repackUnitName: entry.repackUnitName ?? meta?.repackUnitName ?? null,
+      unitName: entry.unitName ?? meta?.unitName ?? '',
+    }
+  })
+
   const labelWidth = 100 // 10cm
   const labelHeight = 50 // 5cm
   const gap = 5 // 0.5cm
@@ -656,7 +786,8 @@ const downloadSerialPDF = (serials, meta) => {
   const usableHeight = pdfHeight - (marginTop * 2)
   const rowsPerPage = Math.max(1, Math.floor(usableHeight / rowHeight))
 
-  serials.forEach((serial, idx) => {
+  entries.forEach((entry, idx) => {
+    const serial = entry.serial
     const itemsPerPage = columnsPerRow * rowsPerPage
     const indexInPage = idx % itemsPerPage
     if (idx > 0 && indexInPage === 0) {
@@ -687,11 +818,20 @@ const downloadSerialPDF = (serials, meta) => {
     doc.setFontSize(7)
     doc.setFont(undefined, 'bold')
     doc.text(`SERIAL: ${serial}`, x + labelWidth / 2, currentY, { align: 'center' })
-    currentY += 3.8
+    currentY += 3.5
     doc.setFontSize(8)
     doc.setFont(undefined, 'bold')
     doc.text(`${meta?.itemName || ''}`, x + labelWidth / 2, currentY, { align: 'center' })
     currentY += 3.2
+
+    if (entry.repackUnitName && entry.repackQty) {
+      doc.setFontSize(7)
+      doc.setFont(undefined, 'bold')
+      const fmtRepackQty = parseFloat(Number(entry.repackQty).toFixed(4)).toString()
+      doc.text(`1 ${entry.repackUnitName.toUpperCase()} = ${fmtRepackQty} ${(entry.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' })
+      currentY += 3
+    }
+
     doc.setFontSize(7)
     doc.setFont(undefined, 'normal')
     doc.text(`BATCH: ${meta?.batch || '-'}`, x + labelWidth / 2, currentY, { align: 'center' })
@@ -699,7 +839,7 @@ const downloadSerialPDF = (serials, meta) => {
     doc.text(`EXP: ${calculateExpDate(meta?.productionDate, meta?.expDays)}`, x + labelWidth / 2, currentY, { align: 'center' })
   })
 
-  const firstSerial = serials[0] || 'serial'
+  const firstSerial = entries[0]?.serial || 'serial'
   doc.save(`${firstSerial}_mk_production_labels_10x5cm.pdf`)
 }
 
