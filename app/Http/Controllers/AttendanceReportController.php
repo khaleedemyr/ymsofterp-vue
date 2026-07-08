@@ -509,7 +509,7 @@ class AttendanceReportController extends Controller
             
             $processedData[$key]['scans'][] = [
                 'scan_date' => $row->scan_date,
-                'inoutmode' => $row->inoutmode
+                'inoutmode' => (int) $row->inoutmode,
             ];
         }
         
@@ -517,86 +517,92 @@ class AttendanceReportController extends Controller
         $result = [];
         foreach ($processedData as $key => $data) {
             if ($data['tanggal'] == $tanggal) {
-                $scans = collect($data['scans'])->sortBy('scan_date');
-                $inScans = $scans->where('inoutmode', 1);
-                $outScans = $scans->where('inoutmode', 2);
-                
-                // Ambil scan masuk pertama
-                $jamIn = $inScans->first()['scan_date'] ?? null;
-                $jamOut = null;
-                $totalIn = $inScans->count();
-                $totalOut = $outScans->count();
-                
-                if ($jamIn) {
-                    // Cari scan keluar di hari yang sama
-                    $sameDayOuts = $outScans->where('scan_date', '>', $jamIn);
-                    
-                    // Cari scan keluar di hari berikutnya (cross-day)
-                    $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
-                    $nextDayOuts = collect();
-                    
-                    if (isset($processedData[$nextDayKey])) {
-                        $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
-                        $nextDayOuts = $nextDayScans->where('inoutmode', 2);
-                    }
-                    
-                    // Tentukan OUT scan yang paling masuk akal - SAMA DENGAN AttendanceController
-                    if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
-                        // Ada both same-day dan cross-day OUT scan
-                        $lastSameDayOut = $sameDayOuts->last()['scan_date'];
-                        $firstNextDayOut = $nextDayOuts->first()['scan_date'];
-                        
-                        // Cek durasi same-day OUT
-                        $sameDayDuration = strtotime($lastSameDayOut) - strtotime($jamIn);
-                        $outHour = (int)date('H', strtotime($firstNextDayOut));
-                        
-                        // Prioritas cross-day jika:
-                        // 1. Same-day OUT terlalu pendek (< 5 jam) ATAU
-                        // 2. Cross-day OUT di pagi sangat awal (00:00-06:00)
-                        if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
-                            $jamOut = $firstNextDayOut;
-                            $totalOut = 1;
-                        } else {
-                            $jamOut = $lastSameDayOut;
-                        }
-                    } elseif ($sameDayOuts->isNotEmpty()) {
-                        // Hanya ada same-day OUT scan
-                        $jamOut = $sameDayOuts->last()['scan_date'];
-                    } elseif ($nextDayOuts->isNotEmpty()) {
-                        // Hanya ada cross-day OUT scan
-                        $firstNextDayOut = $nextDayOuts->first()['scan_date'];
-                        $outHour = (int)date('H', strtotime($firstNextDayOut));
-                        
-                        // Untuk cross-day, hanya gunakan jika di pagi sangat awal (00:00-12:00)
-                        if ($outHour >= 0 && $outHour <= 12) {
-                            $jamOut = $firstNextDayOut;
-                            $totalOut = 1;
-                        }
-                    }
-                }
-                
-                // Deteksi attendance tanpa checkout
-                $has_no_checkout = false;
-                if ($jamIn && !$jamOut) {
-                    $has_no_checkout = true;
-                }
-                
-                
-                $result[] = [
-                    'id_outlet' => $data['id_outlet'],
-                    'nama_outlet' => $data['nama_outlet'],
-                    'jam_in' => $jamIn ? date('H:i:s', strtotime($jamIn)) : null,
-                    'jam_out' => $jamOut ? date('H:i:s', strtotime($jamOut)) : null,
-                    'total_in' => $totalIn,
-                    'total_out' => $totalOut,
-                    'has_no_checkout' => $has_no_checkout,
-                ];
+                $result[] = $this->buildOutletAttendanceDetailRow($data, $processedData, $tanggal, $nextDay);
             }
         }
         
         
         \Log::info('Attendance detail result', ['result' => $result]);
         return response()->json($result);
+    }
+
+    /**
+     * Detail absensi per outlet per hari (termasuk scan KEMBALI / mode 4).
+     *
+     * @param  array<string, mixed>  $data
+     * @param  array<string, array<string, mixed>>  $processedData
+     * @return array<string, mixed>
+     */
+    private function buildOutletAttendanceDetailRow(array $data, array $processedData, string $tanggal, string $nextDay): array
+    {
+        $scans = collect($data['scans'])->sortBy('scan_date')->values();
+        $inScans = $scans->where('inoutmode', AttendanceWorkTimelineService::MODE_IN);
+        $kembaliScans = $scans->where('inoutmode', AttendanceWorkTimelineService::MODE_KEMBALI);
+        $outScans = $scans->where('inoutmode', AttendanceWorkTimelineService::MODE_OUT);
+
+        $workStartScan = $scans->first(function (array $scan) {
+            return in_array((int) $scan['inoutmode'], [
+                AttendanceWorkTimelineService::MODE_IN,
+                AttendanceWorkTimelineService::MODE_KEMBALI,
+            ], true);
+        });
+
+        $workStart = $workStartScan['scan_date'] ?? null;
+        $jamIn = $inScans->first()['scan_date'] ?? null;
+        $jamKembali = $kembaliScans->first()['scan_date'] ?? null;
+        $jamOut = null;
+        $totalOut = $outScans->count();
+
+        if ($workStart) {
+            $sameDayOuts = $outScans->where('scan_date', '>', $workStart);
+
+            $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
+            $nextDayOuts = collect();
+            if (isset($processedData[$nextDayKey])) {
+                $nextDayScans = collect($processedData[$nextDayKey]['scans'])->sortBy('scan_date');
+                $nextDayOuts = $nextDayScans->where('inoutmode', AttendanceWorkTimelineService::MODE_OUT);
+            }
+
+            if ($sameDayOuts->isNotEmpty() && $nextDayOuts->isNotEmpty()) {
+                $lastSameDayOut = $sameDayOuts->last()['scan_date'];
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                $sameDayDuration = strtotime($lastSameDayOut) - strtotime($workStart);
+                $outHour = (int) date('H', strtotime($firstNextDayOut));
+
+                if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
+                    $jamOut = $firstNextDayOut;
+                    $totalOut = max(1, $totalOut);
+                } else {
+                    $jamOut = $lastSameDayOut;
+                }
+            } elseif ($sameDayOuts->isNotEmpty()) {
+                $jamOut = $sameDayOuts->last()['scan_date'];
+            } elseif ($nextDayOuts->isNotEmpty()) {
+                $firstNextDayOut = $nextDayOuts->first()['scan_date'];
+                $outHour = (int) date('H', strtotime($firstNextDayOut));
+
+                if ($outHour >= 0 && $outHour <= 12) {
+                    $jamOut = $firstNextDayOut;
+                    $totalOut = max(1, $totalOut);
+                }
+            }
+        }
+
+        $hasNoCheckout = (bool) ($workStart && ! $jamOut);
+
+        return [
+            'id_outlet' => $data['id_outlet'],
+            'nama_outlet' => $data['nama_outlet'],
+            'jam_in' => $jamIn ? date('H:i:s', strtotime($jamIn)) : null,
+            'jam_kembali' => $jamKembali ? date('H:i:s', strtotime($jamKembali)) : null,
+            'jam_out' => $jamOut ? date('H:i:s', strtotime($jamOut)) : null,
+            'jam_mulai' => $workStart ? date('H:i:s', strtotime($workStart)) : null,
+            'jam_mulai_type' => $jamIn ? 'in' : ($jamKembali ? 'kembali' : null),
+            'total_in' => $inScans->count(),
+            'total_kembali' => $kembaliScans->count(),
+            'total_out' => $totalOut,
+            'has_no_checkout' => $hasNoCheckout,
+        ];
     }
 
     // Endpoint untuk info shift karyawan per tanggal

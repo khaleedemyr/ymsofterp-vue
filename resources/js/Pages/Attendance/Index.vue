@@ -347,7 +347,7 @@
                   {{ detail.nama_outlet }}
                 </h4>
                 <span class="text-sm text-gray-500 dark:text-gray-400">
-                  Total: IN {{ detail.total_in }}, OUT {{ detail.total_out }}
+                  Total: IN {{ detail.total_in }}, Kembali {{ detail.total_kembali || 0 }}, OUT {{ detail.total_out }}
                 </span>
               </div>
               
@@ -358,6 +358,14 @@
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Jam Masuk:</span>
                     <span class="text-sm text-gray-900 dark:text-gray-100">
                       {{ detail.jam_in || '-' }}
+                    </span>
+                  </div>
+
+                  <div v-if="detail.jam_kembali" class="flex items-center gap-2">
+                    <i class="fa-solid fa-rotate-left text-amber-500"></i>
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Jam Kembali:</span>
+                    <span class="text-sm text-amber-700 dark:text-amber-300">
+                      {{ detail.jam_kembali }}
                     </span>
                   </div>
                   
@@ -378,7 +386,7 @@
                     <i class="fa-solid fa-clock text-blue-500"></i>
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Durasi Kerja:</span>
                     <span class="text-sm text-gray-900 dark:text-gray-100">
-                      {{ calculateWorkDuration(detail.jam_in, detail.jam_out) }}
+                      {{ calculateWorkDuration(detail.jam_mulai || detail.jam_in || detail.jam_kembali, detail.jam_out) }}
                     </span>
                   </div>
                   
