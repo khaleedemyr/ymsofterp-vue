@@ -63,6 +63,7 @@ const correctionData = ref({
   newValue: null,
   newDate: '',
   newTime: '',
+  newInoutmode: '1',
   reason: '',
   userInfo: null,
   dateInfo: null,
@@ -211,6 +212,7 @@ function openCorrectionModal(record, type) {
     newValue: type === 'schedule' ? record.shift_id : (record.scan_date ? formatDateTimeForInput(record.scan_date) : ''),
     newDate: type === 'schedule' ? '' : dateStr,
     newTime: type === 'schedule' ? '' : timeStr,
+    newInoutmode: type === 'attendance' ? String(record.inoutmode ?? '1') : '1',
     reason: '',
     userInfo: record,
     dateInfo: type === 'schedule' ? record.tanggal : record.scan_date,
@@ -228,6 +230,7 @@ function closeCorrectionModal() {
     newValue: null,
     newDate: '',
     newTime: '',
+    newInoutmode: '1',
     reason: '',
     userInfo: null,
     dateInfo: null,
@@ -322,6 +325,16 @@ async function submitCorrection() {
       Swal.fire('Error', 'Format waktu tidak valid! Gunakan format HH:MM (00:00 - 23:59)', 'error');
       return;
     }
+
+    const newDateTime = `${correctionData.value.newDate} ${correctionData.value.newTime}:00`;
+    const oldDateTime = correctionData.value.userInfo?.scan_date || '';
+    const oldMode = String(correctionData.value.userInfo?.inoutmode ?? '');
+    const newMode = String(correctionData.value.newInoutmode ?? '');
+    const timeUnchanged = oldDateTime.replace('T', ' ').slice(0, 19) === newDateTime;
+    if (timeUnchanged && oldMode === newMode) {
+      Swal.fire('Error', 'Ubah waktu dan/atau mode absen (IN/OUT/KEMBALI) sebelum mengirim koreksi.', 'error');
+      return;
+    }
   }
   
   // Prevent double click
@@ -349,7 +362,7 @@ async function submitCorrection() {
       // Combine date and time to create proper datetime format
       const newDateTime = `${correctionData.value.newDate} ${correctionData.value.newTime}:00`;
       payload.scan_date = newDateTime;
-      payload.inoutmode = correctionData.value.userInfo.inoutmode;
+      payload.inoutmode = parseInt(correctionData.value.newInoutmode, 10);
       payload.old_scan_date = correctionData.value.userInfo.scan_date;
     }
     
@@ -394,6 +407,22 @@ function getShiftName(shiftId) {
   if (!shiftId) return 'OFF';
   const shift = filteredShifts.value.find(s => s.id === shiftId);
   return shift ? `${shift.shift_name} (${shift.time_start} - ${shift.time_end})` : 'Unknown';
+}
+
+function formatInoutMode(mode) {
+  const value = parseInt(mode, 10);
+  if (value === 1) return 'IN';
+  if (value === 2) return 'OUT';
+  if (value === 4) return 'KEMBALI';
+  return `MODE ${mode}`;
+}
+
+function inoutModeBadgeClass(mode) {
+  const value = parseInt(mode, 10);
+  if (value === 1) return 'bg-green-100 text-green-800';
+  if (value === 2) return 'bg-red-100 text-red-800';
+  if (value === 4) return 'bg-amber-100 text-amber-800';
+  return 'bg-gray-100 text-gray-800';
 }
 
 function validateTimeInput(event) {
@@ -671,9 +700,9 @@ if (userOutletId && userOutletId != 1) {
                     {{ formatDateTime(attendance.scan_date) }}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <span :class="attendance.inoutmode == 1 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                    <span :class="inoutModeBadgeClass(attendance.inoutmode)"
                           class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full">
-                      {{ attendance.inoutmode == 1 ? 'IN' : 'OUT' }}
+                      {{ formatInoutMode(attendance.inoutmode) }}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -796,6 +825,7 @@ if (userOutletId && userOutletId != 1) {
                   >
                     <option value="1">Check In</option>
                     <option value="2">Check Out</option>
+                    <option value="4">Kembali</option>
                   </select>
                 </div>
               </div>
@@ -876,6 +906,7 @@ if (userOutletId && userOutletId != 1) {
                 </span>
                 <span v-else class="text-sm text-gray-700">
                   {{ formatDateTime(correctionData.currentValue) }}
+                  <span class="ml-1 font-medium">({{ formatInoutMode(correctionData.userInfo?.inoutmode) }})</span>
                 </span>
               </div>
             </div>
@@ -907,7 +938,15 @@ if (userOutletId && userOutletId != 1) {
                   class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   @input="validateTimeInput"
                 >
-                <p class="text-xs text-gray-500">Format: 00:00 - 23:59 (24 jam)</p>
+                <select
+                  v-model="correctionData.newInoutmode"
+                  class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="1">Check In (IN)</option>
+                  <option value="2">Check Out (OUT)</option>
+                  <option value="4">Kembali (KEMBALI)</option>
+                </select>
+                <p class="text-xs text-gray-500">Format waktu: 00:00 - 23:59 (24 jam). Ubah mode jika salah scan IN/OUT.</p>
               </div>
             </div>
 

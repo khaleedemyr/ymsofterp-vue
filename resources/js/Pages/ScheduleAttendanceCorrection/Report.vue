@@ -558,6 +558,14 @@ function getStatusText(status) {
 
 // Load initial data
 // Format correction value for display
+function formatAttendanceInoutMode(mode) {
+    const value = parseInt(mode, 10);
+    if (value === 1) return 'Masuk';
+    if (value === 2) return 'Keluar';
+    if (value === 4) return 'Kembali';
+    return `Mode ${mode}`;
+}
+
 function formatCorrectionValue(item, type) {
     const value = type === 'old' ? item.old_value : item.new_value;
     
@@ -574,7 +582,7 @@ function formatCorrectionValue(item, type) {
                 second: '2-digit'
             });
             
-            const inoutMode = data.inoutmode === 1 ? 'Masuk' : 'Keluar';
+            const inoutMode = formatAttendanceInoutMode(data.inoutmode);
             
             return `${inoutMode} ${time}`;
         } catch (error) {

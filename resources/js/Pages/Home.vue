@@ -5773,6 +5773,14 @@ function formatCorrectionValue(approval) {
 }
 
 // Format correction time for detailed display
+function formatCorrectionInoutMode(mode) {
+    const value = parseInt(mode, 10);
+    if (value === 1) return 'Masuk';
+    if (value === 2) return 'Keluar';
+    if (value === 4) return 'Kembali';
+    return `Mode ${mode}`;
+}
+
 function getFormattedCorrectionTime(jsonValue) {
     try {
         const data = JSON.parse(jsonValue);
@@ -5783,7 +5791,7 @@ function getFormattedCorrectionTime(jsonValue) {
             minute: '2-digit',
             second: '2-digit'
         });
-        const mode = data.inoutmode === 1 ? 'Masuk' : 'Keluar';
+        const mode = formatCorrectionInoutMode(data.inoutmode);
         
         return `${date} ${time} (${mode})`;
     } catch (error) {
@@ -5807,7 +5815,7 @@ function formatAnyCorrectionValue(oldValue, newValue, type = 'attendance') {
                     minute: '2-digit',
                     second: '2-digit'
                 });
-                const mode = newData.inoutmode === 1 ? 'Masuk' : 'Keluar';
+                const mode = formatCorrectionInoutMode(newData.inoutmode);
                 return `Input ${mode}: ${time}`;
             }
         } catch (error) {
@@ -5832,8 +5840,18 @@ function formatAnyCorrectionValue(oldValue, newValue, type = 'attendance') {
                 second: '2-digit'
             });
             
-            const mode = oldData.inoutmode === 1 ? 'Masuk' : 'Keluar';
-            return `Waktu ${mode}: ${oldTime} → ${newTime}`;
+            const oldMode = formatCorrectionInoutMode(oldData.inoutmode);
+            const newMode = formatCorrectionInoutMode(newData.inoutmode);
+
+            if (oldMode !== newMode && oldTime === newTime) {
+                return `Mode: ${oldMode} → ${newMode} (${oldTime})`;
+            }
+
+            if (oldMode !== newMode) {
+                return `${oldMode} ${oldTime} → ${newMode} ${newTime}`;
+            }
+
+            return `Waktu ${oldMode}: ${oldTime} → ${newTime}`;
         }
     } catch (error) {
         // If JSON parsing fails, try to extract time from string

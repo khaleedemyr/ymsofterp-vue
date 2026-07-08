@@ -309,7 +309,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             'user_id' => 'required|integer',
             'outlet_id' => 'required|integer',
             'scan_date' => 'required|date',
-            'inoutmode' => 'required|in:1,2',
+            'inoutmode' => 'required|in:1,2,4',
             'reason' => 'required|string|max:500'
         ]);
         
@@ -425,7 +425,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             'sn' => 'required|string',
             'pin' => 'required|string',
             'scan_date' => 'required|date',
-            'inoutmode' => 'required|in:1,2,3,4,5,"1","2","3","4","5"', // Accept both string and integer
+            'inoutmode' => 'required|in:1,2,4,"1","2","4"',
             'old_scan_date' => 'required|date',
             'reason' => 'required|string|max:500',
         ]);
@@ -433,7 +433,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         $sn = $request->input('sn');
         $pin = $request->input('pin');
         $newScanDate = $request->input('scan_date');
-        $inoutmode = (int) $request->input('inoutmode'); // Convert to integer
+        $newInoutmode = (int) $request->input('inoutmode');
         $oldScanDate = $request->input('old_scan_date');
         $reason = $request->input('reason');
         $userId = auth()->id();
@@ -465,6 +465,9 @@ class ScheduleAttendanceCorrectionController extends Controller
             
             $oldValue = date('d/m/Y H:i:s', strtotime($oldRecord->scan_date));
             $newValue = date('d/m/Y H:i:s', strtotime($newScanDate));
+            $oldInoutmode = (int) $oldRecord->inoutmode;
+            $oldModeLabel = $this->formatInoutModeLabel($oldInoutmode);
+            $newModeLabel = $this->formatInoutModeLabel($newInoutmode);
             
             // Insert approval request with additional data for attendance update
             $approvalId = DB::table('schedule_attendance_correction_approvals')->insertGetId([
@@ -478,7 +481,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'sn' => $sn,
                     'pin' => $pin,
                     'scan_date' => $oldScanDate,
-                    'inoutmode' => $inoutmode,
+                    'inoutmode' => $oldInoutmode,
                     'verifymode' => $oldRecord->verifymode,
                     'device_ip' => $oldRecord->device_ip
                 ]),
@@ -486,7 +489,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'sn' => $sn,
                     'pin' => $pin,
                     'scan_date' => $newScanDate,
-                    'inoutmode' => $inoutmode,
+                    'inoutmode' => $newInoutmode,
                     'verifymode' => $oldRecord->verifymode,
                     'device_ip' => $oldRecord->device_ip
                 ]),
@@ -499,7 +502,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             
             HrdApprovalAccess::notifyHrdApprovers([
                 'type' => 'attendance_correction_approval',
-                'message' => "Permohonan koreksi attendance untuk {$oldRecord->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($oldRecord->scan_date)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} → Ke: {$newValue}",
+                'message' => "Permohonan koreksi attendance untuk {$oldRecord->nama_lengkap} pada tanggal " . date('d/m/Y', strtotime($oldRecord->scan_date)) . " membutuhkan persetujuan Anda. Dari: {$oldValue} ({$oldModeLabel}) → Ke: {$newValue} ({$newModeLabel})",
                 'url' => '/schedule-attendance-correction',
                 'is_read' => 0,
             ]);
@@ -943,6 +946,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                         ->where('inoutmode', $oldData['inoutmode'])
                         ->update([
                             'scan_date' => $newData['scan_date'],
+                            'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
                             'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
                             'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
                         ]);
@@ -972,6 +976,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                             ->where('id', $approval->record_id)
                             ->update([
                                 'scan_date' => $newData['scan_date'],
+                                'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
                                 'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
                                 'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
                             ]);
@@ -1005,6 +1010,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                         ->where('inoutmode', $oldData['inoutmode'])
                         ->update([
                             'scan_date' => $newData['scan_date'],
+                            'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
                             'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
                             'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
                         ]);
@@ -1480,5 +1486,15 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ];
             }
         }, $filename);
+    }
+
+    private function formatInoutModeLabel(int $mode): string
+    {
+        return match ($mode) {
+            1 => 'IN',
+            2 => 'OUT',
+            4 => 'KEMBALI',
+            default => 'MODE ' . $mode,
+        };
     }
 }

@@ -2574,7 +2574,7 @@ const formatCorrectionValue = (value, type) => {
           minute: '2-digit'
         })
         
-        const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : `Mode ${data.inoutmode}`
+        const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : data.inoutmode === 4 ? 'Kembali' : `Mode ${data.inoutmode}`
         
         return `${inoutText} - ${formattedDate} ${formattedTime}`
       }
@@ -2593,7 +2593,7 @@ const formatCorrectionValue = (value, type) => {
         minute: '2-digit'
       })
       
-      const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : `Mode ${data.inoutmode}`
+      const inoutText = data.inoutmode === 1 ? 'Masuk' : data.inoutmode === 2 ? 'Keluar' : data.inoutmode === 4 ? 'Kembali' : `Mode ${data.inoutmode}`
       
       return `Tambah ${inoutText} - ${formattedDate} ${formattedTime}`
     }
