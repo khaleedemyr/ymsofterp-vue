@@ -39,6 +39,52 @@ class TicketTeamAutoAssignService
         return true;
     }
 
+    /**
+     * Assign team from settings only when ticket has no assignment yet (for backfill).
+     *
+     * @return 'assigned'|'already_assigned'|'no_match'|'no_users'
+     */
+    public function backfillUnassignedTicket(
+        Ticket $ticket,
+        ?int $assignedBy = null,
+        bool $sendNotifications = false
+    ): string {
+        if (TicketAssignment::where('ticket_id', $ticket->id)->exists()) {
+            return 'already_assigned';
+        }
+
+        $setting = $this->resolveForTicket($ticket);
+        if (! $setting) {
+            return 'no_match';
+        }
+
+        $setting->loadMissing(['users']);
+        $userIds = $setting->users->pluck('id')->map(fn ($id) => (int) $id)->unique()->values();
+        if ($userIds->isEmpty()) {
+            return 'no_users';
+        }
+
+        $primaryUserId = $setting->users->firstWhere('pivot.is_primary', true)?->id;
+        $primaryUserId = $primaryUserId ? (int) $primaryUserId : $userIds->first();
+        if (! $userIds->contains($primaryUserId)) {
+            $primaryUserId = $userIds->first();
+        }
+
+        $assignedBy = $assignedBy ?: ($ticket->created_by ? (int) $ticket->created_by : $primaryUserId);
+
+        $this->assignUsers(
+            $ticket,
+            $userIds,
+            $primaryUserId,
+            $assignedBy,
+            $setting,
+            $sendNotifications,
+            'Backfill assign team'
+        );
+
+        return 'assigned';
+    }
+
     public function resolveForTicket(Ticket $ticket): ?TicketTeamSetting
     {
         $ticket->loadMissing('outlet');
@@ -66,6 +112,46 @@ class TicketTeamAutoAssignService
         return $bestScore > 0 ? $best : null;
     }
 
+    /**
+     * User IDs that should receive ticket notifications (assigned team or team setting match).
+     */
+    public function notificationRecipientUserIds(Ticket $ticket): Collection
+    {
+        $ticket->loadMissing(['assignedUsers']);
+
+        $userIds = $ticket->assignedUsers
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($userIds->isEmpty()) {
+            $setting = $this->resolveForTicket($ticket);
+            if ($setting) {
+                $setting->loadMissing('users');
+                $userIds = $setting->users
+                    ->pluck('id')
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values();
+            }
+        }
+
+        if ($userIds->isEmpty()) {
+            return collect();
+        }
+
+        return User::query()
+            ->whereIn('id', $userIds)
+            ->where('status', 'A')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+    }
+
     private function matchScore(TicketTeamSetting $setting, int $outletId, ?int $regionId): int
     {
         $outletIds = $setting->outlets->pluck('id_outlet')->map(fn ($id) => (int) $id);
@@ -91,7 +177,9 @@ class TicketTeamAutoAssignService
         Collection $userIds,
         int $primaryUserId,
         ?int $assignedBy,
-        TicketTeamSetting $setting
+        TicketTeamSetting $setting,
+        bool $sendNotifications = true,
+        string $historyLabel = 'Auto-assign team'
     ): void {
         TicketAssignment::where('ticket_id', $ticket->id)->delete();
 
@@ -115,16 +203,20 @@ class TicketTeamAutoAssignService
             'field_name' => 'assigned_users',
             'old_value' => null,
             'new_value' => null,
-            'description' => 'Auto-assign team (' . $label . '): ' . implode(', ', $assignedNames),
+            'description' => $historyLabel . ' (' . $label . '): ' . implode(', ', $assignedNames),
         ]);
 
-        $this->sendAssignmentNotifications($ticket, $userIds->all(), $primaryUserId, $assignedBy);
+        if ($sendNotifications) {
+            $this->sendAssignmentNotifications($ticket, $userIds->all(), $primaryUserId, $assignedBy);
+        }
 
         Log::info('Ticket auto-assigned from team setting', [
             'ticket_id' => $ticket->id,
             'setting_id' => $setting->id,
             'user_ids' => $userIds->all(),
             'primary_user_id' => $primaryUserId,
+            'send_notifications' => $sendNotifications,
+            'history_label' => $historyLabel,
         ]);
     }
 

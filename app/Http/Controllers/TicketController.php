@@ -4499,25 +4499,31 @@ class TicketController extends Controller
     }
 
     /**
-     * Send notifications for new comment to all commenters and division users
+     * Send notifications for new comment to assigned team and prior commenters.
      */
     private function sendCommentNotifications($ticket, $comment)
     {
         try {
-            // Get all users who have commented on this ticket
+            $currentUserId = (int) auth()->id();
+
+            // Users who already participated in this ticket thread
             $commenters = \App\Models\TicketComment::where('ticket_id', $ticket->id)
-                ->where('user_id', '!=', auth()->id()) // Exclude the current commenter
+                ->where('user_id', '!=', $currentUserId)
                 ->pluck('user_id')
-                ->unique();
+                ->map(fn ($id) => (int) $id);
 
-            // Get all users in the ticket's division with status 'A'
-            $divisionUsers = \App\Models\User::where('division_id', $ticket->divisi_id)
-                ->where('status', 'A')
-                ->where('id', '!=', auth()->id()) // Exclude the current commenter
-                ->pluck('id');
+            // Team from ticket assignment or ticketing team settings
+            $teamUserIds = app(TicketTeamAutoAssignService::class)
+                ->notificationRecipientUserIds($ticket);
 
-            // Combine and remove duplicates
-            $notifyUserIds = $commenters->merge($divisionUsers)->unique();
+            $creatorId = $ticket->created_by ? collect([(int) $ticket->created_by]) : collect();
+
+            $notifyUserIds = $commenters
+                ->merge($teamUserIds)
+                ->merge($creatorId)
+                ->filter(fn ($userId) => $userId > 0 && $userId !== $currentUserId)
+                ->unique()
+                ->values();
 
             // Get commenter name
             $commenter = auth()->user();
@@ -4552,10 +4558,10 @@ class TicketController extends Controller
                 'ticket_id' => $ticket->id,
                 'ticket_number' => $ticket->ticket_number,
                 'comment_id' => $comment->id,
-                'commenter_id' => auth()->id(),
+                'commenter_id' => $currentUserId,
                 'notified_users_count' => $notifyUserIds->count(),
-                'commenters_count' => $commenters->count(),
-                'division_users_count' => $divisionUsers->count()
+                'commenters_count' => $commenters->unique()->count(),
+                'team_users_count' => $teamUserIds->count(),
             ]);
 
         } catch (\Exception $e) {
