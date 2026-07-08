@@ -39,6 +39,8 @@ const selectedAuditors = ref([]);
 const selectedAuditees = ref([]);
 const notes = ref('');
 const search = ref('');
+/** Filter hasil parameter di detail (draft): all | C | NC | NA | unset */
+const resultFilter = ref('all');
 const saving = ref(false);
 const lastSavedAt = ref('');
 const capSaving = ref(false);
@@ -88,15 +90,46 @@ watch(() => [props.mode, props.audit?.id], () => {
   hydrateFromAudit();
 });
 
+const isDraftManage = computed(() => canManage.value && props.audit?.status === 'draft');
+
 const detailItems = computed(() => {
-  if (canManage.value && props.audit?.status === 'draft') {
-    return items.value;
+  let list;
+  if (isDraftManage.value) {
+    list = items.value;
+  } else {
+    list = items.value.filter((item) => {
+      if (item.result === 'NC') return true;
+      if (item.result !== 'C') return false;
+      return String(item.comment || '').trim().length > 0;
+    });
   }
-  return items.value.filter((item) => {
-    if (item.result === 'NC') return true;
-    if (item.result !== 'C') return false;
-    return String(item.comment || '').trim().length > 0;
-  });
+
+  if (resultFilter.value === 'all') {
+    return list;
+  }
+  if (resultFilter.value === 'unset') {
+    return list.filter((item) => !item.result);
+  }
+
+  return list.filter((item) => item.result === resultFilter.value);
+});
+
+const resultFilterCounts = computed(() => {
+  const source = isDraftManage.value
+    ? items.value
+    : items.value.filter((item) => {
+        if (item.result === 'NC') return true;
+        if (item.result !== 'C') return false;
+        return String(item.comment || '').trim().length > 0;
+      });
+
+  return {
+    all: source.length,
+    C: source.filter((item) => item.result === 'C').length,
+    NC: source.filter((item) => item.result === 'NC').length,
+    NA: source.filter((item) => item.result === 'NA').length,
+    unset: source.filter((item) => !item.result).length,
+  };
 });
 
 const groupedItems = computed(() => buildGroupedItems(detailItems.value));
@@ -1246,15 +1279,62 @@ function formatUserLabel(user) {
             v-model="search"
             type="text"
             class="w-full rounded-lg border-gray-300 text-sm md:w-96"
-            :placeholder="canManage && audit.status === 'draft' ? 'Cari parameter, kategori, subcategory...' : 'Cari parameter NC, kategori, subcategory...'"
+            :placeholder="isDraftManage ? 'Cari parameter, kategori, subcategory...' : 'Cari parameter NC, kategori, subcategory...'"
           >
         </div>
 
-        <div v-if="canManage && audit.status === 'draft'" class="mb-4 flex flex-wrap gap-2 text-xs">
-          <span class="inline-flex items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-700">Belum diisi</span>
-          <span class="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 font-semibold text-emerald-700">C</span>
-          <span class="inline-flex items-center rounded-full bg-rose-100 px-2.5 py-1 font-semibold text-rose-700">NC</span>
-          <span class="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 font-semibold text-slate-700">NA</span>
+        <div v-if="isDraftManage" class="mb-4 flex flex-wrap items-center gap-2 text-xs">
+          <span class="mr-1 font-semibold text-gray-500">Tampilkan:</span>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
+            :class="resultFilter === 'all'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+            @click="resultFilter = 'all'"
+          >
+            Semua ({{ resultFilterCounts.all }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
+            :class="resultFilter === 'C'
+              ? 'bg-emerald-600 text-white'
+              : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'"
+            @click="resultFilter = 'C'"
+          >
+            C ({{ resultFilterCounts.C }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
+            :class="resultFilter === 'NC'
+              ? 'bg-rose-600 text-white'
+              : 'bg-rose-100 text-rose-700 hover:bg-rose-200'"
+            @click="resultFilter = 'NC'"
+          >
+            NC ({{ resultFilterCounts.NC }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
+            :class="resultFilter === 'NA'
+              ? 'bg-slate-700 text-white'
+              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'"
+            @click="resultFilter = 'NA'"
+          >
+            NA ({{ resultFilterCounts.NA }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full border border-dashed px-2.5 py-1 font-semibold transition"
+            :class="resultFilter === 'unset'
+              ? 'border-amber-500 bg-amber-500 text-white'
+              : 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'"
+            @click="resultFilter = 'unset'"
+          >
+            Belum diisi ({{ resultFilterCounts.unset }})
+          </button>
         </div>
 
         <div class="space-y-4">
@@ -1495,9 +1575,9 @@ function formatUserLabel(user) {
 
           <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
             {{
-              search.trim()
-                ? 'Tidak ada parameter NC yang cocok dengan pencarian.'
-                : (canManage && audit.status === 'draft'
+              search.trim() || resultFilter !== 'all'
+                ? 'Tidak ada parameter yang cocok dengan filter/pencarian.'
+                : (isDraftManage
                     ? 'Belum ada parameter audit dari template.'
                     : 'Tidak ada parameter NC pada audit ini.')
             }}
