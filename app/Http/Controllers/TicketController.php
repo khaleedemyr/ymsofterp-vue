@@ -238,34 +238,62 @@ class TicketController extends Controller
         }
     }
 
-    public static function userCanViewTicket($user, Ticket $ticket): bool
+    /** Superadmin: users.id_role = TICKET_MANAGER_ROLE_ID. */
+    public static function userIsTicketSuperadmin($user): bool
     {
-        if (self::userSeesAllTicketOutlets($user)) {
-            return true;
-        }
-        $oid = $user?->id_outlet;
-        if ($oid === null || $oid === '') {
+        if (! $user) {
             return false;
         }
 
-        return (int) $ticket->outlet_id === (int) $oid;
+        return (string) ($user->id_role ?? '') === self::TICKET_MANAGER_ROLE_ID;
+    }
+
+    public static function userCanViewTicket($user, Ticket $ticket): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        // Superadmin melihat semua ticket.
+        if (self::userIsTicketSuperadmin($user)) {
+            return true;
+        }
+
+        // Non-superadmin: ticket yang dia buat ATAU yang dirinya di-assign di tim.
+        // (Pembuat yang tidak di-assign tetap bisa melihat ticket buatannya.)
+        if ((int) ($ticket->created_by ?? 0) === (int) $user->id) {
+            return true;
+        }
+
+        return $ticket->assignedUsers()->where('users.id', $user->id)->exists();
     }
 
     /**
+     * Scope list/query ticket:
+     * - Superadmin (id_role): semua ticket.
+     * - Non-superadmin: ticket created_by user ATAU user ada di ticket_assignments.
+     *
      * @param  \Illuminate\Database\Eloquent\Builder<\App\Models\Ticket>  $query
      */
     protected function applyTicketOutletVisibility(\Illuminate\Database\Eloquent\Builder $query, $user): void
     {
-        if (self::userSeesAllTicketOutlets($user)) {
-            return;
-        }
-        $oid = $user?->id_outlet;
-        if ($oid === null || $oid === '') {
+        if (! $user) {
             $query->whereRaw('1 = 0');
 
             return;
         }
-        $query->where('outlet_id', (int) $oid);
+
+        if (self::userIsTicketSuperadmin($user)) {
+            return;
+        }
+
+        $uid = (int) $user->id;
+        $query->where(function ($q) use ($uid) {
+            $q->where('created_by', $uid)
+                ->orWhereHas('assignedUsers', function ($a) use ($uid) {
+                    $a->where('users.id', $uid);
+                });
+        });
     }
 
     /**
