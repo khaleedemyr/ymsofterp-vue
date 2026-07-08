@@ -233,19 +233,13 @@ class AttendanceReportController extends Controller
                                 
                                 // Untuk cross-day, tidak ada telat tambahan karena ini kelanjutan shift malam sebelumnya
                                 if (!($row->is_cross_day ?? false)) {
-                                    // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
-                                    if ($shift && $shift->time_end && $jam_keluar) {
-                                        $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                                        $scanOutDateTime = $row->jam_keluar;
-                                        
-                                        $end = strtotime($shiftEndDateTime);
-                                        $keluar = strtotime($scanOutDateTime);
-                                        $diff = $end - $keluar; // Selisih waktu shift end - scan out
-                                        
-                                        // Jika checkout lebih awal dari shift end, tambahkan ke telat
-                                        if ($diff > 0) {
-                                            $telat += round($diff/60); // Konversi detik ke menit
-                                        }
+                                    if ($shift && $shift->time_end && $row->jam_keluar) {
+                                        $telat += $this->calculateEarlyCheckoutLateness(
+                                            $row->jam_keluar,
+                                            $shift->time_end,
+                                            $row->is_cross_day ?? false,
+                                            $tanggal
+                                        );
                                     }
                                 }
                                 if ($shift && $shift->time_end && ! empty($row->work_minutes)) {
@@ -874,19 +868,13 @@ class AttendanceReportController extends Controller
                                 
                                 // Untuk cross-day, tidak ada telat tambahan karena ini kelanjutan shift malam sebelumnya
                                 if (!($row->is_cross_day ?? false)) {
-                                    // Tambahkan telat jika checkout terakhir kurang dari jam pulang/end shift
-                                    if ($shift && $shift->time_end && $jam_keluar) {
-                                        $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)) . ' ' . $shift->time_end;
-                                        $scanOutDateTime = $row->jam_keluar;
-                                        
-                                        $end = strtotime($shiftEndDateTime);
-                                        $keluar = strtotime($scanOutDateTime);
-                                        $diff = $end - $keluar; // Selisih waktu shift end - scan out
-                                        
-                                        // Jika checkout lebih awal dari shift end, tambahkan ke telat
-                                        if ($diff > 0) {
-                                            $telat += round($diff/60); // Konversi detik ke menit
-                                        }
+                                    if ($shift && $shift->time_end && $row->jam_keluar) {
+                                        $telat += $this->calculateEarlyCheckoutLateness(
+                                            $row->jam_keluar,
+                                            $shift->time_end,
+                                            $row->is_cross_day ?? false,
+                                            $tanggal
+                                        );
                                     }
                                 }
                                 
@@ -2977,14 +2965,14 @@ class AttendanceReportController extends Controller
             $telat = $this->calculateLateness($jamMasuk, $shift->time_start, $isCrossDay);
         }
 
-        // Early checkout: sama index — skip cross-day; pakai datetime lengkap untuk keluar
+        // Early checkout: pulang sebelum shift end juga dihitung telat (kecuali cross-day)
         if (! $isCrossDay && $shift && $shift->time_end && $processedRow->jam_keluar) {
-            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)).' '.$shift->time_end;
-            $scanOutDateTime = $processedRow->jam_keluar;
-            $diff = strtotime($shiftEndDateTime) - strtotime($scanOutDateTime);
-            if ($diff > 0) {
-                $telat += (int) round($diff / 60);
-            }
+            $telat += $this->calculateEarlyCheckoutLateness(
+                $processedRow->jam_keluar,
+                $shift->time_end,
+                $isCrossDay,
+                $tanggal
+            );
         }
 
         if ($shift && $processedRow->jam_keluar) {
@@ -3223,19 +3211,21 @@ class AttendanceReportController extends Controller
      * Perhitungan telat dari early checkout (checkout lebih awal dari shift end)
      * FIXED: Tidak menghitung telat untuk cross-day scenario
      */
-    private function calculateEarlyCheckoutLateness($jamKeluar, $shiftEnd, $isCrossDay = false) {
+    private function calculateEarlyCheckoutLateness($jamKeluar, $shiftEnd, $isCrossDay = false, ?string $tanggal = null) {
         if (!$jamKeluar || !$shiftEnd) {
             return 0;
         }
         
         // Untuk cross-day, tidak ada telat dari early checkout karena ini shift malam
         if ($isCrossDay) {
-            \Log::info('Cross-day attendance - no early checkout lateness', [
-                'jam_keluar' => $jamKeluar,
-                'shift_end' => $shiftEnd,
-                'is_cross_day' => $isCrossDay
-            ]);
             return 0;
+        }
+
+        if ($tanggal) {
+            $shiftEndDateTime = date('Y-m-d', strtotime($tanggal)).' '.$shiftEnd;
+            $diffSeconds = strtotime($shiftEndDateTime) - strtotime($jamKeluar);
+
+            return $diffSeconds > 0 ? (int) round($diffSeconds / 60) : 0;
         }
         
         // Ambil jam saja (abaikan tanggal)
@@ -3251,15 +3241,7 @@ class AttendanceReportController extends Controller
         
         // Jika checkout lebih awal dari shift end, hitung telat
         if ($diffSeconds > 0) {
-            $telatMinutes = round($diffSeconds / 60);
-            \Log::info('Early checkout lateness calculation', [
-                'jam_keluar' => $jamKeluarTime,
-                'shift_end' => $shiftEndTime,
-                'diff_seconds' => $diffSeconds,
-                'telat_minutes' => $telatMinutes,
-                'is_cross_day' => $isCrossDay
-            ]);
-            return $telatMinutes;
+            return (int) round($diffSeconds / 60);
         }
         
         return 0;

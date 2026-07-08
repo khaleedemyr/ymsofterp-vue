@@ -549,21 +549,23 @@ class AttendanceController extends Controller
                 }
                 
                 if (!$is_off && $shift && $shift->time_start && $shift->shift_id) {
-                    // Calculate telat (late arrival) - following AttendanceReportController logic exactly
-                    $start = strtotime($shift->time_start);
-                    $masuk = strtotime(date('H:i:s', strtotime($firstIn)));
-                    $diff = $masuk - $start;
-                    $telat = $diff > 0 ? round($diff/60) : 0;
-                    
-                    // Calculate lembur (overtime) - using improved logic from AttendanceReportController
-                    if ($lastOut && $shift->time_end) {
-                        $workMinutes = (int) ($result['work_minutes'] ?? 0);
-                        $lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHours(
-                            $workMinutes,
-                            $shift->time_start,
-                            $shift->time_end
-                        ));
-                    }
+                    $processedRow = (object) [
+                        'user_id' => $data['user_id'],
+                        'jam_masuk' => $firstIn,
+                        'jam_keluar' => $lastOut,
+                        'work_minutes' => (int) ($result['work_minutes'] ?? 0),
+                        'last_outlet_id' => $result['last_outlet_id'] ?? null,
+                        'is_cross_day' => $isCrossDay,
+                    ];
+
+                    $telatLembur = app(AttendanceReportController::class)->calculateDailyTelatLembur(
+                        $processedRow,
+                        $shift,
+                        $data['tanggal'],
+                        $is_off
+                    );
+                    $telat = $telatLembur['telat'];
+                    $lembur = $telatLembur['lembur'];
                 } else {
                     $firstIn = null;
                     $lastOut = null;
