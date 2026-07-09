@@ -1334,6 +1334,7 @@ Route::prefix('approval-app')->group(function () {
             Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ApiController::class, 'scheduleDetail']);
             Route::get('/schedules/{schedule}/materials', [\App\Http\Controllers\JustAcademy\ApiController::class, 'materials']);
             Route::post('/schedules/{schedule}/materials/{materialId}/complete', [\App\Http\Controllers\JustAcademy\ApiController::class, 'completeMaterial']);
+            Route::post('/schedules/{schedule}/quizzes/{quiz}/start', [\App\Http\Controllers\JustAcademy\ApiController::class, 'startQuiz']);
             Route::post('/schedules/{schedule}/quizzes/{quiz}/submit', [\App\Http\Controllers\JustAcademy\ApiController::class, 'submitQuiz']);
             Route::post('/check-in', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkIn']);
             Route::post('/check-out', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkOut']);

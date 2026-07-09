@@ -589,61 +589,176 @@ class JustAcademyService
                     ];
                 }
 
-                $submittedAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
-                    ->where('quiz_id', $quiz->id)
-                    ->where('user_id', $userId)
-                    ->whereNotNull('submitted_at')
-                    ->latest('id')
-                    ->first();
-
-                $poolSize = $quiz->questions->count();
-
-                if ($submittedAttempt) {
-                    return [
-                        'item_type' => 'quiz',
-                        'id' => $quiz->id,
-                        'title' => $quiz->title,
-                        'pass_score' => $quiz->pass_score,
-                        'is_required' => $item->is_required,
-                        'question_pool_size' => $poolSize,
-                        'questions_shown' => count($submittedAttempt->question_ids ?? []),
-                        'randomize_questions' => $quiz->randomize_questions,
-                        'randomize_options' => $quiz->randomize_options,
-                        'time_limit' => $this->buildQuizTimePayload($quiz),
-                        'attempt' => [
-                            'score' => $submittedAttempt->score,
-                            'passed' => $submittedAttempt->passed,
-                            'submitted_at' => $submittedAttempt->submitted_at,
-                        ],
-                        'questions' => [],
-                    ];
-                }
-
-                $openAttempt = $this->ensureOpenQuizAttempt($schedule, $quiz, $userId);
-                $questions = $this->resolveQuestionsByIds($quiz, $openAttempt->question_ids ?? []);
-
-                return [
-                    'item_type' => 'quiz',
-                    'id' => $quiz->id,
-                    'title' => $quiz->title,
-                    'pass_score' => $quiz->pass_score,
-                    'is_required' => $item->is_required,
-                    'question_pool_size' => $poolSize,
-                    'questions_shown' => count($questions),
-                    'randomize_questions' => $quiz->randomize_questions,
-                    'randomize_options' => $quiz->randomize_options,
-                    'time_limit' => $this->buildQuizTimePayload($quiz),
-                    'session' => [
-                        'started_at' => $openAttempt->started_at?->toIso8601String(),
-                        'quiz_progress' => $openAttempt->quiz_progress,
-                    ],
-                    'attempt' => null,
-                    'questions' => $this->formatQuestionsForParticipant($questions, $openAttempt->option_orders ?? []),
-                ];
+                return $this->buildParticipantQuizOverview($schedule, $quiz, $userId, $item, $poolSize);
             }
 
             return null;
         })->filter()->values();
+    }
+
+    public function buildParticipantQuizOverview(
+        JaSchedule $schedule,
+        JaQuiz $quiz,
+        int $userId,
+        JaProgramItem $item,
+        int $poolSize,
+    ): array {
+        $submittedAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNotNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if ($submittedAttempt) {
+            return [
+                'item_type' => 'quiz',
+                'id' => $quiz->id,
+                'title' => $quiz->title,
+                'pass_score' => $quiz->pass_score,
+                'is_required' => $item->is_required,
+                'question_pool_size' => $poolSize,
+                'questions_shown' => count($submittedAttempt->question_ids ?? []),
+                'randomize_questions' => $quiz->randomize_questions,
+                'randomize_options' => $quiz->randomize_options,
+                'time_limit' => $this->buildQuizTimePayload($quiz),
+                'status' => 'completed',
+                'time_expired' => false,
+                'attempt' => [
+                    'score' => $submittedAttempt->score,
+                    'passed' => $submittedAttempt->passed,
+                    'submitted_at' => $submittedAttempt->submitted_at,
+                ],
+                'questions' => [],
+                'session' => null,
+            ];
+        }
+
+        $openAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        $status = 'not_started';
+        $timeExpired = false;
+
+        if ($openAttempt) {
+            $questionCount = count($openAttempt->question_ids ?? []);
+            $timeExpired = $this->isQuizAttemptExpired($quiz, $openAttempt, $questionCount);
+            $status = $timeExpired ? 'expired' : 'in_progress';
+        }
+
+        return [
+            'item_type' => 'quiz',
+            'id' => $quiz->id,
+            'title' => $quiz->title,
+            'pass_score' => $quiz->pass_score,
+            'is_required' => $item->is_required,
+            'question_pool_size' => $poolSize,
+            'questions_shown' => $openAttempt ? count($openAttempt->question_ids ?? []) : null,
+            'randomize_questions' => $quiz->randomize_questions,
+            'randomize_options' => $quiz->randomize_options,
+            'time_limit' => $this->buildQuizTimePayload($quiz),
+            'status' => $status,
+            'time_expired' => $timeExpired,
+            'attempt' => null,
+            'questions' => [],
+            'session' => null,
+        ];
+    }
+
+    public function buildQuizTakingPayload(JaSchedule $schedule, JaQuiz $quiz, int $userId): array
+    {
+        $this->ensureParticipant($schedule, $userId);
+        $this->ensureCheckedIn($schedule, $userId);
+        $this->ensureTrainingStarted($schedule);
+
+        if (!$this->programHasQuiz($schedule->program, $quiz->id)) {
+            throw ValidationException::withMessages(['quiz' => 'Quiz tidak sesuai program jadwal.']);
+        }
+
+        $submittedAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNotNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if ($submittedAttempt) {
+            throw ValidationException::withMessages(['quiz' => 'Quiz sudah diselesaikan.']);
+        }
+
+        $this->abandonExpiredOpenAttempts($schedule, $quiz, $userId);
+
+        $openAttempt = $this->ensureOpenQuizAttempt($schedule, $quiz, $userId);
+        $questions = $this->resolveQuestionsByIds($quiz, $openAttempt->question_ids ?? []);
+        $poolSize = $quiz->questions->count();
+
+        return [
+            'item_type' => 'quiz',
+            'id' => $quiz->id,
+            'title' => $quiz->title,
+            'pass_score' => $quiz->pass_score,
+            'question_pool_size' => $poolSize,
+            'questions_shown' => count($questions),
+            'randomize_questions' => $quiz->randomize_questions,
+            'randomize_options' => $quiz->randomize_options,
+            'time_limit' => $this->buildQuizTimePayload($quiz),
+            'status' => 'in_progress',
+            'session' => [
+                'started_at' => $openAttempt->started_at?->toIso8601String(),
+                'quiz_progress' => $openAttempt->quiz_progress,
+            ],
+            'attempt' => null,
+            'questions' => $this->formatQuestionsForParticipant($questions, $openAttempt->option_orders ?? []),
+        ];
+    }
+
+    public function abandonExpiredOpenAttempts(JaSchedule $schedule, JaQuiz $quiz, int $userId): void
+    {
+        $openAttempt = JaQuizAttempt::where('schedule_id', $schedule->id)
+            ->where('quiz_id', $quiz->id)
+            ->where('user_id', $userId)
+            ->whereNull('submitted_at')
+            ->latest('id')
+            ->first();
+
+        if (!$openAttempt) {
+            return;
+        }
+
+        $questionCount = count($openAttempt->question_ids ?? []);
+        if (!$this->isQuizAttemptExpired($quiz, $openAttempt, $questionCount)) {
+            return;
+        }
+
+        $openAttempt->update([
+            'submitted_at' => now(),
+            'score' => 0,
+            'passed' => false,
+        ]);
+    }
+
+    public function isQuizAttemptExpired(JaQuiz $quiz, JaQuizAttempt $attempt, int $questionCount = 0): bool
+    {
+        if (!$attempt->started_at || $attempt->submitted_at) {
+            return false;
+        }
+
+        $mode = $quiz->effectiveTimeLimitMode();
+        $elapsed = $attempt->started_at->diffInSeconds(now());
+
+        if ($mode === 'quiz' && $quiz->time_limit_min) {
+            return $elapsed > ((int) $quiz->time_limit_min * 60);
+        }
+
+        if ($mode === 'question' && $quiz->time_limit_question_sec && $questionCount > 0) {
+            return $elapsed > ((int) $quiz->time_limit_question_sec * $questionCount);
+        }
+
+        return false;
     }
 
     public function markMaterialComplete(JaSchedule $schedule, int $userId, int $materialId): JaMaterialProgress

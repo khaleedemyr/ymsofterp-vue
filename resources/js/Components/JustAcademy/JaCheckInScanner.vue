@@ -119,7 +119,7 @@ function submitPayload(payload) {
       </div>
       <h2 class="text-lg font-semibold text-slate-800">Scan QR Check-in</h2>
       <p class="mt-1 text-sm text-slate-600">
-        Scan QR code dari halaman trainer untuk check-in. Setelah berhasil, materi dan quiz akan terbuka.
+        Scan QR code dari halaman trainer untuk check-in. Setelah berhasil, daftar materi dan quiz akan tampil.
       </p>
     </div>
 

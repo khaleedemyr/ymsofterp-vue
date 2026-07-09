@@ -8,6 +8,8 @@ const props = defineProps({
   scheduleId: { type: Number, required: true },
 });
 
+const emit = defineEmits(['finished']);
+
 const quizAnswers = useForm({ answers: {} });
 const currentIndex = ref(props.item.session?.quiz_progress?.current_index ?? 0);
 const questionStartedAt = ref(
@@ -49,6 +51,9 @@ function calcRemaining() {
 
   if (isQuizTotal.value) {
     const start = new Date(props.item.session?.started_at).getTime();
+    if (!props.item.session?.started_at || Number.isNaN(start)) {
+      return (props.item.time_limit?.quiz_minutes || 0) * 60;
+    }
     const limit = (props.item.time_limit?.quiz_minutes || 0) * 60;
     return Math.max(0, limit - Math.floor((now - start) / 1000));
   }
@@ -125,6 +130,7 @@ function submitQuiz(auto = false) {
       if (auto) {
         jaToastSuccess('Waktu habis — jawaban terakhir dikirim otomatis.');
       }
+      emit('finished');
     },
     onError: (e) => jaFormErrors(e),
   });

@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import JaCheckInScanner from '@/Components/JustAcademy/JaCheckInScanner.vue';
 import JaQuizTaking from '@/Components/JustAcademy/JaQuizTaking.vue';
@@ -17,8 +18,22 @@ const props = defineProps({
 
 const feedbackForm = useForm({ rating: 5, comment: '', trainer_id: '' });
 
+const activeItemKey = ref(null);
+const activeQuizPayload = ref(null);
+const startingQuiz = ref(false);
+const quizStartError = ref('');
+
 const isCheckedIn = computed(() => props.checkedIn || !!props.attendance?.check_in_at);
 const startsAtLabel = computed(() => formatDateTime(props.trainingStartsAt || props.schedule?.start_at));
+
+const activeItem = computed(() => {
+  if (!activeItemKey.value) return null;
+  return props.curriculum.find((item) => itemKey(item) === activeItemKey.value) || null;
+});
+
+function itemKey(item) {
+  return `${item.item_type}-${item.id}`;
+}
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -33,8 +48,82 @@ function formatDateTime(value) {
   });
 }
 
+function quizStatusLabel(item) {
+  if (item.locked) return 'Terkunci';
+  if (item.status === 'completed' || item.attempt) return item.attempt?.passed ? 'Lulus' : 'Selesai';
+  if (item.status === 'in_progress') return 'Berlangsung';
+  if (item.status === 'expired' || item.time_expired) return 'Waktu habis';
+  return 'Belum dimulai';
+}
+
+function quizStatusClass(item) {
+  if (item.locked) return 'bg-slate-100 text-slate-600';
+  if (item.status === 'completed' || item.attempt) {
+    return item.attempt?.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800';
+  }
+  if (item.status === 'in_progress') return 'bg-indigo-100 text-indigo-700';
+  if (item.status === 'expired' || item.time_expired) return 'bg-rose-100 text-rose-700';
+  return 'bg-slate-100 text-slate-600';
+}
+
+function materialStatusLabel(item) {
+  if (item.locked) return 'Terkunci';
+  if (item.completed) return 'Selesai';
+  return 'Belum dibuka';
+}
+
+function materialStatusClass(item) {
+  if (item.locked) return 'bg-slate-100 text-slate-600';
+  if (item.completed) return 'bg-emerald-100 text-emerald-700';
+  return 'bg-slate-100 text-slate-600';
+}
+
+function openMaterial(item) {
+  activeItemKey.value = itemKey(item);
+  activeQuizPayload.value = null;
+  quizStartError.value = '';
+}
+
+function openQuizResult(item) {
+  activeItemKey.value = itemKey(item);
+  activeQuizPayload.value = null;
+  quizStartError.value = '';
+}
+
+async function startQuiz(item) {
+  startingQuiz.value = true;
+  quizStartError.value = '';
+  activeQuizPayload.value = null;
+
+  try {
+    const response = await axios.post(route('just-academy.my-training.quizzes.start', [props.schedule.id, item.id]));
+    if (response.data?.success && response.data.quiz) {
+      activeItemKey.value = itemKey(item);
+      activeQuizPayload.value = response.data.quiz;
+    }
+  } catch (error) {
+    quizStartError.value = error?.response?.data?.message
+      || error?.response?.data?.errors?.quiz?.[0]
+      || 'Gagal memulai quiz.';
+  } finally {
+    startingQuiz.value = false;
+  }
+}
+
+function backToList() {
+  activeItemKey.value = null;
+  activeQuizPayload.value = null;
+  quizStartError.value = '';
+}
+
+function onQuizFinished() {
+  backToList();
+  router.reload({ only: ['curriculum'] });
+}
+
 function completeMaterial(materialId) {
   useForm({}).post(route('just-academy.my-training.materials.complete', [props.schedule.id, materialId]), {
+    onSuccess: () => router.reload({ only: ['curriculum'] }),
     onError: (e) => jaFormErrors(e),
   });
 }
@@ -72,60 +161,149 @@ function submitFeedback() {
         </p>
       </div>
 
-      <div class="space-y-4">
-        <template v-for="(item, index) in curriculum" :key="item.item_type + '-' + item.id">
-          <div v-if="item.item_type === 'material'" :class="[jaUi.card, jaUi.cardBody, item.locked ? 'opacity-80' : '']">
-            <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Langkah {{ index + 1 }} · Materi</p>
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="font-semibold text-slate-800">{{ item.title }}</p>
-                <a
-                  v-if="!item.locked && (item.file_path || item.url)"
-                  :href="item.file_path || item.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :class="jaUi.btnLink"
-                >
-                  Buka materi
-                </a>
-                <p v-else-if="item.locked" class="mt-1 text-xs text-amber-700">Terkunci sampai training dimulai</p>
-              </div>
-              <button
-                v-if="!item.locked && !item.completed"
-                type="button"
-                :class="jaUi.btnSuccess"
-                @click="completeMaterial(item.id)"
-              >
-                Selesai
-              </button>
-              <span v-else-if="item.completed" class="text-sm font-medium text-emerald-600">Selesai</span>
-              <span v-else-if="item.locked" class="text-xs text-slate-400"><i class="fa-solid fa-lock" /></span>
+      <p v-if="quizStartError" class="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        {{ quizStartError }}
+      </p>
+
+      <!-- Daftar langkah -->
+      <div v-if="!activeItemKey" class="space-y-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Daftar Materi & Quiz</h2>
+
+        <div
+          v-for="(item, index) in curriculum"
+          :key="itemKey(item)"
+          :class="[jaUi.card, jaUi.cardBody, item.locked ? 'opacity-80' : '']"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Langkah {{ index + 1 }} · {{ item.item_type === 'material' ? 'Materi' : 'Quiz' }}
+              </p>
+              <p class="mt-1 font-semibold text-slate-800">{{ item.title }}</p>
+
+              <template v-if="item.item_type === 'quiz' && !item.locked">
+                <p v-if="item.time_limit?.mode === 'quiz'" class="mt-1 text-xs text-slate-500">
+                  Batas waktu: {{ item.time_limit.quiz_minutes }} menit
+                </p>
+                <p v-else-if="item.time_limit?.mode === 'question'" class="mt-1 text-xs text-slate-500">
+                  Batas waktu: {{ item.time_limit.question_seconds }} detik per soal
+                </p>
+              </template>
             </div>
+
+            <span
+              class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium"
+              :class="item.item_type === 'material' ? materialStatusClass(item) : quizStatusClass(item)"
+            >
+              {{ item.item_type === 'material' ? materialStatusLabel(item) : quizStatusLabel(item) }}
+            </span>
           </div>
 
-          <div v-else-if="item.item_type === 'quiz'" :class="[jaUi.card, jaUi.cardBody, item.locked ? 'opacity-80' : '']">
-            <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Langkah {{ index + 1 }} · Quiz</p>
-            <h2 class="mb-2 font-semibold text-slate-800">{{ item.title }}</h2>
-            <template v-if="item.locked">
-              <p class="text-xs text-amber-700">Quiz akan tersedia saat training dimulai.</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <template v-if="item.item_type === 'material'">
+              <button
+                v-if="!item.locked"
+                type="button"
+                :class="jaUi.btnPrimary"
+                class="text-sm"
+                @click="openMaterial(item)"
+              >
+                {{ item.completed ? 'Lihat materi' : 'Buka materi' }}
+              </button>
+              <span v-else class="text-xs text-slate-400"><i class="fa-solid fa-lock mr-1" />Terkunci</span>
             </template>
-            <template v-else>
-              <p v-if="item.time_limit?.mode === 'quiz'" class="mb-2 text-xs text-amber-700">
-                Batas waktu: {{ item.time_limit.quiz_minutes }} menit (total quiz)
-              </p>
-              <p v-else-if="item.time_limit?.mode === 'question'" class="mb-2 text-xs text-amber-700">
-                Batas waktu: {{ item.time_limit.question_seconds }} detik per soal
-              </p>
-              <p v-if="item.attempt" class="mb-4 text-sm text-slate-600">
-                Nilai: {{ item.attempt.score }} — {{ item.attempt.passed ? 'Lulus' : 'Belum lulus' }}
-              </p>
-              <JaQuizTaking v-else :item="item" :schedule-id="schedule.id" />
+
+            <template v-else-if="item.item_type === 'quiz'">
+              <template v-if="item.locked">
+                <span class="text-xs text-slate-400"><i class="fa-solid fa-lock mr-1" />Terkunci</span>
+              </template>
+              <template v-else-if="item.attempt || item.status === 'completed'">
+                <button type="button" :class="jaUi.btnSecondary" class="text-sm" @click="openQuizResult(item)">
+                  Lihat hasil
+                </button>
+              </template>
+              <template v-else>
+                <button
+                  type="button"
+                  :class="jaUi.btnPrimary"
+                  class="text-sm"
+                  :disabled="startingQuiz"
+                  @click="startQuiz(item)"
+                >
+                  <i v-if="startingQuiz" class="fa-solid fa-spinner fa-spin mr-1" />
+                  {{ item.status === 'in_progress' ? 'Lanjutkan quiz' : (item.status === 'expired' ? 'Mulai ulang quiz' : 'Mulai quiz') }}
+                </button>
+              </template>
             </template>
           </div>
-        </template>
+        </div>
       </div>
 
-      <div v-if="trainingStarted" :class="[jaUi.card, jaUi.cardBody, 'mt-6']">
+      <!-- Detail langkah -->
+      <div v-else class="space-y-4">
+        <button type="button" class="text-sm text-indigo-600 hover:text-indigo-800" @click="backToList">
+          <i class="fa-solid fa-arrow-left mr-1" /> Kembali ke daftar
+        </button>
+
+        <div v-if="activeItem?.item_type === 'material'" :class="[jaUi.card, jaUi.cardBody]">
+          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Materi</p>
+          <h2 class="mb-4 font-semibold text-slate-800">{{ activeItem.title }}</h2>
+
+          <a
+            v-if="activeItem.file_path || activeItem.url"
+            :href="activeItem.file_path || activeItem.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            :class="jaUi.btnLink"
+          >
+            Buka materi
+          </a>
+          <p v-else class="text-sm text-slate-500">Materi tidak tersedia.</p>
+
+          <div class="mt-4">
+            <button
+              v-if="!activeItem.completed"
+              type="button"
+              :class="jaUi.btnSuccess"
+              @click="completeMaterial(activeItem.id)"
+            >
+              Tandai selesai
+            </button>
+            <span v-else class="text-sm font-medium text-emerald-600">Materi sudah selesai</span>
+          </div>
+        </div>
+
+        <div v-else-if="activeItem?.item_type === 'quiz'" :class="[jaUi.card, jaUi.cardBody]">
+          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Quiz</p>
+          <h2 class="mb-2 font-semibold text-slate-800">{{ activeItem.title }}</h2>
+
+          <template v-if="activeItem.attempt || activeItem.status === 'completed'">
+            <p class="text-sm text-slate-600">
+              Nilai: <strong>{{ activeItem.attempt?.score }}</strong>
+              — {{ activeItem.attempt?.passed ? 'Lulus' : 'Belum lulus' }}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">
+              Pass score: {{ activeItem.pass_score }}
+            </p>
+          </template>
+
+          <template v-else-if="activeQuizPayload">
+            <p v-if="activeQuizPayload.time_limit?.mode === 'quiz'" class="mb-2 text-xs text-amber-700">
+              Batas waktu: {{ activeQuizPayload.time_limit.quiz_minutes }} menit (total quiz)
+            </p>
+            <p v-else-if="activeQuizPayload.time_limit?.mode === 'question'" class="mb-2 text-xs text-amber-700">
+              Batas waktu: {{ activeQuizPayload.time_limit.question_seconds }} detik per soal
+            </p>
+            <JaQuizTaking
+              :item="activeQuizPayload"
+              :schedule-id="schedule.id"
+              @finished="onQuizFinished"
+            />
+          </template>
+        </div>
+      </div>
+
+      <div v-if="trainingStarted && !activeItemKey" :class="[jaUi.card, jaUi.cardBody, 'mt-6']">
         <h2 class="mb-4 font-semibold text-slate-800">Feedback</h2>
         <form class="space-y-3" @submit.prevent="submitFeedback">
           <div>

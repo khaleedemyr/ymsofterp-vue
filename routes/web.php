@@ -3852,6 +3852,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/my-training/{schedule}', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'show'])->name('my-training.show');
     Route::post('/my-training/{schedule}/check-in', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'checkIn'])->name('my-training.check-in');
     Route::post('/my-training/{schedule}/materials/{materialId}/complete', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'completeMaterial'])->name('my-training.materials.complete');
+    Route::post('/my-training/{schedule}/quizzes/{quizId}/start', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'startQuiz'])->name('my-training.quizzes.start');
     Route::post('/my-training/{schedule}/quizzes/{quizId}/submit', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'submitQuiz'])->name('my-training.quizzes.submit');
     Route::post('/my-training/{schedule}/quizzes/{quizId}/progress', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'syncQuizProgress'])->name('my-training.quizzes.progress');
     Route::post('/my-training/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'submitFeedback'])->name('my-training.feedback');

@@ -82,7 +82,18 @@ class MyTrainingController extends Controller
 
         return redirect()
             ->route('just-academy.my-training.show', $schedule)
-            ->with('success', 'Check-in berhasil. Silakan mulai training.');
+            ->with('success', 'Check-in berhasil. Pilih materi atau quiz dari daftar.');
+    }
+
+    public function startQuiz(Request $request, JaSchedule $schedule, int $quizId)
+    {
+        $quiz = JaQuiz::with(['questions.options'])->findOrFail($quizId);
+        $payload = $this->service->buildQuizTakingPayload($schedule, $quiz, (int) $request->user()->id);
+
+        return response()->json([
+            'success' => true,
+            'quiz' => $payload,
+        ]);
     }
 
     public function completeMaterial(Request $request, JaSchedule $schedule, int $materialId)

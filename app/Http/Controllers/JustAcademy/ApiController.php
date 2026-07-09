@@ -116,6 +116,14 @@ class ApiController extends Controller
         return response()->json(['success' => true, 'data' => $progress]);
     }
 
+    public function startQuiz(Request $request, JaSchedule $schedule, JaQuiz $quiz)
+    {
+        $quiz->load(['questions.options']);
+        $payload = $this->service->buildQuizTakingPayload($schedule, $quiz, (int) $request->user()->id);
+
+        return response()->json(['success' => true, 'data' => $payload]);
+    }
+
     public function submitQuiz(Request $request, JaSchedule $schedule, JaQuiz $quiz)
     {
         $validated = $request->validate(['answers' => 'required|array']);
