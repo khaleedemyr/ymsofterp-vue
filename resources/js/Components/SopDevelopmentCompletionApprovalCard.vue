@@ -225,6 +225,9 @@ async function loadPendingApprovals() {
     } catch (error) {
         console.error('Error loading pending SOP Development approvals:', error);
         pendingApprovals.value = [];
+        if (error.response?.status !== 401) {
+            console.warn('SOP Development approval API error:', error.response?.data || error.message);
+        }
     } finally {
         loading.value = false;
     }

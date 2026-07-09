@@ -151,7 +151,7 @@ class SopDevelopmentCompletionController extends Controller
         }
 
         $sopDevelopmentCompletion->load([
-            'user:id,nama_lengkap,avatar,avatar_path',
+            'user:id,nama_lengkap,avatar',
             'approvalFlows.approver:id,nama_lengkap',
         ]);
 
@@ -255,7 +255,7 @@ class SopDevelopmentCompletionController extends Controller
 
         $query = SopDevelopmentCompletion::query()
             ->with([
-                'user:id,nama_lengkap,avatar,avatar_path',
+                'user:id,nama_lengkap,avatar',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
             ->where('status', 'pending');
