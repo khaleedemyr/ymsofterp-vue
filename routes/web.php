@@ -1721,6 +1721,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::delete('/regional/{id}', [\App\Http\Controllers\RegionalController::class, 'destroy'])->name('regional.destroy');
         Route::get('/api/regional/user-regional/{userId}', [\App\Http\Controllers\RegionalController::class, 'getUserRegional'])->name('regional.user-regional');
         Route::get('/api/regional/search-users', [\App\Http\Controllers\RegionalController::class, 'searchUsers'])->name('regional.search-users');
+        Route::get('/api/regional/search-outlets', [\App\Http\Controllers\RegionalController::class, 'searchOutlets'])->name('regional.search-outlets');
+        Route::get('/api/regional/search-supervisor-positions', [\App\Http\Controllers\RegionalController::class, 'searchSupervisorPositions'])->name('regional.search-supervisor-positions');
 });
 
 // Outlet Rejection Routes

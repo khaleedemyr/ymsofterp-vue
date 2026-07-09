@@ -17,10 +17,14 @@ class UserRegional extends Model
         'user_id',
         'area',
         'target_outlet_visits',
+        'outlet_visit_targets',
+        'supervisor_position_id',
     ];
 
     protected $casts = [
         'target_outlet_visits' => 'integer',
+        'outlet_visit_targets' => 'array',
+        'supervisor_position_id' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

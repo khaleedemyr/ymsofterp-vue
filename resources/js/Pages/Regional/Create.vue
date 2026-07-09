@@ -62,20 +62,69 @@
               <p v-if="form.errors?.area" class="text-red-500 text-xs">{{ form.errors.area }}</p>
             </div>
 
-            <div class="mt-6 max-w-xl space-y-2">
+            <div class="mt-6 space-y-3 max-w-4xl">
               <label class="block text-sm font-semibold text-gray-700">
-                <i class="fa-solid fa-bullseye mr-2"></i>Target Kunjungan Outlet / Bulan
+                <i class="fa-solid fa-user-tie mr-2"></i>Atasan (Jabatan)
               </label>
-              <input
-                v-model.number="form.target_outlet_visits"
-                type="number"
-                min="0"
-                max="9999"
-                placeholder="Contoh: 12"
-                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+              <Multiselect
+                v-model="form.supervisor_position"
+                :options="supervisorPositionOptions"
+                :searchable="true"
+                :close-on-select="true"
+                :clear-on-select="false"
+                :preserve-search="true"
+                placeholder="Pilih jabatan atasan..."
+                track-by="id"
+                label="name"
+                :preselect-first="false"
+                class="w-full regional-multiselect"
               />
-              <p class="text-xs text-gray-500">Dipakai KPI regional (D022 / KPI15). Kosongkan jika belum ditetapkan.</p>
-              <p v-if="form.errors?.target_outlet_visits" class="text-red-500 text-xs">{{ form.errors.target_outlet_visits }}</p>
+              <p v-if="form.errors?.supervisor_position_id" class="text-red-500 text-xs">{{ form.errors.supervisor_position_id }}</p>
+            </div>
+
+            <div class="mt-6 space-y-3 max-w-4xl">
+              <label class="block text-sm font-semibold text-gray-700">
+                <i class="fa-solid fa-store mr-2"></i>Target Kunjungan per Outlet / Bulan
+              </label>
+              <div class="space-y-3">
+                <div v-for="(row, idx) in form.outlet_visit_targets" :key="idx" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                  <div class="md:col-span-7">
+                    <Multiselect
+                      v-model="row.outlet"
+                      :options="outletOptions"
+                      :searchable="true"
+                      :close-on-select="true"
+                      :clear-on-select="false"
+                      :preserve-search="true"
+                      placeholder="Pilih outlet..."
+                      track-by="id"
+                      label="name"
+                      :preselect-first="false"
+                      class="w-full regional-multiselect"
+                    />
+                  </div>
+                  <div class="md:col-span-3">
+                    <input
+                      v-model.number="row.target_visits"
+                      type="number"
+                      min="0"
+                      max="9999"
+                      placeholder="Kunjungan"
+                      class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                    />
+                  </div>
+                  <div class="md:col-span-2">
+                    <button type="button" class="w-full px-3 py-3 border border-red-200 text-red-600 rounded-lg hover:bg-red-50" @click="removeOutletRow(idx)">
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+                <button type="button" class="px-4 py-2 border border-indigo-300 text-indigo-700 rounded-lg hover:bg-indigo-50" @click="addOutletRow">
+                  <i class="fa fa-plus mr-1"></i> Tambah Outlet
+                </button>
+              </div>
+              <p class="text-xs text-gray-500">Total target akan dihitung otomatis dari semua outlet.</p>
+              <p v-if="form.errors?.outlet_visit_targets" class="text-red-500 text-xs">{{ form.errors.outlet_visit_targets }}</p>
             </div>
 
             <div v-if="form.user_id && form.area" class="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm max-w-3xl">
@@ -94,9 +143,13 @@
                   <p class="text-sm text-gray-600">Area</p>
                   <p class="font-semibold text-gray-800">{{ getAreaLabel(form.area) }}</p>
                 </div>
+                <div class="bg-white p-4 rounded-lg border border-blue-100">
+                  <p class="text-sm text-gray-600">Atasan (Jabatan)</p>
+                  <p class="font-semibold text-gray-800">{{ form.supervisor_position?.name || '—' }}</p>
+                </div>
                 <div class="bg-white p-4 rounded-lg border border-blue-100 md:col-span-2">
-                  <p class="text-sm text-gray-600">Target Kunjungan / Bulan</p>
-                  <p class="font-semibold text-gray-800">{{ form.target_outlet_visits != null && form.target_outlet_visits !== '' ? form.target_outlet_visits : '—' }}</p>
+                  <p class="text-sm text-gray-600">Total Target Kunjungan / Bulan</p>
+                  <p class="font-semibold text-gray-800">{{ totalTargetVisits }}</p>
                 </div>
               </div>
             </div>
@@ -135,12 +188,21 @@ const form = useForm({
   user_id: null,
   area: '',
   target_outlet_visits: null,
+  supervisor_position: null,
+  outlet_visit_targets: [],
 })
 
 const userOptions = ref([])
+const outletOptions = ref([])
+const supervisorPositionOptions = ref([])
 const isSubmitting = ref(false)
 
-const canSubmit = computed(() => form.user_id && form.area)
+const canSubmit = computed(() =>
+  form.user_id
+  && form.area
+  && form.supervisor_position?.id
+  && form.outlet_visit_targets.some((row) => row?.outlet?.id),
+)
 
 const getUserName = (userId) => {
   if (!userId) return ''
@@ -151,6 +213,11 @@ const getUserName = (userId) => {
 
 onMounted(() => {
   loadUsers()
+  loadOutlets()
+  loadSupervisorPositions()
+  if (!form.outlet_visit_targets.length) {
+    addOutletRow()
+  }
 })
 
 const loadUsers = async () => {
@@ -162,6 +229,40 @@ const loadUsers = async () => {
   }
 }
 
+const loadOutlets = async () => {
+  try {
+    const response = await fetch('/api/regional/search-outlets?search=')
+    outletOptions.value = await response.json()
+  } catch (error) {
+    console.error('Error loading outlets:', error)
+  }
+}
+
+const loadSupervisorPositions = async () => {
+  try {
+    const response = await fetch('/api/regional/search-supervisor-positions?search=')
+    supervisorPositionOptions.value = await response.json()
+  } catch (error) {
+    console.error('Error loading supervisor positions:', error)
+  }
+}
+
+const addOutletRow = () => {
+  form.outlet_visit_targets.push({
+    outlet: null,
+    target_visits: 0,
+  })
+}
+
+const removeOutletRow = (index) => {
+  form.outlet_visit_targets.splice(index, 1)
+}
+
+const totalTargetVisits = computed(() => form.outlet_visit_targets.reduce((sum, row) => {
+  const value = Number(row.target_visits) || 0
+  return sum + value
+}, 0))
+
 function submitForm() {
   if (!form.user_id) {
     Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih karyawan terlebih dahulu!' })
@@ -171,6 +272,14 @@ function submitForm() {
     Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih area Bar, Kitchen, atau Service!' })
     return
   }
+  if (!form.outlet_visit_targets.some((row) => row?.outlet?.id)) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Tambahkan minimal satu outlet target kunjungan.' })
+    return
+  }
+  if (!form.supervisor_position?.id) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih jabatan atasan terlebih dahulu.' })
+    return
+  }
 
   Swal.fire({
     title: 'Konfirmasi Assignment',
@@ -178,7 +287,8 @@ function submitForm() {
       <div class="text-left">
         <p class="mb-2"><strong>Karyawan:</strong> ${getUserName(form.user_id)}</p>
         <p class="mb-2"><strong>Area:</strong> ${getAreaLabel(form.area)}</p>
-        <p class="mb-2"><strong>Target Kunjungan:</strong> ${form.target_outlet_visits != null && form.target_outlet_visits !== '' ? form.target_outlet_visits : '—'}</p>
+        <p class="mb-2"><strong>Atasan:</strong> ${form.supervisor_position?.name || '—'}</p>
+        <p class="mb-2"><strong>Total Target Kunjungan:</strong> ${totalTargetVisits.value}</p>
       </div>
     `,
     icon: 'question',
@@ -193,7 +303,14 @@ function submitForm() {
       form.transform((data) => ({
         user_id: typeof data.user_id === 'object' ? data.user_id.id : data.user_id,
         area: data.area,
-        target_outlet_visits: data.target_outlet_visits === '' || data.target_outlet_visits == null ? null : data.target_outlet_visits,
+        target_outlet_visits: totalTargetVisits.value,
+        supervisor_position_id: data.supervisor_position?.id || null,
+        outlet_visit_targets: data.outlet_visit_targets
+          .filter((row) => row?.outlet?.id)
+          .map((row) => ({
+            outlet_id: row.outlet.id,
+            target_visits: Number(row.target_visits) || 0,
+          })),
       })).post('/regional', {
         onSuccess: () => {
           isSubmitting.value = false

@@ -83,9 +83,26 @@
             <div class="bg-amber-50 rounded-lg p-4">
               <span class="text-sm font-semibold text-amber-900 block mb-1">Target Kunjungan / Bulan</span>
               <span v-if="user.target_outlet_visits != null" class="text-lg font-bold text-amber-800">
-                {{ user.target_outlet_visits }} outlet
+                {{ user.target_outlet_visits }} kunjungan
               </span>
               <span v-else class="text-gray-400 italic text-sm">Belum di-set</span>
+              <p class="text-xs text-amber-700 mt-1">
+                Outlet ditargetkan: {{ getTargetOutletCount(user) }}
+              </p>
+              <div v-if="user.outlet_visit_targets?.length" class="mt-2 space-y-1 max-h-24 overflow-y-auto">
+                <div v-for="(target, idx) in user.outlet_visit_targets" :key="idx" class="text-xs text-amber-900 bg-white border border-amber-100 rounded px-2 py-1 flex justify-between gap-2">
+                  <span class="truncate">{{ target.outlet_name }}</span>
+                  <span class="font-semibold shrink-0">{{ target.target_visits }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-sky-50 rounded-lg p-4 mt-3">
+              <span class="text-sm font-semibold text-sky-900 block mb-1">Atasan (Jabatan)</span>
+              <span v-if="user.supervisor_position_name" class="text-sm font-semibold text-sky-800">
+                {{ user.supervisor_position_name }}
+              </span>
+              <span v-else class="text-gray-400 italic text-sm">Belum dipilih</span>
             </div>
           </div>
 
@@ -165,6 +182,11 @@ function getImageUrl(avatar) {
 function getInitials(name) {
   if (!name) return 'U';
   return name.split(' ').map(word => word.charAt(0)).join('').toUpperCase().substring(0, 2);
+}
+
+function getTargetOutletCount(user) {
+  if (!Array.isArray(user?.outlet_visit_targets)) return 0
+  return user.outlet_visit_targets.length
 }
 
 function editUser(userId) {
