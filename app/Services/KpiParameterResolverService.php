@@ -21,6 +21,33 @@ class KpiParameterResolverService
         'guest_comment_gsi',
     ];
 
+    /** @var list<string> */
+    private const MANUAL_COGS_RESOLVER_KEYS = [
+        'manual_cogs_percent',
+        'manual_deviation_percent',
+        'manual_catcost_percent',
+    ];
+
+    /**
+     * Bulan data KPI untuk resolver — prioritas data_period_month, fallback evaluasi -1 bulan.
+     */
+    private function dataPeriodMonthFromContext(array $context): string
+    {
+        $dataMonth = (string) ($context['data_period_month'] ?? '');
+        if (preg_match('/^\d{4}-\d{2}$/', $dataMonth)) {
+            return $dataMonth;
+        }
+
+        $evaluationMonth = (string) ($context['evaluation_period_month'] ?? '');
+        if (preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)) {
+            return Carbon::createFromFormat('Y-m', $evaluationMonth)
+                ->subMonth()
+                ->format('Y-m');
+        }
+
+        return (string) ($context['period_month'] ?? '');
+    }
+
     /** @var array<string, array<string, mixed>> */
     private array $analyzerCache = [];
 
@@ -78,7 +105,7 @@ class KpiParameterResolverService
     public function prefetchForParameters(array $context, iterable $parameters): void
     {
         $outletIds = $this->outletIdsFromContext($context);
-        $periodMonth = (string) ($context['period_month'] ?? '');
+        $periodMonth = $this->dataPeriodMonthFromContext($context);
 
         if (empty($outletIds) || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return;
@@ -129,6 +156,19 @@ class KpiParameterResolverService
 
         if (isset($resolverKeys['retail_petty_cash_usage'])) {
             $this->resolveRetailPettyCashUsage($outletIds, $periodMonth);
+        }
+
+        if (! empty(array_intersect(array_keys($resolverKeys), self::MANUAL_COGS_RESOLVER_KEYS))) {
+            $year = (int) substr($periodMonth, 0, 4);
+            $month = (int) substr($periodMonth, 5, 2);
+            $this->resolveManualOutletPercent(
+                'manual_cogs_deviation_catcost',
+                'manual_cogs_deviation_catcost_items',
+                'cogs_percent',
+                $outletIds,
+                $month,
+                $year,
+            );
         }
     }
 
@@ -242,7 +282,7 @@ class KpiParameterResolverService
     public function diagnose(array $context): array
     {
         $outletIds = $this->outletIdsFromContext($context);
-        $periodMonth = (string) ($context['period_month'] ?? '');
+        $periodMonth = $this->dataPeriodMonthFromContext($context);
         $erpDataScope = (string) ($context['erp_data_scope'] ?? 'employee_outlet');
         /** @var list<string> $parameterCodes */
         $parameterCodes = array_values(array_unique(array_filter(
@@ -290,6 +330,18 @@ class KpiParameterResolverService
             if ($budgetAmount === 0.0 && $usesParameter('D002')) {
                 $hints[] = "Budget belum di-set di Revenue Targets (Target Pendapatan) atau outlet_monthly_budgets untuk {$periodMonth} — D002 akan 0.";
                 $budgetAmount = null;
+            }
+
+            $usesManualCogs = $usesParameter('D048') || $usesParameter('D049') || $usesParameter('D050');
+            if ($usesManualCogs && DB::getSchemaBuilder()->hasTable('manual_cogs_deviation_catcost')) {
+                $manualHeaderExists = DB::table('manual_cogs_deviation_catcost')
+                    ->where('month', $month)
+                    ->where('year', $year)
+                    ->exists();
+
+                if (! $manualHeaderExists) {
+                    $hints[] = "Manual COGS, Deviation & Catcost belum diinput untuk {$periodMonth} (bulan data KPI) — D048/D049/D050 akan kosong.";
+                }
             }
         }
 
@@ -347,7 +399,7 @@ class KpiParameterResolverService
         }
 
         $outletIds = $this->outletIdsFromContext($context);
-        $periodMonth = (string) ($context['period_month'] ?? '');
+        $periodMonth = $this->dataPeriodMonthFromContext($context);
 
         if (!preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return null;
