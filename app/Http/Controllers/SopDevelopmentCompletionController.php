@@ -121,22 +121,48 @@ class SopDevelopmentCompletionController extends Controller
 
     public function destroy(SopDevelopmentCompletion $sopDevelopmentCompletion)
     {
-        $this->ensureOwner($sopDevelopmentCompletion);
+        $user = Auth::user();
+        $isSuperadmin = $this->isSuperAdmin($user);
 
-        if ($sopDevelopmentCompletion->status !== 'draft') {
+        if (! $isSuperadmin && (int) $sopDevelopmentCompletion->user_id !== (int) $user->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Hanya SOP dengan status draft yang dapat dihapus.',
+                'message' => 'Unauthorized',
+            ], 403);
+        }
+
+        if (! $isSuperadmin && ! $sopDevelopmentCompletion->canBeDeletedByOwner()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'SOP yang sudah selesai tidak dapat dihapus.',
             ], 400);
         }
 
-        $sopDevelopmentCompletion->approvalFlows()->delete();
-        $sopDevelopmentCompletion->delete();
+        try {
+            DB::beginTransaction();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'SOP development berhasil dihapus.',
-        ]);
+            if ($sopDevelopmentCompletion->file_path) {
+                Storage::disk('public')->delete($sopDevelopmentCompletion->file_path);
+            }
+
+            $sopDevelopmentCompletion->approvalFlows()->delete();
+            $sopDevelopmentCompletion->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'SOP development berhasil dihapus.',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            \Log::error('Error deleting SOP development: '.$e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus SOP development.',
+            ], 500);
+        }
     }
 
     public function show(SopDevelopmentCompletion $sopDevelopmentCompletion)

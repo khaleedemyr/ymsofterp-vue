@@ -101,4 +101,9 @@ class SopDevelopmentCompletion extends Model
     {
         return in_array($this->status, ['draft', 'rejected'], true);
     }
+
+    public function canBeDeletedByOwner(): bool
+    {
+        return in_array($this->status, ['draft', 'pending', 'rejected'], true);
+    }
 }

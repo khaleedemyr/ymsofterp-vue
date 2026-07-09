@@ -129,10 +129,11 @@
                     {{ record.status === 'rejected' ? 'Upload Ulang' : 'Submit' }}
                   </button>
                   <button
-                    v-if="record.status === 'draft'"
+                    v-if="canDeleteRecord(record)"
                     type="button"
                     @click="deleteRecord(record)"
                     class="text-red-600 hover:text-red-800 text-sm"
+                    title="Hapus SOP"
                   >
                     <i class="fa-solid fa-trash"></i>
                   </button>
@@ -306,6 +307,16 @@
                 {{ detailRecord.file_original_name || 'Download File SOP' }}
               </a>
             </div>
+            <div v-if="canDeleteRecord(detailRecord)" class="flex justify-end pt-4 border-t">
+              <button
+                type="button"
+                class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                @click="deleteRecord(detailRecord)"
+              >
+                <i class="fa-solid fa-trash mr-1"></i>
+                Hapus SOP
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -395,6 +406,12 @@ function flowStatusClass(status) {
     REJECTED: 'bg-red-100 text-red-800',
   };
   return map[status] || 'bg-gray-100 text-gray-700';
+}
+
+function canDeleteRecord(record) {
+  if (!record) return false;
+  if (props.isSuperAdmin) return true;
+  return ['draft', 'pending', 'rejected'].includes(record.status);
 }
 
 function openCreateModal() {
@@ -525,9 +542,12 @@ async function submitApproval() {
 }
 
 async function deleteRecord(record) {
+  const isPending = record.status === 'pending';
   const result = await Swal.fire({
     title: 'Hapus SOP?',
-    text: `Yakin ingin menghapus "${record.title}"?`,
+    text: isPending
+      ? `SOP "${record.title}" sedang menunggu approval. Yakin ingin menghapus?`
+      : `Yakin ingin menghapus "${record.title}"?`,
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
@@ -539,6 +559,7 @@ async function deleteRecord(record) {
     const response = await axios.delete(`/api/sop-development-completion/${record.id}`);
     if (response.data?.success) {
       Swal.fire('Berhasil', response.data.message, 'success');
+      closeDetailModal();
       router.reload({ only: ['records'] });
     }
   } catch (error) {
