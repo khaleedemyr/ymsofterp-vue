@@ -7,6 +7,7 @@ use App\Support\InventorySerialEffectiveQty;
 use App\Support\ItemUnitCost;
 use App\Support\OutletInventoryCostResolver;
 use App\Support\SerialReceiveItemPriceResolver;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -221,7 +222,7 @@ class OutletSerialReceiveController extends Controller
     {
         $request->validate([
             'serials' => 'required|array|min:1',
-            'serials.*.serial_id' => 'required|integer',
+            'serials.*.serial_id' => 'required|integer|distinct',
             'serials.*.serial_number' => 'required|string',
             'notes' => 'nullable|string',
         ]);
@@ -230,7 +231,16 @@ class OutletSerialReceiveController extends Controller
 
         try {
             $result = DB::transaction(function () use ($request, $user) {
-                $serialIds = collect($request->serials)->pluck('serial_id')->toArray();
+                $serialIdCollection = collect($request->serials)
+                    ->pluck('serial_id')
+                    ->map(fn ($id) => (int) $id);
+
+                $duplicateSerialIds = $serialIdCollection->duplicates()->unique()->values();
+                if ($duplicateSerialIds->isNotEmpty()) {
+                    return back()->withErrors(['serials' => 'Terdapat serial duplikat pada input.']);
+                }
+
+                $serialIds = $serialIdCollection->unique()->values()->all();
 
                 $serials = DB::table('inventory_item_serials')
                     ->whereIn('id', $serialIds)
@@ -285,8 +295,8 @@ class OutletSerialReceiveController extends Controller
                 $itemMasterIds = $serials->pluck('item_id')->unique()->toArray();
                 $itemMasters = DB::table('items')->whereIn('id', $itemMasterIds)->get()->keyBy('id');
 
-                foreach ($request->serials as $input) {
-                    $serial = $serials[$input['serial_id']] ?? null;
+                foreach ($serialIds as $serialId) {
+                    $serial = $serials[$serialId] ?? null;
                     if (!$serial) continue;
 
                     $itemMaster = $itemMasters[$serial->item_id] ?? null;
@@ -307,22 +317,30 @@ class OutletSerialReceiveController extends Controller
                         $outletId,
                     );
 
-                    DB::table('outlet_serial_receive_items')->insert([
-                        'header_id' => $headerId,
-                        'serial_id' => $serial->id,
-                        'serial_number' => $serial->serial_number,
-                        'delivery_order_id' => $doId,
-                        'delivery_order_number' => $doNumber,
-                        'item_id' => $serial->item_id,
-                        'unit_id' => $unitId,
-                        'qty' => $effectiveQty,
-                        'outlet_id' => $serialOutletId,
-                        'warehouse_outlet_id' => $warehouseOutletId,
-                        'cost_small' => $costSmall,
-                        'cost_source' => $costSourceDb,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    try {
+                        DB::table('outlet_serial_receive_items')->insert([
+                            'header_id' => $headerId,
+                            'serial_id' => $serial->id,
+                            'serial_number' => $serial->serial_number,
+                            'delivery_order_id' => $doId,
+                            'delivery_order_number' => $doNumber,
+                            'item_id' => $serial->item_id,
+                            'unit_id' => $unitId,
+                            'qty' => $effectiveQty,
+                            'outlet_id' => $serialOutletId,
+                            'warehouse_outlet_id' => $warehouseOutletId,
+                            'cost_small' => $costSmall,
+                            'cost_source' => $costSourceDb,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    } catch (QueryException $e) {
+                        if ($this->isDuplicateSerialReceiveItemInsert($e)) {
+                            return back()->withErrors(['serials' => "Serial {$serial->serial_number} terdeteksi duplikat pada GR yang sama."]);
+                        }
+
+                        throw $e;
+                    }
 
                     $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
 
@@ -340,7 +358,7 @@ class OutletSerialReceiveController extends Controller
                 return [
                     'header_id' => $headerId,
                     'number' => $grNumber,
-                    'serial_count' => count($request->serials),
+                    'serial_count' => count($serialIds),
                 ];
             });
 
@@ -631,7 +649,7 @@ class OutletSerialReceiveController extends Controller
     {
         $request->validate([
             'serials' => 'required|array|min:1',
-            'serials.*.serial_id' => 'required|integer',
+            'serials.*.serial_id' => 'required|integer|distinct',
             'serials.*.serial_number' => 'required|string',
             'notes' => 'nullable|string',
         ]);
@@ -640,7 +658,16 @@ class OutletSerialReceiveController extends Controller
 
         try {
             $result = DB::transaction(function () use ($request, $user) {
-                $serialIds = collect($request->serials)->pluck('serial_id')->toArray();
+                $serialIdCollection = collect($request->serials)
+                    ->pluck('serial_id')
+                    ->map(fn ($id) => (int) $id);
+
+                $duplicateSerialIds = $serialIdCollection->duplicates()->unique()->values();
+                if ($duplicateSerialIds->isNotEmpty()) {
+                    return ['success' => false, 'message' => 'Terdapat serial duplikat pada input.'];
+                }
+
+                $serialIds = $serialIdCollection->unique()->values()->all();
 
                 $serials = DB::table('inventory_item_serials')
                     ->whereIn('id', $serialIds)
@@ -695,8 +722,8 @@ class OutletSerialReceiveController extends Controller
                 $itemMasterIds = $serials->pluck('item_id')->unique()->toArray();
                 $itemMasters = DB::table('items')->whereIn('id', $itemMasterIds)->get()->keyBy('id');
 
-                foreach ($request->serials as $input) {
-                    $serial = $serials[$input['serial_id']] ?? null;
+                foreach ($serialIds as $serialId) {
+                    $serial = $serials[$serialId] ?? null;
                     if (!$serial) continue;
 
                     $itemMaster = $itemMasters[$serial->item_id] ?? null;
@@ -717,22 +744,30 @@ class OutletSerialReceiveController extends Controller
                         $outletId,
                     );
 
-                    DB::table('outlet_serial_receive_items')->insert([
-                        'header_id' => $headerId,
-                        'serial_id' => $serial->id,
-                        'serial_number' => $serial->serial_number,
-                        'delivery_order_id' => $doId,
-                        'delivery_order_number' => $doNumber,
-                        'item_id' => $serial->item_id,
-                        'unit_id' => $unitId,
-                        'qty' => $effectiveQty,
-                        'outlet_id' => $serialOutletId,
-                        'warehouse_outlet_id' => $warehouseOutletId,
-                        'cost_small' => $costSmall,
-                        'cost_source' => $costSourceDb,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    try {
+                        DB::table('outlet_serial_receive_items')->insert([
+                            'header_id' => $headerId,
+                            'serial_id' => $serial->id,
+                            'serial_number' => $serial->serial_number,
+                            'delivery_order_id' => $doId,
+                            'delivery_order_number' => $doNumber,
+                            'item_id' => $serial->item_id,
+                            'unit_id' => $unitId,
+                            'qty' => $effectiveQty,
+                            'outlet_id' => $serialOutletId,
+                            'warehouse_outlet_id' => $warehouseOutletId,
+                            'cost_small' => $costSmall,
+                            'cost_source' => $costSourceDb,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    } catch (QueryException $e) {
+                        if ($this->isDuplicateSerialReceiveItemInsert($e)) {
+                            return ['success' => false, 'message' => "Serial {$serial->serial_number} terdeteksi duplikat pada GR yang sama."];
+                        }
+
+                        throw $e;
+                    }
 
                     $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
 
@@ -954,6 +989,17 @@ class OutletSerialReceiveController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function isDuplicateSerialReceiveItemInsert(QueryException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        $sqlState = $e->errorInfo[0] ?? null;
+
+        return $sqlState === '23000'
+            || $sqlState === '45000'
+            || str_contains($message, 'duplicate')
+            || str_contains($message, 'duplikat');
     }
 
     private function getOutletName($outletId): string
