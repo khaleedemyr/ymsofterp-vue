@@ -139,6 +139,7 @@ class KpiEvaluationController extends Controller
             'items' => 'array',
             'items.*.id' => 'required|integer',
             'items.*.improvement_plan' => 'nullable|string|max:2000',
+            'items.*.improvement_plan_due_date' => 'nullable|date',
             'employee_comments' => 'nullable|string|max:5000',
             'assessor_comments' => 'nullable|string|max:5000',
             'erp_data_scope' => 'nullable|in:employee_outlet,single_outlet,multiple_outlets,all_outlets',
@@ -273,6 +274,7 @@ class KpiEvaluationController extends Controller
             'items' => 'nullable|array',
             'items.*.id' => 'required|integer',
             'items.*.improvement_plan' => 'nullable|string|max:2000',
+            'items.*.improvement_plan_due_date' => 'nullable|date',
         ]);
 
         $evaluation = $this->evaluationService->recalculateFromForm(
@@ -381,7 +383,7 @@ class KpiEvaluationController extends Controller
                 'name' => $evaluation->template->name,
                 'version' => $evaluation->template->version,
             ] : null,
-            'parameter_values' => $evaluation->parameterValues,
+            'parameter_values' => $this->formatParameterValuesForEdit($evaluation->parameterValues),
             'strategies' => $strategies,
             'items' => $evaluation->items,
         ];

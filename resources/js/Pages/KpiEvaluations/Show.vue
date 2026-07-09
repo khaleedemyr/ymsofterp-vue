@@ -45,6 +45,13 @@ function formatNum(val) {
   return formatKpiNumber(val);
 }
 
+function formatDueDate(value) {
+  if (!value) return '—';
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function back() {
   router.visit(route('kpi-evaluations.index'));
 }
@@ -131,7 +138,7 @@ onMounted(() => {
                 <th class="px-4 py-2 text-right">Skor</th>
                 <th class="px-4 py-2 text-right">Bobot</th>
                 <th class="px-4 py-2 text-center w-24">Detail</th>
-                <th class="px-4 py-2 text-left">Improvement Plan</th>
+                <th class="px-4 py-2 text-left min-w-[14rem]">Improvement Plan</th>
               </tr>
             </thead>
             <tbody class="divide-y">
@@ -156,7 +163,12 @@ onMounted(() => {
                   </button>
                   <span v-else class="text-xs text-gray-300">—</span>
                 </td>
-                <td class="px-4 py-2 text-gray-600 whitespace-pre-wrap">{{ item.improvement_plan || '—' }}</td>
+                <td class="px-4 py-2 text-gray-600">
+                  <div class="whitespace-pre-wrap">{{ item.improvement_plan || '—' }}</div>
+                  <div v-if="item.improvement_plan_due_date" class="mt-1 text-xs text-indigo-700">
+                    Due: {{ formatDueDate(item.improvement_plan_due_date) }}
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>

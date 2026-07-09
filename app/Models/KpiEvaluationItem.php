@@ -27,6 +27,7 @@ class KpiEvaluationItem extends Model
         'score',
         'weighted_score',
         'improvement_plan',
+        'improvement_plan_due_date',
         'sort_order',
     ];
 
@@ -36,6 +37,7 @@ class KpiEvaluationItem extends Model
         'achievement_percent' => 'decimal:4',
         'score' => 'decimal:2',
         'weighted_score' => 'decimal:4',
+        'improvement_plan_due_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

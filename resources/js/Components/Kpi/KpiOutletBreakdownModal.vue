@@ -197,6 +197,25 @@ defineExpose({ show, preload });
               </div>
             </div>
 
+            <div v-else-if="data.breakdown_mode === 'ticket_follow_up'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-gray-500 text-xs">Total Ticket</div>
+                <div class="font-bold text-lg">{{ formatNum(data.summary.total_tickets) }}</div>
+              </div>
+              <div class="bg-green-50 rounded-lg p-3">
+                <div class="text-green-700 text-xs">Closed</div>
+                <div class="font-bold text-lg text-green-800">{{ formatNum(data.summary.closed_tickets) }}</div>
+              </div>
+              <div class="bg-rose-50 rounded-lg p-3">
+                <div class="text-rose-700 text-xs">Overdue</div>
+                <div class="font-bold text-lg text-rose-800">{{ formatNum(data.summary.overdue_tickets) }}</div>
+              </div>
+              <div class="bg-blue-50 rounded-lg p-3">
+                <div class="text-blue-700 text-xs">Compliant (D023)</div>
+                <div class="font-bold text-lg text-blue-800">{{ formatNum(data.summary.compliant_tickets) }}</div>
+              </div>
+            </div>
+
             <div v-else-if="data.breakdown_mode === 'portfolio'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-gray-500 text-xs">Total Outlet</div>
@@ -242,6 +261,14 @@ defineExpose({ show, preload });
                 <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
                   ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan target)
+                </span>
+              </template>
+              <template v-else-if="data.breakdown_mode === 'ticket_follow_up'">
+                {{ data.portfolio_note }}
+                Achievement agregat evaluasi:
+                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <span v-if="data.summary.compliant_tickets != null && data.summary.total_tickets">
+                  ({{ formatNum(data.summary.compliant_tickets) }} / {{ formatNum(data.summary.total_tickets) }} compliant)
                 </span>
               </template>
               <template v-else-if="data.breakdown_mode === 'portfolio'">
@@ -310,6 +337,47 @@ defineExpose({ show, preload });
                     </tr>
                     <tr v-if="!data.non_coverage_rows?.length">
                       <td colspan="2" class="px-3 py-4 text-center text-gray-500">Tidak ada outlet non coverage.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+
+            <template v-else-if="data.breakdown_mode === 'ticket_follow_up'">
+              <div class="overflow-x-auto border rounded-xl">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Outlet</th>
+                      <th class="px-3 py-2 text-right">Total</th>
+                      <th class="px-3 py-2 text-right">Closed</th>
+                      <th class="px-3 py-2 text-right">Overdue</th>
+                      <th class="px-3 py-2 text-right">Compliant</th>
+                      <th class="px-3 py-2 text-right">Achievement</th>
+                      <th class="px-3 py-2 text-center">Level</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y">
+                    <tr v-for="row in data.rows" :key="row.outlet_id" class="hover:bg-gray-50">
+                      <td class="px-3 py-2 font-medium">{{ row.outlet_label }}</td>
+                      <td class="px-3 py-2 text-right">{{ formatNum(row.total_tickets) }}</td>
+                      <td class="px-3 py-2 text-right text-green-700">{{ formatNum(row.closed_tickets) }}</td>
+                      <td class="px-3 py-2 text-right" :class="row.overdue_tickets > 0 ? 'text-rose-700 font-semibold' : ''">
+                        {{ formatNum(row.overdue_tickets) }}
+                      </td>
+                      <td class="px-3 py-2 text-right font-semibold">{{ formatNum(row.compliant_tickets) }}</td>
+                      <td class="px-3 py-2 text-right font-semibold">
+                        {{ formatNum(row.achievement_percent) }}<template v-if="row.achievement_percent != null">%</template>
+                        <template v-else>—</template>
+                      </td>
+                      <td class="px-3 py-2 text-center">
+                        <span class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(row.performance_level)">
+                          {{ levelLabel(row.performance_level) }}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr v-if="!data.rows?.length">
+                      <td colspan="7" class="px-3 py-4 text-center text-gray-500">Tidak ada data ticket.</td>
                     </tr>
                   </tbody>
                 </table>

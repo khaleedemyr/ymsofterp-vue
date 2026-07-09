@@ -60,6 +60,9 @@ class KpiParameterResolverService
     /** @var array<string, array<int, float>> */
     private array $ticketCountCache = [];
 
+    /** @var array<string, array<int, array{total: float, closed: float, overdue: float, compliant: float}>> */
+    private array $improvementTicketStatsCache = [];
+
     /** @var array<string, array<int, float>> */
     private array $pettyCashBudgetByOutletCache = [];
 
@@ -147,11 +150,8 @@ class KpiParameterResolverService
         if (isset($resolverKeys['ticket_complaint_count'])) {
             $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'complaint', null);
         }
-        if (isset($resolverKeys['ticket_improvement_closed'])) {
-            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', true);
-        }
-        if (isset($resolverKeys['ticket_improvement_total'])) {
-            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'improvement', false);
+        if (isset($resolverKeys['ticket_improvement_closed']) || isset($resolverKeys['ticket_improvement_total'])) {
+            $this->getImprovementTicketStatsByOutlet($outletIds, $period['start_date'], $period['end_date']);
         }
 
         if (isset($resolverKeys['retail_petty_cash_usage'])) {
@@ -1393,12 +1393,16 @@ class KpiParameterResolverService
         }
 
         if ($kind === 'improvement') {
-            return $this->ticketCountCache[$cacheKey] = $this->countTicketingTicketsByOutlet(
-                $ids,
-                $start,
-                $end,
-                $closedOnly === true,
-            );
+            $stats = $this->getImprovementTicketStatsByOutlet($ids, $start, $end);
+            $counts = [];
+            foreach ($ids as $id) {
+                $row = $stats[$id] ?? ['total' => 0.0, 'compliant' => 0.0];
+                $counts[$id] = $closedOnly === true
+                    ? (float) $row['compliant']
+                    : (float) $row['total'];
+            }
+
+            return $this->ticketCountCache[$cacheKey] = $counts;
         }
 
         if (! $this->hasTicketCategoriesTable()) {
@@ -1442,43 +1446,86 @@ class KpiParameterResolverService
     }
 
     /**
-     * Semua ticket Ticketing System (exclude cancelled) — dipakai KPI D023/D024.
+     * Statistik ticket improvement per outlet (KPI D023/D024).
+     * D023 = compliant (total − overdue), D024 = total. Overdue = belum closed & due_date lewat akhir periode.
      *
      * @param  list<int>  $outletIds
-     * @return array<int, float>
+     * @return array<int, array{total: float, closed: float, overdue: float, compliant: float}>
      */
-    private function countTicketingTicketsByOutlet(
-        array $outletIds,
-        string $start,
-        string $end,
-        bool $closedOnly,
-    ): array {
-        $counts = array_fill_keys($outletIds, 0.0);
+    public function getImprovementTicketStatsByOutlet(array $outletIds, string $startDate, string $endDate): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
+        sort($ids);
+
+        $emptyRow = static fn (): array => [
+            'total' => 0.0,
+            'closed' => 0.0,
+            'overdue' => 0.0,
+            'compliant' => 0.0,
+        ];
+
+        $result = [];
+        foreach ($ids as $id) {
+            $result[$id] = $emptyRow();
+        }
+
+        if ($ids === []) {
+            return $result;
+        }
+
+        $cacheKey = implode(',', $ids) . ":{$startDate}:{$endDate}:improvement_stats";
+        if (isset($this->improvementTicketStatsCache[$cacheKey])) {
+            return $this->improvementTicketStatsCache[$cacheKey];
+        }
+
+        if (! $this->hasTicketsTable()) {
+            return $this->improvementTicketStatsCache[$cacheKey] = $result;
+        }
+
+        $overdueCutoff = Carbon::parse($endDate)->addDay()->startOfDay();
 
         $query = DB::table('tickets as t')
-            ->whereIn('t.outlet_id', $outletIds)
-            ->whereDate('t.created_at', '>=', $start)
-            ->whereDate('t.created_at', '<=', $end);
+            ->whereIn('t.outlet_id', $ids)
+            ->whereDate('t.created_at', '>=', $startDate)
+            ->whereDate('t.created_at', '<=', $endDate);
 
         if ($this->hasTicketStatusesTable()) {
             $query->join('ticket_statuses as ts', 't.status_id', '=', 'ts.id')
-                ->where('ts.slug', '!=', 'cancelled');
+                ->where('ts.slug', '!=', 'cancelled')
+                ->select('t.outlet_id', 't.due_date', 'ts.slug', 'ts.is_final');
+        } else {
+            $query->select('t.outlet_id', 't.due_date', DB::raw("'open' as slug"), DB::raw('0 as is_final'));
+        }
 
-            if ($closedOnly) {
-                $query->where('ts.slug', 'closed');
+        foreach ($query->get() as $ticket) {
+            $outletId = (int) $ticket->outlet_id;
+            if (! isset($result[$outletId])) {
+                continue;
+            }
+
+            $slug = (string) ($ticket->slug ?? 'unknown');
+            $isFinal = (bool) ($ticket->is_final ?? false);
+            $isClosed = $isFinal || in_array($slug, ['closed', 'resolved', 'done'], true);
+
+            $result[$outletId]['total']++;
+
+            if ($isClosed) {
+                $result[$outletId]['closed']++;
+            }
+
+            $dueDate = $ticket->due_date ? Carbon::parse($ticket->due_date) : null;
+            $isOverdue = ! $isClosed && $dueDate !== null && $dueDate->lt($overdueCutoff);
+
+            if ($isOverdue) {
+                $result[$outletId]['overdue']++;
             }
         }
 
-        $rows = $query
-            ->select('t.outlet_id', DB::raw('COUNT(t.id) as cnt'))
-            ->groupBy('t.outlet_id')
-            ->pluck('cnt', 'outlet_id');
-
-        foreach ($outletIds as $id) {
-            $counts[$id] = (float) ($rows[$id] ?? 0);
+        foreach ($ids as $id) {
+            $result[$id]['compliant'] = max(0.0, $result[$id]['total'] - $result[$id]['overdue']);
         }
 
-        return $counts;
+        return $this->improvementTicketStatsCache[$cacheKey] = $result;
     }
 
     private function hasTicketsTable(): bool

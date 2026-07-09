@@ -100,6 +100,7 @@ const form = useForm({
   items: props.evaluation.items.map((item) => ({
     id: item.id,
     improvement_plan: item.improvement_plan,
+    improvement_plan_due_date: item.improvement_plan_due_date || '',
   })),
   employee_comments: props.evaluation.employee_comments || '',
   assessor_comments: props.evaluation.assessor_comments || '',
@@ -191,6 +192,26 @@ function itemRow(id) {
 
 function sourceLabel(type) {
   return { erp: 'ERP', manual: 'Manual', hybrid: 'Hybrid' }[type] || type;
+}
+
+function manualInputHint(pv) {
+  if (pv?.manual_input_hint) {
+    return pv.manual_input_hint;
+  }
+  const typeHints = {
+    percent: 'Isi angka persen tanpa simbol %, contoh: 85.',
+    integer: 'Isi bilangan bulat, contoh: 12.',
+    hours: 'Isi jumlah jam, contoh: 24.',
+    decimal: 'Isi angka desimal.',
+  };
+  const base = typeHints[pv?.data_type] || 'Isi nilai numerik.';
+  if (pv?.source_type === 'hybrid') {
+    return `${base} Kosongkan untuk pakai ERP; isi untuk override.`;
+  }
+  if (pv?.source_type === 'manual') {
+    return `${base} Wajib diisi manual.`;
+  }
+  return base;
 }
 
 function levelBadge(level) {
@@ -534,17 +555,33 @@ onMounted(() => {
                 <td class="px-4 py-2"><span class="px-2 py-0.5 rounded text-xs bg-gray-100">{{ sourceLabel(pv.source_type) }}</span></td>
                 <td class="px-4 py-2 text-right text-gray-600">{{ formatNum(pv.erp_value) }}</td>
                 <td class="px-4 py-2 text-right">
-                  <input
-                    v-if="pv.source_type !== 'erp'"
-                    :value="manualDisplay(pv.id)"
-                    type="text"
-                    inputmode="decimal"
-                    placeholder="0"
-                    class="w-36 text-right rounded border-gray-300 text-sm ml-auto block tabular-nums"
-                    @focus="onManualFocus(pv.id)"
-                    @blur="onManualBlur(pv.id, pv, pv)"
-                    @input="onManualInput(pv.id, $event.target.value, pv, pv)"
-                  />
+                  <div v-if="pv.source_type !== 'erp'" class="relative flex items-center justify-end gap-1.5">
+                    <input
+                      :value="manualDisplay(pv.id)"
+                      type="text"
+                      inputmode="decimal"
+                      placeholder="0"
+                      class="w-32 text-right rounded border-gray-300 text-sm tabular-nums"
+                      @focus="onManualFocus(pv.id)"
+                      @blur="onManualBlur(pv.id, pv, pv)"
+                      @input="onManualInput(pv.id, $event.target.value, pv, pv)"
+                    />
+                    <span class="relative group shrink-0">
+                      <button
+                        type="button"
+                        class="text-indigo-500 hover:text-indigo-700 p-0.5"
+                        :aria-label="'Petunjuk isian ' + pv.parameter_code"
+                      >
+                        <i class="fa-solid fa-circle-info text-sm"></i>
+                      </button>
+                      <span
+                        class="pointer-events-none invisible group-hover:visible group-focus-within:visible absolute right-0 bottom-full z-30 mb-2 w-72 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs font-normal text-white shadow-lg"
+                        role="tooltip"
+                      >
+                        {{ manualInputHint(pv) }}
+                      </span>
+                    </span>
+                  </div>
                   <span v-else class="text-gray-400">—</span>
                 </td>
                 <td class="px-4 py-2 text-right font-semibold">{{ formatNum(pv.final_value) }}</td>
@@ -584,7 +621,7 @@ onMounted(() => {
                 <th class="px-4 py-2 text-right">Skor</th>
                 <th class="px-4 py-2 text-right">Bobot</th>
                 <th class="px-4 py-2 text-center w-24">Detail</th>
-                <th class="px-4 py-2 text-left">Improvement Plan</th>
+                <th class="px-4 py-2 text-left min-w-[14rem]">Improvement Plan</th>
               </tr>
             </thead>
             <tbody class="divide-y">
@@ -612,7 +649,18 @@ onMounted(() => {
                   <span v-else class="text-xs text-gray-300">—</span>
                 </td>
                 <td class="px-4 py-2">
-                  <textarea v-model="itemRow(item.id).improvement_plan" rows="2" class="w-full rounded border-gray-300 text-sm" placeholder="Rencana perbaikan..." />
+                  <textarea
+                    v-model="itemRow(item.id).improvement_plan"
+                    rows="2"
+                    class="w-full rounded border-gray-300 text-sm"
+                    placeholder="Rencana perbaikan..."
+                  />
+                  <label class="mt-2 block text-xs text-gray-500">Due date (opsional)</label>
+                  <input
+                    v-model="itemRow(item.id).improvement_plan_due_date"
+                    type="date"
+                    class="mt-1 w-full max-w-[11rem] rounded border-gray-300 text-sm"
+                  />
                 </td>
               </tr>
             </tbody>

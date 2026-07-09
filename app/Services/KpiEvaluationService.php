@@ -30,7 +30,7 @@ class KpiEvaluationService
         $evaluation = KpiEvaluation::with([
             'template:id,code,name,version',
             'template.strategies.items.itemParameters.parameter',
-            'parameterValues',
+            'parameterValues.parameter',
             'items',
         ])->findOrFail($id);
 
@@ -108,6 +108,62 @@ class KpiEvaluationService
         }
 
         return $evaluation;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function formatParameterValuesForEdit(Collection $parameterValues): array
+    {
+        return $parameterValues->map(function (KpiEvaluationParameterValue $pv) {
+            $row = $pv->toArray();
+            $param = $pv->relationLoaded('parameter') ? $pv->parameter : null;
+            $row['data_type'] = $param?->data_type;
+            $row['parameter_description'] = $param?->description;
+            $row['manual_input_hint'] = $this->buildManualInputHint($pv, $param);
+
+            return $row;
+        })->values()->all();
+    }
+
+    public function buildManualInputHint(KpiEvaluationParameterValue $pv, ?KpiParameter $param = null): string
+    {
+        $param ??= $pv->relationLoaded('parameter') ? $pv->parameter : null;
+        $dataType = (string) ($param?->data_type ?? 'decimal');
+
+        $hint = match ($dataType) {
+            'percent' => 'Isi angka persen tanpa simbol %, contoh: 85 atau 95,5.',
+            'integer' => 'Isi bilangan bulat, contoh: 12.',
+            'hours' => 'Isi jumlah jam, contoh: 24 atau 24,5.',
+            'text' => 'Isi nilai teks sesuai kebutuhan parameter.',
+            default => 'Isi angka desimal; gunakan titik atau koma untuk desimal.',
+        };
+
+        if ($pv->source_type === 'hybrid') {
+            $hint .= ' Kosongkan untuk memakai nilai ERP; isi angka untuk override manual.';
+        } elseif ($pv->source_type === 'manual') {
+            $hint .= ' Parameter ini wajib diisi manual (tidak ada sumber ERP).';
+        }
+
+        $description = trim((string) ($param?->description ?? ''));
+        if ($description !== '') {
+            $hint .= ' ' . $description;
+        }
+
+        return trim($hint);
+    }
+
+    protected function normalizeImprovementPlanDueDate(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -277,6 +333,7 @@ class KpiEvaluationService
                     ->where('id', $row['id'] ?? 0)
                     ->update([
                         'improvement_plan' => $row['improvement_plan'] ?? null,
+                        'improvement_plan_due_date' => $this->normalizeImprovementPlanDueDate($row['improvement_plan_due_date'] ?? null),
                     ]);
             }
 
@@ -640,6 +697,7 @@ class KpiEvaluationService
                     ->where('id', $row['id'] ?? 0)
                     ->update([
                         'improvement_plan' => $row['improvement_plan'] ?? null,
+                        'improvement_plan_due_date' => $this->normalizeImprovementPlanDueDate($row['improvement_plan_due_date'] ?? null),
                     ]);
             }
 
@@ -1271,7 +1329,7 @@ class KpiEvaluationService
     {
         $version = $evaluation->updated_at?->getTimestamp() ?? 0;
 
-        return 'kpi_bulk_breakdown:v2:' . $evaluation->id . ':' . $version;
+        return 'kpi_bulk_breakdown:v3:' . $evaluation->id . ':' . $version;
     }
 
     /**
@@ -1362,6 +1420,7 @@ class KpiEvaluationService
             $paramByCode = $parameters->keyBy('code');
             $assembler = match (true) {
                 $this->isRegionalVisitCoverageFormula($meta['d_codes']) => 'assembleRegionalVisitCoverageBreakdown',
+                $this->isTicketFollowUpFormula($meta['d_codes']) => 'assembleTicketFollowUpBreakdown',
                 $this->isPortfolioBreakdownFormula($meta['d_codes'], $paramByCode) => 'assemblePortfolioItemBreakdownFromGrid',
                 default => 'assembleItemBreakdownFromGrid',
             };
@@ -1396,6 +1455,19 @@ class KpiEvaluationService
         sort($normalized);
 
         return $normalized === ['D021', 'D022'];
+    }
+
+    /**
+     * Formula Follow-up Improvement Action (D023 / D024).
+     *
+     * @param  list<string>  $dCodes
+     */
+    protected function isTicketFollowUpFormula(array $dCodes): bool
+    {
+        $normalized = array_values(array_unique($dCodes));
+        sort($normalized);
+
+        return $normalized === ['D023', 'D024'];
     }
 
     /**
@@ -1717,6 +1789,105 @@ class KpiEvaluationService
                 'exceeding' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'exceeding')),
                 'meeting' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'meeting')),
                 'below' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'not_visited')),
+            ],
+        ];
+    }
+
+    /**
+     * Breakdown ticket follow-up per outlet: total, closed, overdue, compliant (D023).
+     *
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     * @param  Collection<string, KpiEvaluationParameterValue>  $paramMetaByCode
+     * @param  array<int, array<string, ?float>>  $parameterGrid
+     * @param  array<string, mixed>  $baseContext
+     * @return array<string, mixed>
+     */
+    private function assembleTicketFollowUpBreakdown(
+        KpiEvaluationItem $item,
+        string $formula,
+        array $dCodes,
+        Collection $parameters,
+        Collection $paramMetaByCode,
+        Collection $outletRows,
+        array $parameterGrid,
+        KpiEvaluation $evaluation,
+        array $baseContext,
+    ): array {
+        $startDate = (string) ($baseContext['period_start'] ?? '');
+        $endDate = (string) ($baseContext['period_end'] ?? '');
+        $outletIds = $outletRows->pluck('id_outlet')->map(fn ($id) => (int) $id)->all();
+        $stats = $this->resolver->getImprovementTicketStatsByOutlet($outletIds, $startDate, $endDate);
+
+        $rules = $evaluation->scoring_rules ?? $this->templateService->defaultScoringRules();
+        $rows = [];
+        $sumTotal = 0.0;
+        $sumCompliant = 0.0;
+        $sumClosed = 0.0;
+        $sumOverdue = 0.0;
+
+        foreach ($outletRows as $outlet) {
+            $outletId = (int) $outlet->id_outlet;
+            $row = $stats[$outletId] ?? ['total' => 0.0, 'closed' => 0.0, 'overdue' => 0.0, 'compliant' => 0.0];
+            $total = (float) $row['total'];
+            $compliant = (float) $row['compliant'];
+            $achievement = $total > 0 ? round(($compliant / $total) * 100, 2) : null;
+            $scoring = $this->scoreItem($achievement, $item->target_direction, $rules, $item->target_value);
+
+            $rows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => (string) $outlet->nama_outlet,
+                'outlet_label' => trim($outlet->nama_outlet . ($outlet->qr_code ? " ({$outlet->qr_code})" : '')),
+                'total_tickets' => $total,
+                'closed_tickets' => (float) $row['closed'],
+                'overdue_tickets' => (float) $row['overdue'],
+                'compliant_tickets' => $compliant,
+                'parameter_values' => [
+                    'D023' => $compliant,
+                    'D024' => $total,
+                ],
+                'achievement_percent' => $achievement,
+                'performance_level' => $scoring['level'],
+                'score' => $scoring['score'],
+            ];
+
+            $sumTotal += $total;
+            $sumCompliant += $compliant;
+            $sumClosed += (float) $row['closed'];
+            $sumOverdue += (float) $row['overdue'];
+        }
+
+        $levelOrder = ['below' => 0, 'meeting' => 1, 'exceeding' => 2];
+        usort($rows, function (array $a, array $b) use ($levelOrder): int {
+            $la = $levelOrder[$a['performance_level']] ?? 9;
+            $lb = $levelOrder[$b['performance_level']] ?? 9;
+            if ($la !== $lb) {
+                return $la <=> $lb;
+            }
+
+            return ($b['overdue_tickets'] ?? 0) <=> ($a['overdue_tickets'] ?? 0);
+        });
+
+        return [
+            'available' => true,
+            'breakdown_mode' => 'ticket_follow_up',
+            'outlet_count' => $outletRows->count(),
+            'item_name' => $item->item_name,
+            'formula' => $formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
+            'parameter_columns' => [],
+            'portfolio_note' => 'Compliant = total ticket − overdue. Overdue = belum closed & due date lewat akhir periode data.',
+            'rows' => $rows,
+            'summary' => [
+                'total_tickets' => $sumTotal,
+                'closed_tickets' => $sumClosed,
+                'overdue_tickets' => $sumOverdue,
+                'compliant_tickets' => $sumCompliant,
+                'exceeding' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'exceeding')),
+                'meeting' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'meeting')),
+                'below' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'below')),
             ],
         ];
     }
