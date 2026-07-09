@@ -15,6 +15,8 @@ class RegionalController extends Controller
 
     private ?bool $hasSupervisorPositionIdColumn = null;
 
+    private ?bool $hasAreasColumn = null;
+
     public function index(Request $request)
     {
         $query = DB::table('users as u')
@@ -43,6 +45,10 @@ class RegionalController extends Controller
             $query
                 ->leftJoin('tbl_data_jabatan as sj', 'ur.supervisor_position_id', '=', 'sj.id_jabatan')
                 ->addSelect('ur.supervisor_position_id', 'sj.nama_jabatan as supervisor_position_name');
+        }
+
+        if ($this->hasAreasColumn()) {
+            $query->addSelect('ur.areas');
         }
 
         if ($request->filled('status')) {
@@ -81,6 +87,11 @@ class RegionalController extends Controller
                 ];
             })->values()->all();
 
+            $row->areas = UserRegional::normalizeAreasList(
+                $this->hasAreasColumn() ? ($row->areas ?? null) : null,
+                $row->area ?? null,
+            );
+
             return $row;
         });
 
@@ -106,7 +117,9 @@ class RegionalController extends Controller
                 'exists:users,id',
                 Rule::unique('user_regional', 'user_id'),
             ],
-            'area' => ['required', Rule::in(UserRegional::AREAS)],
+            'areas' => ['required_without:area', 'array', 'min:1'],
+            'areas.*' => [Rule::in(UserRegional::AREAS)],
+            'area' => ['nullable', Rule::in(UserRegional::AREAS)],
             'target_outlet_visits' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'outlet_visit_targets' => ['nullable', 'array'],
             'outlet_visit_targets.*.outlet_id' => ['required', 'integer', 'distinct', 'exists:tbl_data_outlet,id_outlet'],
@@ -115,11 +128,13 @@ class RegionalController extends Controller
         ]);
 
         try {
+            $areas = $this->normalizeAreas($request);
             $outletTargets = $this->normalizeOutletTargets($request->input('outlet_visit_targets', []));
 
             UserRegional::create([
                 'user_id' => $request->user_id,
-                'area' => $request->area,
+                'area' => $areas[0],
+                ...($this->hasAreasColumn() ? ['areas' => $areas] : []),
                 'target_outlet_visits' => $this->resolveTotalTargetVisits($request->input('target_outlet_visits'), $outletTargets),
                 ...($this->hasOutletVisitTargetsColumn() ? ['outlet_visit_targets' => $outletTargets] : []),
                 ...($this->hasSupervisorPositionIdColumn() ? ['supervisor_position_id' => $request->input('supervisor_position_id')] : []),
@@ -141,6 +156,7 @@ class RegionalController extends Controller
         return inertia('Regional/Edit', [
             'user' => $user,
             'currentArea' => $assignment?->area,
+            'currentAreas' => $assignment?->resolveAreas() ?? [],
             'targetOutletVisits' => $assignment?->target_outlet_visits,
             'outletVisitTargets' => $this->hasOutletVisitTargetsColumn() ? ($assignment?->outlet_visit_targets ?? []) : [],
             'supervisorPositionId' => $this->hasSupervisorPositionIdColumn() ? $assignment?->supervisor_position_id : null,
@@ -150,7 +166,9 @@ class RegionalController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'area' => ['required', Rule::in(UserRegional::AREAS)],
+            'areas' => ['required_without:area', 'array', 'min:1'],
+            'areas.*' => [Rule::in(UserRegional::AREAS)],
+            'area' => ['nullable', Rule::in(UserRegional::AREAS)],
             'target_outlet_visits' => ['nullable', 'integer', 'min:0', 'max:9999'],
             'outlet_visit_targets' => ['nullable', 'array'],
             'outlet_visit_targets.*.outlet_id' => ['required', 'integer', 'distinct', 'exists:tbl_data_outlet,id_outlet'],
@@ -159,12 +177,14 @@ class RegionalController extends Controller
         ]);
 
         try {
+            $areas = $this->normalizeAreas($request);
             $outletTargets = $this->normalizeOutletTargets($request->input('outlet_visit_targets', []));
 
             UserRegional::updateOrCreate(
                 ['user_id' => $id],
                 [
-                    'area' => $request->area,
+                    'area' => $areas[0],
+                    ...($this->hasAreasColumn() ? ['areas' => $areas] : []),
                     'target_outlet_visits' => $this->resolveTotalTargetVisits($request->input('target_outlet_visits'), $outletTargets),
                     ...($this->hasOutletVisitTargetsColumn() ? ['outlet_visit_targets' => $outletTargets] : []),
                     ...($this->hasSupervisorPositionIdColumn() ? ['supervisor_position_id' => $request->input('supervisor_position_id')] : []),
@@ -218,6 +238,7 @@ class RegionalController extends Controller
         return response()->json([
             'user_id' => (int) $userId,
             'area' => $assignment?->area,
+            'areas' => $assignment?->resolveAreas() ?? [],
             'target_outlet_visits' => $assignment?->target_outlet_visits,
             'outlet_visit_targets' => $this->hasOutletVisitTargetsColumn() ? ($assignment?->outlet_visit_targets ?? []) : [],
             'supervisor_position_id' => $this->hasSupervisorPositionIdColumn() ? $assignment?->supervisor_position_id : null,
@@ -336,5 +357,30 @@ class RegionalController extends Controller
         }
 
         return $this->hasSupervisorPositionIdColumn;
+    }
+
+    private function hasAreasColumn(): bool
+    {
+        if ($this->hasAreasColumn === null) {
+            $this->hasAreasColumn = Schema::hasColumn('user_regional', 'areas');
+        }
+
+        return $this->hasAreasColumn;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function normalizeAreas(Request $request): array
+    {
+        $areas = UserRegional::normalizeAreasList($request->input('areas', []), $request->input('area'));
+
+        if ($areas === []) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'areas' => 'Pilih minimal satu area (Bar, Kitchen, atau Service).',
+            ]);
+        }
+
+        return $areas;
     }
 }

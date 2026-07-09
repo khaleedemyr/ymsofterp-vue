@@ -1425,7 +1425,7 @@ class KpiParameterResolverService
     /**
      * Scope CVCC dari Regional Management: area user + bawahan (jika ada).
      *
-     * @return array{regional_user_ids: list<int>, area: string, capa_division: string}|null
+     * @return array{regional_user_ids: list<int>, areas: list<string>, area: string, capa_divisions: list<string>, capa_division: string}|null
      */
     private function resolveCvccRegionalScope(int $userId): ?array
     {
@@ -1434,7 +1434,8 @@ class KpiParameterResolverService
         }
 
         $assignment = UserRegional::query()->where('user_id', $userId)->first();
-        if ($assignment === null || ! in_array($assignment->area, UserRegional::AREAS, true)) {
+        $areas = $assignment?->resolveAreas() ?? [];
+        if ($assignment === null || $areas === []) {
             return null;
         }
 
@@ -1455,10 +1456,17 @@ class KpiParameterResolverService
             ? array_values(array_unique(array_merge([$userId], $subordinateIds)))
             : [$userId];
 
+        $capaDivisions = array_map(
+            fn (string $area) => $this->regionalAreaToCapaDivision($area),
+            $areas,
+        );
+
         return [
             'regional_user_ids' => $regionalUserIds,
-            'area' => (string) $assignment->area,
-            'capa_division' => $this->regionalAreaToCapaDivision((string) $assignment->area),
+            'areas' => $areas,
+            'area' => $areas[0],
+            'capa_divisions' => $capaDivisions,
+            'capa_division' => $capaDivisions[0],
         ];
     }
 
@@ -1507,7 +1515,7 @@ class KpiParameterResolverService
     }
 
     /**
-     * @param  array{regional_user_ids: list<int>, area: string, capa_division: string}  $scope
+     * @param  array{regional_user_ids: list<int>, areas: list<string>, area: string, capa_divisions: list<string>, capa_division: string}  $scope
      */
     private function caseMatchesCvccRegionalScope(mixed $meta, array $scope, bool $requireCapaInput = false): bool
     {
@@ -1531,12 +1539,8 @@ class KpiParameterResolverService
             return false;
         }
 
-        $areaMatched = DB::table('user_regional')
-            ->whereIn('user_id', $matchedRegionalIds)
-            ->where('area', $scope['area'])
-            ->exists();
-
-        if (! $areaMatched) {
+        $scopeAreas = $scope['areas'] ?? [$scope['area'] ?? ''];
+        if (! $this->regionalUsersMatchScopeAreas($matchedRegionalIds, $scopeAreas)) {
             return false;
         }
 
@@ -1544,14 +1548,44 @@ class KpiParameterResolverService
             return true;
         }
 
-        $division = (string) ($scope['capa_division'] ?? '');
-        $capaDivision = $decoded['capa_divisions'][$division] ?? null;
-        if (! is_array($capaDivision) && $division === 'service' && isset($decoded['capa']) && is_array($decoded['capa'])) {
-            $capaDivision = $decoded['capa'];
+        $capaDivisions = $scope['capa_divisions'] ?? [$scope['capa_division'] ?? ''];
+        foreach ($capaDivisions as $division) {
+            $division = (string) $division;
+            $capaDivision = $decoded['capa_divisions'][$division] ?? null;
+            if (! is_array($capaDivision) && $division === 'service' && isset($decoded['capa']) && is_array($decoded['capa'])) {
+                $capaDivision = $decoded['capa'];
+            }
+
+            if (is_array($capaDivision) && $this->feedbackCapaService->storedCapaHasUserInput($capaDivision)) {
+                return true;
+            }
         }
 
-        return is_array($capaDivision)
-            && $this->feedbackCapaService->storedCapaHasUserInput($capaDivision);
+        return false;
+    }
+
+    /**
+     * @param  list<int>  $matchedRegionalUserIds
+     * @param  list<string>  $scopeAreas
+     */
+    private function regionalUsersMatchScopeAreas(array $matchedRegionalUserIds, array $scopeAreas): bool
+    {
+        $scopeAreas = UserRegional::normalizeAreasList($scopeAreas);
+        if ($matchedRegionalUserIds === [] || $scopeAreas === []) {
+            return false;
+        }
+
+        $assignments = UserRegional::query()
+            ->whereIn('user_id', $matchedRegionalUserIds)
+            ->get();
+
+        foreach ($assignments as $assignment) {
+            if (array_intersect($assignment->resolveAreas(), $scopeAreas) !== []) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1580,19 +1614,30 @@ class KpiParameterResolverService
             return null;
         }
 
+        $periodEndTs = strtotime($endDate . ' 23:59:59');
+        if ($periodEndTs === false) {
+            return null;
+        }
+
         $hours = [];
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, resolvedOnly: true) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
             if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 continue;
             }
 
             $eventAt = strtotime((string) $row->event_at);
-            $resolvedAt = strtotime((string) $row->resolved_at);
-            if ($eventAt === false || $resolvedAt === false || $resolvedAt < $eventAt) {
+            if ($eventAt === false || $eventAt > $periodEndTs) {
                 continue;
             }
 
-            $hours[] = ($resolvedAt - $eventAt) / 3600;
+            $resolvedAt = $row->resolved_at ? strtotime((string) $row->resolved_at) : false;
+            if ($resolvedAt !== false && $resolvedAt >= $eventAt && $resolvedAt <= $periodEndTs) {
+                $hours[] = ($resolvedAt - $eventAt) / 3600;
+                continue;
+            }
+
+            // Belum resolve dalam periode data → anggap durasi sampai akhir bulan (biasanya > 24 jam).
+            $hours[] = ($periodEndTs - $eventAt) / 3600;
         }
 
         if ($hours === []) {

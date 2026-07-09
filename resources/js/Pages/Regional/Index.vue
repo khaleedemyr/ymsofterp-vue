@@ -70,13 +70,16 @@
             <!-- Area Info -->
             <div class="bg-indigo-50 rounded-lg p-4 mb-4">
               <span class="text-sm font-semibold text-indigo-800 block mb-2">Regional Area</span>
-              <span
-                v-if="user.area"
-                class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-indigo-200 text-indigo-800 font-semibold text-sm"
-              >
-                <i :class="['fas', getAreaIcon(user.area)]"></i>
-                {{ getAreaLabel(user.area) }}
-              </span>
+              <div v-if="resolveUserAreas(user).length" class="flex flex-wrap gap-2">
+                <span
+                  v-for="area in resolveUserAreas(user)"
+                  :key="area"
+                  class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-indigo-200 text-indigo-800 font-semibold text-sm"
+                >
+                  <i :class="['fas', getAreaIcon(area)]"></i>
+                  {{ getAreaLabel(area) }}
+                </span>
+              </div>
               <span v-else class="text-gray-400 italic text-sm">Belum ada area</span>
             </div>
 
@@ -153,7 +156,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
-import { REGIONAL_DEPARTMENTS, getAreaLabel } from './regionalOutletUtils';
+import { REGIONAL_DEPARTMENTS, getAreaLabel, resolveUserAreas } from './regionalOutletUtils';
 
 const props = defineProps({
   users: Array,

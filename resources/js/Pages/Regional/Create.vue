@@ -35,21 +35,26 @@
 
             <div class="mt-6 space-y-3">
               <label class="block text-sm font-semibold text-gray-700">
-                <i class="fa-solid fa-layer-group mr-2"></i>Pilih Area (pilih salah satu)
+                <i class="fa-solid fa-layer-group mr-2"></i>Pilih Area (bisa lebih dari satu)
               </label>
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
                 <label
                   v-for="dept in REGIONAL_DEPARTMENTS"
                   :key="dept.key"
                   class="relative flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-all"
-                  :class="form.area === dept.key
+                  :class="form.areas.includes(dept.key)
                     ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
                     : 'border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40'"
                 >
-                  <input v-model="form.area" type="radio" :value="dept.key" class="sr-only" />
+                  <input
+                    type="checkbox"
+                    class="sr-only"
+                    :checked="form.areas.includes(dept.key)"
+                    @change="toggleArea(dept.key)"
+                  />
                   <div
                     class="w-10 h-10 rounded-full flex items-center justify-center"
-                    :class="form.area === dept.key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'"
+                    :class="form.areas.includes(dept.key) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'"
                   >
                     <i :class="['fas', dept.icon]"></i>
                   </div>
@@ -59,7 +64,8 @@
                   </div>
                 </label>
               </div>
-              <p v-if="form.errors?.area" class="text-red-500 text-xs">{{ form.errors.area }}</p>
+              <p v-if="form.errors?.areas" class="text-red-500 text-xs">{{ form.errors.areas }}</p>
+              <p v-else-if="form.errors?.area" class="text-red-500 text-xs">{{ form.errors.area }}</p>
             </div>
 
             <div class="mt-6 space-y-3 max-w-4xl">
@@ -127,7 +133,7 @@
               <p v-if="form.errors?.outlet_visit_targets" class="text-red-500 text-xs">{{ form.errors.outlet_visit_targets }}</p>
             </div>
 
-            <div v-if="form.user_id && form.area" class="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm max-w-3xl">
+            <div v-if="form.user_id && form.areas.length" class="mt-6 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 shadow-sm max-w-3xl">
               <div class="flex items-center mb-4">
                 <div class="bg-blue-100 p-2 rounded-lg mr-3">
                   <i class="fa-solid fa-check-circle text-blue-600"></i>
@@ -141,7 +147,7 @@
                 </div>
                 <div class="bg-white p-4 rounded-lg border border-blue-100">
                   <p class="text-sm text-gray-600">Area</p>
-                  <p class="font-semibold text-gray-800">{{ getAreaLabel(form.area) }}</p>
+                  <p class="font-semibold text-gray-800">{{ formatAreasLabel(form.areas) }}</p>
                 </div>
                 <div class="bg-white p-4 rounded-lg border border-blue-100">
                   <p class="text-sm text-gray-600">Atasan (Jabatan)</p>
@@ -181,12 +187,12 @@ import Multiselect from 'vue-multiselect'
 import { ref, computed, onMounted } from 'vue'
 import { router, Link, useForm } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
-import { REGIONAL_DEPARTMENTS, getAreaLabel } from './regionalOutletUtils'
+import { REGIONAL_DEPARTMENTS, formatAreasLabel } from './regionalOutletUtils'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const form = useForm({
   user_id: null,
-  area: '',
+  areas: [],
   target_outlet_visits: null,
   supervisor_position: null,
   outlet_visit_targets: [],
@@ -199,10 +205,19 @@ const isSubmitting = ref(false)
 
 const canSubmit = computed(() =>
   form.user_id
-  && form.area
+  && form.areas.length > 0
   && form.supervisor_position?.id
   && form.outlet_visit_targets.some((row) => row?.outlet?.id),
 )
+
+const toggleArea = (areaKey) => {
+  if (form.areas.includes(areaKey)) {
+    form.areas = form.areas.filter((area) => area !== areaKey)
+    return
+  }
+
+  form.areas = [...form.areas, areaKey]
+}
 
 const getUserName = (userId) => {
   if (!userId) return ''
@@ -268,8 +283,8 @@ function submitForm() {
     Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih karyawan terlebih dahulu!' })
     return
   }
-  if (!form.area) {
-    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih area Bar, Kitchen, atau Service!' })
+  if (!form.areas.length) {
+    Swal.fire({ icon: 'warning', title: 'Peringatan', text: 'Pilih minimal satu area (Bar, Kitchen, atau Service)!' })
     return
   }
   if (!form.outlet_visit_targets.some((row) => row?.outlet?.id)) {
@@ -286,7 +301,7 @@ function submitForm() {
     html: `
       <div class="text-left">
         <p class="mb-2"><strong>Karyawan:</strong> ${getUserName(form.user_id)}</p>
-        <p class="mb-2"><strong>Area:</strong> ${getAreaLabel(form.area)}</p>
+        <p class="mb-2"><strong>Area:</strong> ${formatAreasLabel(form.areas)}</p>
         <p class="mb-2"><strong>Atasan:</strong> ${form.supervisor_position?.name || '—'}</p>
         <p class="mb-2"><strong>Total Target Kunjungan:</strong> ${totalTargetVisits.value}</p>
       </div>
@@ -302,7 +317,8 @@ function submitForm() {
       isSubmitting.value = true
       form.transform((data) => ({
         user_id: typeof data.user_id === 'object' ? data.user_id.id : data.user_id,
-        area: data.area,
+        areas: data.areas,
+        area: data.areas[0] || null,
         target_outlet_visits: totalTargetVisits.value,
         supervisor_position_id: data.supervisor_position?.id || null,
         outlet_visit_targets: data.outlet_visit_targets

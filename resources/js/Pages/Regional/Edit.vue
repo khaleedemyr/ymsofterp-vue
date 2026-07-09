@@ -15,20 +15,25 @@
         </div>
 
         <div class="mb-6 space-y-3 max-w-3xl">
-          <label class="block text-sm font-semibold text-gray-700">Pilih Area (pilih salah satu)</label>
+          <label class="block text-sm font-semibold text-gray-700">Pilih Area (bisa lebih dari satu)</label>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label
               v-for="dept in REGIONAL_DEPARTMENTS"
               :key="dept.key"
               class="relative flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-all"
-              :class="form.area === dept.key
+              :class="form.areas.includes(dept.key)
                 ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200'
                 : 'border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40'"
             >
-              <input v-model="form.area" type="radio" :value="dept.key" class="sr-only" />
+              <input
+                type="checkbox"
+                class="sr-only"
+                :checked="form.areas.includes(dept.key)"
+                @change="toggleArea(dept.key)"
+              />
               <div
                 class="w-10 h-10 rounded-full flex items-center justify-center"
-                :class="form.area === dept.key ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'"
+                :class="form.areas.includes(dept.key) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600'"
               >
                 <i :class="['fas', dept.icon]"></i>
               </div>
@@ -126,13 +131,14 @@ import 'vue-multiselect/dist/vue-multiselect.min.css'
 const props = defineProps({
   user: Object,
   currentArea: String,
+  currentAreas: { type: Array, default: () => [] },
   targetOutletVisits: [Number, String, null],
   outletVisitTargets: { type: Array, default: () => [] },
   supervisorPositionId: [Number, String, null],
 })
 
 const form = ref({
-  area: '',
+  areas: [],
   target_outlet_visits: null,
   supervisor_position: null,
   outlet_visit_targets: [],
@@ -140,10 +146,19 @@ const form = ref({
 const outletOptions = ref([])
 const supervisorPositionOptions = ref([])
 const canSubmit = computed(() =>
-  form.value.area
+  form.value.areas.length > 0
   && form.value.supervisor_position?.id
   && form.value.outlet_visit_targets.some((row) => row?.outlet?.id),
 )
+
+const toggleArea = (areaKey) => {
+  if (form.value.areas.includes(areaKey)) {
+    form.value.areas = form.value.areas.filter((area) => area !== areaKey)
+    return
+  }
+
+  form.value.areas = [...form.value.areas, areaKey]
+}
 
 const totalTargetVisits = computed(() => form.value.outlet_visit_targets.reduce((sum, row) => {
   const value = Number(row.target_visits) || 0
@@ -151,7 +166,9 @@ const totalTargetVisits = computed(() => form.value.outlet_visit_targets.reduce(
 }, 0))
 
 onMounted(() => {
-  form.value.area = props.currentArea || ''
+  form.value.areas = props.currentAreas?.length
+    ? [...props.currentAreas]
+    : (props.currentArea ? [props.currentArea] : [])
   form.value.target_outlet_visits = props.targetOutletVisits ?? null
   loadOutlets()
   loadSupervisorPositions()
@@ -202,8 +219,8 @@ function removeOutletRow(index) {
 }
 
 function submitForm() {
-  if (!form.value.area) {
-    alert('Pilih area Bar, Kitchen, atau Service')
+  if (!form.value.areas.length) {
+    alert('Pilih minimal satu area (Bar, Kitchen, atau Service)')
     return
   }
   if (!form.value.outlet_visit_targets.some((row) => row?.outlet?.id)) {
@@ -216,7 +233,8 @@ function submitForm() {
   }
 
   router.put(`/regional/${props.user.id}`, {
-    area: form.value.area,
+    areas: form.value.areas,
+    area: form.value.areas[0] || null,
     target_outlet_visits: totalTargetVisits.value,
     supervisor_position_id: form.value.supervisor_position?.id || null,
     outlet_visit_targets: form.value.outlet_visit_targets

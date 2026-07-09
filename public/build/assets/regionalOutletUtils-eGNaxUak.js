@@ -1,1 +1,0 @@
-const i=[{key:"Bar",label:"Bar",icon:"fa-martini-glass-citrus"},{key:"Kitchen",label:"Kitchen",icon:"fa-kitchen-set"},{key:"Service",label:"Service",icon:"fa-bell-concierge"}];i.map(e=>e.key);function n(e){var a;return((a=i.find(c=>c.key===e))==null?void 0:a.label)||e||"-"}export{i as R,n as g};

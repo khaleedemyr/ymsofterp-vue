@@ -178,7 +178,7 @@ class KpiEvaluationService
         return [
             'erp_data_scope' => count($outletIds) === 1 ? 'single_outlet' : 'multiple_outlets',
             'erp_scope_outlet_ids' => $outletIds,
-            'regional_area' => $assignment->area,
+            'regional_area' => implode(', ', $assignment->resolveAreas()) ?: $assignment->area,
             'outlet_names' => $outletNames,
         ];
     }
