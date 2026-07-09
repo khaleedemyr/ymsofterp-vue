@@ -343,6 +343,15 @@ class KpiParameterResolverService
                     $hints[] = "Manual COGS, Deviation & Catcost belum diinput untuk {$periodMonth} (bulan data KPI) — D048/D049/D050 akan kosong.";
                 }
             }
+
+            $usesCvcc = $usesParameter('D053') || $usesParameter('D054') || $usesParameter('D055');
+            if ($usesCvcc) {
+                $userId = (int) ($context['user_id'] ?? 0);
+                $cvccScope = $userId > 0 ? $this->resolveCvccRegionalScope($userId) : null;
+                if ($cvccScope === null) {
+                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC (D053/D054/D055) akan kosong.';
+                }
+            }
         }
 
         if ($usesParameter('D014') && $this->hasTicketCategoriesTable()) {
@@ -485,17 +494,17 @@ class KpiParameterResolverService
                 $year,
             ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
-                $outletIds,
+                (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
             ),
             'cvcc_service_negative_complaint_count' => $this->resolveCvccServiceNegativeComplaintCount(
-                $outletIds,
+                (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
             ),
             'cvcc_total_review_count' => $this->resolveCvccTotalReviewCount(
-                $outletIds,
+                (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
             ),
@@ -1414,70 +1423,230 @@ class KpiParameterResolverService
     }
 
     /**
-     * @param  list<int>  $outletIds
+     * Scope CVCC dari Regional Management: area user + bawahan (jika ada).
+     *
+     * @return array{regional_user_ids: list<int>, area: string, capa_division: string}|null
      */
-    private function resolveCvccAvgResolutionHours(array $outletIds, string $startDate, string $endDate): ?float
+    private function resolveCvccRegionalScope(int $userId): ?array
     {
-        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+        if ($userId <= 0) {
             return null;
         }
 
-        $avg = DB::table('feedback_cases')
-            ->whereIn('id_outlet', array_map('intval', $outletIds))
-            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->whereNotNull('resolved_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, event_at, resolved_at)) AS avg_hours')
-            ->value('avg_hours');
+        $assignment = UserRegional::query()->where('user_id', $userId)->first();
+        if ($assignment === null || ! in_array($assignment->area, UserRegional::AREAS, true)) {
+            return null;
+        }
 
-        return $avg !== null ? round((float) $avg, 2) : null;
+        $jabatanId = (int) (DB::table('users')->where('id', $userId)->value('id_jabatan') ?? 0);
+
+        $subordinateIds = [];
+        if ($jabatanId > 0 && DB::getSchemaBuilder()->hasColumn('user_regional', 'supervisor_position_id')) {
+            $subordinateIds = DB::table('user_regional')
+                ->where('supervisor_position_id', $jabatanId)
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values()
+                ->all();
+        }
+
+        $regionalUserIds = $subordinateIds !== []
+            ? array_values(array_unique(array_merge([$userId], $subordinateIds)))
+            : [$userId];
+
+        return [
+            'regional_user_ids' => $regionalUserIds,
+            'area' => (string) $assignment->area,
+            'capa_division' => $this->regionalAreaToCapaDivision((string) $assignment->area),
+        ];
+    }
+
+    private function regionalAreaToCapaDivision(string $area): string
+    {
+        return match ($area) {
+            'Bar' => 'bar',
+            'Kitchen' => 'kitchen',
+            'Service' => 'service',
+            default => strtolower($area),
+        };
     }
 
     /**
-     * Negative comment CVCC dengan CAPA division Service yang sudah diisi.
-     *
-     * @param  list<int>  $outletIds
+     * @return array<string, mixed>|null
      */
-    private function resolveCvccServiceNegativeComplaintCount(array $outletIds, string $startDate, string $endDate): ?float
+    private function decodeFeedbackCaseMeta(mixed $meta): ?array
     {
-        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+        if (is_array($meta)) {
+            return $meta;
+        }
+
+        if ($meta === null || $meta === '') {
             return null;
         }
 
-        $rows = DB::table('feedback_cases')
-            ->whereIn('id_outlet', array_map('intval', $outletIds))
-            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->whereIn('severity', self::CVCC_NEGATIVE_SEVERITIES)
-            ->get(['meta']);
+        $decoded = json_decode((string) $meta, true);
 
-        $count = 0;
-        foreach ($rows as $row) {
-            $meta = json_decode((string) ($row->meta ?? ''), true);
-            if (! is_array($meta)) {
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return list<int>
+     */
+    private function extractRegionalUserIdsFromMetaArray(array $meta): array
+    {
+        if (! isset($meta['regional_user_ids']) || ! is_array($meta['regional_user_ids'])) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map('intval', $meta['regional_user_ids']),
+            fn ($id) => $id > 0,
+        )));
+    }
+
+    /**
+     * @param  array{regional_user_ids: list<int>, area: string, capa_division: string}  $scope
+     */
+    private function caseMatchesCvccRegionalScope(mixed $meta, array $scope, bool $requireCapaInput = false): bool
+    {
+        $decoded = $this->decodeFeedbackCaseMeta($meta);
+        if ($decoded === null) {
+            return false;
+        }
+
+        $caseRegionalIds = $this->extractRegionalUserIdsFromMetaArray($decoded);
+        if ($caseRegionalIds === []) {
+            return false;
+        }
+
+        $allowedIds = array_flip($scope['regional_user_ids']);
+        $matchedRegionalIds = array_values(array_filter(
+            $caseRegionalIds,
+            fn (int $id) => isset($allowedIds[$id]),
+        ));
+
+        if ($matchedRegionalIds === []) {
+            return false;
+        }
+
+        $areaMatched = DB::table('user_regional')
+            ->whereIn('user_id', $matchedRegionalIds)
+            ->where('area', $scope['area'])
+            ->exists();
+
+        if (! $areaMatched) {
+            return false;
+        }
+
+        if (! $requireCapaInput) {
+            return true;
+        }
+
+        $division = (string) ($scope['capa_division'] ?? '');
+        $capaDivision = $decoded['capa_divisions'][$division] ?? null;
+        if (! is_array($capaDivision) && $division === 'service' && isset($decoded['capa']) && is_array($decoded['capa'])) {
+            $capaDivision = $decoded['capa'];
+        }
+
+        return is_array($capaDivision)
+            && $this->feedbackCapaService->storedCapaHasUserInput($capaDivision);
+    }
+
+    /**
+     * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed}>
+     */
+    private function fetchCvccCasesForPeriod(string $startDate, string $endDate, bool $resolvedOnly = false): array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+            return [];
+        }
+
+        $query = DB::table('feedback_cases')
+            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+
+        if ($resolvedOnly) {
+            $query->whereNotNull('resolved_at');
+        }
+
+        return $query->get(['meta', 'event_at', 'resolved_at', 'severity'])->all();
+    }
+
+    private function resolveCvccAvgResolutionHours(int $userId, string $startDate, string $endDate): ?float
+    {
+        $scope = $this->resolveCvccRegionalScope($userId);
+        if ($scope === null) {
+            return null;
+        }
+
+        $hours = [];
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, resolvedOnly: true) as $row) {
+            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 continue;
             }
 
-            $serviceCapa = $meta['capa_divisions']['service'] ?? null;
-            if ($this->feedbackCapaService->storedCapaHasUserInput(is_array($serviceCapa) ? $serviceCapa : null)) {
-                $count++;
+            $eventAt = strtotime((string) $row->event_at);
+            $resolvedAt = strtotime((string) $row->resolved_at);
+            if ($eventAt === false || $resolvedAt === false || $resolvedAt < $eventAt) {
+                continue;
             }
+
+            $hours[] = ($resolvedAt - $eventAt) / 3600;
         }
 
-        return $count > 0 ? (float) $count : ($rows->isEmpty() ? null : 0.0);
-    }
-
-    /**
-     * @param  list<int>  $outletIds
-     */
-    private function resolveCvccTotalReviewCount(array $outletIds, string $startDate, string $endDate): ?float
-    {
-        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+        if ($hours === []) {
             return null;
         }
 
-        $count = (int) DB::table('feedback_cases')
-            ->whereIn('id_outlet', array_map('intval', $outletIds))
-            ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->count();
+        return round(array_sum($hours) / count($hours), 2);
+    }
+
+    /**
+     * Negative comment CVCC dengan CAPA division area user yang sudah diisi.
+     */
+    private function resolveCvccServiceNegativeComplaintCount(int $userId, string $startDate, string $endDate): ?float
+    {
+        $scope = $this->resolveCvccRegionalScope($userId);
+        if ($scope === null) {
+            return null;
+        }
+
+        $count = 0;
+        $matchedCases = 0;
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
+            if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
+                continue;
+            }
+
+            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope, requireCapaInput: true)) {
+                continue;
+            }
+
+            $matchedCases++;
+            $count++;
+        }
+
+        if ($matchedCases === 0) {
+            return null;
+        }
+
+        return (float) $count;
+    }
+
+    private function resolveCvccTotalReviewCount(int $userId, string $startDate, string $endDate): ?float
+    {
+        $scope = $this->resolveCvccRegionalScope($userId);
+        if ($scope === null) {
+            return null;
+        }
+
+        $count = 0;
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
+            if ($this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
+                $count++;
+            }
+        }
 
         return $count > 0 ? (float) $count : null;
     }

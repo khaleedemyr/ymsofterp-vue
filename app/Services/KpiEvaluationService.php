@@ -1090,6 +1090,14 @@ class KpiEvaluationService
             ];
         }
 
+        if (preg_match('/^<=\s*(\d+(?:\.\d+)?)\s*hours?$/i', $target, $matches)) {
+            return [
+                'comparator' => 'lte',
+                'min' => null,
+                'max' => (float) $matches[1],
+            ];
+        }
+
         if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*%?$/i', $target, $matches)) {
             return [
                 'comparator' => 'gte',
