@@ -127,22 +127,22 @@
                     </select>
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.cogs_value" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.cogs_value" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.cogs_percent" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.cogs_percent" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.deviation_value" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.deviation_value" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.deviation_percent" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.deviation_percent" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.catcost_value" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.catcost_value" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3">
-                    <input v-model="row.catcost_percent" type="number" step="0.01" min="0" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
+                    <input v-model="row.catcost_percent" type="number" step="0.01" class="w-full rounded-lg border-gray-300 text-right text-sm" placeholder="0" />
                   </td>
                   <td class="px-3 py-3 text-center">
                     <button
