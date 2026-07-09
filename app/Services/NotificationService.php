@@ -169,6 +169,8 @@ class NotificationService
                 // Training/LMS types
                 'training_invitation' => 'Training Invitation',
                 'trainer_invitation' => 'Trainer Invitation',
+                'ja_training_plan_invitation' => 'Training Plan Invitation',
+                'ja_training_plan_trainer_assignment' => 'Training Plan Trainer Assignment',
                 'participant_invitation' => 'Participant Invitation',
                 'trainer_assignment' => 'Trainer Assignment',
                 

@@ -15,8 +15,11 @@ use App\Models\JustAcademy\JaScheduleInviteLog;
 use App\Models\JustAcademy\JaScheduleParticipant;
 use App\Models\JustAcademy\JaScheduleTrainer;
 use App\Models\User;
+use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -24,6 +27,9 @@ class JustAcademyService
 {
     /** Status jadwal yang boleh dilihat peserta (bukan draft/cancelled). */
     public const PARTICIPANT_VISIBLE_STATUSES = ['published', 'ongoing', 'completed'];
+
+    /** Status jadwal yang memicu notifikasi ke peserta/trainer. */
+    public const NOTIFY_STATUSES = ['published', 'ongoing'];
 
     public function participantSchedulesForUser(int $userId)
     {
@@ -57,11 +63,11 @@ class JustAcademyService
         array $jabatanIds,
         array $outletIds,
         int $invitedBy,
-    ): int {
+    ): array {
         $resolved = $this->resolveUserIds($userIds, $jabatanIds, $outletIds);
 
         if ($resolved->isEmpty()) {
-            return 0;
+            return ['added' => 0, 'user_ids' => collect()];
         }
 
         $filterType = 'mixed';
@@ -81,7 +87,8 @@ class JustAcademyService
         };
 
         $added = 0;
-        DB::transaction(function () use ($schedule, $resolved, $inviteSource, $filterType, $invitedBy, $userIds, $jabatanIds, $outletIds, &$added) {
+        $newUserIds = collect();
+        DB::transaction(function () use ($schedule, $resolved, $inviteSource, $filterType, $invitedBy, $userIds, $jabatanIds, $outletIds, &$added, &$newUserIds) {
             foreach ($resolved as $userId) {
                 $participant = JaScheduleParticipant::firstOrCreate(
                     [
@@ -98,6 +105,7 @@ class JustAcademyService
 
                 if ($participant->wasRecentlyCreated) {
                     $added++;
+                    $newUserIds->push((int) $userId);
                 }
             }
 
@@ -115,10 +123,10 @@ class JustAcademyService
             ]);
         });
 
-        return $added;
+        return ['added' => $added, 'user_ids' => $newUserIds->unique()->values()];
     }
 
-    public function syncParticipants(JaSchedule $schedule, array $userIds, int $invitedBy): void
+    public function syncParticipants(JaSchedule $schedule, array $userIds, int $invitedBy): Collection
     {
         $userIds = collect($userIds)->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $existing = $schedule->participants()->pluck('user_id');
@@ -128,6 +136,7 @@ class JustAcademyService
             $schedule->participants()->whereIn('user_id', $toRemove)->delete();
         }
 
+        $added = collect();
         foreach ($userIds->diff($existing) as $userId) {
             JaScheduleParticipant::create([
                 'schedule_id' => $schedule->id,
@@ -137,11 +146,20 @@ class JustAcademyService
                 'invited_at' => now(),
                 'invited_by' => $invitedBy,
             ]);
+            $added->push((int) $userId);
         }
+
+        return $added;
     }
 
-    public function syncTrainers(JaSchedule $schedule, array $internalUserIds, array $externalNames): void
+    public function syncTrainers(JaSchedule $schedule, array $internalUserIds, array $externalNames): Collection
     {
+        $existingInternal = $schedule->trainers()
+            ->where('trainer_type', 'internal')
+            ->whereNotNull('user_id')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id);
+
         $internalUserIds = collect($internalUserIds)->filter()->map(fn ($id) => (int) $id)->unique()->values();
         $externalNames = collect($externalNames)
             ->map(fn ($name) => trim((string) $name))
@@ -192,6 +210,112 @@ class JustAcademyService
                 );
             }
         });
+
+        return $internalUserIds->diff($existingInternal)->values();
+    }
+
+    public function shouldNotifyForStatus(string $status): bool
+    {
+        return in_array($status, self::NOTIFY_STATUSES, true);
+    }
+
+    public function trainerSchedulesForUser(int $userId)
+    {
+        return JaSchedule::query()
+            ->whereHas('trainers', fn ($q) => $q
+                ->where('trainer_type', 'internal')
+                ->where('user_id', $userId))
+            ->whereIn('status', self::NOTIFY_STATUSES);
+    }
+
+    public function homeSchedulesForUser(int $userId, int $limit = 5): array
+    {
+        $participantSchedules = $this->participantSchedulesForUser($userId)
+            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
+            ->whereIn('status', self::NOTIFY_STATUSES)
+            ->where('end_at', '>=', now())
+            ->orderBy('start_at')
+            ->limit($limit)
+            ->get();
+
+        $trainerSchedules = $this->trainerSchedulesForUser($userId)
+            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
+            ->where('end_at', '>=', now())
+            ->orderBy('start_at')
+            ->limit($limit)
+            ->get();
+
+        $combined = collect();
+
+        foreach ($participantSchedules as $schedule) {
+            $combined->put($schedule->id, $this->formatHomeSchedule($schedule, ['participant']));
+        }
+
+        foreach ($trainerSchedules as $schedule) {
+            if ($combined->has($schedule->id)) {
+                $entry = $combined->get($schedule->id);
+                $entry['roles'] = array_values(array_unique([...$entry['roles'], 'trainer']));
+                $combined->put($schedule->id, $entry);
+            } else {
+                $combined->put($schedule->id, $this->formatHomeSchedule($schedule, ['trainer']));
+            }
+        }
+
+        return $combined
+            ->sortBy('start_at')
+            ->values()
+            ->take($limit)
+            ->all();
+    }
+
+    public function notifyScheduleAssignments(
+        JaSchedule $schedule,
+        iterable $participantUserIds,
+        iterable $trainerUserIds,
+        int $actorId,
+        bool $rescheduled = false,
+    ): void {
+        if (!$this->shouldNotifyForStatus($schedule->status)) {
+            return;
+        }
+
+        $schedule->load(['program:id,title', 'outlet:id_outlet,nama_outlet']);
+
+        $participantUserIds = collect($participantUserIds)->filter()->map(fn ($id) => (int) $id)->unique();
+        $trainerUserIds = collect($trainerUserIds)->filter()->map(fn ($id) => (int) $id)->unique();
+
+        foreach ($participantUserIds as $userId) {
+            if ($rescheduled) {
+                $this->sendParticipantRescheduleNotification($schedule, $userId, $actorId);
+            } else {
+                $this->sendParticipantInvitationNotification($schedule, $userId, $actorId);
+            }
+            $this->createScheduleReminder($schedule, $userId, 'participant', $actorId);
+        }
+
+        foreach ($trainerUserIds as $userId) {
+            if ($rescheduled) {
+                $this->sendTrainerRescheduleNotification($schedule, $userId, $actorId);
+            } else {
+                $this->sendTrainerAssignmentNotification($schedule, $userId, $actorId);
+            }
+            $this->createScheduleReminder($schedule, $userId, 'trainer', $actorId);
+        }
+    }
+
+    public function notifyAllAssigneesRescheduled(JaSchedule $schedule, int $actorId): void
+    {
+        if (!$this->shouldNotifyForStatus($schedule->status)) {
+            return;
+        }
+
+        $participantIds = $schedule->participants()->pluck('user_id');
+        $trainerIds = $schedule->trainers()
+            ->where('trainer_type', 'internal')
+            ->whereNotNull('user_id')
+            ->pluck('user_id');
+
+        $this->notifyScheduleAssignments($schedule, $participantIds, $trainerIds, $actorId, true);
     }
 
     public function ensureParticipant(JaSchedule $schedule, int $userId): JaScheduleParticipant
@@ -1030,5 +1154,221 @@ class JustAcademyService
             ->values();
 
         return $names->isNotEmpty() ? $names->join(', ') : '—';
+    }
+
+    private function formatHomeSchedule(JaSchedule $schedule, array $roles): array
+    {
+        $primaryRole = in_array('participant', $roles, true) ? 'participant' : 'trainer';
+
+        return [
+            'id' => $schedule->id,
+            'title' => $schedule->title,
+            'program_title' => $schedule->program?->title,
+            'start_at' => $schedule->start_at?->toIso8601String(),
+            'end_at' => $schedule->end_at?->toIso8601String(),
+            'start_label' => $schedule->start_at?->format('d M Y H:i'),
+            'end_label' => $schedule->end_at?->format('d M Y H:i'),
+            'location' => $schedule->location,
+            'outlet_name' => $schedule->outlet?->nama_outlet,
+            'status' => $schedule->status,
+            'roles' => $roles,
+            'role' => $primaryRole,
+            'url' => $primaryRole === 'trainer'
+                ? url('/just-academy/schedules/' . $schedule->id)
+                : url('/just-academy/my-training/' . $schedule->id),
+        ];
+    }
+
+    private function sendParticipantInvitationNotification(JaSchedule $schedule, int $userId, int $actorId): void
+    {
+        try {
+            $actor = User::find($actorId);
+            $message = $this->buildScheduleNotificationMessage(
+                $schedule,
+                $actor?->nama_lengkap ?? 'Admin',
+                'Anda terdaftar sebagai peserta training plan:',
+                'Silakan cek jadwal dan konfirmasi kehadiran Anda melalui Just Academy.',
+            );
+
+            NotificationService::insertGetId([
+                'user_id' => $userId,
+                'type' => 'ja_training_plan_invitation',
+                'message' => $message,
+                'url' => url('/just-academy/my-training/' . $schedule->id),
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Just Academy participant notification failed', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendTrainerAssignmentNotification(JaSchedule $schedule, int $userId, int $actorId): void
+    {
+        try {
+            $actor = User::find($actorId);
+            $message = $this->buildScheduleNotificationMessage(
+                $schedule,
+                $actor?->nama_lengkap ?? 'Admin',
+                'Anda ditugaskan sebagai trainer pada training plan:',
+                'Silakan persiapkan materi training dan cek detail jadwal di Just Academy.',
+            );
+
+            NotificationService::insertGetId([
+                'user_id' => $userId,
+                'type' => 'ja_training_plan_trainer_assignment',
+                'message' => $message,
+                'url' => url('/just-academy/schedules/' . $schedule->id),
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Just Academy trainer notification failed', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendParticipantRescheduleNotification(JaSchedule $schedule, int $userId, int $actorId): void
+    {
+        try {
+            $actor = User::find($actorId);
+            $message = $this->buildScheduleNotificationMessage(
+                $schedule,
+                $actor?->nama_lengkap ?? 'Admin',
+                'Jadwal training plan Anda telah diperbarui:',
+                'Mohon periksa kembali tanggal, waktu, dan lokasi training.',
+                true,
+            );
+
+            NotificationService::insertGetId([
+                'user_id' => $userId,
+                'type' => 'ja_training_plan_invitation',
+                'message' => $message,
+                'url' => url('/just-academy/my-training/' . $schedule->id),
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Just Academy participant reschedule notification failed', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function sendTrainerRescheduleNotification(JaSchedule $schedule, int $userId, int $actorId): void
+    {
+        try {
+            $actor = User::find($actorId);
+            $message = $this->buildScheduleNotificationMessage(
+                $schedule,
+                $actor?->nama_lengkap ?? 'Admin',
+                'Jadwal training plan (sebagai trainer) telah diperbarui:',
+                'Mohon periksa kembali tanggal, waktu, dan lokasi training.',
+                true,
+            );
+
+            NotificationService::insertGetId([
+                'user_id' => $userId,
+                'type' => 'ja_training_plan_trainer_assignment',
+                'message' => $message,
+                'url' => url('/just-academy/schedules/' . $schedule->id),
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Just Academy trainer reschedule notification failed', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function buildScheduleNotificationMessage(
+        JaSchedule $schedule,
+        string $actorName,
+        string $intro,
+        string $footer,
+        bool $isReschedule = false,
+    ): string {
+        $programTitle = $schedule->program?->title ?? $schedule->title;
+        $outletName = $schedule->outlet?->nama_outlet ?? ($schedule->location ?: '—');
+        $startLabel = $schedule->start_at
+            ? Carbon::parse($schedule->start_at)->format('d F Y H:i')
+            : '—';
+        $endLabel = $schedule->end_at
+            ? Carbon::parse($schedule->end_at)->format('d F Y H:i')
+            : '—';
+
+        $message = $intro . "\n\n";
+        if ($isReschedule) {
+            $message .= "⚠️ Perubahan jadwal\n";
+        }
+        $message .= "📚 Program: {$programTitle}\n";
+        $message .= "📋 Judul: {$schedule->title}\n";
+        $message .= "📅 Mulai: {$startLabel}\n";
+        $message .= "📅 Selesai: {$endLabel}\n";
+        $message .= "🏢 Lokasi: {$outletName}\n";
+        $message .= "👤 Oleh: {$actorName}\n\n";
+        $message .= $footer;
+
+        return $message;
+    }
+
+    private function createScheduleReminder(JaSchedule $schedule, int $userId, string $role, int $createdBy): void
+    {
+        try {
+            $schedule->loadMissing(['program:id,title', 'outlet:id_outlet,nama_outlet']);
+
+            if (!$schedule->start_at) {
+                return;
+            }
+
+            $programTitle = $schedule->program?->title ?? $schedule->title;
+            $outletName = $schedule->outlet?->nama_outlet ?? ($schedule->location ?: 'Head Office');
+            $title = $role === 'trainer'
+                ? "Training Plan (Trainer): {$schedule->title}"
+                : "Training Plan: {$schedule->title}";
+
+            DB::table('reminders')
+                ->where('user_id', $userId)
+                ->where('title', $title)
+                ->delete();
+
+            $description = "📚 Program: {$programTitle}\n";
+            $description .= "📋 Judul: {$schedule->title}\n";
+            $description .= '📅 Mulai: ' . Carbon::parse($schedule->start_at)->format('d F Y H:i') . "\n";
+            $description .= '📅 Selesai: ' . Carbon::parse($schedule->end_at)->format('d F Y H:i') . "\n";
+            $description .= "🏢 Lokasi: {$outletName}\n";
+            $description .= '👤 Peran: ' . ($role === 'trainer' ? 'Trainer' : 'Peserta') . "\n";
+
+            if ($schedule->notes) {
+                $description .= "📝 Catatan: {$schedule->notes}\n";
+            }
+
+            $description .= "\nJangan lupa hadir tepat waktu!";
+
+            DB::table('reminders')->insert([
+                'user_id' => $userId,
+                'created_by' => $createdBy,
+                'date' => $schedule->start_at->toDateString(),
+                'time' => $schedule->start_at->format('H:i:s'),
+                'title' => $title,
+                'description' => $description,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Just Academy schedule reminder failed', [
+                'schedule_id' => $schedule->id,
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

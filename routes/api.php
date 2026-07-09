@@ -882,6 +882,19 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/employee-onboarding/{id}/submit-week', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiSubmitWeek'])->where('id', '[0-9]+');
         Route::post('/employee-onboarding/{id}/approve', [\App\Http\Controllers\EmployeeOnboardingController::class, 'apiApprove'])->where('id', '[0-9]+');
 
+        // SOP Development Completion (mobile app)
+        Route::get('/sop-development-completion', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiIndex']);
+        Route::get('/sop-development-completion/pending-approvals', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiPendingApprovals']);
+        Route::get('/sop-development-completion/search-approvers', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiSearchApprovers']);
+        Route::post('/sop-development-completion', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiStore']);
+        Route::get('/sop-development-completion/{id}', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/sop-development-completion/{id}', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/sop-development-completion/{id}', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiDestroy'])->where('id', '[0-9]+');
+        Route::post('/sop-development-completion/{id}/submit-approval', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiSubmitForApproval'])->where('id', '[0-9]+');
+        Route::post('/sop-development-completion/{id}/approve', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiApprove'])->where('id', '[0-9]+');
+        Route::post('/sop-development-completion/{id}/reject', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiReject'])->where('id', '[0-9]+');
+        Route::get('/sop-development-completion/{id}/file', [\App\Http\Controllers\SopDevelopmentCompletionController::class, 'apiServeFile'])->where('id', '[0-9]+');
+
         // MK Production (mobile app)
         Route::get('/mk-production', [\App\Http\Controllers\MKProductionController::class, 'apiIndex']);
         Route::get('/mk-production/create-data', [\App\Http\Controllers\MKProductionController::class, 'apiCreateData']);

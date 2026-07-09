@@ -117,12 +117,12 @@ class ScheduleController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
-        $this->service->syncParticipants(
+        $newParticipantIds = $this->service->syncParticipants(
             $schedule,
             $validated['participant_ids'] ?? [],
             (int) $request->user()->id,
         );
-        $this->service->syncTrainers(
+        $newTrainerIds = $this->service->syncTrainers(
             $schedule,
             $validated['internal_trainer_ids'] ?? [],
             $validated['external_trainers'] ?? [],
@@ -131,6 +131,13 @@ class ScheduleController extends Controller
         if ($schedule->status === 'published') {
             $this->service->ensureQrToken($schedule);
         }
+
+        $this->service->notifyScheduleAssignments(
+            $schedule,
+            $newParticipantIds,
+            $newTrainerIds,
+            (int) $request->user()->id,
+        );
 
         return redirect()
             ->route('just-academy.schedules.index', [
@@ -200,15 +207,19 @@ class ScheduleController extends Controller
     {
         $validated = $this->validateSchedule($request);
         $wasPublished = $schedule->status === 'published';
+        $wasNotifiable = $this->service->shouldNotifyForStatus($schedule->status);
+        $oldStartAt = $schedule->start_at?->copy();
+        $oldEndAt = $schedule->end_at?->copy();
+        $oldLocation = $schedule->location;
 
         $schedule->update($this->schedulePayload($validated));
 
-        $this->service->syncParticipants(
+        $newParticipantIds = $this->service->syncParticipants(
             $schedule,
             $validated['participant_ids'] ?? [],
             (int) $request->user()->id,
         );
-        $this->service->syncTrainers(
+        $newTrainerIds = $this->service->syncTrainers(
             $schedule,
             $validated['internal_trainer_ids'] ?? [],
             $validated['external_trainers'] ?? [],
@@ -216,6 +227,34 @@ class ScheduleController extends Controller
 
         if ($schedule->status === 'published' && (!$wasPublished || !$schedule->qr_token)) {
             $this->service->ensureQrToken($schedule);
+        }
+
+        $actorId = (int) $request->user()->id;
+        if ($this->service->shouldNotifyForStatus($schedule->status)) {
+            $rescheduled = !$oldStartAt?->eq($schedule->start_at)
+                || !$oldEndAt?->eq($schedule->end_at)
+                || $oldLocation !== $schedule->location;
+
+            if (!$wasNotifiable) {
+                $this->service->notifyScheduleAssignments(
+                    $schedule,
+                    $schedule->participants()->pluck('user_id'),
+                    $schedule->trainers()
+                        ->where('trainer_type', 'internal')
+                        ->whereNotNull('user_id')
+                        ->pluck('user_id'),
+                    $actorId,
+                );
+            } elseif ($rescheduled) {
+                $this->service->notifyAllAssigneesRescheduled($schedule, $actorId);
+            } else {
+                $this->service->notifyScheduleAssignments(
+                    $schedule,
+                    $newParticipantIds,
+                    $newTrainerIds,
+                    $actorId,
+                );
+            }
         }
 
         return redirect()
@@ -261,7 +300,7 @@ class ScheduleController extends Controller
             return back()->withErrors(['invite' => 'Pilih minimal satu peserta, jabatan, atau outlet.']);
         }
 
-        $added = $this->service->inviteParticipants(
+        $result = $this->service->inviteParticipants(
             $schedule,
             $userIds,
             $jabatanIds,
@@ -269,7 +308,16 @@ class ScheduleController extends Controller
             (int) $request->user()->id,
         );
 
-        return back()->with('success', "{$added} peserta berhasil ditambahkan.");
+        if ($result['user_ids']->isNotEmpty()) {
+            $this->service->notifyScheduleAssignments(
+                $schedule->fresh(),
+                $result['user_ids'],
+                collect(),
+                (int) $request->user()->id,
+            );
+        }
+
+        return back()->with('success', "{$result['added']} peserta berhasil ditambahkan.");
     }
 
     public function removeParticipant(JaSchedule $schedule, int $participantId)
@@ -289,8 +337,9 @@ class ScheduleController extends Controller
             'hours' => 'nullable|numeric|min:0',
         ]);
 
+        $isNewInternalTrainer = false;
         if ($validated['trainer_type'] === 'internal') {
-            JaScheduleTrainer::updateOrCreate(
+            $trainer = JaScheduleTrainer::updateOrCreate(
                 [
                     'schedule_id' => $schedule->id,
                     'trainer_type' => 'internal',
@@ -302,6 +351,7 @@ class ScheduleController extends Controller
                     'hours' => $validated['hours'] ?? null,
                 ]
             );
+            $isNewInternalTrainer = $trainer->wasRecentlyCreated;
         } else {
             JaScheduleTrainer::firstOrCreate(
                 [
@@ -314,6 +364,15 @@ class ScheduleController extends Controller
                     'role' => $validated['role'],
                     'hours' => $validated['hours'] ?? null,
                 ]
+            );
+        }
+
+        if ($isNewInternalTrainer) {
+            $this->service->notifyScheduleAssignments(
+                $schedule,
+                collect(),
+                [(int) $validated['user_id']],
+                (int) $request->user()->id,
             );
         }
 
@@ -336,6 +395,14 @@ class ScheduleController extends Controller
         );
 
         return back()->with('success', 'Absensi manual berhasil dicatat.');
+    }
+
+    public function homeSchedules(Request $request)
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->homeSchedulesForUser((int) $request->user()->id),
+        ]);
     }
 
     public function checkInPage(Request $request)

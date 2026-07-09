@@ -3857,6 +3857,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
         Route::get('/jabatan', [\App\Http\Controllers\JustAcademy\LookupController::class, 'jabatan'])->name('jabatan');
         Route::get('/divisi', [\App\Http\Controllers\JustAcademy\LookupController::class, 'divisi'])->name('divisi');
         Route::get('/outlets', [\App\Http\Controllers\JustAcademy\LookupController::class, 'outlets'])->name('outlets');
+        Route::get('/home-schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'homeSchedules'])->name('home-schedules');
     });
 });
 

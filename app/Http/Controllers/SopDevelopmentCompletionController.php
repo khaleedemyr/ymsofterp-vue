@@ -520,6 +520,141 @@ class SopDevelopmentCompletionController extends Controller
         );
     }
 
+    // --- Mobile API (approval-app) ---
+
+    public function apiIndex(Request $request)
+    {
+        $user = Auth::user();
+        $search = trim((string) $request->get('search', ''));
+        $status = (string) $request->get('status', 'all');
+        $perPage = (int) $request->get('per_page', 15);
+
+        if ($perPage < 1 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        $query = SopDevelopmentCompletion::query()
+            ->with([
+                'user:id,nama_lengkap',
+                'approvalFlows.approver:id,nama_lengkap',
+            ])
+            ->orderByDesc('created_at');
+
+        if (! $this->isSuperAdmin($user)) {
+            $query->where('user_id', $user->id);
+        }
+
+        if ($status !== 'all' && $status !== '') {
+            $query->where('status', $status);
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $paginator = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'records' => collect($paginator->items())
+                ->map(fn (SopDevelopmentCompletion $record) => $this->serializeListRecord($record, $user))
+                ->values()
+                ->all(),
+            'pagination' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+            ],
+            'is_super_admin' => $this->isSuperAdmin($user),
+        ]);
+    }
+
+    public function apiShow(int $id)
+    {
+        $record = SopDevelopmentCompletion::with([
+            'user:id,nama_lengkap',
+            'approvalFlows.approver:id,nama_lengkap',
+        ])->findOrFail($id);
+
+        $user = Auth::user();
+        if (! $this->canView($record, $user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized',
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'record' => $this->serializeDetailRecord($record, $user),
+            'can_edit' => $record->isEditableByOwner() && $this->isOwnerOrSuperAdmin($record, $user),
+            'can_submit' => $record->canSubmitForApproval() && $this->isOwnerOrSuperAdmin($record, $user),
+            'can_delete' => $this->canDeleteRecord($record, $user),
+            'can_approve' => $this->canApprove($record),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        return $this->store($request);
+    }
+
+    public function apiUpdate(Request $request, int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->update($request, $record);
+    }
+
+    public function apiDestroy(int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->destroy($record);
+    }
+
+    public function apiSearchApprovers(Request $request)
+    {
+        return $this->getApprovers($request);
+    }
+
+    public function apiPendingApprovals(Request $request)
+    {
+        return $this->getPendingApprovals($request);
+    }
+
+    public function apiSubmitForApproval(Request $request, int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->submitForApproval($request, $record);
+    }
+
+    public function apiApprove(Request $request, int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->approve($request, $record);
+    }
+
+    public function apiReject(Request $request, int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->reject($request, $record);
+    }
+
+    public function apiServeFile(int $id)
+    {
+        $record = SopDevelopmentCompletion::findOrFail($id);
+
+        return $this->serveFile($record);
+    }
+
     /**
      * @param  list<int>  $approverIds
      */
@@ -560,6 +695,57 @@ class SopDevelopmentCompletionController extends Controller
 
         return (string) $user->id_role === self::SUPERADMIN_ROLE_ID
             || (int) ($user->id_jabatan ?? 0) === 160;
+    }
+
+    private function isOwnerOrSuperAdmin(SopDevelopmentCompletion $record, $user): bool
+    {
+        return $this->isSuperAdmin($user) || (int) $record->user_id === (int) $user->id;
+    }
+
+    private function canDeleteRecord(SopDevelopmentCompletion $record, $user): bool
+    {
+        if ($this->isSuperAdmin($user)) {
+            return true;
+        }
+
+        if ((int) $record->user_id !== (int) $user->id) {
+            return false;
+        }
+
+        return $record->canBeDeletedByOwner();
+    }
+
+    private function serializeListRecord(SopDevelopmentCompletion $record, $user): array
+    {
+        return [
+            'id' => $record->id,
+            'title' => $record->title,
+            'description' => $record->description,
+            'due_date' => $record->due_date?->format('Y-m-d'),
+            'status' => $record->status,
+            'status_text' => $record->status_text,
+            'file_path' => $record->file_path,
+            'file_original_name' => $record->file_original_name,
+            'is_overdue' => $record->is_overdue,
+            'submitted_at' => $record->submitted_at?->toIso8601String(),
+            'created_at' => $record->created_at?->toIso8601String(),
+            'creator_name' => $record->user?->nama_lengkap,
+            'user_id' => $record->user_id,
+            'approval_flows' => $record->approvalFlows,
+            'can_delete' => $this->canDeleteRecord($record, $user),
+            'can_submit' => $record->canSubmitForApproval() && $this->isOwnerOrSuperAdmin($record, $user),
+        ];
+    }
+
+    private function serializeDetailRecord(SopDevelopmentCompletion $record, $user): array
+    {
+        return array_merge($this->serializeListRecord($record, $user), [
+            'approval_notes' => $record->approval_notes,
+            'approved_at' => $record->approved_at?->toIso8601String(),
+            'rejected_at' => $record->rejected_at?->toIso8601String(),
+            'resubmission_count' => $record->resubmission_count,
+            'user' => $record->user,
+        ]);
     }
 
     private function ensureOwner(SopDevelopmentCompletion $record): void
