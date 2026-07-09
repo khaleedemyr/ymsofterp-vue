@@ -38,24 +38,42 @@ class ApiController extends Controller
         ]);
     }
 
+    public function homeSchedules(Request $request)
+    {
+        $userId = (int) $request->user()->id;
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->homeSchedulesForUser($userId, 5),
+        ]);
+    }
+
     public function mySchedules(Request $request)
     {
         $userId = (int) $request->user()->id;
         $tab = $request->input('tab', 'upcoming');
 
-        $query = JaSchedule::with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
-            ->whereHas('participants', fn ($q) => $q->where('user_id', $userId))
-            ->orderBy('start_at');
+        $query = $this->service->participantSchedulesForUser($userId)
+            ->with([
+                'program:id,title',
+                'outlet:id_outlet,nama_outlet',
+                'trainers.user:id,nama_lengkap',
+            ]);
 
         if ($tab === 'past') {
-            $query->where('end_at', '<', now());
+            $query->where('end_at', '<', now())->orderByDesc('start_at');
         } else {
-            $query->where('end_at', '>=', now()->subDay());
+            $query->where('end_at', '>=', now())->orderBy('start_at');
         }
+
+        $paginator = $this->service->enrichParticipantScheduleListing(
+            $query->paginate(15),
+            $userId,
+        );
 
         return response()->json([
             'success' => true,
-            'data' => $query->paginate(15),
+            'data' => $paginator,
         ]);
     }
 
@@ -135,6 +153,32 @@ class ApiController extends Controller
         );
 
         return response()->json(['success' => true, 'data' => $attempt]);
+    }
+
+    public function syncQuizProgress(Request $request, JaSchedule $schedule, JaQuiz $quiz)
+    {
+        $validated = $request->validate(['current_index' => 'required|integer|min:0']);
+
+        $this->service->syncQuizProgress(
+            $schedule,
+            $quiz,
+            (int) $request->user()->id,
+            (int) $validated['current_index'],
+        );
+
+        return response()->json(['success' => true]);
+    }
+
+    public function getFeedback(Request $request, JaSchedule $schedule)
+    {
+        $userId = (int) $request->user()->id;
+        $this->service->ensureParticipant($schedule, $userId);
+
+        $feedback = JaFeedback::where('schedule_id', $schedule->id)
+            ->where('user_id', $userId)
+            ->first();
+
+        return response()->json(['success' => true, 'data' => $feedback]);
     }
 
     public function checkIn(Request $request)

@@ -1330,12 +1330,15 @@ Route::prefix('approval-app')->group(function () {
         // Just Academy (mobile ymsoftapp)
         Route::prefix('just-academy')->name('api.approval-app.just-academy.')->group(function () {
             Route::get('/dashboard', [\App\Http\Controllers\JustAcademy\ApiController::class, 'dashboard']);
+            Route::get('/home-schedules', [\App\Http\Controllers\JustAcademy\ApiController::class, 'homeSchedules']);
             Route::get('/my-schedules', [\App\Http\Controllers\JustAcademy\ApiController::class, 'mySchedules']);
             Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ApiController::class, 'scheduleDetail']);
             Route::get('/schedules/{schedule}/materials', [\App\Http\Controllers\JustAcademy\ApiController::class, 'materials']);
             Route::post('/schedules/{schedule}/materials/{materialId}/complete', [\App\Http\Controllers\JustAcademy\ApiController::class, 'completeMaterial']);
             Route::post('/schedules/{schedule}/quizzes/{quiz}/start', [\App\Http\Controllers\JustAcademy\ApiController::class, 'startQuiz']);
+            Route::post('/schedules/{schedule}/quizzes/{quiz}/progress', [\App\Http\Controllers\JustAcademy\ApiController::class, 'syncQuizProgress']);
             Route::post('/schedules/{schedule}/quizzes/{quiz}/submit', [\App\Http\Controllers\JustAcademy\ApiController::class, 'submitQuiz']);
+            Route::get('/schedules/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\ApiController::class, 'getFeedback']);
             Route::post('/check-in', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkIn']);
             Route::post('/check-out', [\App\Http\Controllers\JustAcademy\ApiController::class, 'checkOut']);
             Route::post('/schedules/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\ApiController::class, 'feedback']);
