@@ -383,7 +383,7 @@ class KpiEvaluationController extends Controller
                 'name' => $evaluation->template->name,
                 'version' => $evaluation->template->version,
             ] : null,
-            'parameter_values' => $this->formatParameterValuesForEdit($evaluation->parameterValues),
+            'parameter_values' => $this->evaluationService->formatParameterValuesForEdit($evaluation->parameterValues),
             'strategies' => $strategies,
             'items' => $evaluation->items,
         ];
