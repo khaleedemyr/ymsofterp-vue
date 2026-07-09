@@ -497,16 +497,19 @@ class KpiParameterResolverService
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
+                $this->singleOutletIdFromContext($context),
             ),
             'cvcc_service_negative_complaint_count' => $this->resolveCvccServiceNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
+                $this->singleOutletIdFromContext($context),
             ),
             'cvcc_total_review_count' => $this->resolveCvccTotalReviewCount(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
+                $this->singleOutletIdFromContext($context),
             ),
             default => null,
         };
@@ -1589,13 +1592,40 @@ class KpiParameterResolverService
     }
 
     /**
-     * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed}>
+     * Saat breakdown per outlet, context berisi satu outlet — filter CVCC per id_outlet.
      */
-    private function fetchCvccCasesForPeriod(string $startDate, string $endDate, bool $resolvedOnly = false): array
+    private function singleOutletIdFromContext(array $context): ?int
+    {
+        if (isset($context['outlet_id']) && (int) $context['outlet_id'] > 0) {
+            return (int) $context['outlet_id'];
+        }
+
+        $outletIds = $context['outlet_ids'] ?? [];
+        if (is_array($outletIds) && count($outletIds) === 1) {
+            $outletId = (int) $outletIds[0];
+
+            return $outletId > 0 ? $outletId : null;
+        }
+
+        return null;
+    }
+
+    private function normalizeCvccPeriodDate(string $date): string
+    {
+        return substr(trim($date), 0, 10);
+    }
+
+    /**
+     * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed, severity: mixed}>
+     */
+    private function fetchCvccCasesForPeriod(string $startDate, string $endDate, bool $resolvedOnly = false, ?int $outletId = null): array
     {
         if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
             return [];
         }
+
+        $startDate = $this->normalizeCvccPeriodDate($startDate);
+        $endDate = $this->normalizeCvccPeriodDate($endDate);
 
         $query = DB::table('feedback_cases')
             ->whereBetween('event_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
@@ -1604,23 +1634,28 @@ class KpiParameterResolverService
             $query->whereNotNull('resolved_at');
         }
 
+        if ($outletId !== null && $outletId > 0) {
+            $query->where('id_outlet', $outletId);
+        }
+
         return $query->get(['meta', 'event_at', 'resolved_at', 'severity'])->all();
     }
 
-    private function resolveCvccAvgResolutionHours(int $userId, string $startDate, string $endDate): ?float
+    private function resolveCvccAvgResolutionHours(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
     {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
             return null;
         }
 
+        $endDate = $this->normalizeCvccPeriodDate($endDate);
         $periodEndTs = strtotime($endDate . ' 23:59:59');
         if ($periodEndTs === false) {
             return null;
         }
 
         $hours = [];
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
             if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 continue;
             }
@@ -1650,7 +1685,7 @@ class KpiParameterResolverService
     /**
      * Negative comment CVCC dengan CAPA division area user yang sudah diisi.
      */
-    private function resolveCvccServiceNegativeComplaintCount(int $userId, string $startDate, string $endDate): ?float
+    private function resolveCvccServiceNegativeComplaintCount(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
     {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
@@ -1659,7 +1694,7 @@ class KpiParameterResolverService
 
         $count = 0;
         $matchedCases = 0;
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
             if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
                 continue;
             }
@@ -1672,6 +1707,10 @@ class KpiParameterResolverService
             $count++;
         }
 
+        if ($outletId !== null && $outletId > 0) {
+            return (float) $count;
+        }
+
         if ($matchedCases === 0) {
             return null;
         }
@@ -1679,7 +1718,7 @@ class KpiParameterResolverService
         return (float) $count;
     }
 
-    private function resolveCvccTotalReviewCount(int $userId, string $startDate, string $endDate): ?float
+    private function resolveCvccTotalReviewCount(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
     {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
@@ -1687,10 +1726,14 @@ class KpiParameterResolverService
         }
 
         $count = 0;
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
             if ($this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 $count++;
             }
+        }
+
+        if ($outletId !== null && $outletId > 0) {
+            return (float) $count;
         }
 
         return $count > 0 ? (float) $count : null;
