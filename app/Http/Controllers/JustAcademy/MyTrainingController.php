@@ -58,6 +58,7 @@ class MyTrainingController extends Controller
 
         $attendance = $schedule->attendances()->where('user_id', $userId)->first();
         $trainingStarted = $this->service->trainingHasStarted($schedule);
+        $checkedIn = $this->service->hasCheckedIn($schedule, $userId);
         $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted);
 
         return Inertia::render('JustAcademy/MyTraining/Show', [
@@ -66,7 +67,22 @@ class MyTrainingController extends Controller
             'curriculum' => $curriculum,
             'trainingStarted' => $trainingStarted,
             'trainingStartsAt' => $schedule->start_at?->toIso8601String(),
+            'checkedIn' => $checkedIn,
         ]);
+    }
+
+    public function checkIn(Request $request, JaSchedule $schedule)
+    {
+        $validated = $request->validate([
+            'qr_payload' => 'required|string|max:2000',
+        ]);
+
+        $token = $this->service->parseCheckInToken($validated['qr_payload'], $schedule->id);
+        $this->service->checkIn($schedule, (int) $request->user()->id, $token, 'qr');
+
+        return redirect()
+            ->route('just-academy.my-training.show', $schedule)
+            ->with('success', 'Check-in berhasil. Silakan mulai training.');
     }
 
     public function completeMaterial(Request $request, JaSchedule $schedule, int $materialId)
@@ -110,6 +126,7 @@ class MyTrainingController extends Controller
     {
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
+        $this->service->ensureCheckedIn($schedule, $userId);
         $this->service->ensureTrainingStarted($schedule);
 
         $validated = $request->validate([

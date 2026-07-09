@@ -77,6 +77,7 @@ class ApiController extends Controller
             'data' => [
                 'schedule' => $schedule,
                 'attendance' => $attendance,
+                'checked_in' => $this->service->hasCheckedIn($schedule, $userId),
             ],
         ]);
     }
@@ -86,13 +87,18 @@ class ApiController extends Controller
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
 
+        $attendance = $schedule->attendances()->where('user_id', $userId)->first();
+        $checkedIn = $this->service->hasCheckedIn($schedule, $userId);
         $trainingStarted = $this->service->trainingHasStarted($schedule);
-        $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted);
+        $curriculum = $checkedIn
+            ? $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted)
+            : collect();
 
         return response()->json([
             'success' => true,
             'data' => $curriculum,
             'meta' => [
+                'checked_in' => $checkedIn,
                 'training_started' => $trainingStarted,
                 'training_starts_at' => $schedule->start_at?->toIso8601String(),
             ],
@@ -131,10 +137,11 @@ class ApiController extends Controller
         ]);
 
         $schedule = JaSchedule::findOrFail($validated['schedule_id']);
+        $token = $this->service->parseCheckInToken($validated['qr_token'], $schedule->id);
         $attendance = $this->service->checkIn(
             $schedule,
             (int) $request->user()->id,
-            $validated['qr_token'],
+            $token,
             'qr',
         );
 

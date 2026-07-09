@@ -355,6 +355,49 @@ class JustAcademyService
         ]);
     }
 
+    public function hasCheckedIn(JaSchedule $schedule, int $userId): bool
+    {
+        return JaAttendance::where('schedule_id', $schedule->id)
+            ->where('user_id', $userId)
+            ->whereNotNull('check_in_at')
+            ->exists();
+    }
+
+    public function ensureCheckedIn(JaSchedule $schedule, int $userId): void
+    {
+        if ($this->hasCheckedIn($schedule, $userId)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'check_in' => 'Silakan scan QR check-in dari trainer terlebih dahulu.',
+        ]);
+    }
+
+    public function parseCheckInToken(string $payload, int $expectedScheduleId): string
+    {
+        $payload = trim($payload);
+
+        if ($payload === '') {
+            throw ValidationException::withMessages(['qr_token' => 'QR code tidak boleh kosong.']);
+        }
+
+        if (str_contains($payload, 'token=')) {
+            $query = parse_url($payload, PHP_URL_QUERY);
+            if (is_string($query) && $query !== '') {
+                parse_str($query, $params);
+                if (isset($params['schedule_id']) && (int) $params['schedule_id'] !== $expectedScheduleId) {
+                    throw ValidationException::withMessages(['qr_token' => 'QR code tidak untuk jadwal training ini.']);
+                }
+                if (!empty($params['token'])) {
+                    return (string) $params['token'];
+                }
+            }
+        }
+
+        return $payload;
+    }
+
     public function ensureQrToken(JaSchedule $schedule): string
     {
         if ($schedule->qr_token) {
@@ -500,6 +543,10 @@ class JustAcademyService
 
     public function buildParticipantCurriculum(JaSchedule $schedule, int $userId, ?bool $trainingStarted = null): \Illuminate\Support\Collection
     {
+        if (!$this->hasCheckedIn($schedule, $userId)) {
+            return collect();
+        }
+
         $trainingStarted ??= $this->trainingHasStarted($schedule);
 
         return $this->getProgramCurriculum($schedule->program)->map(function (JaProgramItem $item) use ($schedule, $userId, $trainingStarted) {
@@ -602,6 +649,7 @@ class JustAcademyService
     public function markMaterialComplete(JaSchedule $schedule, int $userId, int $materialId): JaMaterialProgress
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureCheckedIn($schedule, $userId);
         $this->ensureTrainingStarted($schedule);
 
         if (!$this->programHasMaterial($schedule->program, $materialId)) {
@@ -621,6 +669,7 @@ class JustAcademyService
     public function submitQuiz(JaSchedule $schedule, JaQuiz $quiz, int $userId, array $answers): JaQuizAttempt
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureCheckedIn($schedule, $userId);
         $this->ensureTrainingStarted($schedule);
 
         if (!$this->programHasQuiz($schedule->program, $quiz->id)) {
@@ -713,6 +762,7 @@ class JustAcademyService
 
     public function ensureOpenQuizAttempt(JaSchedule $schedule, JaQuiz $quiz, int $userId): JaQuizAttempt
     {
+        $this->ensureCheckedIn($schedule, $userId);
         $this->ensureTrainingStarted($schedule);
 
         $existing = JaQuizAttempt::where('schedule_id', $schedule->id)
@@ -766,6 +816,7 @@ class JustAcademyService
     public function syncQuizProgress(JaSchedule $schedule, JaQuiz $quiz, int $userId, int $currentIndex): JaQuizAttempt
     {
         $this->ensureParticipant($schedule, $userId);
+        $this->ensureCheckedIn($schedule, $userId);
         $this->ensureTrainingStarted($schedule);
 
         if ($quiz->effectiveTimeLimitMode() !== 'question') {
