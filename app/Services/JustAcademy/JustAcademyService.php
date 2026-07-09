@@ -693,6 +693,7 @@ class JustAcademyService
         $this->abandonExpiredOpenAttempts($schedule, $quiz, $userId);
 
         $openAttempt = $this->ensureOpenQuizAttempt($schedule, $quiz, $userId);
+        $openAttempt = $this->refreshQuestionTimerIfNeeded($quiz, $openAttempt);
         $questions = $this->resolveQuestionsByIds($quiz, $openAttempt->question_ids ?? []);
         $poolSize = $quiz->questions->count();
 
@@ -739,6 +740,36 @@ class JustAcademyService
             'score' => 0,
             'passed' => false,
         ]);
+    }
+
+    private function refreshQuestionTimerIfNeeded(JaQuiz $quiz, JaQuizAttempt $attempt): JaQuizAttempt
+    {
+        if ($quiz->effectiveTimeLimitMode() !== 'question') {
+            return $attempt;
+        }
+
+        $limit = (int) $quiz->time_limit_question_sec;
+        if ($limit <= 0) {
+            return $attempt;
+        }
+
+        $progress = $attempt->quiz_progress ?? $this->initialQuizProgress();
+        $questionStartedAt = $progress['question_started_at'] ?? null;
+        $shouldReset = true;
+
+        if ($questionStartedAt) {
+            $elapsed = Carbon::parse($questionStartedAt)->diffInSeconds(now());
+            $shouldReset = $elapsed >= $limit;
+        }
+
+        if (!$shouldReset) {
+            return $attempt;
+        }
+
+        $progress['question_started_at'] = now()->toIso8601String();
+        $attempt->update(['quiz_progress' => $progress]);
+
+        return $attempt->fresh();
     }
 
     public function isQuizAttemptExpired(JaQuiz $quiz, JaQuizAttempt $attempt, int $questionCount = 0): bool

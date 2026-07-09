@@ -130,6 +130,10 @@ class MyTrainingController extends Controller
             (int) $validated['current_index'],
         );
 
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true]);
+        }
+
         return back();
     }
 

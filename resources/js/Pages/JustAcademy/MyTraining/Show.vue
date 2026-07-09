@@ -79,12 +79,9 @@ function materialStatusClass(item) {
 }
 
 function openMaterial(item) {
-  activeItemKey.value = itemKey(item);
-  activeQuizPayload.value = null;
-  quizStartError.value = '';
-}
-
-function openQuizResult(item) {
+  if (item.file_path || item.url) {
+    window.open(item.file_path || item.url, '_blank', 'noopener,noreferrer');
+  }
   activeItemKey.value = itemKey(item);
   activeQuizPayload.value = null;
   quizStartError.value = '';
@@ -123,7 +120,10 @@ function onQuizFinished() {
 
 function completeMaterial(materialId) {
   useForm({}).post(route('just-academy.my-training.materials.complete', [props.schedule.id, materialId]), {
-    onSuccess: () => router.reload({ only: ['curriculum'] }),
+    onSuccess: () => {
+      backToList();
+      router.reload({ only: ['curriculum'] });
+    },
     onError: (e) => jaFormErrors(e),
   });
 }
@@ -188,6 +188,11 @@ function submitFeedback() {
                 <p v-else-if="item.time_limit?.mode === 'question'" class="mt-1 text-xs text-slate-500">
                   Batas waktu: {{ item.time_limit.question_seconds }} detik per soal
                 </p>
+                <p v-if="item.attempt || item.status === 'completed'" class="mt-1 text-xs text-slate-600">
+                  Nilai: <strong>{{ item.attempt?.score }}</strong>
+                  — {{ item.attempt?.passed ? 'Lulus' : 'Belum lulus' }}
+                  <span class="text-slate-400">(pass {{ item.pass_score }})</span>
+                </p>
               </template>
             </div>
 
@@ -217,12 +222,7 @@ function submitFeedback() {
               <template v-if="item.locked">
                 <span class="text-xs text-slate-400"><i class="fa-solid fa-lock mr-1" />Terkunci</span>
               </template>
-              <template v-else-if="item.attempt || item.status === 'completed'">
-                <button type="button" :class="jaUi.btnSecondary" class="text-sm" @click="openQuizResult(item)">
-                  Lihat hasil
-                </button>
-              </template>
-              <template v-else>
+              <template v-else-if="!(item.attempt || item.status === 'completed')">
                 <button
                   type="button"
                   :class="jaUi.btnPrimary"
@@ -239,12 +239,28 @@ function submitFeedback() {
         </div>
       </div>
 
-      <!-- Detail langkah -->
-      <div v-else class="space-y-4">
-        <button type="button" class="text-sm text-indigo-600 hover:text-indigo-800" @click="backToList">
-          <i class="fa-solid fa-arrow-left mr-1" /> Kembali ke daftar
-        </button>
+      <!-- Quiz aktif (tanpa tombol back) -->
+      <div v-else-if="activeQuizPayload" class="space-y-4">
+        <div :class="[jaUi.card, jaUi.cardBody]">
+          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Quiz</p>
+          <h2 class="mb-2 font-semibold text-slate-800">{{ activeQuizPayload.title }}</h2>
 
+          <p v-if="activeQuizPayload.time_limit?.mode === 'quiz'" class="mb-2 text-xs text-amber-700">
+            Batas waktu: {{ activeQuizPayload.time_limit.quiz_minutes }} menit (total quiz)
+          </p>
+          <p v-else-if="activeQuizPayload.time_limit?.mode === 'question'" class="mb-2 text-xs text-amber-700">
+            Batas waktu: {{ activeQuizPayload.time_limit.question_seconds }} detik per soal
+          </p>
+          <JaQuizTaking
+            :item="activeQuizPayload"
+            :schedule-id="schedule.id"
+            @finished="onQuizFinished"
+          />
+        </div>
+      </div>
+
+      <!-- Detail materi -->
+      <div v-else class="space-y-4">
         <div v-if="activeItem?.item_type === 'material'" :class="[jaUi.card, jaUi.cardBody]">
           <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Materi</p>
           <h2 class="mb-4 font-semibold text-slate-800">{{ activeItem.title }}</h2>
@@ -271,35 +287,6 @@ function submitFeedback() {
             </button>
             <span v-else class="text-sm font-medium text-emerald-600">Materi sudah selesai</span>
           </div>
-        </div>
-
-        <div v-else-if="activeItem?.item_type === 'quiz'" :class="[jaUi.card, jaUi.cardBody]">
-          <p class="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">Quiz</p>
-          <h2 class="mb-2 font-semibold text-slate-800">{{ activeItem.title }}</h2>
-
-          <template v-if="activeItem.attempt || activeItem.status === 'completed'">
-            <p class="text-sm text-slate-600">
-              Nilai: <strong>{{ activeItem.attempt?.score }}</strong>
-              — {{ activeItem.attempt?.passed ? 'Lulus' : 'Belum lulus' }}
-            </p>
-            <p class="mt-1 text-xs text-slate-500">
-              Pass score: {{ activeItem.pass_score }}
-            </p>
-          </template>
-
-          <template v-else-if="activeQuizPayload">
-            <p v-if="activeQuizPayload.time_limit?.mode === 'quiz'" class="mb-2 text-xs text-amber-700">
-              Batas waktu: {{ activeQuizPayload.time_limit.quiz_minutes }} menit (total quiz)
-            </p>
-            <p v-else-if="activeQuizPayload.time_limit?.mode === 'question'" class="mb-2 text-xs text-amber-700">
-              Batas waktu: {{ activeQuizPayload.time_limit.question_seconds }} detik per soal
-            </p>
-            <JaQuizTaking
-              :item="activeQuizPayload"
-              :schedule-id="schedule.id"
-              @finished="onQuizFinished"
-            />
-          </template>
         </div>
       </div>
 

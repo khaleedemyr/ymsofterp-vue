@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 import { jaUi, jaFormErrors, jaToastSuccess } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
@@ -11,7 +12,7 @@ const props = defineProps({
 const emit = defineEmits(['finished']);
 
 const quizAnswers = useForm({ answers: {} });
-const currentIndex = ref(props.item.session?.quiz_progress?.current_index ?? 0);
+const currentIndex = ref(Number(props.item.session?.quiz_progress?.current_index ?? 0));
 const questionStartedAt = ref(
   props.item.session?.quiz_progress?.question_started_at ?? props.item.session?.started_at,
 );
@@ -23,7 +24,10 @@ const isPerQuestion = computed(() => props.item.time_limit?.mode === 'question')
 const isQuizTotal = computed(() => props.item.time_limit?.mode === 'quiz');
 const hasTimer = computed(() => isPerQuestion.value || isQuizTotal.value);
 const totalQuestions = computed(() => props.item.questions?.length ?? 0);
-const isLastQuestion = computed(() => currentIndex.value >= totalQuestions.value - 1);
+const isLastQuestion = computed(() => {
+  if (totalQuestions.value <= 0) return true;
+  return currentIndex.value >= totalQuestions.value - 1;
+});
 
 const visibleQuestions = computed(() => {
   if (!isPerQuestion.value) {
@@ -36,10 +40,28 @@ const visibleQuestions = computed(() => {
 const displayQuestionNumber = computed(() => (isPerQuestion.value ? currentIndex.value + 1 : null));
 
 function formatClock(total) {
-  const seconds = Math.max(0, total);
+  const seconds = Math.max(0, Number.isFinite(total) ? total : 0);
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes}:${String(rest).padStart(2, '0')}`;
+}
+
+function ensureQuestionTimerFresh() {
+  if (!isPerQuestion.value) return;
+
+  const limit = props.item.time_limit?.question_seconds || 0;
+  if (limit <= 0) return;
+
+  const start = new Date(questionStartedAt.value).getTime();
+  if (!questionStartedAt.value || Number.isNaN(start)) {
+    questionStartedAt.value = new Date().toISOString();
+    return;
+  }
+
+  const elapsed = Math.floor((Date.now() - start) / 1000);
+  if (elapsed >= limit) {
+    questionStartedAt.value = new Date().toISOString();
+  }
 }
 
 function calcRemaining() {
@@ -60,6 +82,9 @@ function calcRemaining() {
 
   if (isPerQuestion.value) {
     const start = new Date(questionStartedAt.value).getTime();
+    if (!questionStartedAt.value || Number.isNaN(start)) {
+      return props.item.time_limit?.question_seconds || 0;
+    }
     const limit = props.item.time_limit?.question_seconds || 0;
     return Math.max(0, limit - Math.floor((now - start) / 1000));
   }
@@ -75,26 +100,43 @@ function tick() {
 }
 
 function handleTimeExpired() {
+  if (handlingExpiry.value) return;
   handlingExpiry.value = true;
-  if (isPerQuestion.value && !isLastQuestion.value) {
-    goNext(true);
-    handlingExpiry.value = false;
+
+  if (isPerQuestion.value) {
+    if (!isLastQuestion.value) {
+      currentIndex.value += 1;
+      questionStartedAt.value = new Date().toISOString();
+      syncProgress();
+      remainingSeconds.value = calcRemaining();
+      handlingExpiry.value = false;
+      return;
+    }
+    submitQuiz(true);
     return;
   }
-  submitQuiz(true);
+
+  if (isQuizTotal.value) {
+    submitQuiz(true);
+  }
 }
 
-function syncProgress() {
-  router.post(
-    route('just-academy.my-training.quizzes.progress', [props.scheduleId, props.item.id]),
-    { current_index: currentIndex.value },
-    { preserveScroll: true, preserveState: true },
-  );
+async function syncProgress() {
+  if (!isPerQuestion.value) return;
+
+  try {
+    await axios.post(
+      route('just-academy.my-training.quizzes.progress', [props.scheduleId, props.item.id]),
+      { current_index: currentIndex.value },
+      { headers: { Accept: 'application/json' } },
+    );
+  } catch {
+    // Progress sync is best-effort; local navigation stays responsive.
+  }
 }
 
-function goNext(fromTimer = false) {
-  if (isLastQuestion.value) {
-    submitQuiz(fromTimer);
+function goNext() {
+  if (!isPerQuestion.value || isLastQuestion.value) {
     return;
   }
 
@@ -132,11 +174,19 @@ function submitQuiz(auto = false) {
       }
       emit('finished');
     },
-    onError: (e) => jaFormErrors(e),
+    onError: (e) => {
+      handlingExpiry.value = false;
+      jaFormErrors(e);
+    },
   });
 }
 
 onMounted(() => {
+  if (currentIndex.value < 0) currentIndex.value = 0;
+  if (currentIndex.value > totalQuestions.value - 1 && totalQuestions.value > 0) {
+    currentIndex.value = totalQuestions.value - 1;
+  }
+  ensureQuestionTimerFresh();
   tick();
   tickTimer = window.setInterval(tick, 1000);
 });
@@ -177,7 +227,7 @@ onUnmounted(() => {
     <div v-if="isPerQuestion" class="mb-4 h-1.5 overflow-hidden rounded-full bg-slate-100">
       <div
         class="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 transition-all"
-        :style="{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }"
+        :style="{ width: `${totalQuestions > 0 ? ((currentIndex + 1) / totalQuestions) * 100 : 0}%` }"
       />
     </div>
 
@@ -222,7 +272,7 @@ onUnmounted(() => {
         v-if="isPerQuestion && !isLastQuestion"
         type="button"
         :class="jaUi.btnPrimary"
-        @click="goNext(false)"
+        @click="goNext"
       >
         Soal berikutnya
       </button>
