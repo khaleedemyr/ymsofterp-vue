@@ -9,6 +9,7 @@ use App\Models\KpiParameter;
 use App\Models\KpiTemplate;
 use App\Models\KpiTemplatePosition;
 use App\Models\User;
+use App\Models\UserRegional;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -41,7 +42,13 @@ class KpiEvaluationService
     }
 
     /**
-     * @return array{user: object, template: KpiTemplate|null, period: array<string, string>, template_hint: string|null}
+     * @return array{
+     *     user: object,
+     *     template: KpiTemplate|null,
+     *     period: array<string, string>,
+     *     template_hint: string|null,
+     *     erp_scope_suggestion: array<string, mixed>|null
+     * }
      */
     public function previewEmployee(int $userId, string $periodMonth): array
     {
@@ -54,6 +61,57 @@ class KpiEvaluationService
             'template' => $template,
             'period' => $period,
             'template_hint' => $template ? null : $this->explainMissingTemplate((int) $user->id_jabatan, $periodMonth),
+            'erp_scope_suggestion' => $this->suggestErpScopeFromRegional($userId),
+        ];
+    }
+
+    /**
+     * Outlet scope dari Regional Management (user_regional.outlet_visit_targets).
+     *
+     * @return array{
+     *     erp_data_scope: string,
+     *     erp_scope_outlet_ids: list<int>,
+     *     regional_area: string|null,
+     *     outlet_names: list<string>
+     * }|null
+     */
+    public function suggestErpScopeFromRegional(int $userId): ?array
+    {
+        $assignment = UserRegional::query()->where('user_id', $userId)->first();
+        if (! $assignment) {
+            return null;
+        }
+
+        $targets = $assignment->outlet_visit_targets ?? [];
+        if (! is_array($targets)) {
+            $targets = [];
+        }
+
+        $outletIds = collect($targets)
+            ->pluck('outlet_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($outletIds === []) {
+            return null;
+        }
+
+        $outletNames = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $outletIds)
+            ->orderBy('nama_outlet')
+            ->pluck('nama_outlet')
+            ->map(fn ($name) => (string) $name)
+            ->values()
+            ->all();
+
+        return [
+            'erp_data_scope' => count($outletIds) === 1 ? 'single_outlet' : 'multiple_outlets',
+            'erp_scope_outlet_ids' => $outletIds,
+            'regional_area' => $assignment->area,
+            'outlet_names' => $outletNames,
         ];
     }
 

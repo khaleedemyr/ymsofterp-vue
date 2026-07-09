@@ -21,6 +21,7 @@ const periodMonth = ref(props.defaultPeriod);
 const preview = ref(null);
 const previewLoading = ref(false);
 const previewError = ref('');
+const regionalScopeHint = ref('');
 
 const form = useForm({
   user_id: null,
@@ -35,15 +36,69 @@ const selectedMultipleOutlets = ref([]);
 const showSinglePicker = computed(() => form.erp_data_scope === 'single_outlet');
 const showMultiplePicker = computed(() => form.erp_data_scope === 'multiple_outlets');
 
+function applyEmployeeOutletFallback(emp) {
+  if (!emp?.id_outlet || form.erp_data_scope !== 'single_outlet') return;
+  const outlet = props.outlets.find((o) => o.id === emp.id_outlet);
+  if (outlet) {
+    selectedSingleOutlet.value = outlet;
+    form.erp_scope_outlet_ids = [outlet.id];
+  }
+}
+
+function applyErpScopeSuggestion(suggestion) {
+  if (!suggestion?.erp_scope_outlet_ids?.length) return false;
+
+  form.erp_data_scope = suggestion.erp_data_scope;
+  const ids = suggestion.erp_scope_outlet_ids.map((id) => Number(id));
+  form.erp_scope_outlet_ids = ids;
+
+  if (suggestion.erp_data_scope === 'single_outlet') {
+    selectedSingleOutlet.value = props.outlets.find((o) => o.id === ids[0]) ?? null;
+    selectedMultipleOutlets.value = [];
+  } else if (suggestion.erp_data_scope === 'multiple_outlets') {
+    selectedMultipleOutlets.value = props.outlets.filter((o) => ids.includes(o.id));
+    selectedSingleOutlet.value = null;
+  }
+
+  const areaLabel = suggestion.regional_area ? ` (${suggestion.regional_area})` : '';
+  const outletLabel = suggestion.outlet_names?.length
+    ? suggestion.outlet_names.join(', ')
+    : `${ids.length} outlet`;
+  regionalScopeHint.value = `Outlet diisi otomatis dari Regional Management${areaLabel}: ${outletLabel}`;
+
+  return true;
+}
+
+function applyTemplateErpScope(template) {
+  if (!template?.erp_data_scope) return;
+
+  form.erp_data_scope = template.erp_data_scope;
+
+  if (template.erp_data_scope === 'employee_outlet' || template.erp_data_scope === 'all_outlets') {
+    form.erp_scope_outlet_ids = [];
+    selectedSingleOutlet.value = null;
+    selectedMultipleOutlets.value = [];
+    return;
+  }
+
+  const templateOutletIds = (template.erp_scope_outlet_ids ?? []).map((id) => Number(id));
+  if (template.erp_data_scope === 'single_outlet' && templateOutletIds.length > 0) {
+    form.erp_scope_outlet_ids = [templateOutletIds[0]];
+    selectedSingleOutlet.value = props.outlets.find((o) => o.id === templateOutletIds[0]) ?? null;
+    selectedMultipleOutlets.value = [];
+    return;
+  }
+
+  if (template.erp_data_scope === 'multiple_outlets' && templateOutletIds.length > 0) {
+    form.erp_scope_outlet_ids = templateOutletIds;
+    selectedMultipleOutlets.value = props.outlets.filter((o) => templateOutletIds.includes(o.id));
+    selectedSingleOutlet.value = null;
+  }
+}
+
 watch(selectedEmployee, (emp) => {
   form.user_id = emp?.id ?? null;
-  if (emp?.id_outlet && form.erp_data_scope === 'single_outlet') {
-    const outlet = props.outlets.find((o) => o.id === emp.id_outlet);
-    if (outlet) {
-      selectedSingleOutlet.value = outlet;
-      form.erp_scope_outlet_ids = [outlet.id];
-    }
-  }
+  regionalScopeHint.value = '';
   loadPreview();
 });
 
@@ -58,14 +113,10 @@ watch(() => form.erp_data_scope, (scope) => {
     selectedSingleOutlet.value = null;
     selectedMultipleOutlets.value = [];
   }
-  if (scope === 'single_outlet' && selectedEmployee.value?.id_outlet) {
-    const outlet = props.outlets.find((o) => o.id === selectedEmployee.value.id_outlet);
-    if (outlet) {
-      selectedSingleOutlet.value = outlet;
-      form.erp_scope_outlet_ids = [outlet.id];
-    }
+  if (scope === 'single_outlet' && !form.erp_scope_outlet_ids.length && selectedEmployee.value?.id_outlet) {
+    applyEmployeeOutletFallback(selectedEmployee.value);
   }
-  if (scope === 'multiple_outlets') {
+  if (scope === 'multiple_outlets' && !form.erp_scope_outlet_ids.length) {
     selectedMultipleOutlets.value = [];
     form.erp_scope_outlet_ids = [];
   }
@@ -79,15 +130,10 @@ watch(selectedMultipleOutlets, (list) => {
   form.erp_scope_outlet_ids = list.map((o) => o.id);
 });
 
-watch(preview, (p) => {
-  if (p?.template?.erp_data_scope && form.erp_data_scope === 'single_outlet') {
-    form.erp_data_scope = p.template.erp_data_scope;
-  }
-});
-
 async function loadPreview() {
   preview.value = null;
   previewError.value = '';
+  regionalScopeHint.value = '';
   if (!form.user_id || !form.period_month) return;
 
   previewLoading.value = true;
@@ -104,10 +150,19 @@ async function loadPreview() {
       params: { user_id: form.user_id, period_month: form.period_month },
     });
     preview.value = data;
-    const scopeBefore = form.erp_data_scope;
-    if (data.template?.erp_data_scope && scopeBefore === 'single_outlet') {
-      form.erp_data_scope = data.template.erp_data_scope;
+
+    if (applyErpScopeSuggestion(data.erp_scope_suggestion)) {
+      // Regional Management outlet list takes priority.
+    } else if (data.template) {
+      applyTemplateErpScope(data.template);
+      if (form.erp_data_scope === 'single_outlet' && !form.erp_scope_outlet_ids.length) {
+        applyEmployeeOutletFallback(selectedEmployee.value);
+      }
+    } else if (selectedEmployee.value) {
+      form.erp_data_scope = 'single_outlet';
+      applyEmployeeOutletFallback(selectedEmployee.value);
     }
+
     if (!data.template) {
       previewError.value = data.template_hint
         || 'Tidak ada template KPI aktif untuk jabatan karyawan ini. Publish template terlebih dahulu.';
@@ -214,6 +269,9 @@ function back() {
           </p>
           <p v-if="form.erp_data_scope === 'all_outlets'" class="text-xs text-gray-600">
             Data dijumlahkan dari semua outlet operasional aktif.
+          </p>
+          <p v-if="regionalScopeHint" class="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+            <i class="fa-solid fa-map-location-dot mr-1"></i>{{ regionalScopeHint }}
           </p>
           <div v-if="form.errors.erp_data_scope" class="text-xs text-red-500">{{ form.errors.erp_data_scope }}</div>
           <div v-if="form.errors.erp_scope_outlet_ids" class="text-xs text-red-500">{{ form.errors.erp_scope_outlet_ids }}</div>

@@ -196,6 +196,7 @@ class KpiEvaluationController extends Controller
             ] : null,
             'period' => $preview['period'],
             'template_hint' => $preview['template_hint'],
+            'erp_scope_suggestion' => $preview['erp_scope_suggestion'],
         ]);
     }
 
