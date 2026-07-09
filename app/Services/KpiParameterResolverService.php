@@ -101,7 +101,8 @@ class KpiParameterResolverService
         }
 
         if (isset($resolverKeys['daily_revenue_forecast']) || isset($resolverKeys['pos_order_count'])) {
-            $this->queryOrderRevenue($outletIds, $periodMonth, true);
+            $useFullCalendarMonth = (bool) ($context['use_full_calendar_month'] ?? true);
+            $this->queryOrderRevenue($outletIds, $periodMonth, ! $useFullCalendarMonth);
         }
 
         $year = (int) substr($periodMonth, 0, 4);
@@ -272,7 +273,8 @@ class KpiParameterResolverService
         $budgetAmount = null;
 
         if (!empty($outletIds) && preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
-            $revenueProbe = $this->queryOrderRevenue($outletIds, $periodMonth, true);
+            $useFullCalendarMonth = (bool) ($context['use_full_calendar_month'] ?? true);
+            $revenueProbe = $this->queryOrderRevenue($outletIds, $periodMonth, ! $useFullCalendarMonth);
             $revenueMtd = $revenueProbe['total'];
             $revenueMatch = $revenueProbe['match'];
             $orderCount = $revenueProbe['count'];
@@ -320,6 +322,10 @@ class KpiParameterResolverService
             'scope_outlet_names_preview' => $erpDataScope === 'all_outlets' && $scopeOutlets->count() > 8
                 ? $scopeOutlets->take(8)->pluck('nama_outlet')->push('… +' . ($scopeOutlets->count() - 8) . ' outlet lainnya')->all()
                 : $scopeOutlets->pluck('nama_outlet')->all(),
+            'evaluation_period_month' => (string) ($context['evaluation_period_month'] ?? ''),
+            'data_period_month' => $periodMonth,
+            'data_period_start' => (string) ($context['period_start'] ?? ''),
+            'data_period_end' => (string) ($context['period_end'] ?? ''),
             'period_month' => $periodMonth,
             'order_count' => $orderCount,
             'revenue_mtd' => $revenueMtd,
@@ -354,15 +360,18 @@ class KpiParameterResolverService
         $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
         $year = (int) substr($periodMonth, 0, 4);
         $month = (int) substr($periodMonth, 5, 2);
+        $useFullCalendarMonth = (bool) ($context['use_full_calendar_month'] ?? true);
+        $attendanceStart = (string) ($context['attendance_start'] ?? $this->outletAnalyzer->payrollPeriod($periodMonth)['start_date']);
+        $attendanceEnd = (string) ($context['attendance_end'] ?? $this->outletAnalyzer->payrollPeriod($periodMonth)['end_date']);
 
         $aggregation = strtolower(trim((string) ($mapping->aggregation ?? 'sum')));
 
         $standalone = match ($mapping->resolver_key) {
-            'daily_revenue_forecast' => $this->resolveOrderPosMetric($outletIds, $periodMonth, $aggregation),
-            'pos_order_count' => $this->resolveOrderPosMetric($outletIds, $periodMonth, 'count'),
+            'daily_revenue_forecast' => $this->resolveOrderPosMetric($outletIds, $periodMonth, $aggregation, $useFullCalendarMonth),
+            'pos_order_count' => $this->resolveOrderPosMetric($outletIds, $periodMonth, 'count', $useFullCalendarMonth),
             'daily_revenue_forecast_budget' => $this->resolveMonthlyBudget($outletIds, $month, $year),
             'petty_cash_lock_budget' => $this->pettyCashLockBudget->sumLockBudgetForOutlets($outletIds, $year, $month),
-            'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $period['start_date'], $period['end_date']),
+            'training_compliance' => $this->resolveTrainingCompliance((int) ($context['user_id'] ?? 0), $attendanceStart, $attendanceEnd),
             'just_academy_training_completion' => $this->resolveJustAcademyTrainingCompletion(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
@@ -564,17 +573,21 @@ class KpiParameterResolverService
     }
 
     /**
-     * Revenue MTD (sum) atau jumlah order POS sesuai aggregation.
+     * Revenue bulan kalender penuh (sum) atau jumlah order POS sesuai aggregation.
      *
      * @param  list<int>  $outletIds
      */
-    private function resolveOrderPosMetric(array $outletIds, string $periodMonth, string $aggregation = 'sum'): ?float
-    {
+    private function resolveOrderPosMetric(
+        array $outletIds,
+        string $periodMonth,
+        string $aggregation = 'sum',
+        bool $useFullCalendarMonth = false,
+    ): ?float {
         if (empty($outletIds)) {
             return null;
         }
 
-        $result = $this->queryOrderRevenue($outletIds, $periodMonth, true);
+        $result = $this->queryOrderRevenue($outletIds, $periodMonth, ! $useFullCalendarMonth);
         if ($result['match'] === null) {
             return null;
         }

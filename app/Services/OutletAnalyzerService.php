@@ -2624,7 +2624,7 @@ class OutletAnalyzerService
     /**
      * @return array<string, mixed>
      */
-    private function getPayroll(int $outletId, string $month): array
+    private function getPayroll(int $outletId, string $month, bool $useCalendarMonth = false): array
     {
         $empty = [
             'has_generated' => false,
@@ -2648,12 +2648,21 @@ class OutletAnalyzerService
             return $empty;
         }
 
-        $payrollPeriod = $this->payrollPeriod($month);
-        $year = $payrollPeriod['year'];
-        $payrollMonth = $payrollPeriod['month'];
-        $periodStart = $payrollPeriod['start_date'];
-        $periodEnd = $payrollPeriod['end_date'];
-        $periodLabel = $payrollPeriod['label'];
+        if ($useCalendarMonth) {
+            $calendar = $this->calendarPeriod($month);
+            $year = (int) substr($month, 0, 4);
+            $payrollMonth = (int) substr($month, 5, 2);
+            $periodStart = $calendar['start_date'];
+            $periodEnd = $calendar['end_date'];
+            $periodLabel = $calendar['label'];
+        } else {
+            $payrollPeriod = $this->payrollPeriod($month);
+            $year = $payrollPeriod['year'];
+            $payrollMonth = $payrollPeriod['month'];
+            $periodStart = $payrollPeriod['start_date'];
+            $periodEnd = $payrollPeriod['end_date'];
+            $periodLabel = $payrollPeriod['label'];
+        }
 
         $base = array_merge($empty, [
             'payroll_month' => $payrollMonth,

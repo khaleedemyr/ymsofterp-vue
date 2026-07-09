@@ -222,8 +222,12 @@ function back() {
         </div>
 
         <div>
-          <label class="block text-sm font-medium mb-1">Periode (Bulan)</label>
+          <label class="block text-sm font-medium mb-1">Periode Evaluasi (Bulan)</label>
           <input v-model="periodMonth" type="month" class="w-full rounded-xl border-gray-300" />
+          <p class="text-xs text-gray-500 mt-1">
+            KPI dihitung <strong>back month</strong>: pilih Juli 2026 → data parameter dari <strong>Juni 2026</strong> (1–30 Juni).
+            Parameter terkait attendance memakai periode payroll (contoh: 26 Mei – 25 Juni).
+          </p>
         </div>
 
         <div class="border rounded-xl p-4 bg-indigo-50/40 space-y-3">
@@ -280,6 +284,20 @@ function back() {
         <div v-if="previewLoading" class="text-sm text-gray-500">Memuat preview...</div>
 
         <div v-else-if="preview" class="rounded-xl border bg-rose-50/40 p-4 text-sm space-y-2">
+          <div v-if="preview.period">
+            <span class="text-gray-500">Periode evaluasi:</span>
+            <strong>{{ preview.period.evaluation_label || preview.period.evaluation_period_month }}</strong>
+          </div>
+          <div v-if="preview.period">
+            <span class="text-gray-500">Data KPI (back month):</span>
+            <strong>{{ preview.period.data_label || preview.period.data_period_month }}</strong>
+            <span class="text-gray-600">— {{ preview.period.start_date }} s/d {{ preview.period.end_date }}</span>
+          </div>
+          <div v-if="preview.period?.attendance_label">
+            <span class="text-gray-500">Periode attendance:</span>
+            <strong>{{ preview.period.attendance_start }} s/d {{ preview.period.attendance_end }}</strong>
+            <span class="text-gray-600">({{ preview.period.attendance_label }})</span>
+          </div>
           <div><span class="text-gray-500">Jabatan:</span> <strong>{{ preview.user?.nama_jabatan || '—' }}</strong></div>
           <div><span class="text-gray-500">Outlet karyawan:</span> <strong>{{ preview.user?.nama_outlet || '—' }}</strong></div>
           <div v-if="preview.template">

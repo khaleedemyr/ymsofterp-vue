@@ -350,6 +350,8 @@ class KpiEvaluationController extends Controller
             ->values()
             ->all();
 
+        $periodInfo = $this->evaluationService->buildKpiPeriodInfo((string) $evaluation->period_month);
+
         return [
             'id' => $evaluation->id,
             'evaluation_code' => $evaluation->evaluation_code,
@@ -362,8 +364,9 @@ class KpiEvaluationController extends Controller
             'erp_scope_outlet_ids' => $evaluation->erp_scope_outlet_ids ?? [],
             'scope_outlet_count' => count($this->evaluationService->resolveErpOutletIds($evaluation)),
             'period_month' => $evaluation->period_month,
-            'period_start' => $evaluation->period_start?->toDateString(),
-            'period_end' => $evaluation->period_end?->toDateString(),
+            'period_start' => $periodInfo['start_date'],
+            'period_end' => $periodInfo['end_date'],
+            'period_info' => $periodInfo,
             'eval_status' => $evaluation->eval_status,
             'total_score' => $evaluation->total_score,
             'scoring_rules' => $evaluation->scoring_rules,

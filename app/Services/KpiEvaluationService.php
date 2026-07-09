@@ -34,8 +34,76 @@ class KpiEvaluationService
         ])->findOrFail($id);
 
         if ($evaluation->isEditable()) {
+            $this->syncEvaluationDataPeriod($evaluation);
             $this->syncParameterValuesFromTemplate($evaluation);
             $evaluation->load('parameterValues');
+        }
+
+        return $evaluation;
+    }
+
+    /**
+     * Bulan data KPI = 1 bulan sebelum periode evaluasi yang dipilih user.
+     * Contoh: evaluasi Juli 2026 → data Juni 2026.
+     */
+    public function resolveDataPeriodMonth(string $evaluationPeriodMonth): string
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $evaluationPeriodMonth)) {
+            return $evaluationPeriodMonth;
+        }
+
+        return Carbon::createFromFormat('Y-m', $evaluationPeriodMonth)
+            ->subMonth()
+            ->format('Y-m');
+    }
+
+    /**
+     * @return array{
+     *     evaluation_period_month: string,
+     *     data_period_month: string,
+     *     evaluation_label: string,
+     *     data_label: string,
+     *     start_date: string,
+     *     end_date: string,
+     *     attendance_start: string,
+     *     attendance_end: string,
+     *     attendance_label: string
+     * }
+     */
+    public function buildKpiPeriodInfo(string $evaluationPeriodMonth): array
+    {
+        $outletAnalyzer = app(OutletAnalyzerService::class);
+        $dataMonth = $this->resolveDataPeriodMonth($evaluationPeriodMonth);
+        $dataCalendar = $outletAnalyzer->calendarPeriod($dataMonth);
+        $attendance = $outletAnalyzer->payrollPeriod($dataMonth);
+        $evaluationCalendar = $outletAnalyzer->calendarPeriod($evaluationPeriodMonth);
+
+        return [
+            'evaluation_period_month' => $evaluationPeriodMonth,
+            'data_period_month' => $dataMonth,
+            'evaluation_label' => $evaluationCalendar['label'],
+            'data_label' => $dataCalendar['label'],
+            'start_date' => $dataCalendar['start_date'],
+            'end_date' => $dataCalendar['end_date'],
+            'attendance_start' => $attendance['start_date'],
+            'attendance_end' => $attendance['end_date'],
+            'attendance_label' => $attendance['label'],
+        ];
+    }
+
+    public function syncEvaluationDataPeriod(KpiEvaluation $evaluation): KpiEvaluation
+    {
+        $period = $this->buildKpiPeriodInfo((string) $evaluation->period_month);
+
+        $currentStart = $evaluation->period_start?->toDateString();
+        $currentEnd = $evaluation->period_end?->toDateString();
+
+        if ($currentStart !== $period['start_date'] || $currentEnd !== $period['end_date']) {
+            $evaluation->update([
+                'period_start' => $period['start_date'],
+                'period_end' => $period['end_date'],
+            ]);
+            $evaluation->refresh();
         }
 
         return $evaluation;
@@ -54,7 +122,7 @@ class KpiEvaluationService
     {
         $user = $this->getUserSnapshot($userId);
         $template = $this->resolveTemplate((int) $user->id_jabatan, $periodMonth);
-        $period = app(OutletAnalyzerService::class)->calendarPeriod($periodMonth);
+        $period = $this->buildKpiPeriodInfo($periodMonth);
 
         return [
             'user' => $user,
@@ -153,7 +221,7 @@ class KpiEvaluationService
 
         $this->validateErpScope($erpDataScope, $erpScopeOutletIds);
 
-        $period = app(OutletAnalyzerService::class)->calendarPeriod($periodMonth);
+        $period = $this->buildKpiPeriodInfo($periodMonth);
         $dataCodes = $this->collectDataParameterCodes($template);
 
         return DB::transaction(function () use ($user, $template, $periodMonth, $period, $dataCodes, $erpDataScope, $erpScopeOutletIds) {
@@ -251,13 +319,15 @@ class KpiEvaluationService
 
         @set_time_limit(600);
 
+        $evaluation = $this->syncEvaluationDataPeriod($evaluation);
+
         $this->syncParameterValuesFromTemplate($evaluation);
         $evaluation->load('parameterValues');
 
         $context = $this->buildErpContext($evaluation);
 
         $this->resolver->clearCache();
-        $this->resolver->clearPersistentCaches($context['outlet_ids'] ?? [], (string) $evaluation->period_month);
+        $this->resolver->clearPersistentCaches($context['outlet_ids'] ?? [], (string) $context['data_period_month']);
         Cache::forget($this->bulkBreakdownCacheKey($evaluation));
 
         $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
@@ -369,11 +439,20 @@ class KpiEvaluationService
             ? $this->allActiveOutletIds()
             : $ids;
 
+        $period = $this->buildKpiPeriodInfo((string) $evaluation->period_month);
+
         return [
             'outlet_ids' => $outletIds,
             'outlet_id' => $outletIds[0] ?? (int) $evaluation->id_outlet,
             'user_id' => $evaluation->user_id,
-            'period_month' => $evaluation->period_month,
+            'evaluation_period_month' => $evaluation->period_month,
+            'data_period_month' => $period['data_period_month'],
+            'period_month' => $period['data_period_month'],
+            'period_start' => $period['start_date'],
+            'period_end' => $period['end_date'],
+            'attendance_start' => $period['attendance_start'],
+            'attendance_end' => $period['attendance_end'],
+            'use_full_calendar_month' => true,
             'erp_data_scope' => $normalizedScope,
         ];
     }

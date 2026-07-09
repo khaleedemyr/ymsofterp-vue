@@ -422,10 +422,23 @@ onMounted(() => {
       <div class="bg-white rounded-2xl shadow p-4 mb-4 text-sm space-y-3">
         <div class="flex flex-wrap gap-4">
           <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
-          <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
+          <div><span class="text-gray-500">Evaluasi:</span> {{ evaluation.period_info?.evaluation_label || evaluation.period_month }}</div>
+          <div><span class="text-gray-500">Data KPI:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}
+            <span v-if="evaluation.period_info?.data_label" class="text-gray-500">({{ evaluation.period_info.data_label }})</span>
+          </div>
+          <div v-if="evaluation.period_info?.attendance_label">
+            <span class="text-gray-500">Attendance:</span> {{ evaluation.period_info.attendance_start }} s/d {{ evaluation.period_info.attendance_end }}
+          </div>
           <div v-if="diagnosticsLoading" class="text-gray-400 text-xs">Memuat probe ERP...</div>
-          <div v-else-if="erpDiagnostics?.revenue_mtd != null"><span class="text-gray-500">Revenue MTD (probe):</span> {{ formatKpiNumber(erpDiagnostics.revenue_mtd) }}</div>
-          <div v-else-if="erpDiagnostics"><span class="text-gray-500">Revenue MTD (probe):</span> —</div>
+          <div v-else-if="erpDiagnostics?.revenue_mtd != null">
+            <span class="text-gray-500">Revenue ({{ erpDiagnostics.data_period_month || evaluation.period_info?.data_period_month }}):</span>
+            {{ formatKpiNumber(erpDiagnostics.revenue_mtd) }}
+          </div>
+          <div v-else-if="erpDiagnostics"><span class="text-gray-500">Revenue (bulan data):</span> —</div>
+          <div v-if="!diagnosticsLoading && erpDiagnostics?.budget_amount != null">
+            <span class="text-gray-500">Budget ({{ erpDiagnostics.data_period_month }}):</span>
+            {{ formatKpiNumber(erpDiagnostics.budget_amount) }}
+          </div>
           <div v-if="!diagnosticsLoading && erpDiagnostics?.order_count != null"><span class="text-gray-500">Order POS:</span> {{ erpDiagnostics.order_count }}</div>
         </div>
 
@@ -494,6 +507,12 @@ onMounted(() => {
               <i class="fa-solid fa-rotate mr-1"></i> Refresh ERP
             </button>
           </div>
+        </div>
+        <div class="px-4 py-2 text-xs text-indigo-900 bg-indigo-50 border-b border-indigo-100">
+          Nilai ERP diambil dari bulan data <strong>{{ evaluation.period_info?.data_label || evaluation.period_info?.data_period_month }}</strong>
+          ({{ evaluation.period_start }} s/d {{ evaluation.period_end }}).
+          Evaluasi periode <strong>{{ evaluation.period_info?.evaluation_label || evaluation.period_month }}</strong>.
+          Jika angka belum sesuai, klik <strong>Refresh ERP</strong>.
         </div>
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">

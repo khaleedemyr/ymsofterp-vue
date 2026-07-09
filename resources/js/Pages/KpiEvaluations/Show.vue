@@ -77,7 +77,13 @@ onMounted(() => {
 
       <div class="bg-white rounded-2xl shadow p-4 mb-4 text-sm flex flex-wrap gap-4">
         <div><span class="text-gray-500">Template:</span> <strong>{{ evaluation.template?.name }}</strong></div>
-        <div><span class="text-gray-500">Periode:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}</div>
+        <div><span class="text-gray-500">Evaluasi:</span> {{ evaluation.period_info?.evaluation_label || evaluation.period_month }}</div>
+        <div><span class="text-gray-500">Data KPI:</span> {{ evaluation.period_start }} s/d {{ evaluation.period_end }}
+          <span v-if="evaluation.period_info?.data_label" class="text-gray-500">({{ evaluation.period_info.data_label }})</span>
+        </div>
+        <div v-if="evaluation.period_info?.attendance_label">
+          <span class="text-gray-500">Attendance:</span> {{ evaluation.period_info.attendance_start }} s/d {{ evaluation.period_info.attendance_end }}
+        </div>
         <div v-if="evaluation.submitted_at"><span class="text-gray-500">Disubmit:</span> {{ evaluation.submitted_at }}</div>
       </div>
 
