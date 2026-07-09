@@ -1271,7 +1271,7 @@ class KpiEvaluationService
     {
         $version = $evaluation->updated_at?->getTimestamp() ?? 0;
 
-        return 'kpi_bulk_breakdown:' . $evaluation->id . ':' . $version;
+        return 'kpi_bulk_breakdown:v2:' . $evaluation->id . ':' . $version;
     }
 
     /**
@@ -1444,6 +1444,20 @@ class KpiEvaluationService
         KpiEvaluation $evaluation,
         array $baseContext,
     ): array {
+        if ($this->isRegionalVisitCoverageFormula($dCodes)) {
+            return $this->assembleRegionalVisitCoverageBreakdown(
+                $item,
+                $formula,
+                $dCodes,
+                $parameters,
+                $paramMetaByCode,
+                $outletRows,
+                $parameterGrid,
+                $evaluation,
+                $baseContext,
+            );
+        }
+
         $portfolioValues = [];
         foreach ($dCodes as $code) {
             $param = $parameters[$code] ?? null;
