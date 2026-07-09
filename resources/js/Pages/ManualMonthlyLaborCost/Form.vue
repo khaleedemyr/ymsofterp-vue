@@ -46,16 +46,44 @@
         </div>
 
         <div class="bg-white rounded-xl shadow p-6">
-          <div class="flex justify-between items-center mb-4">
+          <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
             <h2 class="text-lg font-semibold text-gray-800">Data per Outlet</h2>
-            <button
-              type="button"
-              @click="addRow"
-              class="px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm"
-            >
-              <i class="fa-solid fa-plus mr-1"></i> Tambah Outlet
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                @click="downloadTemplate"
+                :disabled="downloadingTemplate"
+                class="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 text-sm disabled:opacity-50"
+              >
+                <i class="fa-solid fa-download mr-1"></i>
+                {{ downloadingTemplate ? 'Mengunduh...' : 'Download Template' }}
+              </button>
+              <button
+                type="button"
+                @click="triggerImportFile"
+                :disabled="uploadingExcel"
+                class="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 text-sm disabled:opacity-50"
+              >
+                <i class="fa-solid fa-file-excel mr-1"></i>
+                {{ uploadingExcel ? 'Mengupload...' : 'Upload Excel' }}
+              </button>
+              <input ref="importFileInput" type="file" accept=".xlsx,.xls" class="hidden" @change="importFromExcel" />
+              <button
+                type="button"
+                @click="addRow"
+                class="px-3 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 text-sm"
+              >
+                <i class="fa-solid fa-plus mr-1"></i> Tambah Outlet
+              </button>
+            </div>
           </div>
+
+          <p v-if="importMessage" class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">
+            {{ importMessage }}
+          </p>
+          <p v-if="importError" class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 whitespace-pre-line">
+            {{ importError }}
+          </p>
 
           <p v-if="form.errors.items" class="text-sm text-red-600 mb-3">{{ form.errors.items }}</p>
 
@@ -140,7 +168,8 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { Link, useForm } from '@inertiajs/vue3'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import axios from 'axios'
 
 const props = defineProps({
   record: { type: Object, default: null },
@@ -150,6 +179,11 @@ const props = defineProps({
 })
 
 const isEdit = computed(() => !!props.record?.id)
+const importFileInput = ref(null)
+const downloadingTemplate = ref(false)
+const uploadingExcel = ref(false)
+const importMessage = ref('')
+const importError = ref('')
 
 let rowKey = 0
 function makeRow(item = null) {
@@ -184,6 +218,73 @@ function availableOutletsForRow(currentIdx) {
     .filter(Boolean)
 
   return props.outlets.filter((outlet) => !selectedIds.includes(String(outlet.id_outlet)))
+}
+
+async function downloadTemplate() {
+  downloadingTemplate.value = true
+  importError.value = ''
+  try {
+    const response = await axios.get(route('manual-monthly-labor-cost.template.download'), {
+      responseType: 'blob',
+    })
+    const contentDisposition = response.headers['content-disposition'] || ''
+    const matched = contentDisposition.match(/filename="?([^"]+)"?/)
+    const fileName = matched?.[1] || 'manual_monthly_labor_cost_template.xlsx'
+    const blob = new Blob([response.data], {
+      type: response.headers['content-type'] || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', fileName)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    importError.value = error?.response?.data?.message || 'Gagal download template.'
+  } finally {
+    downloadingTemplate.value = false
+  }
+}
+
+function triggerImportFile() {
+  if (!importFileInput.value) return
+  importFileInput.value.value = ''
+  importFileInput.value.click()
+}
+
+async function importFromExcel(event) {
+  const file = event?.target?.files?.[0]
+  if (!file) return
+
+  uploadingExcel.value = true
+  importMessage.value = ''
+  importError.value = ''
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  try {
+    const response = await axios.post(route('manual-monthly-labor-cost.template.import'), formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    if (response.data?.success && Array.isArray(response.data.items) && response.data.items.length > 0) {
+      form.items = response.data.items.map((item) => makeRow(item))
+      importMessage.value = response.data.message || `${response.data.items.length} outlet berhasil diimport.`
+    }
+  } catch (error) {
+    const data = error?.response?.data
+    if (Array.isArray(data?.errors) && data.errors.length > 0) {
+      importError.value = data.errors.join('\n')
+    } else {
+      importError.value = data?.message || 'Import gagal. Pastikan file sesuai template.'
+    }
+  } finally {
+    uploadingExcel.value = false
+    if (event?.target) event.target.value = ''
+  }
 }
 
 function submit() {
