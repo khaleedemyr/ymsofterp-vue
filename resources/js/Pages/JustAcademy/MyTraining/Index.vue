@@ -202,6 +202,13 @@ function progressBarClass(card) {
                 <i class="fa-solid fa-location-dot text-slate-400" />
                 {{ s.location }}
               </span>
+              <span
+                v-if="s.card?.trainer_names && s.card.trainer_names !== '—'"
+                class="inline-flex items-center gap-1.5"
+              >
+                <i class="fa-solid fa-chalkboard-user text-slate-400" />
+                Trainer: {{ s.card.trainer_names }}
+              </span>
             </div>
 
             <p class="mt-1 text-xs text-slate-400">{{ formatDateLong(s.start_at) }}</p>

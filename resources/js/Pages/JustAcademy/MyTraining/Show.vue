@@ -1,11 +1,11 @@
 <script setup>
-import { computed, ref } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import JaCheckInScanner from '@/Components/JustAcademy/JaCheckInScanner.vue';
 import JaQuizTaking from '@/Components/JustAcademy/JaQuizTaking.vue';
-import { jaUi, jaFormErrors } from '@/composables/useJustAcademyUi';
+import { jaUi, jaFormErrors, jaToastSuccess } from '@/composables/useJustAcademyUi';
 
 const props = defineProps({
   schedule: Object,
@@ -14,9 +14,26 @@ const props = defineProps({
   trainingStarted: { type: Boolean, default: true },
   trainingStartsAt: String,
   checkedIn: { type: Boolean, default: false },
+  feedback: { type: Object, default: null },
 });
 
-const feedbackForm = useForm({ rating: 5, comment: '', trainer_id: '' });
+const feedbackForm = useForm({
+  rating: props.feedback?.rating ?? 5,
+  comment: props.feedback?.comment ?? '',
+  trainer_id: props.feedback?.trainer_id ?? null,
+});
+
+watch(
+  () => props.feedback,
+  (value) => {
+    if (!value) return;
+    feedbackForm.rating = value.rating ?? 5;
+    feedbackForm.comment = value.comment ?? '';
+    feedbackForm.trainer_id = value.trainer_id ?? null;
+  },
+);
+
+const hasSavedFeedback = computed(() => !!props.feedback?.id);
 
 const activeItemKey = ref(null);
 const activeQuizPayload = ref(null);
@@ -129,14 +146,44 @@ function completeMaterial(materialId) {
 }
 
 function submitFeedback() {
-  feedbackForm.post(route('just-academy.my-training.feedback', props.schedule.id), {
-    onError: (e) => jaFormErrors(e),
-  });
+  feedbackForm
+    .transform((data) => ({
+      rating: Number(data.rating),
+      comment: data.comment || null,
+      trainer_id: data.trainer_id || null,
+    }))
+    .post(route('just-academy.my-training.feedback', props.schedule.id), {
+      preserveScroll: true,
+      onSuccess: () => {
+        jaToastSuccess('Feedback berhasil dikirim.');
+        router.reload({ only: ['feedback'] });
+      },
+      onError: (e) => jaFormErrors(e),
+    });
 }
 </script>
 
 <template>
   <JaLayout :title="schedule.title" subtitle="Ikuti materi dan quiz sesuai urutan program" icon="fa-solid fa-user-graduate" narrow>
+    <template #actions>
+      <Link
+        v-if="!activeItemKey"
+        :href="route('just-academy.my-training.index')"
+        :class="jaUi.btnSecondary"
+      >
+        <i class="fa-solid fa-arrow-left mr-1" />
+        Kembali
+      </Link>
+      <button
+        v-else
+        type="button"
+        :class="jaUi.btnSecondary"
+        @click="backToList"
+      >
+        <i class="fa-solid fa-arrow-left mr-1" />
+        Kembali ke daftar
+      </button>
+    </template>
     <div class="mb-6 text-sm text-slate-600">
       <p>{{ schedule.program?.title }}</p>
       <p class="text-slate-500">
@@ -291,14 +338,48 @@ function submitFeedback() {
       </div>
 
       <div v-if="trainingStarted && !activeItemKey" :class="[jaUi.card, jaUi.cardBody, 'mt-6']">
-        <h2 class="mb-4 font-semibold text-slate-800">Feedback</h2>
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="font-semibold text-slate-800">Feedback</h2>
+          <span
+            v-if="hasSavedFeedback"
+            class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+          >
+            <i class="fa-solid fa-circle-check" />
+            Tersimpan
+          </span>
+        </div>
+
+        <p v-if="feedbackForm.errors.rating || feedbackForm.errors.comment || feedbackForm.errors.trainer_id" class="mb-3 text-sm text-rose-600">
+          {{ feedbackForm.errors.rating || feedbackForm.errors.comment || feedbackForm.errors.trainer_id }}
+        </p>
+
         <form class="space-y-3" @submit.prevent="submitFeedback">
           <div>
             <label class="text-sm text-slate-600">Rating (1-5)</label>
-            <input v-model="feedbackForm.rating" type="number" min="1" max="5" class="mt-1 w-24" :class="jaUi.input" />
+            <input
+              v-model.number="feedbackForm.rating"
+              type="number"
+              min="1"
+              max="5"
+              required
+              class="mt-1 w-24"
+              :class="jaUi.input"
+            />
           </div>
-          <textarea v-model="feedbackForm.comment" rows="3" :class="jaUi.input" placeholder="Komentar" />
-          <button type="submit" :class="jaUi.btnPrimary">Kirim Feedback</button>
+          <div>
+            <label class="text-sm text-slate-600">Komentar</label>
+            <textarea
+              v-model="feedbackForm.comment"
+              rows="3"
+              class="mt-1"
+              :class="jaUi.input"
+              placeholder="Ceritakan pengalaman training Anda..."
+            />
+          </div>
+          <button type="submit" :class="jaUi.btnPrimary" :disabled="feedbackForm.processing">
+            <i v-if="feedbackForm.processing" class="fa-solid fa-spinner fa-spin mr-1" />
+            {{ hasSavedFeedback ? 'Perbarui Feedback' : 'Kirim Feedback' }}
+          </button>
         </form>
       </div>
     </template>

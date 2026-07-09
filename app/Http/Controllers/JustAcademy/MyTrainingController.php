@@ -30,7 +30,11 @@ class MyTrainingController extends Controller
         ];
 
         $query = (clone $participantQuery)
-            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet']);
+            ->with([
+                'program:id,title',
+                'outlet:id_outlet,nama_outlet',
+                'trainers.user:id,nama_lengkap',
+            ]);
 
         if ($tab === 'past') {
             $query->where('end_at', '<', now())->orderByDesc('start_at');
@@ -65,6 +69,9 @@ class MyTrainingController extends Controller
         $trainingStarted = $this->service->trainingHasStarted($schedule);
         $checkedIn = $this->service->hasCheckedIn($schedule, $userId);
         $curriculum = $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted);
+        $feedback = JaFeedback::where('schedule_id', $schedule->id)
+            ->where('user_id', $userId)
+            ->first();
 
         return Inertia::render('JustAcademy/MyTraining/Show', [
             'schedule' => $schedule,
@@ -73,6 +80,7 @@ class MyTrainingController extends Controller
             'trainingStarted' => $trainingStarted,
             'trainingStartsAt' => $schedule->start_at?->toIso8601String(),
             'checkedIn' => $checkedIn,
+            'feedback' => $feedback,
         ]);
     }
 
@@ -149,16 +157,21 @@ class MyTrainingController extends Controller
         $this->service->ensureCheckedIn($schedule, $userId);
         $this->service->ensureTrainingStarted($schedule);
 
+        $request->merge([
+            'trainer_id' => $request->filled('trainer_id') ? $request->input('trainer_id') : null,
+            'rating' => $request->input('rating'),
+        ]);
+
         $validated = $request->validate([
             'rating' => 'required|integer|min:1|max:5',
-            'comment' => 'nullable|string',
+            'comment' => 'nullable|string|max:5000',
             'trainer_id' => 'nullable|integer|exists:users,id',
         ]);
 
-        JaFeedback::updateOrCreate(
+        $feedback = JaFeedback::updateOrCreate(
             ['schedule_id' => $schedule->id, 'user_id' => $userId],
             [
-                'rating' => $validated['rating'],
+                'rating' => (int) $validated['rating'],
                 'comment' => $validated['comment'] ?? null,
                 'trainer_id' => $validated['trainer_id'] ?? null,
             ]

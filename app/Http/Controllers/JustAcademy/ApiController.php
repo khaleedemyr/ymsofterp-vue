@@ -172,7 +172,12 @@ class ApiController extends Controller
     {
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
+        $this->service->ensureCheckedIn($schedule, $userId);
         $this->service->ensureTrainingStarted($schedule);
+
+        $request->merge([
+            'trainer_id' => $request->filled('trainer_id') ? $request->input('trainer_id') : null,
+        ]);
 
         $validated = $request->validate([
             'rating' => 'required|integer|min:1|max:5',

@@ -117,6 +117,7 @@ class JustAcademyService
                 'is_live' => $isLive,
                 'status_label' => $this->participantScheduleStatusLabel($schedule, $checkedIn, $isPast, $isLive, $progressPercent),
                 'action_label' => $this->participantScheduleActionLabel($checkedIn, $isPast, $isLive, $progressPercent),
+                'trainer_names' => $this->formatScheduleTrainers($schedule),
             ]);
 
             return $schedule;
