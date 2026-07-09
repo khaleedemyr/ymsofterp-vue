@@ -105,10 +105,11 @@ class ApiController extends Controller
         $userId = (int) $request->user()->id;
         $this->service->ensureParticipant($schedule, $userId);
 
-        $attendance = $schedule->attendances()->where('user_id', $userId)->first();
+        $schedule->loadMissing(['program']);
+
         $checkedIn = $this->service->hasCheckedIn($schedule, $userId);
         $trainingStarted = $this->service->trainingHasStarted($schedule);
-        $curriculum = $checkedIn
+        $curriculum = ($checkedIn && $schedule->program)
             ? $this->service->buildParticipantCurriculum($schedule, $userId, $trainingStarted)
             : collect();
 
