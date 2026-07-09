@@ -9,6 +9,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -238,6 +239,8 @@ class SopDevelopmentCompletionController extends Controller
 
     public function getPendingApprovals()
     {
+        $this->repairLegacyApprovalFlows();
+
         $userId = (int) Auth::id();
         $isSuperadmin = $this->isSuperAdmin(Auth::user());
 
@@ -251,7 +254,21 @@ class SopDevelopmentCompletionController extends Controller
             ->orderBy('submitted_at')
             ->get()
             ->filter(fn (SopDevelopmentCompletion $record) => $this->isVisiblePendingForUser($record, $userId, $isSuperadmin))
-            ->values();
+            ->values()
+            ->map(fn (SopDevelopmentCompletion $record) => [
+                'id' => $record->id,
+                'title' => $record->title,
+                'description' => $record->description,
+                'due_date' => $record->due_date?->format('Y-m-d'),
+                'status' => $record->status,
+                'file_path' => $record->file_path,
+                'file_original_name' => $record->file_original_name,
+                'submitted_at' => $record->submitted_at?->toIso8601String(),
+                'created_at' => $record->created_at?->toIso8601String(),
+                'user' => $record->user,
+                'creator_name' => $record->user?->nama_lengkap,
+                'approval_flows' => $record->approvalFlows,
+            ]);
 
         return response()->json([
             'success' => true,
@@ -481,7 +498,12 @@ class SopDevelopmentCompletionController extends Controller
 
     private function isSuperAdmin($user): bool
     {
-        return $user && (string) $user->id_role === self::SUPERADMIN_ROLE_ID;
+        if (! $user) {
+            return false;
+        }
+
+        return (string) $user->id_role === self::SUPERADMIN_ROLE_ID
+            || (int) ($user->id_jabatan ?? 0) === 160;
     }
 
     private function ensureOwner(SopDevelopmentCompletion $record): void
@@ -567,5 +589,40 @@ class SopDevelopmentCompletionController extends Controller
             ->first();
 
         return $lowestPending && (int) $lowestPending->id === (int) $userFlow->id;
+    }
+
+    private function repairLegacyApprovalFlows(): void
+    {
+        if (! Schema::hasTable('sop_development_completion_approval_flows')) {
+            return;
+        }
+
+        if (! Schema::hasColumn('sop_development_completions', 'approver_id')) {
+            return;
+        }
+
+        $rows = DB::table('sop_development_completions')
+            ->whereNotNull('approver_id')
+            ->where('status', 'pending')
+            ->get(['id', 'approver_id']);
+
+        foreach ($rows as $row) {
+            $hasFlow = DB::table('sop_development_completion_approval_flows')
+                ->where('sop_development_completion_id', $row->id)
+                ->exists();
+
+            if ($hasFlow) {
+                continue;
+            }
+
+            DB::table('sop_development_completion_approval_flows')->insert([
+                'sop_development_completion_id' => $row->id,
+                'approver_id' => $row->approver_id,
+                'approval_level' => 1,
+                'status' => 'PENDING',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 }

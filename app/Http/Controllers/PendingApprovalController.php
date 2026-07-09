@@ -519,6 +519,21 @@ class PendingApprovalController extends Controller
                 Log::error('Error loading Employee Onboarding approvals: ' . $e->getMessage());
             }
 
+            // 27. SOP Development Completion
+            try {
+                $sopController = app(\App\Http\Controllers\SopDevelopmentCompletionController::class);
+                $sopResponse = $sopController->getPendingApprovals();
+                if ($sopResponse->getStatusCode() === 200) {
+                    $sopData = json_decode($sopResponse->getContent(), true);
+                    $data['sop_development_completions'] = $sopData['data'] ?? [];
+                    if ($limit > 0 && count($data['sop_development_completions']) > $limit) {
+                        $data['sop_development_completions'] = array_slice($data['sop_development_completions'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading SOP Development Completion approvals: ' . $e->getMessage());
+            }
+
                 return $data;
             });
             
