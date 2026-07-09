@@ -2741,6 +2741,10 @@ Route::resource('employee-movements', \App\Http\Controllers\EmployeeMovementCont
 Route::get('employee-resignations/get-employees', [\App\Http\Controllers\EmployeeResignationController::class, 'getEmployeesByOutlet'])->name('employee-resignations.get-employees');
 Route::get('employee-resignations/approvers', [\App\Http\Controllers\EmployeeResignationController::class, 'getApprovers'])->name('employee-resignations.approvers');
 Route::get('/api/employee-resignations/pending-approvals', [\App\Http\Controllers\EmployeeResignationController::class, 'pendingApprovals'])->name('employee-resignations.pending-approvals')->middleware('auth');
+Route::get('/api/sop-development-completion/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('sop-development-completion.pending-approvals')->middleware('auth');
+Route::get('/api/sop-development-completion/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('sop-development-completion.show')->middleware('auth');
+Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('sop-development-completion.approve')->middleware('auth');
+Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/reject', [SopDevelopmentCompletionController::class, 'reject'])->name('sop-development-completion.reject')->middleware('auth');
 Route::post('employee-resignations/{employeeResignation}/approve', [\App\Http\Controllers\EmployeeResignationController::class, 'approve'])->name('employee-resignations.approve');
 Route::post('employee-resignations/{employeeResignation}/reject', [\App\Http\Controllers\EmployeeResignationController::class, 'reject'])->name('employee-resignations.reject');
 Route::resource('employee-resignations', \App\Http\Controllers\EmployeeResignationController::class);

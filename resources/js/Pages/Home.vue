@@ -15,6 +15,7 @@ import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
 import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
+import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
@@ -192,12 +193,6 @@ const selectedLostBreakageApproval = ref(null);
 // NPD Plan & Report approvals
 const pendingNpdPlanReportApprovals = ref([]);
 const loadingNpdPlanReportApprovals = ref(false);
-
-// SOP Development Completion approvals
-const pendingSopDevelopmentApprovals = ref([]);
-const loadingSopDevelopmentApprovals = ref(false);
-const showSopDevelopmentApprovalModal = ref(false);
-const selectedSopDevelopmentApproval = ref(null);
 
 // Employee Onboarding approvals
 const pendingEmployeeOnboardingApprovals = ref([]);
@@ -1106,7 +1101,6 @@ async function loadAllPendingApprovalsOptimized() {
     loadingWarehouseStockOpnameApprovals.value = true;
     loadingLostBreakageApprovals.value = true;
     loadingNpdPlanReportApprovals.value = true;
-    loadingSopDevelopmentApprovals.value = true;
     loadingEmployeeOnboardingApprovals.value = true;
     loadingQa2CapApprovals.value = true;
     loadingApprovals.value = true;
@@ -1138,7 +1132,6 @@ async function loadAllPendingApprovalsOptimized() {
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
             pendingLostBreakageApprovals.value = data.lost_breakage || [];
             pendingNpdPlanReportApprovals.value = data.npd_plan_reports || [];
-            pendingSopDevelopmentApprovals.value = data.sop_development_completions || [];
             pendingEmployeeOnboardingApprovals.value = data.employee_onboardings || [];
             pendingQa2CapApprovals.value = data.qa2_cap || [];
             pendingPosVoidItemApprovals.value = data.pos_void_items || [];
@@ -1164,7 +1157,6 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
             loadingNpdPlanReportApprovals.value = false;
-            loadingSopDevelopmentApprovals.value = false;
             loadingEmployeeOnboardingApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             loadingAssetTransferApprovals.value = false;
@@ -1190,7 +1182,6 @@ async function loadAllPendingApprovalsOptimized() {
             loadingCorrectionApprovals.value = false;
             loadingLostBreakageApprovals.value = false;
             loadingNpdPlanReportApprovals.value = false;
-            loadingSopDevelopmentApprovals.value = false;
             loadingEmployeeOnboardingApprovals.value = false;
             loadingQa2CapApprovals.value = false;
             return false;
@@ -1212,25 +1203,9 @@ async function loadAllPendingApprovalsOptimized() {
         loadingCorrectionApprovals.value = false;
         loadingLostBreakageApprovals.value = false;
         loadingNpdPlanReportApprovals.value = false;
-        loadingSopDevelopmentApprovals.value = false;
         loadingEmployeeOnboardingApprovals.value = false;
         loadingQa2CapApprovals.value = false;
         return false;
-    }
-}
-
-async function loadPendingSopDevelopmentApprovals() {
-    loadingSopDevelopmentApprovals.value = true;
-    try {
-        const response = await axios.get('/api/sop-development-completion/pending-approvals');
-        if (response.data?.success) {
-            pendingSopDevelopmentApprovals.value = response.data.data || [];
-        }
-    } catch (error) {
-        console.error('Error loading SOP Development approvals:', error);
-        pendingSopDevelopmentApprovals.value = [];
-    } finally {
-        loadingSopDevelopmentApprovals.value = false;
     }
 }
 
@@ -1970,82 +1945,6 @@ async function rejectCoaching(coachingId, approverId) {
                 text: 'Gagal menolak coaching'
             });
         }
-    }
-}
-
-async function openSopDevelopmentDetail(itemId) {
-    try {
-        const response = await axios.get(`/api/sop-development-completion/${itemId}`);
-        if (response.data?.success && response.data.data) {
-            selectedSopDevelopmentApproval.value = {
-                ...response.data.data,
-                can_approve: response.data.can_approve,
-            };
-            showSopDevelopmentApprovalModal.value = true;
-        }
-    } catch (error) {
-        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal memuat detail SOP' });
-    }
-}
-
-async function approveSopDevelopment(itemId) {
-    const { value: notes } = await Swal.fire({
-        title: 'Setujui SOP',
-        input: 'textarea',
-        inputLabel: 'Catatan (Opsional)',
-        inputPlaceholder: 'Masukkan catatan approval...',
-        showCancelButton: true,
-        confirmButtonText: 'Setujui',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#10b981',
-    });
-
-    if (notes === undefined) return;
-
-    try {
-        const response = await axios.post(`/api/sop-development-completion/${itemId}/approve`, {
-            approval_notes: notes || null,
-        });
-        if (response.data?.success) {
-            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
-            showSopDevelopmentApprovalModal.value = false;
-            selectedSopDevelopmentApproval.value = null;
-            loadAllPendingApprovalsOptimized();
-            loadPendingSopDevelopmentApprovals();
-        }
-    } catch (error) {
-        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal menyetujui SOP' });
-    }
-}
-
-async function rejectSopDevelopment(itemId) {
-    const { value: comments } = await Swal.fire({
-        title: 'Tolak SOP',
-        input: 'textarea',
-        inputLabel: 'Alasan Penolakan *',
-        inputPlaceholder: 'Masukkan alasan penolakan...',
-        showCancelButton: true,
-        confirmButtonText: 'Tolak',
-        cancelButtonText: 'Batal',
-        confirmButtonColor: '#ef4444',
-        inputValidator: (value) => (!value ? 'Alasan penolakan harus diisi!' : undefined),
-    });
-
-    if (!comments) return;
-
-    try {
-        const response = await axios.post(`/api/sop-development-completion/${itemId}/reject`, {
-            approval_notes: comments,
-        });
-        if (response.data?.success) {
-            Swal.fire({ icon: 'success', title: 'Berhasil', text: response.data.message, timer: 2000, showConfirmButton: false });
-            showSopDevelopmentApprovalModal.value = false;
-            selectedSopDevelopmentApproval.value = null;
-            loadAllPendingApprovalsOptimized();
-            loadPendingSopDevelopmentApprovals();
-        }
-    } catch (error) {
-        Swal.fire({ icon: 'error', title: 'Error', text: error.response?.data?.message || 'Gagal menolak SOP' });
     }
 }
 
@@ -6316,6 +6215,14 @@ function handleCctvAccessRequestRejected(requestId) {
     console.log('CCTV Access Request rejected:', requestId);
 }
 
+function handleSopDevelopmentApproved(itemId) {
+    console.log('SOP Development approved:', itemId);
+}
+
+function handleSopDevelopmentRejected(itemId) {
+    console.log('SOP Development rejected:', itemId);
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -6354,7 +6261,6 @@ onMounted(async () => {
     // Load yang tidak termasuk di optimized endpoint
     loadLeaveNotifications();
     loadPendingHrdApprovals();
-    loadPendingSopDevelopmentApprovals();
     // loadTrainingInvitations();
     // loadAvailableTrainings();
     loadActiveSanctions();
@@ -7374,6 +7280,13 @@ watch(locale, () => {
                 <!-- CCTV Access Request Approval Section -->
                 <CctvAccessRequestApprovalCard :is-night="isNight" @approved="handleCctvAccessRequestApproved" @rejected="handleCctvAccessRequestRejected" />
 
+                <!-- SOP Development Completion Approval Section -->
+                <SopDevelopmentCompletionApprovalCard
+                    :is-night="isNight"
+                    @approved="handleSopDevelopmentApproved"
+                    @rejected="handleSopDevelopmentRejected"
+                />
+
                 <!-- Contra Bon Approval Section -->
                 <div v-if="contraBonApprovalCount > 0" class="flex-shrink-0 mb-4">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
@@ -7688,73 +7601,6 @@ watch(locale, () => {
                                         <button
                                             type="button"
                                             @click="rejectNpdPlanReport(report.id)"
-                                            class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white"
-                                        >
-                                            Tolak
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SOP Development Completion Approval Section -->
-                <div v-if="pendingSopDevelopmentApprovals.length > 0" class="flex-shrink-0 mb-4">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
-                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></div>
-                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                    <i class="fa-solid fa-file-circle-check mr-2 text-indigo-500"></i>
-                                    SOP Development Approval
-                                </h3>
-                            </div>
-                            <div class="bg-indigo-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                                {{ pendingSopDevelopmentApprovals.length }}
-                            </div>
-                        </div>
-
-                        <div v-if="loadingSopDevelopmentApprovals" class="text-center py-4">
-                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-500"></div>
-                        </div>
-
-                        <div v-else class="space-y-2">
-                            <div
-                                v-for="item in pendingSopDevelopmentApprovals.slice(0, 3)"
-                                :key="'sop-approval-' + item.id"
-                                class="p-3 rounded-lg border transition-all duration-200"
-                                :class="isNight ? 'bg-slate-700/50 border-slate-600' : 'bg-indigo-50 border-indigo-200'"
-                            >
-                                <div class="flex items-start gap-3">
-                                    <div class="flex-1 min-w-0">
-                                        <button
-                                            type="button"
-                                            class="font-semibold text-sm text-left hover:underline"
-                                            :class="isNight ? 'text-white' : 'text-slate-800'"
-                                            @click="openSopDevelopmentDetail(item.id)"
-                                        >
-                                            {{ item.title }}
-                                        </button>
-                                        <div class="text-xs mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            {{ item.creator_name || item.user?.nama_lengkap || '-' }}
-                                        </div>
-                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                            Due: {{ item.due_date || '-' }}
-                                        </div>
-                                    </div>
-                                    <div class="flex flex-col gap-1">
-                                        <button
-                                            type="button"
-                                            @click="approveSopDevelopment(item.id)"
-                                            class="px-3 py-1 text-xs rounded-full bg-green-500 hover:bg-green-600 text-white"
-                                        >
-                                            Setujui
-                                        </button>
-                                        <button
-                                            type="button"
-                                            @click="rejectSopDevelopment(item.id)"
                                             class="px-3 py-1 text-xs rounded-full bg-red-500 hover:bg-red-600 text-white"
                                         >
                                             Tolak
@@ -13628,44 +13474,6 @@ watch(locale, () => {
         @close="showQa2CapApprovalModal = false"
         @processed="onQa2CapApprovalProcessed"
     />
-
-    <Teleport to="body">
-        <div v-if="showSopDevelopmentApprovalModal && selectedSopDevelopmentApproval" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" @click="showSopDevelopmentApprovalModal = false; selectedSopDevelopmentApproval = null">
-            <div class="bg-white rounded-xl p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-bold text-gray-800">Detail SOP Development Approval</h3>
-                    <button type="button" class="text-gray-400 hover:text-gray-600" @click="showSopDevelopmentApprovalModal = false; selectedSopDevelopmentApproval = null">
-                        <i class="fa fa-times"></i>
-                    </button>
-                </div>
-                <div class="space-y-4 text-sm">
-                    <div><span class="text-gray-500">Judul:</span><p class="font-semibold">{{ selectedSopDevelopmentApproval.title }}</p></div>
-                    <div v-if="selectedSopDevelopmentApproval.description"><span class="text-gray-500">Deskripsi:</span><p class="whitespace-pre-wrap mt-1">{{ selectedSopDevelopmentApproval.description }}</p></div>
-                    <div><span class="text-gray-500">Pembuat:</span><p>{{ selectedSopDevelopmentApproval.user?.nama_lengkap || '-' }}</p></div>
-                    <div v-if="selectedSopDevelopmentApproval.file_path">
-                        <a :href="`/sop-development-completion/${selectedSopDevelopmentApproval.id}/file`" target="_blank" class="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-800">
-                            <i class="fa-solid fa-file-arrow-down"></i>
-                            {{ selectedSopDevelopmentApproval.file_original_name || 'Download File SOP' }}
-                        </a>
-                    </div>
-                    <div v-if="selectedSopDevelopmentApproval.approval_flows?.length">
-                        <span class="text-gray-500">Approval Flow:</span>
-                        <div class="mt-2 space-y-2">
-                            <div v-for="flow in selectedSopDevelopmentApproval.approval_flows" :key="flow.id" class="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                                <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">{{ flow.approval_level }}</span>
-                                <span class="flex-1">{{ flow.approver?.nama_lengkap || '-' }}</span>
-                                <span class="text-xs font-semibold">{{ flow.status }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-if="selectedSopDevelopmentApproval.can_approve" class="flex justify-end gap-2 pt-4 border-t">
-                        <button type="button" class="px-4 py-2 bg-red-500 text-white rounded-lg" @click="rejectSopDevelopment(selectedSopDevelopmentApproval.id)">Tolak</button>
-                        <button type="button" class="px-4 py-2 bg-green-500 text-white rounded-lg" @click="approveSopDevelopment(selectedSopDevelopmentApproval.id)">Setujui</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </Teleport>
     </AppLayout>
 </template>
 

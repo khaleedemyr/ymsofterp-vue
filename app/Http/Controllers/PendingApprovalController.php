@@ -522,7 +522,7 @@ class PendingApprovalController extends Controller
             // 27. SOP Development Completion
             try {
                 $sopController = app(\App\Http\Controllers\SopDevelopmentCompletionController::class);
-                $sopResponse = $sopController->getPendingApprovals();
+                $sopResponse = $sopController->getPendingApprovals($request);
                 if ($sopResponse->getStatusCode() === 200) {
                     $sopData = json_decode($sopResponse->getContent(), true);
                     $data['sop_development_completions'] = $sopData['data'] ?? [];

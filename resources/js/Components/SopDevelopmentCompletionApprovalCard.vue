@@ -22,10 +22,13 @@
                 </div>
 
                 <div v-else class="space-y-2">
-                    <div v-for="item in pendingApprovals.slice(0, 3)" :key="'sop-approval-' + item.id"
+                    <div
+                        v-for="item in pendingApprovals.slice(0, 3)"
+                        :key="'sop-approval-' + item.id"
                         @click="showDetails(item.id)"
                         class="p-3 rounded-lg cursor-pointer transition-all duration-200 hover:scale-105"
-                        :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100'">
+                        :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-indigo-50 hover:bg-indigo-100'"
+                    >
                         <div class="flex items-center justify-between">
                             <div class="flex-1">
                                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
@@ -41,7 +44,7 @@
                                         />
                                         <i v-else class="fa-solid fa-user text-indigo-500 text-xs"></i>
                                     </div>
-                                    <span>{{ item.user?.nama_lengkap || 'Unknown User' }}</span>
+                                    <span>{{ item.user?.nama_lengkap || item.creator_name || 'Unknown User' }}</span>
                                 </div>
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     <i class="fa-solid fa-calendar mr-1 text-indigo-600"></i>
@@ -50,6 +53,10 @@
                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ formatDate(item.submitted_at || item.created_at) }}
                                 </div>
+                            </div>
+                            <div class="text-xs text-indigo-500 font-medium text-right">
+                                <i class="fa fa-user-check mr-1"></i>
+                                {{ item.approver_name || `Level ${item.approval_level || 1}` }}
                             </div>
                         </div>
                     </div>
@@ -84,21 +91,21 @@
                     <div v-else class="space-y-6">
                         <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                             <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi SOP</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="text-gray-600 dark:text-gray-400">Judul SOP</label>
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Judul SOP</label>
                                     <p class="text-gray-900 dark:text-white font-semibold">{{ selectedItem.title }}</p>
                                 </div>
                                 <div>
-                                    <label class="text-gray-600 dark:text-gray-400">Due Date</label>
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Due Date</label>
                                     <p class="text-gray-900 dark:text-white">{{ formatDateOnly(selectedItem.due_date) }}</p>
                                 </div>
                                 <div class="md:col-span-2">
-                                    <label class="text-gray-600 dark:text-gray-400">Pembuat</label>
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">Pembuat</label>
                                     <p class="text-gray-900 dark:text-white font-semibold">{{ selectedItem.user?.nama_lengkap || '-' }}</p>
                                 </div>
                                 <div class="md:col-span-2" v-if="selectedItem.description">
-                                    <label class="text-gray-600 dark:text-gray-400">Deskripsi</label>
+                                    <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Deskripsi</label>
                                     <p class="text-gray-900 dark:text-white whitespace-pre-wrap">{{ selectedItem.description }}</p>
                                 </div>
                             </div>
@@ -119,11 +126,11 @@
                             </a>
                         </div>
 
-                        <div v-if="selectedItem.approval_flows?.length" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <div v-if="sortedApprovalFlows.length" class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
                             <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
                             <div class="space-y-2">
                                 <div
-                                    v-for="flow in selectedItem.approval_flows"
+                                    v-for="flow in sortedApprovalFlows"
                                     :key="flow.id"
                                     class="flex items-center gap-3 text-sm p-2 rounded-lg"
                                     :class="flow.status === 'PENDING' ? 'bg-yellow-50 dark:bg-yellow-900/20' : 'bg-white dark:bg-gray-800'"
@@ -177,6 +184,14 @@ const loadingDetail = ref(false);
 
 const approvalCount = computed(() => pendingApprovals.value.length);
 
+const sortedApprovalFlows = computed(() => {
+    const flows = selectedItem.value?.approval_flows;
+    if (!flows || !Array.isArray(flows) || flows.length === 0) {
+        return [];
+    }
+    return [...flows].sort((a, b) => (Number(a.approval_level) || 0) - (Number(b.approval_level) || 0));
+});
+
 function formatDate(date) {
     if (!date) return '-';
     return new Date(date).toLocaleDateString('id-ID', {
@@ -200,13 +215,15 @@ function formatDateOnly(date) {
 async function loadPendingApprovals() {
     loading.value = true;
     try {
-        const response = await axios.get('/api/sop-development-completion/pending-approvals');
+        const timestamp = new Date().getTime();
+        const response = await axios.get(`/api/sop-development-completion/pending-approvals?t=${timestamp}`);
         if (response.data?.success) {
-            pendingApprovals.value = Array.isArray(response.data.data) ? response.data.data : [];
+            pendingApprovals.value = response.data.data || response.data.items || [];
         } else {
             pendingApprovals.value = [];
         }
     } catch (error) {
+        console.error('Error loading pending SOP Development approvals:', error);
         pendingApprovals.value = [];
     } finally {
         loading.value = false;
@@ -217,6 +234,7 @@ async function showDetails(id) {
     try {
         loadingDetail.value = true;
         showDetailModal.value = true;
+
         const response = await axios.get(`/api/sop-development-completion/${id}`);
         if (response.data?.success && response.data.data) {
             selectedItem.value = {
@@ -224,11 +242,11 @@ async function showDetails(id) {
                 can_approve: response.data.can_approve,
             };
         } else {
-            Swal.fire('Error', response.data?.message || 'Gagal memuat detail', 'error');
+            Swal.fire('Error', response.data?.message || 'Gagal memuat detail SOP', 'error');
             closeDetailModal();
         }
     } catch (error) {
-        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail', 'error');
+        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail SOP', 'error');
         closeDetailModal();
     } finally {
         loadingDetail.value = false;
@@ -261,6 +279,7 @@ async function approveItem() {
         const response = await axios.post(`/api/sop-development-completion/${itemId}/approve`, {
             approval_notes: notes || null,
         });
+
         if (response.data?.success) {
             Swal.fire('Success', response.data.message || 'SOP berhasil disetujui', 'success');
             closeDetailModal();
@@ -296,6 +315,7 @@ function showRejectModal() {
                 const response = await axios.post(`/api/sop-development-completion/${itemId}/reject`, {
                     approval_notes: result.value,
                 });
+
                 if (response.data?.success) {
                     Swal.fire('Success', response.data.message || 'SOP berhasil ditolak', 'success');
                     closeDetailModal();

@@ -237,42 +237,72 @@ class SopDevelopmentCompletionController extends Controller
         }
     }
 
-    public function getPendingApprovals()
+    public function getPendingApprovals(Request $request)
     {
         $this->repairLegacyApprovalFlows();
 
-        $userId = (int) Auth::id();
-        $isSuperadmin = $this->isSuperAdmin(Auth::user());
+        $user = Auth::user();
+        if (! $user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized',
+                'data' => [],
+            ], 401);
+        }
 
-        $records = SopDevelopmentCompletion::query()
-            ->where('status', 'pending')
-            ->whereHas('approvalFlows', fn ($q) => $q->where('status', 'PENDING'))
+        $limit = (int) $request->get('limit', 100);
+        $isSuperadmin = $this->isSuperAdmin($user);
+
+        $query = SopDevelopmentCompletion::query()
             ->with([
                 'user:id,nama_lengkap,avatar,avatar_path',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
-            ->orderBy('submitted_at')
-            ->get()
-            ->filter(fn (SopDevelopmentCompletion $record) => $this->isVisiblePendingForUser($record, $userId, $isSuperadmin))
-            ->values()
-            ->map(fn (SopDevelopmentCompletion $record) => [
-                'id' => $record->id,
-                'title' => $record->title,
-                'description' => $record->description,
-                'due_date' => $record->due_date?->format('Y-m-d'),
-                'status' => $record->status,
-                'file_path' => $record->file_path,
-                'file_original_name' => $record->file_original_name,
-                'submitted_at' => $record->submitted_at?->toIso8601String(),
-                'created_at' => $record->created_at?->toIso8601String(),
-                'user' => $record->user,
-                'creator_name' => $record->user?->nama_lengkap,
-                'approval_flows' => $record->approvalFlows,
-            ]);
+            ->where('status', 'pending');
+
+        if ($isSuperadmin) {
+            $records = $query->whereHas('approvalFlows', fn ($q) => $q->where('status', 'PENDING'))->get();
+        } else {
+            $records = $query->whereHas('approvalFlows', function ($q) use ($user) {
+                $q->where('approver_id', $user->id)->where('status', 'PENDING');
+            })->get();
+        }
+
+        $mapped = $records
+            ->filter(fn (SopDevelopmentCompletion $record) => $this->isVisiblePendingForUser($record, (int) $user->id, $isSuperadmin))
+            ->map(function (SopDevelopmentCompletion $record) {
+                $nextFlow = $record->approvalFlows
+                    ->where('status', 'PENDING')
+                    ->sortBy('approval_level')
+                    ->first();
+
+                return [
+                    'id' => $record->id,
+                    'title' => $record->title,
+                    'description' => $record->description,
+                    'due_date' => $record->due_date?->format('Y-m-d'),
+                    'status' => $record->status,
+                    'file_path' => $record->file_path,
+                    'file_original_name' => $record->file_original_name,
+                    'submitted_at' => $record->submitted_at?->toIso8601String(),
+                    'created_at' => $record->created_at?->toIso8601String(),
+                    'user' => $record->user,
+                    'creator_name' => $record->user?->nama_lengkap,
+                    'approval_flows' => $record->approvalFlows,
+                    'approval_level' => $nextFlow?->approval_level,
+                    'approval_flow_id' => $nextFlow?->id,
+                    'approver_name' => $nextFlow?->approver?->nama_lengkap,
+                    'can_approve' => true,
+                ];
+            })
+            ->sortBy('submitted_at')
+            ->take($limit)
+            ->values();
 
         return response()->json([
             'success' => true,
-            'data' => $records,
+            'data' => $mapped,
+            'items' => $mapped,
         ]);
     }
 
