@@ -600,7 +600,7 @@ class KpiEvaluationService
 
         foreach ($evaluation->items()->get() as $item) {
             $achievement = $this->evaluateFormula($item->formula, $valueMap);
-            $scoring = $this->scoreItem($achievement, $item->target_direction, $rules);
+            $scoring = $this->scoreItem($achievement, $item->target_direction, $rules, $item->target_value);
             $weighted = round(($scoring['score'] * (float) $item->weight_percent) / 100, 4);
 
             $item->update([
@@ -1046,12 +1046,128 @@ class KpiEvaluationService
      * @param  array<string, mixed>  $rules
      * @return array{level: string, score: float}
      */
-    protected function scoreItem(?float $achievement, string $direction, array $rules): array
+    protected function scoreItem(?float $achievement, string $direction, array $rules, ?string $targetValue = null): array
     {
         if ($achievement === null) {
             return ['level' => 'below', 'score' => 0.0];
         }
 
+        $bounds = $this->parseTargetValue($targetValue);
+        if ($bounds !== null) {
+            return $this->scoreItemAgainstTarget($achievement, $direction, $bounds, $rules);
+        }
+
+        return $this->scoreItemWithLegacyRules($achievement, $direction, $rules);
+    }
+
+    /**
+     * @return array{comparator: string, min: ?float, max: ?float}|null
+     */
+    protected function parseTargetValue(?string $targetValue): ?array
+    {
+        if ($targetValue === null) {
+            return null;
+        }
+
+        $target = trim($targetValue);
+        if ($target === '') {
+            return null;
+        }
+
+        if (preg_match('/^<=\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*%?$/i', $target, $matches)) {
+            return [
+                'comparator' => 'lte_range',
+                'min' => (float) $matches[1],
+                'max' => (float) $matches[2],
+            ];
+        }
+
+        if (preg_match('/^<=\s*(\d+(?:\.\d+)?)\s*%?$/i', $target, $matches)) {
+            return [
+                'comparator' => 'lte',
+                'min' => null,
+                'max' => (float) $matches[1],
+            ];
+        }
+
+        if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*%?$/i', $target, $matches)) {
+            return [
+                'comparator' => 'gte',
+                'min' => (float) $matches[1],
+                'max' => null,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{comparator: string, min: ?float, max: ?float}  $bounds
+     * @param  array<string, mixed>  $rules
+     * @return array{level: string, score: float}
+     */
+    protected function scoreItemAgainstTarget(float $achievement, string $direction, array $bounds, array $rules): array
+    {
+        if ($direction === 'lower_better') {
+            if ($bounds['comparator'] === 'lte_range' && $bounds['min'] !== null && $bounds['max'] !== null) {
+                $min = (float) $bounds['min'];
+                $max = (float) $bounds['max'];
+
+                if ($achievement > $max) {
+                    return [
+                        'level' => 'below',
+                        'score' => $this->belowScoreForOverMax($achievement, $max),
+                    ];
+                }
+
+                if ($achievement <= $min) {
+                    return ['level' => 'exceeding', 'score' => 100.0];
+                }
+
+                return ['level' => 'meeting', 'score' => 85.0];
+            }
+
+            if ($bounds['comparator'] === 'lte' && $bounds['max'] !== null) {
+                $max = (float) $bounds['max'];
+
+                if ($achievement > $max) {
+                    return [
+                        'level' => 'below',
+                        'score' => $this->belowScoreForOverMax($achievement, $max),
+                    ];
+                }
+
+                return ['level' => 'exceeding', 'score' => 100.0];
+            }
+        }
+
+        if ($direction === 'higher_better' && $bounds['comparator'] === 'gte' && $bounds['min'] !== null) {
+            $min = (float) $bounds['min'];
+            $meetingThreshold = $min * ((float) ($rules['meeting_min'] ?? 85) / 100);
+
+            if ($achievement >= $min) {
+                return ['level' => 'exceeding', 'score' => 100.0];
+            }
+
+            if ($achievement >= $meetingThreshold) {
+                return ['level' => 'meeting', 'score' => 85.0];
+            }
+
+            return [
+                'level' => 'below',
+                'score' => max(0.0, min(84.0, round(($achievement / max($meetingThreshold, 0.01)) * 84, 2))),
+            ];
+        }
+
+        return $this->scoreItemWithLegacyRules($achievement, $direction, $rules);
+    }
+
+    /**
+     * @param  array<string, mixed>  $rules
+     * @return array{level: string, score: float}
+     */
+    protected function scoreItemWithLegacyRules(float $achievement, string $direction, array $rules): array
+    {
         $exceedingMin = (float) ($rules['exceeding_min'] ?? 100);
         $meetingMin = (float) ($rules['meeting_min'] ?? 85);
 
@@ -1074,6 +1190,13 @@ class KpiEvaluationService
         }
 
         return ['level' => 'below', 'score' => max(0.0, min(84.0, round($achievement, 2)))];
+    }
+
+    protected function belowScoreForOverMax(float $achievement, float $max): float
+    {
+        $overshootPercent = (($achievement - $max) / max($max, 0.01)) * 100;
+
+        return max(0.0, min(84.0, round(85 - $overshootPercent, 2)));
     }
 
     /**
@@ -1398,7 +1521,7 @@ class KpiEvaluationService
             }
 
             $achievement = $this->evaluateFormula($formula, $valueMap);
-            $scoring = $this->scoreItem($achievement, $item->target_direction, $rules);
+            $scoring = $this->scoreItem($achievement, $item->target_direction, $rules, $item->target_value);
 
             $rows[] = [
                 'outlet_id' => $outletId,
