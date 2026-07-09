@@ -17,6 +17,7 @@ import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApp
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
+import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
@@ -1871,16 +1872,30 @@ async function loadCoachingApprovals() {
     }
 }
 
+function normalizeJustAcademyHomeSchedules(raw) {
+    if (!raw) return { participant: [], trainer: [] };
+    if (Array.isArray(raw)) {
+        const participant = [];
+        const trainer = [];
+        for (const item of raw) {
+            const roles = item.roles || [item.role || 'participant'];
+            if (roles.includes('trainer')) trainer.push(item);
+            if (roles.includes('participant') || !roles.includes('trainer')) participant.push(item);
+        }
+        return { participant, trainer };
+    }
+    return {
+        participant: raw.participant || [],
+        trainer: raw.trainer || [],
+    };
+}
+
 async function loadJustAcademySchedules() {
     loadingJustAcademySchedules.value = true;
     try {
         const response = await axios.get('/just-academy/api/home-schedules');
         if (response.data.success) {
-            const data = response.data.data || {};
-            justAcademySchedules.value = {
-                participant: data.participant || [],
-                trainer: data.trainer || [],
-            };
+            justAcademySchedules.value = normalizeJustAcademyHomeSchedules(response.data.data);
         }
     } catch (error) {
         console.error('Error loading Just Academy schedules:', error);
@@ -1889,19 +1904,10 @@ async function loadJustAcademySchedules() {
     }
 }
 
-const justAcademyParticipantSchedules = computed(() => justAcademySchedules.value.participant || []);
-const justAcademyTrainerSchedules = computed(() => justAcademySchedules.value.trainer || []);
-const justAcademySchedulesCount = computed(() =>
-    justAcademyParticipantSchedules.value.length + justAcademyTrainerSchedules.value.length
-);
-const hasJustAcademySchedules = computed(() => justAcademySchedulesCount.value > 0);
-
-function justAcademyStatusClass(status, isNightMode = false) {
-    if (status === 'ongoing') {
-        return isNightMode ? 'bg-emerald-700 text-emerald-200' : 'bg-emerald-100 text-emerald-800';
-    }
-    return isNightMode ? 'bg-indigo-700 text-indigo-200' : 'bg-indigo-100 text-indigo-800';
-}
+const hasJustAcademySchedules = computed(() => {
+    const s = justAcademySchedules.value;
+    return (s.participant?.length || 0) + (s.trainer?.length || 0) > 0;
+});
 
 // Approve coaching
 async function approveCoaching(coachingId, approverId) {
@@ -6445,6 +6451,16 @@ watch(locale, () => {
                                             </div>
                                         </template>
                                     </div>
+
+                                    <!-- Training Plan — selalu terlihat di area profil -->
+                                    <div class="mt-3">
+                                        <JustAcademyHomeSchedulesCard
+                                            :schedules="justAcademySchedules"
+                                            :loading="loadingJustAcademySchedules"
+                                            :is-night="isNight"
+                                            compact
+                                        />
+                                    </div>
                                 </div>
                             </div>
                             
@@ -6513,109 +6529,6 @@ watch(locale, () => {
                     </div>
                 </div>
 
-
-                <!-- Just Academy Training Plan — Peserta & Trainer -->
-                <div v-if="hasJustAcademySchedules || loadingJustAcademySchedules" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
-                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
-                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-2">
-                                <i class="fa-solid fa-graduation-cap text-lg" :class="isNight ? 'text-indigo-400' : 'text-indigo-600'"></i>
-                                <h3 class="text-lg font-semibold" :class="isNight ? 'text-white' : 'text-slate-800'">Training Plan Saya</h3>
-                            </div>
-                            <div v-if="!loadingJustAcademySchedules" class="text-sm px-2 py-1 rounded-full"
-                                 :class="isNight ? 'bg-indigo-700 text-indigo-200' : 'bg-indigo-100 text-indigo-800'">
-                                {{ justAcademySchedulesCount }} jadwal
-                            </div>
-                        </div>
-
-                        <div v-if="loadingJustAcademySchedules" class="text-sm py-4 text-center" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                            Memuat jadwal training...
-                        </div>
-
-                        <div v-else class="space-y-4">
-                            <!-- Sebagai Peserta (Trainee) -->
-                            <div v-if="justAcademyParticipantSchedules.length > 0">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <i class="fa-solid fa-user-graduate text-sm" :class="isNight ? 'text-blue-400' : 'text-blue-600'"></i>
-                                    <h4 class="text-sm font-semibold" :class="isNight ? 'text-blue-200' : 'text-blue-800'">Sebagai Peserta</h4>
-                                </div>
-                                <div class="space-y-2">
-                                    <a v-for="schedule in justAcademyParticipantSchedules.slice(0, 3)" :key="'p-' + schedule.id"
-                                       :href="schedule.trainee_url"
-                                       class="block p-3 rounded-lg border transition-all duration-200 hover:shadow-md"
-                                       :class="isNight ? 'bg-slate-700/50 border-slate-600 hover:bg-slate-700' : 'bg-blue-50 border-blue-200 hover:bg-blue-100'">
-                                        <div class="flex items-start justify-between gap-3">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="font-medium text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                                    {{ schedule.program_title || schedule.title }}
-                                                </div>
-                                                <div class="text-xs mt-2 space-y-1" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                                    <div class="flex items-center gap-1">
-                                                        <i class="fa-regular fa-calendar"></i>
-                                                        <span>{{ schedule.start_label }} – {{ schedule.end_label }}</span>
-                                                    </div>
-                                                    <div v-if="schedule.outlet_name || schedule.location" class="flex items-center gap-1">
-                                                        <i class="fa-solid fa-location-dot"></i>
-                                                        <span>{{ schedule.outlet_name || schedule.location }}</span>
-                                                    </div>
-                                                    <div v-if="schedule.trainer_names && schedule.trainer_names !== '—'" class="flex items-center gap-1">
-                                                        <i class="fa-solid fa-chalkboard-user"></i>
-                                                        <span>Trainer: {{ schedule.trainer_names }}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium"
-                                                  :class="justAcademyStatusClass(schedule.status, isNight)">
-                                                {{ schedule.status_label }}
-                                            </span>
-                                        </div>
-                                    </a>
-                                </div>
-                            </div>
-
-                            <!-- Sebagai Trainer -->
-                            <div v-if="justAcademyTrainerSchedules.length > 0">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <i class="fa-solid fa-chalkboard-user text-sm" :class="isNight ? 'text-violet-400' : 'text-violet-600'"></i>
-                                    <h4 class="text-sm font-semibold" :class="isNight ? 'text-violet-200' : 'text-violet-800'">Sebagai Trainer</h4>
-                                </div>
-                                <div class="space-y-2">
-                                    <a v-for="schedule in justAcademyTrainerSchedules.slice(0, 3)" :key="'t-' + schedule.id"
-                                       :href="schedule.trainer_url"
-                                       class="block p-3 rounded-lg border transition-all duration-200 hover:shadow-md"
-                                       :class="isNight ? 'bg-slate-700/50 border-slate-600 hover:bg-slate-700' : 'bg-violet-50 border-violet-200 hover:bg-violet-100'">
-                                        <div class="flex items-start justify-between gap-3">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="font-medium text-sm truncate" :class="isNight ? 'text-white' : 'text-slate-800'">
-                                                    {{ schedule.program_title || schedule.title }}
-                                                </div>
-                                                <div class="text-xs mt-2 space-y-1" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                                    <div class="flex items-center gap-1">
-                                                        <i class="fa-regular fa-calendar"></i>
-                                                        <span>{{ schedule.start_label }} – {{ schedule.end_label }}</span>
-                                                    </div>
-                                                    <div v-if="schedule.outlet_name || schedule.location" class="flex items-center gap-1">
-                                                        <i class="fa-solid fa-location-dot"></i>
-                                                        <span>{{ schedule.outlet_name || schedule.location }}</span>
-                                                    </div>
-                                                    <div class="flex items-center gap-1">
-                                                        <i class="fa-solid fa-users"></i>
-                                                        <span>{{ schedule.participants_count }} peserta terdaftar</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <span class="flex-shrink-0 text-xs px-2 py-1 rounded-full font-medium"
-                                                  :class="isNight ? 'bg-violet-700 text-violet-200' : 'bg-violet-100 text-violet-800'">
-                                                Trainer
-                                            </span>
-                                        </div>
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Notifications Section - Only show if there are unread notifications -->
                 <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
@@ -8252,8 +8165,17 @@ watch(locale, () => {
                     </div>
                 </div>
 
-                <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
+                <!-- Bottom Section: Training, Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6 items-start px-4 md:px-6">
+                    <!-- Training Plan — area widget, tidak tertutup card approval -->
+                    <div v-if="hasJustAcademySchedules || loadingJustAcademySchedules" class="sm:col-span-2 lg:col-span-4 xl:col-span-6">
+                        <JustAcademyHomeSchedulesCard
+                            :schedules="justAcademySchedules"
+                            :loading="loadingJustAcademySchedules"
+                            :is-night="isNight"
+                        />
+                    </div>
+
                     <!-- Left: Clock and Weather -->
                     <div class="sm:col-span-2 lg:col-span-1 xl:col-span-1 flex flex-col gap-4">
                         <!-- Clock Card -->
