@@ -1904,11 +1904,6 @@ async function loadJustAcademySchedules() {
     }
 }
 
-const hasJustAcademySchedules = computed(() => {
-    const s = justAcademySchedules.value;
-    return (s.participant?.length || 0) + (s.trainer?.length || 0) > 0;
-});
-
 // Approve coaching
 async function approveCoaching(coachingId, approverId) {
     try {
@@ -8165,17 +8160,8 @@ watch(locale, () => {
                     </div>
                 </div>
 
-                <!-- Bottom Section: Training, Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
+                <!-- Bottom Section: Clock, Weather, Calendar, Notes, Birthday, and Announcements -->
                 <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-6 items-start px-4 md:px-6">
-                    <!-- Training Plan — area widget, tidak tertutup card approval -->
-                    <div v-if="hasJustAcademySchedules || loadingJustAcademySchedules" class="sm:col-span-2 lg:col-span-4 xl:col-span-6">
-                        <JustAcademyHomeSchedulesCard
-                            :schedules="justAcademySchedules"
-                            :loading="loadingJustAcademySchedules"
-                            :is-night="isNight"
-                        />
-                    </div>
-
                     <!-- Left: Clock and Weather -->
                     <div class="sm:col-span-2 lg:col-span-1 xl:col-span-1 flex flex-col gap-4">
                         <!-- Clock Card -->
