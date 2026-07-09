@@ -1893,7 +1893,7 @@ function normalizeJustAcademyHomeSchedules(raw) {
 async function loadJustAcademySchedules() {
     loadingJustAcademySchedules.value = true;
     try {
-        const response = await axios.get('/just-academy/api/home-schedules');
+        const response = await axios.get('/api/just-academy/home-schedules');
         if (response.data.success) {
             justAcademySchedules.value = normalizeJustAcademyHomeSchedules(response.data.data);
         }

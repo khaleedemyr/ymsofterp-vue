@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, unref } from 'vue';
 
 const props = defineProps({
     schedules: {
@@ -20,13 +20,24 @@ const props = defineProps({
     },
 });
 
-const participantSchedules = computed(() => props.schedules?.participant || []);
-const trainerSchedules = computed(() => props.schedules?.trainer || []);
+const scheduleSource = computed(() => {
+    const raw = unref(props.schedules);
+    if (!raw || typeof raw !== 'object') {
+        return { participant: [], trainer: [] };
+    }
+    return raw;
+});
+
+const participantSchedules = computed(() => scheduleSource.value.participant || []);
+const trainerSchedules = computed(() => scheduleSource.value.trainer || []);
 const totalCount = computed(() => participantSchedules.value.length + trainerSchedules.value.length);
 const hasSchedules = computed(() => totalCount.value > 0);
 const itemLimit = computed(() => (props.compact ? 2 : 3));
 
-function statusClass(status) {
+function statusClass(status, statusLabel) {
+    if (statusLabel === 'Selesai') {
+        return props.isNight ? 'bg-slate-600 text-slate-200' : 'bg-slate-100 text-slate-700';
+    }
     if (status === 'ongoing') {
         return props.isNight ? 'bg-emerald-700 text-emerald-200' : 'bg-emerald-100 text-emerald-800';
     }
@@ -78,7 +89,7 @@ function statusClass(status) {
                                     </div>
                                 </div>
                             </div>
-                            <span v-if="!compact" class="text-xs px-2 py-0.5 rounded-full" :class="statusClass(schedule.status)">
+                            <span v-if="!compact" class="text-xs px-2 py-0.5 rounded-full" :class="statusClass(schedule.status, schedule.status_label)">
                                 {{ schedule.status_label }}
                             </span>
                         </div>

@@ -232,20 +232,22 @@ class JustAcademyService
     {
         $with = ['program:id,title', 'outlet:id_outlet,nama_outlet', 'trainers.user:id,nama_lengkap'];
 
-        $participantSchedules = $this->participantSchedulesForUser($userId)
-            ->with($with)
-            ->withCount('participants')
-            ->whereIn('status', self::NOTIFY_STATUSES)
-            ->where('end_at', '>=', now())
+        $participantSchedules = $this->applyHomeScheduleVisibility(
+            $this->participantSchedulesForUser($userId)
+                ->with($with)
+                ->withCount('participants')
+                ->whereIn('status', self::NOTIFY_STATUSES)
+        )
             ->orderBy('start_at')
             ->limit($limit)
             ->get()
             ->map(fn (JaSchedule $schedule) => $this->formatHomeSchedule($schedule, ['participant']));
 
-        $trainerSchedules = $this->trainerSchedulesForUser($userId)
-            ->with($with)
-            ->withCount('participants')
-            ->where('end_at', '>=', now())
+        $trainerSchedules = $this->applyHomeScheduleVisibility(
+            $this->trainerSchedulesForUser($userId)
+                ->with($with)
+                ->withCount('participants')
+        )
             ->orderBy('start_at')
             ->limit($limit)
             ->get()
@@ -255,6 +257,15 @@ class JustAcademyService
             'participant' => $participantSchedules->values()->all(),
             'trainer' => $trainerSchedules->values()->all(),
         ];
+    }
+
+    /** Jadwal yang tampil di Home: belum selesai ATAU masih hari ini (meski jam sudah lewat). */
+    private function applyHomeScheduleVisibility($query)
+    {
+        return $query->where(function ($q) {
+            $q->where('end_at', '>=', now())
+                ->orWhereDate('start_at', now()->toDateString());
+        });
     }
 
     public function notifyScheduleAssignments(
@@ -1160,9 +1171,10 @@ class JustAcademyService
             'location' => $schedule->location,
             'outlet_name' => $schedule->outlet?->nama_outlet,
             'status' => $schedule->status,
-            'status_label' => match ($schedule->status) {
-                'published' => 'Published',
-                'ongoing' => 'Berlangsung',
+            'status_label' => match (true) {
+                $schedule->end_at && $schedule->end_at->lt(now()) => 'Selesai',
+                $schedule->status === 'ongoing' => 'Berlangsung',
+                $schedule->status === 'published' => 'Published',
                 default => ucfirst((string) $schedule->status),
             },
             'trainer_names' => $this->formatScheduleTrainers($schedule),

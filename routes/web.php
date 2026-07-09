@@ -3536,6 +3536,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/api/reminders', [App\Http\Controllers\CalendarController::class, 'storeReminder']);
     Route::delete('/api/reminders/{id}', [App\Http\Controllers\CalendarController::class, 'deleteReminder']);
     Route::get('/api/users/data', [App\Http\Controllers\CalendarController::class, 'getUsersData']);
+    Route::get('/api/just-academy/home-schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'homeSchedules']);
 });
 
 // Notes API routes
