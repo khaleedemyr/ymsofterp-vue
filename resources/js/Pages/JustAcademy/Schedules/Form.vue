@@ -65,7 +65,6 @@ const externalTrainerNames = ref(
 
 const form = useForm({
   program_id: props.schedule?.program_id || '',
-  title: props.schedule?.title || '',
   start_at: props.schedule?.start_at?.slice(0, 16) || props.initialStartAt || '',
   end_at: props.schedule?.end_at?.slice(0, 16) || props.initialEndAt || '',
   location: props.schedule?.location || '',
@@ -109,7 +108,7 @@ async function removeSchedule() {
 
   const result = await jaConfirmDelete({
     title: 'Hapus training plan?',
-    html: `Training plan <strong>${props.schedule.title}</strong> akan dihapus permanen.`,
+    html: `Training plan <strong>${props.schedule.program?.title || props.schedule.title}</strong> akan dihapus permanen.`,
     confirmText: 'Ya, hapus',
   });
   if (!result.isConfirmed) return;
@@ -131,10 +130,6 @@ async function removeSchedule() {
           <option value="">— Pilih program —</option>
           <option v-for="p in programs" :key="p.id" :value="p.id">{{ p.title }}</option>
         </select>
-      </div>
-      <div>
-        <label :class="jaUi.label">Judul training plan</label>
-        <input v-model="form.title" :class="jaUi.input" required />
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>

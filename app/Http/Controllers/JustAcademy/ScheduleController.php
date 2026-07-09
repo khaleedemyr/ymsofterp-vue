@@ -432,7 +432,6 @@ class ScheduleController extends Controller
     {
         return $request->validate([
             'program_id' => 'required|integer|exists:ja_programs,id',
-            'title' => 'required|string|max:255',
             'start_at' => 'required|date',
             'end_at' => 'required|date|after:start_at',
             'location' => 'nullable|string|max:255',
@@ -452,18 +451,22 @@ class ScheduleController extends Controller
 
     protected function schedulePayload(array $validated): array
     {
-        return collect($validated)->only([
-            'program_id',
-            'title',
-            'start_at',
-            'end_at',
-            'location',
-            'outlet_id',
-            'region_id',
-            'capacity',
-            'status',
-            'notes',
-        ])->all();
+        $program = JaProgram::find($validated['program_id']);
+
+        return [
+            ...collect($validated)->only([
+                'program_id',
+                'start_at',
+                'end_at',
+                'location',
+                'outlet_id',
+                'region_id',
+                'capacity',
+                'status',
+                'notes',
+            ])->all(),
+            'title' => $program?->title ?? 'Training Plan',
+        ];
     }
 
     protected function companyHolidays()
