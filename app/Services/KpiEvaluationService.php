@@ -322,6 +322,7 @@ class KpiEvaluationService
         $evaluation = $this->syncEvaluationDataPeriod($evaluation);
 
         $this->syncParameterValuesFromTemplate($evaluation);
+        $this->syncItemFormulasFromTemplate($evaluation);
         $evaluation->load('parameterValues');
 
         $context = $this->buildErpContext($evaluation);
@@ -836,6 +837,40 @@ class KpiEvaluationService
         }
 
         $this->seedParameterValues($evaluation, $missingCodes, fetchErp: false);
+    }
+
+    /**
+     * Samakan formula item evaluasi dengan parameter/template terbaru (mis. KPI12 → D019).
+     */
+    protected function syncItemFormulasFromTemplate(KpiEvaluation $evaluation): void
+    {
+        $evaluation->loadMissing([
+            'template.strategies.items.itemParameters.parameter',
+        ]);
+
+        $template = $evaluation->template;
+        if (! $template) {
+            return;
+        }
+
+        $templateItems = $template->strategies
+            ->flatMap(fn ($strategy) => $strategy->items)
+            ->keyBy('id');
+
+        foreach ($evaluation->items()->get() as $item) {
+            $templateItem = $templateItems->get($item->kpi_template_item_id);
+            if (! $templateItem) {
+                continue;
+            }
+
+            $param = $templateItem->itemParameters->first()?->parameter;
+            $expectedFormula = trim((string) ($param?->formula ?? $templateItem->formula ?? ''));
+            if ($expectedFormula === '' || $item->formula === $expectedFormula) {
+                continue;
+            }
+
+            $item->update(['formula' => $expectedFormula]);
+        }
     }
 
     /**
