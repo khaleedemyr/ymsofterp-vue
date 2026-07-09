@@ -299,6 +299,26 @@ class RegionalVisitAnalyticsService
     /**
      * @param  array<int>  $userIds
      */
+    /**
+     * Outlet yang punya scan absensi oleh user di periode (tanpa filter regional setting).
+     *
+     * @return list<int>
+     */
+    public function getUserVisitedOutletIds(int $userId, string $startDate, string $endDate): array
+    {
+        if ($userId <= 0) {
+            return [];
+        }
+
+        return $this->attendanceQuery([$userId], $startDate, $endDate)
+            ->distinct()
+            ->pluck('o.id_outlet')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values()
+            ->all();
+    }
+
     private function attendanceQuery(array $userIds, string $startDate, string $endDate)
     {
         return DB::table('att_log as a')

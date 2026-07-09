@@ -927,7 +927,23 @@ class KpiParameterResolverService
             return null;
         }
 
-        $target = UserRegional::where('user_id', $userId)->value('target_outlet_visits');
+        $assignment = UserRegional::where('user_id', $userId)->first();
+        if ($assignment === null) {
+            return null;
+        }
+
+        $targets = $assignment->outlet_visit_targets ?? [];
+        if (is_string($targets)) {
+            $decoded = json_decode($targets, true);
+            $targets = is_array($decoded) ? $decoded : [];
+        }
+        if (is_array($targets) && $targets !== []) {
+            $sum = (int) collect($targets)->sum(fn ($row) => (int) ($row['target_visits'] ?? 0));
+
+            return $sum > 0 ? (float) $sum : null;
+        }
+
+        $target = $assignment->target_outlet_visits;
         if ($target === null || $target === '') {
             return null;
         }
@@ -936,32 +952,55 @@ class KpiParameterResolverService
     }
 
     /**
-     * Jumlah hari kunjungan outlet oleh karyawan KPI (bukan semua regional user).
+     * Kunjungan (hari) di outlet yang di-set di Regional Management saja.
      *
      * @param  list<int>  $outletIds
      */
     private function resolveRegionalUserVisitCount(array $outletIds, string $startDate, string $endDate, int $userId): ?float
     {
-        if ($userId <= 0 || empty($outletIds)) {
+        if ($userId <= 0) {
             return null;
         }
 
-        if (! UserRegional::where('user_id', $userId)->exists()) {
+        $assignment = UserRegional::where('user_id', $userId)->first();
+        if ($assignment === null) {
+            return null;
+        }
+
+        $targetOutletIds = $this->regionalTargetOutletIds($assignment);
+        if ($targetOutletIds === []) {
             return null;
         }
 
         $totalVisitDays = 0;
 
-        foreach (array_unique(array_filter(array_map('intval', $outletIds))) as $outletId) {
-            if ($outletId <= 0) {
-                continue;
-            }
-
+        foreach ($targetOutletIds as $outletId) {
             $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
             $totalVisitDays += (int) ($detail['summary']['visit_days'] ?? 0);
         }
 
         return (float) $totalVisitDays;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function regionalTargetOutletIds(UserRegional $assignment): array
+    {
+        $targets = $assignment->outlet_visit_targets ?? [];
+        if (is_string($targets)) {
+            $decoded = json_decode($targets, true);
+            $targets = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($targets)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(fn ($row) => (int) ($row['outlet_id'] ?? 0), $targets),
+            fn (int $id) => $id > 0,
+        )));
     }
 
     private function resolveTrainingCompliance(int $userId, string $start, string $end): ?float
@@ -1254,7 +1293,7 @@ class KpiParameterResolverService
     }
 
     /**
-     * QA Audit 1 (QA2 Audits) — rata-rata skor C / (C + NC) audit submitted per outlet scope.
+     * QA2 Audits — skor compliance C / (C + NC) per outlet, lalu rata-rata antar outlet scope.
      *
      * @param  list<int>  $outletIds
      */
@@ -1264,18 +1303,42 @@ class KpiParameterResolverService
             return null;
         }
 
-        $auditIds = DB::table('qa2_audits as a')
-            ->join('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->whereIn('a.outlet_id', array_map('intval', $outletIds))
-            ->where('a.status', 'submitted')
-            ->whereBetween('a.audit_datetime', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->where(function ($q) {
-                $q->where('t.name', 'like', '%Audit 1%')
-                    ->orWhere('t.name', 'like', '%Audit1%')
-                    ->orWhere('t.code', 'like', '%AUDIT1%')
-                    ->orWhere('t.code', 'like', '%AUDIT_1%');
-            })
-            ->pluck('a.id');
+        $scores = [];
+        foreach (array_values(array_unique(array_filter(array_map('intval', $outletIds)))) as $outletId) {
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $score = $this->resolveQa2AuditScoreForOutlet($outletId, $startDate, $endDate);
+            if ($score !== null) {
+                $scores[] = $score;
+            }
+        }
+
+        if ($scores === []) {
+            return null;
+        }
+
+        return round(array_sum($scores) / count($scores), 2);
+    }
+
+    /**
+     * Skor compliance QA2 untuk satu outlet: C / (C + NC) dari semua audit submitted di periode.
+     */
+    private function resolveQa2AuditScoreForOutlet(int $outletId, string $startDate, string $endDate): ?float
+    {
+        if ($outletId <= 0 || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
+            return null;
+        }
+
+        $startDate = substr(trim($startDate), 0, 10);
+        $endDate = substr(trim($endDate), 0, 10);
+
+        $auditIds = DB::table('qa2_audits')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'submitted')
+            ->whereBetween('audit_datetime', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->pluck('id');
 
         if ($auditIds->isEmpty()) {
             return null;

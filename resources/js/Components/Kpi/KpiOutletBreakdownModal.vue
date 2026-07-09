@@ -178,7 +178,26 @@ defineExpose({ show, preload });
           </div>
 
           <template v-else-if="data?.available">
-            <div v-if="data.breakdown_mode === 'portfolio'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+            <div v-if="data.breakdown_mode === 'regional_visit'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-gray-500 text-xs">Outlet Target</div>
+                <div class="font-bold text-lg">{{ data.summary.configured_outlet_count ?? 0 }}</div>
+              </div>
+              <div class="bg-green-50 rounded-lg p-3">
+                <div class="text-green-700 text-xs">Target Dikunjungi</div>
+                <div class="font-bold text-lg text-green-800">{{ data.summary.visited_configured ?? 0 }}</div>
+              </div>
+              <div class="bg-blue-50 rounded-lg p-3">
+                <div class="text-blue-700 text-xs">Total Kunjungan (Target)</div>
+                <div class="font-bold text-lg text-blue-800">{{ formatNum(data.summary.total_visits) }}</div>
+              </div>
+              <div class="bg-amber-50 rounded-lg p-3">
+                <div class="text-amber-800 text-xs">Target Total / Bulan</div>
+                <div class="font-bold text-lg text-amber-900">{{ formatNum(data.summary.portfolio_target) }}</div>
+              </div>
+            </div>
+
+            <div v-else-if="data.breakdown_mode === 'portfolio'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-gray-500 text-xs">Total Outlet</div>
                 <div class="font-bold text-lg">{{ data.outlet_count }}</div>
@@ -217,7 +236,15 @@ defineExpose({ show, preload });
             </div>
 
             <p class="text-xs text-gray-500 mb-3">
-              <template v-if="data.breakdown_mode === 'portfolio'">
+              <template v-if="data.breakdown_mode === 'regional_visit'">
+                {{ data.portfolio_note }}
+                Achievement agregat evaluasi:
+                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
+                  ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan target)
+                </span>
+              </template>
+              <template v-else-if="data.breakdown_mode === 'portfolio'">
                 {{ data.portfolio_note }}
                 Achievement agregat evaluasi:
                 <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
@@ -231,7 +258,65 @@ defineExpose({ show, preload });
               </template>
             </p>
 
-            <div class="overflow-x-auto border rounded-xl">
+            <template v-if="data.breakdown_mode === 'regional_visit'">
+              <h4 class="text-sm font-semibold text-gray-800 mb-2">Outlet Target (Regional Management)</h4>
+              <div class="overflow-x-auto border rounded-xl mb-6">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Outlet</th>
+                      <th class="px-3 py-2 text-right">Target</th>
+                      <th class="px-3 py-2 text-right">Aktual (hari)</th>
+                      <th class="px-3 py-2 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y">
+                    <tr v-for="row in data.configured_rows" :key="'cfg-' + row.outlet_id" class="hover:bg-gray-50">
+                      <td class="px-3 py-2 font-medium">{{ row.outlet_label }}</td>
+                      <td class="px-3 py-2 text-right">{{ formatNum(row.target_visits) }}</td>
+                      <td class="px-3 py-2 text-right font-semibold">{{ formatNum(row.actual_visits) }}</td>
+                      <td class="px-3 py-2 text-center">
+                        <span class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(row.performance_level)">
+                          {{ levelLabel(row.performance_level) }}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr v-if="!data.configured_rows?.length">
+                      <td colspan="4" class="px-3 py-4 text-center text-gray-500">Tidak ada outlet target.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h4 class="text-sm font-semibold text-gray-800 mb-1">
+                Outlet Non Coverage
+                <span class="text-xs font-normal text-gray-500">(ada absensi, bukan target regional)</span>
+              </h4>
+              <p v-if="data.summary.non_coverage_count" class="text-xs text-amber-700 mb-2">
+                {{ data.summary.non_coverage_count }} outlet dengan kunjungan di luar setting regional.
+              </p>
+              <div class="overflow-x-auto border rounded-xl">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Outlet</th>
+                      <th class="px-3 py-2 text-right">Aktual (hari)</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y">
+                    <tr v-for="row in data.non_coverage_rows" :key="'nc-' + row.outlet_id" class="hover:bg-amber-50/50">
+                      <td class="px-3 py-2 font-medium">{{ row.outlet_label }}</td>
+                      <td class="px-3 py-2 text-right font-semibold">{{ formatNum(row.actual_visits) }}</td>
+                    </tr>
+                    <tr v-if="!data.non_coverage_rows?.length">
+                      <td colspan="2" class="px-3 py-4 text-center text-gray-500">Tidak ada outlet non coverage.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+
+            <div v-else class="overflow-x-auto border rounded-xl">
               <table class="min-w-full text-sm">
                 <thead class="bg-gray-50">
                   <tr>

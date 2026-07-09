@@ -22,6 +22,7 @@ class KpiEvaluationService
     public function __construct(
         private KpiParameterResolverService $resolver,
         private KpiTemplateService $templateService,
+        private RegionalVisitAnalyticsService $regionalVisits,
     ) {}
 
     public function loadForEdit(int $id): KpiEvaluation
@@ -1359,9 +1360,11 @@ class KpiEvaluationService
             }
 
             $paramByCode = $parameters->keyBy('code');
-            $assembler = $this->isPortfolioBreakdownFormula($meta['d_codes'], $paramByCode)
-                ? 'assemblePortfolioItemBreakdownFromGrid'
-                : 'assembleItemBreakdownFromGrid';
+            $assembler = match (true) {
+                $this->isRegionalVisitCoverageFormula($meta['d_codes']) => 'assembleRegionalVisitCoverageBreakdown',
+                $this->isPortfolioBreakdownFormula($meta['d_codes'], $paramByCode) => 'assemblePortfolioItemBreakdownFromGrid',
+                default => 'assembleItemBreakdownFromGrid',
+            };
 
             $results[$item->id] = $this->{$assembler}(
                 $item,
@@ -1380,6 +1383,19 @@ class KpiEvaluationService
             'items' => $results,
             'generated_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Formula Outlet Visit Coverage (D021 / D022).
+     *
+     * @param  list<string>  $dCodes
+     */
+    protected function isRegionalVisitCoverageFormula(array $dCodes): bool
+    {
+        $normalized = array_values(array_unique($dCodes));
+        sort($normalized);
+
+        return $normalized === ['D021', 'D022'];
     }
 
     /**
@@ -1525,6 +1541,201 @@ class KpiEvaluationService
                 'portfolio_target' => $portfolioValues['D022'] ?? null,
             ],
         ];
+    }
+
+    /**
+     * Breakdown kunjungan regional: outlet target setting + outlet non-coverage (ada absen, bukan target).
+     *
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     * @param  Collection<string, KpiEvaluationParameterValue>  $paramMetaByCode
+     * @param  array<int, array<string, ?float>>  $parameterGrid
+     * @param  array<string, mixed>  $baseContext
+     * @return array<string, mixed>
+     */
+    private function assembleRegionalVisitCoverageBreakdown(
+        KpiEvaluationItem $item,
+        string $formula,
+        array $dCodes,
+        Collection $parameters,
+        Collection $paramMetaByCode,
+        Collection $outletRows,
+        array $parameterGrid,
+        KpiEvaluation $evaluation,
+        array $baseContext,
+    ): array {
+        $userId = (int) ($baseContext['user_id'] ?? 0);
+        $assignment = UserRegional::query()->where('user_id', $userId)->first();
+
+        if ($assignment === null) {
+            return $this->unavailableItemBreakdown($item, 'Karyawan belum terdaftar di Regional Management.');
+        }
+
+        $targetEntries = $this->normalizeRegionalOutletTargets($assignment->outlet_visit_targets ?? []);
+        if ($targetEntries === []) {
+            return $this->unavailableItemBreakdown($item, 'Belum ada outlet target di Regional Management.');
+        }
+
+        $startDate = (string) ($baseContext['period_start'] ?? '');
+        $endDate = (string) ($baseContext['period_end'] ?? '');
+
+        $targetOutletIds = array_column($targetEntries, 'outlet_id');
+        $visitedOutletIds = $this->regionalVisits->getUserVisitedOutletIds($userId, $startDate, $endDate);
+        $lookupIds = array_values(array_unique(array_merge($targetOutletIds, $visitedOutletIds)));
+
+        $outletMeta = $lookupIds === []
+            ? collect()
+            : DB::table('tbl_data_outlet')
+                ->whereIn('id_outlet', $lookupIds)
+                ->get(['id_outlet', 'nama_outlet', 'qr_code'])
+                ->keyBy('id_outlet');
+
+        $formatLabel = function (int $outletId) use ($outletMeta): string {
+            $outlet = $outletMeta->get($outletId);
+            if ($outlet === null) {
+                return "Outlet #{$outletId}";
+            }
+
+            return trim($outlet->nama_outlet . ($outlet->qr_code ? " ({$outlet->qr_code})" : ''));
+        };
+
+        $configuredRows = [];
+        $totalActual = 0;
+        $totalTarget = 0;
+        $visitedConfigured = 0;
+
+        foreach ($targetEntries as $entry) {
+            $outletId = $entry['outlet_id'];
+            $targetVisits = $entry['target_visits'];
+            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
+            $actualVisits = (int) ($detail['summary']['visit_days'] ?? 0);
+
+            if ($actualVisits > 0) {
+                $visitedConfigured++;
+            }
+
+            $performanceLevel = match (true) {
+                $targetVisits > 0 && $actualVisits >= $targetVisits => 'exceeding',
+                $actualVisits > 0 => 'meeting',
+                default => 'not_visited',
+            };
+
+            $configuredRows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => (string) ($outletMeta->get($outletId)?->nama_outlet ?? ''),
+                'outlet_label' => $formatLabel($outletId),
+                'target_visits' => $targetVisits,
+                'actual_visits' => $actualVisits,
+                'performance_level' => $performanceLevel,
+            ];
+
+            $totalActual += $actualVisits;
+            $totalTarget += $targetVisits;
+        }
+
+        usort($configuredRows, function (array $a, array $b): int {
+            $order = ['not_visited' => 0, 'meeting' => 1, 'exceeding' => 2];
+            $la = $order[$a['performance_level']] ?? 0;
+            $lb = $order[$b['performance_level']] ?? 0;
+            if ($la !== $lb) {
+                return $lb <=> $la;
+            }
+
+            return strcmp((string) $a['outlet_name'], (string) $b['outlet_name']);
+        });
+
+        $targetIdSet = array_flip($targetOutletIds);
+        $nonCoverageRows = [];
+
+        foreach ($visitedOutletIds as $outletId) {
+            if (isset($targetIdSet[$outletId])) {
+                continue;
+            }
+
+            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
+            $actualVisits = (int) ($detail['summary']['visit_days'] ?? 0);
+            if ($actualVisits <= 0) {
+                continue;
+            }
+
+            $nonCoverageRows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => (string) ($outletMeta->get($outletId)?->nama_outlet ?? ''),
+                'outlet_label' => $formatLabel($outletId),
+                'actual_visits' => $actualVisits,
+            ];
+        }
+
+        usort($nonCoverageRows, function (array $a, array $b): int {
+            $visitCompare = ($b['actual_visits'] ?? 0) <=> ($a['actual_visits'] ?? 0);
+            if ($visitCompare !== 0) {
+                return $visitCompare;
+            }
+
+            return strcmp((string) $a['outlet_name'], (string) $b['outlet_name']);
+        });
+
+        $d022Param = $parameters['D022'] ?? null;
+        $portfolioTarget = $d022Param
+            ? $this->resolver->resolve($d022Param, $baseContext)
+            : ($totalTarget > 0 ? (float) $totalTarget : null);
+
+        return [
+            'available' => true,
+            'breakdown_mode' => 'regional_visit',
+            'outlet_count' => count($configuredRows) + count($nonCoverageRows),
+            'item_name' => $item->item_name,
+            'formula' => $formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
+            'parameter_columns' => [],
+            'portfolio_note' => 'Kunjungan dihitung dari absensi (hari kunjungan unik). Target outlet dari Regional Management.',
+            'configured_rows' => $configuredRows,
+            'non_coverage_rows' => $nonCoverageRows,
+            'rows' => [],
+            'summary' => [
+                'configured_outlet_count' => count($configuredRows),
+                'visited_configured' => $visitedConfigured,
+                'non_coverage_count' => count($nonCoverageRows),
+                'total_visits' => $totalActual,
+                'portfolio_target' => $portfolioTarget,
+                'exceeding' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'exceeding')),
+                'meeting' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'meeting')),
+                'below' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'not_visited')),
+            ],
+        ];
+    }
+
+    /**
+     * @param  mixed  $raw
+     * @return list<array{outlet_id: int, target_visits: int}>
+     */
+    private function normalizeRegionalOutletTargets(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($raw as $row) {
+            $outletId = (int) ($row['outlet_id'] ?? 0);
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $entries[] = [
+                'outlet_id' => $outletId,
+                'target_visits' => max(0, (int) ($row['target_visits'] ?? 0)),
+            ];
+        }
+
+        return $entries;
     }
 
     /**
