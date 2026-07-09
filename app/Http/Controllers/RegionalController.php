@@ -6,16 +6,20 @@ use App\Models\User;
 use App\Models\UserRegional;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class RegionalController extends Controller
 {
+    private ?bool $hasOutletVisitTargetsColumn = null;
+
+    private ?bool $hasSupervisorPositionIdColumn = null;
+
     public function index(Request $request)
     {
         $query = DB::table('users as u')
             ->join('user_regional as ur', 'u.id', '=', 'ur.user_id')
             ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
-            ->leftJoin('tbl_data_jabatan as sj', 'ur.supervisor_position_id', '=', 'sj.id_jabatan')
             ->leftJoin('tbl_data_divisi as d', 'u.division_id', '=', 'd.id')
             ->select(
                 'u.id',
@@ -27,12 +31,19 @@ class RegionalController extends Controller
                 'd.nama_divisi',
                 'ur.area',
                 'ur.target_outlet_visits',
-                'ur.outlet_visit_targets',
-                'ur.supervisor_position_id',
-                'sj.nama_jabatan as supervisor_position_name',
                 'ur.updated_at as assigned_at',
             )
             ->orderBy('u.nama_lengkap');
+
+        if ($this->hasOutletVisitTargetsColumn()) {
+            $query->addSelect('ur.outlet_visit_targets');
+        }
+
+        if ($this->hasSupervisorPositionIdColumn()) {
+            $query
+                ->leftJoin('tbl_data_jabatan as sj', 'ur.supervisor_position_id', '=', 'sj.id_jabatan')
+                ->addSelect('ur.supervisor_position_id', 'sj.nama_jabatan as supervisor_position_name');
+        }
 
         if ($request->filled('status')) {
             $query->where('u.status', $request->get('status'));
@@ -47,7 +58,7 @@ class RegionalController extends Controller
         }
 
         $users = $query->get()->map(function ($row) {
-            $targets = $row->outlet_visit_targets;
+            $targets = $this->hasOutletVisitTargetsColumn() ? ($row->outlet_visit_targets ?? []) : [];
             if (is_string($targets)) {
                 $decoded = json_decode($targets, true);
                 $targets = is_array($decoded) ? $decoded : [];
@@ -110,8 +121,8 @@ class RegionalController extends Controller
                 'user_id' => $request->user_id,
                 'area' => $request->area,
                 'target_outlet_visits' => $this->resolveTotalTargetVisits($request->input('target_outlet_visits'), $outletTargets),
-                'outlet_visit_targets' => $outletTargets,
-                'supervisor_position_id' => $request->input('supervisor_position_id'),
+                ...($this->hasOutletVisitTargetsColumn() ? ['outlet_visit_targets' => $outletTargets] : []),
+                ...($this->hasSupervisorPositionIdColumn() ? ['supervisor_position_id' => $request->input('supervisor_position_id')] : []),
             ]);
 
             return redirect()->route('regional.index')
@@ -131,8 +142,8 @@ class RegionalController extends Controller
             'user' => $user,
             'currentArea' => $assignment?->area,
             'targetOutletVisits' => $assignment?->target_outlet_visits,
-            'outletVisitTargets' => $assignment?->outlet_visit_targets ?? [],
-            'supervisorPositionId' => $assignment?->supervisor_position_id,
+            'outletVisitTargets' => $this->hasOutletVisitTargetsColumn() ? ($assignment?->outlet_visit_targets ?? []) : [],
+            'supervisorPositionId' => $this->hasSupervisorPositionIdColumn() ? $assignment?->supervisor_position_id : null,
         ]);
     }
 
@@ -155,8 +166,8 @@ class RegionalController extends Controller
                 [
                     'area' => $request->area,
                     'target_outlet_visits' => $this->resolveTotalTargetVisits($request->input('target_outlet_visits'), $outletTargets),
-                    'outlet_visit_targets' => $outletTargets,
-                    'supervisor_position_id' => $request->input('supervisor_position_id'),
+                    ...($this->hasOutletVisitTargetsColumn() ? ['outlet_visit_targets' => $outletTargets] : []),
+                    ...($this->hasSupervisorPositionIdColumn() ? ['supervisor_position_id' => $request->input('supervisor_position_id')] : []),
                 ],
             );
 
@@ -208,8 +219,8 @@ class RegionalController extends Controller
             'user_id' => (int) $userId,
             'area' => $assignment?->area,
             'target_outlet_visits' => $assignment?->target_outlet_visits,
-            'outlet_visit_targets' => $assignment?->outlet_visit_targets ?? [],
-            'supervisor_position_id' => $assignment?->supervisor_position_id,
+            'outlet_visit_targets' => $this->hasOutletVisitTargetsColumn() ? ($assignment?->outlet_visit_targets ?? []) : [],
+            'supervisor_position_id' => $this->hasSupervisorPositionIdColumn() ? $assignment?->supervisor_position_id : null,
         ]);
     }
 
@@ -236,14 +247,18 @@ class RegionalController extends Controller
     {
         $search = $request->get('search', '');
 
-        $positions = DB::table('tbl_data_jabatan')
+        $positions = DB::table('tbl_data_jabatan as j')
+            ->join('users as u', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('j.status', 'A')
+            ->where('u.status', 'A')
             ->where(function ($query) use ($search) {
                 if ($search) {
-                    $query->where('nama_jabatan', 'like', '%' . $search . '%');
+                    $query->where('j.nama_jabatan', 'like', '%' . $search . '%');
                 }
             })
-            ->select('id_jabatan as id', 'nama_jabatan as name')
-            ->orderBy('nama_jabatan')
+            ->selectRaw('MIN(j.id_jabatan) as id, j.nama_jabatan as name')
+            ->groupBy('j.nama_jabatan')
+            ->orderBy('j.nama_jabatan')
             ->get();
 
         return response()->json($positions);
@@ -303,5 +318,23 @@ class RegionalController extends Controller
             ->pluck('nama_outlet', 'id_outlet')
             ->mapWithKeys(fn ($name, $id) => [(int) $id => $name])
             ->all();
+    }
+
+    private function hasOutletVisitTargetsColumn(): bool
+    {
+        if ($this->hasOutletVisitTargetsColumn === null) {
+            $this->hasOutletVisitTargetsColumn = Schema::hasColumn('user_regional', 'outlet_visit_targets');
+        }
+
+        return $this->hasOutletVisitTargetsColumn;
+    }
+
+    private function hasSupervisorPositionIdColumn(): bool
+    {
+        if ($this->hasSupervisorPositionIdColumn === null) {
+            $this->hasSupervisorPositionIdColumn = Schema::hasColumn('user_regional', 'supervisor_position_id');
+        }
+
+        return $this->hasSupervisorPositionIdColumn;
     }
 }
