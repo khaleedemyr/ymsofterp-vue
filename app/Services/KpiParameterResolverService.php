@@ -1317,6 +1317,10 @@ class KpiParameterResolverService
             return null;
         }
 
+        if ($headerTable === 'manual_cogs_deviation_catcost') {
+            return $this->averageManualCogsDeviationCatcostPercent($itemsTable, $fk, (int) $headerId, $percentColumn, $outletIds);
+        }
+
         $values = DB::table($itemsTable)
             ->where($fk, $headerId)
             ->whereIn('outlet_id', array_map('intval', $outletIds))
@@ -1329,6 +1333,84 @@ class KpiParameterResolverService
         }
 
         return round($values->avg(), 4);
+    }
+
+    /**
+     * Ambil % dari kolom persen; jika kosong/0 tapi nilai rupiah ada, hitung dari nilai / cogs_value.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function averageManualCogsDeviationCatcostPercent(
+        string $itemsTable,
+        string $fk,
+        int $headerId,
+        string $percentColumn,
+        array $outletIds,
+    ): ?float {
+        $rows = DB::table($itemsTable)
+            ->where($fk, $headerId)
+            ->whereIn('outlet_id', array_map('intval', $outletIds))
+            ->get([
+                'cogs_value',
+                'cogs_percent',
+                'deviation_value',
+                'deviation_percent',
+                'catcost_value',
+                'catcost_percent',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
+        $values = $rows
+            ->map(function ($row) use ($percentColumn) {
+                return match ($percentColumn) {
+                    'cogs_percent' => $this->resolveManualCogsMetricPercent(
+                        (float) ($row->cogs_percent ?? 0),
+                        (float) ($row->cogs_value ?? 0),
+                        (float) ($row->cogs_value ?? 0),
+                    ),
+                    'deviation_percent' => $this->resolveManualCogsMetricPercent(
+                        (float) ($row->deviation_percent ?? 0),
+                        (float) ($row->deviation_value ?? 0),
+                        (float) ($row->cogs_value ?? 0),
+                    ),
+                    'catcost_percent' => $this->resolveManualCogsMetricPercent(
+                        (float) ($row->catcost_percent ?? 0),
+                        (float) ($row->catcost_value ?? 0),
+                        (float) ($row->cogs_value ?? 0),
+                    ),
+                    default => null,
+                };
+            })
+            ->filter(fn ($value) => $value !== null);
+
+        if ($values->isEmpty()) {
+            return null;
+        }
+
+        return round($values->avg(), 4);
+    }
+
+    /**
+     * Prioritas kolom % manual; fallback hitung (nilai / cogs_value) × 100.
+     */
+    private function resolveManualCogsMetricPercent(float $storedPercent, float $metricValue, float $cogsValue): ?float
+    {
+        if (abs($storedPercent) > 0.0000001) {
+            return $storedPercent;
+        }
+
+        if (abs($metricValue) < 0.0000001) {
+            return 0.0;
+        }
+
+        if (abs($cogsValue) < 0.0000001) {
+            return null;
+        }
+
+        return ($metricValue / $cogsValue) * 100;
     }
 
     /**
