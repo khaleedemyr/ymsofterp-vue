@@ -147,17 +147,6 @@ function goNext() {
   tick();
 }
 
-function goPrev() {
-  if (currentIndex.value <= 0) {
-    return;
-  }
-  currentIndex.value -= 1;
-  questionStartedAt.value = new Date().toISOString();
-  handlingExpiry.value = false;
-  syncProgress();
-  tick();
-}
-
 function setAnswer(questionId, optionId) {
   quizAnswers.answers[questionId] = optionId;
 }
@@ -260,14 +249,6 @@ onUnmounted(() => {
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <button
-        v-if="isPerQuestion && currentIndex > 0"
-        type="button"
-        :class="jaUi.btnSecondary"
-        @click="goPrev"
-      >
-        Soal sebelumnya
-      </button>
       <button
         v-if="isPerQuestion && !isLastQuestion"
         type="button"

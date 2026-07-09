@@ -25,21 +25,26 @@ class MyTrainingController extends Controller
 
         $stats = [
             'upcoming' => (clone $participantQuery)->where('end_at', '>=', now())->count(),
+            'past' => (clone $participantQuery)->where('end_at', '<', now())->count(),
             'total' => (clone $participantQuery)->count(),
         ];
 
         $query = (clone $participantQuery)
-            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
-            ->orderBy('start_at');
+            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet']);
 
         if ($tab === 'past') {
-            $query->where('end_at', '<', now());
+            $query->where('end_at', '<', now())->orderByDesc('start_at');
         } else {
-            $query->where('end_at', '>=', now());
+            $query->where('end_at', '>=', now())->orderBy('start_at');
         }
 
+        $schedules = $this->service->enrichParticipantScheduleListing(
+            $query->paginate(12)->withQueryString(),
+            $userId,
+        );
+
         return Inertia::render('JustAcademy/MyTraining/Index', [
-            'schedules' => $query->paginate(12)->withQueryString(),
+            'schedules' => $schedules,
             'tab' => $tab,
             'stats' => $stats,
         ]);

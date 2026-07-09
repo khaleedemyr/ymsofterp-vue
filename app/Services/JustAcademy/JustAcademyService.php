@@ -38,6 +38,148 @@ class JustAcademyService
             ->whereIn('status', self::PARTICIPANT_VISIBLE_STATUSES);
     }
 
+    public function enrichParticipantScheduleListing($paginator, int $userId)
+    {
+        $items = collect($paginator->items());
+        if ($items->isEmpty()) {
+            return $paginator;
+        }
+
+        $scheduleIds = $items->pluck('id');
+        $programIds = $items->pluck('program_id')->filter()->unique()->values();
+
+        $attendances = JaAttendance::query()
+            ->where('user_id', $userId)
+            ->whereIn('schedule_id', $scheduleIds)
+            ->get()
+            ->keyBy('schedule_id');
+
+        $materialProgress = JaMaterialProgress::query()
+            ->where('user_id', $userId)
+            ->whereIn('schedule_id', $scheduleIds)
+            ->get()
+            ->groupBy('schedule_id');
+
+        $quizAttempts = JaQuizAttempt::query()
+            ->where('user_id', $userId)
+            ->whereIn('schedule_id', $scheduleIds)
+            ->whereNotNull('submitted_at')
+            ->get()
+            ->groupBy('schedule_id');
+
+        $programItems = JaProgramItem::query()
+            ->whereIn('program_id', $programIds)
+            ->get()
+            ->groupBy('program_id');
+
+        $now = now();
+
+        $paginator->setCollection($items->map(function (JaSchedule $schedule) use (
+            $attendances,
+            $materialProgress,
+            $quizAttempts,
+            $programItems,
+            $now,
+        ) {
+            $attendance = $attendances->get($schedule->id);
+            $itemsForProgram = $programItems->get($schedule->program_id, collect());
+            $materialTotal = $itemsForProgram->where('item_type', 'material')->count();
+            $quizTotal = $itemsForProgram->where('item_type', 'quiz')->count();
+            $stepsTotal = $materialTotal + $quizTotal;
+
+            $materialsDone = ($materialProgress->get($schedule->id) ?? collect())->count();
+            $submittedQuizzes = ($quizAttempts->get($schedule->id) ?? collect())->unique('quiz_id');
+            $quizzesDone = $submittedQuizzes->count();
+            $quizzesPassed = $submittedQuizzes->where('passed', true)->count();
+            $stepsDone = min($stepsTotal, $materialsDone + $quizzesDone);
+            $progressPercent = $stepsTotal > 0 ? (int) round(($stepsDone / $stepsTotal) * 100) : 0;
+
+            $isPast = $schedule->end_at?->lt($now) ?? false;
+            $isLive = $schedule->start_at && $schedule->end_at
+                && $schedule->start_at->lte($now)
+                && $schedule->end_at->gte($now);
+            $isToday = $schedule->start_at?->isToday() ?? false;
+            $checkedIn = (bool) $attendance?->check_in_at;
+
+            $schedule->setAttribute('card', [
+                'checked_in' => $checkedIn,
+                'check_in_at' => $attendance?->check_in_at?->toIso8601String(),
+                'materials_completed' => $materialsDone,
+                'materials_total' => $materialTotal,
+                'quizzes_completed' => $quizzesDone,
+                'quizzes_total' => $quizTotal,
+                'quizzes_passed' => $quizzesPassed,
+                'steps_completed' => $stepsDone,
+                'steps_total' => $stepsTotal,
+                'progress_percent' => $progressPercent,
+                'is_past' => $isPast,
+                'is_today' => $isToday,
+                'is_live' => $isLive,
+                'status_label' => $this->participantScheduleStatusLabel($schedule, $checkedIn, $isPast, $isLive, $progressPercent),
+                'action_label' => $this->participantScheduleActionLabel($checkedIn, $isPast, $isLive, $progressPercent),
+            ]);
+
+            return $schedule;
+        }));
+
+        return $paginator;
+    }
+
+    private function participantScheduleStatusLabel(
+        JaSchedule $schedule,
+        bool $checkedIn,
+        bool $isPast,
+        bool $isLive,
+        int $progressPercent,
+    ): string {
+        if ($isLive) {
+            return 'Berlangsung';
+        }
+
+        if ($schedule->status === 'completed' || ($isPast && $progressPercent >= 100)) {
+            return 'Selesai';
+        }
+
+        if ($isPast) {
+            return $checkedIn ? 'Sudah lewat' : 'Tidak hadir';
+        }
+
+        if ($checkedIn && $progressPercent > 0 && $progressPercent < 100) {
+            return 'Sedang dikerjakan';
+        }
+
+        if ($checkedIn) {
+            return 'Sudah check-in';
+        }
+
+        return 'Terjadwal';
+    }
+
+    private function participantScheduleActionLabel(
+        bool $checkedIn,
+        bool $isPast,
+        bool $isLive,
+        int $progressPercent,
+    ): string {
+        if ($isPast) {
+            return $progressPercent >= 100 ? 'Lihat ringkasan' : 'Lihat riwayat';
+        }
+
+        if ($isLive && !$checkedIn) {
+            return 'Check-in sekarang';
+        }
+
+        if ($checkedIn && $progressPercent < 100) {
+            return 'Lanjutkan training';
+        }
+
+        if ($checkedIn) {
+            return 'Buka training';
+        }
+
+        return 'Lihat detail';
+    }
+
     public function resolveUserIds(array $userIds = [], array $jabatanIds = [], array $outletIds = []): Collection
     {
         $ids = collect($userIds)->filter()->map(fn ($id) => (int) $id);
