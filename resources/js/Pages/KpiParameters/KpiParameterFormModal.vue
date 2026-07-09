@@ -46,6 +46,10 @@ const fieldHints = {
     hint: 'Catatan internal opsional: dari modul mana datanya, rumus sumber, atau penjelasan untuk tim HR.',
     example: 'Diambil dari Daily Revenue Forecast, filter outlet + bulan',
   },
+  manual_input_hint: {
+    hint: 'Petunjuk untuk asesor saat mengisi kolom Manual/Override di evaluasi KPI. Jika diisi, teks ini yang tampil di tooltip (menggantikan petunjuk otomatis).',
+    example: 'Isi persentase COGS (%) dari menu Manual COGS outlet & bulan data. Contoh: 42,5 — tanpa simbol %.',
+  },
   resolver_key: {
     hint: 'Wajib untuk source ERP. Opsional untuk Hybrid — kosongkan jika nilai diisi manual saat penilaian.',
     example: 'Actual revenue MTD → Daily Revenue Forecast',
@@ -86,6 +90,7 @@ const createDefaults = () => ({
   scope_type: 'outlet',
   data_type: 'decimal',
   description: '',
+  manual_input_hint: '',
   target_value: '',
   target_direction: 'higher_better',
   frequency: 'monthly',
@@ -127,6 +132,7 @@ function populateForm() {
       scope_type: row.scope_type,
       data_type: row.data_type,
       description: row.description || '',
+      manual_input_hint: row.manual_input_hint || '',
       target_value: row.target_value || '',
       target_direction: row.target_direction || 'higher_better',
       frequency: row.frequency || 'monthly',
@@ -262,6 +268,10 @@ function submit() {
         <div>
           <KpiFormFieldLabel label="Deskripsi" :hint="fieldHints.description.hint" :example="fieldHints.description.example" />
           <textarea v-model="form.description" rows="2" class="mt-1 w-full rounded-lg border-gray-300" placeholder="Catatan internal (opsional)" />
+        </div>
+        <div>
+          <KpiFormFieldLabel label="Petunjuk input manual" :hint="fieldHints.manual_input_hint.hint" :example="fieldHints.manual_input_hint.example" />
+          <textarea v-model="form.manual_input_hint" rows="2" class="mt-1 w-full rounded-lg border-gray-300" placeholder="Petunjuk untuk kolom Manual/Override di evaluasi (opsional)" />
         </div>
 
         <div class="border rounded-xl p-4 bg-rose-50/40 space-y-4">

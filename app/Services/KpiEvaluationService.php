@@ -115,6 +115,10 @@ class KpiEvaluationService
      */
     public function formatParameterValuesForEdit(Collection $parameterValues): array
     {
+        if ($parameterValues instanceof \Illuminate\Database\Eloquent\Collection) {
+            $parameterValues->loadMissing(['parameter.erpMapping']);
+        }
+
         return $parameterValues->map(function (KpiEvaluationParameterValue $pv) {
             $row = $pv->toArray();
             $param = $pv->relationLoaded('parameter') ? $pv->parameter : null;
@@ -129,28 +133,182 @@ class KpiEvaluationService
     public function buildManualInputHint(KpiEvaluationParameterValue $pv, ?KpiParameter $param = null): string
     {
         $param ??= $pv->relationLoaded('parameter') ? $pv->parameter : null;
-        $dataType = (string) ($param?->data_type ?? 'decimal');
 
-        $hint = match ($dataType) {
-            'percent' => 'Isi angka persen tanpa simbol %, contoh: 85 atau 95,5.',
-            'integer' => 'Isi bilangan bulat, contoh: 12.',
-            'hours' => 'Isi jumlah jam, contoh: 24 atau 24,5.',
-            'text' => 'Isi nilai teks sesuai kebutuhan parameter.',
-            default => 'Isi angka desimal; gunakan titik atau koma untuk desimal.',
-        };
-
-        if ($pv->source_type === 'hybrid') {
-            $hint .= ' Kosongkan untuk memakai nilai ERP; isi angka untuk override manual.';
-        } elseif ($pv->source_type === 'manual') {
-            $hint .= ' Parameter ini wajib diisi manual (tidak ada sumber ERP).';
+        $customHint = trim((string) ($param?->manual_input_hint ?? ''));
+        if ($customHint !== '') {
+            return $this->appendManualInputSourceSuffix($customHint, (string) $pv->source_type);
         }
 
+        $code = (string) $pv->parameter_code;
+        $name = trim((string) ($pv->parameter_name ?: $param?->name ?: $code));
+        $dataType = $this->resolveEffectiveParameterDataType($param, $name);
         $description = trim((string) ($param?->description ?? ''));
-        if ($description !== '') {
-            $hint .= ' ' . $description;
+
+        $instruction = $this->buildParameterSpecificInputInstruction($code, $name, $dataType, $param, $description);
+        $example = $this->exampleValueForParameterInput($code, $name, $dataType);
+
+        $parts = array_filter([
+            $instruction,
+            $example !== '' ? "Contoh: {$example}." : null,
+            $this->describeParameterErpSource($param),
+            ($description !== '' && ! str_contains($instruction, $description)) ? $description : null,
+        ]);
+
+        return $this->appendManualInputSourceSuffix(implode(' ', $parts), (string) $pv->source_type);
+    }
+
+    private function appendManualInputSourceSuffix(string $hint, string $sourceType): string
+    {
+        $hint = trim($hint);
+        if ($hint === '') {
+            return $hint;
         }
 
-        return trim($hint);
+        if ($sourceType === 'hybrid') {
+            return $hint . ' Kosongkan untuk pakai nilai ERP; isi angka untuk override manual.';
+        }
+
+        if ($sourceType === 'manual') {
+            return $hint . ' Parameter ini wajib diisi manual (tidak ada sumber ERP).';
+        }
+
+        return $hint;
+    }
+
+    private function resolveEffectiveParameterDataType(?KpiParameter $param, string $name): string
+    {
+        $dataType = (string) ($param?->data_type ?? 'decimal');
+        $lowerName = strtolower($name);
+
+        if ($dataType === 'decimal' && (str_contains($name, '%') || str_contains($lowerName, 'percent') || str_contains($lowerName, 'persen') || str_contains($lowerName, 'ratio %'))) {
+            return 'percent';
+        }
+
+        return $dataType;
+    }
+
+    private function buildParameterSpecificInputInstruction(
+        string $code,
+        string $name,
+        string $dataType,
+        ?KpiParameter $param,
+        string $description,
+    ): string {
+        $lowerName = strtolower($name);
+
+        if (preg_match('/^kpi\d+/i', $code)) {
+            return $this->buildKpiParameterInputInstruction($name, $dataType, $description);
+        }
+
+        return match (true) {
+            $code === 'D001' || (str_contains($lowerName, 'actual') && str_contains($lowerName, 'revenue'))
+                => 'Isi total pendapatan F&B aktual (MTD) dalam rupiah — angka penuh tanpa pemisah ribuan.',
+            $code === 'D002' || (str_contains($lowerName, 'budget') && str_contains($lowerName, 'revenue'))
+                => 'Isi target/budget pendapatan F&B bulanan dalam rupiah.',
+            $code === 'D048' || (str_contains($lowerName, 'cogs') && str_contains($lowerName, 'ratio'))
+                => 'Isi persentase rasio COGS (%) dari menu Manual COGS, Deviation & Catcost.',
+            $code === 'D049' || str_contains($lowerName, 'deviation')
+                => 'Isi persentase deviation (%) dari menu Manual COGS, Deviation & Catcost.',
+            $code === 'D050' || str_contains($lowerName, 'category cost')
+                => 'Isi persentase category cost (%) dari menu Manual COGS, Deviation & Catcost.',
+            $code === 'D051' || (str_contains($lowerName, 'loss') && str_contains($lowerName, 'breakage'))
+                => 'Isi persentase Loss & Breakage (%) dari Asset Manual Monthly L&B.',
+            $code === 'D052' || str_contains($lowerName, 'labor cost')
+                => 'Isi persentase labor cost (%) dari Manual Monthly Labor Cost.',
+            $code === 'D053' || (str_contains($lowerName, 'resolution') && str_contains($lowerName, 'hour'))
+                => 'Isi rata-rata jam resolusi komplain CVCC (boleh desimal).',
+            in_array($code, ['D054', 'D055'], true) || (str_contains($lowerName, 'cvcc') && $dataType === 'integer')
+                => 'Isi jumlah kasus/review CVCC (bilangan bulat).',
+            $code === 'D016' || str_contains($lowerName, 'qa audit')
+                => 'Isi skor kepatuhan QA audit dalam persen (C / (C+NC) × 100).',
+            $code === 'D018' || str_contains($lowerName, 'just academy')
+                => 'Isi persentase penyelesaian modul wajib Just Academy (0–100, tanpa simbol %).',
+            $code === 'D021' || str_contains($lowerName, 'visit count')
+                => 'Isi jumlah hari kunjungan outlet dari absensi (bilangan bulat).',
+            $code === 'D022' || str_contains($lowerName, 'target outlet visit')
+                => 'Isi target total kunjungan outlet per bulan dari Regional Management (bilangan bulat).',
+            $code === 'D023' || str_contains($lowerName, 'closed') && str_contains($lowerName, 'improvement')
+                => 'Isi jumlah ticket improvement yang compliant / tidak overdue (bilangan bulat).',
+            $code === 'D024' || str_contains($lowerName, 'total improvement')
+                => 'Isi total ticket improvement di periode (bilangan bulat).',
+            $dataType === 'percent' || str_contains($name, '%')
+                => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
+            $dataType === 'integer'
+                => "Isi jumlah (bilangan bulat) untuk «{$name}».",
+            $dataType === 'hours'
+                => "Isi durasi dalam jam untuk «{$name}».",
+            $dataType === 'text'
+                => "Isi teks untuk «{$name}».",
+            default
+                => "Isi nilai numerik untuk «{$name}».",
+        };
+    }
+
+    private function buildKpiParameterInputInstruction(string $name, string $dataType, string $description): string
+    {
+        if ($description !== '') {
+            return "Isi nilai untuk KPI «{$name}». {$description}";
+        }
+
+        return match ($dataType) {
+            'percent' => "Isi persentase pencapaian/target untuk KPI «{$name}» (tanpa simbol %).",
+            'integer' => "Isi jumlah/skor bilangan bulat untuk KPI «{$name}».",
+            'hours' => "Isi nilai jam untuk KPI «{$name}».",
+            default => "Isi nilai numerik untuk KPI «{$name}».",
+        };
+    }
+
+    private function exampleValueForParameterInput(string $code, string $name, string $dataType): string
+    {
+        return match (true) {
+            in_array($code, ['D001', 'D002'], true) || str_contains(strtolower($name), 'revenue')
+                => '19384769236',
+            in_array($code, ['D048', 'D049', 'D050', 'D051', 'D052'], true) || $dataType === 'percent'
+                => '42,5',
+            $code === 'D053' || $dataType === 'hours'
+                => '24,5',
+            $dataType === 'integer'
+                => '12',
+            default
+                => '45,04',
+        };
+    }
+
+    private function describeParameterErpSource(?KpiParameter $param): ?string
+    {
+        if ($param === null || ! in_array($param->source_type, ['erp', 'hybrid'], true)) {
+            return null;
+        }
+
+        $resolverKey = $param->relationLoaded('erpMapping')
+            ? ($param->erpMapping?->resolver_key)
+            : null;
+
+        if ($resolverKey === null || $resolverKey === '') {
+            return null;
+        }
+
+        $labels = [
+            'daily_revenue_forecast' => 'Sumber ERP: POS Orders — Revenue MTD.',
+            'daily_revenue_forecast_budget' => 'Sumber ERP: Daily Revenue Forecast (budget).',
+            'manual_cogs_percent' => 'Sumber ERP: Manual COGS — COGS % per outlet.',
+            'manual_deviation_percent' => 'Sumber ERP: Manual COGS — Deviation %.',
+            'manual_catcost_percent' => 'Sumber ERP: Manual COGS — Category Cost %.',
+            'manual_lost_breakage_percent' => 'Sumber ERP: Asset Manual Monthly L&B %.',
+            'manual_labor_cost_percent' => 'Sumber ERP: Manual Monthly Labor Cost %.',
+            'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — rata-rata jam resolusi.',
+            'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
+            'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
+            'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan.',
+            'just_academy_training_completion' => 'Sumber ERP: Just Academy — completion %.',
+            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — skor competency assessment.',
+            'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
+            'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
+            'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',
+            'ticket_improvement_total' => 'Sumber ERP: total ticket improvement.',
+        ];
+
+        return $labels[$resolverKey] ?? ('Sumber ERP: ' . str_replace('_', ' ', $resolverKey) . '.');
     }
 
     protected function normalizeImprovementPlanDueDate(mixed $value): ?string

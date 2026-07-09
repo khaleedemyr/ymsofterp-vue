@@ -575,9 +575,10 @@ onMounted(() => {
                         <i class="fa-solid fa-circle-info text-sm"></i>
                       </button>
                       <span
-                        class="pointer-events-none invisible group-hover:visible group-focus-within:visible absolute right-0 bottom-full z-30 mb-2 w-72 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs font-normal text-white shadow-lg"
+                        class="pointer-events-none invisible group-hover:visible group-focus-within:visible absolute right-0 bottom-full z-30 mb-2 w-80 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs font-normal text-white shadow-lg"
                         role="tooltip"
                       >
+                        <span class="block font-semibold text-indigo-200 mb-1">{{ pv.parameter_code }} — {{ pv.parameter_name }}</span>
                         {{ manualInputHint(pv) }}
                       </span>
                     </span>

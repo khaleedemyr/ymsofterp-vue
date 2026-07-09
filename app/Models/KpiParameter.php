@@ -16,6 +16,7 @@ class KpiParameter extends Model
         'scope_type',
         'data_type',
         'description',
+        'manual_input_hint',
         'target_value',
         'target_direction',
         'frequency',
