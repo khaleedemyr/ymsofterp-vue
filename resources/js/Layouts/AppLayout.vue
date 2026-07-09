@@ -225,6 +225,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.fb_product_calibration'), icon: 'fa-solid fa-utensils', route: '/fb-product-calibration', code: 'fb_product_calibration' },
             { name: () => t('sidebar.menus.fb_product_calibration_report'), icon: 'fa-solid fa-clipboard-list', route: '/report/fb-product-calibration', code: 'fb_product_calibration_report' },
             { name: () => t('sidebar.menus.npd_plan_report'), icon: 'fa-solid fa-lightbulb', route: '/npd-plan-report', code: 'npd_plan_report' },
+            { name: () => t('sidebar.menus.sop_development_completion'), icon: 'fa-solid fa-file-circle-check', route: '/sop-development-completion', code: 'sop_development_completion' },
             { name: () => t('sidebar.menus.competitor_benchmark_report'), icon: 'fa-solid fa-chart-line', route: '/competitor-benchmark-report', code: 'competitor_benchmark_report' },
           ],
         },

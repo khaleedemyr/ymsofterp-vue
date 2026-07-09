@@ -55,7 +55,7 @@ final class SerialReceiveItemPriceResolver
             return [0.0, 'item_prices', 'Item Price (manual, kosong)'];
         }
 
-        if ($serial && (float) ($serial->cost_small ?? 0) > 0) {
+        if ($serial && self::isWarehouseSaleSerial($serial) && (float) ($serial->cost_small ?? 0) > 0) {
             return self::finalizeAutoResult(
                 (float) $serial->cost_small,
                 $item,
@@ -65,19 +65,19 @@ final class SerialReceiveItemPriceResolver
             );
         }
 
+        if ($serial && self::isGoodReceiveSerial($serial) && (float) ($serial->cost_small ?? 0) > 0) {
+            return self::finalizeAutoResult(
+                self::autoSellCostSmallFromGrHpp((float) $serial->cost_small, $item, $serial),
+                $item,
+                $serial,
+                'auto_fgr_12pct',
+                'FGR Pusat +12% (dari serial GR)',
+            );
+        }
+
         $costSmall = self::costSmallFromCentralFoodGrMarkup($itemId, $item);
         if ($costSmall > 0) {
             return self::finalizeAutoResult($costSmall, $item, $serial, 'auto_fgr_12pct', 'FGR Pusat +12%');
-        }
-
-        if ($serial && $serial->source_type === 'good_receive' && (float) ($serial->cost_small ?? 0) > 0) {
-            return self::finalizeAutoResult(
-                round((float) $serial->cost_small * 1.12, 4),
-                $item,
-                $serial,
-                'fgr_modal_12pct',
-                'FGR (Modal+12%)',
-            );
         }
 
         return [0.0, 'auto_fgr_12pct', 'FGR Pusat +12%'];
@@ -177,6 +177,38 @@ final class SerialReceiveItemPriceResolver
         $divisor = ($smallConv > 0 && $mediumConv > 0) ? ($smallConv * $mediumConv) : 1;
 
         return round($priceLarge / $divisor, 4);
+    }
+
+    /**
+     * HPP cost_small dari serial FGR Pusat → harga jual (+12%, bulat ke atas Rp 100).
+     */
+    public static function autoSellCostSmallFromGrHpp(float $hppCostSmall, object $item, ?object $serial): float
+    {
+        if ($hppCostSmall <= 0) {
+            return 0.0;
+        }
+
+        $smallConv = (float) ($item->small_conversion_qty ?? 1) ?: 1;
+        $mediumConv = (float) ($item->medium_conversion_qty ?? 1) ?: 1;
+        $hppLarge = $hppCostSmall * $smallConv * $mediumConv;
+        $sellLarge = FloorOrderItemPriceResolver::roundUpToHundred($hppLarge * 1.12);
+        $sellCostSmall = self::itemPriceLargeToCostSmall($sellLarge, $item);
+
+        return self::applyAutoUnitPriceRoundUp($sellCostSmall, $item, $serial);
+    }
+
+    public static function isWarehouseSaleSerial(?object $serial): bool
+    {
+        if (! $serial) {
+            return false;
+        }
+
+        return in_array((string) ($serial->source_type ?? ''), ['warehouse_sale', 'retail_warehouse'], true);
+    }
+
+    public static function isGoodReceiveSerial(?object $serial): bool
+    {
+        return $serial && ($serial->source_type ?? '') === 'good_receive';
     }
 
     private static function rowIsManual(?object $row): bool

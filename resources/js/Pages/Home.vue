@@ -15,6 +15,7 @@ import POFoodApprovalCard from '@/Components/POFoodApprovalCard.vue';
 import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
+import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
@@ -6214,6 +6215,14 @@ function handleCctvAccessRequestRejected(requestId) {
     console.log('CCTV Access Request rejected:', requestId);
 }
 
+function handleSopDevelopmentApproved(itemId) {
+    console.log('SOP Development approved:', itemId);
+}
+
+function handleSopDevelopmentRejected(itemId) {
+    console.log('SOP Development rejected:', itemId);
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7270,6 +7279,9 @@ watch(locale, () => {
 
                 <!-- CCTV Access Request Approval Section -->
                 <CctvAccessRequestApprovalCard :is-night="isNight" @approved="handleCctvAccessRequestApproved" @rejected="handleCctvAccessRequestRejected" />
+
+                <!-- SOP Development Completion Approval Section -->
+                <SopDevelopmentCompletionApprovalCard :is-night="isNight" @approved="handleSopDevelopmentApproved" @rejected="handleSopDevelopmentRejected" />
 
                 <!-- Contra Bon Approval Section -->
                 <div v-if="contraBonApprovalCount > 0" class="flex-shrink-0 mb-4">

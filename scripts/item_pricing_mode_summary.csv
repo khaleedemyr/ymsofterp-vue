@@ -1,0 +1,29 @@
+item_id,item_name,sku,category,pricing_mode,scope,item_prices_price,suggested_sell_gr_plus_12
+52334,"Beras Lokal",GC-20250620-2217,Groceries,auto,all,17500.00,17500.00
+52337,"Black Pepper",GC-20260225-2603,Groceries,auto,all,257700.00,257700.00
+52339,"Buah Peach Can",GC-20250620-8357,Groceries,auto,all,61700.00,61700.00
+54371,"Bumbu Ayam Bakar Madu",SR-20250620-6158,"Sub Recipe",manual,all,75931.84,
+54522,"Bumbu Bakar Madu",SR-20250620-8748,"Sub Recipe",manual,all,31051.90,
+52351,"Coca Cola Can",GC-20260508-2449,Groceries,auto,all,146100.00,146100.00
+77894,"Container Tissue Towel",ASSTS-20260429-5543,Asset-Service,manual,all,0.00,
+52717,Dishwash,GC-20250620-4999,Groceries,auto,all,30300.00,30300.00
+52731,"Dishwash Prime",GC-20250620-1390,Groceries,manual,all,226578.00,
+76815,"Dishwashing Machine",ASSTK-20260429-9772,Asset-Kitchen,manual,all,0.00,
+76816,"Dishwashing Machine (ECO LAB)",ASSTK-20260429-9700,Asset-Kitchen,manual,all,2500000.00,
+76824,"Double Sink Conecting Dishwashing",ASSTK-20260429-1665,Asset-Kitchen,manual,all,4500000.00,
+53628,"Extra Madu",SHADDON-20250620-7581,"Add On",NO_PRICE,,,
+52360,Fryall,GC-20250620-6057,Groceries,auto,all,453900.00,453900.00
+52365,Gerkin,GC-20250620-4081,Groceries,auto,all,34900.00,34900.00
+52669,"Gerkin 500Mili liter",GC-20250620-7668,Groceries,manual,all,44800.00,
+54789,"HVS 1 Ply 75x65",GC-20260403-9291,Groceries,auto,all,44900.00,44900.00
+52691,"HVS Roll 3 Ply",GC-20250620-8585,Groceries,manual,all,67200.00,
+52687,"HVS Roll STEAK HOUSE",GC-20250620-9505,Groceries,auto,all,58800.00,58900.00
+52388,Madu,GC-20260319-2016,Groceries,auto,all,121000.00,121000.00
+55404,"Madu Add",SHADDON-20250929-5142,"Add On",NO_PRICE,,,
+54374,"Olesan Ayam Bakar Madu",SR-20250620-2999,"Sub Recipe",manual,all,21386.95,
+52537,"Sauce Chilli Botol",GC-20251021-8273,Groceries,auto,all,17400.00,17400.00
+54370,"Seasoning Ayam Bakar Madu",SR-20250620-9867,"Sub Recipe",manual,all,0.00,
+55345,"Teh Jahe Madu",SHBAR-20251008-5287,BAR,NO_PRICE,,,
+55344,"Teh Lemon Madu",SHBAR-20250929-9136,BAR,NO_PRICE,,,
+55346,"Teh Rempah Madu",SHBAR-20251001-8784,BAR,NO_PRICE,,,
+52819,"Tissue Towel",GC-20260424-9116,Groceries,auto,all,6500.00,6500.00

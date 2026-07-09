@@ -122,6 +122,7 @@ use App\Http\Controllers\JabatanTrainingController;
 use App\Http\Controllers\TrainingComplianceController;
 use App\Http\Controllers\LeaveManagementController;
 use App\Http\Controllers\CctvAccessRequestController;
+use App\Http\Controllers\SopDevelopmentCompletionController;
 use App\Http\Controllers\PosDesignSyncMonitorController;
 
 
@@ -1086,6 +1087,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/fb-product-calibration/{fb_product_calibration}/conduct', [\App\Http\Controllers\FbProductCalibrationController::class, 'storeConduct'])
         ->name('fb-product-calibration.conduct.store');
     Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
+
+    Route::get('/sop-development-completion', [SopDevelopmentCompletionController::class, 'indexPage'])->name('sop-development-completion.index');
+    Route::get('/sop-development-completion/{sopDevelopmentCompletion}/file', [SopDevelopmentCompletionController::class, 'serveFile'])->name('sop-development-completion.file');
+
+    Route::prefix('api/sop-development-completion')->group(function () {
+        Route::get('/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('api.sop-development-completion.pending-approvals');
+        Route::get('/approvers', [SopDevelopmentCompletionController::class, 'getApprovers'])->name('api.sop-development-completion.approvers');
+        Route::post('/', [SopDevelopmentCompletionController::class, 'store'])->name('api.sop-development-completion.store');
+        Route::get('/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('api.sop-development-completion.show');
+        Route::put('/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'update'])->name('api.sop-development-completion.update');
+        Route::delete('/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'destroy'])->name('api.sop-development-completion.destroy');
+        Route::post('/{sopDevelopmentCompletion}/submit-approval', [SopDevelopmentCompletionController::class, 'submitForApproval'])->name('api.sop-development-completion.submit-approval');
+        Route::post('/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('api.sop-development-completion.approve');
+        Route::post('/{sopDevelopmentCompletion}/reject', [SopDevelopmentCompletionController::class, 'reject'])->name('api.sop-development-completion.reject');
+    });
 
     Route::get('/npd-plan-report/approvers', [\App\Http\Controllers\NpdPlanReportController::class, 'getApprovers'])->name('npd-plan-report.approvers');
     Route::get('/npd-plan-report/pending-approvals', [\App\Http\Controllers\NpdPlanReportController::class, 'getPendingApprovals'])->name('npd-plan-report.pending-approvals');

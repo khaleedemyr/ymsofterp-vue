@@ -1,0 +1,70 @@
+no,item_name,item_id,item_name_db,sku,category_db,match_status,pricing_mode,scope,item_prices_price,suggested_sell_gr_plus_12
+1,"Beras Lokal",52334,"Beras Lokal",GC-20250620-2217,Groceries,exact,auto,all,17500.00,17500.00
+2,"Beras Pandan Wangi",52333,"Beras Pandan Wangi",GC-20250620-5032,Groceries,exact,auto,all,17500.00,17500.00
+3,"Black Pepper",52337,"Black Pepper",GC-20260225-2603,Groceries,exact,auto,all,257700.00,257700.00
+4,"Buah Lychee Can",52338,"Buah Lychee Can",GC-20251224-3145,Groceries,exact,auto,all,28000.00,28000.00
+5,"Buah Peach Can",52339,"Buah Peach Can",GC-20250620-8357,Groceries,exact,auto,all,61700.00,61700.00
+6,"Cheese Powder",52463,"Cheese Powder",GC-20250620-3862,Groceries,exact,auto,all,179300.00,179300.00
+7,"Chicken Powder",52343,"Chicken Powder",GC-20250620-8867,Groceries,exact,auto,all,101000.00,101000.00
+8,"Chilli Flake",52345,"Chilli Flake",GC-20250624-1365,Groceries,exact,auto,all,156900.00,156900.00
+9,"Chocolate Compound",52461,"Chocolate Compound",GC-20260615-4772,Groceries,exact,auto,all,84100.00,84100.00
+10,"Coca Cola Can",52351,"Coca Cola Can",GC-20260508-2449,Groceries,exact,auto,all,146100.00,146100.00
+11,"Coca Cola Zero Can",78832,"Coca Cola Zero Can",GC-20260511-9315,Groceries,exact,auto,all,146100.00,146100.00
+12,"Cokelat Powder",52353,"Cokelat Powder",GC-20260406-7964,Groceries,exact,auto,all,246500.00,246500.00
+13,"Cream Soup Powder",52355,"Cream Soup Powder",GC-20250620-9402,Groceries,exact,auto,all,101500.00,101500.00
+14,Fryall,52360,Fryall,GC-20250620-6057,Groceries,exact,auto,all,453900.00,453900.00
+15,"Garam Kapal",52361,"Garam Kapal",GC-20250620-6203,Groceries,exact,auto,all,2600.00,2600.00
+16,"Garam Refina",52362,"Garam Refina",GC-20250620-1464,Groceries,exact,auto,all,8400.00,8400.00
+17,"Gas Whipped",52364,"Gas Whipped",GC-20250620-3158,Groceries,exact,auto,all,85800.00,85800.00
+18,Gerkin,52365,Gerkin,GC-20250620-4081,Groceries,exact,auto,all,34900.00,34900.00
+19,Guacamole,52660,Guacamole,GC-20250719-4687,Groceries,exact,auto,all,70900.00,70900.00
+20,"Gula Pasir",52371,"Gula Pasir",GC-20250620-6840,Groceries,exact,auto,all,20400.00,20400.00
+21,"Gula Putih Sachet SH",52555,"Gula Putih Sachet SH",GC-20250620-4436,Groceries,exact,auto,all,73400.00,73400.00
+22,"Kecap Asin Angsa",52525,"Kecap Asin Angsa",GC-20250625-1654,Groceries,exact,auto,all,28100.00,28100.00
+23,"Kecap Manis",52383,"Kecap Manis",GC-20250620-6331,Groceries,exact,auto,all,25800.00,25800.00
+24,"Kerupuk Emping",52384,"Kerupuk Emping",GC-20260402-3048,Groceries,exact,auto,all,98600.00,98600.00
+25,Madu,52388,Madu,GC-20260319-2016,Groceries,exact,auto,all,121000.00,121000.00
+26,"Marjan Lychee",52390,"Marjan Lychee",GC-20250620-5127,Groceries,exact,auto,all,25300.00,25300.00
+27,"Marjan Strawberry",52392,"Marjan Strawberry",GC-20250620-4643,Groceries,exact,auto,all,25300.00,25300.00
+28,"Marjan Vanilla",52393,"Marjan Vanilla",GC-20250620-2030,Groceries,exact,auto,all,25300.00,25300.00
+29,Mayonaise,52394,Mayonaise,GC-20260413-3504,Groceries,exact,auto,all,225300.00,225300.00
+30,"Milk Evaporate",52483,"Milk Evaporate",GC-20250620-7201,Groceries,exact,auto,all,21300.00,21300.00
+31,"Minyak Klentik",52607,"Minyak Klentik",GC-20250729-7377,Groceries,exact,auto,all,59400.00,59400.00
+32,"Nestea Powder",52404,"Nestea Powder",GC-20250620-8456,Groceries,exact,auto,all,72000.00,72000.00
+33,"Olive Oil 500Mili liter",52664,"Olive Oil 500Mili liter",GC-20260213-9753,Groceries,exact,auto,all,143400.00,143400.00
+34,"Oyster Sauce",52408,"Oyster Sauce",GC-20250620-2542,Groceries,exact,auto,all,123300.00,123300.00
+35,"Pasta Fettucine",52419,"Pasta Fettucine",GC-20250620-9854,Groceries,exact,auto,all,24600.00,24600.00
+36,"Pasta Lasagna",52481,"Pasta Lasagna",GC-20250916-5180,Groceries,exact,auto,all,28100.00,28100.00
+37,"Pasta Spaghetti",52420,"Pasta Spaghetti",GC-20260113-8672,Groceries,exact,auto,all,47300.00,47300.00
+38,"Plastik Roll Buah 30x45",52828,"Plastik Roll Buah 30x45",GC-20250620-9824,Groceries,exact,auto,all,100900.00,100900.00
+39,"Plastik Wrap",52789,"Plastik Wrap",GC-20250620-2423,Groceries,exact,auto,all,220700.00,220700.00
+40,"Salad Bowl",52790,"Salad Bowl",GC-20260321-6380,Groceries,exact,auto,all,54800.00,54800.00
+41,"Sauce Chilli Botol",52537,"Sauce Chilli Botol",GC-20251021-8273,Groceries,exact,auto,all,17400.00,17400.00
+42,"Sauce Cup",52791,"Sauce Cup",GC-20250620-3126,Groceries,exact,auto,all,12100.00,12100.00
+43,"Sauce Cup Dessert",52852,"Sauce Cup Dessert",GC-20250620-4363,Groceries,exact,auto,all,21300.00,21300.00
+44,"Sauce Tomat Botol",52538,"Sauce Tomat Botol",GC-20251021-9672,Groceries,exact,auto,all,11800.00,11800.00
+45,"Skewer Rotan Simpul",52510,"Skewer Rotan Simpul",GC-20250620-1018,Groceries,exact,auto,all,50500.00,50500.00
+46,"Soda Water",52433,"Soda Water",GC-20250620-5511,Groceries,exact,auto,all,35300.00,35300.00
+47,Soun,52499,Soun,GC-20250620-7326,Groceries,exact,auto,all,6800.00,6800.00
+48,Sunquick,52436,Sunquick,GC-20250620-9758,Groceries,exact,auto,all,168100.00,168100.00
+49,"Syrup Gula Aren",52367,"Syrup Gula Aren",GC-20250620-5921,Groceries,exact,auto,all,72800.00,72800.00
+50,"Syrup Kawista",52468,"Syrup Kawista",GC-20250919-2584,Groceries,exact,auto,all,60500.00,60500.00
+51,"Syrup Mint",52399,"Syrup Mint",GC-20250620-2292,Groceries,exact,auto,all,123300.00,123300.00
+52,"Tabasco Sauce",52437,"Tabasco Sauce",GC-20250620-3056,Groceries,exact,auto,all,47100.00,47100.00
+53,"Teh Celup",52443,"Teh Celup",GC-20250620-6711,Groceries,exact,auto,all,56700.00,56700.00
+54,"Tepung Easy Mix",52444,"Tepung Easy Mix",GC-20250620-8983,Groceries,exact,auto,all,35300.00,35300.00
+55,"Tepung Roti Kasar",52447,"Tepung Roti Kasar",GC-20250620-8148,Groceries,exact,auto,all,22200.00,22200.00
+56,Thyme,52655,Thyme,GC-20250620-8119,Groceries,exact,auto,all,268800.00,268800.00
+57,"Tissue Dinner",52815,"Tissue Dinner",GC-20260626-9048,Groceries,exact,auto,all,8900.00,8900.00
+58,"Tissue Pop Up",52817,"Tissue Pop Up",GC-20260415-5235,Groceries,exact,auto,all,29600.00,29600.00
+59,"Tissue Roll",52818,"Tissue Roll",GC-20260501-8570,Groceries,exact,auto,all,16200.00,16200.00
+60,"Tissue Towel",52819,"Tissue Towel",GC-20260424-9116,Groceries,exact,auto,all,6500.00,6500.00
+61,"Truffle Oil",52458,"Truffle Oil",GC-20260203-3626,Groceries,exact,auto,all,209900.00,209900.00
+62,Dishwash,52717,Dishwash,GC-20250620-4999,Groceries,exact,auto,all,30300.00,30300.00
+63,"General Cleaner",55709,"General Cleaner",GC-20260416-8411,Groceries,exact,auto,all,124400.00,124400.00
+64,Hairnet,52736,Hairnet,GC-20250620-6280,Groceries,exact,auto,all,44900.00,44900.00
+65,"Hands Glove Rubber",52732,"Hands Glove Rubber",GC-20260515-4131,Groceries,exact,auto,all,68400.00,68400.00
+66,"Masker 3 Ply",52733,"Masker 3 Ply",GC-20250620-3579,Groceries,exact,auto,all,29200.00,29200.00
+67,"HVS 1 Ply 75x65",54789,"HVS 1 Ply 75x65",GC-20260403-9291,Groceries,exact,auto,all,44900.00,44900.00
+68,"Label Preparation Roll",55500,"Label Preparation Roll",GC-20260212-6194,Groceries,exact,auto,all,168100.00,168100.00
+69,"Thermal Roll Steak house",52690,"Thermal Roll Steak house",GC-20250620-5902,Groceries,exact,auto,all,12700.00,12700.00

@@ -17,6 +17,29 @@ class SerialReceiveAutoPriceRoundTest extends TestCase
         $this->assertSame(11300.0, $rounded);
     }
 
+    public function test_auto_sell_cost_small_from_gr_hpp(): void
+    {
+        $item = (object) [
+            'id' => 1,
+            'small_unit_id' => 10,
+            'medium_unit_id' => 20,
+            'large_unit_id' => 30,
+            'small_conversion_qty' => 1000,
+            'medium_conversion_qty' => 1,
+        ];
+
+        $serial = (object) [
+            'unit_id' => 30,
+            'cost_small' => 180,
+            'source_type' => 'good_receive',
+        ];
+
+        $costSmall = SerialReceiveItemPriceResolver::autoSellCostSmallFromGrHpp(180, $item, $serial);
+        $unitPrice = ItemUnitCost::priceForUnit($costSmall, $item, $serial->unit_id);
+
+        $this->assertSame(201700.0, $unitPrice);
+    }
+
     public function test_auto_cost_small_yields_unit_price_in_hundred_increments(): void
     {
         $item = (object) [
