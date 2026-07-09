@@ -230,42 +230,31 @@ class JustAcademyService
 
     public function homeSchedulesForUser(int $userId, int $limit = 5): array
     {
+        $with = ['program:id,title', 'outlet:id_outlet,nama_outlet', 'trainers.user:id,nama_lengkap'];
+
         $participantSchedules = $this->participantSchedulesForUser($userId)
-            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
+            ->with($with)
+            ->withCount('participants')
             ->whereIn('status', self::NOTIFY_STATUSES)
             ->where('end_at', '>=', now())
             ->orderBy('start_at')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->map(fn (JaSchedule $schedule) => $this->formatHomeSchedule($schedule, ['participant']));
 
         $trainerSchedules = $this->trainerSchedulesForUser($userId)
-            ->with(['program:id,title', 'outlet:id_outlet,nama_outlet'])
+            ->with($with)
+            ->withCount('participants')
             ->where('end_at', '>=', now())
             ->orderBy('start_at')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->map(fn (JaSchedule $schedule) => $this->formatHomeSchedule($schedule, ['trainer']));
 
-        $combined = collect();
-
-        foreach ($participantSchedules as $schedule) {
-            $combined->put($schedule->id, $this->formatHomeSchedule($schedule, ['participant']));
-        }
-
-        foreach ($trainerSchedules as $schedule) {
-            if ($combined->has($schedule->id)) {
-                $entry = $combined->get($schedule->id);
-                $entry['roles'] = array_values(array_unique([...$entry['roles'], 'trainer']));
-                $combined->put($schedule->id, $entry);
-            } else {
-                $combined->put($schedule->id, $this->formatHomeSchedule($schedule, ['trainer']));
-            }
-        }
-
-        return $combined
-            ->sortBy('start_at')
-            ->values()
-            ->take($limit)
-            ->all();
+        return [
+            'participant' => $participantSchedules->values()->all(),
+            'trainer' => $trainerSchedules->values()->all(),
+        ];
     }
 
     public function notifyScheduleAssignments(
@@ -1171,11 +1160,20 @@ class JustAcademyService
             'location' => $schedule->location,
             'outlet_name' => $schedule->outlet?->nama_outlet,
             'status' => $schedule->status,
+            'status_label' => match ($schedule->status) {
+                'published' => 'Published',
+                'ongoing' => 'Berlangsung',
+                default => ucfirst((string) $schedule->status),
+            },
+            'trainer_names' => $this->formatScheduleTrainers($schedule),
+            'participants_count' => (int) ($schedule->participants_count ?? 0),
             'roles' => $roles,
             'role' => $primaryRole,
             'url' => $primaryRole === 'trainer'
                 ? url('/just-academy/schedules/' . $schedule->id)
                 : url('/just-academy/my-training/' . $schedule->id),
+            'trainee_url' => url('/just-academy/my-training/' . $schedule->id),
+            'trainer_url' => url('/just-academy/schedules/' . $schedule->id),
         ];
     }
 
