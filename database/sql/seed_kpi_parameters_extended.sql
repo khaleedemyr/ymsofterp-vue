@@ -28,8 +28,8 @@ INSERT INTO `kpi_parameters` (
 ('D028', 'Target Upselling Sales',              'hybrid', 'outlet',   'decimal', 'Target F&B revenue upselling (Upselling menu)', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D029', 'Current Period Average Check',        'erp',    'outlet',   'decimal', 'Average check current period',           NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D030', 'Previous Period Average Check',       'erp',    'outlet',   'decimal', 'Average check previous period',          NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D031', 'Employee Induction Completion %',     'manual', 'employee', 'percent', 'Employee induction on-time completion',  NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D032', 'Coaching Visit Person Count',         'manual', 'employee', 'integer', 'Coaching visits executed (persons)',     NULL, 'higher_better', 'daily',   NULL, 1, 'A', NOW(), NOW()),
+('D031', 'Employee Induction Completion %',     'hybrid', 'employee', 'percent', 'Onboarding week approved on time %',       NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D032', 'Coaching Visit Person Count',         'hybrid', 'employee', 'integer', 'Distinct employees coached in period',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D033', 'SOP Development Completion %',        'manual', 'employee', 'percent', 'SOP development project completion',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D034', 'Monthly Dev Program Implementation %','manual', 'employee', 'percent', 'Monthly development program execution',  NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D035', 'Beverage Avg Serving Time (minutes)', 'hybrid', 'outlet',   'decimal', 'Avg beverage serving time per order',    NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
@@ -100,7 +100,9 @@ JOIN (
     SELECT 'D027', 'upselling_actual_fb_revenue', 'sum' UNION ALL
     SELECT 'D028', 'upselling_target_fb_revenue', 'sum' UNION ALL
     SELECT 'D029', 'outlet_avg_check_data_month', 'avg' UNION ALL
-    SELECT 'D030', 'outlet_avg_check_prev_month', 'avg'
+    SELECT 'D030', 'outlet_avg_check_prev_month', 'avg' UNION ALL
+    SELECT 'D031', 'employee_induction_on_time_percent', 'avg' UNION ALL
+    SELECT 'D032', 'employee_coaching_person_count', 'count'
 ) v ON v.code = p.code
 ON DUPLICATE KEY UPDATE `resolver_key` = VALUES(`resolver_key`), `aggregation` = VALUES(`aggregation`), `updated_at` = NOW();
 

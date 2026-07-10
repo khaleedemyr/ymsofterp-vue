@@ -238,6 +238,8 @@ class KpiParameterController extends Controller
                 ['value' => 'upselling_target_fb_revenue', 'label' => 'Upselling Sales Achievement — target F&B revenue'],
                 ['value' => 'outlet_avg_check_data_month', 'label' => 'Outlet Sales Report — avg check/pax (bulan data KPI)'],
                 ['value' => 'outlet_avg_check_prev_month', 'label' => 'Outlet Sales Report — avg check/pax (bulan sebelum bulan data)'],
+                ['value' => 'employee_induction_on_time_percent', 'label' => 'Employee Onboarding — % minggu induction tepat waktu'],
+                ['value' => 'employee_coaching_person_count', 'label' => 'Employee Coaching — jumlah karyawan unik di-coaching'],
                 ['value' => 'cvcc_avg_resolution_hours', 'label' => 'CVCC — Avg Complaint Resolution (hours)'],
                 ['value' => 'cvcc_service_negative_complaint_count', 'label' => 'CVCC — Negative + CAPA Service filled'],
                 ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total Review / Case Count'],

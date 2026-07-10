@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\EmployeeOnboarding;
 use App\Models\KpiParameter;
 use App\Models\UpsellingSalesAchievement;
 use App\Models\UserRegional;
@@ -511,6 +512,15 @@ class KpiParameterResolverService
                 $outletIds,
                 Carbon::createFromFormat('Y-m', $periodMonth)->subMonth()->format('Y-m'),
             ),
+            'employee_induction_on_time_percent' => $this->resolveEmployeeInductionOnTimePercent(
+                $outletIds,
+                $periodMonth,
+            ),
+            'employee_coaching_person_count' => $this->resolveEmployeeCoachingPersonCount(
+                (int) ($context['user_id'] ?? 0),
+                $outletIds,
+                $periodMonth,
+            ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
@@ -557,6 +567,8 @@ class KpiParameterResolverService
             'upselling_target_fb_revenue',
             'outlet_avg_check_data_month',
             'outlet_avg_check_prev_month',
+            'employee_induction_on_time_percent',
+            'employee_coaching_person_count',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
             'cvcc_total_review_count',
@@ -2251,5 +2263,93 @@ class KpiParameterResolverService
         }
 
         return round((float) ($row->grand_total ?? 0) / $totalPax, 2);
+    }
+
+    /**
+     * Persentase minggu onboarding yang selesai tepat waktu (approved ≤ deadline minggu).
+     * Deadline minggu N = start_date + (N×7 − 1 hari). Hanya minggu yang jatuh tempo di bulan data KPI.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveEmployeeInductionOnTimePercent(array $outletIds, string $periodMonth): ?float
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $periodMonth) || ! DB::getSchemaBuilder()->hasTable('employee_onboardings')) {
+            return null;
+        }
+
+        $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth();
+        $periodEnd = Carbon::createFromFormat('Y-m', $periodMonth)->endOfMonth();
+
+        $query = EmployeeOnboarding::query()
+            ->with('weekSubmissions')
+            ->whereIn('status', ['in_progress', 'completed']);
+
+        if ($outletIds !== []) {
+            $query->whereIn('outlet_id', array_map('intval', $outletIds));
+        }
+
+        $onTime = 0;
+        $total = 0;
+
+        foreach ($query->get() as $onboarding) {
+            if ($onboarding->start_date === null) {
+                continue;
+            }
+
+            $start = Carbon::parse($onboarding->start_date)->startOfDay();
+            $totalWeeks = max(1, (int) $onboarding->total_weeks);
+
+            for ($week = 1; $week <= $totalWeeks; $week++) {
+                $dueAt = $start->copy()->addDays($week * 7 - 1)->endOfDay();
+                if ($dueAt->lt($periodStart) || $dueAt->gt($periodEnd)) {
+                    continue;
+                }
+
+                $total++;
+                $submission = $onboarding->weekSubmissions->firstWhere('week_number', $week);
+
+                if (
+                    $submission
+                    && $submission->status === 'approved'
+                    && $submission->approved_at !== null
+                    && Carbon::parse($submission->approved_at)->lte($dueAt)
+                ) {
+                    $onTime++;
+                }
+            }
+        }
+
+        if ($total === 0) {
+            return null;
+        }
+
+        return round(($onTime / $total) * 100, 2);
+    }
+
+    /**
+     * Jumlah karyawan unik yang di-coaching oleh user evaluasi di bulan data KPI.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveEmployeeCoachingPersonCount(int $userId, array $outletIds, string $periodMonth): ?float
+    {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth) || ! DB::getSchemaBuilder()->hasTable('employee_coachings')) {
+            return null;
+        }
+
+        $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth()->startOfDay();
+        $periodEnd = Carbon::createFromFormat('Y-m', $periodMonth)->endOfMonth()->endOfDay();
+
+        $query = DB::table('employee_coachings')
+            ->where('created_by', $userId)
+            ->whereBetween('created_at', [$periodStart, $periodEnd]);
+
+        if ($outletIds !== []) {
+            $query->whereIn('outlet_id', array_map('intval', $outletIds));
+        }
+
+        $count = (int) $query->distinct()->count('employee_id');
+
+        return (float) $count;
     }
 }

@@ -241,6 +241,10 @@ class KpiEvaluationService
                 => 'Isi rata-rata check per pax bulan pembanding terbaru (bulan data KPI) dari Outlet Sales Report.',
             $code === 'D030' || str_contains($lowerName, 'previous period average check')
                 => 'Isi rata-rata check per pax bulan sebelumnya (bulan data KPI − 1) dari Outlet Sales Report.',
+            $code === 'D031' || str_contains($lowerName, 'induction completion')
+                => 'Isi persentase minggu induction onboarding yang selesai tepat waktu (0–100, tanpa simbol %).',
+            $code === 'D032' || str_contains($lowerName, 'coaching visit')
+                => 'Isi jumlah karyawan unik yang di-coaching (bilangan bulat).',
             $dataType === 'percent' || str_contains($name, '%')
                 => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
             $dataType === 'integer'
@@ -313,6 +317,8 @@ class KpiEvaluationService
             'upselling_target_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — target F&B revenue.',
             'outlet_avg_check_data_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan data.',
             'outlet_avg_check_prev_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan sebelumnya.',
+            'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu induction tepat waktu.',
+            'employee_coaching_person_count' => 'Sumber ERP: Employee Coaching — jumlah karyawan unik di-coaching.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
