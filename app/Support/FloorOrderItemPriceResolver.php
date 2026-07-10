@@ -66,10 +66,16 @@ final class FloorOrderItemPriceResolver
             return 'medium';
         }
 
+        $smallId = $item->small_unit_id ?? null;
+        $mediumId = $item->medium_unit_id ?? null;
+        $largeId = $item->large_unit_id ?? null;
+
+        // FO pesan per satuan medium; cek medium sebelum small. Jika small & medium sama
+        // (master data duplikat), hindari tier small agar konversi tidak pakai small_conversion_qty.
         $unitIds = array_filter([
-            'small' => $item->small_unit_id ?? null,
-            'medium' => $item->medium_unit_id ?? null,
-            'large' => $item->large_unit_id ?? null,
+            'medium' => $mediumId,
+            'small' => ($smallId && $smallId !== $mediumId) ? $smallId : null,
+            'large' => $largeId,
         ]);
 
         if ($unitIds !== []) {

@@ -154,14 +154,18 @@ foreach ($foRows as $row) {
     if (! isset($itemMap[$itemId])) {
         continue;
     }
-    $expected = $itemMap[$itemId]['price_large'];
     $item = $itemMasters->get($itemId);
+    $priceLarge = $itemMap[$itemId]['price_large'];
     $tier = FloorOrderItemPriceResolver::detectUnitTier($item, (string) $row->unit, $unitNameById);
-    if ($tier === 'small') {
-        $expected = FloorOrderItemPriceResolver::roundUpToHundred(
-            FloorOrderItemPriceResolver::largeToSmallPrice($expected, $item)
-        );
-    }
+    $expected = match ($tier) {
+        'large' => FloorOrderItemPriceResolver::roundUpToHundred($priceLarge),
+        'small' => FloorOrderItemPriceResolver::roundUpToHundred(
+            FloorOrderItemPriceResolver::largeToSmallPrice($priceLarge, $item)
+        ),
+        default => FloorOrderItemPriceResolver::roundUpToHundred(
+            FloorOrderItemPriceResolver::largeToMediumPrice($priceLarge, $item)
+        ),
+    };
 
     if (abs($expected - (float) $row->price) < 0.01) {
         continue;

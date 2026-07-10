@@ -79,12 +79,24 @@ foreach ($itemNames as $name) {
     } elseif ($pricedRows->isNotEmpty()) {
         $priceLarge = (float) $pricedRows->first()->price;
         $sysPack = FloorOrderItemPriceResolver::resolveLineUnitPrice($itemId, $mediumUnit);
-        $packTarget = FloorOrderItemPriceResolver::roundUpToHundred($priceLarge);
-        if (abs($sysPack - $packTarget) < 0.01) {
-            echo "[SKIP] {$name}: Pack sudah ~" . number_format($packTarget, 0, ',', '.') . "\n";
+        $packFromLarge = FloorOrderItemPriceResolver::roundUpToHundred(
+            FloorOrderItemPriceResolver::largeToMediumPrice($priceLarge, $item)
+        );
+        if (abs($sysPack - $packFromLarge) < 0.01) {
+            echo "[SKIP] {$name}: Pack sudah ~" . number_format($packFromLarge, 0, ',', '.') . " (large sudah benar)\n";
             continue;
         }
-        $action = 'multiply';
+        $legacyPackInLargeField = FloorOrderItemPriceResolver::roundUpToHundred($priceLarge);
+        if (abs($sysPack - $legacyPackInLargeField) < 0.01) {
+            $packTarget = $legacyPackInLargeField;
+            $action = 'multiply';
+        } elseif ($sysPack > 0 && abs($sysPack - $packFromLarge) > 0.01) {
+            echo "[SKIP] {$name}: sys Pack {$sysPack} tidak cocok pola legacy maupun large/conv\n";
+            continue;
+        } else {
+            $packTarget = $legacyPackInLargeField;
+            $action = 'multiply';
+        }
     } else {
         $packTarget = legacyUndividedPackPrice($itemId, $foFrom, $foTo, $mediumConv);
         if ($packTarget <= 0) {
