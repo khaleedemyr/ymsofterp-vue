@@ -25,7 +25,7 @@ INSERT INTO `kpi_parameters` (
 ('D025', 'Customer Satisfaction Index (GSI)',     'hybrid', 'outlet',   'percent', 'GSI guest satisfaction score',           NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D026', 'Google Review Rating',                'hybrid', 'outlet',   'decimal', 'Average Google review rating',           NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D027', 'Actual Upselling Sales',              'hybrid', 'outlet',   'decimal', 'Actual upselling sales MTD',             NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D028', 'Target Upselling Sales',              'manual', 'outlet',   'decimal', 'Target upselling sales MTD',             NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D028', 'Target Upselling Sales',              'hybrid', 'outlet',   'decimal', 'Target F&B revenue upselling (Upselling menu)', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D029', 'Current Period Average Check',        'erp',    'outlet',   'decimal', 'Average check current period',           NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D030', 'Previous Period Average Check',       'erp',    'outlet',   'decimal', 'Average check previous period',          NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D031', 'Employee Induction Completion %',     'manual', 'employee', 'percent', 'Employee induction on-time completion',  NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
@@ -96,7 +96,11 @@ FROM `kpi_parameters` p
 JOIN (
     -- D013 tetap pakai mapping sample (guest_comment_gsi count) untuk KPI10 — jangan diubah
     SELECT 'D040' AS code, 'ticket_complaint_count' AS resolver_key, 'count' AS aggregation UNION ALL
-    SELECT 'D042', 'ticket_complaint_count', 'count'
+    SELECT 'D042', 'ticket_complaint_count', 'count' UNION ALL
+    SELECT 'D027', 'upselling_actual_fb_revenue', 'sum' UNION ALL
+    SELECT 'D028', 'upselling_target_fb_revenue', 'sum' UNION ALL
+    SELECT 'D029', 'outlet_avg_check_data_month', 'avg' UNION ALL
+    SELECT 'D030', 'outlet_avg_check_prev_month', 'avg'
 ) v ON v.code = p.code
 ON DUPLICATE KEY UPDATE `resolver_key` = VALUES(`resolver_key`), `aggregation` = VALUES(`aggregation`), `updated_at` = NOW();
 

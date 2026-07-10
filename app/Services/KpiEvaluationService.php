@@ -233,6 +233,14 @@ class KpiEvaluationService
                 => 'Isi total ticket improvement di periode (bilangan bulat).',
             $code === 'D026' || str_contains($lowerName, 'google review rating')
                 => 'Isi rating Google Review rata-rata (skala 1–5) dari menu Manual Monthly Google Review.',
+            $code === 'D027' || str_contains($lowerName, 'actual upselling')
+                => 'Isi actual F&B revenue upselling dari menu Upselling Sales Achievement (bulan data).',
+            $code === 'D028' || str_contains($lowerName, 'target upselling')
+                => 'Isi target F&B revenue upselling dari menu Upselling Sales Achievement (bulan data).',
+            $code === 'D029' || str_contains($lowerName, 'current period average check')
+                => 'Isi rata-rata check per pax bulan pembanding terbaru (bulan data KPI) dari Outlet Sales Report.',
+            $code === 'D030' || str_contains($lowerName, 'previous period average check')
+                => 'Isi rata-rata check per pax bulan sebelumnya (bulan data KPI − 1) dari Outlet Sales Report.',
             $dataType === 'percent' || str_contains($name, '%')
                 => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
             $dataType === 'integer'
@@ -301,6 +309,10 @@ class KpiEvaluationService
             'manual_lost_breakage_percent' => 'Sumber ERP: Asset Manual Monthly L&B %.',
             'manual_labor_cost_percent' => 'Sumber ERP: Manual Monthly Labor Cost %.',
             'manual_google_review_rating_avg' => 'Sumber ERP: Manual Monthly Google Review — rata-rata rating outlet.',
+            'upselling_actual_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — actual F&B revenue.',
+            'upselling_target_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — target F&B revenue.',
+            'outlet_avg_check_data_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan data.',
+            'outlet_avg_check_prev_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan sebelumnya.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',

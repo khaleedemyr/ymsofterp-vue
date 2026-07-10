@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\KpiParameter;
+use App\Models\UpsellingSalesAchievement;
 use App\Models\UserRegional;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -86,6 +87,7 @@ class KpiParameterResolverService
         private RegionalVisitAnalyticsService $regionalVisits,
         private PettyCashLockBudgetService $pettyCashLockBudget,
         private FeedbackCapaService $feedbackCapaService,
+        private UpsellingSalesAchievementService $upsellingAchievement,
     ) {}
 
     /**
@@ -502,6 +504,13 @@ class KpiParameterResolverService
                 $month,
                 $year,
             ),
+            'upselling_actual_fb_revenue' => $this->resolveUpsellingActualFbRevenue($outletIds, $month, $year),
+            'upselling_target_fb_revenue' => $this->resolveUpsellingTargetFbRevenue($outletIds, $month, $year),
+            'outlet_avg_check_data_month' => $this->resolveOutletSalesAvgCheckPerPax($outletIds, $periodMonth),
+            'outlet_avg_check_prev_month' => $this->resolveOutletSalesAvgCheckPerPax(
+                $outletIds,
+                Carbon::createFromFormat('Y-m', $periodMonth)->subMonth()->format('Y-m'),
+            ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
@@ -544,6 +553,10 @@ class KpiParameterResolverService
             'manual_lost_breakage_percent',
             'manual_labor_cost_percent',
             'manual_google_review_rating_avg',
+            'upselling_actual_fb_revenue',
+            'upselling_target_fb_revenue',
+            'outlet_avg_check_data_month',
+            'outlet_avg_check_prev_month',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
             'cvcc_total_review_count',
@@ -2124,5 +2137,119 @@ class KpiParameterResolverService
         }
 
         return $count > 0 ? (float) $count : null;
+    }
+
+    /**
+     * Actual F&B revenue upselling (POS) dari menu Upselling Sales Achievement — bulan data KPI.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveUpsellingActualFbRevenue(array $outletIds, int $month, int $year): ?float
+    {
+        $totals = $this->resolveUpsellingFbRevenueTotals($outletIds, $month, $year);
+
+        return $totals !== null ? $totals['actual'] : null;
+    }
+
+    /**
+     * Target F&B revenue upselling dari menu Upselling Sales Achievement — bulan data KPI.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveUpsellingTargetFbRevenue(array $outletIds, int $month, int $year): ?float
+    {
+        $totals = $this->resolveUpsellingFbRevenueTotals($outletIds, $month, $year);
+
+        return $totals !== null ? $totals['target'] : null;
+    }
+
+    /**
+     * @param  list<int>  $outletIds
+     * @return array{actual: float, target: float}|null
+     */
+    private function resolveUpsellingFbRevenueTotals(array $outletIds, int $month, int $year): ?array
+    {
+        if ($outletIds === [] || ! DB::getSchemaBuilder()->hasTable('upselling_sales_achievements')) {
+            return null;
+        }
+
+        $actual = 0.0;
+        $target = 0.0;
+        $found = false;
+
+        foreach ($outletIds as $outletId) {
+            $outletId = (int) $outletId;
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $achievement = UpsellingSalesAchievement::query()
+                ->where('outlet_id', $outletId)
+                ->where('month', $month)
+                ->where('year', $year)
+                ->first();
+
+            if ($achievement === null) {
+                continue;
+            }
+
+            $detail = $this->upsellingAchievement->buildDetailRows($achievement);
+            $actual += (float) ($detail['totals']['actual_fb_revenue'] ?? 0);
+            $target += (float) ($detail['totals']['target_fb_revenue'] ?? 0);
+            $found = true;
+        }
+
+        if (! $found) {
+            return null;
+        }
+
+        return [
+            'actual' => round($actual, 2),
+            'target' => round($target, 2),
+        ];
+    }
+
+    /**
+     * Rata-rata check per pax (grand_total / pax) dari POS orders — sama seperti Outlet Sales Report.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveOutletSalesAvgCheckPerPax(array $outletIds, string $periodMonth): ?float
+    {
+        if ($outletIds === [] || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        $year = (int) substr($periodMonth, 0, 4);
+        $month = (int) substr($periodMonth, 5, 2);
+        $dateFrom = sprintf('%04d-%02d-01', $year, $month);
+        $dateTo = date('Y-m-t', strtotime($dateFrom));
+
+        $qrCodes = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', array_map('intval', $outletIds))
+            ->where('status', 'A')
+            ->pluck('qr_code')
+            ->filter(fn ($code) => trim((string) $code) !== '')
+            ->values()
+            ->all();
+
+        if ($qrCodes === []) {
+            return null;
+        }
+
+        $row = DB::table('orders')
+            ->whereIn('orders.kode_outlet', $qrCodes)
+            ->whereDate('orders.created_at', '>=', $dateFrom)
+            ->whereDate('orders.created_at', '<=', $dateTo)
+            ->selectRaw('SUM(COALESCE(orders.grand_total, 0)) as grand_total')
+            ->selectRaw('SUM(COALESCE(orders.pax, 0)) as total_pax')
+            ->first();
+
+        $totalPax = (float) ($row->total_pax ?? 0);
+        if ($totalPax <= 0) {
+            return null;
+        }
+
+        return round((float) ($row->grand_total ?? 0) / $totalPax, 2);
     }
 }
