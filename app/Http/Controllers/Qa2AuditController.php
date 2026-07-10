@@ -53,6 +53,7 @@ class Qa2AuditController extends Controller
 
         if (!$isHo) {
             $query->where('a.outlet_id', (int) $user->id_outlet);
+            $query->where('a.status', '!=', 'draft');
         }
 
         if ($outletId) {
@@ -100,6 +101,7 @@ class Qa2AuditController extends Controller
         $statsQuery = DB::table('qa2_audits');
         if (!$isHo) {
             $statsQuery->where('outlet_id', (int) $user->id_outlet);
+            $statsQuery->where('status', '!=', 'draft');
         }
         if ($outletId) {
             $statsQuery->where('outlet_id', (int) $outletId);
@@ -2049,6 +2051,7 @@ class Qa2AuditController extends Controller
 
         if (!$isHo) {
             $query->where('a.outlet_id', (int) $user->id_outlet);
+            $query->where('a.status', '!=', 'draft');
         }
 
         if ($outletId) {
@@ -2097,6 +2100,7 @@ class Qa2AuditController extends Controller
         $statsQuery = DB::table('qa2_audits');
         if (!$isHo) {
             $statsQuery->where('outlet_id', (int) $user->id_outlet);
+            $statsQuery->where('status', '!=', 'draft');
         }
         if ($outletId) {
             $statsQuery->where('outlet_id', (int) $outletId);

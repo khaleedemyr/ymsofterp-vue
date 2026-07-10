@@ -241,12 +241,12 @@ async function shareToWhatsApp(audit) {
         </div>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="grid gap-4" :class="permissions?.can_manage ? 'sm:grid-cols-3' : 'sm:grid-cols-2'">
         <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
           <p class="text-xs uppercase tracking-wide text-gray-500">Total</p>
           <p class="mt-2 text-2xl font-semibold text-gray-900">{{ statistics?.total || 0 }}</p>
         </div>
-        <div class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
+        <div v-if="permissions?.can_manage" class="rounded-xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
           <p class="text-xs uppercase tracking-wide text-gray-500">Draft</p>
           <p class="mt-2 text-2xl font-semibold text-amber-600">{{ statistics?.draft || 0 }}</p>
         </div>
@@ -267,7 +267,7 @@ async function shareToWhatsApp(audit) {
 
           <select v-model="status" class="w-full rounded-lg border-gray-300 text-sm">
             <option value="">Semua Status</option>
-            <option value="draft">Draft</option>
+            <option v-if="permissions?.can_manage" value="draft">Draft</option>
             <option value="submitted">Submitted</option>
           </select>
 
