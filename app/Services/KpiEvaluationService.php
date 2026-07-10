@@ -162,6 +162,59 @@ class KpiEvaluationService
     }
 
     /**
+     * Skor key strategy = rata-rata tertimbang skor KPI dalam strategy (skala 0–100).
+     */
+    public function calculateStrategyScore(Collection $items): ?float
+    {
+        $weighted = 0.0;
+        $totalWeight = 0.0;
+
+        foreach ($items as $item) {
+            if ($item->score === null) {
+                continue;
+            }
+
+            $weight = (float) $item->weight_percent;
+            if ($weight <= 0) {
+                continue;
+            }
+
+            $weighted += (float) $item->score * $weight;
+            $totalWeight += $weight;
+        }
+
+        if ($totalWeight <= 0) {
+            return null;
+        }
+
+        return round($weighted / $totalWeight, 2);
+    }
+
+    /**
+     * Kontribusi strategy terhadap total skor evaluasi.
+     */
+    public function calculateStrategyContribution(Collection $items): ?float
+    {
+        $hasValue = false;
+        $total = 0.0;
+
+        foreach ($items as $item) {
+            if ($item->weighted_score === null) {
+                continue;
+            }
+
+            $hasValue = true;
+            $total += (float) $item->weighted_score;
+        }
+
+        if (! $hasValue) {
+            return null;
+        }
+
+        return round($total, 2);
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function enrichEvaluationItems(Collection $items, string $evaluationPeriodMonth): array

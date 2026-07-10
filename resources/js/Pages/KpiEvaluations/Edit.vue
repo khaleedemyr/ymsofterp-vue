@@ -11,6 +11,7 @@ import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/f
 import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
 import { formatKpiAchievement, formatKpiParameterInputUnit, kpiParameterInputMode } from '@/utils/formatKpiAchievement';
 import { resolveKpiTotalScoreFlag } from '@/utils/resolveKpiTotalScoreFlag';
+import { calculateKpiStrategyScore } from '@/utils/calculateKpiStrategyScore';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -230,6 +231,14 @@ function levelBadge(level) {
 
 function formatNum(val) {
   return formatKpiNumber(val);
+}
+
+function formatStrategyScore(strategy) {
+  return strategy.score ?? calculateKpiStrategyScore(strategy.items);
+}
+
+function strategyScoreFlag(strategy) {
+  return resolveKpiTotalScoreFlag(formatStrategyScore(strategy));
 }
 
 function formatAchievement(item) {
@@ -635,9 +644,22 @@ onMounted(() => {
 
       <!-- KPI Items by Strategy -->
       <div v-for="strategy in groupedStrategies" :key="strategy.name" class="bg-white rounded-2xl shadow mb-4 overflow-hidden">
-        <div class="bg-rose-700 text-white px-4 py-3 flex justify-between">
+        <div class="bg-rose-700 text-white px-4 py-3 flex flex-wrap items-center justify-between gap-2">
           <span class="font-semibold">{{ strategy.name }}</span>
-          <span class="text-rose-100">Bobot Strategy: {{ strategy.weight_percent }}%</span>
+          <div class="flex flex-wrap items-center gap-3 text-sm">
+            <span class="text-rose-100">Bobot Strategy: {{ strategy.weight_percent }}%</span>
+            <span class="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1">
+              <span class="text-rose-100">Skor Strategy:</span>
+              <span class="font-bold">{{ formatNum(formatStrategyScore(strategy)) }}</span>
+              <span
+                v-if="strategyScoreFlag(strategy)"
+                class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                :class="strategyScoreFlag(strategy).className"
+              >
+                {{ strategyScoreFlag(strategy).label }}
+              </span>
+            </span>
+          </div>
         </div>
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">

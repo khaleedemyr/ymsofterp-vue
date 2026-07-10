@@ -349,6 +349,8 @@ class KpiEvaluationController extends Controller
                 return [
                     'name' => $strategyName,
                     'weight_percent' => $first->strategy_weight_percent,
+                    'score' => $this->evaluationService->calculateStrategyScore($items),
+                    'weighted_score' => $this->evaluationService->calculateStrategyContribution($items),
                     'items' => $this->evaluationService->enrichEvaluationItems($items, $periodMonth),
                 ];
             })
