@@ -231,6 +231,8 @@ class KpiEvaluationService
                 => 'Isi jumlah ticket improvement yang compliant / tidak overdue (bilangan bulat).',
             $code === 'D024' || str_contains($lowerName, 'total improvement')
                 => 'Isi total ticket improvement di periode (bilangan bulat).',
+            $code === 'D026' || str_contains($lowerName, 'google review rating')
+                => 'Isi rating Google Review rata-rata (skala 1–5) dari menu Manual Monthly Google Review.',
             $dataType === 'percent' || str_contains($name, '%')
                 => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
             $dataType === 'integer'
@@ -267,6 +269,8 @@ class KpiEvaluationService
                 => '42,5',
             $code === 'D053' || $dataType === 'hours'
                 => '24,5',
+            $code === 'D026' || str_contains(strtolower($name), 'google review')
+                => '4,75',
             $dataType === 'integer'
                 => '12',
             default
@@ -296,6 +300,7 @@ class KpiEvaluationService
             'manual_catcost_percent' => 'Sumber ERP: Manual COGS — Category Cost %.',
             'manual_lost_breakage_percent' => 'Sumber ERP: Asset Manual Monthly L&B %.',
             'manual_labor_cost_percent' => 'Sumber ERP: Manual Monthly Labor Cost %.',
+            'manual_google_review_rating_avg' => 'Sumber ERP: Manual Monthly Google Review — rata-rata rating outlet.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — rata-rata jam resolusi.',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',

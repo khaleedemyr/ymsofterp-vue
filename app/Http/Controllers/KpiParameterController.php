@@ -233,6 +233,7 @@ class KpiParameterController extends Controller
                 ['value' => 'manual_catcost_percent', 'label' => 'Manual COGS — Category Cost % per outlet'],
                 ['value' => 'manual_lost_breakage_percent', 'label' => 'Asset Manual Monthly Lost & Breakage %'],
                 ['value' => 'manual_labor_cost_percent', 'label' => 'Manual Monthly Labor Cost %'],
+                ['value' => 'manual_google_review_rating_avg', 'label' => 'Manual Monthly Google Review — avg rating per outlet'],
                 ['value' => 'cvcc_avg_resolution_hours', 'label' => 'CVCC — Avg Complaint Resolution (hours)'],
                 ['value' => 'cvcc_service_negative_complaint_count', 'label' => 'CVCC — Negative + CAPA Service filled'],
                 ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total Review / Case Count'],

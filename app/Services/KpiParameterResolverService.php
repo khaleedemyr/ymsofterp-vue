@@ -497,6 +497,11 @@ class KpiParameterResolverService
                 $month,
                 $year,
             ),
+            'manual_google_review_rating_avg' => $this->resolveManualGoogleReviewRatingAvg(
+                $outletIds,
+                $month,
+                $year,
+            ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
@@ -538,6 +543,7 @@ class KpiParameterResolverService
             'manual_catcost_percent',
             'manual_lost_breakage_percent',
             'manual_labor_cost_percent',
+            'manual_google_review_rating_avg',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
             'cvcc_total_review_count',
@@ -1638,6 +1644,41 @@ class KpiParameterResolverService
             ->whereIn('outlet_id', array_map('intval', $outletIds))
             ->whereNotNull($percentColumn)
             ->pluck($percentColumn)
+            ->map(fn ($v) => (float) $v);
+
+        if ($values->isEmpty()) {
+            return null;
+        }
+
+        return round($values->avg(), 4);
+    }
+
+    /**
+     * Rata-rata rating Google Review per outlet dari menu Manual Monthly Google Review.
+     * Hanya outlet dalam scope user; rating 0 diabaikan (belum diisi).
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveManualGoogleReviewRatingAvg(array $outletIds, int $month, int $year): ?float
+    {
+        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('manual_monthly_google_review')) {
+            return null;
+        }
+
+        $headerId = DB::table('manual_monthly_google_review')
+            ->where('month', $month)
+            ->where('year', $year)
+            ->value('id');
+
+        if (! $headerId) {
+            return null;
+        }
+
+        $values = DB::table('manual_monthly_google_review_items')
+            ->where('manual_monthly_google_review_id', $headerId)
+            ->whereIn('outlet_id', array_map('intval', $outletIds))
+            ->where('rating', '>', 0)
+            ->pluck('rating')
             ->map(fn ($v) => (float) $v);
 
         if ($values->isEmpty()) {

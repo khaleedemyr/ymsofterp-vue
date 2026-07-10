@@ -11,3 +11,4 @@ UPDATE `kpi_parameters` SET `manual_input_hint` = 'Isi persentase labor cost (%)
 UPDATE `kpi_parameters` SET `manual_input_hint` = 'Isi rata-rata jam resolusi komplain CVCC. Contoh: 18,5.' WHERE `code` = 'D053';
 UPDATE `kpi_parameters` SET `manual_input_hint` = 'Isi skor kepatuhan QA audit (%). Contoh: 92 — tanpa simbol %.' WHERE `code` = 'D016';
 UPDATE `kpi_parameters` SET `manual_input_hint` = 'Isi % penyelesaian modul wajib Just Academy (0–100). Contoh: 85 — tanpa simbol %.' WHERE `code` = 'D018';
+UPDATE `kpi_parameters` SET `manual_input_hint` = 'Isi rating Google Review rata-rata (skala 1–5) dari menu Manual Monthly Google Review untuk outlet & bulan data. Contoh: 4,75.' WHERE `code` = 'D026';

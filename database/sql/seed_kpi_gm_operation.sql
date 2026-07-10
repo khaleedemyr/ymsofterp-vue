@@ -141,6 +141,7 @@ JOIN (
     SELECT 'D050', 'manual_catcost_percent', 'avg' UNION ALL
     SELECT 'D051', 'manual_lost_breakage_percent', 'avg' UNION ALL
     SELECT 'D052', 'manual_labor_cost_percent', 'avg' UNION ALL
+    SELECT 'D026', 'manual_google_review_rating_avg', 'avg' UNION ALL
     SELECT 'D053', 'cvcc_avg_resolution_hours', 'avg' UNION ALL
     SELECT 'D054', 'cvcc_service_negative_complaint_count', 'count' UNION ALL
     SELECT 'D055', 'cvcc_total_review_count', 'count' UNION ALL
