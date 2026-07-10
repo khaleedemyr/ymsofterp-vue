@@ -30,6 +30,12 @@ class KpiParameterResolverService
         'manual_catcost_percent',
     ];
 
+    /** @var list<string> */
+    private const QA2_RECIPE_COMPLIANCE_PARAMETER_CODES = [
+        'BRA-1.5.3',
+        'BRA-1.4.6',
+    ];
+
     /** Resolver yang membandingkan bulan spesifik — tidak dijumlahkan lintas quarter. */
     private const MONTH_SPECIFIC_RESOLVER_KEYS = [
         'outlet_avg_check_data_month',
@@ -611,6 +617,11 @@ class KpiParameterResolverService
                 $period['start_date'],
                 $period['end_date'],
             ),
+            'qa2_recipe_compliance_score' => $this->resolveQa2RecipeComplianceScore(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
             'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
             'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
             'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
@@ -691,6 +702,12 @@ class KpiParameterResolverService
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
             ),
+            'fb_product_calibration_completion_percent' => $this->resolveFbProductCalibrationCompletionPercent(
+                (int) ($context['user_id'] ?? 0),
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+            ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
@@ -721,6 +738,7 @@ class KpiParameterResolverService
             'just_academy_training_completion',
             'just_academy_competency_assessment_score',
             'qa2_audit1_score',
+            'qa2_recipe_compliance_score',
             'ticket_complaint_count',
             'ticket_improvement_closed',
             'ticket_improvement_total',
@@ -741,6 +759,7 @@ class KpiParameterResolverService
             'employee_coaching_person_count',
             'npd_approved_product_count',
             'competitor_benchmark_execution_count',
+            'fb_product_calibration_completion_percent',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
             'cvcc_total_review_count',
@@ -1499,9 +1518,14 @@ class KpiParameterResolverService
      * QA2 Audits — skor compliance C / (C + NC) per outlet, lalu rata-rata antar outlet scope.
      *
      * @param  list<int>  $outletIds
+     * @param  list<string>|null  $parameterCodes  Filter parameter QA2 (mis. BRA-1.5.3). Null = semua item audit.
      */
-    private function resolveQa2Audit1Score(array $outletIds, string $startDate, string $endDate): ?float
-    {
+    private function resolveQa2Audit1Score(
+        array $outletIds,
+        string $startDate,
+        string $endDate,
+        ?array $parameterCodes = null,
+    ): ?float {
         if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
             return null;
         }
@@ -1512,7 +1536,7 @@ class KpiParameterResolverService
                 continue;
             }
 
-            $score = $this->resolveQa2AuditScoreForOutlet($outletId, $startDate, $endDate);
+            $score = $this->resolveQa2AuditScoreForOutlet($outletId, $startDate, $endDate, $parameterCodes);
             if ($score !== null) {
                 $scores[] = $score;
             }
@@ -1526,10 +1550,102 @@ class KpiParameterResolverService
     }
 
     /**
-     * Skor compliance QA2 untuk satu outlet: C / (C + NC) dari semua audit submitted di periode.
+     * QA2 — Recipe Compliance: C / (C + NC) untuk parameter recipe (BRA-1.5.3, BRA-1.4.6) per outlet.
+     *
+     * @param  list<int>  $outletIds
      */
-    private function resolveQa2AuditScoreForOutlet(int $outletId, string $startDate, string $endDate): ?float
+    private function resolveQa2RecipeComplianceScore(array $outletIds, string $startDate, string $endDate): ?float
     {
+        return $this->resolveQa2Audit1Score(
+            $outletIds,
+            $startDate,
+            $endDate,
+            self::QA2_RECIPE_COMPLIANCE_PARAMETER_CODES,
+        );
+    }
+
+    /**
+     * F&B Product Calibration — % jadwal selesai (conductor = user dinilai + bawahan langsung) per outlet, rata-rata scope.
+     *
+     * @param  list<int>  $outletIds
+     */
+    private function resolveFbProductCalibrationCompletionPercent(
+        int $userId,
+        array $outletIds,
+        string $startDate,
+        string $endDate,
+    ): ?float {
+        if ($userId <= 0 || empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('fb_product_calibrations')) {
+            return null;
+        }
+
+        $conductorUserIds = $this->resolveTrainingScopeUserIds($userId);
+        if ($conductorUserIds === []) {
+            return null;
+        }
+
+        $scores = [];
+        foreach (array_values(array_unique(array_filter(array_map('intval', $outletIds)))) as $outletId) {
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $score = $this->resolveFbProductCalibrationCompletionForOutlet(
+                $outletId,
+                $conductorUserIds,
+                $startDate,
+                $endDate,
+            );
+            if ($score !== null) {
+                $scores[] = $score;
+            }
+        }
+
+        if ($scores === []) {
+            return null;
+        }
+
+        return round(array_sum($scores) / count($scores), 2);
+    }
+
+    /**
+     * @param  list<int>  $conductorUserIds
+     */
+    private function resolveFbProductCalibrationCompletionForOutlet(
+        int $outletId,
+        array $conductorUserIds,
+        string $startDate,
+        string $endDate,
+    ): ?float {
+        $stats = DB::table('fb_product_calibrations')
+            ->whereNull('deleted_at')
+            ->where('outlet_id', $outletId)
+            ->whereDate('scheduled_date', '>=', $startDate)
+            ->whereDate('scheduled_date', '<=', $endDate)
+            ->whereIn('conductor_id', $conductorUserIds)
+            ->where('status', '!=', 'cancelled')
+            ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed, COUNT(*) as total")
+            ->first();
+
+        $total = (int) ($stats->total ?? 0);
+        if ($total === 0) {
+            return null;
+        }
+
+        return round(((int) ($stats->completed ?? 0) / $total) * 100, 2);
+    }
+
+    /**
+     * Skor compliance QA2 untuk satu outlet: C / (C + NC) dari audit submitted di periode.
+     *
+     * @param  list<string>|null  $parameterCodes
+     */
+    private function resolveQa2AuditScoreForOutlet(
+        int $outletId,
+        string $startDate,
+        string $endDate,
+        ?array $parameterCodes = null,
+    ): ?float {
         if ($outletId <= 0 || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
             return null;
         }
@@ -1547,9 +1663,25 @@ class KpiParameterResolverService
             return null;
         }
 
-        $stats = DB::table('qa2_audit_items')
+        $query = DB::table('qa2_audit_items')
             ->whereIn('audit_id', $auditIds)
-            ->whereIn('result', ['C', 'NC'])
+            ->whereIn('result', ['C', 'NC']);
+
+        if ($parameterCodes !== null && $parameterCodes !== []) {
+            $codes = array_values(array_unique(array_filter(array_map('strval', $parameterCodes))));
+            $query->where(function ($q) use ($codes) {
+                $q->whereIn('parameter_code', $codes);
+                if (DB::getSchemaBuilder()->hasTable('qa2_parameters')) {
+                    $q->orWhereIn('parameter_id', function ($sub) use ($codes) {
+                        $sub->from('qa2_parameters')
+                            ->whereIn('code', $codes)
+                            ->select('id');
+                    });
+                }
+            });
+        }
+
+        $stats = $query
             ->selectRaw("SUM(CASE WHEN result = 'C' THEN 1 ELSE 0 END) as compliant")
             ->selectRaw('COUNT(*) as total')
             ->first();

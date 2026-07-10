@@ -317,6 +317,8 @@ class KpiEvaluationService
                 => 'Isi jumlah kasus/review CVCC (bilangan bulat).',
             $code === 'D016' || str_contains($lowerName, 'qa audit')
                 => 'Isi skor kepatuhan QA audit dalam persen (C / (C+NC) × 100).',
+            $code === 'D017' || str_contains($lowerName, 'recipe compliance') || str_contains($lowerName, 'sop compliance')
+                => 'Skor % kepatuhan recipe dari QA2 Audits (BRA-1.5.3 & BRA-1.4.6): C / (C+NC) × 100 per outlet.',
             $code === 'D018' || str_contains($lowerName, 'just academy')
                 => 'Isi persentase penyelesaian modul wajib Just Academy (0–100, tanpa simbol %).',
             $code === 'D021' || str_contains($lowerName, 'visit count')
@@ -345,6 +347,8 @@ class KpiEvaluationService
                 => 'Jumlah produk NPD approved dari menu NPD Plan & Report (PIC / creator) — otomatis dari ERP bila hybrid.',
             $code === 'D046' || str_contains($lowerName, 'benchmark reports')
                 => 'Jumlah benchmark competitor dari menu Competitor Benchmark Report (PIC / creator) — otomatis dari ERP bila hybrid.',
+            $code === 'D036' || str_contains($lowerName, 'taste calibration')
+                => 'Persentase schedule F&B Product Calibration yang selesai (conductor = karyawan dinilai atau bawahan langsung) per outlet bulan data.',
             $dataType === 'percent' || str_contains($name, '%')
                 => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
             $dataType === 'integer'
@@ -422,7 +426,8 @@ class KpiEvaluationService
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
-            'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan.',
+            'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
+            'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
             'just_academy_training_completion' => 'Sumber ERP: Just Academy — completion %.',
             'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — skor competency assessment.',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
@@ -1671,6 +1676,14 @@ class KpiEvaluationService
         }
 
         if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*Person/i', $target, $matches)) {
+            return [
+                'comparator' => 'gte',
+                'min' => (float) $matches[1],
+                'max' => null,
+            ];
+        }
+
+        if (preg_match('/^(\d+(?:\.\d+)?)\s*%\s*Completion/i', $target, $matches)) {
             return [
                 'comparator' => 'gte',
                 'min' => (float) $matches[1],
