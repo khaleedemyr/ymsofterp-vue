@@ -37,7 +37,8 @@ class KpiEvaluationService
         if ($evaluation->isEditable()) {
             $this->syncEvaluationDataPeriod($evaluation);
             $this->syncParameterValuesFromTemplate($evaluation);
-            $evaluation->load('parameterValues');
+            $this->syncItemFormulasFromTemplate($evaluation);
+            $evaluation->load(['parameterValues', 'items']);
         }
 
         return $evaluation;

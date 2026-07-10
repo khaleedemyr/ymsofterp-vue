@@ -157,7 +157,7 @@ function getSelectedParameter(item) {
   return parameterOptions.value.find((p) => p.id === id) || null;
 }
 
-function syncItemFromParameter(item) {
+function syncItemFromParameter(item, { resetTarget = false } = {}) {
   const param = getSelectedParameter(item);
   if (!param) {
     item.name = '';
@@ -169,21 +169,25 @@ function syncItemFromParameter(item) {
   }
   item.name = param.name;
   item.formula = param.formula || '';
-  item.target_value = param.target_value || '';
   item.target_direction = param.target_direction || 'higher_better';
-  item.frequency = param.frequency || 'monthly';
+  if (resetTarget || !String(item.target_value || '').trim()) {
+    item.target_value = param.target_value || '';
+  }
+  if (resetTarget || !String(item.frequency || '').trim()) {
+    item.frequency = param.frequency || 'monthly';
+  }
 }
 
 function setSelectedParameter(item, param) {
+  const previousId = item.parameter_ids?.[0] ?? null;
   item.parameter_ids = param ? [param.id] : [];
-  syncItemFromParameter(item);
+  syncItemFromParameter(item, { resetTarget: param?.id !== previousId });
 }
 
 function submit() {
   let missingParameters = false;
   form.strategies.forEach((s) => {
     s.items?.forEach((item) => {
-      syncItemFromParameter(item);
       if (!item.parameter_ids?.length) missingParameters = true;
     });
   });
@@ -341,7 +345,7 @@ function cancel() {
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div class="md:col-span-2">
                     <label class="text-xs font-medium">Parameter KPI *</label>
-                    <p class="text-xs text-gray-500 mb-1">Pilih parameter — nama, target, direction, frequency &amp; formula mengikuti master parameter.</p>
+                    <p class="text-xs text-gray-500 mb-1">Pilih parameter — nama &amp; formula mengikuti master. Target &amp; frequency bisa disesuaikan per template/jabatan.</p>
                     <Multiselect
                       :model-value="getSelectedParameter(item)"
                       :options="parameterOptions"
@@ -370,8 +374,13 @@ function cancel() {
                       <span class="font-medium text-gray-800">{{ item.name || '—' }}</span>
                     </div>
                     <div>
-                      <span class="text-xs text-gray-500 block">Target</span>
-                      <span class="font-medium text-gray-800">{{ item.target_value || '—' }}</span>
+                      <label class="text-xs text-gray-500 block">Target</label>
+                      <input
+                        v-model="item.target_value"
+                        type="text"
+                        placeholder="Min. 3 Products"
+                        class="mt-0.5 w-full rounded-lg border-gray-300 text-sm font-medium text-gray-800"
+                      />
                     </div>
                     <div>
                       <span class="text-xs text-gray-500 block">Direction</span>
