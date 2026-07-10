@@ -8,13 +8,37 @@ class PettyCashLockBudgetService
 {
     public const FORECAST_AFTER_RESERVE_RATIO = 0.80;
 
+    public const DEFAULT_PETTY_CASH_RATIO_PERCENT = 0.8;
+
+    /** @deprecated Use resolvePettyCashRatioDecimal() */
     public const FORECAST_PETTY_CASH_RATIO_OF_REST = 0.008;
 
     /**
-     * Sumber: monthly_target pada outlet_revenue_target_headers per outlet/bulan.
-     * Lock budget = monthly_target × 80% × 0.8%
+     * Persentase petty cash dari 80% target per outlet.
+     * Default outlet lain: 0.8%.
      *
-     * @return array{monthly_target: float, usable_after_reserve: float, lock_budget: float}|null
+     * @var array<int, float>
+     */
+    private const OUTLET_PETTY_CASH_RATIO_PERCENT = [
+        11 => 1.5,
+        28 => 3.5,
+    ];
+
+    public function resolvePettyCashRatioPercent(int $outletId): float
+    {
+        return self::OUTLET_PETTY_CASH_RATIO_PERCENT[$outletId] ?? self::DEFAULT_PETTY_CASH_RATIO_PERCENT;
+    }
+
+    public function resolvePettyCashRatioDecimal(int $outletId): float
+    {
+        return $this->resolvePettyCashRatioPercent($outletId) / 100;
+    }
+
+    /**
+     * Sumber: monthly_target pada outlet_revenue_target_headers per outlet/bulan.
+     * Lock budget = monthly_target × 80% × {ratio outlet}%
+     *
+     * @return array{monthly_target: float, usable_after_reserve: float, lock_budget: float, petty_cash_ratio_percent: float}|null
      */
     public function resolveForOutlet(int $outletId, string $monthStart): ?array
     {
@@ -31,13 +55,16 @@ class PettyCashLockBudgetService
             return null;
         }
 
+        $ratioPercent = $this->resolvePettyCashRatioPercent($outletId);
+        $ratioDecimal = $ratioPercent / 100;
         $usableAfterReserve = round($monthlyTarget * self::FORECAST_AFTER_RESERVE_RATIO, 2);
-        $lockBudget = round($usableAfterReserve * self::FORECAST_PETTY_CASH_RATIO_OF_REST, 2);
+        $lockBudget = round($usableAfterReserve * $ratioDecimal, 2);
 
         return [
             'monthly_target' => round($monthlyTarget, 2),
             'usable_after_reserve' => $usableAfterReserve,
             'lock_budget' => $lockBudget,
+            'petty_cash_ratio_percent' => $ratioPercent,
         ];
     }
 
@@ -65,8 +92,11 @@ class PettyCashLockBudgetService
                 continue;
             }
 
-            $result[(int) $header->outlet_id] = round(
-                $monthlyTarget * self::FORECAST_AFTER_RESERVE_RATIO * self::FORECAST_PETTY_CASH_RATIO_OF_REST,
+            $outletId = (int) $header->outlet_id;
+            $ratioDecimal = $this->resolvePettyCashRatioDecimal($outletId);
+
+            $result[$outletId] = round(
+                $monthlyTarget * self::FORECAST_AFTER_RESERVE_RATIO * $ratioDecimal,
                 2
             );
         }
@@ -88,17 +118,19 @@ class PettyCashLockBudgetService
     }
 
     /**
-     * @param  array{monthly_target: float, lock_budget: float}  $monthlyBudget
+     * @param  array{monthly_target: float, lock_budget: float, petty_cash_ratio_percent?: float}  $monthlyBudget
      * @param  array{retail_food_non_contra_bon_total: float, retail_non_food_non_contra_bon_total: float, monthly_total: float}  $usage
      */
     public function buildExceededMessage(array $monthlyBudget, array $usage, float $newAmount): string
     {
         $totalAfterNew = $usage['monthly_total'] + $newAmount;
+        $ratioPercent = $monthlyBudget['petty_cash_ratio_percent'] ?? self::DEFAULT_PETTY_CASH_RATIO_PERCENT;
+        $ratioLabel = rtrim(rtrim(number_format($ratioPercent, 2, ',', '.'), '0'), ',');
 
         return "Transaksi ditolak! Budget petty cash outlet bulan ini terlampaui.\n\n" .
             "📊 Detail Budget:\n" .
             '• Target Pendapatan Bulanan (header): Rp ' . number_format($monthlyBudget['monthly_target'], 0, ',', '.') . "\n" .
-            '• Budget Petty Cash (0.8% × 80% target): Rp ' . number_format($monthlyBudget['lock_budget'], 0, ',', '.') . "\n" .
+            '• Budget Petty Cash (' . $ratioLabel . '% × 80% target): Rp ' . number_format($monthlyBudget['lock_budget'], 0, ',', '.') . "\n" .
             '• Retail Food non-contra bon (bulan ini): Rp ' . number_format($usage['retail_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
             '• Retail Non Food non-contra bon (bulan ini): Rp ' . number_format($usage['retail_non_food_non_contra_bon_total'], 0, ',', '.') . "\n" .
             '• Total terpakai sebelum transaksi: Rp ' . number_format($usage['monthly_total'], 0, ',', '.') . "\n" .
