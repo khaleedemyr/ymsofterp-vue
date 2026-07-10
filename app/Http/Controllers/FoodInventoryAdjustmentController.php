@@ -305,38 +305,23 @@ class FoodInventoryAdjustmentController extends Controller
             // Cek warehouse untuk menentukan flow approval
             $warehouse = DB::table('warehouses')->where('id', $adj->warehouse_id)->first();
             $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
+
+            if (!$this->canUserActOnStockAdjustment($user, $adj, $isMKWarehouse)) {
+                throw new \Exception('Anda tidak berhak reject pada tahap ini');
+            }
             
             $update = ['status' => 'rejected', 'updated_at' => now()];
-            
-            if ($isMKWarehouse) {
-                // MK Warehouse: hanya Sous Chef MK (179)
-                if ($user->id_jabatan == 179) {
-                    $update['ssd_manager_note'] = $request->note;
-                } else if ($user->id_jabatan == 167) {
-                    $update['cost_control_manager_note'] = $request->note;
-                } else if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
-                    if ($adj->status == 'waiting_approval' || $adj->status == 'waiting_cost_control') {
-                        $update['ssd_manager_note'] = $request->note;
-                    } else if ($adj->status == 'waiting_cost_control') {
-                        $update['cost_control_manager_note'] = $request->note;
-                    }
-                }
-            } else {
-                // Non-MK Warehouse
-                if ($user->id_jabatan == 172) {
-                    $update['assistant_ssd_manager_note'] = $request->note;
-                } else if (in_array($user->id_jabatan, [161, 172])) {
-                    $update['ssd_manager_note'] = $request->note;
-                } else if ($user->id_jabatan == 167) {
-                    $update['cost_control_manager_note'] = $request->note;
-                } else if ($user->id_role === '5af56935b011a' && $user->status === 'A') {
-                    if ($adj->status == 'waiting_approval') {
-                        $update['assistant_ssd_manager_note'] = $request->note;
-                    } else if ($adj->status == 'waiting_ssd_manager') {
-                        $update['ssd_manager_note'] = $request->note;
-                    } else if ($adj->status == 'waiting_cost_control') {
-                        $update['cost_control_manager_note'] = $request->note;
-                    }
+            $note = $request->note;
+
+            if ($adj->status === 'waiting_cost_control') {
+                $update['cost_control_manager_note'] = $note;
+            } elseif ($adj->status === 'waiting_ssd_manager') {
+                $update['ssd_manager_note'] = $note;
+            } elseif ($adj->status === 'waiting_approval') {
+                if ($isMKWarehouse) {
+                    $update['ssd_manager_note'] = $note;
+                } else {
+                    $update['assistant_ssd_manager_note'] = $note;
                 }
             }
             DB::table('food_inventory_adjustments')->where('id', $id)->update($update);
@@ -479,30 +464,25 @@ class FoodInventoryAdjustmentController extends Controller
             // Filter based on user role and warehouse - sesuai tahapan approval
             if (!$isSuperadmin) {
                 $query->where(function($q) use ($jabatan) {
-                    // Asisten SSD Manager (172): non-MK warehouse, tahap pertama (waiting_approval)
                     if ($jabatan === 172) {
                         $q->where('status', 'waiting_approval')
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
-                    }
-                    // SSD Manager (161): non-MK warehouse, tahap pertama & kedua
-                    elseif ($jabatan === 161) {
+                    } elseif ($jabatan === 161) {
                         $q->whereIn('status', ['waiting_approval', 'waiting_ssd_manager'])
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
-                    }
-                    // Sous Chef MK (179): MK warehouse, hanya tahap pertama (waiting_approval)
-                    elseif ($jabatan === 179) {
+                    } elseif ($jabatan === 179) {
                         $q->where('status', 'waiting_approval')
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
-                    }
-                    // Cost Control Manager (167): semua warehouse, tahap akhir (waiting_cost_control)
-                    elseif ($jabatan === 167) {
+                    } elseif ($jabatan === 167) {
                         $q->where('status', 'waiting_cost_control');
+                    } else {
+                        $q->whereRaw('1 = 0');
                     }
                 });
             }
@@ -1413,7 +1393,7 @@ class FoodInventoryAdjustmentController extends Controller
             ->where('al.activity_type', 'reject')
             ->where('al.description', 'Reject stock adjustment ID: ' . $id)
             ->orderByDesc('al.created_at')
-            ->select('u.id', 'u.nama_lengkap', 'u.id_jabatan', 'al.created_at')
+            ->select('u.id', 'u.nama_lengkap', 'u.id_jabatan', 'u.id_role', 'al.created_at')
             ->first();
 
         if (!$rejectLog) {
@@ -1426,10 +1406,79 @@ class FoodInventoryAdjustmentController extends Controller
         return [
             'user_id' => $rejectLog->id,
             'nama_lengkap' => $rejectLog->nama_lengkap,
-            'role' => $this->resolveStockAdjustmentApproverRole((int) $rejectLog->id_jabatan, $isMKWarehouse),
+            'role' => $this->resolveRejectionRole($adjustment, $rejectLog, $isMKWarehouse),
             'rejected_at' => $rejectLog->created_at,
-            'note' => $this->resolveStockAdjustmentRejectionNote($adjustment, (int) $rejectLog->id_jabatan),
+            'note' => $this->resolveStockAdjustmentRejectionNote($adjustment, (int) $rejectLog->id_jabatan, $rejectLog->id_role ?? null),
         ];
+    }
+
+    private function canUserActOnStockAdjustment($user, $adj, bool $isMKWarehouse): bool
+    {
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
+        if ($isSuperadmin) {
+            return in_array($adj->status, ['waiting_approval', 'waiting_ssd_manager', 'waiting_cost_control'], true);
+        }
+
+        $jabatan = (int) $user->id_jabatan;
+        $status = $adj->status;
+
+        if ($isMKWarehouse) {
+            if ($status === 'waiting_approval') {
+                return $jabatan === 179;
+            }
+            if ($status === 'waiting_cost_control') {
+                return $jabatan === 167;
+            }
+
+            return false;
+        }
+
+        if ($status === 'waiting_approval') {
+            return in_array($jabatan, [172, 161], true);
+        }
+        if ($status === 'waiting_ssd_manager') {
+            return in_array($jabatan, [161, 172], true);
+        }
+        if ($status === 'waiting_cost_control') {
+            return $jabatan === 167;
+        }
+
+        return false;
+    }
+
+    private function resolveRejectionRole(FoodInventoryAdjustment $adjustment, $rejectLog, bool $isMKWarehouse): string
+    {
+        $stageRole = $this->resolveRejectionStageRole($adjustment, $isMKWarehouse);
+
+        if (($rejectLog->id_role ?? null) === '5af56935b011a') {
+            return $stageRole . ' (Superadmin)';
+        }
+
+        $role = $this->resolveStockAdjustmentApproverRole((int) $rejectLog->id_jabatan, $isMKWarehouse);
+        if ($role !== 'Approver') {
+            return $role;
+        }
+
+        $namaJabatan = DB::table('tbl_data_jabatan')
+            ->where('id_jabatan', $rejectLog->id_jabatan)
+            ->value('nama_jabatan');
+
+        return $namaJabatan ?: $stageRole;
+    }
+
+    private function resolveRejectionStageRole(FoodInventoryAdjustment $adjustment, bool $isMKWarehouse): string
+    {
+        if ($adjustment->cost_control_manager_note && !$adjustment->approved_by_cost_control_manager) {
+            return 'Cost Control Manager';
+        }
+        if (!$adjustment->approved_by_ssd_manager) {
+            return $isMKWarehouse ? 'Sous Chef MK' : 'SSD Manager';
+        }
+        if (!$adjustment->approved_by_assistant_ssd_manager && !$isMKWarehouse) {
+            return 'Asisten SSD Manager';
+        }
+
+        return 'Cost Control Manager';
     }
 
     private function resolveStockAdjustmentApproverRole(int $jabatanId, bool $isMKWarehouse): string
@@ -1450,8 +1499,20 @@ class FoodInventoryAdjustmentController extends Controller
         return 'Approver';
     }
 
-    private function resolveStockAdjustmentRejectionNote(FoodInventoryAdjustment $adjustment, int $jabatanId): ?string
+    private function resolveStockAdjustmentRejectionNote(FoodInventoryAdjustment $adjustment, int $jabatanId, ?string $idRole = null): ?string
     {
+        if ($idRole === '5af56935b011a') {
+            if ($adjustment->cost_control_manager_note) {
+                return $adjustment->cost_control_manager_note;
+            }
+            if ($adjustment->ssd_manager_note) {
+                return $adjustment->ssd_manager_note;
+            }
+            if ($adjustment->assistant_ssd_manager_note) {
+                return $adjustment->assistant_ssd_manager_note;
+            }
+        }
+
         if ($jabatanId === 172) {
             return $adjustment->assistant_ssd_manager_note;
         }
