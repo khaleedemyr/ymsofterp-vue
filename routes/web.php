@@ -1122,6 +1122,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/manual-monthly-labor-cost/template/download', [\App\Http\Controllers\ManualMonthlyLaborCostController::class, 'downloadTemplate'])->name('manual-monthly-labor-cost.template.download');
     Route::post('/manual-monthly-labor-cost/template/import', [\App\Http\Controllers\ManualMonthlyLaborCostController::class, 'importFromExcel'])->name('manual-monthly-labor-cost.template.import');
     Route::resource('manual-monthly-labor-cost', \App\Http\Controllers\ManualMonthlyLaborCostController::class);
+
+    Route::resource('manual-monthly-google-review', \App\Http\Controllers\ManualMonthlyGoogleReviewController::class);
 });
 
 Route::get('/items/search-for-warehouse-transfer', [ItemController::class, 'searchForWarehouseTransfer']);

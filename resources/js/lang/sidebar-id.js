@@ -288,6 +288,7 @@ export default {
     "announcement": "Pengumuman",
     "data_member": "Data Member",
     "guest_comment_ocr": "Komentar Tamu (OCR)",
+    "manual_monthly_google_review": "Manual Monthly Google Review",
     "customer_voice_command_center": "Pusat Komando Suara Pelanggan",
     "omnichannel_inbox": "Inbox Omnichannel",
     "omnichannel_chat_analytics": "Analisis Chat",

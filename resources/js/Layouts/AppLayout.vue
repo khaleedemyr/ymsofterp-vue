@@ -659,6 +659,7 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.menus.data_member'), icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
             { name: () => t('sidebar.menus.guest_comment_ocr'), icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
+            { name: () => t('sidebar.menus.manual_monthly_google_review'), icon: 'fa-brands fa-google', route: '/manual-monthly-google-review', code: 'manual_monthly_google_review' },
             { name: () => t('sidebar.menus.customer_voice_command_center'), icon: 'fa-solid fa-headset', route: '/customer-voice-command-center', code: 'customer_voice_command_center' },
             { name: () => t('sidebar.menus.omnichannel_inbox'), icon: 'fa-solid fa-inbox', route: '/crm/omnichannel-inbox', code: 'omnichannel_inbox' },
             { name: () => t('sidebar.menus.omnichannel_chat_analytics'), icon: 'fa-solid fa-chart-line', route: '/crm/omnichannel-chat-analytics', code: 'omnichannel_chat_analytics' },

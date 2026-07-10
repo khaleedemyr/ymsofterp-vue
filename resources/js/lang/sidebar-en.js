@@ -288,6 +288,7 @@ export default {
     "announcement": "Announcement",
     "data_member": "Data Member",
     "guest_comment_ocr": "Guest Comment (OCR)",
+    "manual_monthly_google_review": "Manual Monthly Google Review",
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
     "omnichannel_chat_analytics": "Chat Analytics",
