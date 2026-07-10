@@ -372,11 +372,15 @@ class FoodInventoryAdjustmentController extends Controller
             'items.item',
             'warehouse',
             'creator',
+            'assistantSsdManager:id,nama_lengkap',
+            'ssdManager:id,nama_lengkap',
+            'costControlManager:id,nama_lengkap',
         ])->findOrFail($id);
         $user = auth()->user();
         return inertia('FoodInventoryAdjustment/Show', [
             'adjustment' => $adjustment,
             'user' => $user,
+            'rejection_info' => $this->buildRejectionInfo((int) $id, $adjustment),
         ]);
     }
 
@@ -1395,6 +1399,70 @@ class FoodInventoryAdjustmentController extends Controller
         }
 
         return $prefix . strtoupper(Str::random(6));
+    }
+
+    private function buildRejectionInfo(int $id, FoodInventoryAdjustment $adjustment): ?array
+    {
+        if ($adjustment->status !== 'rejected') {
+            return null;
+        }
+
+        $rejectLog = DB::table('activity_logs as al')
+            ->join('users as u', 'u.id', '=', 'al.user_id')
+            ->where('al.module', 'stock_adjustment')
+            ->where('al.activity_type', 'reject')
+            ->where('al.description', 'Reject stock adjustment ID: ' . $id)
+            ->orderByDesc('al.created_at')
+            ->select('u.id', 'u.nama_lengkap', 'u.id_jabatan', 'al.created_at')
+            ->first();
+
+        if (!$rejectLog) {
+            return null;
+        }
+
+        $warehouse = DB::table('warehouses')->where('id', $adjustment->warehouse_id)->first();
+        $isMKWarehouse = $warehouse && in_array($warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen'], true);
+
+        return [
+            'user_id' => $rejectLog->id,
+            'nama_lengkap' => $rejectLog->nama_lengkap,
+            'role' => $this->resolveStockAdjustmentApproverRole((int) $rejectLog->id_jabatan, $isMKWarehouse),
+            'rejected_at' => $rejectLog->created_at,
+            'note' => $this->resolveStockAdjustmentRejectionNote($adjustment, (int) $rejectLog->id_jabatan),
+        ];
+    }
+
+    private function resolveStockAdjustmentApproverRole(int $jabatanId, bool $isMKWarehouse): string
+    {
+        if ($jabatanId === 172) {
+            return 'Asisten SSD Manager';
+        }
+        if ($jabatanId === 161) {
+            return 'SSD Manager';
+        }
+        if ($jabatanId === 179) {
+            return 'Sous Chef MK';
+        }
+        if ($jabatanId === 167) {
+            return 'Cost Control Manager';
+        }
+
+        return 'Approver';
+    }
+
+    private function resolveStockAdjustmentRejectionNote(FoodInventoryAdjustment $adjustment, int $jabatanId): ?string
+    {
+        if ($jabatanId === 172) {
+            return $adjustment->assistant_ssd_manager_note;
+        }
+        if (in_array($jabatanId, [161, 179], true)) {
+            return $adjustment->ssd_manager_note;
+        }
+        if ($jabatanId === 167) {
+            return $adjustment->cost_control_manager_note;
+        }
+
+        return null;
     }
 }
 

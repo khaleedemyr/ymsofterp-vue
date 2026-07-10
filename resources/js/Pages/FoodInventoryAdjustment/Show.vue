@@ -264,11 +264,11 @@
                 <i class="fa-solid fa-user-check text-blue-600"></i>
                 <span class="font-semibold text-blue-900">Asisten SSD Manager</span>
               </div>
-              <span class="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Approved</span>
+              <span class="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded-full">Disetujui</span>
             </div>
             <p class="text-sm text-gray-700 mb-1">
               <i class="fa-solid fa-user mr-1"></i>
-              {{ getApproverName(adjustment.approved_by_assistant_ssd_manager) }}
+              {{ adjustment.assistant_ssd_manager?.nama_lengkap || '-' }}
             </p>
             <p class="text-sm text-gray-600">
               <i class="fa-solid fa-clock mr-1"></i>
@@ -285,11 +285,11 @@
                 <i class="fa-solid fa-user-shield text-indigo-600"></i>
                 <span class="font-semibold text-indigo-900">SSD Manager / Sous Chef MK</span>
               </div>
-              <span class="text-xs text-indigo-600 bg-indigo-100 px-2 py-1 rounded-full">Approved</span>
+              <span class="text-xs text-indigo-600 bg-indigo-100 px-2 py-1 rounded-full">Disetujui</span>
             </div>
             <p class="text-sm text-gray-700 mb-1">
               <i class="fa-solid fa-user mr-1"></i>
-              {{ getApproverName(adjustment.approved_by_ssd_manager) }}
+              {{ adjustment.ssd_manager?.nama_lengkap || '-' }}
             </p>
             <p class="text-sm text-gray-600">
               <i class="fa-solid fa-clock mr-1"></i>
@@ -310,7 +310,7 @@
             </div>
             <p class="text-sm text-gray-700 mb-1">
               <i class="fa-solid fa-user mr-1"></i>
-              {{ getApproverName(adjustment.approved_by_cost_control_manager) }}
+              {{ adjustment.cost_control_manager?.nama_lengkap || '-' }}
             </p>
             <p class="text-sm text-gray-600">
               <i class="fa-solid fa-clock mr-1"></i>
@@ -321,7 +321,28 @@
             </p>
           </div>
           
-          <div v-if="!adjustment.approved_by_assistant_ssd_manager && !adjustment.approved_by_ssd_manager && !adjustment.approved_by_cost_control_manager" class="text-center py-8 text-gray-400">
+          <div v-if="rejection_info" class="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <i class="fa-solid fa-user-xmark text-red-600"></i>
+                <span class="font-semibold text-red-900">{{ rejection_info.role }}</span>
+              </div>
+              <span class="text-xs text-red-600 bg-red-100 px-2 py-1 rounded-full">Ditolak</span>
+            </div>
+            <p class="text-sm text-gray-700 mb-1">
+              <i class="fa-solid fa-user mr-1"></i>
+              {{ rejection_info.nama_lengkap || '-' }}
+            </p>
+            <p class="text-sm text-gray-600">
+              <i class="fa-solid fa-clock mr-1"></i>
+              {{ formatDateTime(rejection_info.rejected_at) }}
+            </p>
+            <p v-if="rejection_info.note" class="text-sm text-gray-700 mt-2 italic">
+              "{{ rejection_info.note }}"
+            </p>
+          </div>
+
+          <div v-if="!adjustment.approved_by_assistant_ssd_manager && !adjustment.approved_by_ssd_manager && !adjustment.approved_by_cost_control_manager && !rejection_info" class="text-center py-8 text-gray-400">
             <i class="fa-solid fa-clock text-4xl mb-3"></i>
             <p class="text-lg font-medium">Belum ada approval</p>
           </div>
@@ -348,7 +369,8 @@ import axios from 'axios'
 
 const props = defineProps({
   adjustment: Object,
-  user: Object
+  user: Object,
+  rejection_info: Object,
 })
 
 const approvalNote = ref('')
@@ -487,13 +509,6 @@ function formatDate(date) {
 function formatDateTime(date) {
   if (!date) return '-'
   return new Date(date).toLocaleString('id-ID')
-}
-
-function getApproverName(userId) {
-  // Try to get from adjustment relationships if available
-  // For now, return user ID as fallback
-  // Backend should include approver names in the response
-  return `User ID: ${userId}`
 }
 
 const loadSerialSummary = async () => {

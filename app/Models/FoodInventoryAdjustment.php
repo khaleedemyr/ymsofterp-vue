@@ -39,4 +39,19 @@ class FoodInventoryAdjustment extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    public function assistantSsdManager()
+    {
+        return $this->belongsTo(User::class, 'approved_by_assistant_ssd_manager');
+    }
+
+    public function ssdManager()
+    {
+        return $this->belongsTo(User::class, 'approved_by_ssd_manager');
+    }
+
+    public function costControlManager()
+    {
+        return $this->belongsTo(User::class, 'approved_by_cost_control_manager');
+    }
 } 
