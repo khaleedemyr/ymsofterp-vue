@@ -1660,6 +1660,11 @@ class AttendanceReportController extends Controller
         $divisionId = $request->input('division_id');
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
+        $jabatanIds = $request->input('jabatan_ids', []);
+        if (!is_array($jabatanIds)) {
+            $jabatanIds = array_filter(explode(',', (string) $jabatanIds));
+        }
+        $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
 
         // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
         $user = auth()->user();
@@ -1676,6 +1681,7 @@ class AttendanceReportController extends Controller
         \Log::info('Employee Summary Filter Values', [
             'outlet_id' => $outletId,
             'division_id' => $divisionId,
+            'jabatan_ids' => $jabatanIds,
             'bulan' => $bulan,
             'tahun' => $tahun,
         ]);
@@ -1683,7 +1689,7 @@ class AttendanceReportController extends Controller
         $rows = collect();
         $employeeSummary = collect(); // Initialize employeeSummary to prevent undefined variable error
         
-        if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
+        if (!empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
@@ -1728,6 +1734,10 @@ class AttendanceReportController extends Controller
                 
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
+                }
+
+                if (!empty($jabatanIds)) {
+                    $sub->whereIn('u.id_jabatan', $jabatanIds);
                 }
 
                 // Gunakan chunk untuk mencegah memory overflow
@@ -2195,6 +2205,10 @@ class AttendanceReportController extends Controller
         // Dropdown filter
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
         $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+        $jabatan = DB::table('tbl_data_jabatan')
+            ->select('id_jabatan as id', 'nama_jabatan as name')
+            ->orderBy('nama_jabatan')
+            ->get();
 
 
         // Calculate summary statistics (round down total lembur)
@@ -2220,10 +2234,12 @@ class AttendanceReportController extends Controller
             'rows' => $employeeSummary ?? collect(),
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'jabatan' => $jabatan,
             'leaveTypes' => $leaveTypes,
             'filter' => [
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
+                'jabatan_ids' => $jabatanIds,
                 'bulan' => $bulan,
                 'tahun' => $tahun,
             ],
@@ -2240,6 +2256,11 @@ class AttendanceReportController extends Controller
         $divisionId = $request->input('division_id');
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
+        $jabatanIds = $request->input('jabatan_ids', []);
+        if (!is_array($jabatanIds)) {
+            $jabatanIds = array_filter(explode(',', (string) $jabatanIds));
+        }
+        $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
 
         // ✅ VALIDASI: Jika user bukan dari outlet 1 (head office), paksa outlet_id sesuai outlet user
         $user = auth()->user();
@@ -2256,7 +2277,7 @@ class AttendanceReportController extends Controller
         set_time_limit(300); // 5 menit
         
         
-        if (!empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun)) {
+        if (!empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
@@ -2292,6 +2313,10 @@ class AttendanceReportController extends Controller
                 
                 if (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
+                }
+
+                if (!empty($jabatanIds)) {
+                    $sub->whereIn('u.id_jabatan', $jabatanIds);
                 }
 
                 $sub->orderBy('a.scan_date')->chunk($chunkSize, function($chunk) use (&$rawData) {

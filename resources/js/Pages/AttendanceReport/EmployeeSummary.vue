@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 // State untuk expandable rows
 const expandedRows = ref(new Set())
@@ -11,6 +13,7 @@ const props = defineProps({
   rows: Array,
   outlets: Array,
   divisions: Array,
+  jabatan: Array,
   leaveTypes: Array,
   filter: Object,
   period: Object,
@@ -28,6 +31,11 @@ const initialOutletId = () => {
 
 const outletId = ref(initialOutletId())
 const divisionId = ref(props.filter?.division_id || '')
+const selectedJabatan = ref(
+  (props.filter?.jabatan_ids || [])
+    .map((id) => props.jabatan?.find((j) => j.id === id))
+    .filter(Boolean)
+)
 const bulan = ref(props.filter?.bulan || (new Date().getMonth() + 1))
 const tahun = ref(props.filter?.tahun || new Date().getFullYear())
 
@@ -60,6 +68,7 @@ function applyFilter() {
   router.get('/attendance-report/employee-summary', {
     outlet_id: outletId.value || '',
     division_id: divisionId.value || '',
+    jabatan_ids: selectedJabatan.value.map((j) => j.id),
     bulan: bulan.value,
     tahun: tahun.value,
   }, { 
@@ -92,6 +101,7 @@ function exportExcel() {
     bulan: bulan.value,
     tahun: tahun.value,
   })
+  selectedJabatan.value.forEach((j) => params.append('jabatan_ids[]', j.id))
   
   // Create a temporary link element to trigger download
   const link = document.createElement('a')
@@ -220,6 +230,22 @@ function getLeaveDays(row, leaveTypeName) {
               <option value="">Semua Divisi</option>
               <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.name }}</option>
             </select>
+          </div>
+          <div class="flex-1 min-w-[220px]">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
+            <Multiselect
+              v-model="selectedJabatan"
+              :options="jabatan"
+              :multiple="true"
+              :searchable="true"
+              :close-on-select="false"
+              :show-labels="false"
+              :allow-empty="true"
+              label="name"
+              track-by="id"
+              placeholder="Pilih atau cari jabatan..."
+              class="w-full"
+            />
           </div>
           <div class="flex-1 min-w-[120px]">
             <label class="block text-sm font-medium text-gray-700 mb-1">Bulan</label>

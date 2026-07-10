@@ -54,6 +54,7 @@ function openEmployeeSummary(outletIdParam) {
   if (divisionId.value) {
     params.set('division_id', divisionId.value)
   }
+  selectedJabatan.value.forEach((j) => params.append('jabatan_ids[]', j.id))
   window.open(`/attendance-report/employee-summary?${params.toString()}`, '_blank')
 }
 </script>
