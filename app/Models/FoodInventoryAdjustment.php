@@ -11,19 +11,14 @@ class FoodInventoryAdjustment extends Model
 
     protected $table = 'food_inventory_adjustments';
 
-    protected $fillable = [
-        'inventory_item_id',
-        'warehouse_id',
-        'date',
-        'type',
-        'qty_small',
-        'qty_medium',
-        'qty_large',
-        'reason',
-        'created_by',
-    ];
+    protected $guarded = [];
 
     public $timestamps = true;
+
+    public function items()
+    {
+        return $this->hasMany(FoodInventoryAdjustmentItem::class, 'adjustment_id');
+    }
 
     public function inventoryItem()
     {
@@ -54,4 +49,4 @@ class FoodInventoryAdjustment extends Model
     {
         return $this->belongsTo(User::class, 'approved_by_cost_control_manager');
     }
-} 
+}
