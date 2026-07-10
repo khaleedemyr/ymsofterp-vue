@@ -108,9 +108,9 @@ class FoodInventoryAdjustmentController extends Controller
                     ->where('status', 'A')
                     ->pluck('id');
             } else {
-                // Untuk non-MK warehouse: ke Asisten SSD Manager (172) dulu
+                // Untuk non-MK warehouse: ke Asisten SSD Manager (172) dan SSD Manager (161)
                 $notifUsers = DB::table('users')
-                    ->where('id_jabatan', 172)
+                    ->whereIn('id_jabatan', [172, 161])
                     ->where('status', 'A')
                     ->pluck('id');
             }
@@ -202,13 +202,14 @@ class FoodInventoryAdjustmentController extends Controller
                     throw new \Exception('Anda tidak berhak approve pada tahap ini');
                 }
             } else {
-                // Non-MK Warehouse: Asisten SSD Manager (172) dulu, baru SSD Manager (161)
-                if ($user->id_jabatan == 172 && $adj->status == 'waiting_approval') {
+                // Non-MK Warehouse: Asisten SSD Manager (172) atau SSD Manager (161) di tahap 1
+                if (in_array($user->id_jabatan, [172, 161]) && $adj->status == 'waiting_approval') {
                     $update['status'] = 'waiting_ssd_manager';
                     $update['approved_by_assistant_ssd_manager'] = $user->id;
                     $update['approved_at_assistant_ssd_manager'] = now();
                     $update['assistant_ssd_manager_note'] = $request->note;
-                    $desc = 'Asisten SSD Manager approve stock adjustment ID: ' . $id;
+                    $desc = ($user->id_jabatan == 172 ? 'Asisten SSD Manager' : 'SSD Manager')
+                        . ' approve tahap Asisten SSD Manager stock adjustment ID: ' . $id;
                     
                     // Notifikasi ke SSD Manager untuk approval selanjutnya
                     $ssdManagers = DB::table('users')->where('id_jabatan', 161)->where('status', 'A')->pluck('id');
@@ -218,7 +219,9 @@ class FoodInventoryAdjustmentController extends Controller
                         NotificationService::insert([
                             'user_id' => $uid,
                             'type' => 'stock_adjustment_approval',
-                            'message' => "Stock Adjustment #$adjNumber dari $warehouseName sudah di-approve Asisten SSD Manager, menunggu approval SSD Manager.",
+                            'message' => "Stock Adjustment #$adjNumber dari $warehouseName sudah di-approve "
+                                . ($user->id_jabatan == 172 ? 'Asisten SSD Manager' : 'SSD Manager')
+                                . ', menunggu approval SSD Manager.',
                             'url' => '/food-inventory-adjustment/' . $id,
                             'is_read' => 0,
                         ]);
@@ -472,16 +475,16 @@ class FoodInventoryAdjustmentController extends Controller
             // Filter based on user role and warehouse - sesuai tahapan approval
             if (!$isSuperadmin) {
                 $query->where(function($q) use ($jabatan) {
-                    // Asisten SSD Manager (172): non-MK warehouse, hanya tahap pertama (waiting_approval)
+                    // Asisten SSD Manager (172): non-MK warehouse, tahap pertama (waiting_approval)
                     if ($jabatan === 172) {
                         $q->where('status', 'waiting_approval')
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
                     }
-                    // SSD Manager (161): non-MK warehouse, hanya tahap kedua (waiting_ssd_manager)
+                    // SSD Manager (161): non-MK warehouse, tahap pertama & kedua
                     elseif ($jabatan === 161) {
-                        $q->where('status', 'waiting_ssd_manager')
+                        $q->whereIn('status', ['waiting_approval', 'waiting_ssd_manager'])
                             ->whereHas('warehouse', function($wh) {
                                 $wh->whereNotIn('name', ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
                             });
@@ -517,7 +520,7 @@ class FoodInventoryAdjustmentController extends Controller
                     if ($isMKWarehouse) {
                         $approverName = 'Sous Chef MK';
                     } else {
-                        $approverName = 'Asisten SSD Manager';
+                        $approverName = 'Asisten SSD Manager / SSD Manager';
                     }
                 } elseif ($adj->status === 'waiting_ssd_manager') {
                     $approverName = 'SSD Manager';
@@ -759,7 +762,10 @@ class FoodInventoryAdjustmentController extends Controller
             if ($isMKWarehouse) {
                 $notifUsers = DB::table('users')->where('id_jabatan', 179)->where('status', 'A')->pluck('id');
             } else {
-                $notifUsers = DB::table('users')->where('id_jabatan', 172)->where('status', 'A')->pluck('id');
+                $notifUsers = DB::table('users')
+                    ->whereIn('id_jabatan', [172, 161])
+                    ->where('status', 'A')
+                    ->pluck('id');
             }
             foreach ($notifUsers as $uid) {
                 NotificationService::insert([
