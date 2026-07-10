@@ -2,17 +2,25 @@
 import { ref } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.min.css'
 
 const props = defineProps({
   rows: Array,
   outlets: Array,
   divisions: Array,
+  jabatan: Array,
   filter: Object,
   period: Object,
 })
 
 const outletId = ref(props.filter?.outlet_id || '')
 const divisionId = ref(props.filter?.division_id || '')
+const selectedJabatan = ref(
+  (props.filter?.jabatan_ids || [])
+    .map((id) => props.jabatan?.find((j) => j.id === id))
+    .filter(Boolean)
+)
 const bulan = ref(props.filter?.bulan || (new Date().getMonth() + 1))
 const tahun = ref(props.filter?.tahun || new Date().getFullYear())
 const isLoading = ref(false)
@@ -25,6 +33,7 @@ function applyFilter() {
   router.get('/attendance-report/outlet-summary', {
     outlet_id: outletId.value || '',
     division_id: divisionId.value || '',
+    jabatan_ids: selectedJabatan.value.map((j) => j.id),
     bulan: bulan.value,
     tahun: tahun.value,
   }, { 
@@ -36,9 +45,16 @@ function applyFilter() {
   })
 }
 
-function openEmployeeSummary(outletId, outletName) {
-  const url = `/attendance-report/employee-summary?outlet_id=${outletId}&bulan=${bulan.value}&tahun=${tahun.value}`
-  window.open(url, '_blank')
+function openEmployeeSummary(outletIdParam) {
+  const params = new URLSearchParams({
+    outlet_id: outletIdParam,
+    bulan: bulan.value,
+    tahun: tahun.value,
+  })
+  if (divisionId.value) {
+    params.set('division_id', divisionId.value)
+  }
+  window.open(`/attendance-report/employee-summary?${params.toString()}`, '_blank')
 }
 </script>
 
@@ -73,6 +89,22 @@ function openEmployeeSummary(outletId, outletName) {
             <option value="">Semua Divisi</option>
             <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.name }}</option>
           </select>
+        </div>
+        <div class="flex-1 min-w-[220px]">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
+          <Multiselect
+            v-model="selectedJabatan"
+            :options="jabatan"
+            :multiple="true"
+            :searchable="true"
+            :close-on-select="false"
+            :show-labels="false"
+            :allow-empty="true"
+            label="name"
+            track-by="id"
+            placeholder="Pilih atau cari jabatan..."
+            class="w-full"
+          />
         </div>
         <div class="flex-1 min-w-[120px]">
           <label class="block text-sm font-medium text-gray-700 mb-1">Bulan</label>
@@ -128,9 +160,9 @@ function openEmployeeSummary(outletId, outletName) {
               <td class="px-4 py-2 text-right font-mono">{{ r.total_ph_days || 0 }}</td>
               <td class="px-4 py-2 text-center">
                 <button 
-                  @click="openEmployeeSummary(r.outlet_id, r.nama_outlet)"
+                  @click="openEmployeeSummary(r.outlet_id)"
                   class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1"
-                  title="Lihat Employee Summary untuk {{ r.nama_outlet }}"
+                  :title="`Lihat Employee Summary untuk ${r.nama_outlet}`"
                 >
                   <i class="fa fa-users text-xs"></i>
                   Detail
@@ -167,5 +199,3 @@ function openEmployeeSummary(outletId, outletName) {
 table { width: 100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid #e5e7eb; }
 </style>
-
-

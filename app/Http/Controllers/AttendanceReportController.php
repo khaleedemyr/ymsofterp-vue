@@ -1021,9 +1021,19 @@ class AttendanceReportController extends Controller
         $divisionId = $request->input('division_id');
         $bulan = $request->input('bulan') ?: date('m');
         $tahun = $request->input('tahun') ?: date('Y');
+        $jabatanIds = $request->input('jabatan_ids', []);
+        if (!is_array($jabatanIds)) {
+            $jabatanIds = array_filter(explode(',', (string) $jabatanIds));
+        }
+        $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
+
+        $jabatan = DB::table('tbl_data_jabatan')
+            ->select('id_jabatan as id', 'nama_jabatan as name')
+            ->orderBy('nama_jabatan')
+            ->get();
 
         // ✅ OPTIMIZATION: Only load data if filters are provided
-        $hasFilters = !empty($outletId) || !empty($divisionId) || !empty($bulan) || !empty($tahun);
+        $hasFilters = !empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun);
         
         if (!$hasFilters) {
             // Return empty data with dropdowns only
@@ -1034,9 +1044,11 @@ class AttendanceReportController extends Controller
                 'rows' => [],
                 'outlets' => $outlets,
                 'divisions' => $divisions,
+                'jabatan' => $jabatan,
                 'filter' => [
                     'outlet_id' => $outletId,
                     'division_id' => $divisionId,
+                    'jabatan_ids' => $jabatanIds,
                     'bulan' => $bulan,
                     'tahun' => $tahun,
                 ],
@@ -1062,9 +1074,14 @@ class AttendanceReportController extends Controller
             )
             ->where('a.scan_date', '>=', $start . ' 00:00:00')
             ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
-        // Filter outlet hanya untuk dropdown karyawan, bukan untuk report
+        if (!empty($outletId)) {
+            $sub->where('u.id_outlet', $outletId);
+        }
         if (!empty($divisionId)) {
             $sub->where('u.division_id', $divisionId);
+        }
+        if (!empty($jabatanIds)) {
+            $sub->whereIn('u.id_jabatan', $jabatanIds);
         }
         $rawData = $sub->orderBy('a.scan_date')->get();
 
@@ -1119,8 +1136,12 @@ class AttendanceReportController extends Controller
         $dtEnd = new \DateTime($end);
         while ($dt <= $dtEnd) { $period[] = $dt->format('Y-m-d'); $dt->modify('+1 day'); }
 
-        // Ambil seluruh outlet untuk flattening
-        $allOutlets = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet')->get();
+        // Ambil outlet untuk flattening (filter jika outlet dipilih)
+        $allOutletsQuery = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet');
+        if (!empty($outletId)) {
+            $allOutletsQuery->where('id_outlet', $outletId);
+        }
+        $allOutlets = $allOutletsQuery->get();
 
         // Flatten sesuai tanggal x outlet - FIXED: Use user's outlet
         $flatten = [];
@@ -1238,9 +1259,11 @@ class AttendanceReportController extends Controller
             'rows' => $byOutlet,
             'outlets' => $outlets,
             'divisions' => $divisions,
+            'jabatan' => $jabatan,
             'filter' => [
                 'outlet_id' => $outletId,
                 'division_id' => $divisionId,
+                'jabatan_ids' => $jabatanIds,
                 'bulan' => $bulan,
                 'tahun' => $tahun,
             ],
