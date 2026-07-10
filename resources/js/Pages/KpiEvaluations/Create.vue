@@ -70,7 +70,7 @@ function applyErpScopeSuggestion(suggestion) {
 }
 
 function applyTemplateErpScope(template) {
-  if (!template?.erp_data_scope) return;
+  if (!template?.erp_data_scope || template.erp_data_scope === 'all_outlets') return;
 
   form.erp_data_scope = template.erp_data_scope;
 
@@ -154,7 +154,13 @@ async function loadPreview() {
     if (applyErpScopeSuggestion(data.erp_scope_suggestion)) {
       // Regional Management outlet list takes priority.
     } else if (data.template) {
-      applyTemplateErpScope(data.template);
+      const tplScope = data.template.erp_data_scope;
+      if (tplScope && tplScope !== 'all_outlets') {
+        applyTemplateErpScope(data.template);
+      } else {
+        form.erp_data_scope = 'single_outlet';
+        applyEmployeeOutletFallback(selectedEmployee.value);
+      }
       if (form.erp_data_scope === 'single_outlet' && !form.erp_scope_outlet_ids.length) {
         applyEmployeeOutletFallback(selectedEmployee.value);
       }

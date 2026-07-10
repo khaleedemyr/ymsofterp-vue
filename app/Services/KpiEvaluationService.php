@@ -557,7 +557,7 @@ class KpiEvaluationService
         ]);
 
         [$erpDataScope, $erpScopeOutletIds] = $this->normalizeErpScope(
-            $scopeInput['erp_data_scope'] ?? $template->erp_data_scope ?? 'employee_outlet',
+            $this->resolveCreateErpScope($scopeInput, $template),
             $scopeInput['erp_scope_outlet_ids'] ?? $template->erp_scope_outlet_ids ?? [],
             (int) $user->id_outlet,
         );
@@ -847,6 +847,21 @@ class KpiEvaluationService
             'all_outlets' => ['all_outlets', []],
             default => ['employee_outlet', $employeeOutletId > 0 ? [$employeeOutletId] : []],
         };
+    }
+
+    /**
+     * Scope ERP saat buat evaluasi: hanya pakai all_outlets jika user eksplisit memilih.
+     * Template default all_outlets tidak boleh override pilihan outlet per evaluasi.
+     */
+    private function resolveCreateErpScope(array $scopeInput, KpiTemplate $template): string
+    {
+        if (isset($scopeInput['erp_data_scope']) && $scopeInput['erp_data_scope'] !== '') {
+            return (string) $scopeInput['erp_data_scope'];
+        }
+
+        $templateScope = (string) ($template->erp_data_scope ?? 'employee_outlet');
+
+        return $templateScope === 'all_outlets' ? 'employee_outlet' : $templateScope;
     }
 
     /**

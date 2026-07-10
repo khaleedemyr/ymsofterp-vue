@@ -166,7 +166,7 @@ SELECT
     1,
     'draft',
     '{"exceeding_min":100,"meeting_min":85,"below_max":85}',
-    'all_outlets',
+    'employee_outlet',
     'A',
     NOW(),
     NOW()
@@ -177,7 +177,7 @@ UPDATE `kpi_templates`
 SET
     `name` = 'GM Operation',
     `description` = 'Template KPI GM Operation — F&B Financial, Customer Experience, Team Development, Compliance.',
-    `erp_data_scope` = 'all_outlets',
+    `erp_data_scope` = 'employee_outlet',
     `updated_at` = NOW()
 WHERE `code` = 'KPI_GM_OPERATION_v1';
 
