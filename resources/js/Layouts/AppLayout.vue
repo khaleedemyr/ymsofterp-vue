@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { useI18n } from 'vue-i18n';
 import axios from 'axios';
@@ -17,6 +17,8 @@ import { provideLoading } from '@/Composables/useLoading';
 provideLoading();
 
 const sidebarOpen = ref(true);
+const menuSearchQuery = ref('');
+const menuSearchInputRef = ref(null);
 const showLang = ref(false);
 const { locale, t } = useI18n();
 let notificationPollInterval = null;
@@ -729,6 +731,54 @@ const filteredMenuGroups = computed(() =>
   }).filter((group) => group.menus.length > 0)
 );
 
+function normalizeSearchText(text) {
+    return String(text ?? '').toLowerCase().trim();
+}
+
+function resolveMenuLabel(menu) {
+    return typeof menu.name === 'function' ? menu.name() : (menu.name ?? '');
+}
+
+function resolveGroupLabel(group) {
+    return typeof group.title === 'function' ? group.title() : (group.title ?? '');
+}
+
+const displayMenuGroups = computed(() => {
+    const query = normalizeSearchText(menuSearchQuery.value);
+    if (!query) {
+        return filteredMenuGroups.value;
+    }
+
+    return filteredMenuGroups.value
+        .map((group) => {
+            const groupLabel = normalizeSearchText(resolveGroupLabel(group));
+            const groupMatches = groupLabel.includes(query);
+            const menus = group.menus.filter((menu) => {
+                const menuLabel = normalizeSearchText(resolveMenuLabel(menu));
+                return menuLabel.includes(query) || groupMatches;
+            });
+
+            return {
+                ...group,
+                menus,
+                searchExpanded: menus.length > 0,
+            };
+        })
+        .filter((group) => group.menus.length > 0);
+});
+
+function clearMenuSearch() {
+    menuSearchQuery.value = '';
+}
+
+async function focusMenuSearch() {
+    if (!sidebarOpen.value) {
+        sidebarOpen.value = true;
+    }
+    await nextTick();
+    menuSearchInputRef.value?.focus();
+}
+
 const languages = [
     { code: 'id', label: 'Indonesia' },
     { code: 'en', label: 'English' },
@@ -1099,8 +1149,42 @@ function formatCurrency(amount) {
                 <i :class="['fas transition-transform duration-300', sidebarOpen ? 'fa-angle-double-left' : 'fa-angle-double-right']"></i>
             </button>
         </div>
+        <div v-if="sidebarOpen" class="px-3 py-3 border-b border-gray-100">
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                <input
+                    ref="menuSearchInputRef"
+                    v-model="menuSearchQuery"
+                    type="search"
+                    :placeholder="t('sidebar.search_menu')"
+                    class="w-full rounded-lg border border-gray-200 bg-gray-50 py-2 pl-9 pr-8 text-sm text-gray-700 placeholder:text-gray-400 focus:border-blue-500 focus:bg-white focus:ring-1 focus:ring-blue-500"
+                />
+                <button
+                    v-if="menuSearchQuery"
+                    type="button"
+                    @click="clearMenuSearch"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                    :title="t('sidebar.search_menu_clear')"
+                >
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </div>
+        </div>
+        <div v-else class="px-2 py-3 border-b border-gray-100 flex justify-center">
+            <button
+                type="button"
+                @click="focusMenuSearch"
+                class="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+                :title="t('sidebar.search_menu')"
+            >
+                <i class="fa-solid fa-magnifying-glass"></i>
+            </button>
+        </div>
         <nav class="flex-1 overflow-y-auto py-4">
-            <div v-for="(group, idx) in filteredMenuGroups" :key="group.title" class="mb-4">
+            <div v-if="menuSearchQuery && displayMenuGroups.length === 0" class="px-4 py-8 text-center text-sm text-gray-500">
+                {{ t('sidebar.search_menu_no_result') }}
+            </div>
+            <div v-for="(group, idx) in displayMenuGroups" :key="group.groupKey || resolveGroupLabel(group) || idx" class="mb-4">
                 <div
                     class="px-4 py-2.5 text-xs font-semibold uppercase flex items-center gap-3 cursor-pointer group-title-modern mx-2 rounded-lg"
                     :class="sidebarOpen ? 'text-gray-500 hover:text-gray-700 hover:bg-gray-50' : 'text-gray-400 justify-center'"
@@ -1121,7 +1205,7 @@ function formatCurrency(amount) {
                     <span class="text-base flex-shrink-0"><i :class="group.icon"></i></span>
                     <span v-if="sidebarOpen" class="truncate flex-1 tracking-wider">{{ typeof group.title === 'function' ? group.title() : group.title }}</span>
                 </div>
-                <div v-show="!group.collapsible || group.open.value" class="mt-1">
+                <div v-show="!group.collapsible || group.open.value || group.searchExpanded" class="mt-1">
                     <Link
                         v-for="menu in group.menus"
                         :key="menu.route"
@@ -1138,7 +1222,7 @@ function formatCurrency(amount) {
                         <span v-if="sidebarOpen && $page.url.startsWith(menu.route)" class="absolute right-2 w-1.5 h-1.5 bg-blue-600 rounded-full"></span>
                     </Link>
                 </div>
-                <div v-if="idx < filteredMenuGroups.length - 1" class="my-3 mx-2 h-px bg-gray-200"></div>
+                <div v-if="idx < displayMenuGroups.length - 1" class="my-3 mx-2 h-px bg-gray-200"></div>
             </div>
         </nav>
     </aside>
