@@ -8,6 +8,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import axios from 'axios';
 import { useLoading } from '@/Composables/useLoading';
 import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/formatKpiNumber';
+import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -530,8 +531,9 @@ onMounted(() => {
           </div>
         </div>
         <div class="px-4 py-2 text-xs text-indigo-900 bg-indigo-50 border-b border-indigo-100">
-          Nilai ERP diambil dari bulan data <strong>{{ evaluation.period_info?.data_label || evaluation.period_info?.data_period_month }}</strong>
-          ({{ evaluation.period_start }} s/d {{ evaluation.period_end }}).
+          Parameter D* diambil sesuai <strong>frequency</strong> masing-masing
+          (Monthly = 1 bulan, Quarterly = jumlah/rata-rata 3 bulan terakhir).
+          KPI quarterly memakai agregasi yang sama saat hitung achievement.
           Evaluasi periode <strong>{{ evaluation.period_info?.evaluation_label || evaluation.period_month }}</strong>.
           Jika angka belum sesuai, klik <strong>Refresh ERP</strong>.
         </div>
@@ -541,6 +543,7 @@ onMounted(() => {
               <tr>
                 <th class="px-4 py-2 text-left">Kode</th>
                 <th class="px-4 py-2 text-left">Nama</th>
+                <th class="px-4 py-2 text-left">Frequency</th>
                 <th class="px-4 py-2 text-left">Sumber</th>
                 <th class="px-4 py-2 text-right">ERP</th>
                 <th class="px-4 py-2 text-right">Manual / Override</th>
@@ -552,6 +555,12 @@ onMounted(() => {
               <tr v-for="pv in evaluation.parameter_values" :key="pv.id">
                 <td class="px-4 py-2 font-mono text-indigo-700">{{ pv.parameter_code }}</td>
                 <td class="px-4 py-2">{{ pv.parameter_name }}</td>
+                <td class="px-4 py-2">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="kpiFrequencyBadgeClass(pv.frequency)">
+                    {{ pv.frequency_label || formatKpiFrequencyLabel(pv.frequency) }}
+                  </span>
+                  <div v-if="pv.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ pv.data_window_label }}</div>
+                </td>
                 <td class="px-4 py-2"><span class="px-2 py-0.5 rounded text-xs bg-gray-100">{{ sourceLabel(pv.source_type) }}</span></td>
                 <td class="px-4 py-2 text-right text-gray-600">{{ formatNum(pv.erp_value) }}</td>
                 <td class="px-4 py-2 text-right">
@@ -597,7 +606,7 @@ onMounted(() => {
                 </td>
               </tr>
               <tr v-if="!evaluation.parameter_values?.length">
-                <td colspan="7" class="px-4 py-6 text-center text-gray-400">Tidak ada data parameter.</td>
+                <td colspan="8" class="px-4 py-6 text-center text-gray-400">Tidak ada data parameter.</td>
               </tr>
             </tbody>
           </table>
@@ -615,6 +624,7 @@ onMounted(() => {
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-2 text-left">KPI</th>
+                <th class="px-4 py-2 text-left">Frequency</th>
                 <th class="px-4 py-2 text-left">Target</th>
                 <th class="px-4 py-2 text-left">Formula</th>
                 <th class="px-4 py-2 text-right">Achievement</th>
@@ -628,6 +638,12 @@ onMounted(() => {
             <tbody class="divide-y">
               <tr v-for="item in strategy.items" :key="item.id">
                 <td class="px-4 py-2 font-medium">{{ item.item_name }}</td>
+                <td class="px-4 py-2">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="kpiFrequencyBadgeClass(item.frequency)">
+                    {{ item.frequency_label || formatKpiFrequencyLabel(item.frequency) }}
+                  </span>
+                  <div v-if="item.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ item.data_window_label }}</div>
+                </td>
                 <td class="px-4 py-2 text-gray-600">{{ item.target_value || '—' }}</td>
                 <td class="px-4 py-2 font-mono text-xs text-gray-500">{{ item.formula || '—' }}</td>
                 <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}<template v-if="item.achievement_percent != null">%</template></td>

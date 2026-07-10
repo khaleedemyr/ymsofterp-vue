@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
+import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -96,12 +97,16 @@ onMounted(() => {
 
       <div class="bg-white rounded-2xl shadow mb-6 overflow-hidden">
         <div class="bg-indigo-700 text-white px-4 py-3 font-semibold">Data Parameter</div>
+        <div class="px-4 py-2 text-xs text-indigo-900 bg-indigo-50 border-b border-indigo-100">
+          Kolom Frequency menunjukkan periode penghitungan parameter (Monthly = 1 bulan, Quarterly = 3 bulan).
+        </div>
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-2 text-left">Kode</th>
                 <th class="px-4 py-2 text-left">Nama</th>
+                <th class="px-4 py-2 text-left">Frequency</th>
                 <th class="px-4 py-2 text-left">Sumber</th>
                 <th class="px-4 py-2 text-right">ERP</th>
                 <th class="px-4 py-2 text-right">Manual</th>
@@ -112,6 +117,12 @@ onMounted(() => {
               <tr v-for="pv in evaluation.parameter_values" :key="pv.id">
                 <td class="px-4 py-2 font-mono text-indigo-700">{{ pv.parameter_code }}</td>
                 <td class="px-4 py-2">{{ pv.parameter_name }}</td>
+                <td class="px-4 py-2">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="kpiFrequencyBadgeClass(pv.frequency)">
+                    {{ pv.frequency_label || formatKpiFrequencyLabel(pv.frequency) }}
+                  </span>
+                  <div v-if="pv.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ pv.data_window_label }}</div>
+                </td>
                 <td class="px-4 py-2">{{ sourceLabel(pv.source_type) }}</td>
                 <td class="px-4 py-2 text-right">{{ formatNum(pv.erp_value) }}</td>
                 <td class="px-4 py-2 text-right">{{ formatNum(pv.manual_value) }}</td>
@@ -132,6 +143,7 @@ onMounted(() => {
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-2 text-left">KPI</th>
+                <th class="px-4 py-2 text-left">Frequency</th>
                 <th class="px-4 py-2 text-left">Target</th>
                 <th class="px-4 py-2 text-right">Achievement</th>
                 <th class="px-4 py-2 text-left">Level</th>
@@ -144,6 +156,12 @@ onMounted(() => {
             <tbody class="divide-y">
               <tr v-for="item in strategy.items" :key="item.id">
                 <td class="px-4 py-2 font-medium">{{ item.item_name }}</td>
+                <td class="px-4 py-2">
+                  <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="kpiFrequencyBadgeClass(item.frequency)">
+                    {{ item.frequency_label || formatKpiFrequencyLabel(item.frequency) }}
+                  </span>
+                  <div v-if="item.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ item.data_window_label }}</div>
+                </td>
                 <td class="px-4 py-2">{{ item.target_value || '—' }}</td>
                 <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}%</td>
                 <td class="px-4 py-2">

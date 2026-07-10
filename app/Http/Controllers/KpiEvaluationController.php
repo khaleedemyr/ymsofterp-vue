@@ -338,21 +338,24 @@ class KpiEvaluationController extends Controller
 
     protected function formatEvaluation(KpiEvaluation $evaluation): array
     {
+        $periodMonth = (string) $evaluation->period_month;
+        $enrichedItems = $this->evaluationService->enrichEvaluationItems($evaluation->items, $periodMonth);
+
         $strategies = $evaluation->items
             ->groupBy('key_strategy_name')
-            ->map(function ($items, $strategyName) {
+            ->map(function ($items, $strategyName) use ($periodMonth) {
                 $first = $items->first();
 
                 return [
                     'name' => $strategyName,
                     'weight_percent' => $first->strategy_weight_percent,
-                    'items' => $items->values()->all(),
+                    'items' => $this->evaluationService->enrichEvaluationItems($items, $periodMonth),
                 ];
             })
             ->values()
             ->all();
 
-        $periodInfo = $this->evaluationService->buildKpiPeriodInfo((string) $evaluation->period_month);
+        $periodInfo = $this->evaluationService->buildKpiPeriodInfo($periodMonth);
 
         return [
             'id' => $evaluation->id,
@@ -383,9 +386,13 @@ class KpiEvaluationController extends Controller
                 'name' => $evaluation->template->name,
                 'version' => $evaluation->template->version,
             ] : null,
-            'parameter_values' => $this->evaluationService->formatParameterValuesForEdit($evaluation->parameterValues),
+            'parameter_values' => $this->evaluationService->formatParameterValuesForEdit(
+                $evaluation->parameterValues,
+                $periodMonth,
+                $evaluation->items,
+            ),
             'strategies' => $strategies,
-            'items' => $evaluation->items,
+            'items' => $enrichedItems,
         ];
     }
 }

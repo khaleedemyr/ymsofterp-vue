@@ -30,6 +30,12 @@ class KpiParameterResolverService
         'manual_catcost_percent',
     ];
 
+    /** Resolver yang membandingkan bulan spesifik — tidak dijumlahkan lintas quarter. */
+    private const MONTH_SPECIFIC_RESOLVER_KEYS = [
+        'outlet_avg_check_data_month',
+        'outlet_avg_check_prev_month',
+    ];
+
     /**
      * Bulan data KPI untuk resolver — prioritas data_period_month, fallback evaluasi -1 bulan.
      */
@@ -183,8 +189,13 @@ class KpiParameterResolverService
      * @param  array<string, mixed>  $baseContext
      * @return array<int, array<string, ?float>>
      */
-    public function resolveParameterGridForOutlets(array $outletIds, iterable $parameters, array $baseContext): array
-    {
+    public function resolveParameterGridForOutlets(
+        array $outletIds,
+        iterable $parameters,
+        array $baseContext,
+        string $frequency = 'monthly',
+        ?array $dataMonths = null,
+    ): array {
         $params = $parameters instanceof Collection ? $parameters : collect($parameters);
         $grid = [];
 
@@ -196,7 +207,16 @@ class KpiParameterResolverService
             return $grid;
         }
 
-        $this->prefetchForParameters($baseContext, $params);
+        $evaluationMonth = (string) ($baseContext['evaluation_period_month'] ?? '');
+        if ($dataMonths === null && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)) {
+            $dataMonths = $this->frequencyDataMonths($frequency, $evaluationMonth);
+        }
+
+        if ($dataMonths !== null && count($dataMonths) > 1) {
+            $this->prefetchForParametersMultiMonth($baseContext, $params, $dataMonths);
+        } else {
+            $this->prefetchForParameters($baseContext, $params);
+        }
 
         foreach ($outletIds as $outletId) {
             $outletId = (int) $outletId;
@@ -212,7 +232,9 @@ class KpiParameterResolverService
                     continue;
                 }
 
-                $grid[$outletId][$param->code] = $this->resolve($param, $context);
+                $grid[$outletId][$param->code] = ($dataMonths !== null && count($dataMonths) > 1)
+                    ? $this->resolveAcrossMonths($param, $context, $dataMonths)
+                    : $this->resolve($param, $context);
             }
         }
 
@@ -274,6 +296,146 @@ class KpiParameterResolverService
 
             return null;
         }
+    }
+
+    /**
+     * Resolve parameter dengan agregasi multi-bulan sesuai frequency (monthly / quarterly).
+     *
+     * @param  list<string>  $dataMonths  Daftar Y-m, urutan kronologis.
+     */
+    public function resolveAcrossMonths(KpiParameter $parameter, array $baseContext, array $dataMonths): ?float
+    {
+        $dataMonths = array_values(array_filter($dataMonths, fn (string $m) => preg_match('/^\d{4}-\d{2}$/', $m)));
+
+        if ($dataMonths === []) {
+            return null;
+        }
+
+        if (count($dataMonths) === 1) {
+            return $this->resolve($parameter, $this->contextForDataMonth($baseContext, $dataMonths[0]));
+        }
+
+        if ($this->isMonthSpecificResolver($parameter)) {
+            return $this->resolve(
+                $parameter,
+                $this->contextForDataMonth($baseContext, $dataMonths[array_key_last($dataMonths)]),
+            );
+        }
+
+        try {
+            $this->prefetchForParametersMultiMonth($baseContext, [$parameter], $dataMonths);
+
+            $values = [];
+            foreach ($dataMonths as $month) {
+                $value = $this->resolve($parameter, $this->contextForDataMonth($baseContext, $month));
+                if ($value !== null) {
+                    $values[] = $value;
+                }
+            }
+
+            return $this->aggregateFrequencyValues($values, $this->frequencyAggregationMethod($parameter));
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
+     * @param  iterable<KpiParameter>  $parameters
+     * @param  list<string>  $dataMonths
+     */
+    public function prefetchForParametersMultiMonth(array $baseContext, iterable $parameters, array $dataMonths): void
+    {
+        foreach (array_unique($dataMonths) as $month) {
+            if (preg_match('/^\d{4}-\d{2}$/', $month)) {
+                $this->prefetchForParameters($this->contextForDataMonth($baseContext, $month), $parameters);
+            }
+        }
+    }
+
+    /**
+     * @param  list<float>  $values
+     */
+    public function aggregateFrequencyValues(array $values, string $method): ?float
+    {
+        if ($values === []) {
+            return null;
+        }
+
+        return match ($method) {
+            'avg', 'average', 'mean' => round(array_sum($values) / count($values), 4),
+            default => round(array_sum($values), 4),
+        };
+    }
+
+    public function frequencyAggregationMethod(KpiParameter $parameter): string
+    {
+        $mapping = $parameter->erpMapping;
+        $erpAgg = strtolower(trim((string) ($mapping?->aggregation ?? '')));
+
+        if (in_array($erpAgg, ['avg', 'average', 'mean'], true)) {
+            return 'avg';
+        }
+
+        if (in_array($erpAgg, ['count', 'sum'], true)) {
+            return 'sum';
+        }
+
+        return match ((string) $parameter->data_type) {
+            'percent' => 'avg',
+            default => 'sum',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $baseContext
+     * @return array<string, mixed>
+     */
+    public function contextForDataMonth(array $baseContext, string $dataMonth): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $dataMonth)) {
+            return $baseContext;
+        }
+
+        $calendar = $this->outletAnalyzer->calendarPeriod($dataMonth);
+        $attendance = $this->outletAnalyzer->payrollPeriod($dataMonth);
+
+        return array_merge($baseContext, [
+            'data_period_month' => $dataMonth,
+            'period_month' => $dataMonth,
+            'period_start' => $calendar['start_date'],
+            'period_end' => $calendar['end_date'],
+            'attendance_start' => $attendance['start_date'],
+            'attendance_end' => $attendance['end_date'],
+        ]);
+    }
+
+    private function isMonthSpecificResolver(KpiParameter $parameter): bool
+    {
+        $key = (string) ($parameter->erpMapping?->resolver_key ?? '');
+
+        return in_array($key, self::MONTH_SPECIFIC_RESOLVER_KEYS, true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function frequencyDataMonths(string $frequency, string $evaluationPeriodMonth): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $evaluationPeriodMonth)) {
+            return [];
+        }
+
+        $end = Carbon::createFromFormat('Y-m', $evaluationPeriodMonth)->subMonth();
+        $monthCount = strtolower(trim($frequency ?: 'monthly')) === 'quarterly' ? 3 : 1;
+        $months = [];
+
+        for ($offset = $monthCount - 1; $offset >= 0; $offset--) {
+            $months[] = $end->copy()->subMonths($offset)->format('Y-m');
+        }
+
+        return $months;
     }
 
     /**

@@ -92,6 +92,87 @@ class KpiEvaluationService
         ];
     }
 
+    public function labelFrequency(?string $frequency): string
+    {
+        return match (strtolower(trim((string) ($frequency ?: 'monthly')))) {
+            'quarterly' => 'Quarterly',
+            'monthly' => 'Monthly',
+            default => ucfirst(trim((string) $frequency)),
+        };
+    }
+
+    public function maxFrequency(string $a, string $b): string
+    {
+        $rank = ['monthly' => 1, 'quarterly' => 2];
+
+        return ($rank[strtolower(trim($b))] ?? 0) > ($rank[strtolower(trim($a))] ?? 0) ? strtolower(trim($b)) : strtolower(trim($a));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function resolveFrequencyDataMonths(string $frequency, string $evaluationPeriodMonth): array
+    {
+        $end = Carbon::createFromFormat('Y-m', $this->resolveDataPeriodMonth($evaluationPeriodMonth));
+
+        $monthCount = match (strtolower(trim($frequency ?: 'monthly'))) {
+            'quarterly' => 3,
+            default => 1,
+        };
+
+        $months = [];
+        for ($offset = $monthCount - 1; $offset >= 0; $offset--) {
+            $months[] = $end->copy()->subMonths($offset)->format('Y-m');
+        }
+
+        return $months;
+    }
+
+    /**
+     * @return array{
+     *     frequency: string,
+     *     frequency_label: string,
+     *     data_period_months: list<string>,
+     *     data_window_label: string,
+     *     data_window_month_count: int
+     * }
+     */
+    public function buildFrequencyWindowInfo(string $frequency, string $evaluationPeriodMonth): array
+    {
+        $frequency = strtolower(trim($frequency ?: 'monthly'));
+        $months = $this->resolveFrequencyDataMonths($frequency, $evaluationPeriodMonth);
+        $outletAnalyzer = app(OutletAnalyzerService::class);
+
+        if (count($months) === 1) {
+            $windowLabel = $outletAnalyzer->calendarPeriod($months[0])['label'];
+        } else {
+            $first = Carbon::createFromFormat('Y-m', $months[0]);
+            $last = Carbon::createFromFormat('Y-m', $months[array_key_last($months)]);
+            $windowLabel = $first->locale('id')->translatedFormat('F').' – '.$last->locale('id')->translatedFormat('F Y');
+        }
+
+        return [
+            'frequency' => $frequency,
+            'frequency_label' => $this->labelFrequency($frequency),
+            'data_period_months' => $months,
+            'data_window_label' => $windowLabel,
+            'data_window_month_count' => count($months),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function enrichEvaluationItems(Collection $items, string $evaluationPeriodMonth): array
+    {
+        return $items->map(function (KpiEvaluationItem $item) use ($evaluationPeriodMonth) {
+            $row = $item->toArray();
+            $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
+
+            return array_merge($row, $window);
+        })->values()->all();
+    }
+
     public function syncEvaluationDataPeriod(KpiEvaluation $evaluation): KpiEvaluation
     {
         $period = $this->buildKpiPeriodInfo((string) $evaluation->period_month);
@@ -113,18 +194,32 @@ class KpiEvaluationService
     /**
      * @return list<array<string, mixed>>
      */
-    public function formatParameterValuesForEdit(Collection $parameterValues): array
-    {
+    public function formatParameterValuesForEdit(
+        Collection $parameterValues,
+        ?string $evaluationPeriodMonth = null,
+        ?Collection $evaluationItems = null,
+    ): array {
         if ($parameterValues instanceof \Illuminate\Database\Eloquent\Collection) {
             $parameterValues->loadMissing(['parameter.erpMapping']);
         }
 
-        return $parameterValues->map(function (KpiEvaluationParameterValue $pv) {
+        $codeFrequencyBoost = $this->buildCodeFrequencyBoostFromItems($evaluationItems);
+
+        return $parameterValues->map(function (KpiEvaluationParameterValue $pv) use ($evaluationPeriodMonth, $codeFrequencyBoost) {
             $row = $pv->toArray();
             $param = $pv->relationLoaded('parameter') ? $pv->parameter : null;
             $row['data_type'] = $param?->data_type;
             $row['parameter_description'] = $param?->description;
             $row['manual_input_hint'] = $this->buildManualInputHint($pv, $param);
+
+            $frequency = $this->maxFrequency(
+                (string) ($param?->frequency ?? 'monthly'),
+                $codeFrequencyBoost[$pv->parameter_code] ?? 'monthly',
+            );
+            $row['frequency'] = $frequency;
+            if ($evaluationPeriodMonth !== null) {
+                $row = array_merge($row, $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth));
+            }
 
             return $row;
         })->values()->all();
@@ -566,11 +661,23 @@ class KpiEvaluationService
 
         $context = $this->buildErpContext($evaluation);
 
+        $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
+        $evaluation->loadMissing('items');
+        $prefetchMonths = $this->collectPrefetchDataMonths($evaluation, $parameterRows);
+        foreach ($prefetchMonths as $month) {
+            $this->resolver->clearPersistentCaches($context['outlet_ids'] ?? [], $month);
+        }
+
         $this->resolver->clearCache();
-        $this->resolver->clearPersistentCaches($context['outlet_ids'] ?? [], (string) $context['data_period_month']);
         Cache::forget($this->bulkBreakdownCacheKey($evaluation));
 
-        $parameterRows = $evaluation->parameterValues()->with('parameter.erpMapping')->get();
+        if ($prefetchMonths !== []) {
+            $this->resolver->prefetchForParametersMultiMonth(
+                $context,
+                $parameterRows->pluck('parameter')->filter(),
+                $prefetchMonths,
+            );
+        }
 
         foreach ($parameterRows as $pv) {
             $param = $pv->parameter;
@@ -594,8 +701,6 @@ class KpiEvaluationService
             }
         }
 
-        $this->resolver->prefetch($context, $parameterRows->pluck('parameter')->filter());
-
         foreach ($parameterRows as $pv) {
             $pv->refresh();
             $param = $pv->parameter;
@@ -608,7 +713,9 @@ class KpiEvaluationService
                 continue;
             }
 
-            $erpValue = $this->resolver->resolve($param, $context);
+            $frequency = $this->effectiveParameterFrequency($evaluation, $param);
+            $dataMonths = $this->resolveFrequencyDataMonths($frequency, (string) $evaluation->period_month);
+            $erpValue = $this->resolver->resolveAcrossMonths($param, $context, $dataMonths);
             $finalValue = $this->resolveFinalValue(
                 $sourceType,
                 $erpValue,
@@ -830,15 +937,18 @@ class KpiEvaluationService
 
     public function recalculate(KpiEvaluation $evaluation): void
     {
-        $valueMap = $evaluation->parameterValues()
-            ->get()
+        $evaluation->load(['parameterValues.parameter', 'items']);
+
+        $storedMap = $evaluation->parameterValues
             ->mapWithKeys(fn ($pv) => [$pv->parameter_code => $pv->final_value !== null ? (float) $pv->final_value : null])
             ->all();
 
+        $baseContext = $this->buildErpContext($evaluation);
         $rules = $evaluation->scoring_rules ?? $this->templateService->defaultScoringRules();
         $totalScore = 0.0;
 
-        foreach ($evaluation->items()->get() as $item) {
+        foreach ($evaluation->items as $item) {
+            $valueMap = $this->buildItemFormulaValueMap($item, $storedMap, $evaluation, $baseContext);
             $achievement = $this->evaluateFormula($item->formula, $valueMap);
             $scoring = $this->scoreItem($achievement, $item->target_direction, $rules, $item->target_value);
             $weighted = round(($scoring['score'] * (float) $item->weight_percent) / 100, 4);
@@ -854,6 +964,146 @@ class KpiEvaluationService
         }
 
         $evaluation->update(['total_score' => round($totalScore, 2)]);
+    }
+
+    /**
+     * @param  array<string, float|null>  $storedMap
+     * @return array<string, float|null>
+     */
+    protected function buildItemFormulaValueMap(
+        KpiEvaluationItem $item,
+        array $storedMap,
+        KpiEvaluation $evaluation,
+        array $baseContext,
+    ): array {
+        $valueMap = $storedMap;
+        $itemFrequency = (string) ($item->frequency ?? 'monthly');
+        $codes = $this->extractCodes($item->formula);
+
+        if ($itemFrequency === 'monthly' || $codes === []) {
+            return $valueMap;
+        }
+
+        $dataMonths = $this->resolveFrequencyDataMonths($itemFrequency, (string) $evaluation->period_month);
+        if (count($dataMonths) <= 1) {
+            return $valueMap;
+        }
+
+        $erpParams = [];
+        foreach ($codes as $code) {
+            if (! preg_match('/^D\d{3}$/', $code)) {
+                continue;
+            }
+
+            $pv = $evaluation->parameterValues->firstWhere('parameter_code', $code);
+            $param = $pv?->parameter;
+            if (! $param || ! in_array($param->source_type, ['erp', 'hybrid'], true)) {
+                continue;
+            }
+
+            $erpParams[] = $param;
+        }
+
+        if ($erpParams !== []) {
+            $this->resolver->prefetchForParametersMultiMonth($baseContext, $erpParams, $dataMonths);
+        }
+
+        foreach ($codes as $code) {
+            if (! preg_match('/^D\d{3}$/', $code)) {
+                continue;
+            }
+
+            $pv = $evaluation->parameterValues->firstWhere('parameter_code', $code);
+            $param = $pv?->parameter;
+            if (! $param || ! in_array($param->source_type, ['erp', 'hybrid'], true)) {
+                continue;
+            }
+
+            $erpValue = $this->resolver->resolveAcrossMonths($param, $baseContext, $dataMonths);
+            $valueMap[$code] = $this->resolveFinalValue(
+                $param->source_type,
+                $erpValue,
+                $pv->manual_value !== null ? (float) $pv->manual_value : null,
+                (bool) $pv->is_overridden,
+            );
+        }
+
+        return $valueMap;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function buildCodeFrequencyBoostFromItems(?iterable $items): array
+    {
+        $map = [];
+
+        if ($items === null) {
+            return $map;
+        }
+
+        foreach ($items as $item) {
+            foreach ($this->extractCodes($item->formula ?? null) as $code) {
+                $map[$code] = $this->maxFrequency(
+                    $map[$code] ?? 'monthly',
+                    (string) ($item->frequency ?? 'monthly'),
+                );
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function buildCodeFrequencyBoostMap(KpiEvaluation $evaluation): array
+    {
+        return $this->buildCodeFrequencyBoostFromItems($evaluation->items);
+    }
+
+    protected function effectiveParameterFrequency(KpiEvaluation $evaluation, KpiParameter $param): string
+    {
+        $boost = $this->buildCodeFrequencyBoostMap($evaluation);
+
+        return $this->maxFrequency(
+            (string) ($param->frequency ?? 'monthly'),
+            $boost[$param->code] ?? 'monthly',
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function collectPrefetchDataMonths(KpiEvaluation $evaluation, Collection $parameterRows): array
+    {
+        $months = [];
+        $boost = $this->buildCodeFrequencyBoostMap($evaluation);
+
+        foreach ($parameterRows as $pv) {
+            $param = $pv->parameter;
+            if (! $param) {
+                continue;
+            }
+
+            $frequency = $this->maxFrequency(
+                (string) ($param->frequency ?? 'monthly'),
+                $boost[$param->code] ?? 'monthly',
+            );
+            $months = array_merge(
+                $months,
+                $this->resolveFrequencyDataMonths($frequency, (string) $evaluation->period_month),
+            );
+        }
+
+        foreach ($evaluation->items as $item) {
+            $months = array_merge(
+                $months,
+                $this->resolveFrequencyDataMonths((string) ($item->frequency ?? 'monthly'), (string) $evaluation->period_month),
+            );
+        }
+
+        return array_values(array_unique($months));
     }
 
     /**
@@ -1570,9 +1820,10 @@ class KpiEvaluationService
                 ->get();
 
         $baseContext = $this->buildErpContext($evaluation);
-        $parameterGrid = $outletIds !== [] && $parameters->isNotEmpty()
-            ? $this->resolver->resolveParameterGridForOutlets($outletIds, $parameters, $baseContext)
-            : [];
+        $paramMetaByCode = $evaluation->parameterValues()
+            ->whereIn('parameter_code', $allDCodes)
+            ->get()
+            ->keyBy('parameter_code');
 
         $outletRows = $outletIds === []
             ? collect()
@@ -1580,11 +1831,6 @@ class KpiEvaluationService
                 ->whereIn('id_outlet', $outletIds)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet', 'qr_code']);
-
-        $paramMetaByCode = $evaluation->parameterValues()
-            ->whereIn('parameter_code', $allDCodes)
-            ->get()
-            ->keyBy('parameter_code');
 
         $results = [];
         foreach ($items as $item) {
@@ -1599,6 +1845,12 @@ class KpiEvaluationService
             }
 
             $paramByCode = $parameters->keyBy('code');
+            $itemParams = $parameters->filter(fn (KpiParameter $p) => in_array($p->code, $meta['d_codes'], true));
+            $itemFrequency = (string) ($item->frequency ?? 'monthly');
+            $parameterGrid = $outletIds !== [] && $itemParams->isNotEmpty()
+                ? $this->resolver->resolveParameterGridForOutlets($outletIds, $itemParams, $baseContext, $itemFrequency)
+                : [];
+
             $assembler = match (true) {
                 $this->isRegionalVisitCoverageFormula($meta['d_codes']) => 'assembleRegionalVisitCoverageBreakdown',
                 $this->isTicketFollowUpFormula($meta['d_codes']) => 'assembleTicketFollowUpBreakdown',
