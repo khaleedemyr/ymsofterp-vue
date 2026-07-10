@@ -683,6 +683,14 @@ class KpiParameterResolverService
                 $outletIds,
                 $periodMonth,
             ),
+            'npd_approved_product_count' => $this->resolveNpdApprovedProductCount(
+                (int) ($context['user_id'] ?? 0),
+                $periodMonth,
+            ),
+            'competitor_benchmark_execution_count' => $this->resolveCompetitorBenchmarkExecutionCount(
+                (int) ($context['user_id'] ?? 0),
+                $periodMonth,
+            ),
             'cvcc_avg_resolution_hours' => $this->resolveCvccAvgResolutionHours(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
@@ -731,6 +739,8 @@ class KpiParameterResolverService
             'outlet_avg_check_prev_month',
             'employee_induction_on_time_percent',
             'employee_coaching_person_count',
+            'npd_approved_product_count',
+            'competitor_benchmark_execution_count',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
             'cvcc_total_review_count',
@@ -2513,5 +2523,91 @@ class KpiParameterResolverService
         $count = (int) $query->distinct()->count('employee_id');
 
         return (float) $count;
+    }
+
+    private function resolveNpdApprovedProductCount(int $userId, string $periodMonth): ?float
+    {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        if (
+            ! DB::getSchemaBuilder()->hasTable('npd_plan_reports')
+            || ! DB::getSchemaBuilder()->hasTable('npd_plan_report_items')
+        ) {
+            return null;
+        }
+
+        $monthStart = $periodMonth.'-01';
+
+        $rows = DB::table('npd_plan_report_items as i')
+            ->join('npd_plan_reports as r', 'r.id', '=', 'i.report_id')
+            ->whereNull('r.deleted_at')
+            ->where('r.status', 'approved')
+            ->whereDate('r.report_month', $monthStart)
+            ->get(['i.id', 'i.pics', 'r.created_by']);
+
+        $count = $rows->filter(function ($row) use ($userId) {
+            if ((int) ($row->created_by ?? 0) === $userId) {
+                return true;
+            }
+
+            return $this->userMatchesPicJson((string) ($row->pics ?? ''), $userId);
+        })->count();
+
+        return (float) $count;
+    }
+
+    private function resolveCompetitorBenchmarkExecutionCount(int $userId, string $periodMonth): ?float
+    {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return null;
+        }
+
+        if (
+            ! DB::getSchemaBuilder()->hasTable('competitor_benchmark_reports')
+            || ! DB::getSchemaBuilder()->hasTable('competitor_benchmark_report_items')
+        ) {
+            return null;
+        }
+
+        $monthStart = $periodMonth.'-01';
+
+        $rows = DB::table('competitor_benchmark_report_items as i')
+            ->join('competitor_benchmark_reports as r', 'r.id', '=', 'i.report_id')
+            ->whereNull('r.deleted_at')
+            ->where('r.status', 'approved')
+            ->whereDate('r.report_month', $monthStart)
+            ->get(['i.id', 'r.pics', 'r.created_by']);
+
+        $count = $rows->filter(function ($row) use ($userId) {
+            if ((int) ($row->created_by ?? 0) === $userId) {
+                return true;
+            }
+
+            return $this->userMatchesPicJson((string) ($row->pics ?? ''), $userId);
+        })->count();
+
+        return (float) $count;
+    }
+
+    private function userMatchesPicJson(string $picsJson, int $userId): bool
+    {
+        if ($userId <= 0 || trim($picsJson) === '') {
+            return false;
+        }
+
+        $pics = json_decode($picsJson, true);
+        if (! is_array($pics)) {
+            return false;
+        }
+
+        foreach ($pics as $pic) {
+            if ((int) ($pic['id'] ?? 0) === $userId) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

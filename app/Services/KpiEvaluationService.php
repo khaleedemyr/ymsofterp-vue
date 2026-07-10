@@ -340,6 +340,10 @@ class KpiEvaluationService
                 => 'Isi persentase minggu induction onboarding yang selesai tepat waktu (0–100, tanpa simbol %).',
             $code === 'D032' || str_contains($lowerName, 'coaching visit')
                 => 'Isi jumlah karyawan unik yang di-coaching (bilangan bulat).',
+            $code === 'D043' || str_contains($lowerName, 'new products developed')
+                => 'Jumlah produk NPD approved dari menu NPD Plan & Report (PIC / creator) — otomatis dari ERP bila hybrid.',
+            $code === 'D046' || str_contains($lowerName, 'benchmark reports')
+                => 'Jumlah benchmark competitor dari menu Competitor Benchmark Report (PIC / creator) — otomatis dari ERP bila hybrid.',
             $dataType === 'percent' || str_contains($name, '%')
                 => "Isi nilai persentase untuk «{$name}» tanpa simbol %.",
             $dataType === 'integer'
@@ -1355,12 +1359,38 @@ class KpiEvaluationService
 
             $param = $templateItem->itemParameters->first()?->parameter;
             $expectedFormula = trim((string) ($param?->formula ?? $templateItem->formula ?? ''));
-            if ($expectedFormula === '' || $item->formula === $expectedFormula) {
-                continue;
+            $expectedTarget = $this->resolveTemplateItemTarget($templateItem, $param);
+            $expectedFrequency = $this->resolveTemplateItemFrequency($templateItem, $param);
+
+            $updates = [];
+            if ($expectedFormula !== '' && $item->formula !== $expectedFormula) {
+                $updates['formula'] = $expectedFormula;
+            }
+            if ($expectedTarget !== null && $item->target_value !== $expectedTarget) {
+                $updates['target_value'] = $expectedTarget;
+            }
+            if ($item->frequency !== $expectedFrequency) {
+                $updates['frequency'] = $expectedFrequency;
             }
 
-            $item->update(['formula' => $expectedFormula]);
+            if ($updates !== []) {
+                $item->update($updates);
+            }
         }
+    }
+
+    protected function resolveTemplateItemTarget($templateItem, ?KpiParameter $param): ?string
+    {
+        $itemTarget = trim((string) ($templateItem->target_value ?? ''));
+
+        return $itemTarget !== '' ? $itemTarget : $param?->target_value;
+    }
+
+    protected function resolveTemplateItemFrequency($templateItem, ?KpiParameter $param): string
+    {
+        $itemFrequency = trim((string) ($templateItem->frequency ?? ''));
+
+        return $itemFrequency !== '' ? $itemFrequency : (string) ($param?->frequency ?? 'monthly');
     }
 
     /**
@@ -1472,9 +1502,9 @@ class KpiEvaluationService
                     'strategy_weight_percent' => $strategy->weight_percent,
                     'item_name' => $param?->name ?? $item->name,
                     'weight_percent' => $item->weight_percent,
-                    'target_value' => $param?->target_value ?? $item->target_value,
+                    'target_value' => $this->resolveTemplateItemTarget($item, $param),
                     'target_direction' => $param?->target_direction ?? $item->target_direction ?? 'higher_better',
-                    'frequency' => $param?->frequency ?? $item->frequency,
+                    'frequency' => $this->resolveTemplateItemFrequency($item, $param),
                     'formula' => $param?->formula ?? $item->formula,
                     'sort_order' => $sort++,
                 ]);
@@ -1624,6 +1654,22 @@ class KpiEvaluationService
         }
 
         if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*%?$/i', $target, $matches)) {
+            return [
+                'comparator' => 'gte',
+                'min' => (float) $matches[1],
+                'max' => null,
+            ];
+        }
+
+        if (preg_match('/^Min\.\s*(\d+(?:\.\d+)?)\s*(?:Products?|\/\s*Month)?/i', $target, $matches)) {
+            return [
+                'comparator' => 'gte',
+                'min' => (float) $matches[1],
+                'max' => null,
+            ];
+        }
+
+        if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*Person/i', $target, $matches)) {
             return [
                 'comparator' => 'gte',
                 'min' => (float) $matches[1],
