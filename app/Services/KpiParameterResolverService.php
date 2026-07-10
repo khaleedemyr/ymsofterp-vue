@@ -1959,6 +1959,52 @@ class KpiParameterResolverService
     /**
      * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed, severity: mixed}>
      */
+    private function fetchCvccCasesByRegionalAssignedPeriod(string $startDate, string $endDate, ?int $outletId = null): array
+    {
+        if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
+            return [];
+        }
+
+        $startDate = $this->normalizeCvccPeriodDate($startDate);
+        $endDate = $this->normalizeCvccPeriodDate($endDate);
+        $startAt = $startDate . ' 00:00:00';
+        $endAt = $endDate . ' 23:59:59';
+
+        $query = DB::table('feedback_cases')
+            ->whereNotNull('meta')
+            ->whereRaw(
+                'JSON_UNQUOTE(JSON_EXTRACT(meta, ?)) BETWEEN ? AND ?',
+                ['$.regional_assigned_at', $startAt, $endAt],
+            )
+            ->whereRaw('JSON_LENGTH(COALESCE(JSON_EXTRACT(meta, ?), JSON_ARRAY())) > 0', ['$.regional_user_ids']);
+
+        if ($outletId !== null && $outletId > 0) {
+            $query->where('id_outlet', $outletId);
+        }
+
+        return $query->get(['meta', 'event_at', 'resolved_at', 'severity'])->all();
+    }
+
+    private function extractRegionalAssignedAtTimestamp(mixed $meta): ?int
+    {
+        $decoded = $this->decodeFeedbackCaseMeta($meta);
+        if ($decoded === null) {
+            return null;
+        }
+
+        $raw = trim((string) ($decoded['regional_assigned_at'] ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $ts = strtotime($raw);
+
+        return $ts !== false ? $ts : null;
+    }
+
+    /**
+     * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed, severity: mixed}>
+     */
     private function fetchCvccCasesForPeriod(string $startDate, string $endDate, bool $resolvedOnly = false, ?int $outletId = null): array
     {
         if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
@@ -1996,24 +2042,24 @@ class KpiParameterResolverService
         }
 
         $hours = [];
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
+        foreach ($this->fetchCvccCasesByRegionalAssignedPeriod($startDate, $endDate, outletId: $outletId) as $row) {
             if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 continue;
             }
 
-            $eventAt = strtotime((string) $row->event_at);
-            if ($eventAt === false || $eventAt > $periodEndTs) {
+            $assignedAt = $this->extractRegionalAssignedAtTimestamp($row->meta);
+            if ($assignedAt === null || $assignedAt > $periodEndTs) {
                 continue;
             }
 
             $resolvedAt = $row->resolved_at ? strtotime((string) $row->resolved_at) : false;
-            if ($resolvedAt !== false && $resolvedAt >= $eventAt && $resolvedAt <= $periodEndTs) {
-                $hours[] = ($resolvedAt - $eventAt) / 3600;
+            if ($resolvedAt !== false && $resolvedAt >= $assignedAt && $resolvedAt <= $periodEndTs) {
+                $hours[] = ($resolvedAt - $assignedAt) / 3600;
                 continue;
             }
 
             // Belum resolve dalam periode data → anggap durasi sampai akhir bulan (biasanya > 24 jam).
-            $hours[] = ($periodEndTs - $eventAt) / 3600;
+            $hours[] = ($periodEndTs - $assignedAt) / 3600;
         }
 
         if ($hours === []) {

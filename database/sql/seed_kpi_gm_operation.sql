@@ -16,7 +16,7 @@
 --   D008  Petty Cash Usage   → Retail Food + Non Food (non contra bon)
 --   D009  Petty Cash Budget  → Petty Cash Lock Budget (Revenue Targets)
 --   D052  Labor Cost %       → Manual Monthly Labor Cost
---   D053  Resolution Hours   → CVCC (event_at → resolved_at)
+--   D053  Resolution Hours   → CVCC (regional_assigned_at → resolved_at)
 --   D054  Service Complaints → CVCC negative + CAPA Service filled
 --   D055  Total Reviews      → CVCC total cases
 --   D018  Training           → Just Academy (modul wajib selesai)
@@ -48,7 +48,7 @@ INSERT INTO `kpi_parameters` (
 ('D050', 'Manual Category Cost Ratio %',       'hybrid', 'outlet', 'percent', 'Category cost % from Manual COGS menu',         NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D051', 'Manual Loss & Breakage Ratio %',     'hybrid', 'outlet', 'percent', 'L&B % from Asset Manual Monthly L&B',           NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D052', 'Manual Labor Cost Ratio %',          'hybrid', 'outlet', 'percent', 'Labor cost % from Manual Monthly Labor Cost',   NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D053', 'CVCC Avg Resolution Hours',          'hybrid', 'outlet', 'hours',   'Avg hours event → resolved (CVCC)',             NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D053', 'CVCC Avg Resolution Hours',          'hybrid', 'outlet', 'hours',   'Avg hours regional assign → resolved (CVCC)',     NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D054', 'CVCC Service Negative w/ CAPA',      'hybrid', 'outlet', 'integer', 'Negative CVCC + CAPA Service filled',           NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D055', 'CVCC Total Review Count',            'hybrid', 'outlet', 'integer', 'Total CVCC cases in period',                    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW())
 ON DUPLICATE KEY UPDATE

@@ -216,7 +216,7 @@ class KpiEvaluationService
             $code === 'D052' || str_contains($lowerName, 'labor cost')
                 => 'Isi persentase labor cost (%) dari Manual Monthly Labor Cost.',
             $code === 'D053' || (str_contains($lowerName, 'resolution') && str_contains($lowerName, 'hour'))
-                => 'Isi rata-rata jam resolusi komplain CVCC (boleh desimal).',
+                => 'Isi rata-rata jam resolusi komplain CVCC sejak di-assign ke regional (boleh desimal).',
             in_array($code, ['D054', 'D055'], true) || (str_contains($lowerName, 'cvcc') && $dataType === 'integer')
                 => 'Isi jumlah kasus/review CVCC (bilangan bulat).',
             $code === 'D016' || str_contains($lowerName, 'qa audit')
@@ -301,7 +301,7 @@ class KpiEvaluationService
             'manual_lost_breakage_percent' => 'Sumber ERP: Asset Manual Monthly L&B %.',
             'manual_labor_cost_percent' => 'Sumber ERP: Manual Monthly Labor Cost %.',
             'manual_google_review_rating_avg' => 'Sumber ERP: Manual Monthly Google Review — rata-rata rating outlet.',
-            'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — rata-rata jam resolusi.',
+            'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan.',

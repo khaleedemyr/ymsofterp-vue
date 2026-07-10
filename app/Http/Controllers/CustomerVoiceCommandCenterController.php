@@ -2163,12 +2163,30 @@ class CustomerVoiceCommandCenterController extends Controller
         }
         $previousIds = array_values($previousIds);
 
+        $isFirstRegionalAssign = $previousIds === [] && $ids !== [];
+        if ($isFirstRegionalAssign) {
+            $meta['regional_assigned_at'] = now()->format('Y-m-d H:i:s');
+        }
+
         $meta['regional_user_ids'] = $ids;
 
         DB::table('feedback_cases')->where('id', $caseId)->update([
             'meta' => json_encode($meta, JSON_UNESCAPED_UNICODE),
             'updated_at' => now(),
         ]);
+
+        if ($isFirstRegionalAssign) {
+            DB::table('feedback_case_activities')->insert([
+                'case_id' => $caseId,
+                'activity_type' => 'regional_assigned',
+                'actor_user_id' => $request->user()->id ?? null,
+                'from_status' => null,
+                'to_status' => null,
+                'note' => 'Assign regional: '.count($ids).' user',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
 
         $toNotify = $ids;
         if ($notifyOnlyNew) {
