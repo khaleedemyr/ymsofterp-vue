@@ -10,6 +10,7 @@ import { useLoading } from '@/Composables/useLoading';
 import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/formatKpiNumber';
 import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
 import { formatKpiAchievement, formatKpiParameterInputUnit, kpiParameterInputMode } from '@/utils/formatKpiAchievement';
+import { resolveKpiTotalScoreFlag } from '@/utils/resolveKpiTotalScoreFlag';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -160,6 +161,8 @@ watch(selectedMultipleOutlets, (list) => {
 });
 
 const groupedStrategies = computed(() => evaluation.value.strategies || []);
+
+const totalScoreFlag = computed(() => resolveKpiTotalScoreFlag(evaluation.value.total_score));
 
 const scopeOutletCount = computed(() => {
   if (erpDiagnostics.value?.scope_outlet_count != null) {
@@ -445,7 +448,14 @@ onMounted(() => {
           </div>
         </div>
         <div class="text-right">
-          <div class="text-3xl font-bold text-rose-600">{{ formatNum(evaluation.total_score) }}</div>
+          <div v-if="totalScoreFlag" class="mb-2">
+            <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" :class="totalScoreFlag.className">
+              {{ totalScoreFlag.label }}
+            </span>
+          </div>
+          <div class="text-3xl font-bold" :class="totalScoreFlag?.scoreClassName || 'text-gray-600'">
+            {{ formatNum(evaluation.total_score) }}
+          </div>
           <div class="text-xs text-gray-500">Total Skor</div>
         </div>
       </div>

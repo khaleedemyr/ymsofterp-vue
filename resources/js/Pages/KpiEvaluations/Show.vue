@@ -5,6 +5,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
 import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
 import { formatKpiAchievement } from '@/utils/formatKpiAchievement';
+import { resolveKpiTotalScoreFlag } from '@/utils/resolveKpiTotalScoreFlag';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -15,6 +16,8 @@ const props = defineProps({
 const breakdownModal = ref(null);
 
 const groupedStrategies = computed(() => props.evaluation.strategies || []);
+
+const totalScoreFlag = computed(() => resolveKpiTotalScoreFlag(props.evaluation.total_score));
 
 const scopeOutletCount = computed(() => {
   if (props.evaluation.scope_outlet_count != null) {
@@ -83,7 +86,14 @@ onMounted(() => {
         </div>
         <div class="text-right">
           <span class="px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">{{ evaluation.eval_status }}</span>
-          <div class="text-3xl font-bold text-rose-600 mt-2">{{ evaluation.total_score ?? '—' }}</div>
+          <div v-if="totalScoreFlag" class="mt-2">
+            <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" :class="totalScoreFlag.className">
+              {{ totalScoreFlag.label }}
+            </span>
+          </div>
+          <div class="text-3xl font-bold mt-2" :class="totalScoreFlag?.scoreClassName || 'text-gray-600'">
+            {{ evaluation.total_score ?? '—' }}
+          </div>
           <div class="text-xs text-gray-500">Total Skor</div>
         </div>
       </div>

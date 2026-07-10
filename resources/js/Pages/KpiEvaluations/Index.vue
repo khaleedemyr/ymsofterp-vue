@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
+import { resolveKpiTotalScoreFlag } from '@/utils/resolveKpiTotalScoreFlag';
 
 const props = defineProps({
   evaluations: Object,
@@ -31,6 +32,10 @@ function statusBadge(st) {
     locked: 'bg-gray-100 text-gray-600',
   };
   return map[st] || 'bg-gray-100';
+}
+
+function totalScoreFlag(score) {
+  return resolveKpiTotalScoreFlag(score);
 }
 
 function openCreate() {
@@ -84,6 +89,7 @@ async function hapus(row) {
               <th class="px-4 py-3 text-left">Periode</th>
               <th class="px-4 py-3 text-left">Template</th>
               <th class="px-4 py-3 text-right">Skor</th>
+              <th class="px-4 py-3 text-left">Flag</th>
               <th class="px-4 py-3 text-left">Status</th>
               <th class="px-4 py-3 text-right">Aksi</th>
             </tr>
@@ -100,6 +106,16 @@ async function hapus(row) {
               <td class="px-4 py-3 text-xs">{{ row.template?.name || '—' }}</td>
               <td class="px-4 py-3 text-right font-semibold">{{ row.total_score ?? '—' }}</td>
               <td class="px-4 py-3">
+                <span
+                  v-if="totalScoreFlag(row.total_score)"
+                  class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold"
+                  :class="totalScoreFlag(row.total_score).className"
+                >
+                  {{ totalScoreFlag(row.total_score).label }}
+                </span>
+                <span v-else class="text-gray-400">—</span>
+              </td>
+              <td class="px-4 py-3">
                 <span class="px-2 py-1 rounded-full text-xs font-medium" :class="statusBadge(row.eval_status)">{{ row.eval_status }}</span>
               </td>
               <td class="px-4 py-3 text-right space-x-2">
@@ -108,7 +124,7 @@ async function hapus(row) {
               </td>
             </tr>
             <tr v-if="!evaluations.data?.length">
-              <td colspan="8" class="px-4 py-8 text-center text-gray-400">Belum ada evaluasi KPI.</td>
+              <td colspan="9" class="px-4 py-8 text-center text-gray-400">Belum ada evaluasi KPI.</td>
             </tr>
           </tbody>
         </table>
