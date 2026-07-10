@@ -9,6 +9,7 @@ import axios from 'axios';
 import { useLoading } from '@/Composables/useLoading';
 import { formatKpiNumber, formatKpiNumberPlain, parseKpiNumber } from '@/utils/formatKpiNumber';
 import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
+import { formatKpiAchievement, formatKpiParameterInputUnit, kpiParameterInputMode } from '@/utils/formatKpiAchievement';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -226,6 +227,14 @@ function levelBadge(level) {
 
 function formatNum(val) {
   return formatKpiNumber(val);
+}
+
+function formatAchievement(item) {
+  return formatKpiAchievement(item?.achievement_percent, item);
+}
+
+function parameterInputUnit(pv) {
+  return pv?.input_unit || formatKpiParameterInputUnit(pv);
 }
 
 function manualDisplay(id) {
@@ -568,13 +577,14 @@ onMounted(() => {
                     <input
                       :value="manualDisplay(pv.id)"
                       type="text"
-                      inputmode="decimal"
+                      :inputmode="kpiParameterInputMode(pv)"
                       placeholder="0"
-                      class="w-32 text-right rounded border-gray-300 text-sm tabular-nums"
+                      class="w-28 text-right rounded border-gray-300 text-sm tabular-nums"
                       @focus="onManualFocus(pv.id)"
                       @blur="onManualBlur(pv.id, pv, pv)"
                       @input="onManualInput(pv.id, $event.target.value, pv, pv)"
                     />
+                    <span v-if="parameterInputUnit(pv)" class="text-xs text-gray-500 shrink-0">{{ parameterInputUnit(pv) }}</span>
                     <span class="relative group shrink-0">
                       <button
                         type="button"
@@ -646,7 +656,7 @@ onMounted(() => {
                 </td>
                 <td class="px-4 py-2 text-gray-600">{{ item.target_value || '—' }}</td>
                 <td class="px-4 py-2 font-mono text-xs text-gray-500">{{ item.formula || '—' }}</td>
-                <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}<template v-if="item.achievement_percent != null">%</template></td>
+                <td class="px-4 py-2 text-right">{{ formatAchievement(item) }}</td>
                 <td class="px-4 py-2">
                   <span v-if="item.performance_level" class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(item.performance_level)">{{ item.performance_level }}</span>
                   <span v-else>—</span>

@@ -170,8 +170,122 @@ class KpiEvaluationService
             $row = $item->toArray();
             $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
 
-            return array_merge($row, $window);
+            return array_merge($row, $window, $this->resolveAchievementDisplayMeta($item));
         })->values()->all();
+    }
+
+    /**
+     * Satuan tampilan achievement KPI (bukan selalu persen).
+     *
+     * @return array{value_type: string, data_type: string, unit_suffix: string, unit_label: string}
+     */
+    public function resolveAchievementDisplayMeta(KpiEvaluationItem $item): array
+    {
+        $target = trim((string) ($item->target_value ?? ''));
+        $formula = trim((string) ($item->formula ?? ''));
+
+        if (preg_match('/\*?\s*100\s*$/', $formula) || preg_match('/\/\s*D\d{3}.*\*\s*100/i', $formula)) {
+            return $this->achievementDisplayFromDataType('percent');
+        }
+
+        if (preg_match('/Person/i', $target)) {
+            return [
+                'value_type' => 'count',
+                'data_type' => 'integer',
+                'unit_suffix' => '',
+                'unit_label' => 'orang',
+            ];
+        }
+
+        if (preg_match('/minutes?/i', $target)) {
+            return [
+                'value_type' => 'duration',
+                'data_type' => 'decimal',
+                'unit_suffix' => '',
+                'unit_label' => 'menit',
+            ];
+        }
+
+        if (preg_match('/hours?/i', $target)) {
+            return [
+                'value_type' => 'duration',
+                'data_type' => 'hours',
+                'unit_suffix' => '',
+                'unit_label' => 'jam',
+            ];
+        }
+
+        if (str_contains($target, '%')) {
+            return $this->achievementDisplayFromDataType('percent');
+        }
+
+        $codes = $this->extractCodes($formula);
+        $dataCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
+
+        if (count($dataCodes) === 1 && count($codes) === 1) {
+            $param = KpiParameter::query()->where('code', $dataCodes[0])->first();
+            if ($param) {
+                $dataType = $this->resolveEffectiveParameterDataType($param, (string) $param->name);
+
+                return $this->achievementDisplayFromDataType($dataType, (string) $param->code, (string) $param->name);
+            }
+        }
+
+        return [
+            'value_type' => 'decimal',
+            'data_type' => 'decimal',
+            'unit_suffix' => '',
+            'unit_label' => '',
+        ];
+    }
+
+    /**
+     * @return array{value_type: string, data_type: string, unit_suffix: string, unit_label: string}
+     */
+    private function achievementDisplayFromDataType(string $dataType, string $code = '', string $name = ''): array
+    {
+        $lowerName = strtolower($name);
+
+        if ($dataType === 'percent') {
+            return [
+                'value_type' => 'percent',
+                'data_type' => 'percent',
+                'unit_suffix' => '%',
+                'unit_label' => '',
+            ];
+        }
+
+        if ($dataType === 'integer') {
+            $label = match (true) {
+                $code === 'D032' || str_contains($lowerName, 'coaching') || str_contains($lowerName, 'person') => 'orang',
+                str_contains($lowerName, 'product') || str_contains($lowerName, 'npd') || str_contains($lowerName, 'benchmark') => 'produk',
+                str_contains($lowerName, 'visit') && str_contains($lowerName, 'count') => 'hari',
+                default => '',
+            };
+
+            return [
+                'value_type' => 'count',
+                'data_type' => 'integer',
+                'unit_suffix' => '',
+                'unit_label' => $label,
+            ];
+        }
+
+        if ($dataType === 'hours') {
+            return [
+                'value_type' => 'duration',
+                'data_type' => 'hours',
+                'unit_suffix' => '',
+                'unit_label' => 'jam',
+            ];
+        }
+
+        return [
+            'value_type' => 'decimal',
+            'data_type' => $dataType,
+            'unit_suffix' => '',
+            'unit_label' => '',
+        ];
     }
 
     public function syncEvaluationDataPeriod(KpiEvaluation $evaluation): KpiEvaluation
@@ -212,6 +326,7 @@ class KpiEvaluationService
             $row['data_type'] = $param?->data_type;
             $row['parameter_description'] = $param?->description;
             $row['manual_input_hint'] = $this->buildManualInputHint($pv, $param);
+            $row['input_unit'] = $this->resolveParameterInputUnit($param, (string) $pv->parameter_code, (string) ($pv->parameter_name ?: $param?->name ?: ''));
 
             $frequency = $this->maxFrequency(
                 (string) ($param?->frequency ?? 'monthly'),
@@ -281,6 +396,39 @@ class KpiEvaluationService
         }
 
         return $dataType;
+    }
+
+    private function resolveParameterInputUnit(?KpiParameter $param, string $code, string $name): string
+    {
+        $dataType = $this->resolveEffectiveParameterDataType($param, $name);
+        $lowerName = strtolower($name);
+
+        if ($dataType === 'percent') {
+            return '%';
+        }
+
+        if ($dataType === 'hours') {
+            return 'jam';
+        }
+
+        if ($dataType === 'integer') {
+            return match (true) {
+                $code === 'D032' || str_contains($lowerName, 'coaching') || str_contains($lowerName, 'person') => 'orang',
+                str_contains($lowerName, 'product') || str_contains($lowerName, 'npd') || str_contains($lowerName, 'benchmark') => 'produk',
+                str_contains($lowerName, 'visit') && str_contains($lowerName, 'count') => 'hari',
+                default => '',
+            };
+        }
+
+        if (str_contains($lowerName, 'minute')) {
+            return 'menit';
+        }
+
+        if (str_contains($lowerName, 'google review') || str_contains($lowerName, 'rating')) {
+            return '/ 5';
+        }
+
+        return '';
     }
 
     private function buildParameterSpecificInputInstruction(
@@ -1694,6 +1842,14 @@ class KpiEvaluationService
             return [
                 'comparator' => 'gte',
                 'min' => (float) $matches[1],
+                'max' => null,
+            ];
+        }
+
+        if (preg_match('/^>\s*(\d+(?:\.\d+)?)\s*Person/i', $target, $matches)) {
+            return [
+                'comparator' => 'gte',
+                'min' => (float) $matches[1] + 0.0001,
                 'max' => null,
             ];
         }

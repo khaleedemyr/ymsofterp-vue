@@ -88,6 +88,97 @@ class MampReportService
 
     /**
      * @return array{
+     *   outlet: array{id: int, name: string},
+     *   period: array{date_from: string, date_to: string, label: string},
+     *   rows: array<int, array{category_id: int, category: string, division: string, total: float}>,
+     *   total: float
+     * }
+     */
+    public function buildOutletCategorySummary(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->where('status', 'A')
+            ->first(['id_outlet', 'nama_outlet']);
+
+        if (! $outlet) {
+            abort(404, 'Outlet tidak ditemukan.');
+        }
+
+        $totalsByCategoryId = [];
+
+        DB::table('retail_non_food')
+            ->where('outlet_id', $outletId)
+            ->whereBetween('transaction_date', [$dateFrom, $dateTo])
+            ->where('status', 'approved')
+            ->whereNull('deleted_at')
+            ->whereNotNull('category_budget_id')
+            ->select('category_budget_id', DB::raw('SUM(total_amount) as total'))
+            ->groupBy('category_budget_id')
+            ->get()
+            ->each(function ($row) use (&$totalsByCategoryId) {
+                $key = (int) $row->category_budget_id;
+                $totalsByCategoryId[$key] = ($totalsByCategoryId[$key] ?? 0) + (float) $row->total;
+            });
+
+        DB::table('non_food_payment_outlets as nfpo')
+            ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
+            ->where('nfpo.outlet_id', $outletId)
+            ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
+            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->whereNotNull('nfpo.category_id')
+            ->select('nfpo.category_id', DB::raw('SUM(nfpo.amount) as total'))
+            ->groupBy('nfpo.category_id')
+            ->get()
+            ->each(function ($row) use (&$totalsByCategoryId) {
+                $key = (int) $row->category_id;
+                $totalsByCategoryId[$key] = ($totalsByCategoryId[$key] ?? 0) + (float) $row->total;
+            });
+
+        foreach ($totalsByCategoryId as $categoryId => $total) {
+            $totalsByCategoryId[$categoryId] = round($total, 2);
+        }
+
+        $categoryIds = array_keys(array_filter(
+            $totalsByCategoryId,
+            fn ($total) => $total > 0
+        ));
+
+        $rows = PurchaseRequisitionCategory::query()
+            ->active()
+            ->whereIn('id', $categoryIds)
+            ->orderBy('division')
+            ->orderBy('name')
+            ->get(['id', 'name', 'division'])
+            ->map(fn ($category) => [
+                'category_id' => (int) $category->id,
+                'category' => (string) $category->name,
+                'division' => (string) $category->division,
+                'total' => (float) ($totalsByCategoryId[(int) $category->id] ?? 0),
+            ])
+            ->values()
+            ->all();
+
+        $fromLabel = Carbon::parse($dateFrom)->format('d M Y');
+        $toLabel = Carbon::parse($dateTo)->format('d M Y');
+
+        return [
+            'outlet' => [
+                'id' => (int) $outlet->id_outlet,
+                'name' => (string) $outlet->nama_outlet,
+            ],
+            'period' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'label' => $fromLabel . ' — ' . $toLabel,
+            ],
+            'rows' => $rows,
+            'total' => round(collect($rows)->sum('total'), 2),
+        ];
+    }
+
+    /**
+     * @return array{
      *   period: array{year:int,month:int,date_from:string,date_to:string,label:string},
      *   rows: array<int, array{outlet_id: int|null, outlet: string, total: float}>,
      *   total: float

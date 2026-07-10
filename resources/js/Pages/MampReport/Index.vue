@@ -17,7 +17,7 @@
       </div>
 
       <div class="bg-white rounded-xl shadow-lg p-4 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div v-if="activeTab !== 'outlet_category'" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
             <select
@@ -58,6 +58,46 @@
             </button>
           </div>
         </div>
+
+        <div v-else class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
+            <select
+              v-model="filters.outlet_id"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2"
+            >
+              <option :value="null">— Pilih outlet —</option>
+              <option v-for="o in outlets" :key="o.id" :value="o.id">
+                {{ o.name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Dari</label>
+            <input
+              v-model="filters.date_from"
+              type="date"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Sampai</label>
+            <input
+              v-model="filters.date_to"
+              type="date"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2"
+            />
+          </div>
+          <div>
+            <button
+              type="button"
+              class="w-full bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700"
+              @click="applyFilters"
+            >
+              Tampilkan
+            </button>
+          </div>
+        </div>
       </div>
 
       <template v-if="outlet_summary">
@@ -81,7 +121,7 @@
             type="button"
             class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
             :class="activeTab === 'detail' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
-            @click="activeTab = 'detail'"
+            @click="switchTab('detail')"
           >
             Detail Transaksi
           </button>
@@ -89,9 +129,17 @@
             type="button"
             class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
             :class="activeTab === 'outlet' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
-            @click="activeTab = 'outlet'"
+            @click="switchTab('outlet')"
           >
             Rekap per Outlet
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors"
+            :class="activeTab === 'outlet_category' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+            @click="switchTab('outlet_category')"
+          >
+            Outlet Category
           </button>
         </div>
 
@@ -226,6 +274,50 @@
             </table>
           </div>
         </div>
+
+        <div v-show="activeTab === 'outlet_category'">
+          <div v-if="!outlet_category_summary" class="text-center text-gray-500 py-12 bg-white rounded-xl shadow-lg">
+            Pilih outlet dan rentang tanggal untuk menampilkan pemakaian per kategori.
+          </div>
+          <template v-else>
+            <p class="text-sm text-gray-500 mb-3">
+              {{ outlet_category_summary.outlet?.name }} — {{ outlet_category_summary.period?.label }}
+            </p>
+            <div class="bg-white rounded-xl shadow-lg overflow-x-auto max-w-2xl">
+              <table class="min-w-full text-sm border-collapse">
+                <thead>
+                  <tr class="bg-slate-700 text-white">
+                    <th class="px-4 py-2 text-left border">Category</th>
+                    <th class="px-4 py-2 text-left border">Division</th>
+                    <th class="px-4 py-2 text-right border">Nilai Pemakaian</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in outlet_category_summary.rows"
+                    :key="row.category_id"
+                    class="hover:bg-gray-50"
+                  >
+                    <td class="px-4 py-1.5 border">{{ row.category }}</td>
+                    <td class="px-4 py-1.5 border text-gray-600">{{ row.division }}</td>
+                    <td class="px-4 py-1.5 border text-right font-mono">{{ formatCredit(row.total) }}</td>
+                  </tr>
+                  <tr v-if="!outlet_category_summary.rows.length">
+                    <td colspan="3" class="px-4 py-6 border text-center text-gray-400">
+                      Tidak ada pemakaian kategori pada periode ini.
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="outlet_category_summary.rows.length">
+                  <tr class="bg-gray-100 font-bold">
+                    <td colspan="2" class="px-4 py-2 border text-right">TOTAL</td>
+                    <td class="px-4 py-2 border text-right font-mono">{{ formatCredit(outlet_category_summary.total) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </template>
+        </div>
       </template>
     </div>
   </AppLayout>
@@ -239,24 +331,62 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
+  outlets: { type: Array, default: () => [] },
   filters: {
     type: Object,
-    default: () => ({ category_id: null, year: new Date().getFullYear(), month: new Date().getMonth() + 1 }),
+    default: () => ({
+      view: 'outlet',
+      category_id: null,
+      year: new Date().getFullYear(),
+      month: new Date().getMonth() + 1,
+      outlet_id: null,
+      date_from: '',
+      date_to: '',
+    }),
   },
   outlet_summary: { type: Object, default: null },
+  outlet_category_summary: { type: Object, default: null },
   report: { type: Object, default: null },
 })
+
+function defaultDateFrom() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+}
+
+function defaultDateTo() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
+}
 
 const filters = reactive({
   category_id: props.filters.category_id ?? null,
   year: props.filters.year ?? new Date().getFullYear(),
   month: props.filters.month ?? new Date().getMonth() + 1,
+  outlet_id: props.filters.outlet_id ?? null,
+  date_from: props.filters.date_from || defaultDateFrom(),
+  date_to: props.filters.date_to || defaultDateTo(),
 })
 
 const expandedRows = ref([])
 const rowItemsByKey = ref({})
 const rowItemsLoading = ref({})
-const activeTab = ref('outlet')
+const activeTab = ref(props.filters.view ?? 'outlet')
+
+watch(() => props.filters.view, (view) => {
+  if (view) {
+    activeTab.value = view
+  }
+})
+
+watch(() => props.filters, (nextFilters) => {
+  filters.category_id = nextFilters.category_id ?? null
+  filters.year = nextFilters.year ?? new Date().getFullYear()
+  filters.month = nextFilters.month ?? new Date().getMonth() + 1
+  filters.outlet_id = nextFilters.outlet_id ?? null
+  filters.date_from = nextFilters.date_from || defaultDateFrom()
+  filters.date_to = nextFilters.date_to || defaultDateTo()
+}, { deep: true })
 
 watch(() => props.report, () => {
   expandedRows.value = []
@@ -273,14 +403,30 @@ function monthLabel(m) {
   return monthNames[m - 1] || m
 }
 
+function switchTab(tab) {
+  activeTab.value = tab
+  applyFilters()
+}
+
 function applyFilters() {
   const params = {
-    year: filters.year,
-    month: filters.month,
+    view: activeTab.value,
   }
-  if (filters.category_id) {
-    params.category_id = filters.category_id
+
+  if (activeTab.value === 'outlet_category') {
+    if (filters.outlet_id) {
+      params.outlet_id = filters.outlet_id
+    }
+    params.date_from = filters.date_from
+    params.date_to = filters.date_to
+  } else {
+    params.year = filters.year
+    params.month = filters.month
+    if (filters.category_id) {
+      params.category_id = filters.category_id
+    }
   }
+
   router.get('/mamp-report', params, { preserveState: true, preserveScroll: true })
 }
 

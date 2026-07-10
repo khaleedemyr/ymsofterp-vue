@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import axios from 'axios';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
+import { formatKpiAchievement } from '@/utils/formatKpiAchievement';
 
 const props = defineProps({
   evaluationId: { type: Number, required: true },
@@ -13,12 +14,17 @@ const open = ref(false);
 const loading = ref(false);
 const error = ref('');
 const data = ref(null);
+const activeItem = ref(null);
 const bulkCache = ref({});
 const bulkLoading = ref(false);
 let bulkLoadPromise = null;
 
 function formatNum(val) {
   return formatKpiNumber(val);
+}
+
+function formatAchievement(value, item = null) {
+  return formatKpiAchievement(value, item || activeItem.value);
 }
 
 function levelBadge(level) {
@@ -98,6 +104,7 @@ async function show(item) {
     return;
   }
 
+  activeItem.value = item;
   open.value = true;
   error.value = '';
 
@@ -258,7 +265,7 @@ defineExpose({ show, preload });
               <template v-if="data.breakdown_mode === 'regional_visit'">
                 {{ data.portfolio_note }}
                 Achievement agregat evaluasi:
-                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
                   ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan target)
                 </span>
@@ -266,7 +273,7 @@ defineExpose({ show, preload });
               <template v-else-if="data.breakdown_mode === 'ticket_follow_up'">
                 {{ data.portfolio_note }}
                 Achievement agregat evaluasi:
-                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.compliant_tickets != null && data.summary.total_tickets">
                   ({{ formatNum(data.summary.compliant_tickets) }} / {{ formatNum(data.summary.total_tickets) }} compliant)
                 </span>
@@ -274,14 +281,14 @@ defineExpose({ show, preload });
               <template v-else-if="data.breakdown_mode === 'portfolio'">
                 {{ data.portfolio_note }}
                 Achievement agregat evaluasi:
-                <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
                   ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan)
                 </span>
               </template>
               <template v-else>
                 Nilai per outlet dihitung dari data ERP per outlet (bukan agregat scope).
-                Achievement agregat evaluasi: <strong>{{ formatNum(data.aggregate_achievement) }}%</strong>
+                Achievement agregat evaluasi: <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
               </template>
             </p>
 
@@ -367,7 +374,7 @@ defineExpose({ show, preload });
                       </td>
                       <td class="px-3 py-2 text-right font-semibold">{{ formatNum(row.compliant_tickets) }}</td>
                       <td class="px-3 py-2 text-right font-semibold">
-                        {{ formatNum(row.achievement_percent) }}<template v-if="row.achievement_percent != null">%</template>
+                        <template v-if="row.achievement_percent != null">{{ formatAchievement(row.achievement_percent) }}</template>
                         <template v-else>—</template>
                       </td>
                       <td class="px-3 py-2 text-center">
@@ -416,7 +423,7 @@ defineExpose({ show, preload });
                       {{ paramCellValue(row, col) }}
                     </td>
                     <td v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right font-semibold">
-                      {{ formatNum(row.achievement_percent) }}<template v-if="row.achievement_percent != null">%</template>
+                      {{ formatAchievement(row.achievement_percent) }}
                     </td>
                     <td class="px-3 py-2 text-center">
                       <span class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(row.performance_level)">

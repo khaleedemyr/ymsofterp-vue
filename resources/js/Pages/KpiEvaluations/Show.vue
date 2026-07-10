@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { formatKpiNumber } from '@/utils/formatKpiNumber';
 import { formatKpiFrequencyLabel, kpiFrequencyBadgeClass } from '@/utils/formatKpiFrequency';
+import { formatKpiAchievement } from '@/utils/formatKpiAchievement';
 import KpiOutletBreakdownModal from '@/Components/Kpi/KpiOutletBreakdownModal.vue';
 
 const props = defineProps({
@@ -44,6 +45,10 @@ function levelBadge(level) {
 
 function formatNum(val) {
   return formatKpiNumber(val);
+}
+
+function formatAchievement(item) {
+  return formatKpiAchievement(item?.achievement_percent, item);
 }
 
 function formatDueDate(value) {
@@ -163,7 +168,7 @@ onMounted(() => {
                   <div v-if="item.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ item.data_window_label }}</div>
                 </td>
                 <td class="px-4 py-2">{{ item.target_value || '—' }}</td>
-                <td class="px-4 py-2 text-right">{{ formatNum(item.achievement_percent) }}%</td>
+                <td class="px-4 py-2 text-right">{{ formatAchievement(item) }}</td>
                 <td class="px-4 py-2">
                   <span v-if="item.performance_level" class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(item.performance_level)">{{ item.performance_level }}</span>
                 </td>
