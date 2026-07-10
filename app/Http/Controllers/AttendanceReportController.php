@@ -1027,10 +1027,7 @@ class AttendanceReportController extends Controller
         }
         $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
 
-        $jabatan = DB::table('tbl_data_jabatan')
-            ->select('id_jabatan as id', 'nama_jabatan as name')
-            ->orderBy('nama_jabatan')
-            ->get();
+        $jabatan = $this->getActiveUserJabatanOptions();
 
         // ✅ OPTIMIZATION: Only load data if filters are provided
         $hasFilters = !empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun);
@@ -1064,6 +1061,7 @@ class AttendanceReportController extends Controller
             ->join('user_pins as up', 'a.pin', '=', 'up.pin')
             ->join('users as u', 'up.user_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet') // ✅ FIX: Group by user's outlet
+            ->where('u.status', 'A')
             ->select(
                 'a.scan_date',
                 'a.inoutmode',
@@ -1269,6 +1267,21 @@ class AttendanceReportController extends Controller
             ],
             'period' => [ 'start' => $start, 'end' => $end ],
         ]);
+    }
+
+    /**
+     * Jabatan yang dipakai user aktif (status A) untuk filter dropdown.
+     */
+    private function getActiveUserJabatanOptions()
+    {
+        return DB::table('tbl_data_jabatan as j')
+            ->join('users as u', 'u.id_jabatan', '=', 'j.id_jabatan')
+            ->where('u.status', 'A')
+            ->whereNotNull('u.id_jabatan')
+            ->select('j.id_jabatan as id', 'j.nama_jabatan as name')
+            ->distinct()
+            ->orderBy('j.nama_jabatan')
+            ->get();
     }
 
     /**
@@ -1717,6 +1730,7 @@ class AttendanceReportController extends Controller
                         $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                     })
                     ->join('users as u', 'up.user_id', '=', 'u.id')
+                    ->where('u.status', 'A')
                     ->select(
                         'a.scan_date',
                         'a.inoutmode',
@@ -2205,10 +2219,7 @@ class AttendanceReportController extends Controller
         // Dropdown filter
         $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
         $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
-        $jabatan = DB::table('tbl_data_jabatan')
-            ->select('id_jabatan as id', 'nama_jabatan as name')
-            ->orderBy('nama_jabatan')
-            ->get();
+        $jabatan = $this->getActiveUserJabatanOptions();
 
 
         // Calculate summary statistics (round down total lembur)
@@ -2296,6 +2307,7 @@ class AttendanceReportController extends Controller
                         $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                     })
                     ->join('users as u', 'up.user_id', '=', 'u.id')
+                    ->where('u.status', 'A')
                     ->select(
                         'a.scan_date',
                         'a.inoutmode',

@@ -436,11 +436,26 @@ class OutletRejectionController extends Controller
     public function approveAssistantSsdManager(Request $request, $id)
     {
         $rejection = OutletRejection::with(['outlet', 'warehouse'])->findOrFail($id);
+        $user = Auth::user();
+        $userJabatan = (int) $user->id_jabatan;
+        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
         
         // Check if warehouse is MK1 or MK2 - jika MK, tidak perlu approval asisten SSD manager
         $isMKWarehouse = in_array($rejection->warehouse->name, ['MK1 Hot Kitchen', 'MK2 Cold Kitchen']);
         if ($isMKWarehouse) {
             return redirect()->route('outlet-rejections.index')->with('error', 'Outlet Rejection MK tidak memerlukan approval Asisten SSD Manager');
+        }
+
+        if ($rejection->status !== 'draft') {
+            return redirect()->route('outlet-rejections.index')->with('error', 'Outlet Rejection tidak dalam status draft');
+        }
+
+        if ($rejection->assistant_ssd_manager_approved_at) {
+            return redirect()->route('outlet-rejections.index')->with('error', 'Tahap Asisten SSD Manager sudah di-approve');
+        }
+
+        if (!in_array($userJabatan, [172, 161]) && !$isSuperadmin) {
+            return redirect()->route('outlet-rejections.index')->with('error', 'Anda tidak berhak approve pada tahap Asisten SSD Manager');
         }
         
         $updateData = [
@@ -459,11 +474,12 @@ class OutletRejectionController extends Controller
             $no_rejection = $rejection->number;
             $outlet = $rejection->outlet->nama_outlet ?? '-';
             $warehouse = $rejection->warehouse->name ?? '-';
+            $approverLabel = $userJabatan === 172 ? 'Asisten SSD Manager' : ($userJabatan === 161 ? 'SSD Manager' : 'Superadmin');
             $this->sendNotification(
                 $ssdManagers,
                 'outlet_rejection_approval',
                 'Approval Outlet Rejection',
-                "Outlet Rejection $no_rejection dari $outlet ($warehouse) sudah di-approve Asisten SSD Manager, menunggu approval SSD Manager.",
+                "Outlet Rejection $no_rejection dari $outlet ($warehouse) sudah di-approve $approverLabel, menunggu approval SSD Manager.",
                 route('outlet-rejections.show', $rejection->id)
             );
         } else {
@@ -476,11 +492,12 @@ class OutletRejectionController extends Controller
             $no_rejection = $rejection->number;
             $outlet = $rejection->outlet->nama_outlet ?? '-';
             $warehouse = $rejection->warehouse->name ?? '-';
+            $rejectorLabel = $userJabatan === 172 ? 'Asisten SSD Manager' : ($userJabatan === 161 ? 'SSD Manager' : 'Superadmin');
             $this->sendNotification(
                 [$createdBy],
                 'outlet_rejection_rejected',
                 'Outlet Rejection Ditolak',
-                "Outlet Rejection $no_rejection dari $outlet ($warehouse) telah ditolak oleh Asisten SSD Manager.",
+                "Outlet Rejection $no_rejection dari $outlet ($warehouse) telah ditolak oleh $rejectorLabel.",
                 route('outlet-rejections.show', $rejection->id)
             );
         }

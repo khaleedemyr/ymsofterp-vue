@@ -424,7 +424,7 @@ const canApproveAssistantSSD = computed(() => {
   // Hanya untuk rejection non-MK
   if (isMKWarehouse.value) return false;
   
-  return ((user?.id_jabatan === 172 && user?.status === 'A') || isSuperadmin.value)
+  return (([172, 161].includes(user?.id_jabatan) && user?.status === 'A') || isSuperadmin.value)
     && props.rejection.status === 'draft'
     && !props.rejection.assistant_ssd_manager_approved_at;
 });
