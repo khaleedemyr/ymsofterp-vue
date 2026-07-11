@@ -679,4 +679,137 @@ class RegionalVisitAnalyticsService
             'visit_coverage_pct' => 0,
         ];
     }
+
+    /**
+     * Ringkasan target vs pencapaian kunjungan outlet untuk Home (user Regional Management).
+     *
+     * @return array<string, mixed>|null null jika user bukan regional
+     */
+    public function homeVisitSummaryForUser(int $userId): ?array
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $assignment = UserRegional::query()->where('user_id', $userId)->first();
+        if ($assignment === null) {
+            return null;
+        }
+
+        $targetEntries = $this->normalizeOutletVisitTargets($assignment->outlet_visit_targets ?? []);
+        $portfolioTargetLegacy = $assignment->target_outlet_visits !== null && $assignment->target_outlet_visits !== ''
+            ? max(0, (int) $assignment->target_outlet_visits)
+            : 0;
+
+        $bulan = (int) date('n');
+        $tahun = (int) date('Y');
+        $period = $this->payrollPeriod($bulan, $tahun);
+        $startDate = $period['start_date'];
+        $endDate = $period['end_date'];
+
+        $outlets = [];
+        $totalActual = 0;
+        $totalTarget = 0;
+        $visitedCount = 0;
+
+        if ($targetEntries !== []) {
+            $outletIds = array_column($targetEntries, 'outlet_id');
+            $outletMeta = DB::table('tbl_data_outlet')
+                ->whereIn('id_outlet', $outletIds)
+                ->get(['id_outlet', 'nama_outlet'])
+                ->keyBy('id_outlet');
+
+            foreach ($targetEntries as $entry) {
+                $outletId = $entry['outlet_id'];
+                $targetVisits = $entry['target_visits'];
+                $detail = $this->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
+                $actualVisits = (int) ($detail['summary']['visit_days'] ?? 0);
+
+                if ($actualVisits > 0) {
+                    $visitedCount++;
+                }
+
+                $totalActual += $actualVisits;
+                $totalTarget += $targetVisits;
+
+                $outlets[] = [
+                    'outlet_id' => $outletId,
+                    'outlet_name' => (string) ($outletMeta->get($outletId)?->nama_outlet ?? "Outlet #{$outletId}"),
+                    'target_visits' => $targetVisits,
+                    'actual_visits' => $actualVisits,
+                    'achievement_pct' => $targetVisits > 0
+                        ? round(min(100, ($actualVisits / $targetVisits) * 100), 1)
+                        : ($actualVisits > 0 ? 100.0 : 0.0),
+                    'status' => match (true) {
+                        $targetVisits > 0 && $actualVisits >= $targetVisits => 'achieved',
+                        $actualVisits > 0 => 'partial',
+                        default => 'none',
+                    },
+                ];
+            }
+
+            usort($outlets, fn (array $a, array $b) => strcmp($a['outlet_name'], $b['outlet_name']));
+        } elseif ($portfolioTargetLegacy > 0) {
+            $totalTarget = $portfolioTargetLegacy;
+            foreach ($this->getUserVisitedOutletIds($userId, $startDate, $endDate) as $outletId) {
+                $detail = $this->getOutletVisitDetail([$userId], (int) $outletId, $startDate, $endDate);
+                $totalActual += (int) ($detail['summary']['visit_days'] ?? 0);
+            }
+        }
+
+        $effectiveTarget = $totalTarget > 0 ? $totalTarget : $portfolioTargetLegacy;
+
+        return [
+            'areas' => $assignment->resolveAreas(),
+            'period' => [
+                'bulan' => $period['bulan'],
+                'tahun' => $period['tahun'],
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'label' => date('d M Y', strtotime($startDate)).' – '.date('d M Y', strtotime($endDate)),
+            ],
+            'summary' => [
+                'portfolio_target' => $effectiveTarget,
+                'total_actual' => $totalActual,
+                'achievement_pct' => $effectiveTarget > 0
+                    ? round(min(100, ($totalActual / $effectiveTarget) * 100), 1)
+                    : null,
+                'configured_outlet_count' => count($targetEntries),
+                'visited_outlet_count' => $visitedCount,
+            ],
+            'outlets' => $outlets,
+            'has_outlet_targets' => $targetEntries !== [],
+        ];
+    }
+
+    /**
+     * @param  mixed  $raw
+     * @return list<array{outlet_id: int, target_visits: int}>
+     */
+    private function normalizeOutletVisitTargets(mixed $raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        $entries = [];
+        foreach ($raw as $row) {
+            $outletId = (int) ($row['outlet_id'] ?? 0);
+            if ($outletId <= 0) {
+                continue;
+            }
+
+            $entries[] = [
+                'outlet_id' => $outletId,
+                'target_visits' => max(0, (int) ($row['target_visits'] ?? 0)),
+            ];
+        }
+
+        return $entries;
+    }
 }

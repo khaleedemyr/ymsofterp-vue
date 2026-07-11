@@ -18,6 +18,7 @@ import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprova
 import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
+import RegionalVisitTargetCard from '@/Components/RegionalVisitTargetCard.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
@@ -6456,6 +6457,9 @@ watch(locale, () => {
                                             compact
                                         />
                                     </div>
+
+                                    <!-- Target kunjungan outlet (Regional Management) -->
+                                    <RegionalVisitTargetCard :is-night="isNight" compact />
                                 </div>
                             </div>
                             

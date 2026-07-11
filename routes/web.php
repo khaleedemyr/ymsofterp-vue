@@ -197,6 +197,7 @@ Route::middleware('auth')->group(function () {
     Route::patch('/profile/documents', [ProfileController::class, 'updateDocuments'])->name('profile.update-documents');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
+    Route::get('/home/regional-visit-summary', [\App\Http\Controllers\HomeController::class, 'regionalVisitSummary'])->name('home.regional-visit-summary');
 
     // Google Review scraper routes
     Route::get('/google-review', [GoogleReviewController::class, 'index'])->name('google-review.index');

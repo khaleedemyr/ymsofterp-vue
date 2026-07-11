@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\RegionalVisitAnalyticsService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 
 class HomeController extends Controller
 {
@@ -15,4 +14,27 @@ class HomeController extends Controller
             // ...props lain jika ada
         ]);
     }
-} 
+
+    /**
+     * Ringkasan target & pencapaian kunjungan outlet untuk user Regional Management (Home widget).
+     */
+    public function regionalVisitSummary(Request $request, RegionalVisitAnalyticsService $analytics)
+    {
+        $userId = (int) ($request->user()->id ?? 0);
+        $summary = $analytics->homeVisitSummaryForUser($userId);
+
+        if ($summary === null) {
+            return response()->json([
+                'success' => true,
+                'is_regional' => false,
+                'data' => null,
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'is_regional' => true,
+            'data' => $summary,
+        ]);
+    }
+}
