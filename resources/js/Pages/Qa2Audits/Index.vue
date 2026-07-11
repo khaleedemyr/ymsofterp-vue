@@ -97,6 +97,54 @@ function canCap(audit) {
   return audit.status === 'submitted' && Number(audit.count_nc || 0) > 0 && Number(audit.count_nc_pending_cap || 0) > 0;
 }
 
+function capStatus(audit) {
+  const nc = Number(audit.count_nc || 0);
+  if (audit.status !== 'submitted' || nc === 0) {
+    return null;
+  }
+
+  const pending = Number(audit.count_nc_pending_cap || 0);
+  const submission = audit.cap_submission_status || null;
+
+  if (pending > 0) {
+    return {
+      label: pending === nc ? 'CAP Belum Diisi' : `CAP Belum Lengkap (${pending})`,
+      className: 'bg-rose-100 text-rose-700',
+      icon: 'fa-circle-exclamation',
+    };
+  }
+
+  if (submission === 'approved') {
+    return {
+      label: 'CAP Disetujui',
+      className: 'bg-emerald-100 text-emerald-700',
+      icon: 'fa-circle-check',
+    };
+  }
+
+  if (submission === 'pending_approval') {
+    return {
+      label: 'CAP Proses Approval',
+      className: 'bg-amber-100 text-amber-700',
+      icon: 'fa-clock',
+    };
+  }
+
+  if (submission === 'rejected') {
+    return {
+      label: 'CAP Ditolak',
+      className: 'bg-red-100 text-red-700',
+      icon: 'fa-circle-xmark',
+    };
+  }
+
+  return {
+    label: 'CAP Terisi',
+    className: 'bg-indigo-100 text-indigo-700',
+    icon: 'fa-clipboard-check',
+  };
+}
+
 function auditScore(audit) {
   const compliant = Number(audit.count_c || 0);
   const nonCompliant = Number(audit.count_nc || 0);
@@ -313,6 +361,7 @@ async function shareToWhatsApp(audit) {
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">C / NC / NA</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Audit Result</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Status</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">CAP</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Aksi</th>
               </tr>
             </thead>
@@ -384,9 +433,17 @@ async function shareToWhatsApp(audit) {
                   >
                     {{ audit.status }}
                   </span>
-                  <div v-if="canCap(audit)" class="mt-1 text-xs font-medium text-rose-600">
-                    NC belum CAP: {{ audit.count_nc_pending_cap || 0 }}
-                  </div>
+                </td>
+                <td class="px-4 py-3 text-sm">
+                  <span
+                    v-if="capStatus(audit)"
+                    class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold"
+                    :class="capStatus(audit).className"
+                  >
+                    <i class="fas text-[10px]" :class="capStatus(audit).icon" />
+                    {{ capStatus(audit).label }}
+                  </span>
+                  <span v-else class="text-xs text-gray-400">-</span>
                 </td>
                 <td class="px-4 py-3 text-sm">
                   <div class="flex flex-wrap gap-2">
@@ -430,7 +487,7 @@ async function shareToWhatsApp(audit) {
                 </td>
               </tr>
               <tr v-if="!audits.data.length">
-                <td colspan="9" class="px-4 py-10 text-center text-sm text-gray-500">
+                <td colspan="10" class="px-4 py-10 text-center text-sm text-gray-500">
                   Data QA Audit belum ada.
                 </td>
               </tr>
