@@ -216,6 +216,9 @@ class TicketController extends Controller
     /** User dengan outlet pusat (id_outlet = 1) melihat semua ticket; lainnya hanya ticket outlet mereka. */
     public const TICKET_VIEW_ALL_OUTLETS_ID = 1;
 
+    /** Status ticket yang ditampilkan saat cek duplikasi (create / daily report). */
+    private const ACTIVE_TICKET_STATUS_SLUGS_FOR_DEDUP = ['open', 'in_progress', 'pending'];
+
     public static function userSeesAllTicketOutlets($user): bool
     {
         if (!$user) {
@@ -4742,11 +4745,8 @@ class TicketController extends Controller
         $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet', 'creator:id,nama_lengkap,email'])
             ->where('outlet_id', $outletId)
             ->where('title', 'like', '%'.$area->nama_area.'%')
-            ->where(function ($q) {
-                $q->whereDoesntHave('status')
-                    ->orWhereHas('status', function ($statusQuery) {
-                        $statusQuery->whereNotIn('slug', ['closed', 'resolved']);
-                    });
+            ->whereHas('status', function ($statusQuery) {
+                $statusQuery->whereIn('slug', self::ACTIVE_TICKET_STATUS_SLUGS_FOR_DEDUP);
             })
             ->orderByDesc('created_at')
             ->limit(20)
@@ -4802,11 +4802,8 @@ class TicketController extends Controller
             'creator:id,nama_lengkap,email',
         ])
             ->where('outlet_id', $outletId)
-            ->where(function ($q) {
-                $q->whereDoesntHave('status')
-                    ->orWhereHas('status', function ($statusQuery) {
-                        $statusQuery->whereNotIn('slug', ['closed', 'resolved']);
-                    });
+            ->whereHas('status', function ($statusQuery) {
+                $statusQuery->whereIn('slug', self::ACTIVE_TICKET_STATUS_SLUGS_FOR_DEDUP);
             });
 
         if ($search !== '') {
