@@ -970,7 +970,7 @@ function buildSavePayload(cleanItems) {
     ...form.value,
     items: cleanItems,
     fo_schedule_id: form.value.fo_schedule_id,
-    warehouse_outlet_id: form.value.warehouse_outlet_id,
+    warehouse_outlet_id: form.value.warehouse_outlet_id || selectedWarehouseOutlet.value,
     fo_mode: selectedFOMode.value,
     input_mode: mode.value,
   };
@@ -980,20 +980,28 @@ function buildSavePayload(cleanItems) {
   return payload;
 }
 
-async function saveDraftItems() {
+async function persistDraftItems() {
   const cleanItems = buildCleanItems();
   if (!cleanItems.length) {
     throw new Error('Minimal 1 item wajib diisi sebelum submit.');
   }
+  if (!form.value.arrival_date) {
+    throw new Error('Tanggal kedatangan wajib diisi.');
+  }
+  if (!form.value.warehouse_outlet_id && !selectedWarehouseOutlet.value) {
+    throw new Error('Pilih warehouse outlet terlebih dahulu.');
+  }
+
   const payload = buildSavePayload(cleanItems);
   if (draftId.value) {
     await axios.put(`/floor-order/${draftId.value}`, payload);
     return;
   }
+
   const res = await axios.post('/floor-order', payload);
   handleStoreResponse(res);
   if (!draftId.value) {
-    throw new Error('Draft Order belum tersimpan.');
+    throw new Error('Draft Order belum tersimpan. Silakan coba lagi.');
   }
 }
 
@@ -1004,13 +1012,26 @@ function triggerAutosave() {
     if (selectedFOMode.value === 'RO Khusus' && approvers.value.length === 0) {
       return;
     }
+    if (!form.value.arrival_date) {
+      return;
+    }
+    if (!form.value.warehouse_outlet_id && !selectedWarehouseOutlet.value) {
+      return;
+    }
     const cleanItems = buildCleanItems();
     if (!cleanItems.length) {
       return;
     }
     const payload = buildSavePayload(cleanItems);
-    if (draftId.value) {
-      await axios.put(`/floor-order/${draftId.value}`, payload);
+    try {
+      if (draftId.value) {
+        await axios.put(`/floor-order/${draftId.value}`, payload);
+      } else {
+        const res = await axios.post('/floor-order', payload);
+        handleStoreResponse(res);
+      }
+    } catch (e) {
+      console.error('Autosave floor order failed:', e);
     }
   }, 2000);
 }
@@ -1044,19 +1065,22 @@ function submitOrderWithLoading() {
     });
     return;
   }
-  
-  if (!draftId.value) {
-    Swal.fire({
-      icon: 'error',
-      title: 'Tidak Bisa Submit',
-      text: 'Draft Order belum tersimpan. Silakan tunggu beberapa detik atau pastikan koneksi Anda stabil.',
-    });
-    return;
-  }
 
   if (!validateKhususApprovers()) {
     return;
   }
+
+  const previewItems = buildCleanItems();
+  if (!previewItems.length) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Item Belum Diisi',
+      text: 'Minimal 1 item dengan qty > 0 wajib diisi sebelum submit.',
+      confirmButtonColor: '#3085d6',
+    });
+    return;
+  }
+
   Swal.fire({
     icon: 'question',
     title: 'Konfirmasi Kirim RO',
@@ -1079,7 +1103,7 @@ function submitOrderWithLoading() {
         }
       });
       try {
-        await saveDraftItems();
+        await persistDraftItems();
         await axios.post(`/floor-order/${draftId.value}/submit`);
         isSubmitting.value = false;
         Swal.close();
