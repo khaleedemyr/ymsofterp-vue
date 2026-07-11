@@ -44,10 +44,23 @@ class FoodFloorOrderController extends Controller
     public function edit($id)
     {
         $order = FoodFloorOrder::with(['items', 'approvalFlows.approver'])->findOrFail($id);
+        if (! $order->canEdit()) {
+            return redirect()->route('floor-order.index')
+                ->with('error', 'Request Order tidak dapat diedit karena sudah melewati batas waktu edit (07:00).');
+        }
+
+        $this->appendEditWindowMeta($order);
+
         return Inertia::render('FloorOrder/Form', [
             'order' => $order,
             'user' => Auth::user()->load('outlet'),
         ]);
+    }
+
+    private function appendEditWindowMeta(FoodFloorOrder $order): void
+    {
+        $order->setAttribute('can_edit', $order->canEdit());
+        $order->setAttribute('edit_cutoff_at', $order->editCutoffAt()?->toIso8601String());
     }
 
     public function getApprovers(Request $request)
@@ -358,6 +371,12 @@ class FoodFloorOrderController extends Controller
         }
         
         $order = FoodFloorOrder::findOrFail($id);
+        if (! $order->canEdit()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request Order tidak dapat diubah karena sudah melewati batas waktu edit (07:00).',
+            ], 422);
+        }
         if ($order->status !== 'draft') {
             return response()->json([
                 'success' => false,
@@ -610,6 +629,7 @@ class FoodFloorOrderController extends Controller
         
         // Load items dari relasi untuk semua mode
         $order->load('items.category');
+        $this->appendEditWindowMeta($order);
         
         return Inertia::render('FloorOrder/Show', [
             'order' => $order,
@@ -892,6 +912,7 @@ class FoodFloorOrderController extends Controller
             $order->has_packing_list = \DB::table('food_packing_lists')
                 ->where('food_floor_order_id', $order->id)
                 ->exists();
+            $this->appendEditWindowMeta($order);
             $order->setRelation('foSchedule', $order->foSchedule);
             $order->setRelation('warehouseOutlet', $order->warehouseOutlet);
             return $order;
@@ -941,6 +962,7 @@ class FoodFloorOrderController extends Controller
             $order->has_packing_list = \DB::table('food_packing_lists')
                 ->where('food_floor_order_id', $order->id)
                 ->exists();
+            $this->appendEditWindowMeta($order);
             $order->total_amount = $order->items->sum(function($item) {
                 return ($item->qty ?? 0) * ($item->price ?? 0);
             });
@@ -971,6 +993,7 @@ class FoodFloorOrderController extends Controller
         $order->has_packing_list = \DB::table('food_packing_lists')
             ->where('food_floor_order_id', $order->id)
             ->exists();
+        $this->appendEditWindowMeta($order);
 
         return response()->json($order);
     }
