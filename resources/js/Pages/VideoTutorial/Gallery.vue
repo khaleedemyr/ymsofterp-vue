@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
@@ -16,6 +17,7 @@ const search = ref(props.filters?.search || '');
 const groupId = ref(props.filters?.group_id || '');
 const sort = ref(props.filters?.sort || 'newest');
 const viewMode = ref('grid'); // grid or list
+const sharingVideoId = ref(null);
 
 const debouncedSearch = debounce(() => {
   router.get('/video-tutorials/gallery', {
@@ -49,6 +51,29 @@ function formatTotalDuration(seconds) {
   return `${minutes} menit`;
 }
 
+async function shareToWhatsApp(video, event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  if (sharingVideoId.value) return;
+
+  try {
+    sharingVideoId.value = video.id;
+    const response = await axios.post(route('video-tutorials.share-link', video.id));
+    const message = response.data?.message || response.data?.url;
+    if (!message) {
+      throw new Error('Link tidak tersedia');
+    }
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  } catch (error) {
+    Swal.fire('Error', error.response?.data?.message || error.message || 'Gagal membuat link share', 'error');
+  } finally {
+    sharingVideoId.value = null;
+  }
+}
+
 async function playVideo(video) {
   const videoUrl = video.video_url || `/storage/${video.video_path}`;
   
@@ -78,6 +103,15 @@ async function playVideo(video) {
         <div><span class="font-semibold text-purple-300">Ukuran:</span> ${video.video_size_formatted}</div>
         <div><span class="font-semibold text-purple-300">Dibuat Oleh:</span> ${video.creator_name}</div>
         <div><span class="font-semibold text-purple-300">Tanggal:</span> ${new Date(video.created_at).toLocaleDateString('id-ID')}</div>
+      <div class="mt-6 flex justify-center">
+        <button
+          id="gallery-share-wa-btn"
+          type="button"
+          class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-green-600 hover:bg-green-700 text-white font-semibold shadow-lg transition-colors"
+        >
+          <i class="fa-brands fa-whatsapp text-lg"></i>
+          Share WhatsApp
+        </button>
       </div>
     </div>
   `;
@@ -93,7 +127,13 @@ async function playVideo(video) {
     customClass: {
       popup: 'swal2-video-popup-dark',
       closeButton: 'swal2-video-close-dark'
-    }
+    },
+    didOpen: () => {
+      const btn = document.getElementById('gallery-share-wa-btn');
+      if (btn) {
+        btn.addEventListener('click', (e) => shareToWhatsApp(video, e));
+      }
+    },
   });
 }
 
@@ -112,6 +152,17 @@ watch([groupId, sort], () => {
 
 const filteredGroups = computed(() => {
   return props.groups.filter(group => group.videos_count > 0);
+});
+
+onMounted(() => {
+  const params = new URLSearchParams(window.location.search);
+  const playId = params.get('play');
+  if (!playId || !props.videos?.data?.length) return;
+
+  const video = props.videos.data.find((item) => String(item.id) === String(playId));
+  if (video) {
+    playVideo(video);
+  }
 });
 </script>
 
@@ -293,9 +344,20 @@ const filteredGroups = computed(() => {
                     <i class="fa-solid fa-user"></i>
                     {{ video.creator_name }}
                   </span>
-                  <span class="flex items-center gap-1">
-                    <i class="fa-solid fa-file-video"></i>
-                    {{ video.video_size_formatted }}
+                  <span class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-600/20 text-green-300 border border-green-500/30 hover:bg-green-600/35 transition-colors"
+                      :disabled="sharingVideoId === video.id"
+                      @click="shareToWhatsApp(video, $event)"
+                    >
+                      <i class="fa-brands fa-whatsapp"></i>
+                      Share
+                    </button>
+                    <span class="flex items-center gap-1">
+                      <i class="fa-solid fa-file-video"></i>
+                      {{ video.video_size_formatted }}
+                    </span>
                   </span>
                 </div>
               </div>
@@ -359,6 +421,15 @@ const filteredGroups = computed(() => {
                       {{ video.video_size_formatted }}
                     </span>
                     <span class="text-gray-400">{{ new Date(video.created_at).toLocaleDateString('id-ID') }}</span>
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-600/20 text-green-300 border border-green-500/30 hover:bg-green-600/35 transition-colors"
+                      :disabled="sharingVideoId === video.id"
+                      @click="shareToWhatsApp(video, $event)"
+                    >
+                      <i class="fa-brands fa-whatsapp"></i>
+                      Share WhatsApp
+                    </button>
                   </div>
                 </div>
               </div>

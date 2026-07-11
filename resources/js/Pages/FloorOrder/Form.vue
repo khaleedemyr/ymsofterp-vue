@@ -66,6 +66,121 @@ if (props.order) {
 
 const draftId = ref(props.order?.id || null);
 
+// --- RO Khusus: approval flow (seperti PR OPS) ---
+const approvers = ref([]);
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+
+if (props.order?.approval_flows?.length) {
+  approvers.value = [...props.order.approval_flows]
+    .sort((a, b) => a.approval_level - b.approval_level)
+    .map((f) => ({
+      id: f.approver_id,
+      nama_lengkap: f.approver?.nama_lengkap || '',
+      email: f.approver?.email || '',
+      jabatan: f.approver?.jabatan || '',
+    }));
+}
+
+function buildApproverPayload() {
+  return approvers.value.filter((a) => a?.id).map((a) => a.id);
+}
+
+function validateKhususApprovers() {
+  if (selectedFOMode.value !== 'RO Khusus') {
+    return true;
+  }
+  if (approvers.value.length === 0) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Approver Diperlukan',
+      text: 'Silakan pilih minimal satu approver sebelum menyimpan RO Khusus.',
+      confirmButtonColor: '#3085d6',
+    });
+    return false;
+  }
+  return true;
+}
+
+async function loadApprovers(query) {
+  const q = (query || '').trim();
+  if (q.length < 2) {
+    approverResults.value = [];
+    showApproverDropdown.value = false;
+    return;
+  }
+  try {
+    const res = await axios.get('/api/floor-order/approvers', { params: { search: q } });
+    approverResults.value = res.data.users || [];
+    showApproverDropdown.value = approverResults.value.length > 0;
+  } catch (e) {
+    approverResults.value = [];
+    showApproverDropdown.value = false;
+  }
+}
+
+function addApprover(user) {
+  if (!user?.id) return;
+  if (!approvers.value.find((a) => a.id === user.id)) {
+    approvers.value.push({
+      id: user.id,
+      nama_lengkap: user.nama_lengkap || user.name,
+      email: user.email || '',
+      jabatan: user.jabatan || '',
+    });
+  }
+  approverSearch.value = '';
+  approverResults.value = [];
+  showApproverDropdown.value = false;
+}
+
+function removeApprover(index) {
+  approvers.value.splice(index, 1);
+}
+
+function reorderApprover(fromIndex, toIndex) {
+  if (fromIndex < 0 || fromIndex >= approvers.value.length) return;
+  if (toIndex < 0 || toIndex >= approvers.value.length) return;
+  const item = approvers.value.splice(fromIndex, 1)[0];
+  approvers.value.splice(toIndex, 0, item);
+}
+
+watch(approverSearch, (val) => {
+  loadApprovers(val);
+});
+
+watch(approvers, () => {
+  if (selectedFOMode.value !== 'RO Khusus' || !jadwalSiap.value) {
+    return;
+  }
+  if (!draftId.value && approvers.value.length > 0) {
+    const cleanItems = form.value.items.map(item => ({
+      item_id: item.item_id,
+      item_name: item.item_name,
+      qty: item.qty,
+      unit: item.unit,
+      price: item.price,
+      subtotal: item.subtotal,
+      category_id: item.category_id,
+      category_name: item.category_name,
+    }));
+    axios.post('/floor-order', {
+      ...form.value,
+      items: cleanItems,
+      fo_mode: selectedFOMode.value,
+      input_mode: mode.value,
+      fo_schedule_id: form.value.fo_schedule_id,
+      warehouse_outlet_id: form.value.warehouse_outlet_id,
+      approvers: buildApproverPayload(),
+    }).then(handleStoreResponse);
+    return;
+  }
+  if (draftId.value) {
+    triggerAutosave();
+  }
+}, { deep: true });
+
 const region_id = computed(() =>
   props.user.region_id ||
   props.user.outlet?.region_id ||
@@ -836,6 +951,9 @@ let autosaveTimeout = null;
 function triggerAutosave() {
   clearTimeout(autosaveTimeout);
   autosaveTimeout = setTimeout(() => {
+    if (selectedFOMode.value === 'RO Khusus' && approvers.value.length === 0) {
+      return;
+    }
     const cleanItems = form.value.items.map(item => ({
       item_id: item.item_id,
       item_name: item.item_name,
@@ -846,13 +964,18 @@ function triggerAutosave() {
       category_id: item.category_id,
       category_name: item.category_name,
     }));
+    const payload = {
+      ...form.value,
+      items: cleanItems,
+      fo_schedule_id: form.value.fo_schedule_id,
+      warehouse_outlet_id: form.value.warehouse_outlet_id,
+      fo_mode: selectedFOMode.value,
+    };
+    if (selectedFOMode.value === 'RO Khusus') {
+      payload.approvers = buildApproverPayload();
+    }
     if (draftId.value) {
-      axios.put(`/floor-order/${draftId.value}`, {
-        ...form.value,
-        items: cleanItems,
-        fo_schedule_id: form.value.fo_schedule_id,
-        warehouse_outlet_id: form.value.warehouse_outlet_id,
-      });
+      axios.put(`/floor-order/${draftId.value}`, payload);
     }
   }, 2000);
 }
@@ -861,6 +984,9 @@ watch(form, triggerAutosave, { deep: true });
 // Insert draft baru hanya setelah jadwalSiap true dan modal jadwal ditutup
 watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
   if (val && !modal && !draftId.value) {
+    if (!validateKhususApprovers()) {
+      return;
+    }
     const cleanItems = form.value.items.map(item => ({
       item_id: item.item_id,
       item_name: item.item_name,
@@ -871,14 +997,18 @@ watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
       category_id: item.category_id,
       category_name: item.category_name,
     }));
-      axios.post('/floor-order', {
-        ...form.value,
-        items: cleanItems,
-        fo_mode: selectedFOMode.value,
-        input_mode: mode.value,
-        fo_schedule_id: form.value.fo_schedule_id,
+    const payload = {
+      ...form.value,
+      items: cleanItems,
+      fo_mode: selectedFOMode.value,
+      input_mode: mode.value,
+      fo_schedule_id: form.value.fo_schedule_id,
       warehouse_outlet_id: form.value.warehouse_outlet_id,
-      }).then(handleStoreResponse);
+    };
+    if (selectedFOMode.value === 'RO Khusus') {
+      payload.approvers = buildApproverPayload();
+    }
+      axios.post('/floor-order', payload).then(handleStoreResponse);
     }
 });
 
@@ -902,6 +1032,10 @@ function submitOrderWithLoading() {
       title: 'Tidak Bisa Submit',
       text: 'Draft Order belum tersimpan. Silakan tunggu beberapa detik atau pastikan koneksi Anda stabil.',
     });
+    return;
+  }
+
+  if (!validateKhususApprovers()) {
     return;
   }
   Swal.fire({
@@ -1219,6 +1353,58 @@ watch(selectedWarehouseOutlet, (val) => {
             </div>
           </div>
         </div>
+      </div>
+      <div v-if="selectedFOMode === 'RO Khusus'" class="mb-6 border border-teal-200 rounded-xl p-4 bg-teal-50/50">
+        <h3 class="text-lg font-semibold text-gray-900 mb-1">Approval Flow</h3>
+        <p class="text-sm text-gray-600 mb-4">
+          Pilih approver secara berurutan (level terendah ke tertinggi). Minimal satu approver wajib sebelum draft tersimpan.
+        </p>
+        <div class="relative mb-4">
+          <input
+            v-model="approverSearch"
+            type="text"
+            placeholder="Cari approver (nama, email, jabatan)..."
+            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+            @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
+          />
+          <div
+            v-if="showApproverDropdown && approverResults.length"
+            class="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-56 overflow-y-auto"
+          >
+            <button
+              v-for="user in approverResults"
+              :key="user.id"
+              type="button"
+              class="w-full text-left px-3 py-2 hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
+              @click="addApprover(user)"
+            >
+              <div class="font-medium">{{ user.nama_lengkap }}</div>
+              <div class="text-xs text-gray-500">{{ user.email }}</div>
+              <div v-if="user.jabatan" class="text-xs text-teal-700">{{ user.jabatan }}</div>
+            </button>
+          </div>
+        </div>
+        <div v-if="approvers.length" class="space-y-2">
+          <div
+            v-for="(approver, index) in approvers"
+            :key="approver.id"
+            class="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"
+          >
+            <div>
+              <div class="text-xs text-teal-600 font-semibold">Level {{ index + 1 }}</div>
+              <div class="font-medium">{{ approver.nama_lengkap }}</div>
+              <div class="text-xs text-gray-500">{{ approver.jabatan || approver.email }}</div>
+            </div>
+            <div class="flex items-center gap-1">
+              <button v-if="index > 0" type="button" class="px-2 py-1 text-xs bg-gray-100 rounded" @click="reorderApprover(index, index - 1)">↑</button>
+              <button v-if="index < approvers.length - 1" type="button" class="px-2 py-1 text-xs bg-gray-100 rounded" @click="reorderApprover(index, index + 1)">↓</button>
+              <button type="button" class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded" @click="removeApprover(index)">Hapus</button>
+            </div>
+          </div>
+        </div>
+        <p v-else class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Belum ada approver. Tambahkan minimal satu approver agar RO Khusus bisa disimpan.
+        </p>
       </div>
       <div v-if="jadwalSiap" class="mb-6 flex gap-4">
         <button :class="['px-4 py-2 rounded-lg font-semibold', mode==='pc' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700']" @click="mode='pc'">Mode PC</button>

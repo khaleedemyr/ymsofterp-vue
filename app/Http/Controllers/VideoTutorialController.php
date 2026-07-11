@@ -414,6 +414,55 @@ class VideoTutorialController extends Controller
         ]);
     }
 
+    public function generateShareLink(Request $request, VideoTutorial $videoTutorial)
+    {
+        if ($videoTutorial->status !== 'A') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Video tutorial tidak aktif.',
+            ], 422);
+        }
+
+        $videoTutorial->load(['group', 'creator']);
+
+        $videoUrl = $videoTutorial->video_url
+            ? url($videoTutorial->video_url)
+            : '';
+        $galleryUrl = route('video-tutorials.gallery', ['play' => $videoTutorial->id]);
+
+        return response()->json([
+            'success' => true,
+            'url' => $galleryUrl,
+            'video_url' => $videoUrl,
+            'message' => $this->buildShareMessage($videoTutorial, $galleryUrl, $videoUrl),
+        ]);
+    }
+
+    protected function buildShareMessage(VideoTutorial $video, string $galleryUrl, string $videoUrl): string
+    {
+        $lines = ['Video Tutorial: ' . $video->title];
+
+        $groupName = trim((string) ($video->group?->name ?? ''));
+        if ($groupName !== '') {
+            $lines[] = 'Group: ' . $groupName;
+        }
+
+        $creator = trim((string) ($video->creator?->nama_lengkap ?? ''));
+        if ($creator !== '') {
+            $lines[] = 'Oleh: ' . $creator;
+        }
+
+        if ($galleryUrl !== '') {
+            $lines[] = 'Buka gallery: ' . $galleryUrl;
+        }
+
+        if ($videoUrl !== '') {
+            $lines[] = 'Link video: ' . $videoUrl;
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function generateThumbnail($videoPath, $originalName)
     {
         try {

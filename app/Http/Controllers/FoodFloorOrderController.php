@@ -18,6 +18,9 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use App\Support\FloorOrderItemPriceResolver;
 use App\Support\FloorOrderPriceAuditor;
+use App\Support\FoodFloorOrderApprovalService;
+use App\Models\User;
+use Illuminate\Validation\ValidationException;
 
 class FoodFloorOrderController extends Controller
 {
@@ -27,18 +30,51 @@ class FoodFloorOrderController extends Controller
 
     protected $floorOrderService;
 
-    public function __construct(FloorOrderService $floorOrderService)
-    {
+    protected FoodFloorOrderApprovalService $approvalService;
+
+    public function __construct(
+        FloorOrderService $floorOrderService,
+        FoodFloorOrderApprovalService $approvalService,
+    ) {
         $this->floorOrderService = $floorOrderService;
+        $this->approvalService = $approvalService;
     }
 
     // Tampilkan form edit draft
     public function edit($id)
     {
-        $order = FoodFloorOrder::with('items')->findOrFail($id);
+        $order = FoodFloorOrder::with(['items', 'approvalFlows.approver'])->findOrFail($id);
         return Inertia::render('FloorOrder/Form', [
             'order' => $order,
             'user' => Auth::user()->load('outlet'),
+        ]);
+    }
+
+    public function getApprovers(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+
+        $query = User::query()
+            ->where('users.status', 'A')
+            ->join('tbl_data_jabatan', 'users.id_jabatan', '=', 'tbl_data_jabatan.id_jabatan')
+            ->select(
+                'users.id',
+                'users.nama_lengkap',
+                'users.email',
+                'tbl_data_jabatan.nama_jabatan as jabatan',
+            );
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('users.nama_lengkap', 'like', "%{$search}%")
+                    ->orWhere('users.email', 'like', "%{$search}%")
+                    ->orWhere('tbl_data_jabatan.nama_jabatan', 'like', "%{$search}%");
+            });
+        }
+
+        return response()->json([
+            'success' => true,
+            'users' => $query->orderBy('users.nama_lengkap')->limit(30)->get(),
         ]);
     }
 
@@ -168,6 +204,12 @@ class FoodFloorOrderController extends Controller
         try {
             \DB::beginTransaction();
 
+            $foMode = $request->fo_mode ?? 'RO Utama';
+            $approverIds = null;
+            if ($foMode === 'RO Khusus') {
+                $approverIds = $this->approvalService->validateAndNormalizeApproverIds($request);
+            }
+
             // Ambil id_outlet dari request atau user login
             $idOutlet = $request->outlet_id ?? (auth()->user()->id_outlet ?? null);
             $userId = auth()->id();
@@ -259,6 +301,10 @@ class FoodFloorOrderController extends Controller
                 ]);
             }
 
+            if ($foMode === 'RO Khusus' && $approverIds !== null) {
+                $this->approvalService->syncFlows((int) $floorOrderId, $approverIds);
+            }
+
             \DB::commit();
 
             $order = FoodFloorOrder::with('items')->find($floorOrderId);
@@ -279,6 +325,14 @@ class FoodFloorOrderController extends Controller
                     'order_number' => $existingOrder->order_number ?? ('DRAFT-' . $userId . '-' . time())
                 ]
             ]);
+        } catch (ValidationException $e) {
+            \DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?: 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             \DB::rollBack();
             \Log::error('Error dalam store', [
@@ -304,7 +358,26 @@ class FoodFloorOrderController extends Controller
         }
         
         $order = FoodFloorOrder::findOrFail($id);
+        if ($order->status !== 'draft') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya draft yang dapat diubah.',
+            ], 422);
+        }
+
         $oldData = $order->toArray();
+        $approverIds = null;
+        try {
+            if (($request->fo_mode ?? $order->fo_mode) === 'RO Khusus') {
+                $approverIds = $this->approvalService->validateAndNormalizeApproverIds($request);
+            }
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?: 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
         // --- VALIDASI warehouse_outlet_id ---
         $warehouseOutletId = $request->warehouse_outlet_id;
         $warehouseOutlet = \App\Models\WarehouseOutlet::where('id', $warehouseOutletId)
@@ -345,6 +418,10 @@ class FoodFloorOrderController extends Controller
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
+        }
+
+        if ($approverIds !== null) {
+            $this->approvalService->syncFlows((int) $order->id, $approverIds);
         }
 
         \App\Models\ActivityLog::create([
@@ -411,7 +488,16 @@ class FoodFloorOrderController extends Controller
     // Submit draft
     public function submit(Request $request, $id)
     {
-        $order = FoodFloorOrder::findOrFail($id);
+        $order = FoodFloorOrder::with(['approvalFlows.approver', 'warehouseOutlet'])->findOrFail($id);
+
+        if ($order->fo_mode === 'RO Khusus') {
+            if (! $this->approvalService->usesCustomFlow($order)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Approver wajib dipilih sebelum mengirim RO Khusus.',
+                ], 422);
+            }
+        }
 
         // Pastikan harga baris FO = item_prices / FGR +12% terkini sebelum budget & approve
         app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
@@ -448,7 +534,13 @@ class FoodFloorOrderController extends Controller
 
         // Kirim notifikasi jika RO Khusus
         if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
-            $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
+            $order->refresh();
+            $order->load(['approvalFlows.approver', 'warehouseOutlet']);
+            if ($this->approvalService->usesCustomFlow($order)) {
+                $this->approvalService->notifyFirstApprover($order);
+            } else {
+                $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
+            }
         }
 
         $this->writeActivityLog(
@@ -514,7 +606,7 @@ class FoodFloorOrderController extends Controller
 
     public function show($id)
     {
-        $order = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'approver', 'warehouseOutlet'])->findOrFail($id);
+        $order = FoodFloorOrder::with(['outlet', 'requester', 'foSchedule', 'approver', 'warehouseOutlet', 'approvalFlows.approver'])->findOrFail($id);
         
         // Load items dari relasi untuk semua mode
         $order->load('items.category');
@@ -544,39 +636,102 @@ class FoodFloorOrderController extends Controller
     public function approve(Request $request, $id)
     {
         $user = Auth::user();
-        $order = \App\Models\FoodFloorOrder::findOrFail($id);
-
-        // Cek hak akses berdasarkan warehouse outlet
-        $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-        $canApprove = $this->canUserApproveByWarehouse($user, $order->warehouse_outlet_id);
-        
-        if (!($isSuperadmin || $canApprove)) {
-            abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve RO Khusus untuk warehouse outlet ini');
-        }
+        $order = FoodFloorOrder::with(['approvalFlows.approver', 'warehouseOutlet'])->findOrFail($id);
 
         if (($order->fo_mode !== 'RO Khusus') || $order->status !== 'submitted') {
             abort(400, 'Tidak bisa approve order ini');
         }
 
-        // Support both 'approved' boolean and 'reject' parameter
-        $isReject = ($request->has('approved') && $request->approved === false) || 
-                    ($request->has('reject') && $request->reject === true);
-        
-        // Support 'note', 'comment', 'notes', and 'reason' parameters
-        $note = $request->input('note') ?? $request->input('comment') ?? 
-                $request->input('notes') ?? $request->input('reason');
-        
-        // Budget checking hanya untuk approve, bukan reject
-        if (!$isReject) {
+        if (! $this->approvalService->canUserApprove($user, $order)) {
+            abort(403, 'Unauthorized - Anda tidak memiliki hak untuk approve RO Khusus ini');
+        }
+
+        $isReject = ($request->has('approved') && $request->approved === false)
+            || ($request->has('reject') && $request->reject === true);
+
+        $note = $request->input('note') ?? $request->input('comment')
+            ?? $request->input('notes') ?? $request->input('reason');
+
+        if (! $isReject) {
             app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
             $order->refresh();
-            $order->load('items');
+            $order->load(['items', 'approvalFlows.approver', 'warehouseOutlet']);
+        }
 
+        try {
+            $flowResult = $this->approvalService->resolveCurrentFlow($order, $user, $isReject, $note);
+        } catch (ValidationException $e) {
+            $message = collect($e->errors())->flatten()->first() ?: 'Approval gagal.';
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 422);
+            }
+
+            return redirect()->back()->withErrors(['approval' => $message]);
+        }
+
+        if ($flowResult['rejected']) {
+            $order->update([
+                'status' => 'rejected',
+                'approval_by' => $user->id,
+                'approval_at' => now(),
+                'approval_notes' => $note,
+            ]);
+
+            if ($order->user_id) {
+                $this->sendNotification(
+                    [$order->user_id],
+                    'floor_order_rejected',
+                    'RO Khusus Ditolak',
+                    "RO Khusus {$order->order_number} telah ditolak.",
+                    route('floor-order.show', $order->id)
+                );
+            }
+
+            \App\Models\ActivityLog::create([
+                'user_id' => $user->id,
+                'activity_type' => 'reject',
+                'module' => 'food_floor_order',
+                'description' => 'Reject Floor Order: ' . $order->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $order->fresh()->toArray(),
+            ]);
+
+            $message = 'RO Khusus berhasil ditolak';
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => $message]);
+            }
+
+            return redirect()->back()->with('success', $message);
+        }
+
+        if (! $flowResult['final']) {
+            \App\Models\ActivityLog::create([
+                'user_id' => $user->id,
+                'activity_type' => 'approve',
+                'module' => 'food_floor_order',
+                'description' => 'Partial approve Floor Order: ' . $order->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => null,
+                'new_data' => $order->fresh()->toArray(),
+            ]);
+
+            $message = 'Approval tercatat. Menunggu persetujuan approver berikutnya.';
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => $message]);
+            }
+
+            return redirect()->back()->with('success', $message);
+        }
+
+        if (! $isReject) {
             $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
-            if (!$budgetCheckResult['success']) {
+            if (! $budgetCheckResult['success']) {
                 \Log::error('FO_APPROVE: Budget check failed', [
                     'order_id' => $order->id,
-                    'message' => $budgetCheckResult['message']
+                    'message' => $budgetCheckResult['message'],
                 ]);
                 if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
                     return response()->json([
@@ -585,46 +740,37 @@ class FoodFloorOrderController extends Controller
                         'violations' => $budgetCheckResult['violations'] ?? null,
                     ], 422);
                 }
+
                 return redirect()->back()->withErrors(['budget' => $budgetCheckResult['message']]);
             }
         }
-        
+
         $order->update([
-            'status' => $isReject ? 'rejected' : 'approved',
+            'status' => 'approved',
             'approval_by' => $user->id,
             'approval_at' => now(),
             'approval_notes' => $note,
         ]);
+
         \App\Models\ActivityLog::create([
             'user_id' => $user->id,
-            'activity_type' => $isReject ? 'reject' : 'approve',
+            'activity_type' => 'approve',
             'module' => 'food_floor_order',
-            'description' => ($isReject ? 'Reject' : 'Approve') . ' Floor Order: ' . $order->id,
+            'description' => 'Approve Floor Order: ' . $order->id,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'old_data' => null,
             'new_data' => $order->fresh()->toArray(),
         ]);
-        
-        // Send notification to requester if rejected
-        if ($isReject && $order->user_id) {
-            $this->sendNotification(
-                [$order->user_id],
-                'floor_order_rejected',
-                'RO Khusus Ditolak',
-                "RO Khusus {$order->order_number} telah ditolak.",
-                route('floor-order.show', $order->id)
-            );
-        }
-        
+
         if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
             return response()->json([
                 'success' => true,
-                'message' => $isReject ? 'RO Khusus berhasil ditolak' : 'RO Khusus berhasil di-approve'
+                'message' => 'RO Khusus berhasil di-approve',
             ]);
         }
-        
-        return redirect()->back()->with('success', $isReject ? 'Floor Order berhasil ditolak' : 'Floor Order berhasil di-approve');
+
+        return redirect()->back()->with('success', 'Floor Order berhasil di-approve');
     }
 
     // Method untuk mengecek apakah user bisa approve berdasarkan warehouse outlet
@@ -813,6 +959,7 @@ class FoodFloorOrderController extends Controller
             'foSchedule',
             'approver',
             'warehouseOutlet',
+            'approvalFlows.approver',
             'items.category',
             'items.item'
         ])->findOrFail($id);
@@ -998,41 +1145,22 @@ class FoodFloorOrderController extends Controller
     {
         try {
             $user = Auth::user();
-            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-            
-            $query = FoodFloorOrder::with(['outlet', 'requester', 'warehouseOutlet', 'items'])
+
+            $allApprovals = FoodFloorOrder::with(['outlet', 'requester', 'warehouseOutlet', 'items', 'approvalFlows.approver'])
                 ->where('fo_mode', 'RO Khusus')
                 ->where('status', 'submitted')
-                ->orderByDesc('created_at');
-            
+                ->orderByDesc('created_at')
+                ->get();
+
+            $filtered = $this->approvalService->filterPendingForUser($allApprovals, $user);
+
             $pendingApprovals = [];
-            
-            // Filter berdasarkan warehouse outlet dan jabatan user
-            if ($isSuperadmin) {
-                // Superadmin bisa lihat semua
-                $allApprovals = $query->get();
-            } else {
-                // Filter berdasarkan warehouse outlet yang bisa di-approve user
-                $allApprovals = $query->get()->filter(function($order) use ($user) {
-                    return $this->canUserApproveByWarehouse($user, $order->warehouse_outlet_id);
-                });
-            }
-            
-            foreach ($allApprovals as $order) {
+            foreach ($filtered as $order) {
                 $warehouseName = $order->warehouseOutlet ? $order->warehouseOutlet->name : 'Unknown';
-                $approvalLevelDisplay = $this->getApprovalLevelDisplay($warehouseName);
-                
-                // Get approver name based on warehouse outlet
-                $approverName = null;
-                if ($isSuperadmin) {
-                    // For superadmin, get approver based on warehouse outlet
-                    $approver = $this->getApproverByWarehouse($warehouseName);
-                    $approverName = $approver ? $approver->nama_lengkap : $approvalLevelDisplay;
-                } else {
-                    // For regular users, they are the approver
-                    $approverName = $user->nama_lengkap;
-                }
-                
+                $nextFlow = $this->approvalService->nextPendingFlow($order);
+                $approverName = $nextFlow?->approver?->nama_lengkap
+                    ?? $this->getApprovalLevelDisplay($warehouseName);
+
                 $pendingApprovals[] = [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
@@ -1043,16 +1171,19 @@ class FoodFloorOrderController extends Controller
                     'requester' => $order->requester ? ['nama_lengkap' => $order->requester->nama_lengkap] : null,
                     'items_count' => $order->items->count(),
                     'description' => $order->description,
-                    'approval_level' => 'ro_khusus',
-                    'approval_level_display' => $approvalLevelDisplay,
+                    'approval_level' => $nextFlow ? ('level_' . $nextFlow->approval_level) : 'ro_khusus',
+                    'approval_level_display' => $nextFlow
+                        ? ('Level ' . $nextFlow->approval_level . ': ' . ($nextFlow->approver?->nama_lengkap ?? '-'))
+                        : $this->getApprovalLevelDisplay($warehouseName),
                     'approver_name' => $approverName,
-                    'created_at' => $order->created_at
+                    'current_approval_flow_id' => $nextFlow?->id,
+                    'created_at' => $order->created_at,
                 ];
             }
-            
+
             return response()->json([
                 'success' => true,
-                'ro_khusus' => $pendingApprovals
+                'ro_khusus' => $pendingApprovals,
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting pending RO Khusus approvals', [
@@ -1115,8 +1246,9 @@ class FoodFloorOrderController extends Controller
                 'requester',
                 'warehouseOutlet',
                 'approver',
+                'approvalFlows.approver',
                 'items.item',
-                'items.category'
+                'items.category',
             ])->findOrFail($id);
             
             // Ensure items have proper data
@@ -1137,10 +1269,12 @@ class FoodFloorOrderController extends Controller
             // Add total_amount to order object
             $order->total_amount = $totalAmount;
             
+            $nextFlow = $this->approvalService->nextPendingFlow($order);
+
             return response()->json([
                 'success' => true,
                 'ro_khusus' => $order,
-                'current_approval_flow_id' => null, // RO Khusus doesn't use approval flow system
+                'current_approval_flow_id' => $nextFlow?->id,
             ]);
         } catch (\Exception $e) {
             \Log::error('Error getting RO Khusus detail', [

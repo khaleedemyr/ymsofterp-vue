@@ -1336,6 +1336,7 @@ Route::put('/floor-order/{id}', [FoodFloorOrderController::class, 'update'])->na
 Route::delete('/floor-order/{id}', [FoodFloorOrderController::class, 'destroy'])->name('floor-order.destroy');
 Route::post('/floor-order/{id}/submit', [FoodFloorOrderController::class, 'submit'])->name('floor-order.submit');
 Route::post('/floor-order/{id}/approve', [FoodFloorOrderController::class, 'approve'])->name('floor-order.approve');
+Route::get('/api/floor-order/approvers', [FoodFloorOrderController::class, 'getApprovers']);
 Route::get('/api/ro-khusus/pending-approvals', [FoodFloorOrderController::class, 'getPendingROKhususApprovals']);
 Route::get('/api/ro-khusus/{id}', [FoodFloorOrderController::class, 'getROKhususDetail']);
 Route::post('/api/floor-order/check-exists', [\App\Http\Controllers\FoodFloorOrderController::class, 'checkExists']);
@@ -3058,6 +3059,7 @@ Route::middleware(['auth'])->group(function () {
 // Video Tutorial Routes
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('video-tutorials/gallery', [VideoTutorialController::class, 'gallery'])->name('video-tutorials.gallery');
+    Route::post('video-tutorials/{videoTutorial}/share-link', [VideoTutorialController::class, 'generateShareLink'])->name('video-tutorials.share-link');
     Route::resource('video-tutorials', VideoTutorialController::class);
     Route::patch('video-tutorials/{videoTutorial}/toggle-status', [VideoTutorialController::class, 'toggleStatus'])->name('video-tutorials.toggle-status');
     

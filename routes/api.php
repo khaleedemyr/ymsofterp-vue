@@ -655,6 +655,7 @@ Route::prefix('approval-app')->group(function () {
         Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback'])->where('id', '[0-9]+');
 
         // Floor Order (Approval App)
+        Route::get('/floor-orders/approvers', [FoodFloorOrderController::class, 'getApprovers']);
         Route::get('/floor-orders', [FoodFloorOrderController::class, 'apiIndex']);
         Route::get('/floor-orders/check-exists', [FoodFloorOrderController::class, 'checkExists']);
         Route::get('/floor-orders/forecast-budget', [FoodFloorOrderController::class, 'forecastBudgetVsInput']);
@@ -1373,6 +1374,7 @@ Route::prefix('approval-app')->group(function () {
         
         // Video Tutorial routes
         Route::get('/video-tutorials/gallery', [\App\Http\Controllers\VideoTutorialController::class, 'galleryApi']);
+        Route::post('/video-tutorials/{videoTutorial}/share-link', [\App\Http\Controllers\VideoTutorialController::class, 'generateShareLink']);
         Route::get('/video-tutorials/groups', [\App\Http\Controllers\VideoTutorialController::class, 'getGroupsApi']);
 
         Route::prefix('finance-master')->group(function () {

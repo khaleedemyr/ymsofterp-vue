@@ -89,20 +89,47 @@ const canUserApproveByWarehouse = (user, warehouseOutletName) => {
 };
 
 const canApproveFO = computed(() => {
-  // Untuk RO Supplier, tetap menggunakan logika lama (Executive Chef atau Superadmin)
   if (props.order.fo_mode === 'RO Supplier') {
     const isExecutiveChef = props.user?.id_jabatan === 163 && props.user?.status === 'A';
     return props.order.status === 'submitted' && (isExecutiveChef || isSuperadmin.value);
   }
-  
-  // Untuk RO Khusus, cek berdasarkan warehouse outlet
+
   if (props.order.fo_mode === 'RO Khusus' && props.order.status === 'submitted') {
+    const flows = props.order.approval_flows || [];
+    if (flows.length > 0) {
+      const pending = [...flows]
+        .filter((f) => f.status === 'PENDING')
+        .sort((a, b) => a.approval_level - b.approval_level);
+      if (!pending.length) return false;
+      const next = pending[0];
+      if (isSuperadmin.value) return true;
+      return Number(next.approver_id) === Number(props.user?.id);
+    }
+
     const warehouseName = props.order.warehouse_outlet?.name;
     return isSuperadmin.value || canUserApproveByWarehouse(props.user, warehouseName);
   }
-  
+
   return false;
 });
+
+function flowStatusClass(status) {
+  switch (status) {
+    case 'APPROVED': return 'border-green-300 bg-green-50';
+    case 'REJECTED': return 'border-red-300 bg-red-50';
+    case 'PENDING': return 'border-amber-300 bg-amber-50';
+    default: return 'border-gray-200 bg-gray-50';
+  }
+}
+
+function flowStatusBadgeClass(status) {
+  switch (status) {
+    case 'APPROVED': return 'bg-green-100 text-green-800';
+    case 'REJECTED': return 'bg-red-100 text-red-800';
+    case 'PENDING': return 'bg-amber-100 text-amber-800';
+    default: return 'bg-gray-100 text-gray-800';
+  }
+}
 
 async function approveFO() {
   const { value: note } = await Swal.fire({
@@ -194,6 +221,36 @@ async function approveFO() {
         <div class="mb-2">
           <div class="text-xs text-gray-500">Keterangan</div>
           <div class="font-semibold">{{ props.order.description || '-' }}</div>
+        </div>
+        <div
+          v-if="props.order.fo_mode === 'RO Khusus' && props.order.approval_flows?.length"
+          class="mt-4 border border-teal-200 rounded-xl p-4 bg-teal-50/40"
+        >
+          <h3 class="text-sm font-semibold text-teal-800 mb-3 flex items-center gap-2">
+            <i class="fa fa-users"></i> Approval Flow
+          </h3>
+          <div class="space-y-2">
+            <div
+              v-for="flow in props.order.approval_flows"
+              :key="flow.id"
+              class="flex items-center justify-between p-3 rounded-lg border"
+              :class="flowStatusClass(flow.status)"
+            >
+              <div>
+                <div class="text-xs font-semibold text-teal-700">Level {{ flow.approval_level }}</div>
+                <div class="font-medium">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                <div v-if="flow.comments" class="text-xs text-gray-600 mt-1">{{ flow.comments }}</div>
+              </div>
+              <div class="text-right">
+                <span class="text-xs font-semibold px-2 py-1 rounded-full" :class="flowStatusBadgeClass(flow.status)">
+                  {{ flow.status }}
+                </span>
+                <div v-if="flow.approved_at" class="text-xs text-gray-500 mt-1">
+                  {{ new Date(flow.approved_at).toLocaleString('id-ID') }}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="mt-4">
           <button

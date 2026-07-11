@@ -58,4 +58,10 @@ class FoodFloorOrder extends Model
     {
         return $this->belongsTo(\App\Models\WarehouseOutlet::class, 'warehouse_outlet_id');
     }
+
+    public function approvalFlows()
+    {
+        return $this->hasMany(FoodFloorOrderApprovalFlow::class, 'food_floor_order_id')
+            ->orderBy('approval_level');
+    }
 } 

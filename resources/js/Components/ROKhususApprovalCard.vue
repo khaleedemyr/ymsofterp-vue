@@ -206,8 +206,45 @@
                         </div>
                     </div>
 
+                    <!-- Approval Flow -->
+                    <div v-if="sortedApprovalFlows.length" class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-users mr-2 text-teal-500"></i>
+                            Approval Flow
+                        </h4>
+                        <div class="space-y-2">
+                            <div
+                                v-for="flow in sortedApprovalFlows"
+                                :key="'flow-' + flow.id"
+                                class="flex items-center justify-between p-3 rounded-lg border bg-white dark:bg-gray-800"
+                                :class="{
+                                    'border-green-300': flow.status === 'APPROVED',
+                                    'border-red-300': flow.status === 'REJECTED',
+                                    'border-amber-300': flow.status === 'PENDING',
+                                    'border-gray-200 dark:border-gray-600': !['APPROVED','REJECTED','PENDING'].includes(flow.status),
+                                }"
+                            >
+                                <div>
+                                    <div class="text-xs font-semibold text-teal-600">Level {{ flow.approval_level }}</div>
+                                    <div class="font-medium text-gray-900 dark:text-white">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                                    <div v-if="flow.comments" class="text-xs text-gray-500 mt-1">{{ flow.comments }}</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs font-semibold px-2 py-1 rounded-full"
+                                        :class="{
+                                            'bg-green-100 text-green-800': flow.status === 'APPROVED',
+                                            'bg-red-100 text-red-800': flow.status === 'REJECTED',
+                                            'bg-amber-100 text-amber-800': flow.status === 'PENDING',
+                                            'bg-gray-100 text-gray-800': !['APPROVED','REJECTED','PENDING'].includes(flow.status),
+                                        }"
+                                    >{{ flow.status }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Approval Actions -->
-                    <div class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div v-if="canApproveSelectedRO" class="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
                         <button @click="showRejectModal" 
                                 class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
                             <i class="fa fa-times mr-2"></i>Tolak
@@ -395,8 +432,12 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+
+const page = usePage();
+const currentUser = computed(() => page.props.auth?.user || page.props.user || null);
 
 const props = defineProps({
     isNight: {
@@ -415,6 +456,35 @@ const isSelecting = ref(false); // Toggle select mode
 
 // Computed
 const approvalCount = computed(() => pendingApprovals.value.length);
+
+const sortedApprovalFlows = computed(() => {
+    const flows = selectedRO.value?.approval_flows;
+    if (!flows || !Array.isArray(flows) || flows.length === 0) {
+        return [];
+    }
+    return [...flows].sort((a, b) => (Number(a.approval_level) || 0) - (Number(b.approval_level) || 0));
+});
+
+const isSuperadmin = computed(() => {
+    const user = currentUser.value;
+    return user?.id_role === '5af56935b011a' && user?.status === 'A';
+});
+
+const canApproveSelectedRO = computed(() => {
+    if (!selectedRO.value || selectedRO.value.status !== 'submitted') {
+        return false;
+    }
+
+    const flows = sortedApprovalFlows.value;
+    if (flows.length > 0) {
+        const pending = flows.filter((f) => f.status === 'PENDING').sort((a, b) => a.approval_level - b.approval_level);
+        if (!pending.length) return false;
+        if (isSuperadmin.value) return true;
+        return Number(pending[0].approver_id) === Number(currentUser.value?.id);
+    }
+
+    return true;
+});
 
 // Methods
 function formatDate(date) {
