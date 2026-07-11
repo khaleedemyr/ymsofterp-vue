@@ -15,12 +15,8 @@ class FoodFloorOrder extends Model
     protected $guarded = [];
 
     /**
-     * Batas waktu edit berdasarkan waktu RO dibuat (created_at):
-     * - Dibuat sebelum jam 07:00 → kunci jam 07:00 hari yang sama
-     * - Dibuat jam 07:00 atau setelahnya → kunci jam 07:00 hari berikutnya
-     *
-     * Contoh: buat 12 Jul 02:00 → kunci 12 Jul 07:00
-     *         buat 11 Jul 15:00 → kunci 12 Jul 07:00
+     * Batas waktu edit: tanggal dibuat + 1 hari jam 07:00 WIB (besok pagi).
+     * Contoh: buat 11 Jul kapan pun → bisa edit sampai 12 Jul 06:59.
      */
     public function editCutoffAt(): ?Carbon
     {
@@ -29,13 +25,8 @@ class FoodFloorOrder extends Model
         }
 
         $created = Carbon::parse($this->created_at)->timezone(self::EDIT_TIMEZONE);
-        $sameDayCutoff = $created->copy()->startOfDay()->setTime(self::EDIT_CUTOFF_HOUR, 0, 0);
 
-        if ($created->lt($sameDayCutoff)) {
-            return $sameDayCutoff;
-        }
-
-        return $sameDayCutoff->copy()->addDay();
+        return $created->copy()->startOfDay()->addDay()->setTime(self::EDIT_CUTOFF_HOUR, 0, 0);
     }
 
     public function isWithinEditWindow(?Carbon $now = null): bool
@@ -52,7 +43,7 @@ class FoodFloorOrder extends Model
 
     public function canEdit(?Carbon $now = null): bool
     {
-        if ($this->fo_mode === 'RO Supplier') {
+        if ($this->fo_mode === 'RO Supplier' && $this->status !== 'draft') {
             return false;
         }
 

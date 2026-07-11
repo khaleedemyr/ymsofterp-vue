@@ -47,7 +47,7 @@ class FoodFloorOrderController extends Controller
         $order = FoodFloorOrder::with(['items', 'approvalFlows.approver'])->findOrFail($id);
         if (! $order->canEdit()) {
             return redirect()->route('floor-order.index')
-                ->with('error', 'Request Order tidak dapat diedit karena sudah melewati batas waktu edit (07:00).');
+                ->with('error', 'Request Order tidak dapat diedit karena sudah melewati batas waktu edit (besok jam 07:00).');
         }
 
         $this->appendEditWindowMeta($order);
@@ -489,16 +489,16 @@ class FoodFloorOrderController extends Controller
         }
         
         $order = FoodFloorOrder::findOrFail($id);
-        if (! $order->canEdit()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Request Order tidak dapat diubah karena sudah melewati batas waktu edit (07:00).',
-            ], 422);
-        }
         if ($order->status !== 'draft') {
             return response()->json([
                 'success' => false,
                 'message' => 'Hanya draft yang dapat diubah.',
+            ], 422);
+        }
+        if (! $order->isWithinEditWindow()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request Order tidak dapat diubah karena sudah melewati batas waktu edit (besok jam 07:00).',
             ], 422);
         }
 
