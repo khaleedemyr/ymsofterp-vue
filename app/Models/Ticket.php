@@ -18,6 +18,9 @@ class Ticket extends Model
 
     public const TICKET_VENDOR_DIVISION_ID = 18;
 
+    /** Status slug yang dihitung sebagai "Closed" di statistik & filter. */
+    public const CLOSED_STATUS_SLUGS = ['closed', 'resolved'];
+
     protected $fillable = [
         'ticket_number',
         'title',
@@ -129,6 +132,20 @@ class Ticket extends Model
         });
     }
 
+    public function scopePending($query)
+    {
+        return $query->whereHas('status', function ($q) {
+            $q->where('slug', 'pending');
+        });
+    }
+
+    public function scopeCancelled($query)
+    {
+        return $query->whereHas('status', function ($q) {
+            $q->where('slug', 'cancelled');
+        });
+    }
+
     public function scopeResolved($query)
     {
         return $query->whereHas('status', function($q) {
@@ -138,8 +155,8 @@ class Ticket extends Model
 
     public function scopeClosed($query)
     {
-        return $query->whereHas('status', function($q) {
-            $q->where('is_final', 1);
+        return $query->whereHas('status', function ($q) {
+            $q->whereIn('slug', self::CLOSED_STATUS_SLUGS);
         });
     }
 
@@ -203,12 +220,21 @@ class Ticket extends Model
 
     public function isClosed()
     {
+        return $this->status && in_array($this->status->slug, self::CLOSED_STATUS_SLUGS, true);
+    }
+
+    public function isTerminal()
+    {
         return $this->status && $this->status->is_final;
     }
 
     public function isOverdue()
     {
-        return $this->due_date && $this->due_date->isPast() && !$this->isClosed();
+        if ($this->isTerminal()) {
+            return false;
+        }
+
+        return $this->due_date && $this->due_date->isPast();
     }
 
     public function getTimeToResolve()

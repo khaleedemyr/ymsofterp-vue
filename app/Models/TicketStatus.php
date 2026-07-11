@@ -87,6 +87,6 @@ class TicketStatus extends Model
 
     public function isClosed()
     {
-        return $this->is_final;
+        return in_array($this->slug, Ticket::CLOSED_STATUS_SLUGS, true);
     }
 }

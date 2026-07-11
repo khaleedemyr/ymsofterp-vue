@@ -98,7 +98,7 @@
       </div>
 
       <!-- Statistics Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
         <!-- Total -->
         <button
           type="button"
@@ -150,6 +150,23 @@
             <i class="fa-solid fa-spinner text-4xl text-orange-300"></i>
           </div>
         </button>
+        <!-- Pending -->
+        <button
+          type="button"
+          @click="setStatusFilter('pending')"
+          :class="[
+            'rounded-xl shadow-lg p-6 border-l-4 bg-white hover:shadow-xl transition-all text-left',
+            status === 'pending' ? 'border-violet-600 ring-2 ring-violet-100' : 'border-violet-500'
+          ]"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-600">Pending</p>
+              <p class="text-2xl font-bold text-gray-900">{{ statistics.pending }}</p>
+            </div>
+            <i class="fa-solid fa-hourglass-half text-4xl text-violet-300"></i>
+          </div>
+        </button>
         <!-- Closed -->
         <button
           type="button"
@@ -165,6 +182,23 @@
               <p class="text-2xl font-bold text-gray-900">{{ statistics.closed }}</p>
             </div>
             <i class="fa-solid fa-check-circle text-4xl text-green-300"></i>
+          </div>
+        </button>
+        <!-- Cancelled -->
+        <button
+          type="button"
+          @click="setStatusFilter('cancelled')"
+          :class="[
+            'rounded-xl shadow-lg p-6 border-l-4 bg-white hover:shadow-xl transition-all text-left',
+            status === 'cancelled' ? 'border-rose-600 ring-2 ring-rose-100' : 'border-rose-500'
+          ]"
+        >
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-gray-600">Cancelled</p>
+              <p class="text-2xl font-bold text-gray-900">{{ statistics.cancelled }}</p>
+            </div>
+            <i class="fa-solid fa-ban text-4xl text-rose-300"></i>
           </div>
         </button>
       </div>
@@ -187,7 +221,9 @@
           <option value="all">Semua Status</option>
           <option value="open">Open</option>
           <option value="in_progress">In Progress</option>
+          <option value="pending">Pending</option>
           <option value="closed">Closed</option>
+          <option value="cancelled">Cancelled</option>
         </select>
         <select
           v-model="priority"
@@ -912,7 +948,9 @@ const props = defineProps({
       total: 0,
       open: 0,
       in_progress: 0,
-      closed: 0
+      pending: 0,
+      closed: 0,
+      cancelled: 0,
     })
   },
 });

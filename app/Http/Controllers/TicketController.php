@@ -1039,16 +1039,7 @@ class TicketController extends Controller
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
 
-        // Statistics — selaras filter outlet + jenis issue
-        $statsBase = Ticket::query();
-        $this->applyTicketOutletVisibility($statsBase, $user);
-        $this->applyTicketIssueTypeFilter($statsBase, (string) $issueType);
-        $statistics = [
-            'total' => (clone $statsBase)->count(),
-            'open' => (clone $statsBase)->open()->count(),
-            'in_progress' => (clone $statsBase)->inProgress()->count(),
-            'closed' => (clone $statsBase)->closed()->count(),
-        ];
+        $statistics = $this->ticketListStatistics($user, (string) $issueType);
 
         return Inertia::render('Tickets/Index', [
             'data' => $tickets,
@@ -2087,7 +2078,7 @@ class TicketController extends Controller
         foreach ($tickets as $ticket) {
             $slug = $ticket->status?->slug ?? 'unknown';
             $isFinal = (bool) ($ticket->status?->is_final ?? false);
-            $isClosed = $isFinal || in_array($slug, ['closed', 'resolved', 'done'], true);
+            $isClosed = in_array($slug, Ticket::CLOSED_STATUS_SLUGS, true);
 
             if ($slug === 'open') {
                 $open++;
@@ -3130,6 +3121,25 @@ class TicketController extends Controller
     }
 
     /**
+     * @return array{total: int, open: int, in_progress: int, pending: int, closed: int, cancelled: int}
+     */
+    private function ticketListStatistics($user, string $issueType = 'all'): array
+    {
+        $statsBase = Ticket::query();
+        $this->applyTicketOutletVisibility($statsBase, $user);
+        $this->applyTicketIssueTypeFilter($statsBase, $issueType);
+
+        return [
+            'total' => (clone $statsBase)->count(),
+            'open' => (clone $statsBase)->open()->count(),
+            'in_progress' => (clone $statsBase)->inProgress()->count(),
+            'pending' => (clone $statsBase)->pending()->count(),
+            'closed' => (clone $statsBase)->closed()->count(),
+            'cancelled' => (clone $statsBase)->cancelled()->count(),
+        ];
+    }
+
+    /**
      * Show the form for creating a new ticket
      */
     public function create()
@@ -3676,15 +3686,7 @@ class TicketController extends Controller
             ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'avatar', 'division_id']);
 
-        $statsBase = Ticket::query();
-        $this->applyTicketOutletVisibility($statsBase, $apiUser);
-        $this->applyTicketIssueTypeFilter($statsBase, (string) $issueType);
-        $statistics = [
-            'total' => (clone $statsBase)->count(),
-            'open' => (clone $statsBase)->open()->count(),
-            'in_progress' => (clone $statsBase)->inProgress()->count(),
-            'closed' => (clone $statsBase)->closed()->count(),
-        ];
+        $statistics = $this->ticketListStatistics($apiUser, (string) $issueType);
 
         return response()->json([
             'success' => true,
