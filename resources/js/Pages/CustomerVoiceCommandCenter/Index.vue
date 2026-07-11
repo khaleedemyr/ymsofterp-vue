@@ -310,8 +310,8 @@
                 <th class="px-3 py-3 text-left font-semibold min-w-[340px]">Ringkasan</th>
                 <th class="px-3 py-3 text-left font-semibold min-w-[100px]" title="Berdasarkan isian tersimpan di meta CAPA">CAPA</th>
                 <th
-                  class="px-3 py-3 text-left font-semibold min-w-[108px]"
-                  title="Status approval CAPA per divisi"
+                  class="px-3 py-3 text-left font-semibold min-w-[220px]"
+                  title="Status approval CAPA per divisi beserta approver"
                 >
                   Approval CAPA
                 </th>
@@ -449,25 +449,44 @@
                       </span>
                     </div>
                   </td>
-                  <td class="px-3 py-3 align-top">
-                    <div class="space-y-1">
+                  <td class="px-3 py-3 align-top min-w-[220px]">
+                    <div class="space-y-2">
                       <div
                         v-for="div in capaDivisionDefs"
                         :key="`verif-${row.id}-${div.id}`"
-                        class="flex items-center gap-1.5 text-[10px] text-slate-600"
+                        class="space-y-0.5"
                       >
-                        <span class="w-[44px] shrink-0 font-semibold text-slate-500">{{ div.short }}</span>
-                        <span
-                          class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
-                          :class="divisionVerificationDisplay(row, div.id).badgeClass"
-                          :title="divisionVerificationDisplay(row, div.id).title"
+                        <div class="flex items-center gap-1.5 text-[10px] text-slate-600">
+                          <span class="w-[44px] shrink-0 font-semibold text-slate-500">{{ div.short }}</span>
+                          <span
+                            class="inline-flex h-5 w-5 items-center justify-center rounded-full border text-[10px]"
+                            :class="divisionVerificationDisplay(row, div.id).badgeClass"
+                            :title="divisionVerificationDisplay(row, div.id).title"
+                          >
+                            <i :class="divisionVerificationDisplay(row, div.id).iconClass" aria-hidden="true" />
+                          </span>
+                        </div>
+                        <div
+                          v-if="divisionApprovalFlows(row, div.id).length"
+                          class="ml-[52px] space-y-0.5"
                         >
-                          <i :class="divisionVerificationDisplay(row, div.id).iconClass" aria-hidden="true" />
-                        </span>
+                          <div
+                            v-for="flow in divisionApprovalFlows(row, div.id)"
+                            :key="`flow-${row.id}-${div.id}-${flow.id}`"
+                            class="flex items-start gap-1 text-[10px] leading-tight"
+                            :title="approvalFlowTooltip(flow)"
+                          >
+                            <span class="shrink-0 font-semibold text-slate-400">L{{ flow.approval_level }}</span>
+                            <span class="min-w-0 flex-1 truncate text-slate-700">{{ approverFlowName(flow) }}</span>
+                            <span
+                              class="shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold uppercase"
+                              :class="approvalFlowStatusClass(flow.status)"
+                            >
+                              {{ approvalFlowStatusLabel(flow.status) }}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <span v-if="verificationAuditInfo(row)" class="text-[10px] text-slate-500">
-                        {{ verificationAuditInfo(row) }}
-                      </span>
                     </div>
                   </td>
                   <td class="px-3 py-3 min-w-[190px]">
@@ -2154,13 +2173,39 @@ function capaAuditInfo(row) {
   return `${by || '-'} · ${at || '-'}`
 }
 
-function verificationAuditInfo(row) {
-  const a = row?.capa_audit
-  if (!a) return ''
-  const by = userNameById(a.verified_by_user_id)
-  const at = formatShortDateTime(a.verified_at)
-  if (!by && !at) return ''
-  return `${by || '-'} · ${at || '-'}`
+function divisionApprovalFlows(row, divisionId) {
+  const flows = row?.capa_division_approval?.[divisionId]?.flows
+  if (!Array.isArray(flows) || !flows.length) return []
+  return [...flows].sort((a, b) => Number(a.approval_level) - Number(b.approval_level))
+}
+
+function approverFlowName(flow) {
+  const fromFlow = flow?.approver?.nama_lengkap
+  if (fromFlow) return String(fromFlow)
+  return userNameById(flow?.approver_id) || `User #${flow?.approver_id || '?'}`
+}
+
+function approvalFlowStatusLabel(status) {
+  const s = String(status || '').toUpperCase()
+  if (s === 'APPROVED') return 'OK'
+  if (s === 'REJECTED') return 'Tolak'
+  if (s === 'PENDING') return 'Tunggu'
+  return s || '—'
+}
+
+function approvalFlowStatusClass(status) {
+  const s = String(status || '').toUpperCase()
+  if (s === 'APPROVED') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (s === 'REJECTED') return 'border-rose-200 bg-rose-50 text-rose-800'
+  if (s === 'PENDING') return 'border-amber-200 bg-amber-50 text-amber-900'
+  return 'border-slate-200 bg-slate-50 text-slate-600'
+}
+
+function approvalFlowTooltip(flow) {
+  const name = approverFlowName(flow)
+  const label = approvalFlowStatusLabel(flow?.status)
+  const at = formatShortDateTime(flow?.approved_at || flow?.rejected_at)
+  return at ? `${name} — ${label} (${at})` : `${name} — ${label}`
 }
 
 function severityClass(sev) {
