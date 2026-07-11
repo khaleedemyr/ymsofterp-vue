@@ -2595,6 +2595,7 @@ Route::post('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'sto
 Route::get('qa2-audits/{id}/edit', [\App\Http\Controllers\Qa2AuditController::class, 'edit'])->name('qa2-audits.edit');
 Route::post('qa2-audits/{id}/share-link', [\App\Http\Controllers\Qa2AuditController::class, 'generateShareLink'])->name('qa2-audits.share-link');
 Route::post('qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->name('qa2-audits.save-draft');
+Route::post('qa2-audits/{id}/update-auditees', [\App\Http\Controllers\Qa2AuditController::class, 'updateAuditees'])->name('qa2-audits.update-auditees');
 Route::post('qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController::class, 'submit'])->name('qa2-audits.submit');
 Route::post('qa2-audits/{id}/items/{itemId}/media', [\App\Http\Controllers\Qa2AuditController::class, 'uploadItemMedia'])->name('qa2-audits.items.upload-media');
 Route::delete('qa2-audits/{id}/items/{itemId}/media/{mediaId}', [\App\Http\Controllers\Qa2AuditController::class, 'deleteItemMedia'])->name('qa2-audits.items.delete-media');

@@ -560,6 +560,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/qa2-audits/{id}/cap-approve', [\App\Http\Controllers\Qa2AuditController::class, 'approveCap'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/cap-reject', [\App\Http\Controllers\Qa2AuditController::class, 'rejectCap'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->where('id', '[0-9]+');
+        Route::post('/qa2-audits/{id}/update-auditees', [\App\Http\Controllers\Qa2AuditController::class, 'updateAuditees'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/submit', [\App\Http\Controllers\Qa2AuditController::class, 'apiSubmit'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/share-link', [\App\Http\Controllers\Qa2AuditController::class, 'generateShareLink'])->where('id', '[0-9]+');
         Route::post('/qa2-audits/{id}/save-cap', [\App\Http\Controllers\Qa2AuditController::class, 'saveCap'])->where('id', '[0-9]+');

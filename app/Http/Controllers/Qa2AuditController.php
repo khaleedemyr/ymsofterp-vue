@@ -1132,6 +1132,7 @@ class Qa2AuditController extends Controller
             ->exists();
 
         $canManage = $isHo && $audit->status === 'draft';
+        $canEditAuditee = $isHo && $audit->status === 'submitted';
 
         return Inertia::render('Qa2Audits/Form', [
             'mode' => 'edit',
@@ -1150,6 +1151,7 @@ class Qa2AuditController extends Controller
             'tree' => $this->auditTree($id),
             'permissions' => [
                 'can_manage' => $canManage,
+                'can_edit_auditee' => $canEditAuditee,
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
                 'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
                 'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
@@ -1253,6 +1255,27 @@ class Qa2AuditController extends Controller
                         'updated_at' => now(),
                     ]);
             }
+        });
+
+        return response()->json(['success' => true]);
+    }
+
+    public function updateAuditees(Request $request, int $id)
+    {
+        $this->ensureHo();
+
+        $audit = $this->getAuditRow($id);
+        abort_if(!$audit, 404);
+        abort_if($audit->status !== 'submitted', 422, 'Auditee hanya dapat diubah pada audit submitted.');
+
+        $validated = $request->validate([
+            'auditee_ids' => 'nullable|array',
+            'auditee_ids.*' => 'integer|exists:users,id',
+        ]);
+
+        DB::transaction(function () use ($id, $validated) {
+            $this->syncAuditees($id, $validated['auditee_ids'] ?? []);
+            DB::table('qa2_audits')->where('id', $id)->update(['updated_at' => now()]);
         });
 
         return response()->json(['success' => true]);
@@ -1575,10 +1598,8 @@ class Qa2AuditController extends Controller
     private function syncPeople(int $auditId, array $auditorIds, array $auditeeIds): void
     {
         DB::table('qa2_audit_auditors')->where('audit_id', $auditId)->delete();
-        DB::table('qa2_audit_auditees')->where('audit_id', $auditId)->delete();
 
         $auditors = array_values(array_unique(array_map('intval', $auditorIds)));
-        $auditees = array_values(array_unique(array_map('intval', $auditeeIds)));
 
         if (!empty($auditors)) {
             $rows = [];
@@ -1593,18 +1614,30 @@ class Qa2AuditController extends Controller
             DB::table('qa2_audit_auditors')->insert($rows);
         }
 
-        if (!empty($auditees)) {
-            $rows = [];
-            foreach ($auditees as $uid) {
-                $rows[] = [
-                    'audit_id' => $auditId,
-                    'user_id' => $uid,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            DB::table('qa2_audit_auditees')->insert($rows);
+        $this->syncAuditees($auditId, $auditeeIds);
+    }
+
+    private function syncAuditees(int $auditId, array $auditeeIds): void
+    {
+        DB::table('qa2_audit_auditees')->where('audit_id', $auditId)->delete();
+
+        $auditees = array_values(array_unique(array_map('intval', $auditeeIds)));
+
+        if (empty($auditees)) {
+            return;
         }
+
+        $rows = [];
+        foreach ($auditees as $uid) {
+            $rows[] = [
+                'audit_id' => $auditId,
+                'user_id' => $uid,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        DB::table('qa2_audit_auditees')->insert($rows);
     }
 
     private function getTemplateSeedRows(int $templateId): array
@@ -2272,6 +2305,7 @@ class Qa2AuditController extends Controller
             ->where('user_id', (int) $user->id)
             ->exists();
         $canManage = $isHo && $audit->status === 'draft';
+        $canEditAuditee = $isHo && $audit->status === 'submitted';
 
         return response()->json([
             'success' => true,
@@ -2291,6 +2325,7 @@ class Qa2AuditController extends Controller
             'tree' => $this->auditTree($id),
             'permissions' => [
                 'can_manage' => $canManage,
+                'can_edit_auditee' => $canEditAuditee,
                 'can_fill_cap' => $canFillCap && $audit->status === 'submitted',
                 'can_edit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),
                 'can_submit_cap' => $canFillCap && $audit->status === 'submitted' && $this->capSubmissionEditable($audit),

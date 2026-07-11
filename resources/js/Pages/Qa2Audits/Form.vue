@@ -22,6 +22,7 @@ const props = defineProps({
 
 const isCreate = computed(() => props.mode === 'create');
 const canManage = computed(() => !!props.permissions?.can_manage);
+const canEditAuditee = computed(() => !!props.permissions?.can_edit_auditee);
 const canFillCap = computed(() => !!props.permissions?.can_fill_cap);
 const canEditCap = computed(() => props.permissions?.can_edit_cap !== false && !!props.permissions?.can_fill_cap);
 const canSubmitCap = computed(() => !!props.permissions?.can_submit_cap);
@@ -313,8 +314,34 @@ const autoSave = debounce(async () => {
   }
 }, 1200);
 
+const auditeePayload = computed(() => ({
+  auditee_ids: selectedAuditees.value.map((u) => u.id),
+}));
+
+const autoSaveAuditees = debounce(async () => {
+  if (isCreate.value || !canEditAuditee.value) {
+    return;
+  }
+
+  saving.value = true;
+  try {
+    await axios.post(route('qa2-audits.update-auditees', props.audit.id), auditeePayload.value);
+    lastSavedAt.value = new Date().toLocaleTimeString();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    saving.value = false;
+  }
+}, 1200);
+
 watch(draftPayload, () => {
   autoSave();
+}, { deep: true });
+
+watch(selectedAuditees, () => {
+  if (canEditAuditee.value) {
+    autoSaveAuditees();
+  }
 }, { deep: true });
 
 const capPayload = computed(() => ({
@@ -830,7 +857,7 @@ function formatUserLabel(user) {
             <div>Audit Date: {{ audit.audit_datetime }}</div>
             <div>Time Start: {{ audit.audit_time_start || '-' }}</div>
             <div>Time End: {{ audit.audit_time_end || '-' }}</div>
-            <div v-if="saving" class="font-medium text-amber-600">Autosave draft...</div>
+            <div v-if="saving" class="font-medium text-amber-600">Menyimpan...</div>
             <div v-else-if="lastSavedAt" class="font-medium text-emerald-600">Tersimpan {{ lastSavedAt }}</div>
             <div v-if="canFillCap && capSaving" class="font-medium text-rose-600">Autosave CAP...</div>
             <div v-else-if="canFillCap && capLastSavedAt" class="font-medium text-emerald-600">CAP tersimpan {{ capLastSavedAt }}</div>
@@ -890,11 +917,12 @@ function formatUserLabel(user) {
 
           <div>
             <label class="mb-1 block text-sm font-medium text-gray-700">Auditee Name</label>
+            <p v-if="canEditAuditee" class="mb-1 text-xs text-indigo-600">Auditee masih dapat diubah setelah submit.</p>
             <Multiselect
               v-model="selectedAuditees"
               :options="users"
               :multiple="true"
-              :disabled="!isCreate && !canManage"
+              :disabled="!isCreate && !canManage && !canEditAuditee"
               track-by="id"
               :custom-label="formatUserLabel"
               placeholder="Pilih auditee"
@@ -948,7 +976,7 @@ function formatUserLabel(user) {
 
           <div>
             <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Auditee</p>
-            <div v-if="audit.auditees?.length" class="space-y-2">
+            <div v-if="audit.auditees?.length && !canEditAuditee" class="space-y-2">
               <div v-for="person in audit.auditees" :key="`audit-auditee-${person.id}`" class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-2">
                 <button
                   v-if="resolveAvatarUrl(person)"
@@ -965,7 +993,7 @@ function formatUserLabel(user) {
                 </div>
               </div>
             </div>
-            <p v-else class="text-xs text-gray-400">-</p>
+            <p v-else-if="!canEditAuditee" class="text-xs text-gray-400">-</p>
           </div>
         </div>
 
