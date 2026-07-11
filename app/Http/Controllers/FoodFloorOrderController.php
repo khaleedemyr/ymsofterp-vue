@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use App\Models\WarehouseOutlet;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Support\FloorOrderItemPriceResolver;
 use App\Support\FloorOrderPriceAuditor;
 use App\Support\FoodFloorOrderApprovalService;
@@ -203,6 +204,135 @@ class FoodFloorOrderController extends Controller
         return array_values($map);
     }
 
+    private function assertHasProcessedItems(array $processedItems, string $actionLabel = 'menyimpan'): void
+    {
+        if ($processedItems === []) {
+            throw new \Exception("Minimal 1 item wajib diisi untuk {$actionLabel} Request Order.");
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildProcessedItemsFromOrder(FoodFloorOrder $order): array
+    {
+        $items = $order->items()->get()->map(function ($item) {
+            return [
+                'item_id' => $item->item_id,
+                'item_name' => $item->item_name,
+                'qty' => $item->qty,
+                'unit' => $item->unit,
+                'price' => $item->price,
+                'subtotal' => $item->subtotal,
+            ];
+        })->all();
+
+        return $this->dedupeProcessedItemsByItemId(
+            $this->validateAndGroupItemsBySupplier($items, $order->id_outlet, $order->fo_mode)
+        );
+    }
+
+    private function persistFloorOrderItems(int $floorOrderId, array $processedItems): void
+    {
+        foreach ($processedItems as $item) {
+            $masterItem = Item::find($item['item_id']);
+            DB::table('food_floor_order_items')->insert([
+                'floor_order_id' => $floorOrderId,
+                'item_id' => $item['item_id'],
+                'item_name' => $item['item_name'],
+                'qty' => $item['qty'],
+                'unit' => $item['unit'],
+                'price' => $item['price'],
+                'subtotal' => $item['subtotal'],
+                'category_id' => $masterItem ? $masterItem->category_id : null,
+                'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function clearSupplierItemTables(int $floorOrderId): void
+    {
+        DB::table('food_floor_order_supplier_items')->where('floor_order_id', $floorOrderId)->delete();
+        DB::table('food_floor_order_supplier_headers')->where('floor_order_id', $floorOrderId)->delete();
+    }
+
+    private function syncSupplierGroupsFromProcessedItems(int $floorOrderId, array $processedItems): void
+    {
+        $this->clearSupplierItemTables($floorOrderId);
+
+        $bySupplier = [];
+        foreach ($processedItems as $item) {
+            $supplierId = $item['supplier_id'] ?? null;
+            if (! $supplierId) {
+                continue;
+            }
+            $bySupplier[(int) $supplierId][] = $item;
+        }
+
+        foreach ($bySupplier as $supplierId => $items) {
+            $headerId = DB::table('food_floor_order_supplier_headers')->insertGetId([
+                'floor_order_id' => $floorOrderId,
+                'supplier_id' => $supplierId,
+                'supplier_fo_number' => $this->floorOrderService->generateSupplierFONumber($supplierId),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            foreach ($items as $item) {
+                $row = [
+                    'floor_order_id' => $floorOrderId,
+                    'item_id' => $item['item_id'],
+                    'item_name' => $item['item_name'],
+                    'qty' => $item['qty'],
+                    'price' => $item['price'],
+                    'subtotal' => $item['subtotal'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+
+                if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {
+                    $row['supplier_header_id'] = $headerId;
+                }
+
+                if (Schema::hasColumn('food_floor_order_supplier_items', 'unit')) {
+                    $row['unit'] = $item['unit'];
+                }
+
+                DB::table('food_floor_order_supplier_items')->insert($row);
+            }
+        }
+    }
+
+    /**
+     * @return array<int, array{header: object, items: \Illuminate\Support\Collection<int, object>}>
+     */
+    private function loadItemsBySupplier(int $floorOrderId): array
+    {
+        $headers = DB::table('food_floor_order_supplier_headers')
+            ->where('floor_order_id', $floorOrderId)
+            ->orderBy('id')
+            ->get();
+
+        $groups = [];
+        foreach ($headers as $header) {
+            $itemQuery = DB::table('food_floor_order_supplier_items')
+                ->where('floor_order_id', $floorOrderId);
+
+            if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {
+                $itemQuery->where('supplier_header_id', $header->id);
+            }
+
+            $groups[] = [
+                'header' => $header,
+                'items' => $itemQuery->orderBy('id')->get(),
+            ];
+        }
+
+        return $groups;
+    }
+
     // Method store untuk membuat floor order
     public function store(Request $request)
     {
@@ -290,28 +420,16 @@ class FoodFloorOrderController extends Controller
             $processedItems = $this->dedupeProcessedItemsByItemId(
                 $this->validateAndGroupItemsBySupplier($items, $idOutlet, $request->fo_mode)
             );
+            $this->assertHasProcessedItems($processedItems, 'menyimpan');
 
             // Hapus item lama (hanya untuk draft ini)
             \DB::table('food_floor_order_items')->where('floor_order_id', $floorOrderId)->delete();
-            \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $floorOrderId)->delete();
-            \DB::table('food_floor_order_supplier_headers')->where('floor_order_id', $floorOrderId)->delete();
+            $this->clearSupplierItemTables((int) $floorOrderId);
 
-            // Simpan semua item ke tabel regular items
-            foreach ($processedItems as $item) {
-                $masterItem = Item::find($item['item_id']);
-                \DB::table('food_floor_order_items')->insert([
-                    'floor_order_id' => $floorOrderId,
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'unit' => $item['unit'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal'],
-                    'category_id' => $masterItem ? $masterItem->category_id : null,
-                    'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
+            $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
+
+            if ($foMode === 'RO Supplier') {
+                $this->syncSupplierGroupsFromProcessedItems((int) $floorOrderId, $processedItems);
             }
 
             if ($foMode === 'RO Khusus' && $approverIds !== null) {
@@ -415,28 +533,16 @@ class FoodFloorOrderController extends Controller
         $processedItems = $this->dedupeProcessedItemsByItemId(
             $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode)
         );
+        $this->assertHasProcessedItems($processedItems, 'mengubah');
 
         // Hapus data item lama
         $order->items()->delete();
-        \DB::table('food_floor_order_supplier_items')->where('floor_order_id', $order->id)->delete();
-        \DB::table('food_floor_order_supplier_headers')->where('floor_order_id', $order->id)->delete();
+        $this->clearSupplierItemTables((int) $order->id);
 
-        // Simpan semua item ke tabel regular items
-        foreach ($processedItems as $item) {
-            $masterItem = Item::find($item['item_id']);
-            \DB::table('food_floor_order_items')->insert([
-                'floor_order_id' => $order->id,
-                'item_id' => $item['item_id'],
-                'item_name' => $item['item_name'],
-                'qty' => $item['qty'],
-                'unit' => $item['unit'],
-                'price' => $item['price'],
-                'subtotal' => $item['subtotal'],
-                'category_id' => $masterItem ? $masterItem->category_id : null,
-                'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
+        $this->persistFloorOrderItems((int) $order->id, $processedItems);
+
+        if (($request->fo_mode ?? $order->fo_mode) === 'RO Supplier') {
+            $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
         }
 
         if ($approverIds !== null) {
@@ -522,6 +628,18 @@ class FoodFloorOrderController extends Controller
         app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
         $order->refresh();
         $order->load('items');
+
+        if ($order->items->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Request Order tidak memiliki item. Tambahkan minimal 1 item sebelum submit.',
+            ], 422);
+        }
+
+        if ($order->fo_mode === 'RO Supplier') {
+            $processedItems = $this->buildProcessedItemsFromOrder($order);
+            $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
+        }
         
         // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
         if ($order->fo_mode !== 'RO Khusus') {
@@ -634,6 +752,9 @@ class FoodFloorOrderController extends Controller
         return Inertia::render('FloorOrder/Show', [
             'order' => $order,
             'user' => Auth::user()->load('outlet'),
+            'itemsBySupplier' => $order->fo_mode === 'RO Supplier'
+                ? $this->loadItemsBySupplier((int) $order->id)
+                : [],
         ]);
     }
 
@@ -994,6 +1115,9 @@ class FoodFloorOrderController extends Controller
             ->where('food_floor_order_id', $order->id)
             ->exists();
         $this->appendEditWindowMeta($order);
+        $order->setAttribute('items_by_supplier', $order->fo_mode === 'RO Supplier'
+            ? $this->loadItemsBySupplier((int) $order->id)
+            : []);
 
         return response()->json($order);
     }

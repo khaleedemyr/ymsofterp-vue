@@ -947,14 +947,13 @@ function roundUpToHundred(price) {
   return Math.ceil(price / 100) * 100;
 }
 
-let autosaveTimeout = null;
-function triggerAutosave() {
-  clearTimeout(autosaveTimeout);
-  autosaveTimeout = setTimeout(() => {
-    if (selectedFOMode.value === 'RO Khusus' && approvers.value.length === 0) {
-      return;
-    }
-    const cleanItems = form.value.items.map(item => ({
+function buildCleanItems() {
+  if (mode.value === 'tab') {
+    syncTabItemsToForm();
+  }
+  return form.value.items
+    .filter(item => item.item_id && Number(item.qty) > 0)
+    .map(item => ({
       item_id: item.item_id,
       item_name: item.item_name,
       qty: item.qty,
@@ -964,18 +963,54 @@ function triggerAutosave() {
       category_id: item.category_id,
       category_name: item.category_name,
     }));
-    const payload = {
-      ...form.value,
-      items: cleanItems,
-      fo_schedule_id: form.value.fo_schedule_id,
-      warehouse_outlet_id: form.value.warehouse_outlet_id,
-      fo_mode: selectedFOMode.value,
-    };
-    if (selectedFOMode.value === 'RO Khusus') {
-      payload.approvers = buildApproverPayload();
+}
+
+function buildSavePayload(cleanItems) {
+  const payload = {
+    ...form.value,
+    items: cleanItems,
+    fo_schedule_id: form.value.fo_schedule_id,
+    warehouse_outlet_id: form.value.warehouse_outlet_id,
+    fo_mode: selectedFOMode.value,
+    input_mode: mode.value,
+  };
+  if (selectedFOMode.value === 'RO Khusus') {
+    payload.approvers = buildApproverPayload();
+  }
+  return payload;
+}
+
+async function saveDraftItems() {
+  const cleanItems = buildCleanItems();
+  if (!cleanItems.length) {
+    throw new Error('Minimal 1 item wajib diisi sebelum submit.');
+  }
+  const payload = buildSavePayload(cleanItems);
+  if (draftId.value) {
+    await axios.put(`/floor-order/${draftId.value}`, payload);
+    return;
+  }
+  const res = await axios.post('/floor-order', payload);
+  handleStoreResponse(res);
+  if (!draftId.value) {
+    throw new Error('Draft Order belum tersimpan.');
+  }
+}
+
+let autosaveTimeout = null;
+function triggerAutosave() {
+  clearTimeout(autosaveTimeout);
+  autosaveTimeout = setTimeout(async () => {
+    if (selectedFOMode.value === 'RO Khusus' && approvers.value.length === 0) {
+      return;
     }
+    const cleanItems = buildCleanItems();
+    if (!cleanItems.length) {
+      return;
+    }
+    const payload = buildSavePayload(cleanItems);
     if (draftId.value) {
-      axios.put(`/floor-order/${draftId.value}`, payload);
+      await axios.put(`/floor-order/${draftId.value}`, payload);
     }
   }, 2000);
 }
@@ -987,27 +1022,11 @@ watch([jadwalSiap, showScheduleModal], ([val, modal]) => {
     if (!validateKhususApprovers()) {
       return;
     }
-    const cleanItems = form.value.items.map(item => ({
-      item_id: item.item_id,
-      item_name: item.item_name,
-      qty: item.qty,
-      unit: item.unit,
-      price: item.price,
-      subtotal: item.subtotal,
-      category_id: item.category_id,
-      category_name: item.category_name,
-    }));
-    const payload = {
-      ...form.value,
-      items: cleanItems,
-      fo_mode: selectedFOMode.value,
-      input_mode: mode.value,
-      fo_schedule_id: form.value.fo_schedule_id,
-      warehouse_outlet_id: form.value.warehouse_outlet_id,
-    };
-    if (selectedFOMode.value === 'RO Khusus') {
-      payload.approvers = buildApproverPayload();
+    const cleanItems = buildCleanItems();
+    if (!cleanItems.length) {
+      return;
     }
+    const payload = buildSavePayload(cleanItems);
       axios.post('/floor-order', payload).then(handleStoreResponse);
     }
 });
@@ -1047,7 +1066,7 @@ function submitOrderWithLoading() {
     cancelButtonText: 'Batal',
     focusCancel: true,
     reverseButtons: true,
-  }).then((result) => {
+  }).then(async (result) => {
     if (result.isConfirmed) {
       isSubmitting.value = true;
       Swal.fire({
@@ -1059,7 +1078,9 @@ function submitOrderWithLoading() {
           Swal.showLoading();
         }
       });
-      axios.post(`/floor-order/${draftId.value}/submit`).then(() => {
+      try {
+        await saveDraftItems();
+        await axios.post(`/floor-order/${draftId.value}/submit`);
         isSubmitting.value = false;
         Swal.close();
         showPreview.value = false;
@@ -1071,20 +1092,19 @@ function submitOrderWithLoading() {
         }).then(() => {
           router.visit('/floor-order');
         });
-      }).catch((error) => {
+      } catch (error) {
         isSubmitting.value = false;
         Swal.close();
-        
-        // Ambil message dari response error
-        const errorMessage = error.response?.data?.message || 'Terjadi kesalahan saat mengirim RO.';
-        
+
+        const errorMessage = error.response?.data?.message || error.message || 'Terjadi kesalahan saat mengirim RO.';
+
         Swal.fire({
           icon: 'error',
           title: 'Gagal',
           text: errorMessage,
           confirmButtonText: 'OK'
         });
-      });
+      }
     }
   });
 }
