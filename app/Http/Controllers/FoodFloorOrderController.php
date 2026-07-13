@@ -143,6 +143,32 @@ class FoodFloorOrderController extends Controller
         return $items;
     }
 
+    private function resolveItemSupplierMapping(int $itemId, int $outletId, ?string $unitName = null): ?object
+    {
+        $baseQuery = fn (?string $unitFilter) => DB::table('item_supplier_outlet')
+            ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
+            ->leftJoin('units', 'item_supplier.unit_id', '=', 'units.id')
+            ->where('item_supplier_outlet.outlet_id', $outletId)
+            ->where('item_supplier.item_id', $itemId)
+            ->when($unitFilter, function ($query) use ($unitFilter) {
+                $query->where(function ($q) use ($unitFilter) {
+                    $q->where('units.name', $unitFilter)
+                        ->orWhereRaw('LOWER(units.name) = ?', [strtolower($unitFilter)]);
+                });
+            })
+            ->select('item_supplier.supplier_id', 'item_supplier.id as item_supplier_id')
+            ->orderByDesc('item_supplier.id');
+
+        if ($unitName !== null && $unitName !== '') {
+            $match = $baseQuery($unitName)->first();
+            if ($match) {
+                return $match;
+            }
+        }
+
+        return $baseQuery(null)->first();
+    }
+
     // Method untuk memproses item tanpa validasi supplier
     private function validateAndGroupItemsBySupplier($items, $outletId, $foMode = null)
     {
@@ -156,13 +182,11 @@ class FoodFloorOrderController extends Controller
                 continue;
             }
 
-            // Cek apakah item ada di supplier (untuk informasi saja, tidak untuk validasi)
-            $itemSupplier = \DB::table('item_supplier_outlet')
-                ->join('item_supplier', 'item_supplier_outlet.item_supplier_id', '=', 'item_supplier.id')
-                ->where('item_supplier_outlet.outlet_id', $outletId)
-                ->where('item_supplier.item_id', $item['item_id'])
-                ->select('item_supplier.supplier_id', 'item_supplier.id as item_supplier_id')
-                ->first();
+            $itemSupplier = $this->resolveItemSupplierMapping(
+                (int) $item['item_id'],
+                (int) $outletId,
+                isset($item['unit']) ? (string) $item['unit'] : null
+            );
 
             $processedItems[] = [
                 'item_id' => $item['item_id'],
@@ -214,17 +238,25 @@ class FoodFloorOrderController extends Controller
     private function assertSupplierMappedForRoSupplierItems(array $processedItems): void
     {
         $missing = [];
+        $outletName = null;
+
         foreach ($processedItems as $item) {
-            if (empty($item['supplier_id'])) {
+            if (empty($item['supplier_id']) || empty($item['item_supplier_id'])) {
                 $missing[] = $item['item_name'] ?? ('Item #' . ($item['item_id'] ?? '?'));
+                if ($outletName === null && ! empty($item['id_outlet'])) {
+                    $outletName = DB::table('tbl_data_outlet')
+                        ->where('id_outlet', $item['id_outlet'])
+                        ->value('nama_outlet');
+                }
             }
         }
 
         if ($missing !== []) {
             $names = implode(', ', array_unique($missing));
+            $outletLabel = $outletName ? " (outlet: {$outletName})" : '';
             throw new \Exception(
-                "Item berikut belum memiliki supplier untuk outlet ini: {$names}. "
-                . 'Hubungi admin untuk mapping Item Supplier di menu Item Supplier.'
+                "Item berikut belum memiliki mapping Item Supplier{$outletLabel}: {$names}. "
+                . 'Tambahkan outlet ini di menu Item Supplier → Edit mapping item + supplier.'
             );
         }
     }
@@ -312,6 +344,16 @@ class FoodFloorOrderController extends Controller
 
                 if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_id')) {
                     $row['supplier_id'] = $supplierId;
+                }
+
+                if (Schema::hasColumn('food_floor_order_supplier_items', 'item_supplier_id')) {
+                    if (empty($item['item_supplier_id'])) {
+                        throw new \Exception(
+                            'Item ' . ($item['item_name'] ?? ('#' . ($item['item_id'] ?? '?')))
+                            . ' belum memiliki mapping Item Supplier untuk outlet ini.'
+                        );
+                    }
+                    $row['item_supplier_id'] = $item['item_supplier_id'];
                 }
 
                 if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {

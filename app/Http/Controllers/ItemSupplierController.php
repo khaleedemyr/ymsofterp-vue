@@ -88,18 +88,20 @@ class ItemSupplierController extends Controller
         ]);
         DB::beginTransaction();
         try {
-            // Hapus semua item_supplier dan relasi outlet lama untuk supplier ini
-            $oldItemSuppliers = ItemSupplier::where('supplier_id', $request->supplier_id)
-                ->whereIn('id', function($q) use ($request) {
-                    $q->select('item_supplier_id')
-                      ->from('item_supplier_outlet')
-                      ->whereIn('outlet_id', $request->outlet_ids);
-                })->get();
-            foreach ($oldItemSuppliers as $old) {
-                ItemSupplierOutlet::where('item_supplier_id', $old->id)->delete();
-                $old->delete();
-            }
-            // Insert ulang
+            $itemSupplier = ItemSupplier::with('itemSupplierOutlets')->findOrFail($id);
+            $originalOutletIds = $itemSupplier->itemSupplierOutlets->pluck('outlet_id')->all();
+            $itemIds = collect($request->items)->pluck('item_id')->unique()->values()->all();
+
+            $idsToReplace = ItemSupplier::where('supplier_id', $request->supplier_id)
+                ->whereIn('item_id', $itemIds)
+                ->whereHas('itemSupplierOutlets', function ($q) use ($originalOutletIds) {
+                    $q->whereIn('outlet_id', $originalOutletIds);
+                })
+                ->pluck('id');
+
+            ItemSupplierOutlet::whereIn('item_supplier_id', $idsToReplace)->delete();
+            ItemSupplier::whereIn('id', $idsToReplace)->delete();
+
             foreach ($request->items as $item) {
                 $itemSupplier = ItemSupplier::create([
                     'supplier_id' => $request->supplier_id,

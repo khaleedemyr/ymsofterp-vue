@@ -445,6 +445,7 @@ Route::prefix('approval-app')->group(function () {
         // Retail Non Food (Approval App - Outlet Retail Non Food)
         Route::get('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiIndex']);
         Route::get('/retail-non-food/create-data', [\App\Http\Controllers\RetailNonFoodController::class, 'apiCreateData']);
+        Route::get('/retail-non-food/category-budgets', [\App\Http\Controllers\RetailNonFoodController::class, 'getCategoryBudgets']);
         Route::get('/retail-non-food/{id}', [\App\Http\Controllers\RetailNonFoodController::class, 'apiShow']);
         Route::post('/retail-non-food', [\App\Http\Controllers\RetailNonFoodController::class, 'apiStore']);
         Route::delete('/retail-non-food/{id}', [\App\Http\Controllers\RetailNonFoodController::class, 'destroy']);
