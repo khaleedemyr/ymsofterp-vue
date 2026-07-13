@@ -219,10 +219,12 @@ class RepackController extends Controller
             'item_hasil_id' => 'required|exists:items,id',
             'unit_hasil_id' => 'required|exists:units,id',
             'qty_hasil' => 'required|numeric|min:0.0001',
+            'exp_date' => 'nullable|date',
         ]);
 
         $warehouseId = (int) $request->warehouse_id;
         $qtyHasil = (float) $request->qty_hasil;
+        $expDate = $request->input('exp_date') ?: null;
 
         $itemAsal = Item::findOrFail($request->item_asal_id);
         $itemHasil = Item::findOrFail($request->item_hasil_id);
@@ -438,6 +440,7 @@ class RepackController extends Controller
                         'cost_small' => $costSmall,
                         'cost_medium' => $costMedium,
                         'cost_large' => $costLarge,
+                        'exp_date' => $expDate,
                         'generated_by' => Auth::id(),
                         'generated_at' => now(),
                         'created_at' => now(),
@@ -551,6 +554,7 @@ class RepackController extends Controller
                 's.id',
                 's.serial_number',
                 's.generated_at',
+                's.exp_date',
                 's.unit_id',
                 'u.name as unit_name'
             )

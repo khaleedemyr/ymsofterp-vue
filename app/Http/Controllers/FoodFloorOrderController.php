@@ -211,6 +211,24 @@ class FoodFloorOrderController extends Controller
         }
     }
 
+    private function assertSupplierMappedForRoSupplierItems(array $processedItems): void
+    {
+        $missing = [];
+        foreach ($processedItems as $item) {
+            if (empty($item['supplier_id'])) {
+                $missing[] = $item['item_name'] ?? ('Item #' . ($item['item_id'] ?? '?'));
+            }
+        }
+
+        if ($missing !== []) {
+            $names = implode(', ', array_unique($missing));
+            throw new \Exception(
+                "Item berikut belum memiliki supplier untuk outlet ini: {$names}. "
+                . 'Hubungi admin untuk mapping Item Supplier di menu Item Supplier.'
+            );
+        }
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -291,6 +309,10 @@ class FoodFloorOrderController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
+
+                if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_id')) {
+                    $row['supplier_id'] = $supplierId;
+                }
 
                 if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {
                     $row['supplier_header_id'] = $headerId;
@@ -429,6 +451,7 @@ class FoodFloorOrderController extends Controller
             $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
 
             if ($foMode === 'RO Supplier') {
+                $this->assertSupplierMappedForRoSupplierItems($processedItems);
                 $this->syncSupplierGroupsFromProcessedItems((int) $floorOrderId, $processedItems);
             }
 
@@ -542,6 +565,7 @@ class FoodFloorOrderController extends Controller
         $this->persistFloorOrderItems((int) $order->id, $processedItems);
 
         if (($request->fo_mode ?? $order->fo_mode) === 'RO Supplier') {
+            $this->assertSupplierMappedForRoSupplierItems($processedItems);
             $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
         }
 
@@ -624,72 +648,86 @@ class FoodFloorOrderController extends Controller
             }
         }
 
-        // Pastikan harga baris FO = item_prices / FGR +12% terkini sebelum budget & approve
-        app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
-        $order->refresh();
-        $order->load('items');
+        try {
+            // Pastikan harga baris FO = item_prices / FGR +12% terkini sebelum budget & approve
+            app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
+            $order->refresh();
+            $order->load('items');
 
-        if ($order->items->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Request Order tidak memiliki item. Tambahkan minimal 1 item sebelum submit.',
-            ], 422);
-        }
-
-        if ($order->fo_mode === 'RO Supplier') {
-            $processedItems = $this->buildProcessedItemsFromOrder($order);
-            $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
-        }
-        
-        // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
-        if ($order->fo_mode !== 'RO Khusus') {
-            
-            $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
-            if (!$budgetCheckResult['success']) {
-                \Log::error('FO_SUBMIT: Budget check failed', [
-                    'order_id' => $order->id,
-                    'message' => $budgetCheckResult['message']
-                ]);
+            if ($order->items->isEmpty()) {
                 return response()->json([
                     'success' => false,
-                    'message' => $budgetCheckResult['message']
+                    'message' => 'Request Order tidak memiliki item. Tambahkan minimal 1 item sebelum submit.',
                 ], 422);
             }
-            
-        }
-        
-        $oldData = $order->toArray();
 
-        $date = now()->format('Ymd');
-        $random = strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
-        $order_number = 'RO-' . $date . '-' . $random;
-
-        $order->update([
-            'status' => $order->fo_mode === 'RO Khusus' ? 'submitted' : 'approved',
-            'order_number' => $order_number,
-        ]);
-
-        // Kirim notifikasi jika RO Khusus
-        if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
-            $order->refresh();
-            $order->load(['approvalFlows.approver', 'warehouseOutlet']);
-            if ($this->approvalService->usesCustomFlow($order)) {
-                $this->approvalService->notifyFirstApprover($order);
-            } else {
-                $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
+            if ($order->fo_mode === 'RO Supplier') {
+                $processedItems = $this->buildProcessedItemsFromOrder($order);
+                $this->assertSupplierMappedForRoSupplierItems($processedItems);
+                $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
             }
+
+            // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
+            if ($order->fo_mode !== 'RO Khusus') {
+
+                $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
+                if (! $budgetCheckResult['success']) {
+                    \Log::error('FO_SUBMIT: Budget check failed', [
+                        'order_id' => $order->id,
+                        'message' => $budgetCheckResult['message'],
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => $budgetCheckResult['message'],
+                    ], 422);
+                }
+
+            }
+
+            $oldData = $order->toArray();
+
+            $date = now()->format('Ymd');
+            $random = strtoupper(substr(bin2hex(random_bytes(2)), 0, 4));
+            $order_number = 'RO-' . $date . '-' . $random;
+
+            $order->update([
+                'status' => $order->fo_mode === 'RO Khusus' ? 'submitted' : 'approved',
+                'order_number' => $order_number,
+            ]);
+
+            // Kirim notifikasi jika RO Khusus
+            if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
+                $order->refresh();
+                $order->load(['approvalFlows.approver', 'warehouseOutlet']);
+                if ($this->approvalService->usesCustomFlow($order)) {
+                    $this->approvalService->notifyFirstApprover($order);
+                } else {
+                    $this->sendNotificationByWarehouse($order->warehouse_outlet_id, $order->id, $order_number);
+                }
+            }
+
+            $this->writeActivityLog(
+                $request,
+                'food_floor_order',
+                'submit',
+                'Submit Floor Order / Request Order: ' . $order_number,
+                $oldData,
+                $order->fresh()->toArray()
+            );
+
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            \Log::error('FO_SUBMIT: Error', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
         }
-
-        $this->writeActivityLog(
-            $request,
-            'food_floor_order',
-            'submit',
-            'Submit Floor Order / Request Order: ' . $order_number,
-            $oldData,
-            $order->fresh()->toArray()
-        );
-
-        return response()->json(['success' => true]);
     }
 
     // Cek apakah sudah ada FO Utama/Tambahan di hari dan outlet yang sama
