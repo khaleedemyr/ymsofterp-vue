@@ -313,12 +313,20 @@ class BackfillItemSupplierOutletsCommand extends Command
 
     private function supplierFromPurchaseOrder(int $itemId): ?int
     {
-        if (! Schema::hasTable('purchase_order_food_items') || ! Schema::hasTable('purchase_order_food')) {
+        if (! Schema::hasTable('purchase_order_food_items')) {
+            return null;
+        }
+
+        $poTable = Schema::hasTable('purchase_order_foods')
+            ? 'purchase_order_foods'
+            : (Schema::hasTable('purchase_order_food') ? 'purchase_order_food' : null);
+
+        if ($poTable === null) {
             return null;
         }
 
         $supplierId = DB::table('purchase_order_food_items as poi')
-            ->join('purchase_order_food as po', 'poi.purchase_order_food_id', '=', 'po.id')
+            ->join("{$poTable} as po", 'poi.purchase_order_food_id', '=', 'po.id')
             ->where('poi.item_id', $itemId)
             ->whereNotNull('po.supplier_id')
             ->select('po.supplier_id', DB::raw('COUNT(*) as cnt'))

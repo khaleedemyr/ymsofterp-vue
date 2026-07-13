@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Services\NotificationService;
 use App\Services\AssetInventoryStockService;
 use App\Services\LostBreakageReplacementService;
+use App\Services\LostBreakageStockService;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\LostBreakageExport;
 
@@ -733,7 +734,12 @@ class LostBreakageController extends Controller
                     'status'     => 'APPROVED',
                     'updated_at' => now(),
                 ]);
-                $message = 'Semua approval selesai. Data telah disetujui.';
+
+                $freshHeader = DB::table('lost_breakage_headers')->where('id', $id)->first();
+                $details = DB::table('lost_breakage_details')->where('header_id', $id)->get()->all();
+                app(LostBreakageStockService::class)->applyStockOut($freshHeader, $details);
+
+                $message = 'Semua approval selesai. Data telah disetujui dan stok telah dikurangi.';
             }
 
             DB::commit();

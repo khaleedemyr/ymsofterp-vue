@@ -235,35 +235,6 @@ class FoodFloorOrderController extends Controller
         }
     }
 
-    private function assertSupplierMappedForRoSupplierItems(array $processedItems): void
-    {
-        $missing = [];
-        $outletName = null;
-
-        foreach ($processedItems as $item) {
-            if (empty($item['supplier_id']) || empty($item['item_supplier_id'])) {
-                $missing[] = $item['item_name'] ?? ('Item #' . ($item['item_id'] ?? '?'));
-                if ($outletName === null && ! empty($item['id_outlet'])) {
-                    $outletName = DB::table('tbl_data_outlet')
-                        ->where('id_outlet', $item['id_outlet'])
-                        ->value('nama_outlet');
-                }
-            }
-        }
-
-        if ($missing !== []) {
-            $names = implode(', ', array_unique($missing));
-            $outletLabel = $outletName ? " (outlet: {$outletName})" : '';
-            throw new \Exception(
-                "Item berikut belum memiliki mapping Item Supplier{$outletLabel}: {$names}. "
-                . 'Tambahkan outlet ini di menu Item Supplier → Edit mapping item + supplier.'
-            );
-        }
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
     private function buildProcessedItemsFromOrder(FoodFloorOrder $order): array
     {
         $items = $order->items()->get()->map(function ($item) {
@@ -313,9 +284,12 @@ class FoodFloorOrderController extends Controller
         $this->clearSupplierItemTables($floorOrderId);
 
         $bySupplier = [];
+        $unmappedItems = [];
+
         foreach ($processedItems as $item) {
             $supplierId = $item['supplier_id'] ?? null;
             if (! $supplierId) {
+                $unmappedItems[] = $item;
                 continue;
             }
             $bySupplier[(int) $supplierId][] = $item;
@@ -331,42 +305,56 @@ class FoodFloorOrderController extends Controller
             ]);
 
             foreach ($items as $item) {
-                $row = [
-                    'floor_order_id' => $floorOrderId,
-                    'item_id' => $item['item_id'],
-                    'item_name' => $item['item_name'],
-                    'qty' => $item['qty'],
-                    'price' => $item['price'],
-                    'subtotal' => $item['subtotal'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-
-                if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_id')) {
-                    $row['supplier_id'] = $supplierId;
-                }
-
-                if (Schema::hasColumn('food_floor_order_supplier_items', 'item_supplier_id')) {
-                    if (empty($item['item_supplier_id'])) {
-                        throw new \Exception(
-                            'Item ' . ($item['item_name'] ?? ('#' . ($item['item_id'] ?? '?')))
-                            . ' belum memiliki mapping Item Supplier untuk outlet ini.'
-                        );
-                    }
-                    $row['item_supplier_id'] = $item['item_supplier_id'];
-                }
-
-                if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {
-                    $row['supplier_header_id'] = $headerId;
-                }
-
-                if (Schema::hasColumn('food_floor_order_supplier_items', 'unit')) {
-                    $row['unit'] = $item['unit'];
-                }
-
-                DB::table('food_floor_order_supplier_items')->insert($row);
+                $this->insertSupplierItemRow(
+                    $floorOrderId,
+                    $item,
+                    $supplierId,
+                    $item['item_supplier_id'] ?? null,
+                    $headerId
+                );
             }
         }
+
+        foreach ($unmappedItems as $item) {
+            $this->insertSupplierItemRow($floorOrderId, $item, null, null, null);
+        }
+    }
+
+    private function insertSupplierItemRow(
+        int $floorOrderId,
+        array $item,
+        ?int $supplierId,
+        ?int $itemSupplierId,
+        ?int $headerId = null
+    ): void {
+        $row = [
+            'floor_order_id' => $floorOrderId,
+            'item_id' => $item['item_id'],
+            'item_name' => $item['item_name'],
+            'qty' => $item['qty'],
+            'price' => $item['price'],
+            'subtotal' => $item['subtotal'],
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        if (Schema::hasColumn('food_floor_order_supplier_items', 'supplier_id')) {
+            $row['supplier_id'] = $supplierId;
+        }
+
+        if (Schema::hasColumn('food_floor_order_supplier_items', 'item_supplier_id')) {
+            $row['item_supplier_id'] = $itemSupplierId;
+        }
+
+        if ($headerId !== null && Schema::hasColumn('food_floor_order_supplier_items', 'supplier_header_id')) {
+            $row['supplier_header_id'] = $headerId;
+        }
+
+        if (Schema::hasColumn('food_floor_order_supplier_items', 'unit')) {
+            $row['unit'] = $item['unit'];
+        }
+
+        DB::table('food_floor_order_supplier_items')->insert($row);
     }
 
     /**
@@ -492,10 +480,6 @@ class FoodFloorOrderController extends Controller
 
             $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
 
-            if ($foMode === 'RO Supplier') {
-                $this->syncSupplierGroupsFromProcessedItems((int) $floorOrderId, $processedItems);
-            }
-
             if ($foMode === 'RO Khusus' && $approverIds !== null) {
                 $this->approvalService->syncFlows((int) $floorOrderId, $approverIds);
             }
@@ -605,10 +589,6 @@ class FoodFloorOrderController extends Controller
 
         $this->persistFloorOrderItems((int) $order->id, $processedItems);
 
-        if (($request->fo_mode ?? $order->fo_mode) === 'RO Supplier') {
-            $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
-        }
-
         if ($approverIds !== null) {
             $this->approvalService->syncFlows((int) $order->id, $approverIds);
         }
@@ -699,12 +679,6 @@ class FoodFloorOrderController extends Controller
                     'success' => false,
                     'message' => 'Request Order tidak memiliki item. Tambahkan minimal 1 item sebelum submit.',
                 ], 422);
-            }
-
-            if ($order->fo_mode === 'RO Supplier') {
-                $processedItems = $this->buildProcessedItemsFromOrder($order);
-                $this->assertSupplierMappedForRoSupplierItems($processedItems);
-                $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
             }
 
             // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
