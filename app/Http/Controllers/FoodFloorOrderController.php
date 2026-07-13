@@ -493,7 +493,6 @@ class FoodFloorOrderController extends Controller
             $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
 
             if ($foMode === 'RO Supplier') {
-                $this->assertSupplierMappedForRoSupplierItems($processedItems);
                 $this->syncSupplierGroupsFromProcessedItems((int) $floorOrderId, $processedItems);
             }
 
@@ -607,7 +606,6 @@ class FoodFloorOrderController extends Controller
         $this->persistFloorOrderItems((int) $order->id, $processedItems);
 
         if (($request->fo_mode ?? $order->fo_mode) === 'RO Supplier') {
-            $this->assertSupplierMappedForRoSupplierItems($processedItems);
             $this->syncSupplierGroupsFromProcessedItems((int) $order->id, $processedItems);
         }
 
