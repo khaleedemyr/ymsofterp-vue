@@ -184,18 +184,29 @@ class MampReportService
      *   total: float
      * }
      */
-    public function buildOutletSummary(int $year, int $month): array
+    public function buildOutletSummary(int $year, int $month, ?int $categoryId = null): array
     {
         $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
         $dateFrom = $periodStart->format('Y-m-d');
         $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
 
+        $category = null;
+        if ($categoryId !== null && $categoryId > 0) {
+            $category = PurchaseRequisitionCategory::query()->find($categoryId);
+        }
+
         $totalsByOutletId = [];
 
-        DB::table('retail_non_food')
+        $rnfQuery = DB::table('retail_non_food')
             ->whereBetween('transaction_date', [$dateFrom, $dateTo])
             ->where('status', 'approved')
-            ->whereNull('deleted_at')
+            ->whereNull('deleted_at');
+
+        if ($categoryId !== null && $categoryId > 0) {
+            $rnfQuery->where('category_budget_id', $categoryId);
+        }
+
+        $rnfQuery
             ->select('outlet_id', DB::raw('SUM(total_amount) as total'))
             ->groupBy('outlet_id')
             ->get()
@@ -204,10 +215,16 @@ class MampReportService
                 $totalsByOutletId[$key] = ($totalsByOutletId[$key] ?? 0) + (float) $row->total;
             });
 
-        DB::table('non_food_payment_outlets as nfpo')
+        $nfpQuery = DB::table('non_food_payment_outlets as nfpo')
             ->join('non_food_payments as nfp', 'nfp.id', '=', 'nfpo.non_food_payment_id')
             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-            ->whereIn('nfp.status', ['paid', 'approved'])
+            ->whereIn('nfp.status', ['paid', 'approved']);
+
+        if ($categoryId !== null && $categoryId > 0) {
+            $nfpQuery->where('nfpo.category_id', $categoryId);
+        }
+
+        $nfpQuery
             ->select('nfpo.outlet_id', DB::raw('SUM(nfpo.amount) as total'))
             ->groupBy('nfpo.outlet_id')
             ->get()
@@ -241,7 +258,7 @@ class MampReportService
             ];
         }
 
-        return [
+        $result = [
             'period' => [
                 'year' => $year,
                 'month' => $month,
@@ -252,6 +269,16 @@ class MampReportService
             'rows' => $rows,
             'total' => round(collect($rows)->sum('total'), 2),
         ];
+
+        if ($category) {
+            $result['category'] = [
+                'id' => (int) $category->id,
+                'name' => (string) $category->name,
+                'division' => (string) $category->division,
+            ];
+        }
+
+        return $result;
     }
 
     private function fetchCreditLines(int $categoryId, string $dateFrom, string $dateTo): Collection

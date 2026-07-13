@@ -25,7 +25,7 @@
               class="w-full border border-gray-300 rounded-lg px-3 py-2"
               @change="applyFilters"
             >
-              <option :value="null">— Semua (hanya rekap outlet) —</option>
+              <option :value="null">— Semua kategori —</option>
               <option v-for="c in categories" :key="c.id" :value="c.id">
                 {{ c.name }} ({{ c.division }})
               </option>
@@ -245,7 +245,7 @@
 
         <div v-show="activeTab === 'outlet'">
           <p class="text-sm text-gray-500 mb-3">
-            Semua kategori — {{ outlet_summary.period?.label }}
+            {{ outletSummaryLabel }}
           </p>
           <div class="bg-white rounded-xl shadow-lg overflow-x-auto max-w-xl">
             <table class="min-w-full text-sm border-collapse">
@@ -324,7 +324,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
@@ -398,6 +398,19 @@ const monthNames = [
   'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
 ]
+
+const outletSummaryLabel = computed(() => {
+  const period = props.outlet_summary?.period?.label || ''
+  const categoryName = props.outlet_summary?.category?.name
+    || props.report?.category?.name
+    || props.categories.find((c) => c.id === filters.category_id)?.name
+
+  if (categoryName) {
+    return `${categoryName} — ${period}`
+  }
+
+  return `Semua kategori — ${period}`
+})
 
 function monthLabel(m) {
   return monthNames[m - 1] || m
