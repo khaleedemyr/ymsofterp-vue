@@ -96,6 +96,9 @@
                         Outlet Allocations
                       </th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Show on Retail
+                      </th>
+                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
@@ -125,6 +128,20 @@
                           </div>
                         </div>
                         <span v-else class="text-gray-500">-</span>
+                      </td>
+                      <td class="px-6 py-4 whitespace-nowrap">
+                        <button
+                          type="button"
+                          @click="toggleShowOnRetail(category)"
+                          :disabled="togglingCategoryId === category.id"
+                          :class="category.show_on_retail
+                            ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                          class="inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full transition-colors disabled:opacity-50"
+                        >
+                          <span v-if="togglingCategoryId === category.id">...</span>
+                          <span v-else>{{ category.show_on_retail ? 'Aktif' : 'Nonaktif' }}</span>
+                        </button>
                       </td>
                       <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div class="flex space-x-2">
@@ -250,6 +267,7 @@
 import { computed, ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import axios from 'axios'
 
 const props = defineProps({
   categories: Array,
@@ -292,6 +310,24 @@ const refreshData = () => {
 const showDeleteModal = ref(false)
 const selectedCategoryToDelete = ref('')
 const deleting = ref(false)
+const togglingCategoryId = ref(null)
+
+const toggleShowOnRetail = async (category) => {
+  const newValue = !category.show_on_retail
+  togglingCategoryId.value = category.id
+
+  try {
+    await axios.patch(`/budget-management/category/${category.id}/show-on-retail`, {
+      show_on_retail: newValue,
+    })
+    category.show_on_retail = newValue
+  } catch (error) {
+    console.error('Failed to toggle show on retail:', error)
+    alert('Gagal mengubah status show on retail')
+  } finally {
+    togglingCategoryId.value = null
+  }
+}
 
 const deleteCategory = () => {
   if (!selectedCategoryToDelete.value) return

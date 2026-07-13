@@ -150,6 +150,7 @@ class RetailNonFoodController extends Controller
         // Ambil category budgets (hanya yang GLOBAL)
         // Urutkan ascending berdasarkan divisi, kemudian nama category
         $categoryBudgets = PurchaseRequisitionCategory::active()
+            ->showOnRetail()
             ->where('budget_type', 'GLOBAL')
             ->orderBy('division', 'asc')
             ->orderBy('name', 'asc')
@@ -436,6 +437,7 @@ class RetailNonFoodController extends Controller
 
             // Ambil category budgets dengan budget_type GLOBAL
             $globalCategories = PurchaseRequisitionCategory::active()
+                ->showOnRetail()
                 ->where('budget_type', 'GLOBAL')
                 ->orderBy('division', 'asc')
                 ->orderBy('name', 'asc')
@@ -450,6 +452,7 @@ class RetailNonFoodController extends Controller
                 
                 if (!empty($perOutletCategoryIds)) {
                     $perOutletCategories = PurchaseRequisitionCategory::active()
+                        ->showOnRetail()
                         ->where('budget_type', 'PER_OUTLET')
                         ->whereIn('id', $perOutletCategoryIds)
                         ->orderBy('division', 'asc')
@@ -606,6 +609,7 @@ class RetailNonFoodController extends Controller
         }
 
         $categoryBudgets = PurchaseRequisitionCategory::active()
+            ->showOnRetail()
             ->where('budget_type', 'GLOBAL')
             ->orderBy('division', 'asc')
             ->orderBy('name', 'asc')

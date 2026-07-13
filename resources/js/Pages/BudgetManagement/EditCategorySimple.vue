@@ -132,6 +132,34 @@
                     </p>
                   </div>
 
+                  <!-- Show on Retail -->
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                      Show on Retail
+                    </label>
+                    <div class="flex items-center space-x-3">
+                      <button
+                        type="button"
+                        @click="form.show_on_retail = !form.show_on_retail"
+                        :class="form.show_on_retail
+                          ? 'bg-green-500'
+                          : 'bg-gray-300'"
+                        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                      >
+                        <span
+                          :class="form.show_on_retail ? 'translate-x-5' : 'translate-x-0'"
+                          class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                        />
+                      </button>
+                      <span class="text-sm text-gray-700">
+                        {{ form.show_on_retail ? 'Aktif' : 'Nonaktif' }}
+                      </span>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">
+                      Jika aktif, kategori budget ini akan muncul di menu Retail Non Food.
+                    </p>
+                  </div>
+
                   <!-- Outlet Selection (only for PER_OUTLET) -->
                   <div v-if="form.budget_type === 'PER_OUTLET'">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -314,6 +342,7 @@ const selectAllOutlets = ref(false)
 const form = reactive({
   budget_type: 'GLOBAL',
   budget_limit: 0,
+  show_on_retail: true,
   selected_outlets: [],
   outlet_budgets: {},
 })
@@ -328,6 +357,7 @@ watch(() => props.category, (newCategory) => {
   if (newCategory) {
     form.budget_type = newCategory.budget_type || 'GLOBAL'
     form.budget_limit = newCategory.budget_limit || 0
+    form.show_on_retail = newCategory.show_on_retail !== false && newCategory.show_on_retail !== 0
     
     // Initialize selected outlets and budgets from existing outlet budgets
     if (newCategory.outlet_budgets && newCategory.outlet_budgets.length > 0) {

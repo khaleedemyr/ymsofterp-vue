@@ -73,6 +73,7 @@ class BudgetManagementController extends Controller
             'budget_limit' => 'required|numeric|min:0',
             'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
             'description' => 'nullable|string',
+            'show_on_retail' => 'nullable|boolean',
             'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
             'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
             'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
@@ -85,6 +86,7 @@ class BudgetManagementController extends Controller
             // Create category
             $categoryData = $request->only(['name', 'division', 'subcategory', 'budget_limit', 'budget_type', 'description']);
             $categoryData['active'] = true;
+            $categoryData['show_on_retail'] = $request->boolean('show_on_retail', true);
             $category = PurchaseRequisitionCategory::create($categoryData);
 
             // If PER_OUTLET, create outlet budgets
@@ -135,6 +137,7 @@ class BudgetManagementController extends Controller
         $request->validate([
             'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
             'budget_limit' => 'required|numeric|min:0',
+            'show_on_retail' => 'nullable|boolean',
             'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
             'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
             'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
@@ -149,6 +152,7 @@ class BudgetManagementController extends Controller
             $category->update([
                 'budget_type' => $request->budget_type,
                 'budget_limit' => $request->budget_limit,
+                'show_on_retail' => $request->boolean('show_on_retail', true),
             ]);
 
             // Handle outlet budgets based on budget type
@@ -182,6 +186,30 @@ class BudgetManagementController extends Controller
             DB::rollBack();
             return back()->withErrors(['error' => 'Failed to update category: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Toggle show on retail flag
+     */
+    public function toggleShowOnRetail(Request $request, $id)
+    {
+        $request->validate([
+            'show_on_retail' => 'required|boolean',
+        ]);
+
+        $category = PurchaseRequisitionCategory::findOrFail($id);
+        $category->update([
+            'show_on_retail' => $request->boolean('show_on_retail'),
+        ]);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'show_on_retail' => $category->show_on_retail,
+            ]);
+        }
+
+        return back()->with('success', 'Show on retail updated successfully!');
     }
 
     /**
@@ -512,6 +540,7 @@ class BudgetManagementController extends Controller
             'budget_limit' => 'required|numeric|min:0',
             'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
             'description' => 'nullable|string',
+            'show_on_retail' => 'nullable|boolean',
             'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
             'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
             'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
@@ -527,6 +556,7 @@ class BudgetManagementController extends Controller
                 'budget_type' => $validated['budget_type'],
                 'description' => $validated['description'] ?? null,
                 'active' => true,
+                'show_on_retail' => $request->boolean('show_on_retail', true),
             ]);
 
             if ($validated['budget_type'] === 'PER_OUTLET') {
@@ -572,6 +602,7 @@ class BudgetManagementController extends Controller
             'budget_limit' => 'required|numeric|min:0',
             'budget_type' => 'required|in:GLOBAL,PER_OUTLET',
             'description' => 'nullable|string',
+            'show_on_retail' => 'nullable|boolean',
             'selected_outlets' => 'required_if:budget_type,PER_OUTLET|array',
             'selected_outlets.*' => 'exists:tbl_data_outlet,id_outlet',
             'outlet_budgets' => 'required_if:budget_type,PER_OUTLET|array',
@@ -586,6 +617,7 @@ class BudgetManagementController extends Controller
                 'budget_limit' => $validated['budget_limit'],
                 'budget_type' => $validated['budget_type'],
                 'description' => $validated['description'] ?? null,
+                'show_on_retail' => $request->boolean('show_on_retail', true),
             ]);
 
             if ($validated['budget_type'] === 'GLOBAL') {

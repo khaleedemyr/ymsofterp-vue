@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 
 class PurchaseRequisitionCategory extends Model
 {
@@ -17,11 +18,13 @@ class PurchaseRequisitionCategory extends Model
         'budget_type',
         'description',
         'active',
+        'show_on_retail',
     ];
 
     protected $casts = [
         'budget_limit' => 'decimal:2',
         'active' => 'boolean',
+        'show_on_retail' => 'boolean',
     ];
 
     // Relationships
@@ -49,6 +52,15 @@ class PurchaseRequisitionCategory extends Model
     public function scopeActive($query)
     {
         return $query->where('active', 1);
+    }
+
+    public function scopeShowOnRetail($query)
+    {
+        if (! Schema::hasColumn((new static)->getTable(), 'show_on_retail')) {
+            return $query;
+        }
+
+        return $query->where('show_on_retail', 1);
     }
 
     // Accessors

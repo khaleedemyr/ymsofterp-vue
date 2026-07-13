@@ -617,6 +617,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
         Route::post('/category', [\App\Http\Controllers\BudgetManagementController::class, 'storeCategory'])->name('store-category');
         Route::get('/category/{id}/edit', [\App\Http\Controllers\BudgetManagementController::class, 'editCategory'])->name('edit-category');
         Route::put('/category/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'updateCategory'])->name('update-category');
+        Route::patch('/category/{id}/show-on-retail', [\App\Http\Controllers\BudgetManagementController::class, 'toggleShowOnRetail'])->name('toggle-show-on-retail');
         Route::delete('/category/{id}', [\App\Http\Controllers\BudgetManagementController::class, 'deleteCategory'])->name('delete-category');
         Route::get('/category/delete', [\App\Http\Controllers\BudgetManagementController::class, 'deleteCategoryPage'])->name('delete-category-page');
         Route::get('/category/{categoryId}/outlet-budgets', [\App\Http\Controllers\BudgetManagementController::class, 'manageOutletBudgets'])->name('manage-outlet-budgets');
