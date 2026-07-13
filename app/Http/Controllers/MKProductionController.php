@@ -881,6 +881,8 @@ class MKProductionController extends Controller
                 's.ref_po_number',
                 's.ref_gr_number',
                 's.generated_at',
+                's.production_date',
+                's.exp_date',
                 's.repack_unit_id',
                 's.repack_qty',
                 'u.name as unit_name',
@@ -933,6 +935,12 @@ class MKProductionController extends Controller
 
     public function generateSerials(Request $request, $id)
     {
+        $validated = $request->validate([
+            'production_date' => 'required|date',
+            'repack_unit_id' => 'nullable|integer|exists:units,id',
+            'repack_qty' => 'nullable|numeric|min:0.01',
+        ]);
+
         $prod = DB::table('mk_productions as mp')
             ->join('items as i', 'i.id', '=', 'mp.item_id')
             ->select(
@@ -942,6 +950,7 @@ class MKProductionController extends Controller
                 'mp.qty_jadi',
                 'mp.warehouse_id',
                 'mp.batch_number',
+                'i.exp',
                 'i.small_unit_id',
                 'i.medium_unit_id',
                 'i.large_unit_id',
@@ -958,6 +967,11 @@ class MKProductionController extends Controller
         $qtyIn = (float) ($prod->qty_jadi ?: 0);
         $repackUnitId = $request->input('repack_unit_id');
         $repackQty = (float) $request->input('repack_qty', 0);
+        $productionDate = $validated['production_date'];
+        $expDays = (int) ($prod->exp ?? 0);
+        $expDate = $expDays > 0
+            ? \Carbon\Carbon::parse($productionDate)->addDays($expDays)->toDateString()
+            : null;
 
         if ($repackUnitId && $repackQty > 0) {
             $serialCount = InventorySerialRepackChunk::serialCount($qtyIn, $repackQty);
@@ -1041,6 +1055,8 @@ class MKProductionController extends Controller
                     'ref_po_number' => $prod->batch_number,
                     'repack_unit_id' => $repackUnitId,
                     'repack_qty' => $serialRepackQty,
+                    'production_date' => $productionDate,
+                    'exp_date' => $expDate,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,

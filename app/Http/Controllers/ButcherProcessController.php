@@ -668,6 +668,12 @@ class ButcherProcessController extends Controller
 
     public function generateSerials(Request $request, $id)
     {
+        $validated = $request->validate([
+            'repack_unit_id' => 'nullable|integer|exists:units,id',
+            'repack_qty' => 'nullable|numeric|min:0.01',
+            'exp_date' => 'nullable|date',
+        ]);
+
         $butcherItem = DB::table('butcher_process_items as bpi')
             ->join('butcher_processes as bp', 'bp.id', '=', 'bpi.butcher_process_id')
             ->leftJoin('butcher_process_item_details as bpid', 'bpid.butcher_process_item_id', '=', 'bpi.id')
@@ -697,6 +703,7 @@ class ButcherProcessController extends Controller
         $qtyPcs = (float) ($butcherItem->pcs_qty ?: 0);
         $repackUnitId = $request->input('repack_unit_id');
         $repackQty = (float) $request->input('repack_qty', 0);
+        $expDate = $validated['exp_date'] ?? null;
 
         if ($repackUnitId && $repackQty > 0) {
             $serialCount = \App\Support\InventorySerialRepackChunk::serialCount($qtyPcs, $repackQty);
@@ -772,6 +779,7 @@ class ButcherProcessController extends Controller
                     'ref_po_number' => $butcherItem->butcher_number,
                     'repack_unit_id' => $repackUnitId,
                     'repack_qty' => $serialRepackQty,
+                    'exp_date' => $expDate,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,
@@ -812,6 +820,7 @@ class ButcherProcessController extends Controller
                 's.id',
                 's.serial_number',
                 's.generated_at',
+                's.exp_date',
                 's.repack_unit_id',
                 's.repack_qty',
                 'u.name as unit_name',

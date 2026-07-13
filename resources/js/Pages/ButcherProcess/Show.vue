@@ -465,6 +465,10 @@ const generateSerial = async (item) => {
         <div style="margin-top:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
           <span style="font-weight:600;">Jumlah serial:</span> <span id="swal-serial-count">${pcsQty}</span>
         </div>
+        <div style="margin-top:12px;">
+          <label style="font-weight:600;display:block;margin-bottom:4px;">Exp Date (Opsional):</label>
+          <input type="date" id="swal-exp-date" class="swal2-input" style="width:100%;margin:0;">
+        </div>
       </div>
     `,
     icon: 'question',
@@ -503,6 +507,7 @@ const generateSerial = async (item) => {
     },
     preConfirm: () => {
       const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no'
+      const expDate = document.getElementById('swal-exp-date')?.value || null
       if (mode === 'yes') {
         const repackUnitId = document.getElementById('swal-repack-unit')?.value
         const repackQty = parseFloat(document.getElementById('swal-repack-qty')?.value) || 0
@@ -514,9 +519,9 @@ const generateSerial = async (item) => {
           Swal.showValidationMessage('Qty konversi harus lebih dari 0')
           return false
         }
-        return { repack_unit_id: parseInt(repackUnitId), repack_qty: repackQty }
+        return { repack_unit_id: parseInt(repackUnitId), repack_qty: repackQty, exp_date: expDate }
       }
-      return { repack_unit_id: null, repack_qty: null }
+      return { repack_unit_id: null, repack_qty: null, exp_date: expDate }
     }
   })
 
@@ -526,6 +531,7 @@ const generateSerial = async (item) => {
     const { data } = await axios.post(`/api/butcher-process-items/${item.id}/generate-serials`, {
       repack_unit_id: formValues.repack_unit_id,
       repack_qty: formValues.repack_qty,
+      exp_date: formValues.exp_date || null,
     })
     await Swal.fire('Berhasil', data?.message || 'Serial berhasil digenerate', 'success')
     await loadSerialSummary()
@@ -544,6 +550,12 @@ const showSerials = async (item) => {
     }
 
     const fmtQty = (v) => v != null ? parseFloat(Number(v).toFixed(4)).toString() : ''
+    const fmtExpDate = (v) => {
+      if (!v) return '-'
+      const d = new Date(v)
+      if (Number.isNaN(d.getTime())) return v
+      return d.toLocaleDateString('id-ID')
+    }
 
     const rowsHtml = data.slice(0, 200).map((row, idx) => {
       const convInfo = row.repack_unit_id && row.repack_qty
@@ -555,6 +567,7 @@ const showSerials = async (item) => {
         <td style="border:1px solid #ddd;padding:4px;">${row.serial_number}</td>
         <td style="border:1px solid #ddd;padding:4px;">${row.unit_name || '-'}</td>
         <td style="border:1px solid #ddd;padding:4px;">${convInfo}</td>
+        <td style="border:1px solid #ddd;padding:4px;">${fmtExpDate(row.exp_date)}</td>
         <td style="border:1px solid #ddd;padding:4px;">${row.generated_at || '-'}</td>
         <td style="border:1px solid #ddd;padding:4px;text-align:center;">
           <button
@@ -564,6 +577,7 @@ const showSerials = async (item) => {
             data-repack-unit-name="${row.repack_unit_name || ''}"
             data-repack-qty="${row.repack_qty || ''}"
             data-unit-name="${row.unit_name || ''}"
+            data-exp-date="${row.exp_date || ''}"
             style="padding:2px 8px;background:#dbeafe;color:#1d4ed8;border-radius:4px;border:0;cursor:pointer;"
           >
             PDF 10x5
@@ -593,6 +607,7 @@ const showSerials = async (item) => {
                 <th style="border:1px solid #ddd;padding:4px;">Serial</th>
                 <th style="border:1px solid #ddd;padding:4px;">Unit Asal</th>
                 <th style="border:1px solid #ddd;padding:4px;">Konversi</th>
+                <th style="border:1px solid #ddd;padding:4px;">Exp Date</th>
                 <th style="border:1px solid #ddd;padding:4px;">Generated At</th>
                 <th style="border:1px solid #ddd;padding:4px;">Print</th>
               </tr>
@@ -611,6 +626,7 @@ const showSerials = async (item) => {
                 repackQty: row.repack_qty,
                 repackUnitName: row.repack_unit_name,
                 unitName: row.unit_name,
+                expDate: row.exp_date || null,
               })),
               {
                 itemName: item.pcsItem?.name || item.pcs_item_name || '',
@@ -630,8 +646,15 @@ const showSerials = async (item) => {
             const repackUnitName = event.target?.getAttribute('data-repack-unit-name') || null
             const repackQty = event.target?.getAttribute('data-repack-qty') || null
             const unitName = event.target?.getAttribute('data-unit-name') || ''
+            const expDate = event.target?.getAttribute('data-exp-date') || null
             if (serial) {
-              downloadSerialPDF([serial], {
+              downloadSerialPDF([{
+                serial,
+                repackUnitName: repackUnitName || null,
+                repackQty: repackQty ? parseFloat(repackQty) : null,
+                unitName: unitName,
+                expDate: expDate || null,
+              }], {
                 itemName: item.pcsItem?.name || item.pcs_item_name || '',
                 batch: item.details?.[0]?.batch_est || props.butcherProcess?.number || '-',
                 slaughterDate: labelSlaughterDate(item),
@@ -670,6 +693,7 @@ const downloadSerialPDF = (serials, meta) => {
       repackQty: entry.repackQty ?? meta?.repackQty ?? null,
       repackUnitName: entry.repackUnitName ?? meta?.repackUnitName ?? null,
       unitName: entry.unitName ?? meta?.unitName ?? '',
+      expDate: entry.expDate ?? meta?.expDate ?? null,
     }
   })
 
@@ -740,7 +764,10 @@ const downloadSerialPDF = (serials, meta) => {
     currentY += 2.9
     doc.text(`PACKING: ${formatDateForLabel(meta?.packingDate)}`, x + labelWidth / 2, currentY, { align: 'center' })
     currentY += 2.9
-    doc.text(`EXP: ${calculateExpDate(meta?.packingDate, meta?.expDays)}`, x + labelWidth / 2, currentY, { align: 'center' })
+    const expLabel = entry.expDate
+      ? formatDateForLabel(entry.expDate)
+      : calculateExpDate(meta?.packingDate, meta?.expDays)
+    doc.text(`EXP: ${expLabel}`, x + labelWidth / 2, currentY, { align: 'center' })
   })
 
   const firstSerial = entries[0]?.serial || 'serial'

@@ -191,6 +191,10 @@ const generateSerial = async (item) => {
           <div style="margin-top:12px;padding:8px;background:#f3f4f6;border-radius:6px;">
             <span style="font-weight:600;">Jumlah serial:</span> <span id="swal-serial-count">${baseQty}</span>
           </div>
+          <div style="margin-top:12px;">
+            <label style="font-weight:600;display:block;margin-bottom:4px;">Exp Date (Opsional):</label>
+            <input type="date" id="swal-exp-date" class="swal2-input" style="width:100%;margin:0;">
+          </div>
         </div>
       `,
       icon: 'question',
@@ -229,6 +233,7 @@ const generateSerial = async (item) => {
       },
       preConfirm: () => {
         const mode = document.querySelector('input[name="swal-conv-mode"]:checked')?.value || 'no';
+        const expDate = document.getElementById('swal-exp-date')?.value || null;
         if (mode === 'yes') {
           const repackUnitId = document.getElementById('swal-repack-unit')?.value;
           const repackQty = parseFloat(document.getElementById('swal-repack-qty')?.value) || 0;
@@ -240,9 +245,9 @@ const generateSerial = async (item) => {
             Swal.showValidationMessage('Qty konversi harus lebih dari 0');
             return false;
           }
-          return { repack_unit_id: parseInt(repackUnitId), repack_qty: repackQty };
+          return { repack_unit_id: parseInt(repackUnitId), repack_qty: repackQty, exp_date: expDate };
         }
-        return { repack_unit_id: null, repack_qty: null };
+        return { repack_unit_id: null, repack_qty: null, exp_date: expDate };
       }
     });
 
@@ -252,6 +257,7 @@ const generateSerial = async (item) => {
       unit_id: Number(selected.value),
       repack_unit_id: formValues.repack_unit_id,
       repack_qty: formValues.repack_qty,
+      exp_date: formValues.exp_date || null,
     });
 
     await Swal.fire('Berhasil', response.data?.message || 'Serial berhasil dibuat.', 'success');
@@ -271,6 +277,12 @@ const showSerials = async (item) => {
     }
 
     const fmtQty = (v) => v != null ? parseFloat(Number(v).toFixed(4)).toString() : '';
+    const fmtExpDate = (v) => {
+      if (!v) return '-';
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return v;
+      return d.toLocaleDateString('id-ID');
+    };
 
     const rowsHtml = data
       .slice(0, 200)
@@ -284,6 +296,7 @@ const showSerials = async (item) => {
             <td style="border:1px solid #ddd;padding:4px;">${row.serial_number}</td>
             <td style="border:1px solid #ddd;padding:4px;">${row.unit_name || '-'}</td>
             <td style="border:1px solid #ddd;padding:4px;">${convInfo}</td>
+            <td style="border:1px solid #ddd;padding:4px;">${fmtExpDate(row.exp_date)}</td>
             <td style="border:1px solid #ddd;padding:4px;">${row.pr_number || '-'}</td>
             <td style="border:1px solid #ddd;padding:4px;">${row.po_number || '-'}</td>
             <td style="border:1px solid #ddd;padding:4px;">${row.gr_number || '-'}</td>
@@ -295,6 +308,7 @@ const showSerials = async (item) => {
                 data-repack-unit-name="${row.repack_unit_name || ''}"
                 data-repack-qty="${row.repack_qty || ''}"
                 data-unit-name="${row.unit_name || ''}"
+                data-exp-date="${row.exp_date || ''}"
                 style="padding:2px 8px;background:#dbeafe;color:#1d4ed8;border-radius:4px;border:0;cursor:pointer;"
               >
                 PDF 10x5
@@ -326,6 +340,7 @@ const showSerials = async (item) => {
                 <th style="border:1px solid #ddd;padding:4px;">Serial</th>
                 <th style="border:1px solid #ddd;padding:4px;">Unit</th>
                 <th style="border:1px solid #ddd;padding:4px;">Konversi</th>
+                <th style="border:1px solid #ddd;padding:4px;">Exp Date</th>
                 <th style="border:1px solid #ddd;padding:4px;">No PR</th>
                 <th style="border:1px solid #ddd;padding:4px;">No PO</th>
                 <th style="border:1px solid #ddd;padding:4px;">No GR</th>
@@ -347,6 +362,7 @@ const showSerials = async (item) => {
                 repackUnitName: data[0]?.repack_unit_name || null,
                 repackQty: data[0]?.repack_qty || null,
                 unitName: data[0]?.unit_name || '',
+                expDate: data[0]?.exp_date || null,
               }
             );
           });
@@ -359,11 +375,13 @@ const showSerials = async (item) => {
             const repackUnitName = event.target?.getAttribute('data-repack-unit-name') || null;
             const repackQty = event.target?.getAttribute('data-repack-qty') || null;
             const unitName = event.target?.getAttribute('data-unit-name') || '';
+            const expDate = event.target?.getAttribute('data-exp-date') || null;
             if (serial) {
               downloadSerialPDF([serial], item.item_name, {
                 repackUnitName: repackUnitName || null,
                 repackQty: repackQty ? parseFloat(repackQty) : null,
                 unitName: unitName,
+                expDate: expDate || null,
               });
             }
           });
@@ -434,6 +452,14 @@ const downloadSerialPDF = (serials, itemName, meta = {}) => {
       doc.setFontSize(7);
       doc.setFont(undefined, 'bold');
       doc.text(`1 ${meta.repackUnitName.toUpperCase()} = ${fmtRepackQty} ${(meta.unitName || '').toUpperCase()}`, x + labelWidth / 2, currentY, { align: 'center' });
+      currentY += 3.5;
+    }
+
+    if (meta?.expDate) {
+      const expLabel = new Date(meta.expDate).toLocaleDateString('id-ID');
+      doc.setFontSize(7);
+      doc.setFont(undefined, 'bold');
+      doc.text(`EXP: ${expLabel}`, x + labelWidth / 2, currentY, { align: 'center' });
     }
   });
 

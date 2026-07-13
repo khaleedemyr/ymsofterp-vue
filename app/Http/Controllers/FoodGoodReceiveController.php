@@ -1079,6 +1079,7 @@ class FoodGoodReceiveController extends Controller
             'unit_id' => 'required|integer|exists:units,id',
             'repack_unit_id' => 'nullable|integer|exists:units,id',
             'repack_qty' => 'nullable|numeric|min:0.01',
+            'exp_date' => 'nullable|date',
         ]);
 
         $grItem = DB::table('food_good_receive_items as gri')
@@ -1151,6 +1152,7 @@ class FoodGoodReceiveController extends Controller
 
         $repackUnitId = $request->input('repack_unit_id');
         $repackQty = (float) $request->input('repack_qty', 0);
+        $expDate = $validated['exp_date'] ?? null;
 
         if ($repackUnitId && $repackQty > 0) {
             $serialCount = \App\Support\InventorySerialRepackChunk::serialCount($convertedQty, $repackQty);
@@ -1246,6 +1248,7 @@ class FoodGoodReceiveController extends Controller
                     'ref_pr_number' => $grItem->pr_number,
                     'repack_unit_id' => $repackUnitId,
                     'repack_qty' => $serialRepackQty,
+                    'exp_date' => $expDate,
                     'generated_by' => Auth::id(),
                     'generated_at' => $now,
                     'created_at' => $now,
@@ -1326,6 +1329,7 @@ class FoodGoodReceiveController extends Controller
                 's.ref_po_number as po_number',
                 's.ref_pr_number as pr_number',
                 's.generated_at',
+                's.exp_date',
                 's.repack_unit_id',
                 's.repack_qty',
                 'u.name as unit_name',
