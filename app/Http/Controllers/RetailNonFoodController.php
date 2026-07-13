@@ -10,6 +10,8 @@ use App\Models\PurchaseRequisitionOutletBudget;
 use App\Services\PettyCashLockBudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
 class RetailNonFoodController extends Controller
@@ -191,7 +193,15 @@ class RetailNonFoodController extends Controller
             $request->validate([
                 'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
                 'transaction_date' => 'required|date|after_or_equal:today',
-                'category_budget_id' => 'required|exists:purchase_requisition_categories,id',
+                'category_budget_id' => [
+                    'required',
+                    Rule::exists('purchase_requisition_categories', 'id')->where(function ($query) {
+                        $query->where('active', 1);
+                        if (Schema::hasColumn('purchase_requisition_categories', 'show_on_retail')) {
+                            $query->where('show_on_retail', 1);
+                        }
+                    }),
+                ],
                 'payment_method' => 'required|in:cash,contra_bon',
                 'supplier_id' => 'required|exists:suppliers,id',
                 'items' => 'required|array|min:1',
@@ -202,6 +212,7 @@ class RetailNonFoodController extends Controller
                 'notes' => 'nullable|string',
             ], [
                 'transaction_date.after_or_equal' => 'Tanggal transaksi tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
+                'category_budget_id.exists' => 'Kategori budget tidak valid atau tidak tersedia untuk Retail Non Food.',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('RETAIL_NON_FOOD_STORE: Validation failed', [
