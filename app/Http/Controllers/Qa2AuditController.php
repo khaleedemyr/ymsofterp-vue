@@ -130,6 +130,7 @@ class Qa2AuditController extends Controller
             'outlets' => $outlets,
             'permissions' => [
                 'can_manage' => $isHo,
+                'can_action_admin' => $this->canActionAdmin($user),
             ],
         ]);
     }
@@ -1577,6 +1578,24 @@ class Qa2AuditController extends Controller
         abort_if(!$isHo, 403);
     }
 
+    /**
+     * Privilege untuk aksi Edit/Hapus di index QA2 Audits
+     * (division QA = 32 atau superadmin).
+     */
+    private function canActionAdmin($user = null): bool
+    {
+        $user = $user ?? auth()->user();
+        if (!$user) {
+            return false;
+        }
+
+        if ((string) ($user->id_role ?? '') === '5af56935b011a') {
+            return true;
+        }
+
+        return (int) ($user->division_id ?? 0) === 32;
+    }
+
     private function generateAuditNumber(): string
     {
         $date = now()->format('Ymd');
@@ -2166,6 +2185,7 @@ class Qa2AuditController extends Controller
             ],
             'permissions' => [
                 'can_manage' => $isHo,
+                'can_action_admin' => $this->canActionAdmin($user),
             ],
         ]);
     }

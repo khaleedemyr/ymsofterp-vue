@@ -18,6 +18,14 @@ const props = defineProps({
 const page = usePage();
 const currentUser = computed(() => page.props.auth?.user || {});
 
+const canActionAdmin = computed(() => {
+  if (props.permissions && Object.prototype.hasOwnProperty.call(props.permissions, 'can_action_admin')) {
+    return !!props.permissions.can_action_admin;
+  }
+  const user = currentUser.value || {};
+  return Number(user.division_id) === 32 || String(user.id_role || '') === '5af56935b011a';
+});
+
 const search = ref(props.filters?.search || '');
 const status = ref(props.filters?.status || '');
 const outletId = ref(props.filters?.outlet_id || '');
@@ -95,6 +103,19 @@ function goView(id) {
 
 function canCap(audit) {
   return audit.status === 'submitted' && Number(audit.count_nc || 0) > 0 && Number(audit.count_nc_pending_cap || 0) > 0;
+}
+
+/** Draft: aksi hanya untuk QA/superadmin. Submitted: tombol aksi tampil untuk semua. */
+function showRowActions(audit) {
+  if (audit.status === 'draft') {
+    return canActionAdmin.value;
+  }
+  return true;
+}
+
+/** Edit & Hapus: hanya division_id=32 atau id_role superadmin. */
+function canEditOrDelete() {
+  return canActionAdmin.value;
 }
 
 function capStatus(audit) {
@@ -446,7 +467,7 @@ async function shareToWhatsApp(audit) {
                   <span v-else class="text-xs text-gray-400">-</span>
                 </td>
                 <td class="px-4 py-3 text-sm">
-                  <div class="flex flex-wrap gap-2">
+                  <div v-if="showRowActions(audit)" class="flex flex-wrap gap-2">
                     <button type="button" class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-700" @click="goView(audit.id)">
                       Lihat
                     </button>
@@ -460,7 +481,7 @@ async function shareToWhatsApp(audit) {
                       Share WA
                     </button>
                     <button
-                      v-if="permissions?.can_manage"
+                      v-if="canEditOrDelete()"
                       type="button"
                       class="rounded-md border border-indigo-300 px-2.5 py-1 text-xs text-indigo-700"
                       @click="goEdit(audit.id)"
@@ -476,7 +497,7 @@ async function shareToWhatsApp(audit) {
                       Isi CAP
                     </button>
                     <button
-                      v-if="permissions?.can_manage"
+                      v-if="canEditOrDelete()"
                       type="button"
                       class="rounded-md border border-red-300 px-2.5 py-1 text-xs text-red-700"
                       @click="removeAudit(audit.id)"
@@ -484,6 +505,7 @@ async function shareToWhatsApp(audit) {
                       Hapus
                     </button>
                   </div>
+                  <span v-else class="text-xs text-gray-400">-</span>
                 </td>
               </tr>
               <tr v-if="!audits.data.length">
