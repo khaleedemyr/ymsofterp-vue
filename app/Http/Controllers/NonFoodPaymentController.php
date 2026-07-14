@@ -14,6 +14,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 
 class NonFoodPaymentController extends Controller
@@ -64,6 +66,7 @@ class NonFoodPaymentController extends Controller
             ->leftJoin('users as u', 'non_food_payments.created_by', '=', 'u.id')
             ->leftJoin('purchase_order_ops as poo', 'non_food_payments.purchase_order_ops_id', '=', 'poo.id')
             ->leftJoin('purchase_requisitions as pr', 'non_food_payments.purchase_requisition_id', '=', 'pr.id')
+            ->leftJoin('users as pr_creator', 'pr.created_by', '=', 'pr_creator.id')
             ->select(
                 'non_food_payments.*',
                 's.name as supplier_name',
@@ -71,7 +74,10 @@ class NonFoodPaymentController extends Controller
                 'poo.number as po_number',
                 'poo.date as po_date',
                 'pr.pr_number as pr_number',
-                'pr.date as pr_date'
+                'pr.date as pr_date',
+                'pr.mode as pr_mode',
+                'pr_creator.nama_lengkap as pr_creator_name',
+                'pr_creator.avatar as pr_creator_avatar'
             )
             ;
 
@@ -122,6 +128,7 @@ class NonFoodPaymentController extends Controller
                 $q->where('non_food_payments.payment_number', 'like', "%{$search}%")
                   ->orWhere('s.name', 'like', "%{$search}%")
                   ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                  ->orWhere('pr_creator.nama_lengkap', 'like', "%{$search}%")
                   ->orWhere('poo.number', 'like', "%{$search}%")
                   ->orWhere('pr.pr_number', 'like', "%{$search}%");
             });
@@ -269,6 +276,13 @@ class NonFoodPaymentController extends Controller
                     'outlet_total' => $payment->amount ?? 0
                 ]]);
             }
+
+            if (($payment->pr_mode ?? null) === 'kasbon') {
+                $payment->pr_creator_avatar_url = $this->resolveUserAvatarUrl($payment->pr_creator_avatar ?? null);
+            } else {
+                $payment->pr_creator_avatar_url = null;
+            }
+            unset($payment->pr_creator_avatar);
             
             return $payment;
         });
@@ -392,6 +406,7 @@ class NonFoodPaymentController extends Controller
         // Get available Purchase Requisitions (mode purchase_payment, travel_application, kasbon) that don't have payments yet
         // Exclude PRs that have any payment (except cancelled) or are fully paid
         $prQuery = DB::table('purchase_requisitions as pr')
+            ->leftJoin('users as creator', 'pr.created_by', '=', 'creator.id')
             ->where('pr.status', 'APPROVED')
             ->whereIn('pr.mode', ['purchase_payment', 'travel_application', 'kasbon'])
             ->select(
@@ -404,7 +419,9 @@ class NonFoodPaymentController extends Controller
                 'pr.is_held',
                 'pr.hold_reason',
                 'pr.division_id',
-                'pr.mode'
+                'pr.mode',
+                'creator.nama_lengkap as creator_name',
+                'creator.avatar as creator_avatar'
             );
 
         // Apply filters
@@ -443,7 +460,12 @@ class NonFoodPaymentController extends Controller
             
             // No payment yet, show it
             return true;
-        })->take(50)->values();
+        })->take(50)->values()->map(function ($pr) {
+            $pr->creator_avatar_url = $this->resolveUserAvatarUrl($pr->creator_avatar ?? null);
+            unset($pr->creator_avatar);
+
+            return $pr;
+        });
 
         // Get available Retail Non Food with payment_method = contra_bon that don't have payments yet
         $retailNonFoodQuery = DB::table('retail_non_food as rnf')
@@ -3755,5 +3777,19 @@ class NonFoodPaymentController extends Controller
         }
 
         return $budgetInfo;
+    }
+
+    private function resolveUserAvatarUrl(?string $avatar): ?string
+    {
+        $avatar = trim((string) ($avatar ?? ''));
+        if ($avatar === '') {
+            return null;
+        }
+
+        if (Str::startsWith($avatar, ['http://', 'https://', '/'])) {
+            return $avatar;
+        }
+
+        return Storage::url($avatar);
     }
 }

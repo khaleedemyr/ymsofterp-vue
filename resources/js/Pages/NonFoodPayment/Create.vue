@@ -118,25 +118,57 @@
                  class="border rounded-lg p-4 transition" 
                  :class="pr.is_held ? 'border-red-300 bg-red-50 opacity-60 cursor-not-allowed' : 'border-gray-200 hover:bg-gray-50 cursor-pointer'"
                  @click="pr.is_held ? null : selectPR(pr)">
-              <div class="flex items-center justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1">
-                    <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
-                    <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      <i class="fas fa-lock mr-1"></i>
-                      ON HOLD
-                    </span>
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-start gap-3 flex-1 min-w-0">
+                  <template v-if="pr.mode === 'kasbon'">
+                    <button
+                      v-if="resolveAvatarUrl(pr.creator_avatar_url || pr.creator_avatar)"
+                      type="button"
+                      class="h-14 w-14 shrink-0 overflow-hidden rounded-full ring-2 ring-orange-200 hover:ring-orange-400 transition shadow-sm"
+                      title="Lihat avatar creator"
+                      @click.stop="openAvatarLightbox(pr.creator_avatar_url || pr.creator_avatar)"
+                    >
+                      <img
+                        :src="resolveAvatarUrl(pr.creator_avatar_url || pr.creator_avatar)"
+                        :alt="pr.creator_name || 'Creator'"
+                        class="h-full w-full object-cover"
+                      >
+                    </button>
+                    <div
+                      v-else
+                      class="h-14 w-14 shrink-0 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center ring-2 ring-orange-200"
+                    >
+                      <i class="fa fa-user text-xl"></i>
+                    </div>
+                  </template>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                      <div class="font-semibold text-gray-900">{{ pr.pr_number }}</div>
+                      <span
+                        v-if="pr.mode === 'kasbon'"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                      >
+                        Kasbon
+                      </span>
+                      <span v-if="pr.is_held" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        <i class="fas fa-lock mr-1"></i>
+                        ON HOLD
+                      </span>
+                    </div>
+                    <div v-if="pr.mode === 'kasbon'" class="text-sm font-medium text-gray-800 mb-0.5">
+                      {{ pr.creator_name || '-' }}
+                    </div>
+                    <div class="text-sm text-gray-600">{{ pr.title }}</div>
+                    <div class="text-sm text-gray-500">
+                      {{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}
+                    </div>
+                    <p v-if="pr.is_held && pr.hold_reason" class="text-sm text-red-600 mt-1">
+                      <i class="fas fa-info-circle mr-1"></i>
+                      {{ pr.hold_reason }}
+                    </p>
                   </div>
-                  <div class="text-sm text-gray-600">{{ pr.title }}</div>
-                  <div class="text-sm text-gray-500">
-                    {{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}
-                  </div>
-                  <p v-if="pr.is_held && pr.hold_reason" class="text-sm text-red-600 mt-1">
-                    <i class="fas fa-info-circle mr-1"></i>
-                    {{ pr.hold_reason }}
-                  </p>
                 </div>
-                <div class="text-right">
+                <div class="text-right shrink-0">
                   <button type="button" 
                           :class="pr.is_held ? 'bg-gray-400 text-white px-4 py-2 rounded-lg cursor-not-allowed' : 'bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition'"
                           :disabled="pr.is_held">
@@ -236,6 +268,36 @@
             <div v-if="selectedPR && selectedPR.division_name">
               <label class="block text-sm font-medium text-gray-700">Division</label>
               <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
+            </div>
+            <div v-if="selectedPR && selectedPR.mode === 'kasbon'" class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Creator Kasbon</label>
+              <div class="flex items-center gap-3">
+                <button
+                  v-if="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
+                  type="button"
+                  class="h-16 w-16 shrink-0 overflow-hidden rounded-full ring-2 ring-orange-200 hover:ring-orange-400 transition shadow-sm"
+                  title="Lihat avatar creator"
+                  @click="openAvatarLightbox(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
+                >
+                  <img
+                    :src="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
+                    :alt="selectedPR.creator_name || 'Creator'"
+                    class="h-full w-full object-cover"
+                  >
+                </button>
+                <div
+                  v-else
+                  class="h-16 w-16 shrink-0 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center ring-2 ring-orange-200"
+                >
+                  <i class="fa fa-user text-2xl"></i>
+                </div>
+                <div>
+                  <p class="text-base font-semibold text-gray-900">{{ selectedPR.creator_name || '-' }}</p>
+                  <span class="inline-flex mt-1 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                    PR Mode Kasbon
+                  </span>
+                </div>
+              </div>
             </div>
             <!-- Payment Type Information (always show if PO selected) -->
             <div v-if="selectedPO" class="md:col-span-2">
@@ -1413,6 +1475,16 @@ const props = defineProps({
   }
 });
 
+function resolveAvatarUrl(raw) {
+  if (!raw) return null;
+  const value = String(raw).trim();
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('/')) {
+    return value;
+  }
+  return `/storage/${value}`;
+}
+
 // Map PO data to ensure is_held is boolean
 const searchPO = ref('');
 
@@ -1459,10 +1531,12 @@ const mappedPRs = computed(() => {
     const prNumber = (pr.pr_number || '').toLowerCase();
     const title = (pr.title || '').toLowerCase();
     const mode = (pr.mode || '').toLowerCase();
+    const creatorName = (pr.creator_name || '').toLowerCase();
     
     return prNumber.includes(searchTerm) || 
            title.includes(searchTerm) || 
-           mode.includes(searchTerm);
+           mode.includes(searchTerm) ||
+           creatorName.includes(searchTerm);
   });
 });
 
@@ -1792,6 +1866,12 @@ function openLightbox(imagePath, imageName) {
     name: imageName
   };
   lightboxVisible.value = true;
+}
+
+function openAvatarLightbox(raw) {
+  const url = resolveAvatarUrl(raw);
+  if (!url) return;
+  openLightbox(url, 'Avatar Creator');
 }
 
 function closeLightbox() {
