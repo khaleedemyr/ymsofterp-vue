@@ -30,7 +30,7 @@
 
       <!-- Search and Filter -->
       <div class="bg-white rounded-xl shadow-lg p-4 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
@@ -38,6 +38,7 @@
               v-model="search"
               placeholder="Search by name or SKU..."
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              @input="onSearchInput"
             />
           </div>
           <div>
@@ -45,6 +46,7 @@
             <select
               v-model="categoryFilter"
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              @change="applyFilters"
             >
               <option value="">All Categories</option>
               <option v-for="category in categories" :key="category.id" :value="category.id">
@@ -57,10 +59,25 @@
             <select
               v-model="statusFilter"
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              @change="applyFilters"
             >
               <option value="">All Status</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Per Page</label>
+            <select
+              v-model="perPage"
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              @change="applyFilters"
+            >
+              <option :value="10">10</option>
+              <option :value="15">15</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
             </select>
           </div>
         </div>
@@ -226,19 +243,24 @@
         </table>
       </div>
       <!-- Pagination -->
-      <div class="flex justify-end mt-4 gap-2">
-        <button
-          v-for="link in items.links"
-          :key="link.label"
-          :disabled="!link.url"
-          @click="goToPage(link.url)"
-          v-html="link.label"
-          class="px-3 py-1 rounded-lg border text-sm font-semibold"
-          :class="[
-            link.active ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-700 hover:bg-blue-50',
-            !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-          ]"
-        />
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mt-4 gap-3">
+        <div class="text-sm text-gray-600">
+          Showing {{ items.from || 0 }}–{{ items.to || 0 }} of {{ items.total || 0 }} items
+        </div>
+        <div class="flex flex-wrap justify-end gap-2">
+          <button
+            v-for="link in items.links"
+            :key="link.label"
+            :disabled="!link.url"
+            @click="goToPage(link.url)"
+            v-html="link.label"
+            class="px-3 py-1 rounded-lg border text-sm font-semibold"
+            :class="[
+              link.active ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-blue-700 hover:bg-blue-50',
+              !link.url ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            ]"
+          />
+        </div>
       </div>
       <ItemFormModal
         :show="showFormModal"
@@ -482,6 +504,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
+import { debounce } from 'lodash';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 import ItemFormModal from './ItemFormModal.vue';
@@ -495,6 +518,7 @@ import NonPosItemPriceModal from './NonPosItemPriceModal.vue';
 
 const props = defineProps({
   items: Object,
+  filters: Object,
   categories: Array,
   subCategories: Array,
   units: Array,
@@ -508,9 +532,10 @@ const props = defineProps({
   auth: Object
 });
 
-const search = ref('');
-const categoryFilter = ref('');
-const statusFilter = ref('');
+const search = ref(props.filters?.search || '');
+const categoryFilter = ref(props.filters?.category || '');
+const statusFilter = ref(props.filters?.status || '');
+const perPage = ref(Number(props.filters?.per_page || 10));
 const showFormModal = ref(false);
 const showBarcodeModal = ref(false);
 const selectedItem = ref(null);
@@ -545,8 +570,45 @@ const filteredCategories = ref([])
 const filteredSubCategories = ref([])
 const loadingCategories = ref(false)
 
+function filterParams() {
+  return {
+    search: search.value || undefined,
+    category: categoryFilter.value || undefined,
+    status: statusFilter.value || undefined,
+    per_page: perPage.value,
+  };
+}
+
+function applyFilters() {
+  router.get(route('items.index'), filterParams(), {
+    preserveState: true,
+    replace: true,
+    only: ['items', 'filters'],
+  });
+}
+
+const debouncedApplyFilters = debounce(() => {
+  applyFilters();
+}, 400);
+
+function onSearchInput() {
+  debouncedApplyFilters();
+}
+
 function goToPage(url) {
-  if (url) router.visit(url, { preserveState: true, replace: true });
+  if (!url) return;
+
+  const urlObj = new URL(url, window.location.origin);
+  urlObj.searchParams.set('search', search.value || '');
+  urlObj.searchParams.set('category', categoryFilter.value || '');
+  urlObj.searchParams.set('status', statusFilter.value || '');
+  urlObj.searchParams.set('per_page', String(perPage.value || 10));
+
+  router.visit(urlObj.toString(), {
+    preserveState: true,
+    replace: true,
+    only: ['items', 'filters'],
+  });
 }
 
 const deleteItem = async (item) => {
@@ -1159,18 +1221,6 @@ async function handlePriceUpdateImportUpload() {
     }]
   }
 }
-
-watch([search, categoryFilter, statusFilter], () => {
-  router.get(route('items.index'), {
-    search: search.value,
-    category: categoryFilter.value,
-    status: statusFilter.value,
-  }, {
-    preserveState: true,
-    replace: true,
-    only: ['items'],
-  });
-});
 
 async function exportFile(type) {
   Swal.fire({

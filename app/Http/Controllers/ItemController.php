@@ -187,9 +187,23 @@ class ItemController extends Controller
             $query->where('status', $request->status);
         }
 
-        $items = $query->orderBy('created_at', 'desc')->paginate(10);
+        $perPage = (int) $request->get('per_page', 10);
+        if (! in_array($perPage, [10, 15, 25, 50, 100], true)) {
+            $perPage = 10;
+        }
+
+        $items = $query->orderBy('created_at', 'desc')
+            ->paginate($perPage)
+            ->withQueryString();
         $units = Unit::all();
         $itemsArr = $items->toArray();
+
+        $filters = [
+            'search' => $request->get('search', ''),
+            'category' => $request->get('category', ''),
+            'status' => $request->get('status', ''),
+            'per_page' => $perPage,
+        ];
 
         // Ambil semua item aktif untuk BOM dropdown
         $bomItems = \App\Models\Item::with('smallUnit')
@@ -279,6 +293,7 @@ class ItemController extends Controller
         $master = $this->getMasterData();
         return Inertia::render('Items/Index', [
             'items' => $itemsArr,
+            'filters' => $filters,
             'categories' => $master['categories'],
             'subCategories' => $master['subCategories'],
             'units' => $units,
