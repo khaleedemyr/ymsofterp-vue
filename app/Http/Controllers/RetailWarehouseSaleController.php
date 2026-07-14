@@ -532,17 +532,11 @@ class RetailWarehouseSaleController extends Controller
         $item->unit_medium = $unitMedium;
         $item->unit_large = $unitLarge;
 
-        // Get price from item_prices with priority for region_id=1 or availability_price_type='all'
-        $price = DB::table('item_prices')
-            ->where('item_id', $item->item_id)
-            ->where(function($q) {
-                $q->where('region_id', 1)
-                  ->orWhere('availability_price_type', 'all');
-            })
-            ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
-            ->value('price');
-
-        $item->price = $price ? (float)$price : 0;
+        // Default jual medium: item_prices = harga large, dikonversi.
+        $item->price = $this->resolveRetailWarehouseSaleUnitPrice(
+            (int) $item->item_id,
+            $item->medium_unit_id ? (int) $item->medium_unit_id : null
+        );
 
         return response()->json(['success' => true, 'item' => $item]);
     }
@@ -584,7 +578,7 @@ class RetailWarehouseSaleController extends Controller
         }
 
         // Get unit names for each item
-        $items->transform(function($item) {
+        $items->transform(function ($item) {
             $unitSmall = DB::table('units')->where('id', $item->small_unit_id)->value('name');
             $unitMedium = DB::table('units')->where('id', $item->medium_unit_id)->value('name');
             $unitLarge = DB::table('units')->where('id', $item->large_unit_id)->value('name');
@@ -593,17 +587,11 @@ class RetailWarehouseSaleController extends Controller
             $item->unit_medium = $unitMedium;
             $item->unit_large = $unitLarge;
 
-            // Get price from item_prices with priority for region_id=1 or availability_price_type='all'
-            $price = DB::table('item_prices')
-                ->where('item_id', $item->item_id)
-                ->where(function($q) {
-                    $q->where('region_id', 1)
-                      ->orWhere('availability_price_type', 'all');
-                })
-                ->orderByRaw("CASE WHEN region_id = 1 THEN 0 WHEN availability_price_type = 'all' THEN 1 ELSE 2 END")
-                ->value('price');
-
-            $item->price = $price ? (float)$price : 0;
+            // Default jual medium: item_prices = harga large, dikonversi.
+            $item->price = $this->resolveRetailWarehouseSaleUnitPrice(
+                (int) $item->item_id,
+                $item->medium_unit_id ? (int) $item->medium_unit_id : null
+            );
 
             return $item;
         });
@@ -663,10 +651,16 @@ class RetailWarehouseSaleController extends Controller
         $request->validate([
             'item_id' => 'required|exists:items,id',
             'unit_id' => 'nullable|integer',
+            'unit_size' => 'nullable|in:small,medium,large',
         ]);
 
         $unitId = $request->filled('unit_id') ? (int) $request->unit_id : null;
-        $price = $this->resolveRetailWarehouseSaleUnitPrice((int) $request->item_id, $unitId);
+        $unitSize = $request->get('unit_size');
+        $price = $this->resolveRetailWarehouseSaleUnitPrice(
+            (int) $request->item_id,
+            $unitId,
+            $unitSize
+        );
 
         return response()->json([
             'price' => $price,
@@ -675,9 +669,9 @@ class RetailWarehouseSaleController extends Controller
 
     /**
      * Harga jual penjualan warehouse retail.
-     * item_prices disimpan per satuan large; dikonversi ke unit jual (medium/small) bila unit_id diberikan.
+     * item_prices disimpan per satuan large; dikonversi ke unit jual (medium/small) bila unit_id/unit_size diberikan.
      */
-    private function resolveRetailWarehouseSaleUnitPrice(int $itemId, ?int $unitId = null): float
+    private function resolveRetailWarehouseSaleUnitPrice(int $itemId, ?int $unitId = null, ?string $unitSize = null): float
     {
         $item = DB::table('items')->where('id', $itemId)->first();
         if (! $item) {
@@ -711,21 +705,45 @@ class RetailWarehouseSaleController extends Controller
             $priceLarge = $suggested ? (float) $suggested : 0.0;
         }
 
-        if ($priceLarge <= 0 || ! $unitId) {
+        if ($priceLarge <= 0) {
+            return 0.0;
+        }
+
+        // Tanpa unit → default ke medium (unit jual biasa)
+        if (! $unitId && ! $unitSize) {
+            $unitId = $item->medium_unit_id ? (int) $item->medium_unit_id : null;
+            $unitSize = 'medium';
+        }
+
+        if (! $unitId && ! $unitSize) {
             return round($priceLarge, 2);
         }
 
         $smallConv = (float) ($item->small_conversion_qty ?: 1);
         $mediumConv = (float) ($item->medium_conversion_qty ?: 1);
 
-        if ((int) $unitId === (int) $item->large_unit_id) {
+        if ($unitSize === 'large' || ((int) $unitId === (int) $item->large_unit_id && $unitSize !== 'small' && $unitSize !== 'medium')) {
             return round($priceLarge, 2);
         }
-        if ((int) $unitId === (int) $item->medium_unit_id && $mediumConv > 0) {
-            return round($priceLarge / $mediumConv, 2);
+
+        if ($unitSize === 'small') {
+            if ($smallConv > 0 && $mediumConv > 0) {
+                return round($priceLarge / ($smallConv * $mediumConv), 2);
+            }
         }
+
+        if ($unitSize === 'medium' || (int) $unitId === (int) $item->medium_unit_id) {
+            if ($mediumConv > 0) {
+                return round($priceLarge / $mediumConv, 2);
+            }
+        }
+
         if ((int) $unitId === (int) $item->small_unit_id && $smallConv > 0 && $mediumConv > 0) {
             return round($priceLarge / ($smallConv * $mediumConv), 2);
+        }
+
+        if ((int) $unitId === (int) $item->large_unit_id) {
+            return round($priceLarge, 2);
         }
 
         return round($priceLarge, 2);

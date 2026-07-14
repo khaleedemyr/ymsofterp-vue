@@ -112,26 +112,8 @@ async function scanBarcode() {
       existingItem.qty += 1;
       existingItem.subtotal = existingItem.qty * existingItem.price;
     } else {
-      // Add new item
-      const newItem = {
-        item_id: item.item_id,
-        item_name: item.item_name,
-        barcode: barcodeInput.value,
-        qty: 1,
-        unit: item.unit_medium,
-        price: item.price || 0, // Use price from backend
-        subtotal: item.price || 0, // Calculate initial subtotal
-        stock: {
-          small: item.qty_small || 0,
-          medium: item.qty_medium || 0,
-          large: item.qty_large || 0
-        },
-        units: {
-          small: item.unit_small,
-          medium: item.unit_medium,
-          large: item.unit_large
-        }
-      };
+      // Add new item — default medium; harga dari backend sudah dikonversi ke medium
+      const newItem = buildSaleItem(item, barcodeInput.value);
       form.value.items.push(newItem);
     }
 
@@ -194,27 +176,7 @@ function selectSearchItem(item) {
     existingItem.qty += 1;
     existingItem.subtotal = existingItem.qty * existingItem.price;
   } else {
-    // Add new item
-    const newItem = {
-      item_id: item.item_id,
-      item_name: item.item_name,
-      barcode: '', // No barcode for name search
-      qty: 1,
-      unit: item.unit_medium,
-      price: item.price || 0,
-      subtotal: item.price || 0,
-      stock: {
-        small: item.qty_small || 0,
-        medium: item.qty_medium || 0,
-        large: item.qty_large || 0
-      },
-      units: {
-        small: item.unit_small,
-        medium: item.unit_medium,
-        large: item.unit_large
-      }
-    };
-    form.value.items.push(newItem);
+    form.value.items.push(buildSaleItem(item));
   }
 
   // Clear search
@@ -265,6 +227,43 @@ function hideSearchResults() {
 function updateItemSubtotal(index) {
   const item = form.value.items[index];
   item.subtotal = item.qty * item.price;
+}
+
+function buildSaleItem(item, barcode = '') {
+  return {
+    item_id: item.item_id,
+    item_name: item.item_name,
+    barcode: barcode || '',
+    qty: 1,
+    unit_size: 'medium',
+    unit: item.unit_medium,
+    price: item.price || 0,
+    subtotal: item.price || 0,
+    stock: {
+      small: item.qty_small || 0,
+      medium: item.qty_medium || 0,
+      large: item.qty_large || 0
+    },
+    units: {
+      small: item.unit_small,
+      medium: item.unit_medium,
+      large: item.unit_large
+    },
+    unit_ids: {
+      small: item.small_unit_id,
+      medium: item.medium_unit_id,
+      large: item.large_unit_id
+    }
+  };
+}
+
+async function onUnitChange(index) {
+  const item = form.value.items[index];
+  const size = item.unit_size || 'medium';
+  item.unit = item.units?.[size] || item.unit;
+  const unitId = item.unit_ids?.[size] || null;
+  item.price = await fetchItemPrice(item.item_id, unitId, size);
+  updateItemSubtotal(index);
 }
 
 function removeItem(index) {
@@ -475,9 +474,13 @@ function handleKeyPress(event) {
   }
 }
 
-async function fetchItemPrice(itemId) {
+async function fetchItemPrice(itemId, unitId = null, unitSize = null) {
   try {
-    const response = await fetch(`/api/retail-warehouse-sale/item-price?item_id=${itemId}`, {
+    const params = new URLSearchParams({ item_id: itemId });
+    if (unitId) params.set('unit_id', unitId);
+    if (unitSize) params.set('unit_size', unitSize);
+
+    const response = await fetch(`/api/retail-warehouse-sale/item-price?${params.toString()}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -495,7 +498,9 @@ async function fetchItemPrice(itemId) {
 
 async function refreshItemPrice(index) {
   const item = form.value.items[index];
-  const price = await fetchItemPrice(item.item_id);
+  const size = item.unit_size || 'medium';
+  const unitId = item.unit_ids?.[size] || null;
+  const price = await fetchItemPrice(item.item_id, unitId, size);
   item.price = price;
   updateItemSubtotal(index);
 }
@@ -748,13 +753,13 @@ async function refreshItemPrice(index) {
                   <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
                     <select 
-                      v-model="item.unit" 
-                      @change="updateItemSubtotal(index)"
+                      v-model="item.unit_size" 
+                      @change="onUnitChange(index)"
                       class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option :value="item.units.small">{{ item.units.small }}</option>
-                      <option :value="item.units.medium">{{ item.units.medium }}</option>
-                      <option :value="item.units.large">{{ item.units.large }}</option>
+                      <option value="small">{{ item.units.small }}</option>
+                      <option value="medium">{{ item.units.medium }}</option>
+                      <option value="large">{{ item.units.large }}</option>
                     </select>
                   </div>
                   <div>
