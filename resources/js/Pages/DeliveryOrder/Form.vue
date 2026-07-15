@@ -107,11 +107,11 @@
               </td>
               <td class="px-4 py-2 text-right text-lg">{{ item.qty }}</td>
               <td class="px-4 py-2 text-base">{{ item.unit }}</td>
-              <td class="px-4 py-2 text-right text-lg font-bold">{{ item.qty_scan }}</td>
+              <td class="px-4 py-2 text-right text-lg font-bold">{{ getItemScanTotal(item) }}</td>
               <td class="px-4 py-2 text-center">
-                <span v-if="Number(item.qty_scan) === 0" class="text-gray-400 font-bold text-lg">Belum Scan</span>
-                <span v-else-if="Number(item.qty_scan).toFixed(2) === Number(item.qty).toFixed(2)" class="text-green-700 font-bold text-lg animate-pulse">OK</span>
-                <span v-else-if="Number(item.qty_scan) > Number(item.qty)" class="text-red-700 font-bold text-lg animate-pulse">Lebih</span>
+                <span v-if="getItemScanTotal(item) === 0" class="text-gray-400 font-bold text-lg">Belum Scan</span>
+                <span v-else-if="getItemScanTotal(item).toFixed(2) === Number(item.qty).toFixed(2)" class="text-green-700 font-bold text-lg animate-pulse">OK</span>
+                <span v-else-if="getItemScanTotal(item) > Number(item.qty)" class="text-red-700 font-bold text-lg animate-pulse">Lebih</span>
                 <span v-else class="text-yellow-700 font-bold text-lg animate-pulse">Kurang</span>
               </td>
             </tr>
@@ -136,12 +136,12 @@
         <div v-if="hasScannedSerials" class="mt-6 w-full">
           <div class="text-sm font-bold text-purple-800 mb-2">Nomor Seri yang sudah di-scan:</div>
           <div v-for="item in packingListItems" :key="'serial-' + item.id">
-            <div v-if="scannedSerials[item.item_id] && scannedSerials[item.item_id].length" class="mb-3 bg-purple-50 rounded-lg p-3 border border-purple-200">
-              <div class="font-semibold text-purple-800 text-sm mb-1">{{ item.name }} ({{ scannedSerials[item.item_id].length }} seri)</div>
+            <div v-if="getScannedSerialList(item).length" class="mb-3 bg-purple-50 rounded-lg p-3 border border-purple-200">
+              <div class="font-semibold text-purple-800 text-sm mb-1">{{ item.name }} ({{ getScannedSerialList(item).length }} seri)</div>
               <div class="flex flex-wrap gap-1">
-                <span v-for="(sn, idx) in scannedSerials[item.item_id]" :key="sn.serial_number" class="inline-flex items-center bg-white border border-purple-300 rounded px-2 py-0.5 text-xs font-mono">
+                <span v-for="(sn, idx) in getScannedSerialList(item)" :key="sn.serial_number" class="inline-flex items-center bg-white border border-purple-300 rounded px-2 py-0.5 text-xs font-mono">
                   {{ sn.serial_number }}
-                  <span v-if="sn.repack_unit_name" class="ml-1 text-purple-600 font-semibold">(+{{ sn.effective_qty }})</span>
+                  <span class="ml-1 text-purple-600 font-semibold">(+{{ Number(sn.effective_qty || 1).toFixed(2) }})</span>
                   <button @click="removeSerial(item, idx)" class="ml-1 text-red-500 hover:text-red-700 font-bold">&times;</button>
                 </span>
               </div>
@@ -250,6 +250,17 @@ const scannedSerials = reactive({});  // { item_id: [{ serial_number, effective_
 
 const hasScannedSerials = computed(() => Object.values(scannedSerials).some(arr => arr && arr.length > 0));
 
+function serialItemKey(itemOrId) {
+  if (itemOrId && typeof itemOrId === 'object') {
+    return String(itemOrId.item_id ?? itemOrId.id ?? '');
+  }
+  return String(itemOrId ?? '');
+}
+
+function getScannedSerialList(item) {
+  return scannedSerials[serialItemKey(item)] || [];
+}
+
 /**
  * Qty serial dalam unit packing list.
  * Prioritas: effective_qty dari API (sudah dikonversi via master item).
@@ -306,14 +317,16 @@ function effectiveQtyForPackingList(serial, packingUnit, item = null) {
 }
 
 function getSerialQtySum(item) {
-  const itemId = item.item_id || item.id;
-  const serials = scannedSerials[itemId] || [];
-  return serials.reduce((sum, s) => sum + (Number(s.effective_qty) || 1), 0);
+  return getScannedSerialList(item).reduce((sum, s) => sum + (Number(s.effective_qty) || 1), 0);
+}
+
+function getItemScanTotal(item) {
+  return (Number(item.qty_scan_barcode) || 0) + getSerialQtySum(item);
 }
 
 function syncItemQtyScan(item) {
   item.qty_scan_barcode = Number(item.qty_scan_barcode) || 0;
-  item.qty_scan = item.qty_scan_barcode + getSerialQtySum(item);
+  item.qty_scan = getItemScanTotal(item);
 }
 
 function itemHasSerials(item) {
@@ -327,6 +340,8 @@ function getMaxBarcodeQty(item) {
 
 function isItemComplete(item) {
   const target = Number(item.qty) || 0;
+  // keep qty_scan synced for submit payload
+  item.qty_scan = getItemScanTotal(item);
   const total = Number(item.qty_scan) || 0;
   if (total <= 0) return false;
   if (Math.abs(total - target) < 0.001) return true;
@@ -430,23 +445,26 @@ async function onPackingListChange() {
 }
 
 function applySerialScan(serialNumber, serial) {
-  const matchedItem = packingListItems.find((i) => (i.item_id || i.id) == serial.item_id);
+  const matchedItem = packingListItems.find((i) => serialItemKey(i) === serialItemKey(serial.item_id));
   if (!matchedItem) {
     scanFeedback.value = '❌ Item tidak ditemukan di Packing List!';
     scanFeedbackClass.value = 'text-red-600';
     return;
   }
   const effectiveQty = effectiveQtyForPackingList(serial, matchedItem.unit, matchedItem);
-  const remainingSerial = Number(matchedItem.qty) - (Number(matchedItem.qty_scan_barcode) || 0) - getSerialQtySum(matchedItem);
+  const remainingSerial = Number(matchedItem.qty) - getItemScanTotal(matchedItem);
   if (effectiveQty > remainingSerial + 0.001) {
-    scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit}, scan ini: +${effectiveQty.toFixed(2)})`;
+    const already = getScannedSerialList(matchedItem).map((s) => s.serial_number).join(', ');
+    scanFeedback.value = `❌ Qty serial melebihi sisa (sisa: ${remainingSerial.toFixed(2)} ${matchedItem.unit}, scan ini: +${effectiveQty.toFixed(2)})`
+      + (already ? `. Item ini sudah terisi SN: ${already}. Hapus SN lama dulu jika ingin diganti.` : '');
     scanFeedbackClass.value = 'text-red-600';
     return;
   }
-  if (!scannedSerials[serial.item_id]) {
-    scannedSerials[serial.item_id] = [];
+  const key = serialItemKey(serial.item_id);
+  if (!scannedSerials[key]) {
+    scannedSerials[key] = [];
   }
-  scannedSerials[serial.item_id].push({
+  scannedSerials[key].push({
     serial_number: serialNumber,
     effective_qty: effectiveQty,
     repack_unit_name: serial.repack_unit_name || null,
@@ -673,9 +691,12 @@ function onScanBarcode(overrideCode = null, overrideQty = undefined) {
 }
 
 function removeSerial(item, idx) {
-  const itemId = item.item_id || item.id;
-  if (scannedSerials[itemId] && scannedSerials[itemId].length > idx) {
-    scannedSerials[itemId].splice(idx, 1);
+  const key = serialItemKey(item);
+  if (scannedSerials[key] && scannedSerials[key].length > idx) {
+    scannedSerials[key].splice(idx, 1);
+    if (scannedSerials[key].length === 0) {
+      delete scannedSerials[key];
+    }
     syncItemQtyScan(item);
   }
 }
@@ -812,9 +833,10 @@ function selectReason(reason) {
 }
 
 function statusClass(item) {
-  if (Number(item.qty_scan).toFixed(2) === Number(item.qty).toFixed(2)) return 'bg-green-50 animate-pulse';
-  if (Number(item.qty_scan) > Number(item.qty)) return 'bg-red-50 animate-pulse';
-  if (Number(item.qty_scan) > 0) return 'bg-yellow-50 animate-pulse';
+  const total = getItemScanTotal(item);
+  if (total.toFixed(2) === Number(item.qty).toFixed(2)) return 'bg-green-50 animate-pulse';
+  if (total > Number(item.qty)) return 'bg-red-50 animate-pulse';
+  if (total > 0) return 'bg-yellow-50 animate-pulse';
   return '';
 }
 
