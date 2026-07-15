@@ -348,6 +348,33 @@
               <label class="block text-sm font-medium text-gray-700">Description</label>
               <p class="mt-1 text-gray-900">{{ (payment.purchase_requisition || payment.purchase_order_ops?.source_pr)?.description }}</p>
             </div>
+
+            <div v-if="kasbonApprovedInfo" class="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4">
+              <h3 class="text-sm font-semibold text-orange-900 mb-3 flex items-center gap-2">
+                <i class="fa fa-money-bill-wave text-orange-500"></i>
+                Informasi Kasbon Approved
+              </h3>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="bg-white rounded-lg border border-orange-100 p-3">
+                  <div class="text-xs font-medium text-gray-500 mb-1">Nilai Kasbon</div>
+                  <div class="text-lg font-bold text-green-700">{{ formatCurrency(kasbonApprovedInfo.amount) }}</div>
+                </div>
+                <div class="bg-white rounded-lg border border-orange-100 p-3">
+                  <div class="text-xs font-medium text-gray-500 mb-1">Termin Potong Gaji</div>
+                  <div class="text-lg font-bold text-gray-900">{{ kasbonApprovedInfo.termin }}x</div>
+                </div>
+                <div class="bg-white rounded-lg border border-orange-100 p-3">
+                  <div class="text-xs font-medium text-gray-500 mb-1">Cicilan / Termin</div>
+                  <div class="text-lg font-bold text-orange-700">{{ formatCurrency(kasbonApprovedInfo.installment) }}</div>
+                </div>
+              </div>
+              <div v-if="kasbonApprovedInfo.reason" class="mt-3">
+                <div class="text-xs font-medium text-gray-500 mb-1">Alasan Kasbon</div>
+                <div class="text-sm text-gray-900 bg-white rounded-lg border border-orange-100 p-3 whitespace-pre-wrap">
+                  {{ kasbonApprovedInfo.reason }}
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Asset Service Order (pembayaran dari service asset) -->
@@ -678,6 +705,24 @@ const paymentOutletRows = computed(() => {
 const paymentOutletTotal = computed(() =>
   paymentOutletRows.value.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0)
 );
+
+const kasbonApprovedInfo = computed(() => {
+  const pr = payment?.purchase_requisition || payment?.purchase_order_ops?.source_pr;
+  if (!pr || pr.mode !== 'kasbon') return null;
+
+  const ledger = pr.pr_kasbon || pr.prKasbon || null;
+  const amount = Number(ledger?.total_amount ?? pr.amount ?? 0);
+  let termin = Number(ledger?.termin_total ?? pr.kasbon_termin ?? 1);
+  if (!termin || termin < 1) termin = 1;
+  let installment = Number(ledger?.installment_amount ?? 0);
+  if (!installment || installment <= 0) {
+    installment = Math.round((amount / termin) * 100) / 100;
+  }
+  const items = pr.items || [];
+  const reason = items[0]?.item_name || null;
+
+  return { amount, termin, installment, reason };
+});
 
 // Group PO Ops items by outlet (same logic as Purchase Order Ops Show - multi-outlet)
 function getItemOutletId(item) {

@@ -424,6 +424,19 @@ class NonFoodPaymentController extends Controller
                 'creator.avatar as creator_avatar'
             );
 
+        if (Schema::hasColumn('purchase_requisitions', 'kasbon_termin')) {
+            $prQuery->addSelect('pr.kasbon_termin');
+        }
+
+        if (Schema::hasTable('pr_kasbons')) {
+            $prQuery->leftJoin('pr_kasbons as pk', 'pk.purchase_requisition_id', '=', 'pr.id')
+                ->addSelect(
+                    'pk.total_amount as kasbon_ledger_total_amount',
+                    'pk.termin_total as kasbon_ledger_termin_total',
+                    'pk.installment_amount as kasbon_ledger_installment_amount'
+                );
+        }
+
         // Apply filters
         if ($dateFrom) {
             $prQuery->whereDate('pr.date', '>=', $dateFrom);
@@ -463,6 +476,7 @@ class NonFoodPaymentController extends Controller
         })->take(50)->values()->map(function ($pr) {
             $pr->creator_avatar_url = $this->resolveUserAvatarUrl($pr->creator_avatar ?? null);
             unset($pr->creator_avatar);
+            $this->enrichKasbonFieldsForPr($pr);
 
             return $pr;
         });
@@ -1177,6 +1191,26 @@ class NonFoodPaymentController extends Controller
                 return response()->json(['error' => 'Purchase Requisition not found'], 404);
             }
 
+            if ($pr->mode === 'kasbon') {
+                if (Schema::hasTable('pr_kasbons')) {
+                    $ledger = DB::table('pr_kasbons')
+                        ->where('purchase_requisition_id', $prId)
+                        ->select('total_amount', 'termin_total', 'installment_amount')
+                        ->first();
+                    if ($ledger) {
+                        $pr->kasbon_ledger_total_amount = $ledger->total_amount;
+                        $pr->kasbon_ledger_termin_total = $ledger->termin_total;
+                        $pr->kasbon_ledger_installment_amount = $ledger->installment_amount;
+                    }
+                }
+                $kasbonItem = DB::table('purchase_requisition_items')
+                    ->where('purchase_requisition_id', $prId)
+                    ->orderBy('id')
+                    ->value('item_name');
+                $pr->kasbon_reason = $kasbonItem ?: null;
+                $this->enrichKasbonFieldsForPr($pr);
+            }
+
             // Get PR items with outlet and category info (for new structure)
             $items = DB::table('purchase_requisition_items as pri')
                 ->leftJoin('tbl_data_outlet as o', 'pri.outlet_id', '=', 'o.id_outlet')
@@ -1754,6 +1788,8 @@ class NonFoodPaymentController extends Controller
             'purchaseRequisition.division',
             'purchaseRequisition.creator',
             'purchaseRequisition.outlet',
+            'purchaseRequisition.prKasbon',
+            'purchaseRequisition.items',
             'retailNonFood.outlet',
             'retailNonFood.supplier',
             'retailNonFood.items',
@@ -3824,5 +3860,31 @@ class NonFoodPaymentController extends Controller
         }
 
         return Storage::url($avatar);
+    }
+
+    /**
+     * Normalize kasbon approved fields for NFP UI (list + detail).
+     * Prefers pr_kasbons ledger when present, else purchase_requisitions.
+     */
+    private function enrichKasbonFieldsForPr(object $pr): void
+    {
+        if (($pr->mode ?? null) !== 'kasbon') {
+            return;
+        }
+
+        $amount = (float) ($pr->kasbon_ledger_total_amount ?? $pr->amount ?? 0);
+        $termin = (int) ($pr->kasbon_ledger_termin_total ?? $pr->kasbon_termin ?? 1);
+        if ($termin < 1) {
+            $termin = 1;
+        }
+
+        $installment = $pr->kasbon_ledger_installment_amount ?? null;
+        if ($installment === null || (float) $installment <= 0) {
+            $installment = round($amount / $termin, 2);
+        }
+
+        $pr->kasbon_amount_approved = $amount;
+        $pr->kasbon_termin_approved = $termin;
+        $pr->kasbon_installment_amount = (float) $installment;
     }
 }

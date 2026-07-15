@@ -160,7 +160,11 @@
                     </div>
                     <div class="text-sm text-gray-600">{{ pr.title }}</div>
                     <div class="text-sm text-gray-500">
-                      {{ formatDate(pr.date) }} - {{ formatCurrency(pr.amount) }}
+                      {{ formatDate(pr.date) }} -
+                      {{ formatCurrency(pr.kasbon_amount_approved ?? pr.amount) }}
+                      <span v-if="pr.mode === 'kasbon' && (pr.kasbon_termin_approved || pr.kasbon_termin)" class="ml-1 text-orange-700 font-medium">
+                        · Termin {{ pr.kasbon_termin_approved || pr.kasbon_termin }}x
+                      </span>
                     </div>
                     <p v-if="pr.is_held && pr.hold_reason" class="text-sm text-red-600 mt-1">
                       <i class="fas fa-info-circle mr-1"></i>
@@ -269,33 +273,71 @@
               <label class="block text-sm font-medium text-gray-700">Division</label>
               <p class="mt-1 text-gray-900">{{ selectedPR.division_name }}</p>
             </div>
-            <div v-if="selectedPR && selectedPR.mode === 'kasbon'" class="md:col-span-2">
-              <label class="block text-sm font-medium text-gray-700 mb-2">Creator Kasbon</label>
-              <div class="flex items-center gap-3">
-                <button
-                  v-if="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
-                  type="button"
-                  class="h-16 w-16 shrink-0 overflow-hidden rounded-full ring-2 ring-orange-200 hover:ring-orange-400 transition shadow-sm"
-                  title="Lihat avatar creator"
-                  @click="openAvatarLightbox(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
-                >
-                  <img
-                    :src="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
-                    :alt="selectedPR.creator_name || 'Creator'"
-                    class="h-full w-full object-cover"
+            <div v-if="selectedPR && selectedPR.mode === 'kasbon'" class="md:col-span-2 space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Creator Kasbon</label>
+                <div class="flex items-center gap-3">
+                  <button
+                    v-if="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
+                    type="button"
+                    class="h-16 w-16 shrink-0 overflow-hidden rounded-full ring-2 ring-orange-200 hover:ring-orange-400 transition shadow-sm"
+                    title="Lihat avatar creator"
+                    @click="openAvatarLightbox(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
                   >
-                </button>
-                <div
-                  v-else
-                  class="h-16 w-16 shrink-0 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center ring-2 ring-orange-200"
-                >
-                  <i class="fa fa-user text-2xl"></i>
+                    <img
+                      :src="resolveAvatarUrl(selectedPR.creator_avatar_url || selectedPR.creator_avatar)"
+                      :alt="selectedPR.creator_name || 'Creator'"
+                      class="h-full w-full object-cover"
+                    >
+                  </button>
+                  <div
+                    v-else
+                    class="h-16 w-16 shrink-0 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center ring-2 ring-orange-200"
+                  >
+                    <i class="fa fa-user text-2xl"></i>
+                  </div>
+                  <div>
+                    <p class="text-base font-semibold text-gray-900">{{ selectedPR.creator_name || '-' }}</p>
+                    <span class="inline-flex mt-1 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      PR Mode Kasbon
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p class="text-base font-semibold text-gray-900">{{ selectedPR.creator_name || '-' }}</p>
-                  <span class="inline-flex mt-1 items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                    PR Mode Kasbon
-                  </span>
+              </div>
+
+              <div class="bg-orange-50 border border-orange-200 rounded-xl p-4">
+                <h3 class="text-sm font-semibold text-orange-900 mb-3 flex items-center gap-2">
+                  <i class="fa fa-money-bill-wave text-orange-500"></i>
+                  Informasi Kasbon Approved
+                </h3>
+                <p class="text-xs text-orange-800/80 mb-3">
+                  Nilai &amp; termin dari approval PR (bisa berbeda dari pengajuan awal jika diubah approver).
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div class="bg-white rounded-lg border border-orange-100 p-3">
+                    <div class="text-xs font-medium text-gray-500 mb-1">Nilai Kasbon</div>
+                    <div class="text-lg font-bold text-green-700">
+                      {{ formatCurrency(selectedPR.kasbon_amount_approved ?? selectedPR.amount) }}
+                    </div>
+                  </div>
+                  <div class="bg-white rounded-lg border border-orange-100 p-3">
+                    <div class="text-xs font-medium text-gray-500 mb-1">Termin Potong Gaji</div>
+                    <div class="text-lg font-bold text-gray-900">
+                      {{ selectedPR.kasbon_termin_approved || selectedPR.kasbon_termin || 1 }}x
+                    </div>
+                  </div>
+                  <div class="bg-white rounded-lg border border-orange-100 p-3">
+                    <div class="text-xs font-medium text-gray-500 mb-1">Cicilan / Termin</div>
+                    <div class="text-lg font-bold text-orange-700">
+                      {{ formatCurrency(selectedPR.kasbon_installment_amount || ((selectedPR.kasbon_amount_approved ?? selectedPR.amount) / (selectedPR.kasbon_termin_approved || selectedPR.kasbon_termin || 1))) }}
+                    </div>
+                  </div>
+                </div>
+                <div v-if="selectedPR.kasbon_reason" class="mt-3">
+                  <div class="text-xs font-medium text-gray-500 mb-1">Alasan Kasbon</div>
+                  <div class="text-sm text-gray-900 bg-white rounded-lg border border-orange-100 p-3 whitespace-pre-wrap">
+                    {{ selectedPR.kasbon_reason }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2037,8 +2079,9 @@ async function selectPR(pr) {
     selectedSupplier.value = null;
   }
   
-  form.amount = pr.amount;
-  originalAmount.value = pr.amount;
+  const approvedAmount = pr.kasbon_amount_approved ?? pr.amount;
+  form.amount = approvedAmount;
+  originalAmount.value = approvedAmount;
   
   // Load PR items grouped by outlet
   loadingPOItems.value = true;
@@ -2051,16 +2094,19 @@ async function selectPR(pr) {
     // Initialize outlet payments dari itemsByOutlet
     initializeOutletPayments();
     
-    // Update amount with total from API if available, and save as original
-    if (response.data.total_amount) {
-      form.amount = response.data.total_amount;
-      originalAmount.value = response.data.total_amount;
-    }
-    
-    // Update selectedPR with full data
+    // Update selectedPR with full data (includes kasbon approved fields)
     if (response.data.pr) {
       selectedPR.value = { ...selectedPR.value, ...response.data.pr };
     }
+
+    // Prefer kasbon approved amount, then API total, then PR amount
+    const nextAmount =
+      selectedPR.value?.kasbon_amount_approved ??
+      response.data.total_amount ??
+      selectedPR.value?.amount ??
+      pr.amount;
+    form.amount = nextAmount;
+    originalAmount.value = nextAmount;
   } catch (error) {
     console.error('Error loading PR items:', error);
     import('sweetalert2').then(({ default: Swal }) => {
