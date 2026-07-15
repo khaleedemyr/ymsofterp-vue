@@ -435,6 +435,167 @@ trait ReportHelperTrait
     }
 
     /**
+     * Sub kategori yang tidak ditampilkan di pivot outlet × sub category.
+     */
+    protected function pivotSubCategoryExcludedCategoryIds(): array
+    {
+        return [163, 164, 165];
+    }
+
+    /**
+     * Pivot Sub Category — Food GR (align Rekap FJ: LEFT FO + warehouse wajib),
+     * dibatasi show_pos=0 agar cocok dengan kolom pivot.
+     */
+    protected function pivotSubCategoryFetchFoodRows(?string $from, ?string $to): Collection
+    {
+        $effectivePriceExpr = $this->rekapFjFoodGrEffectivePriceSql();
+
+        $query = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->where('sc.show_pos', '0')
+            ->whereNotIn('sc.category_id', $this->pivotSubCategoryExcludedCategoryIds())
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
+            ->select(
+                'o.nama_outlet as customer',
+                'o.is_outlet',
+                'sc.name as sub_category',
+                DB::raw("SUM(i.received_qty * {$effectivePriceExpr}) as nilai")
+            );
+
+        if ($from) {
+            $query->whereDate('gr.receive_date', '>=', $from);
+        }
+        if ($to) {
+            $query->whereDate('gr.receive_date', '<=', $to);
+        }
+
+        return $query
+            ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
+            ->orderBy('o.is_outlet', 'desc')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('sc.name')
+            ->get();
+    }
+
+    /**
+     * Pivot Sub Category — GR Nomor Seri (sama harga Rekap FJ), dibatasi show_pos=0.
+     */
+    protected function pivotSubCategoryFetchSerialRows(?string $from, ?string $to): Collection
+    {
+        if (!$this->rekapFjHasSerialGrTables()) {
+            return collect();
+        }
+
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql();
+
+        $query = DB::table('outlet_serial_receive_headers as h')
+            ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+            ->where('sc.show_pos', '0')
+            ->whereNotIn('sc.category_id', $this->pivotSubCategoryExcludedCategoryIds())
+            ->whereNull('h.deleted_at')
+            ->whereNotNull('w.name')
+            ->select(
+                'o.nama_outlet as customer',
+                'o.is_outlet',
+                'sc.name as sub_category',
+                DB::raw("SUM(si.qty * {$effectivePriceExpr}) as nilai")
+            );
+
+        if ($from) {
+            $query->whereDate('h.receive_date', '>=', $from);
+        }
+        if ($to) {
+            $query->whereDate('h.receive_date', '<=', $to);
+        }
+
+        return $query
+            ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
+            ->orderBy('o.is_outlet', 'desc')
+            ->orderBy('o.nama_outlet')
+            ->orderBy('sc.name')
+            ->get();
+    }
+
+    /**
+     * Bangun pivot outlet × sub category dari baris Food + Serial (tanpa GR Supplier).
+     *
+     * @return array{0: \Illuminate\Support\Collection, 1: array{outlets: array, nonOutlets: array}}
+     */
+    protected function buildPivotPerOutletSubCategory(?string $from, ?string $to): array
+    {
+        $subCategories = DB::table('sub_categories')
+            ->where('show_pos', '0')
+            ->whereNotIn('category_id', $this->pivotSubCategoryExcludedCategoryIds())
+            ->orderBy('name')
+            ->get();
+
+        $outletData = [];
+        foreach ($this->pivotSubCategoryFetchFoodRows($from, $to)->concat($this->pivotSubCategoryFetchSerialRows($from, $to)) as $row) {
+            $key = $row->customer . '_' . $row->sub_category;
+            if (!isset($outletData[$key])) {
+                $outletData[$key] = [
+                    'customer' => $row->customer,
+                    'is_outlet' => $row->is_outlet,
+                    'sub_category' => $row->sub_category,
+                    'nilai' => 0,
+                ];
+            }
+            $outletData[$key]['nilai'] += (float) $row->nilai;
+        }
+
+        $pivot = [];
+        foreach ($outletData as $row) {
+            $customer = $row['customer'];
+            if (!isset($pivot[$customer])) {
+                $pivot[$customer] = [
+                    'customer' => $customer,
+                    'is_outlet' => $row['is_outlet'],
+                    'line_total' => 0,
+                ];
+            }
+            $pivot[$customer][$row['sub_category']] = $row['nilai'];
+            $pivot[$customer]['line_total'] += $row['nilai'];
+        }
+
+        foreach ($pivot as $customer => &$row) {
+            foreach ($subCategories as $sc) {
+                if (!isset($row[$sc->name])) {
+                    $row[$sc->name] = 0;
+                }
+            }
+        }
+        unset($row);
+
+        $groupedReport = [
+            'outlets' => array_values(array_filter($pivot, function ($row) {
+                return $row['is_outlet'] == 1;
+            })),
+            'nonOutlets' => array_values(array_filter($pivot, function ($row) {
+                return $row['is_outlet'] != 1;
+            })),
+        ];
+
+        return [$subCategories, $groupedReport];
+    }
+
+    /**
      * Detail FJ per outlet — GR Food (floor order price).
      */
     protected function rekapFjFetchFoodGrDetailRows(

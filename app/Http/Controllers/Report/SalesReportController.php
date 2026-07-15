@@ -662,168 +662,17 @@ class SalesReportController extends Controller
      */
     public function reportSalesPivotPerOutletSubCategory(Request $request)
     {
-        // Ambil semua sub kategori dengan show_pos = '0'
-        $subCategories = DB::table('sub_categories')
-            ->where('show_pos', '0')
-            ->whereNotIn('category_id', [163, 164, 165])
-            ->orderBy('name')
-            ->get();
-
-        // Query untuk outlet_food_good_receives (sama dengan Report Rekap FJ)
-        $query1 = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-            })
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('sc.show_pos', '0')
-            ->whereNotIn('sc.category_id', [163, 164, 165])
-            ->select(
-                'o.nama_outlet as customer',
-                'o.is_outlet',
-                'sc.name as sub_category',
-                DB::raw('SUM(i.received_qty * fo.price) as nilai')
-            );
-
-        // Filter tanggal - gunakan date range seperti Report Rekap FJ
-        if ($request->filled('from')) {
-            $query1->whereDate('gr.receive_date', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $query1->whereDate('gr.receive_date', '<=', $request->to);
-        }
-        // Fallback untuk filter tanggal tunggal (backward compatibility)
-        if ($request->filled('tanggal') && !$request->filled('from') && !$request->filled('to')) {
-            $query1->whereDate('gr.receive_date', $request->tanggal);
-        }
-        
-        // Filter GR yang belum dihapus
-        $query1->whereNull('gr.deleted_at');
-
-        $report1 = $query1
-            ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
-            ->orderBy('o.is_outlet', 'desc')
-            ->orderBy('o.nama_outlet')
-            ->orderBy('sc.name')
-            ->get();
-
-        // Query untuk good_receive_outlet_suppliers (sama dengan Report Rekap FJ)
-        $query2 = DB::table('good_receive_outlet_suppliers as gr')
-            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('sc.show_pos', '0')
-            ->whereNotIn('sc.category_id', [163, 164, 165])
-            ->select(
-                'o.nama_outlet as customer',
-                'o.is_outlet',
-                'sc.name as sub_category',
-                DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as nilai')
-            );
-
-        // Filter tanggal untuk query2
-        if ($request->filled('from')) {
-            $query2->whereDate('gr.receive_date', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $query2->whereDate('gr.receive_date', '<=', $request->to);
-        }
-        // Fallback untuk filter tanggal tunggal
-        if ($request->filled('tanggal') && !$request->filled('from') && !$request->filled('to')) {
-            $query2->whereDate('gr.receive_date', $request->tanggal);
+        $from = $request->filled('from') ? $request->from : null;
+        $to = $request->filled('to') ? $request->to : null;
+        // Fallback tanggal tunggal (backward compatibility)
+        if (!$from && !$to && $request->filled('tanggal')) {
+            $from = $request->tanggal;
+            $to = $request->tanggal;
         }
 
-        $report2 = $query2
-            ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
-            ->orderBy('o.is_outlet', 'desc')
-            ->orderBy('o.nama_outlet')
-            ->orderBy('sc.name')
-            ->get();
+        // Sama sumber dengan Rekap FJ: Food GR + GR Nomor Seri (tanpa GR Supplier)
+        [$subCategories, $groupedReport] = $this->buildPivotPerOutletSubCategory($from, $to);
 
-        // Gabungkan kedua report dan group by outlet + sub_category
-        $combinedData = collect();
-        $outletData = [];
-        
-        // Process report1 (outlet_food_good_receives)
-        foreach ($report1 as $row) {
-            $key = $row->customer . '_' . $row->sub_category;
-            if (!isset($outletData[$key])) {
-                $outletData[$key] = [
-                    'customer' => $row->customer,
-                    'is_outlet' => $row->is_outlet,
-                    'sub_category' => $row->sub_category,
-                    'nilai' => 0
-                ];
-            }
-            $outletData[$key]['nilai'] += $row->nilai;
-        }
-        
-        // Process report2 (good_receive_outlet_suppliers)
-        foreach ($report2 as $row) {
-            $key = $row->customer . '_' . $row->sub_category;
-            if (!isset($outletData[$key])) {
-                $outletData[$key] = [
-                    'customer' => $row->customer,
-                    'is_outlet' => $row->is_outlet,
-                    'sub_category' => $row->sub_category,
-                    'nilai' => 0
-                ];
-            }
-            $outletData[$key]['nilai'] += $row->nilai;
-        }
-
-        // Bentuk pivot array
-        $pivot = [];
-        foreach ($outletData as $row) {
-            $customer = $row['customer'];
-            if (!isset($pivot[$customer])) {
-                $pivot[$customer] = [
-                    'customer' => $customer,
-                    'is_outlet' => $row['is_outlet'],
-                    'line_total' => 0,
-                ];
-            }
-            $pivot[$customer][$row['sub_category']] = $row['nilai'];
-            $pivot[$customer]['line_total'] += $row['nilai'];
-        }
-
-        // Pastikan semua sub kategori ada kolomnya
-        foreach ($pivot as $customer => &$row) {
-            foreach ($subCategories as $sc) {
-                if (!isset($row[$sc->name])) {
-                    $row[$sc->name] = 0;
-                }
-            }
-        }
-        unset($row);
-
-        // Group data berdasarkan is_outlet (sama dengan Report Rekap FJ)
-        $groupedReport = [
-            'outlets' => array_values(array_filter($pivot, function($row) {
-                return $row['is_outlet'] == 1;
-            })),
-            'nonOutlets' => array_values(array_filter($pivot, function($row) {
-                return $row['is_outlet'] != 1;
-            }))
-        ];
-
-        // Kirim ke frontend
         return Inertia::render('Report/ReportSalesPivotPerOutletSubCategory', [
             'subCategories' => $subCategories,
             'report' => $groupedReport,
@@ -860,145 +709,15 @@ class SalesReportController extends Controller
                 $to = $tanggal;
             }
             
-            // Ambil semua sub kategori dengan show_pos = '0'
-            $subCategories = DB::table('sub_categories')
-                ->where('show_pos', '0')
-                ->whereNotIn('category_id', [163, 164, 165])
-                ->orderBy('name')
-                ->get();
-                
+            // Sama sumber dengan Rekap FJ: Food GR + GR Nomor Seri (tanpa GR Supplier)
+            [$subCategories, $groupedReport] = $this->buildPivotPerOutletSubCategory($from, $to);
+
             if ($subCategories->isEmpty()) {
                 return response()->json(['error' => 'Tidak ada sub kategori yang ditemukan'], 400);
             }
 
-            // Query untuk outlet_food_good_receives (sama dengan Report Rekap FJ)
-            $query1 = DB::table('outlet_food_good_receives as gr')
-                ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->where('sc.show_pos', '0')
-                ->whereNotIn('sc.category_id', [163, 164, 165])
-                ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to)
-                ->whereNull('gr.deleted_at')
-                ->select(
-                    'o.nama_outlet as customer',
-                    'o.is_outlet',
-                    'sc.name as sub_category',
-                    DB::raw('SUM(i.received_qty * fo.price) as nilai')
-                )
-                ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
-                ->orderBy('o.is_outlet', 'desc')
-                ->orderBy('o.nama_outlet')
-                ->orderBy('sc.name')
-                ->get();
-
-            // Query untuk good_receive_outlet_suppliers (sama dengan Report Rekap FJ)
-            $query2 = DB::table('good_receive_outlet_suppliers as gr')
-                ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-                ->join('items as it', 'i.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->join('units as u', 'i.unit_id', '=', 'u.id')
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as fo', function($join) {
-                    $join->on('i.item_id', '=', 'fo.item_id')
-                         ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-                })
-                ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-                ->where('sc.show_pos', '0')
-                ->whereNotIn('sc.category_id', [163, 164, 165])
-                ->whereDate('gr.receive_date', '>=', $from)
-                ->whereDate('gr.receive_date', '<=', $to)
-                ->select(
-                    'o.nama_outlet as customer',
-                    'o.is_outlet',
-                    'sc.name as sub_category',
-                    DB::raw('SUM(i.qty_received * COALESCE(fo.price, 0)) as nilai')
-                )
-                ->groupBy('o.nama_outlet', 'o.is_outlet', 'sc.name')
-                ->orderBy('o.is_outlet', 'desc')
-                ->orderBy('o.nama_outlet')
-                ->orderBy('sc.name')
-                ->get();
-
-            // Gabungkan kedua report
-            $outletData = [];
-            
-            // Process query1 (outlet_food_good_receives)
-            foreach ($query1 as $row) {
-                $key = $row->customer . '_' . $row->sub_category;
-                if (!isset($outletData[$key])) {
-                    $outletData[$key] = [
-                        'customer' => $row->customer,
-                        'is_outlet' => $row->is_outlet,
-                        'sub_category' => $row->sub_category,
-                        'nilai' => 0
-                    ];
-                }
-                $outletData[$key]['nilai'] += $row->nilai;
-            }
-            
-            // Process query2 (good_receive_outlet_suppliers)
-            foreach ($query2 as $row) {
-                $key = $row->customer . '_' . $row->sub_category;
-                if (!isset($outletData[$key])) {
-                    $outletData[$key] = [
-                        'customer' => $row->customer,
-                        'is_outlet' => $row->is_outlet,
-                        'sub_category' => $row->sub_category,
-                        'nilai' => 0
-                    ];
-                }
-                $outletData[$key]['nilai'] += $row->nilai;
-            }
-
-            // Bentuk pivot array
-            $pivot = [];
-            foreach ($outletData as $row) {
-                $customer = $row['customer'];
-                if (!isset($pivot[$customer])) {
-                    $pivot[$customer] = [
-                        'customer' => $customer,
-                        'is_outlet' => $row['is_outlet'],
-                        'line_total' => 0,
-                    ];
-                }
-                $pivot[$customer][$row['sub_category']] = $row['nilai'];
-                $pivot[$customer]['line_total'] += $row['nilai'];
-            }
-
-            // Pastikan semua sub kategori ada kolomnya
-            foreach ($pivot as $customer => &$row) {
-                foreach ($subCategories as $sc) {
-                    if (!isset($row[$sc->name])) {
-                        $row[$sc->name] = 0;
-                    }
-                }
-            }
-            unset($row);
-
-            // Group data berdasarkan is_outlet
-            $outlets = array_values(array_filter($pivot, function($row) {
-                return $row['is_outlet'] == 1;
-            }));
-            
-            $nonOutlets = array_values(array_filter($pivot, function($row) {
-                return $row['is_outlet'] != 1;
-            }));
-            
             // Flatten data untuk export (gabungkan outlets dan non-outlets)
-            $flatReport = array_merge($outlets, $nonOutlets);
+            $flatReport = array_merge($groupedReport['outlets'], $groupedReport['nonOutlets']);
             
             // Jika tidak ada data, buat row kosong untuk menghindari error
             if (empty($flatReport)) {
@@ -1406,79 +1125,92 @@ class SalesReportController extends Controller
             'from' => 'required|date',
             'to' => 'required|date',
         ]);
-        
-        // Query untuk outlet_food_good_receives (sama dengan Report Rekap FJ)
+
+        $effectiveFoodPrice = $this->rekapFjFoodGrEffectivePriceSql();
+
+        // Food GR — align Rekap FJ / pivot
         $query1 = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('categories as cat', 'it.category_id', '=', 'cat.id')
             ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_floor_order_items as fo', function($join) {
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
                 $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
             })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
             ->where('o.nama_outlet', $request->outlet)
+            ->where('sc.show_pos', '0')
+            ->whereNotIn('sc.category_id', $this->pivotSubCategoryExcludedCategoryIds())
             ->whereDate('gr.receive_date', '>=', $request->from)
             ->whereDate('gr.receive_date', '<=', $request->to)
-            ->whereNull('gr.deleted_at') // Filter GR yang belum dihapus
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
             ->select(
                 'cat.name as category',
                 'sc.name as sub_category',
                 'it.name as item_name',
                 'i.received_qty',
                 'u.name as unit',
-                'fo.price',
-                DB::raw('(i.received_qty * fo.price) as subtotal')
+                DB::raw("{$effectiveFoodPrice} as price"),
+                DB::raw("(i.received_qty * {$effectiveFoodPrice}) as subtotal")
             )
             ->orderBy('cat.name')
             ->orderBy('sc.name')
             ->orderBy('it.name')
             ->get();
-            
-        // Query untuk good_receive_outlet_suppliers (sama dengan Report Rekap FJ)
-        $query2 = DB::table('good_receive_outlet_suppliers as gr')
-            ->join('good_receive_outlet_supplier_items as i', 'gr.id', '=', 'i.good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->join('units as u', 'i.unit_id', '=', 'u.id')
-            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->on('fo.floor_order_id', '=', 'do.floor_order_id');
-            })
-            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->where('o.nama_outlet', $request->outlet)
-            ->whereDate('gr.receive_date', '>=', $request->from)
-            ->whereDate('gr.receive_date', '<=', $request->to)
-            ->select(
-                'cat.name as category',
-                'sc.name as sub_category',
-                'it.name as item_name',
-                'i.qty_received as received_qty',
-                'u.name as unit',
-                DB::raw('COALESCE(fo.price, 0) as price'),
-                DB::raw('(i.qty_received * COALESCE(fo.price, 0)) as subtotal')
-            )
-            ->orderBy('cat.name')
-            ->orderBy('sc.name')
-            ->orderBy('it.name')
-            ->get();
-            
-        // Gabungkan kedua query
+
+        $query2 = collect();
+        if ($this->rekapFjHasSerialGrTables()) {
+            $effectiveSerialPrice = $this->rekapFjSerialGrEffectivePriceSql();
+            $query2 = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('categories as cat', 'it.category_id', '=', 'cat.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+                ->where('o.nama_outlet', $request->outlet)
+                ->where('sc.show_pos', '0')
+                ->whereNotIn('sc.category_id', $this->pivotSubCategoryExcludedCategoryIds())
+                ->whereDate('h.receive_date', '>=', $request->from)
+                ->whereDate('h.receive_date', '<=', $request->to)
+                ->whereNull('h.deleted_at')
+                ->whereNotNull('w.name')
+                ->select(
+                    'cat.name as category',
+                    'sc.name as sub_category',
+                    'it.name as item_name',
+                    'si.qty as received_qty',
+                    'u.name as unit',
+                    DB::raw("{$effectiveSerialPrice} as price"),
+                    DB::raw("(si.qty * {$effectiveSerialPrice}) as subtotal")
+                )
+                ->orderBy('cat.name')
+                ->orderBy('sc.name')
+                ->orderBy('it.name')
+                ->get();
+        }
+
+        // Gabungkan Food + Serial
         $allItems = $query1->concat($query2);
-        
+
         // Group by sub_category
         $grouped = [];
         foreach ($allItems as $item) {
             $subCat = $item->sub_category;
-            if (!isset($grouped[$subCat])) $grouped[$subCat] = [];
+            if (!isset($grouped[$subCat])) {
+                $grouped[$subCat] = [];
+            }
             $grouped[$subCat][] = $item;
         }
-        
+
         return response()->json($grouped);
     }
 
