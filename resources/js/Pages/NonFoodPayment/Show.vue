@@ -74,6 +74,37 @@
             </div>
           </div>
 
+          <!-- Pembayaran Per Outlet -->
+          <div v-if="paymentOutletRows.length > 0" class="bg-white rounded-2xl shadow-2xl p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Pembayaran Per Outlet</h2>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Outlet</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bank</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  <tr v-for="row in paymentOutletRows" :key="row.id">
+                    <td class="px-4 py-3 text-sm text-gray-900">{{ row.outlet_name }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.category_name || '-' }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-700">{{ row.bank_name || '-' }}</td>
+                    <td class="px-4 py-3 text-sm font-semibold text-right text-gray-900">{{ formatCurrency(row.amount) }}</td>
+                  </tr>
+                </tbody>
+                <tfoot class="bg-gray-50">
+                  <tr>
+                    <td colspan="3" class="px-4 py-3 text-sm font-semibold text-right text-gray-700">Total</td>
+                    <td class="px-4 py-3 text-sm font-bold text-right text-green-700">{{ formatCurrency(paymentOutletTotal) }}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
           <!-- Purchase Order Information -->
           <div v-if="payment.purchase_order_ops" class="bg-white rounded-2xl shadow-2xl p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-4">Purchase Order Information</h2>
@@ -629,6 +660,24 @@ const props = defineProps({
 });
 
 const payment = props.payment;
+
+const paymentOutletRows = computed(() => {
+  const rows = payment?.payment_outlets || payment?.paymentOutlets || [];
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    id: row.id,
+    outlet_name: row.outlet?.nama_outlet || (row.outlet_id == null ? 'Head Office' : `Outlet #${row.outlet_id}`),
+    category_name: row.category?.name || null,
+    bank_name: row.bank
+      ? `${row.bank.bank_name} - ${row.bank.account_number}`
+      : null,
+    amount: row.amount,
+  }));
+});
+
+const paymentOutletTotal = computed(() =>
+  paymentOutletRows.value.reduce((sum, row) => sum + (parseFloat(row.amount) || 0), 0)
+);
 
 // Group PO Ops items by outlet (same logic as Purchase Order Ops Show - multi-outlet)
 function getItemOutletId(item) {

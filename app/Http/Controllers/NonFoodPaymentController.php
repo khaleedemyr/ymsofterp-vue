@@ -1763,7 +1763,8 @@ class NonFoodPaymentController extends Controller
             'approver',
             'attachments.uploader',
             'paymentOutlets.outlet',
-            'paymentOutlets.category'
+            'paymentOutlets.category',
+            'paymentOutlets.bank',
         ]);
 
         // Get PO attachments if payment is for PO
@@ -1931,7 +1932,8 @@ class NonFoodPaymentController extends Controller
             'purchaseRequisition.division',
             'supplier',
             'paymentOutlets.outlet',
-            'paymentOutlets.category'
+            'paymentOutlets.category',
+            'paymentOutlets.bank.outlet',
         ]);
 
         // Get suppliers
@@ -1976,11 +1978,10 @@ class NonFoodPaymentController extends Controller
             return back()->with('error', 'Payment ini tidak dapat diedit.');
         }
 
-        $request->validate([
+        $validationRules = [
             'supplier_id' => 'required|exists:suppliers,id',
             'amount' => 'required|numeric|min:0',
             'payment_method' => 'required|in:cash,transfer,check',
-            'bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
             'payment_date' => 'required|date',
             'due_date' => 'nullable|date|after_or_equal:payment_date',
             'description' => 'nullable|string|max:1000',
@@ -1992,16 +1993,38 @@ class NonFoodPaymentController extends Controller
             'outlet_payments.*.amount' => 'required|numeric|min:0',
             'outlet_payments.*.bank_id' => 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id',
             'coa_id' => 'nullable|exists:chart_of_accounts,id',
-        ]);
+        ];
+
+        // Bank header wajib hanya jika tidak ada multi outlet payments
+        if (empty($request->outlet_payments) || !is_array($request->outlet_payments) || count($request->outlet_payments) === 0) {
+            $validationRules['bank_id'] = 'nullable|required_if:payment_method,transfer,check|exists:bank_accounts,id';
+        } else {
+            $validationRules['bank_id'] = 'nullable|exists:bank_accounts,id';
+        }
+
+        $request->validate($validationRules);
 
         try {
             DB::beginTransaction();
+
+            $headerBankId = null;
+            if (in_array($request->payment_method, ['transfer', 'check'])) {
+                $headerBankId = $request->bank_id ?? null;
+                if (!$headerBankId && is_array($request->outlet_payments)) {
+                    foreach ($request->outlet_payments as $outletPayment) {
+                        if (!empty($outletPayment['bank_id'])) {
+                            $headerBankId = $outletPayment['bank_id'];
+                            break;
+                        }
+                    }
+                }
+            }
 
             $updateData = [
                 'supplier_id' => $request->supplier_id,
                 'amount' => $request->amount,
                 'payment_method' => $request->payment_method,
-                'bank_id' => in_array($request->payment_method, ['transfer', 'check']) ? ($request->bank_id ?? null) : null,
+                'bank_id' => $headerBankId,
                 'payment_date' => $request->payment_date,
                 'due_date' => $request->due_date,
                 'description' => $request->description,
@@ -2019,11 +2042,10 @@ class NonFoodPaymentController extends Controller
             if ($request->has('outlet_payments') && is_array($request->outlet_payments)) {
                 // Delete existing outlet payments
                 \App\Models\NonFoodPaymentOutlet::where('non_food_payment_id', $nonFoodPayment->id)->delete();
-                
+
                 // Create new outlet payments
                 foreach ($request->outlet_payments as $outletPayment) {
                     if (!empty($outletPayment['amount']) && $outletPayment['amount'] > 0) {
-                        // Validate bank_id if payment method is transfer or check
                         $bankId = null;
                         if (in_array($request->payment_method, ['transfer', 'check'])) {
                             if (empty($outletPayment['bank_id'])) {
@@ -2031,8 +2053,19 @@ class NonFoodPaymentController extends Controller
                                 return back()->with('error', 'Bank harus dipilih untuk setiap outlet dengan metode pembayaran ' . $request->payment_method . '.');
                             }
                             $bankId = $outletPayment['bank_id'];
+
+                            $outletId = $outletPayment['outlet_id'] ?? null;
+                            $bank = \App\Models\BankAccount::find($bankId);
+                            if (!$bank) {
+                                DB::rollback();
+                                return back()->with('error', 'Bank tidak ditemukan. Silakan pilih ulang bank untuk setiap outlet.');
+                            }
+                            if (!empty($outletId) && intval($bank->outlet_id) !== intval($outletId)) {
+                                DB::rollback();
+                                return back()->with('error', 'Rekening bank harus sesuai outlet masing-masing. Silakan pilih rekening bank untuk outlet yang tepat.');
+                            }
                         }
-                        
+
                         \App\Models\NonFoodPaymentOutlet::create([
                             'non_food_payment_id' => $nonFoodPayment->id,
                             'outlet_id' => $outletPayment['outlet_id'] ?? null,
