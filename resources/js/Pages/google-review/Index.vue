@@ -963,6 +963,17 @@ async function startFullClassification(mode = 'ai') {
     error.value = 'Range tanggal Google tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
     return
   }
+  if (mode === 'ai') {
+    const ok = window.confirm(
+      'Jalankan KLASIFIKASI AI (Gemini)?\n\nJika ingin isi severity sendiri tanpa AI, batalkan lalu klik "Klasifikasi Manual".'
+    )
+    if (!ok) return
+  } else {
+    const ok = window.confirm(
+      'Jalankan KLASIFIKASI MANUAL?\n\nReview disimpan tanpa Gemini. Lengkapi severity/topik di detail laporan setelah selesai.'
+    )
+    if (!ok) return
+  }
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   let body
   const r = placeInfo.value?.rating
@@ -1016,6 +1027,9 @@ async function startFullClassification(mode = 'ai') {
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.success) {
       throw new Error(data.error || data.message || `HTTP ${res.status}`)
+    }
+    if (data.classification_mode && data.classification_mode !== mode) {
+      throw new Error(`Mode laporan tidak sesuai (server: ${data.classification_mode}, diminta: ${mode})`)
     }
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {

@@ -32,6 +32,9 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             return;
         }
 
+        $manualOnly = $this->resolveManualOnly($report);
+        $this->manualOnly = $manualOnly;
+
         DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
             'status' => 'processing',
             'progress_phase' => 'starting',
@@ -39,7 +42,7 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             'progress_done' => 0,
             'updated_at' => now(),
         ]);
-        $this->pushLog($this->manualOnly
+        $this->pushLog($manualOnly
             ? 'Job Instagram dimulai (klasifikasi MANUAL).'
             : 'Job dimulai (klasifikasi AI komentar Instagram).');
 
@@ -271,6 +274,32 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                 'updated_at' => now(),
             ]);
         }
+    }
+
+    private function resolveManualOnly(object $report): bool
+    {
+        if ($this->manualOnly) {
+            return true;
+        }
+
+        $mode = isset($report->classification_mode)
+            ? strtolower(trim((string) $report->classification_mode))
+            : '';
+        if ($mode === 'manual') {
+            return true;
+        }
+
+        if (! empty($report->source_payload)) {
+            $decoded = json_decode((string) $report->source_payload, true);
+            if (is_array($decoded) && ! array_is_list($decoded)) {
+                $payloadMode = strtolower(trim((string) ($decoded['classification_mode'] ?? '')));
+                if ($payloadMode === 'manual') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function pushLog(string $message): void

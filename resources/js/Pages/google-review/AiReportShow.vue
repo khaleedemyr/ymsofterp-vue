@@ -24,8 +24,16 @@
           <div class="row">
             <span class="lbl">Status</span>
             <span class="badge" :class="'st-' + live.status">{{ statusLabel(live.status) }}</span>
+            <span
+              class="badge"
+              :class="(report.classification_mode || 'ai') === 'manual' ? 'mode-manual' : 'mode-ai'"
+            >{{ (report.classification_mode || 'ai') === 'manual' ? 'Mode: Manual' : 'Mode: AI' }}</span>
             <span v-if="polling" class="poll">Memperbarui…</span>
           </div>
+
+          <p v-if="(report.classification_mode || 'ai') === 'manual' && live.status === 'completed'" class="manual-hint">
+            Mode manual: klik <strong>Edit</strong> pada tiap baris untuk mengisi severity, topik, follow-up, dan ringkasan. Tidak memakai Gemini/worker.
+          </p>
 
           <div v-if="queueStuckHint" class="queue-hint">
             <strong>Antrian belum diproses</strong>
@@ -646,6 +654,24 @@ onUnmounted(() => {
 .st-failed {
   background: #fecaca;
   color: #991b1b;
+}
+.mode-manual {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+.mode-ai {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+.manual-hint {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  color: #0f766e;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .poll {
   font-size: 12px;

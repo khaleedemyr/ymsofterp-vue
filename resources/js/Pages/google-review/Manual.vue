@@ -33,13 +33,17 @@
 
       <div class="card">
         <h3>Klasifikasi dari Manual Review</h3>
+        <p class="hint">
+          <strong>Klasifikasi Manual</strong> = simpan review lalu isi severity/topik sendiri di detail laporan (tanpa Gemini).
+          <strong>Klasifikasi AI</strong> = panggil Gemini.
+        </p>
         <div class="row">
           <label><input v-model="selectAll" type="checkbox" @change="toggleAll" /> Pilih semua halaman ini</label>
-          <button class="btn btn-ai" :disabled="aiSubmitting || manualSubmitting || selectedIds.length === 0" @click="startManualAi">
-            {{ aiSubmitting ? 'Mengirim...' : `Klasifikasi AI (${selectedIds.length})` }}
-          </button>
           <button class="btn btn-manual" :disabled="aiSubmitting || manualSubmitting || selectedIds.length === 0" @click="startManualClassify">
             {{ manualSubmitting ? 'Mengirim...' : `Klasifikasi Manual (${selectedIds.length})` }}
+          </button>
+          <button class="btn btn-ai" :disabled="aiSubmitting || manualSubmitting || selectedIds.length === 0" @click="startManualAi">
+            {{ aiSubmitting ? 'Mengirim...' : `Klasifikasi AI (${selectedIds.length})` }}
           </button>
         </div>
       </div>
@@ -267,8 +271,20 @@ async function startManualAi() {
 async function startManualClassification(mode = 'ai') {
   selectedIds.value = selectedIds.value.filter((id) => !blockedSet.value.has(Number(id)))
   if (selectedIds.value.length === 0) {
-    window.alert('Semua review terpilih sudah pernah/sedang diproses AI.')
+    window.alert('Semua review terpilih sudah pernah/sedang diproses.')
     return
+  }
+  const n = selectedIds.value.length
+  if (mode === 'ai') {
+    const ok = window.confirm(
+      `Jalankan KLASIFIKASI AI (Gemini) untuk ${n} review?\n\nJika ingin isi severity sendiri tanpa AI, batalkan lalu klik "Klasifikasi Manual".`
+    )
+    if (!ok) return
+  } else {
+    const ok = window.confirm(
+      `Jalankan KLASIFIKASI MANUAL untuk ${n} review?\n\nReview akan disimpan tanpa Gemini. Setelah selesai, lengkapi severity/topik di detail laporan.`
+    )
+    if (!ok) return
   }
   if (mode === 'manual') manualSubmitting.value = true
   else aiSubmitting.value = true
@@ -292,6 +308,12 @@ async function startManualClassification(mode = 'ai') {
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`)
+    if (data.classification_mode && data.classification_mode !== mode) {
+      throw new Error(`Mode laporan tidak sesuai (server: ${data.classification_mode}, diminta: ${mode})`)
+    }
+    if (mode === 'manual' && data.status && data.status !== 'completed') {
+      window.alert(data.message || 'Laporan manual dibuat, tapi status belum completed. Cek detail.')
+    }
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
     const message = e?.message || (mode === 'manual' ? 'Gagal membuat laporan manual' : 'Gagal membuat laporan AI')
@@ -361,6 +383,7 @@ textarea { grid-column: span 3; resize: vertical; min-height: 90px; }
 .per-page { display: flex; align-items: center; gap: 8px; }
 .per-page select { width: 86px; }
 .muted { color: #6b7280; font-size: 12px; }
+.hint { color: #4b5563; font-size: 13px; margin: 0 0 12px; line-height: 1.45; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; vertical-align: top; }
 .text { max-width: 460px; white-space: pre-wrap; word-break: break-word; }

@@ -8,6 +8,7 @@ use App\Jobs\ProcessInstagramCommentAiReportJob;
 use App\Models\GoogleReviewManualReview;
 use App\Services\ApifyGoogleReviewsService;
 use App\Services\GooglePlacesService;
+use App\Services\GoogleReviewDeduper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -1204,7 +1205,11 @@ class GoogleReviewController extends Controller
         ]);
 
         $source = $request->input('source');
-        $manualOnly = $request->input('classification_mode', 'ai') === 'manual';
+        $classificationMode = strtolower(trim((string) $request->input('classification_mode', 'ai')));
+        if (! in_array($classificationMode, ['ai', 'manual'], true)) {
+            $classificationMode = 'ai';
+        }
+        $manualOnly = $classificationMode === 'manual';
         $place = $request->input('place', []);
         $payload = null;
         $dateFrom = $request->input('date_from');
@@ -1217,17 +1222,20 @@ class GoogleReviewController extends Controller
                     'error' => 'Daftar review kosong.',
                 ], 422);
             }
+            // Payload tetap array review murni (dibaca job sebagai list). Mode disimpan di kolom classification_mode.
             $payload = json_encode($reviews, JSON_UNESCAPED_UNICODE);
         } elseif ($source === 'apify_dataset' && ($dateFrom || $dateTo)) {
             $payload = json_encode([
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
+                'classification_mode' => $classificationMode,
             ], JSON_UNESCAPED_UNICODE);
         } elseif ($source === 'instagram_comments_db') {
             $payload = json_encode([
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'profile_keys' => array_values(array_filter((array) $request->input('profile_keys', []))),
+                'classification_mode' => $classificationMode,
             ], JSON_UNESCAPED_UNICODE);
         } elseif ($source === 'manual_db') {
             $manualIds = array_values(array_filter(array_map('intval', (array) $request->input('manual_review_ids', []))));
@@ -1251,10 +1259,15 @@ class GoogleReviewController extends Controller
 
             $payload = json_encode([
                 'manual_review_ids' => $manualIds,
+                'classification_mode' => $classificationMode,
+            ], JSON_UNESCAPED_UNICODE);
+        } elseif ($source === 'apify_dataset') {
+            $payload = json_encode([
+                'classification_mode' => $classificationMode,
             ], JSON_UNESCAPED_UNICODE);
         }
 
-        $reportId = DB::table('google_review_ai_reports')->insertGetId([
+        $reportInsert = [
             'user_id' => auth()->id(),
             'status' => 'pending',
             'source' => $source,
@@ -1269,7 +1282,53 @@ class GoogleReviewController extends Controller
             'source_payload' => $payload,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+        if (Schema::hasColumn('google_review_ai_reports', 'classification_mode')) {
+            $reportInsert['classification_mode'] = $classificationMode;
+        }
+
+        $reportId = DB::table('google_review_ai_reports')->insertGetId($reportInsert);
+
+        // Mode MANUAL: langsung materialize item di request ini — tanpa queue/worker/Gemini.
+        if ($manualOnly) {
+            try {
+                $count = $this->materializeManualClassificationReport($reportId);
+                \Log::info('GoogleReview MANUAL report materialized inline', [
+                    'report_id' => $reportId,
+                    'source' => $source,
+                    'item_count' => $count,
+                    'user_id' => auth()->id(),
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'id' => $reportId,
+                    'classification_mode' => 'manual',
+                    'status' => 'completed',
+                    'review_count' => $count,
+                    'message' => "Laporan manual siap. {$count} review menunggu input severity/topik di detail (tanpa AI/worker).",
+                ]);
+            } catch (\Throwable $e) {
+                \Log::error('GoogleReview MANUAL materialize failed', [
+                    'report_id' => $reportId,
+                    'source' => $source,
+                    'error' => $e->getMessage(),
+                ]);
+                DB::table('google_review_ai_reports')->where('id', $reportId)->update([
+                    'status' => 'failed',
+                    'error_message' => mb_substr($e->getMessage(), 0, 10000),
+                    'progress_phase' => 'failed',
+                    'updated_at' => now(),
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'id' => $reportId,
+                    'classification_mode' => 'manual',
+                    'error' => $e->getMessage(),
+                ], 500);
+            }
+        }
 
         $sync = (bool) config('google_review.ai_dispatch_sync', false);
         $queueConnection = (string) config('queue.default', 'sync');
@@ -1281,7 +1340,7 @@ class GoogleReviewController extends Controller
         \Log::info('GoogleReview AI report created', [
             'report_id' => $reportId,
             'source' => $source,
-            'classification_mode' => $manualOnly ? 'manual' : 'ai',
+            'classification_mode' => 'ai',
             'sync' => $sync,
             'queue_connection' => $queueConnection,
             'queue_name' => $queueName,
@@ -1295,22 +1354,22 @@ class GoogleReviewController extends Controller
         try {
             if ($sync) {
                 if ($source === 'instagram_comments_db') {
-                    ProcessInstagramCommentAiReportJob::dispatchSync($reportId, $manualOnly);
+                    ProcessInstagramCommentAiReportJob::dispatchSync($reportId, false);
                 } else {
-                    ProcessGoogleReviewAiReportJob::dispatchSync($reportId, $manualOnly);
+                    ProcessGoogleReviewAiReportJob::dispatchSync($reportId, false);
                 }
             } else {
                 if ($source === 'instagram_comments_db') {
-                    ProcessInstagramCommentAiReportJob::dispatch($reportId, $manualOnly);
+                    ProcessInstagramCommentAiReportJob::dispatch($reportId, false);
                 } else {
-                    ProcessGoogleReviewAiReportJob::dispatch($reportId, $manualOnly);
+                    ProcessGoogleReviewAiReportJob::dispatch($reportId, false);
                 }
             }
 
             \Log::info('GoogleReview AI report dispatched', [
                 'report_id' => $reportId,
                 'source' => $source,
-                'classification_mode' => $manualOnly ? 'manual' : 'ai',
+                'classification_mode' => 'ai',
                 'sync' => $sync,
                 'queue_connection' => $queueConnection,
                 'queue_name' => $queueName,
@@ -1319,7 +1378,7 @@ class GoogleReviewController extends Controller
             \Log::error('GoogleReview AI dispatch failed', [
                 'report_id' => $reportId,
                 'source' => $source,
-                'classification_mode' => $manualOnly ? 'manual' : 'ai',
+                'classification_mode' => 'ai',
                 'sync' => $sync,
                 'queue_connection' => $queueConnection,
                 'queue_name' => $queueName,
@@ -1343,14 +1402,10 @@ class GoogleReviewController extends Controller
         return response()->json([
             'success' => true,
             'id' => $reportId,
-            'classification_mode' => $manualOnly ? 'manual' : 'ai',
-            'message' => $manualOnly
-                ? ($sync
-                    ? 'Laporan klasifikasi MANUAL diproses. Lengkapi severity/topik di detail, lalu Sync ke CVCC.'
-                    : 'Laporan klasifikasi MANUAL masuk antrian. Setelah selesai, lengkapi di detail lalu Sync ke CVCC.')
-                : ($sync
-                    ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
-                    : $this->aiReportQueuedMessage()),
+            'classification_mode' => 'ai',
+            'message' => $sync
+                ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
+                : $this->aiReportQueuedMessage(),
         ]);
     }
 
@@ -1643,6 +1698,9 @@ class GoogleReviewController extends Controller
                 'id' => $report->id,
                 'status' => $report->status,
                 'source' => $report->source,
+                'classification_mode' => property_exists($report, 'classification_mode')
+                    ? (string) ($report->classification_mode ?? 'ai')
+                    : 'ai',
                 'place_id' => $report->place_id,
                 'nama_outlet' => $report->nama_outlet,
                 'place_name' => $report->place_name,
@@ -1751,6 +1809,9 @@ class GoogleReviewController extends Controller
                 'id' => (int) $report->id,
                 'status' => (string) $report->status,
                 'source' => (string) ($report->source ?? ''),
+                'classification_mode' => property_exists($report, 'classification_mode')
+                    ? (string) ($report->classification_mode ?? 'ai')
+                    : 'ai',
                 'place_id' => (string) ($report->place_id ?? ''),
                 'nama_outlet' => (string) ($report->nama_outlet ?? ''),
                 'place_name' => (string) ($report->place_name ?? ''),
@@ -1971,6 +2032,275 @@ class GoogleReviewController extends Controller
                 'impact' => $impactOut,
             ],
         ]);
+    }
+
+    /**
+     * Materialize laporan MANUAL di request HTTP (tanpa queue/worker/Gemini).
+     * Item dibuat dengan severity awal dari rating; user melengkapi di UI detail.
+     */
+    private function materializeManualClassificationReport(int $reportId): int
+    {
+        $report = DB::table('google_review_ai_reports')->where('id', $reportId)->first();
+        if (! $report) {
+            throw new \RuntimeException('Laporan tidak ditemukan.');
+        }
+
+        $log = [[
+            't' => now()->format('Y-m-d H:i:s'),
+            'm' => 'Klasifikasi MANUAL langsung (tanpa worker/AI).',
+        ]];
+
+        $reviews = $this->collectReviewsForManualMaterialize($report);
+        $rawCount = count($reviews);
+        $log[] = [
+            't' => now()->format('Y-m-d H:i:s'),
+            'm' => "Review dimuat: {$rawCount} baris.",
+        ];
+
+        if ($report->source !== 'instagram_comments_db') {
+            $deduped = GoogleReviewDeduper::dedupe($reviews);
+            $reviews = $deduped['reviews'];
+            $removed = (int) ($deduped['removed'] ?? 0);
+            $log[] = [
+                't' => now()->format('Y-m-d H:i:s'),
+                'm' => $removed > 0
+                    ? "Deduplikasi: {$removed} duplikat diabaikan ({$rawCount} → ".count($reviews).' unik).'
+                    : 'Deduplikasi: tidak ada duplikat.',
+            ];
+        } else {
+            $removed = 0;
+        }
+
+        if (count($reviews) === 0) {
+            throw new \RuntimeException('Tidak ada review untuk diklasifikasi manual.');
+        }
+
+        $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
+        $hasSourceAccount = Schema::hasColumn('google_review_ai_items', 'source_account');
+        $hasSourcePostUrl = Schema::hasColumn('google_review_ai_items', 'source_post_url');
+        $hasSourcePostShortcode = Schema::hasColumn('google_review_ai_items', 'source_post_shortcode');
+        $hasFuImpact = Schema::hasColumn('google_review_ai_items', 'follow_up_target');
+
+        DB::table('google_review_ai_items')->where('report_id', $reportId)->delete();
+
+        $batch = [];
+        $now = now();
+        foreach (array_values($reviews) as $idx => $row) {
+            $row = is_array($row) ? $row : (array) $row;
+            $severity = $this->defaultSeverityFromRating($row['rating'] ?? null);
+            $text = trim((string) ($row['text'] ?? ''));
+            $summary = $text === '' ? '' : mb_substr($text, 0, 180);
+            $insert = [
+                'report_id' => $reportId,
+                'sort_order' => $idx,
+                'author' => mb_substr((string) ($row['author'] ?? ''), 0, 255),
+                'rating' => mb_substr((string) ($row['rating'] ?? ''), 0, 32),
+                'review_date' => mb_substr((string) ($row['date'] ?? ''), 0, 255),
+                'text' => $row['text'] ?? null,
+                'profile_photo' => mb_substr((string) ($row['profile_photo'] ?? ''), 0, 1024),
+                'severity' => $severity,
+                'topics' => json_encode([]),
+                'summary_id' => mb_substr($summary, 0, 500),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+            if ($hasFuImpact) {
+                $insert['follow_up_target'] = in_array($severity, ['minor', 'major', 'critical'], true) ? 'internal' : null;
+                $insert['impact'] = json_encode([]);
+            }
+            if ($hasSourceItemId) {
+                $insert['source_item_id'] = (int) ($row['source_item_id'] ?? $row['_source_item_id'] ?? 0);
+            }
+            if ($hasSourceAccount) {
+                $insert['source_account'] = mb_substr((string) ($row['_source_account'] ?? ''), 0, 64);
+            }
+            if ($hasSourcePostUrl) {
+                $insert['source_post_url'] = mb_substr((string) ($row['_source_post_url'] ?? ''), 0, 512);
+            }
+            if ($hasSourcePostShortcode) {
+                $insert['source_post_shortcode'] = mb_substr((string) ($row['_source_post_shortcode'] ?? ''), 0, 32);
+            }
+            $batch[] = $insert;
+            if (count($batch) >= 150) {
+                DB::table('google_review_ai_items')->insert($batch);
+                $batch = [];
+            }
+        }
+        if ($batch !== []) {
+            DB::table('google_review_ai_items')->insert($batch);
+        }
+
+        $finalCount = count($reviews);
+        $log[] = [
+            't' => now()->format('Y-m-d H:i:s'),
+            'm' => "Selesai (MANUAL). {$finalCount} review siap diisi severity/topik di detail.",
+        ];
+
+        $update = [
+            'status' => 'completed',
+            'review_count' => $finalCount,
+            'raw_review_count' => $rawCount,
+            'dedupe_removed_count' => $removed,
+            'error_message' => null,
+            'progress_phase' => 'manual_completed',
+            'progress_total' => max(1, $finalCount),
+            'progress_done' => $finalCount,
+            'progress_log' => json_encode($log, JSON_UNESCAPED_UNICODE),
+            'updated_at' => now(),
+        ];
+        // Jangan hapus source_payload manual_db agar blocked-ids tetap bekerja.
+        if ($report->source !== 'manual_db') {
+            $update['source_payload'] = null;
+        }
+
+        DB::table('google_review_ai_reports')->where('id', $reportId)->update($update);
+
+        return $finalCount;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectReviewsForManualMaterialize(object $report): array
+    {
+        if ($report->source === 'manual_db') {
+            $meta = [];
+            if (! empty($report->source_payload)) {
+                $decoded = json_decode((string) $report->source_payload, true);
+                $meta = is_array($decoded) ? $decoded : [];
+            }
+            $ids = array_values(array_filter(array_map('intval', (array) ($meta['manual_review_ids'] ?? []))));
+            if ($ids === []) {
+                throw new \RuntimeException('Manual review IDs kosong.');
+            }
+
+            return DB::table('google_review_manual_reviews')
+                ->whereIn('id', $ids)
+                ->where('is_active', 1)
+                ->orderBy('id')
+                ->get()
+                ->map(fn ($row) => [
+                    'source_item_id' => (int) ($row->id ?? 0),
+                    'author' => (string) ($row->author ?? ''),
+                    'rating' => (string) ($row->rating ?? ''),
+                    'date' => (string) ($row->review_date ?? ''),
+                    'text' => (string) ($row->text ?? ''),
+                    'profile_photo' => (string) ($row->profile_photo ?? ''),
+                ])
+                ->values()
+                ->all();
+        }
+
+        if ($report->source === 'apify_dataset') {
+            if (empty($report->dataset_id)) {
+                throw new \RuntimeException('dataset_id kosong.');
+            }
+            $meta = [];
+            if (! empty($report->source_payload)) {
+                $decoded = json_decode((string) $report->source_payload, true);
+                $meta = is_array($decoded) ? $decoded : [];
+            }
+            $dateFrom = isset($meta['date_from']) ? (string) $meta['date_from'] : null;
+            $dateTo = isset($meta['date_to']) ? (string) $meta['date_to'] : null;
+
+            return array_values($this->apifyService->getAllReviewsFromDataset(
+                (string) $report->dataset_id,
+                null,
+                $dateFrom,
+                $dateTo
+            ));
+        }
+
+        if ($report->source === 'instagram_comments_db') {
+            return $this->collectInstagramCommentsForManual($report);
+        }
+
+        // places_api / scraper_inline — payload = list review
+        if (empty($report->source_payload)) {
+            throw new \RuntimeException('Payload review kosong.');
+        }
+        $reviews = json_decode((string) $report->source_payload, true);
+        if (! is_array($reviews)) {
+            throw new \RuntimeException('Payload review tidak valid.');
+        }
+
+        return array_values($reviews);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectInstagramCommentsForManual(object $report): array
+    {
+        $meta = [];
+        if (! empty($report->source_payload)) {
+            $decoded = json_decode((string) $report->source_payload, true);
+            $meta = is_array($decoded) ? $decoded : [];
+        }
+        $dateFrom = isset($meta['date_from']) ? (string) $meta['date_from'] : null;
+        $dateTo = isset($meta['date_to']) ? (string) $meta['date_to'] : null;
+        $profileKeys = array_values(array_filter((array) ($meta['profile_keys'] ?? [])));
+
+        $q = DB::table('instagram_comments')
+            ->join('instagram_posts', 'instagram_posts.id', '=', 'instagram_comments.instagram_post_id')
+            ->select([
+                'instagram_comments.id as comment_id',
+                'instagram_comments.username',
+                'instagram_comments.text',
+                'instagram_comments.commented_at',
+                'instagram_posts.profile_key',
+                'instagram_posts.post_url',
+                'instagram_posts.short_code',
+            ])
+            ->whereRaw("TRIM(COALESCE(instagram_comments.text, '')) <> ''");
+
+        if ($profileKeys !== []) {
+            $q->whereIn('instagram_posts.profile_key', $profileKeys);
+        }
+        if ($dateFrom) {
+            $q->whereDate('instagram_comments.commented_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $q->whereDate('instagram_comments.commented_at', '<=', $dateTo);
+        }
+
+        return $q->orderBy('instagram_comments.id')->get()->map(function ($r) {
+            return [
+                'author' => (string) ($r->username ?? ''),
+                'rating' => '',
+                'date' => (string) ($r->commented_at ?? ''),
+                'text' => (string) ($r->text ?? ''),
+                'profile_photo' => '',
+                '_source_item_id' => (int) ($r->comment_id ?? 0),
+                '_source_account' => (string) ($r->profile_key ?? ''),
+                '_source_post_url' => (string) ($r->post_url ?? ''),
+                '_source_post_shortcode' => (string) ($r->short_code ?? ''),
+            ];
+        })->values()->all();
+    }
+
+    private function defaultSeverityFromRating(mixed $rating): string
+    {
+        $raw = trim((string) $rating);
+        if ($raw === '') {
+            return 'neutral';
+        }
+        if (preg_match('/(\d+(?:[.,]\d+)?)/', $raw, $m)) {
+            $n = (float) str_replace(',', '.', $m[1]);
+            if ($n >= 4) {
+                return 'positive';
+            }
+            if ($n >= 3) {
+                return 'neutral';
+            }
+            if ($n >= 2) {
+                return 'minor';
+            }
+
+            return 'major';
+        }
+
+        return 'neutral';
     }
 
     /**

@@ -31,7 +31,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
     {
         Log::info('ProcessGoogleReviewAiReportJob started', [
             'report_id' => $this->reportId,
-            'manual_only' => $this->manualOnly,
+            'manual_only_ctor' => $this->manualOnly,
             'queue' => $this->queue,
             'connection' => $this->connection,
             'attempt' => method_exists($this, 'attempts') ? $this->attempts() : null,
@@ -45,6 +45,16 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
             return;
         }
 
+        // Mode disimpan di DB agar tetap benar walau argumen job/queue worker stale.
+        $manualOnly = $this->resolveManualOnly($report);
+        $this->manualOnly = $manualOnly;
+
+        Log::info('ProcessGoogleReviewAiReportJob mode resolved', [
+            'report_id' => $this->reportId,
+            'manual_only' => $manualOnly,
+            'classification_mode' => $report->classification_mode ?? null,
+        ]);
+
         DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
             'status' => 'processing',
             'progress_phase' => 'starting',
@@ -52,7 +62,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
             'progress_done' => 0,
             'updated_at' => now(),
         ]);
-        $this->pushLog($this->manualOnly
+        $this->pushLog($manualOnly
             ? 'Job dimulai (klasifikasi MANUAL — tanpa AI).'
             : 'Job dimulai (klasifikasi AI).');
 
@@ -319,6 +329,32 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
         }
 
         return 'neutral';
+    }
+
+    private function resolveManualOnly(object $report): bool
+    {
+        if ($this->manualOnly) {
+            return true;
+        }
+
+        $mode = isset($report->classification_mode)
+            ? strtolower(trim((string) $report->classification_mode))
+            : '';
+        if ($mode === 'manual') {
+            return true;
+        }
+
+        if (! empty($report->source_payload)) {
+            $decoded = json_decode((string) $report->source_payload, true);
+            if (is_array($decoded) && ! array_is_list($decoded)) {
+                $payloadMode = strtolower(trim((string) ($decoded['classification_mode'] ?? '')));
+                if ($payloadMode === 'manual') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function pushLog(string $message): void

@@ -45,10 +45,25 @@ class ProcessGoogleReviewAiReportCommand extends Command
         }
 
         $this->info("Memproses laporan #{$id} ({$row->source})…");
+
+        $manualOnly = false;
+        if (isset($row->classification_mode) && strtolower((string) $row->classification_mode) === 'manual') {
+            $manualOnly = true;
+        } elseif (! empty($row->source_payload)) {
+            $decoded = json_decode((string) $row->source_payload, true);
+            if (is_array($decoded) && ! array_is_list($decoded)
+                && strtolower((string) ($decoded['classification_mode'] ?? '')) === 'manual') {
+                $manualOnly = true;
+            }
+        }
+
+        $this->line($manualOnly
+            ? 'Mode: MANUAL (tanpa Gemini).'
+            : 'Mode: AI (Gemini).');
         $this->line('(Ini sama dengan job antrian; bisa beberapa menit untuk ratusan review.)');
 
         try {
-            $job = new ProcessGoogleReviewAiReportJob($id);
+            $job = new ProcessGoogleReviewAiReportJob($id, $manualOnly);
             $job->handle($ai, $apify);
         } catch (\Throwable $e) {
             $this->error('Gagal: '.$e->getMessage());
