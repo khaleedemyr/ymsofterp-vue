@@ -29,29 +29,31 @@
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Jam mulai</label>
-              <input
-                v-model="form.start_time"
-                type="text"
-                inputmode="numeric"
-                placeholder="HH:mm"
-                maxlength="5"
-                class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
-                @blur="normalizeTime('start_time')"
-              />
-              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam, contoh 14:30</p>
+              <div class="grid grid-cols-2 gap-2">
+                <select v-model="startHour" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500">
+                  <option value="">Jam</option>
+                  <option v-for="h in hourOptions" :key="'sh-'+h" :value="h">{{ h }}</option>
+                </select>
+                <select v-model="startMinute" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500">
+                  <option value="">Menit</option>
+                  <option v-for="m in minuteOptions" :key="'sm-'+m" :value="m">{{ m }}</option>
+                </select>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Jam selesai</label>
-              <input
-                v-model="form.end_time"
-                type="text"
-                inputmode="numeric"
-                placeholder="HH:mm"
-                maxlength="5"
-                class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
-                @blur="normalizeTime('end_time')"
-              />
-              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam, contoh 16:45</p>
+              <div class="grid grid-cols-2 gap-2">
+                <select v-model="endHour" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500">
+                  <option value="">Jam</option>
+                  <option v-for="h in hourOptions" :key="'eh-'+h" :value="h">{{ h }}</option>
+                </select>
+                <select v-model="endMinute" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500">
+                  <option value="">Menit</option>
+                  <option v-for="m in minuteOptions" :key="'em-'+m" :value="m">{{ m }}</option>
+                </select>
+              </div>
+              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Outlet *</label>
@@ -403,29 +405,21 @@ function toDatetimeLocal(value) {
   return String(value).replace(' ', 'T').slice(0, 16)
 }
 
+function splitHm(value) {
+  const s = toTimeInput(value)
+  if (!/^\d{2}:\d{2}$/.test(s)) return { hour: '', minute: '' }
+  const [hour, minute] = s.split(':')
+  return { hour, minute }
+}
+
+const hourOptions = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const minuteOptions = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+
 function splitDateTimeLocal(value) {
   const s = toDatetimeLocal(value)
   if (!s) return { date: '', time: '' }
   const [date, time] = s.split('T')
   return { date: date || '', time: (time || '').slice(0, 5) }
-}
-
-function normalizeTime(field) {
-  let v = String(form[field] || '').trim().replace('.', ':')
-  if (/^\d{3,4}$/.test(v)) {
-    v = v.padStart(4, '0')
-    v = `${v.slice(0, 2)}:${v.slice(2)}`
-  }
-  if (/^\d{1,2}:\d{1,2}$/.test(v)) {
-    const [h, m] = v.split(':')
-    const hh = Math.min(23, Math.max(0, parseInt(h, 10) || 0))
-    const mm = Math.min(59, Math.max(0, parseInt(m, 10) || 0))
-    form[field] = `${pad2(hh)}:${pad2(mm)}`
-    return
-  }
-  if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
-    form[field] = ''
-  }
 }
 
 function normalizeWaTime() {
@@ -616,6 +610,28 @@ const form = useForm({
   remove_evidence_ids: [],
   submit: 0,
 })
+
+const initialStartHm = splitHm(form.start_time)
+const initialEndHm = splitHm(form.end_time)
+const startHour = ref(initialStartHm.hour)
+const startMinute = ref(initialStartHm.minute)
+const endHour = ref(initialEndHm.hour)
+const endMinute = ref(initialEndHm.minute)
+
+function syncStartTime() {
+  form.start_time = startHour.value !== '' && startMinute.value !== ''
+    ? `${startHour.value}:${startMinute.value}`
+    : ''
+}
+
+function syncEndTime() {
+  form.end_time = endHour.value !== '' && endMinute.value !== ''
+    ? `${endHour.value}:${endMinute.value}`
+    : ''
+}
+
+watch([startHour, startMinute], syncStartTime)
+watch([endHour, endMinute], syncEndTime)
 
 const initialWaDt = splitDateTimeLocal(props.record?.wa_reported_at)
 const waReportDate = ref(initialWaDt.date)
@@ -884,8 +900,8 @@ function removeItem(index) {
 }
 
 function submit(doSubmit) {
-  normalizeTime('start_time')
-  normalizeTime('end_time')
+  syncStartTime()
+  syncEndTime()
   normalizeWaTime()
   syncWaReportedAt()
 
