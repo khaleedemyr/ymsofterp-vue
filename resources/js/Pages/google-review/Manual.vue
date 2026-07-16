@@ -149,6 +149,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import axios from 'axios'
+import Swal from 'sweetalert2'
 import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -212,10 +213,17 @@ async function submitCreate() {
       profile_photo: '',
       is_active: true,
     }
+    await Swal.fire({
+      icon: 'success',
+      title: 'Tersimpan',
+      text: 'Manual review berhasil ditambahkan.',
+      timer: 1600,
+      showConfirmButton: false,
+    })
     await router.reload({ preserveScroll: true })
   } catch (error) {
     const message = error?.response?.data?.message || 'Gagal menyimpan manual review'
-    window.alert(message)
+    await Swal.fire({ icon: 'error', title: 'Gagal', text: message })
   } finally {
     submitting.value = false
   }
@@ -271,22 +279,34 @@ async function startManualAi() {
 async function startManualClassification(mode = 'ai') {
   selectedIds.value = selectedIds.value.filter((id) => !blockedSet.value.has(Number(id)))
   if (selectedIds.value.length === 0) {
-    window.alert('Semua review terpilih sudah pernah/sedang diproses.')
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Tidak ada review',
+      text: 'Semua review terpilih sudah pernah/sedang diproses.',
+    })
     return
   }
   const n = selectedIds.value.length
-  if (mode === 'ai') {
-    const ok = window.confirm(
-      `Jalankan KLASIFIKASI AI (Gemini) untuk ${n} review?\n\nJika ingin isi severity sendiri tanpa AI, batalkan lalu klik "Klasifikasi Manual".`
-    )
-    if (!ok) return
-  } else {
-    const ok = window.confirm(
-      `Jalankan KLASIFIKASI MANUAL untuk ${n} review?\n\nReview akan disimpan tanpa Gemini. Setelah selesai, lengkapi severity/topik di detail laporan.`
-    )
-    if (!ok) return
-  }
-  if (mode === 'manual') manualSubmitting.value = true
+  const isManual = mode === 'manual'
+  const confirm = await Swal.fire({
+    icon: isManual ? 'question' : 'warning',
+    title: isManual ? 'Klasifikasi Manual?' : 'Klasifikasi AI?',
+    html: isManual
+      ? `<p style="margin:0 0 8px">Jalankan klasifikasi <strong>manual</strong> untuk <strong>${n}</strong> review.</p>
+         <p style="margin:0;color:#6b7280;font-size:13px">Tanpa Gemini/worker. Setelah selesai, lengkapi severity &amp; topik di detail laporan.</p>`
+      : `<p style="margin:0 0 8px">Jalankan klasifikasi <strong>AI (Gemini)</strong> untuk <strong>${n}</strong> review.</p>
+         <p style="margin:0;color:#6b7280;font-size:13px">Jika ingin isi sendiri tanpa AI, batalkan lalu klik tombol Klasifikasi Manual.</p>`,
+    showCancelButton: true,
+    focusCancel: !isManual,
+    confirmButtonText: isManual ? 'Ya, klasifikasi manual' : 'Ya, klasifikasi AI',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: isManual ? '#0d9488' : '#7c3aed',
+    cancelButtonColor: '#94a3b8',
+    reverseButtons: true,
+  })
+  if (!confirm.isConfirmed) return
+
+  if (isManual) manualSubmitting.value = true
   else aiSubmitting.value = true
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
   try {
@@ -311,13 +331,27 @@ async function startManualClassification(mode = 'ai') {
     if (data.classification_mode && data.classification_mode !== mode) {
       throw new Error(`Mode laporan tidak sesuai (server: ${data.classification_mode}, diminta: ${mode})`)
     }
-    if (mode === 'manual' && data.status && data.status !== 'completed') {
-      window.alert(data.message || 'Laporan manual dibuat, tapi status belum completed. Cek detail.')
+    if (isManual && data.status && data.status !== 'completed') {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Perhatian',
+        text: data.message || 'Laporan manual dibuat, tapi status belum completed. Cek detail.',
+      })
+    } else {
+      await Swal.fire({
+        icon: 'success',
+        title: isManual ? 'Laporan manual siap' : 'Laporan AI dibuat',
+        text: data.message || (isManual
+          ? 'Silakan lengkapi severity/topik di detail.'
+          : 'Menunggu proses klasifikasi AI.'),
+        timer: 1800,
+        showConfirmButton: false,
+      })
     }
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    const message = e?.message || (mode === 'manual' ? 'Gagal membuat laporan manual' : 'Gagal membuat laporan AI')
-    window.alert(message)
+    const message = e?.message || (isManual ? 'Gagal membuat laporan manual' : 'Gagal membuat laporan AI')
+    await Swal.fire({ icon: 'error', title: 'Gagal', text: message })
     await router.reload({ preserveScroll: true })
   } finally {
     aiSubmitting.value = false
@@ -347,25 +381,49 @@ async function submitEdit() {
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     })
     editOpen.value = false
+    await Swal.fire({
+      icon: 'success',
+      title: 'Diperbarui',
+      text: 'Manual review berhasil diperbarui.',
+      timer: 1400,
+      showConfirmButton: false,
+    })
     await router.reload({ preserveScroll: true })
   } catch (error) {
     const message = error?.response?.data?.message || 'Gagal update manual review'
-    window.alert(message)
+    await Swal.fire({ icon: 'error', title: 'Gagal', text: message })
   } finally {
     editSubmitting.value = false
   }
 }
 
 async function removeReview(id) {
-  if (!window.confirm('Hapus manual review ini?')) return
+  const confirm = await Swal.fire({
+    icon: 'warning',
+    title: 'Hapus review?',
+    text: 'Manual review ini akan dihapus permanen.',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#94a3b8',
+    reverseButtons: true,
+  })
+  if (!confirm.isConfirmed) return
   try {
     await axios.delete(`/google-review/manual/${id}`, {
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     })
+    await Swal.fire({
+      icon: 'success',
+      title: 'Dihapus',
+      timer: 1200,
+      showConfirmButton: false,
+    })
     await router.reload({ preserveScroll: true })
   } catch (error) {
     const message = error?.response?.data?.message || 'Gagal menghapus manual review'
-    window.alert(message)
+    await Swal.fire({ icon: 'error', title: 'Gagal', text: message })
   }
 }
 </script>

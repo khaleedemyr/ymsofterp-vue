@@ -556,6 +556,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import Swal from 'sweetalert2'
 import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -964,15 +965,34 @@ async function startFullClassification(mode = 'ai') {
     return
   }
   if (mode === 'ai') {
-    const ok = window.confirm(
-      'Jalankan KLASIFIKASI AI (Gemini)?\n\nJika ingin isi severity sendiri tanpa AI, batalkan lalu klik "Klasifikasi Manual".'
-    )
-    if (!ok) return
+    const confirm = await Swal.fire({
+      icon: 'warning',
+      title: 'Klasifikasi AI?',
+      html: `<p style="margin:0 0 8px">Jalankan klasifikasi <strong>AI (Gemini)</strong>?</p>
+             <p style="margin:0;color:#6b7280;font-size:13px">Jika ingin isi severity sendiri tanpa AI, batalkan lalu klik Klasifikasi Manual.</p>`,
+      showCancelButton: true,
+      focusCancel: true,
+      confirmButtonText: 'Ya, klasifikasi AI',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#7c3aed',
+      cancelButtonColor: '#94a3b8',
+      reverseButtons: true,
+    })
+    if (!confirm.isConfirmed) return
   } else {
-    const ok = window.confirm(
-      'Jalankan KLASIFIKASI MANUAL?\n\nReview disimpan tanpa Gemini. Lengkapi severity/topik di detail laporan setelah selesai.'
-    )
-    if (!ok) return
+    const confirm = await Swal.fire({
+      icon: 'question',
+      title: 'Klasifikasi Manual?',
+      html: `<p style="margin:0 0 8px">Jalankan klasifikasi <strong>manual</strong>?</p>
+             <p style="margin:0;color:#6b7280;font-size:13px">Tanpa Gemini/worker. Lengkapi severity/topik di detail setelah selesai.</p>`,
+      showCancelButton: true,
+      confirmButtonText: 'Ya, klasifikasi manual',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#0d9488',
+      cancelButtonColor: '#94a3b8',
+      reverseButtons: true,
+    })
+    if (!confirm.isConfirmed) return
   }
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
   let body
