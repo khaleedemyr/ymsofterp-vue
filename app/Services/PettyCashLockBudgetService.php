@@ -22,6 +22,8 @@ class PettyCashLockBudgetService
     private const OUTLET_PETTY_CASH_RATIO_PERCENT = [
         11 => 1.5,
         28 => 3.5,
+        12 => 3.0,
+        29 => 3.0,
     ];
 
     public function resolvePettyCashRatioPercent(int $outletId): float
