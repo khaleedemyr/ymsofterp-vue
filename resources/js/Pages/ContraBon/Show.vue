@@ -255,10 +255,10 @@ const isSuperadmin = computed(() =>
   props.user?.id_role === '5af56935b011a' && props.user?.status === 'A'
 )
 
-// Check if user can edit (Finance Manager or Superadmin)
+// Check if user can edit (Finance Manager, Assistant Manager Finance, or Superadmin)
 const canEdit = computed(() => {
-  const isFinanceManager = props.user?.id_jabatan == 160 && props.user?.status == 'A';
-  return isFinanceManager || isSuperadmin.value;
+  const canEditByJabatan = [160, 317].includes(Number(props.user?.id_jabatan)) && props.user?.status == 'A';
+  return canEditByJabatan || isSuperadmin.value;
 })
 
 const canApproveFinanceManager = computed(() =>

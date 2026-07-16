@@ -3774,12 +3774,12 @@ class ContraBonController extends Controller
     {
         $user = Auth::user();
         
-        // Validasi: Hanya Finance Manager (id_jabatan == 160) dan Superadmin yang bisa edit
-        $isFinanceManager = $user->id_jabatan == 160 && $user->status == 'A';
+        // Validasi: Finance Manager (160), Assistant Manager Finance (317), atau Superadmin
+        $canEditByJabatan = in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A';
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
         
-        if (!$isFinanceManager && !$isSuperadmin) {
-            return back()->withErrors(['error' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.']);
+        if (!$canEditByJabatan && !$isSuperadmin) {
+            return back()->withErrors(['error' => 'Hanya Finance Manager, Assistant Manager Finance, dan Superadmin yang dapat mengedit Contra Bon.']);
         }
         
         $contraBon = ContraBon::with([
@@ -4021,18 +4021,18 @@ class ContraBonController extends Controller
     {
         $user = Auth::user();
         
-        // Validasi: Hanya Finance Manager (id_jabatan == 160) dan Superadmin yang bisa edit
-        $isFinanceManager = $user->id_jabatan == 160 && $user->status == 'A';
+        // Validasi: Finance Manager (160), Assistant Manager Finance (317), atau Superadmin
+        $canEditByJabatan = in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A';
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
         
-        if (!$isFinanceManager && !$isSuperadmin) {
+        if (!$canEditByJabatan && !$isSuperadmin) {
             if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.'
+                    'message' => 'Hanya Finance Manager, Assistant Manager Finance, dan Superadmin yang dapat mengedit Contra Bon.'
                 ], 403);
             }
-            return back()->withErrors(['error' => 'Hanya Finance Manager dan Superadmin yang dapat mengedit Contra Bon.']);
+            return back()->withErrors(['error' => 'Hanya Finance Manager, Assistant Manager Finance, dan Superadmin yang dapat mengedit Contra Bon.']);
         }
         
         $contraBon = ContraBon::findOrFail($id);

@@ -227,13 +227,13 @@ const props = defineProps({
 const page = usePage();
 const { showLoading, hideLoading } = useLoading();
 
-// Check if user can edit (Finance Manager or Superadmin)
+// Check if user can edit (Finance Manager, Assistant Manager Finance, or Superadmin)
 const canEdit = computed(() => {
   const user = page.props.auth?.user;
   if (!user) return false;
-  const isFinanceManager = user.id_jabatan == 160 && user.status == 'A';
+  const canEditByJabatan = [160, 317].includes(Number(user.id_jabatan)) && user.status == 'A';
   const isSuperadmin = user.id_role === '5af56935b011a' && user.status === 'A';
-  return isFinanceManager || isSuperadmin;
+  return canEditByJabatan || isSuperadmin;
 });
 
 // Get today's date for default filter
