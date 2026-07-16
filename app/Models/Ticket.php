@@ -80,6 +80,11 @@ class Ticket extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function itWorkReports()
+    {
+        return $this->hasMany(ItWorkReport::class, 'ticket_id');
+    }
+
     public function assignee()
     {
         return $this->belongsTo(User::class, 'assigned_to');

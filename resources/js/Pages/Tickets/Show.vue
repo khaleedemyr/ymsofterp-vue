@@ -81,6 +81,49 @@
             </div>
           </div>
 
+          <!-- IT Work Reports -->
+          <div class="bg-white rounded-2xl shadow-lg p-6">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold text-gray-800">IT Work Report</h3>
+              <a
+                :href="`/it-work-reports/create?ticket_id=${ticket.id}`"
+                class="inline-flex items-center px-3 py-1.5 rounded-lg bg-cyan-100 text-cyan-700 text-xs font-semibold hover:bg-cyan-200"
+              >
+                <i class="fa-solid fa-plus mr-1"></i> Buat Report
+              </a>
+            </div>
+
+            <div v-if="ticket.it_work_reports && ticket.it_work_reports.length" class="space-y-3">
+              <a
+                v-for="wr in ticket.it_work_reports"
+                :key="`iwr-${wr.id}`"
+                :href="`/it-work-reports/${wr.id}`"
+                class="block border border-gray-200 rounded-lg p-3 bg-gray-50 hover:bg-cyan-50 transition"
+              >
+                <div class="flex flex-wrap items-center gap-2 justify-between">
+                  <span class="text-sm font-semibold text-cyan-700">{{ wr.number }}</span>
+                  <span
+                    :class="wr.status === 'submitted'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-amber-100 text-amber-700'"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  >
+                    {{ wr.status === 'submitted' ? 'Submitted' : 'Draft' }}
+                  </span>
+                </div>
+                <div class="mt-1 text-xs text-gray-600">
+                  {{ wr.work_date ? String(wr.work_date).slice(0, 10) : '-' }}
+                  <span v-if="wr.outlet_name"> · {{ wr.outlet_name }}</span>
+                </div>
+                <div v-if="wr.title" class="mt-1 text-xs text-gray-500">{{ wr.title }}</div>
+              </a>
+            </div>
+
+            <div v-else class="text-sm text-gray-500">
+              Belum ada IT Work Report yang terhubung ke ticket ini.
+            </div>
+          </div>
+
           <!-- Comments Section -->
           <div class="bg-white rounded-2xl shadow-lg p-6">
             <!-- Comment Toggle Button -->

@@ -3447,6 +3447,12 @@ class TicketController extends Controller
             ];
         })->values();
 
+        $ticketData['it_work_reports'] = \App\Models\ItWorkReport::query()
+            ->where('ticket_id', $ticket->id)
+            ->orderByDesc('work_date')
+            ->orderByDesc('id')
+            ->get(['id', 'number', 'work_date', 'status', 'source_type', 'outlet_name', 'title']);
+
         if ($user) {
             $ticketData['can_update_status'] = self::userCanUpdateTicketStatus($user, $ticket);
             $ticketData['can_set_work_executor_type'] = self::userCanSetWorkExecutorType($user, $ticket);

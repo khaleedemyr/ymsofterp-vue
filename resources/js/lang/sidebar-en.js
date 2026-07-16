@@ -100,6 +100,7 @@ export default {
     "master_daily_report": "Master Daily Report",
     "daily_report": "Daily Report",
     "ticketing_system": "Ticketing System",
+    "it_work_report": "IT Work Report",
     "pr_tracking_report": "PR Tracking Report",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",

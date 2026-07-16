@@ -1091,6 +1091,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('fb-product-calibration.conduct.store');
     Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
 
+    Route::get('/it-work-reports/export', [\App\Http\Controllers\ItWorkReportController::class, 'export'])->name('it-work-reports.export');
+    Route::get('/it-work-reports/search-tickets', [\App\Http\Controllers\ItWorkReportController::class, 'searchTickets'])->name('it-work-reports.search-tickets');
+    Route::resource('it-work-reports', \App\Http\Controllers\ItWorkReportController::class);
+
     Route::get('/sop-development-completion', [SopDevelopmentCompletionController::class, 'indexPage'])->name('sop-development-completion.index');
     Route::get('/sop-development-completion/{sopDevelopmentCompletion}/file', [SopDevelopmentCompletionController::class, 'serveFile'])->name('sop-development-completion.file');
 
