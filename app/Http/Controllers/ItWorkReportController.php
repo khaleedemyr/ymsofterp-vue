@@ -797,4 +797,242 @@ class ItWorkReportController extends Controller
 
         return false;
     }
+
+    // ─── Approval App API ────────────────────────────────────────────
+
+    public function apiIndex(Request $request)
+    {
+        $query = ItWorkReport::query()
+            ->with([
+                'executor:id,nama_lengkap',
+                'ticket:id,ticket_number,title',
+            ])
+            ->withCount(['items', 'evidences'])
+            ->orderByDesc('work_date')
+            ->orderByDesc('id');
+
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', (int) $request->outlet_id);
+        }
+        if ($request->filled('source_type') && $request->source_type !== 'all') {
+            $query->where('source_type', $request->string('source_type')->toString());
+        }
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->string('status')->toString());
+        }
+        if ($request->filled('date_from')) {
+            $query->whereDate('work_date', '>=', $request->string('date_from')->toString());
+        }
+        if ($request->filled('date_to')) {
+            $query->whereDate('work_date', '<=', $request->string('date_to')->toString());
+        }
+        if ($request->filled('scope')) {
+            $scope = $request->string('scope')->toString();
+            $query->whereHas('items', fn ($q) => $q->whereJsonContains('scopes', $scope));
+        }
+        if ($search = trim((string) $request->get('search', ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('outlet_name', 'like', "%{$search}%")
+                    ->orWhere('title', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        if ($perPage < 1 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $query->paginate($perPage),
+            'filters' => $request->only(['search', 'outlet_id', 'source_type', 'status', 'date_from', 'date_to', 'scope']),
+            'scopeOptions' => ItWorkReport::SCOPES,
+            'sourceOptions' => $this->sourceOptions(),
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $this->formOptions(),
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $report = ItWorkReport::with([
+            'items.evidences',
+            'evidences',
+            'executor:id,nama_lengkap',
+            'creator:id,nama_lengkap',
+            'ticket:id,ticket_number,title',
+        ])->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $report,
+            'deviceTypes' => ItWorkReport::DEVICE_TYPES,
+            'scopeOptions' => ItWorkReport::SCOPES,
+            'resultOptions' => ItWorkReport::RESULTS,
+            'sourceOptions' => $this->sourceOptions(),
+            'canEdit' => $report->isDraft() && $this->canManage($report),
+            'canDelete' => $report->isDraft() && $this->canManage($report),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $validated = $this->validatePayload($request, submitting: $request->boolean('submit'));
+            $report = null;
+            DB::beginTransaction();
+            try {
+                $outlet = Outlet::findOrFail($validated['outlet_id']);
+                $status = $request->boolean('submit')
+                    ? ItWorkReport::STATUS_SUBMITTED
+                    : ItWorkReport::STATUS_DRAFT;
+
+                $report = ItWorkReport::create([
+                    'number' => $this->generateNumber(),
+                    'work_date' => $validated['work_date'],
+                    'start_time' => $validated['start_time'] ?? null,
+                    'end_time' => $validated['end_time'] ?? null,
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'executor_id' => $validated['executor_id'] ?? Auth::id(),
+                    'source_type' => $validated['source_type'],
+                    'ticket_id' => $validated['ticket_id'] ?? null,
+                    'wa_contact_name' => $validated['wa_contact_name'] ?? null,
+                    'wa_phone' => $validated['wa_phone'] ?? null,
+                    'wa_reported_at' => $validated['wa_reported_at'] ?? null,
+                    'wa_summary' => $validated['wa_summary'] ?? null,
+                    'title' => $validated['title'] ?? null,
+                    'notes' => $validated['notes'] ?? null,
+                    'status' => $status,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
+                    'submitted_at' => $status === ItWorkReport::STATUS_SUBMITTED ? now() : null,
+                ]);
+
+                $this->syncItems($report, $validated['items'] ?? []);
+                $this->storeWaEvidences($report, $request);
+                $this->storeItemEvidences($report, $request);
+                $this->assertSubmitRequirements($report->fresh(['items.evidences', 'evidences']), $status);
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                if ($report?->id) {
+                    Storage::disk('public')->deleteDirectory('it_work_reports/'.$report->id);
+                }
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $report->status === ItWorkReport::STATUS_SUBMITTED
+                    ? 'IT Work Report berhasil disubmit.'
+                    : 'IT Work Report disimpan sebagai draft.',
+                'data' => $report->fresh(['items.evidences', 'evidences', 'executor', 'ticket']),
+            ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $itWorkReport = ItWorkReport::findOrFail($id);
+        if (! ($itWorkReport->isDraft() && $this->canManage($itWorkReport))) {
+            return response()->json(['success' => false, 'message' => 'Tidak bisa mengedit report ini.'], 403);
+        }
+
+        try {
+            $validated = $this->validatePayload($request, submitting: $request->boolean('submit'));
+            DB::beginTransaction();
+            try {
+                $outlet = Outlet::findOrFail($validated['outlet_id']);
+                $status = $request->boolean('submit')
+                    ? ItWorkReport::STATUS_SUBMITTED
+                    : ItWorkReport::STATUS_DRAFT;
+
+                $itWorkReport->update([
+                    'work_date' => $validated['work_date'],
+                    'start_time' => $validated['start_time'] ?? null,
+                    'end_time' => $validated['end_time'] ?? null,
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'executor_id' => $validated['executor_id'] ?? $itWorkReport->executor_id,
+                    'source_type' => $validated['source_type'],
+                    'ticket_id' => $validated['ticket_id'] ?? null,
+                    'wa_contact_name' => $validated['wa_contact_name'] ?? null,
+                    'wa_phone' => $validated['wa_phone'] ?? null,
+                    'wa_reported_at' => $validated['wa_reported_at'] ?? null,
+                    'wa_summary' => $validated['wa_summary'] ?? null,
+                    'title' => $validated['title'] ?? null,
+                    'notes' => $validated['notes'] ?? null,
+                    'status' => $status,
+                    'updated_by' => Auth::id(),
+                    'submitted_at' => $status === ItWorkReport::STATUS_SUBMITTED
+                        ? ($itWorkReport->submitted_at ?? now())
+                        : null,
+                ]);
+
+                $this->syncItems($itWorkReport, $validated['items'] ?? []);
+                $this->deleteEvidencesByIds($itWorkReport, $request->input('remove_evidence_ids', []));
+                $this->storeWaEvidences($itWorkReport, $request);
+                $this->storeItemEvidences($itWorkReport, $request);
+                $this->assertSubmitRequirements($itWorkReport->fresh(['items.evidences', 'evidences']), $status);
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $status === ItWorkReport::STATUS_SUBMITTED
+                    ? 'IT Work Report berhasil disubmit.'
+                    : 'IT Work Report berhasil diperbarui.',
+                'data' => $itWorkReport->fresh(['items.evidences', 'evidences', 'executor', 'ticket']),
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $itWorkReport = ItWorkReport::findOrFail($id);
+        if (! ($itWorkReport->isDraft() && $this->canManage($itWorkReport))) {
+            return response()->json(['success' => false, 'message' => 'Tidak bisa menghapus report ini.'], 403);
+        }
+
+        Storage::disk('public')->deleteDirectory('it_work_reports/'.$itWorkReport->id);
+        $itWorkReport->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'IT Work Report dihapus.',
+        ]);
+    }
 }

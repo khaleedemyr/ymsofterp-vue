@@ -549,6 +549,16 @@ Route::prefix('approval-app')->group(function () {
         Route::put('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'update'])->where('id', '[0-9]+');
         Route::delete('/daily-report/comments/{id}', [\App\Http\Controllers\DailyReportCommentController::class, 'destroy'])->where('id', '[0-9]+');
 
+        // IT Work Report (Approval App — selaras web /it-work-reports)
+        Route::get('/it-work-reports/create-data', [\App\Http\Controllers\ItWorkReportController::class, 'apiCreateData']);
+        Route::get('/it-work-reports/search-tickets', [\App\Http\Controllers\ItWorkReportController::class, 'searchTickets']);
+        Route::get('/it-work-reports/reverse-geocode', [\App\Http\Controllers\ItWorkReportController::class, 'reverseGeocode']);
+        Route::get('/it-work-reports', [\App\Http\Controllers\ItWorkReportController::class, 'apiIndex']);
+        Route::post('/it-work-reports', [\App\Http\Controllers\ItWorkReportController::class, 'apiStore']);
+        Route::get('/it-work-reports/{id}', [\App\Http\Controllers\ItWorkReportController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/it-work-reports/{id}', [\App\Http\Controllers\ItWorkReportController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/it-work-reports/{id}', [\App\Http\Controllers\ItWorkReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // QA2 Audits (Approval App — selaras web /qa2-audits)
         Route::get('/qa2-audits/create-data', [\App\Http\Controllers\Qa2AuditController::class, 'apiCreateData']);
         Route::get('/qa2-audits/report-summary', [\App\Http\Controllers\Qa2AuditController::class, 'apiReportSummary']);
