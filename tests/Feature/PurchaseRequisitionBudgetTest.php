@@ -101,6 +101,59 @@ class PurchaseRequisitionBudgetTest extends TestCase
     }
 
     /**
+     * Test that PR Total excludes DRAFT status (not yet submitted)
+     */
+    public function test_pr_total_excludes_draft_status()
+    {
+        $dateFrom = date('Y-m-01');
+        $dateTo = date('Y-m-t');
+
+        $approvedPR = PurchaseRequisition::factory()->create([
+            'category_id' => $this->category->id,
+            'status' => 'APPROVED',
+            'is_held' => false,
+            'created_at' => now(),
+        ]);
+
+        PurchaseRequisitionItem::factory()->create([
+            'purchase_requisition_id' => $approvedPR->id,
+            'category_id' => $this->category->id,
+            'qty' => 1,
+            'unit_price' => 1000000,
+            'subtotal' => 1000000,
+            'created_at' => now(),
+        ]);
+
+        $draftPR = PurchaseRequisition::factory()->create([
+            'category_id' => $this->category->id,
+            'status' => 'DRAFT',
+            'is_held' => false,
+            'created_at' => now(),
+        ]);
+
+        PurchaseRequisitionItem::factory()->create([
+            'purchase_requisition_id' => $draftPR->id,
+            'category_id' => $this->category->id,
+            'qty' => 1,
+            'unit_price' => 5000000,
+            'subtotal' => 5000000,
+            'created_at' => now(),
+        ]);
+
+        $budgetInfo = $this->budgetService->getBudgetInfo(
+            $this->category->id,
+            null,
+            $dateFrom,
+            $dateTo,
+            0
+        );
+
+        $this->assertTrue($budgetInfo['success']);
+        $this->assertEquals(1000000, $budgetInfo['breakdown']['pr_total'], 'PR Total should exclude DRAFT status');
+        $this->assertEquals(1000000, $budgetInfo['category_used_amount'], 'Used amount should exclude DRAFT status');
+    }
+
+    /**
      * Test that PR Total excludes deleted PRs
      */
     public function test_pr_total_excludes_deleted_prs()

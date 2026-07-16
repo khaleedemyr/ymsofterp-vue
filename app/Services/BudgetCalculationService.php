@@ -91,9 +91,7 @@ class BudgetCalculationService
         // SIMPLIFIED: Tidak menggunakan non_food_payments, langsung dari PO items yang approved
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, null, $year, $month, $dateFrom, $dateTo);
 
-        // Get total PR items (all PR items for this category - termasuk yang sudah jadi PO)
-        // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
-        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        // Get total PR items that consume budget (active lifecycle only — exclude DRAFT/REJECTED)
         $prTotalAmount = $this->calculatePrTotalAmount($categoryId, null, $year, $month, $dateFrom, $dateTo, $excludePrId);
 
         // Get unpaid amounts (SIMPLIFIED: hanya PR unpaid)
@@ -192,9 +190,7 @@ class BudgetCalculationService
         // SIMPLIFIED: Tidak menggunakan non_food_payments, langsung dari PO items yang approved
         $paidAmountFromPo = $this->calculatePaidAmountFromPo($categoryId, $outletId, $year, $month, $dateFrom, $dateTo);
 
-        // Get total PR items (all PR items for this category/outlet - termasuk yang sudah jadi PO)
-        // PENTING: PR Total = semua PR items yang sudah dibuat, TIDAK PEDULI STATUS
-        // Exclude PR yang sedang di-approve untuk menghindari double counting
+        // Get total PR items that consume budget (active lifecycle only — exclude DRAFT/REJECTED)
         $prTotalAmount = $this->calculatePrTotalAmount($categoryId, $outletId, $year, $month, $dateFrom, $dateTo, $excludePrId);
 
         // Get unpaid amounts for this outlet (SIMPLIFIED: hanya PR unpaid)
@@ -504,16 +500,13 @@ class BudgetCalculationService
      */
     private function calculatePrTotalAmount(int $categoryId, ?int $outletId, int $year, int $month, string $dateFrom, string $dateTo, ?int $excludePrId = null): float
     {
-        // PR Total = semua PR items yang sudah dibuat, EXCLUDE REJECTED
-        // Join ke purchase_requisitions untuk filter status dan is_held
-        // Note: Hard deleted PRs are automatically excluded because PR items will also be deleted
+        // PR Total = only statuses that consume budget (same idea as Budget Management).
+        // Exclude DRAFT (not submitted) and REJECTED (budget released). Include PAID (already spent).
         $query = DB::table('purchase_requisition_items as pri')
             ->join('purchase_requisitions as pr', 'pri.purchase_requisition_id', '=', 'pr.id')
             ->where('pri.category_id', $categoryId)
             ->whereBetween(DB::raw('DATE(pri.created_at)'), [$dateFrom, $dateTo])
-            // Exclude REJECTED status
-            ->where('pr.status', '!=', 'REJECTED')
-            // Exclude held PRs
+            ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED', 'PAID'])
             ->where('pr.is_held', false);
 
         // Exclude PR yang sedang di-approve untuk menghindari double counting

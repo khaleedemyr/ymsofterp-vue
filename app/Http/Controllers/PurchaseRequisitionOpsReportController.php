@@ -381,6 +381,9 @@ class PurchaseRequisitionOpsReportController extends Controller
 
         if ($filters['status'] !== 'all') {
             $query->where('pr.status', $filters['status']);
+        } else {
+            // Budget usage for "all" should not include DRAFT / REJECTED
+            $query->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']);
         }
 
         if ($filters['outlet_id']) {
@@ -473,6 +476,8 @@ class PurchaseRequisitionOpsReportController extends Controller
 
         if ($filters['status'] !== 'all') {
             $query->where('pr.status', $filters['status']);
+        } else {
+            $query->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED', 'PAID']);
         }
 
         if ($filters['category_id']) {
