@@ -29,11 +29,29 @@
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Jam mulai</label>
-              <input v-model="form.start_time" type="time" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+              <input
+                v-model="form.start_time"
+                type="text"
+                inputmode="numeric"
+                placeholder="HH:mm"
+                maxlength="5"
+                class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                @blur="normalizeTime('start_time')"
+              />
+              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam, contoh 14:30</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Jam selesai</label>
-              <input v-model="form.end_time" type="time" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+              <input
+                v-model="form.end_time"
+                type="text"
+                inputmode="numeric"
+                placeholder="HH:mm"
+                maxlength="5"
+                class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                @blur="normalizeTime('end_time')"
+              />
+              <p class="text-[10px] text-gray-400 mt-0.5">Format 24 jam, contoh 16:45</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Outlet *</label>
@@ -110,7 +128,19 @@
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Waktu lapor</label>
-              <input v-model="form.wa_reported_at" type="datetime-local" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+              <div class="grid grid-cols-2 gap-2">
+                <input v-model="waReportDate" type="date" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+                <input
+                  v-model="waReportTime"
+                  type="text"
+                  inputmode="numeric"
+                  placeholder="HH:mm"
+                  maxlength="5"
+                  class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                  @blur="normalizeWaTime"
+                />
+              </div>
+              <p class="text-[10px] text-gray-400 mt-0.5">Jam format 24 jam</p>
             </div>
             <div class="md:col-span-3">
               <label class="block text-xs font-semibold text-gray-600 mb-1">Ringkasan chat *</label>
@@ -123,7 +153,6 @@
                   <i class="fa-solid fa-camera"></i> Ambil dari kamera
                 </button>
               </div>
-              <input ref="waCameraInput" type="file" accept="image/*,video/*" capture="environment" class="hidden" @change="onWaFiles($event)" />
               <p v-if="form.errors.wa_screenshots" class="text-xs text-red-500 mb-2">{{ form.errors.wa_screenshots }}</p>
               <div class="flex flex-wrap gap-2">
                 <div v-for="(preview, pIdx) in waPreviews" :key="'wa-new-'+pIdx" class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100">
@@ -226,7 +255,6 @@
                   </button>
                   <span class="text-xs text-gray-500">Upload galeri tidak diizinkan. Foto otomatis ditandai tanggal, jam, alamat & koordinat.</span>
                 </div>
-                <input :ref="(el) => setCameraRef(index, el)" type="file" accept="image/*,video/*" capture="environment" class="hidden" @change="onItemCameraFiles($event, index)" />
                 <p v-if="form.errors[`item_evidences.${index}`]" class="text-xs text-red-500 mb-2">{{ form.errors[`item_evidences.${index}`] }}</p>
 
                 <div class="flex flex-wrap gap-2">
@@ -282,6 +310,13 @@
           </button>
         </div>
       </form>
+
+      <CameraModal
+        v-if="showCameraModal"
+        mode="photo"
+        @close="closeCameraModal"
+        @capture="onLiveCameraCapture"
+      />
     </div>
   </AppLayout>
 </template>
@@ -290,6 +325,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import CameraModal from '@/Components/CameraModal.vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -344,6 +380,69 @@ function toTimeInput(value) {
 function toDatetimeLocal(value) {
   if (!value) return ''
   return String(value).replace(' ', 'T').slice(0, 16)
+}
+
+function splitDateTimeLocal(value) {
+  const s = toDatetimeLocal(value)
+  if (!s) return { date: '', time: '' }
+  const [date, time] = s.split('T')
+  return { date: date || '', time: (time || '').slice(0, 5) }
+}
+
+function normalizeTime(field) {
+  let v = String(form[field] || '').trim().replace('.', ':')
+  if (/^\d{3,4}$/.test(v)) {
+    v = v.padStart(4, '0')
+    v = `${v.slice(0, 2)}:${v.slice(2)}`
+  }
+  if (/^\d{1,2}:\d{1,2}$/.test(v)) {
+    const [h, m] = v.split(':')
+    const hh = Math.min(23, Math.max(0, parseInt(h, 10) || 0))
+    const mm = Math.min(59, Math.max(0, parseInt(m, 10) || 0))
+    form[field] = `${pad2(hh)}:${pad2(mm)}`
+    return
+  }
+  if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
+    form[field] = ''
+  }
+}
+
+function normalizeWaTime() {
+  let v = String(waReportTime.value || '').trim().replace('.', ':')
+  if (/^\d{3,4}$/.test(v)) {
+    v = v.padStart(4, '0')
+    v = `${v.slice(0, 2)}:${v.slice(2)}`
+  }
+  if (/^\d{1,2}:\d{1,2}$/.test(v)) {
+    const [h, m] = v.split(':')
+    const hh = Math.min(23, Math.max(0, parseInt(h, 10) || 0))
+    const mm = Math.min(59, Math.max(0, parseInt(m, 10) || 0))
+    waReportTime.value = `${pad2(hh)}:${pad2(mm)}`
+  } else if (v && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) {
+    waReportTime.value = ''
+  }
+  syncWaReportedAt()
+}
+
+function syncWaReportedAt() {
+  if (waReportDate.value && waReportTime.value) {
+    form.wa_reported_at = `${waReportDate.value} ${waReportTime.value}:00`
+  } else if (waReportDate.value) {
+    form.wa_reported_at = `${waReportDate.value} 00:00:00`
+  } else {
+    form.wa_reported_at = ''
+  }
+}
+
+function dataUrlToFile(dataUrl, filename = `camera_${Date.now()}.jpg`) {
+  const parts = String(dataUrl).split(',')
+  const mimeMatch = parts[0].match(/:(.*?);/)
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg'
+  const binary = atob(parts[1] || '')
+  const len = binary.length
+  const bytes = new Uint8Array(len)
+  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i)
+  return new File([bytes], filename, { type: mime, lastModified: Date.now() })
 }
 
 function filePreview(file) {
@@ -497,6 +596,11 @@ const form = useForm({
   submit: 0,
 })
 
+const initialWaDt = splitDateTimeLocal(props.record?.wa_reported_at)
+const waReportDate = ref(initialWaDt.date)
+const waReportTime = ref(initialWaDt.time)
+watch([waReportDate, waReportTime], syncWaReportedAt)
+
 const itemMedia = reactive(
   mappedItems.map(() => ({ files: [], previews: [], metas: [] }))
 )
@@ -504,6 +608,8 @@ const waPreviews = ref([])
 const locationBusy = ref(false)
 const capturingIndex = ref(null)
 const pendingLocation = ref(null)
+const showCameraModal = ref(false)
+const cameraTarget = ref(null) // 'wa' | item index
 const existingEvidences = ref(
   (() => {
     const map = new Map()
@@ -525,15 +631,17 @@ function existingItemEvidences(itemId) {
   )
 }
 
-const cameraRefs = {}
-const waCameraInput = ref(null)
-
-function setCameraRef(index, el) {
-  if (el) cameraRefs[index] = el
+function closeCameraModal() {
+  showCameraModal.value = false
+  cameraTarget.value = null
+  pendingLocation.value = null
+  locationBusy.value = false
+  capturingIndex.value = null
 }
 
 async function openWaCamera() {
-  waCameraInput.value?.click()
+  cameraTarget.value = 'wa'
+  showCameraModal.value = true
 }
 
 async function openItemCamera(index) {
@@ -541,13 +649,65 @@ async function openItemCamera(index) {
   capturingIndex.value = index
   try {
     pendingLocation.value = await resolveLocationTag()
-    cameraRefs[index]?.click()
+    cameraTarget.value = index
+    showCameraModal.value = true
   } catch (e) {
     alert('Lokasi GPS wajib aktif untuk mengambil evidence. Izinkan akses lokasi lalu coba lagi.')
     pendingLocation.value = null
   } finally {
     locationBusy.value = false
     capturingIndex.value = null
+  }
+}
+
+async function onLiveCameraCapture(payload) {
+  const target = cameraTarget.value
+  showCameraModal.value = false
+
+  try {
+    // CameraModal photo mode emits data URL string
+    if (typeof payload !== 'string') {
+      alert('Format capture tidak dikenali. Gunakan mode foto.')
+      closeCameraModal()
+      return
+    }
+
+    const rawFile = dataUrlToFile(payload)
+
+    if (target === 'wa') {
+      form.wa_screenshots.push(rawFile)
+      waPreviews.value.push(filePreview(rawFile))
+      cameraTarget.value = null
+      return
+    }
+
+    const index = Number(target)
+    let meta = pendingLocation.value
+    pendingLocation.value = null
+    if (!meta) {
+      locationBusy.value = true
+      try {
+        meta = await resolveLocationTag()
+      } catch {
+        alert('Lokasi GPS wajib aktif untuk evidence perangkat.')
+        locationBusy.value = false
+        cameraTarget.value = null
+        return
+      }
+      locationBusy.value = false
+    }
+
+    ensureItemMedia(index)
+    const stamped = await stampPhotoWithTag(rawFile, meta)
+    itemMedia[index].files.push(stamped)
+    itemMedia[index].previews.push(filePreview(stamped))
+    itemMedia[index].metas.push({ ...meta })
+    syncItemEvidenceForm(index)
+  } catch (e) {
+    console.error(e)
+    alert('Gagal memproses foto dari kamera.')
+  } finally {
+    cameraTarget.value = null
   }
 }
 
@@ -568,43 +728,6 @@ function syncItemEvidenceForm(index) {
   }))
 }
 
-async function onItemCameraFiles(event, index) {
-  const files = Array.from(event.target.files || [])
-  event.target.value = ''
-  if (!files.length) return
-
-  let meta = pendingLocation.value
-  pendingLocation.value = null
-  if (!meta) {
-    locationBusy.value = true
-    try {
-      meta = await resolveLocationTag()
-    } catch {
-      alert('Lokasi GPS wajib aktif untuk evidence perangkat.')
-      locationBusy.value = false
-      return
-    }
-    locationBusy.value = false
-  }
-
-  ensureItemMedia(index)
-  for (const file of files) {
-    try {
-      let finalFile = file
-      if ((file.type || '').startsWith('image/')) {
-        finalFile = await stampPhotoWithTag(file, meta)
-      }
-      itemMedia[index].files.push(finalFile)
-      itemMedia[index].previews.push(filePreview(finalFile))
-      itemMedia[index].metas.push({ ...meta })
-    } catch (e) {
-      console.error(e)
-      alert('Gagal memproses foto evidence.')
-    }
-  }
-  syncItemEvidenceForm(index)
-}
-
 function removeItemNew(index, pIdx) {
   const preview = itemMedia[index]?.previews?.[pIdx]
   if (preview?.url) URL.revokeObjectURL(preview.url)
@@ -612,15 +735,6 @@ function removeItemNew(index, pIdx) {
   itemMedia[index].previews.splice(pIdx, 1)
   itemMedia[index].metas.splice(pIdx, 1)
   syncItemEvidenceForm(index)
-}
-
-function onWaFiles(event) {
-  const files = Array.from(event.target.files || [])
-  files.forEach((file) => {
-    form.wa_screenshots.push(file)
-    waPreviews.value.push(filePreview(file))
-  })
-  event.target.value = ''
 }
 
 function removeWaNew(pIdx) {
@@ -694,6 +808,11 @@ function removeItem(index) {
 }
 
 function submit(doSubmit) {
+  normalizeTime('start_time')
+  normalizeTime('end_time')
+  normalizeWaTime()
+  syncWaReportedAt()
+
   if (doSubmit) {
     for (let i = 0; i < form.items.length; i++) {
       const item = form.items[i]
