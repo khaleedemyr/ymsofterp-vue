@@ -147,24 +147,35 @@
               <textarea v-model="form.wa_summary" rows="2" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
             </div>
             <div class="md:col-span-3">
-              <label class="block text-xs font-semibold text-gray-600 mb-2">Screenshot WA (wajib dari kamera saat submit)</label>
-              <div class="flex flex-wrap gap-2 mb-3">
-                <button type="button" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 text-white text-sm" @click="openWaCamera">
-                  <i class="fa-solid fa-camera"></i> Ambil dari kamera
+              <label class="block text-xs font-semibold text-gray-600 mb-2">Screenshot WA (upload file, wajib saat submit)</label>
+              <div class="flex flex-wrap gap-2 mb-3 items-center">
+                <button type="button" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 text-white text-sm" @click="waUploadInput?.click()">
+                  <i class="fa-solid fa-upload"></i> Upload screenshot
                 </button>
+                <input ref="waUploadInput" type="file" accept="image/*,video/*,.pdf" multiple class="hidden" @change="onWaUpload" />
               </div>
               <p v-if="form.errors.wa_screenshots" class="text-xs text-red-500 mb-2">{{ form.errors.wa_screenshots }}</p>
               <div class="flex flex-wrap gap-2">
-                <div v-for="(preview, pIdx) in waPreviews" :key="'wa-new-'+pIdx" class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100">
+                <div
+                  v-for="(preview, pIdx) in waPreviews"
+                  :key="'wa-new-'+pIdx"
+                  class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100 cursor-pointer"
+                  @click="openWaLightbox('new', pIdx)"
+                >
                   <img v-if="preview.isImage" :src="preview.url" class="w-full h-full object-cover" />
                   <video v-else-if="preview.isVideo" :src="preview.url" class="w-full h-full object-cover" />
-                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="removeWaNew(pIdx)">×</button>
+                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs z-10" @click.stop="removeWaNew(pIdx)">×</button>
                 </div>
-                <div v-for="ev in existingWa" :key="'wa-old-'+ev.id" class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100">
+                <div
+                  v-for="(ev, eIdx) in existingWa"
+                  :key="'wa-old-'+ev.id"
+                  class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100 cursor-pointer"
+                  @click="openWaLightbox('old', eIdx)"
+                >
                   <img v-if="ev.is_image" :src="ev.url" class="w-full h-full object-cover" />
                   <video v-else-if="ev.is_video" :src="ev.url" class="w-full h-full object-cover" />
                   <div v-else class="w-full h-full flex items-center justify-center text-gray-400"><i class="fa-solid fa-file"></i></div>
-                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="markRemove(ev.id)">×</button>
+                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs z-10" @click.stop="markRemove(ev.id)">×</button>
                 </div>
               </div>
             </div>
@@ -261,7 +272,8 @@
                   <div
                     v-for="(preview, pIdx) in (itemMedia[index]?.previews || [])"
                     :key="'new-'+index+'-'+pIdx"
-                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100"
+                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100 cursor-pointer"
+                    @click="openItemLightbox(index, 'new', pIdx)"
                   >
                     <div class="w-28 h-24">
                       <img v-if="preview.isImage" :src="preview.url" class="w-full h-full object-cover" />
@@ -273,13 +285,14 @@
                     <div v-if="itemMedia[index]?.metas?.[pIdx]" class="px-1 py-0.5 text-[9px] leading-tight text-gray-600 bg-white border-t truncate">
                       {{ formatMetaShort(itemMedia[index].metas[pIdx]) }}
                     </div>
-                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs leading-none" @click="removeItemNew(index, pIdx)">×</button>
+                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs leading-none z-10" @click.stop="removeItemNew(index, pIdx)">×</button>
                   </div>
 
                   <div
-                    v-for="ev in existingItemEvidences(item.id)"
+                    v-for="(ev, eIdx) in existingItemEvidences(item.id)"
                     :key="'old-'+ev.id"
-                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100"
+                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100 cursor-pointer"
+                    @click="openItemLightbox(index, 'old', eIdx, item.id)"
                   >
                     <div class="w-28 h-24">
                       <img v-if="ev.is_image" :src="ev.url" class="w-full h-full object-cover" />
@@ -292,7 +305,7 @@
                     <div v-if="ev.captured_at || ev.address || ev.latitude" class="px-1 py-0.5 text-[9px] leading-tight text-gray-600 bg-white border-t truncate">
                       {{ formatExistingMetaShort(ev) }}
                     </div>
-                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="markRemove(ev.id)">×</button>
+                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs z-10" @click.stop="markRemove(ev.id)">×</button>
                   </div>
                 </div>
               </div>
@@ -317,6 +330,13 @@
         @close="closeCameraModal"
         @capture="onLiveCameraCapture"
       />
+
+      <VueEasyLightbox
+        :visible="lightboxVisible"
+        :imgs="lightboxImgs"
+        :index="lightboxIndex"
+        @hide="lightboxVisible = false"
+      />
     </div>
   </AppLayout>
 </template>
@@ -326,6 +346,7 @@ import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CameraModal from '@/Components/CameraModal.vue'
+import VueEasyLightbox from 'vue-easy-lightbox'
 import axios from 'axios'
 
 const props = defineProps({
@@ -609,7 +630,11 @@ const locationBusy = ref(false)
 const capturingIndex = ref(null)
 const pendingLocation = ref(null)
 const showCameraModal = ref(false)
-const cameraTarget = ref(null) // 'wa' | item index
+const cameraTarget = ref(null) // item index
+const waUploadInput = ref(null)
+const lightboxVisible = ref(false)
+const lightboxImgs = ref([])
+const lightboxIndex = ref(0)
 const existingEvidences = ref(
   (() => {
     const map = new Map()
@@ -639,9 +664,69 @@ function closeCameraModal() {
   capturingIndex.value = null
 }
 
-async function openWaCamera() {
-  cameraTarget.value = 'wa'
-  showCameraModal.value = true
+function onWaUpload(event) {
+  const files = Array.from(event.target.files || [])
+  files.forEach((file) => {
+    form.wa_screenshots.push(file)
+    waPreviews.value.push(filePreview(file))
+  })
+  event.target.value = ''
+}
+
+function showLightbox(images, index = 0) {
+  const imgs = images.filter(Boolean)
+  if (!imgs.length) return
+  lightboxImgs.value = imgs
+  lightboxIndex.value = Math.max(0, Math.min(index, imgs.length - 1))
+  lightboxVisible.value = true
+}
+
+function openWaLightbox(kind, idx) {
+  const newImgs = waPreviews.value.filter((p) => p.isImage).map((p) => p.url)
+  const oldImgs = existingWa.value.filter((e) => e.is_image).map((e) => e.url)
+  const imgs = [...newImgs, ...oldImgs]
+  let index = 0
+  if (kind === 'new') {
+    const preview = waPreviews.value[idx]
+    if (!preview?.isImage) {
+      if (preview?.url) window.open(preview.url, '_blank')
+      return
+    }
+    index = newImgs.indexOf(preview.url)
+  } else {
+    const ev = existingWa.value[idx]
+    if (!ev?.is_image) {
+      if (ev?.url) window.open(ev.url, '_blank')
+      return
+    }
+    index = newImgs.length + oldImgs.indexOf(ev.url)
+  }
+  showLightbox(imgs, index)
+}
+
+function openItemLightbox(itemIndex, kind, idx, itemId = null) {
+  const newPreviews = itemMedia[itemIndex]?.previews || []
+  const newImgs = newPreviews.filter((p) => p.isImage).map((p) => p.url)
+  const oldList = existingItemEvidences(itemId || form.items[itemIndex]?.id)
+  const oldImgs = oldList.filter((e) => e.is_image).map((e) => e.url)
+  const imgs = [...newImgs, ...oldImgs]
+
+  if (kind === 'new') {
+    const preview = newPreviews[idx]
+    if (!preview?.isImage) {
+      if (preview?.url) window.open(preview.url, '_blank')
+      return
+    }
+    showLightbox(imgs, newImgs.indexOf(preview.url))
+    return
+  }
+
+  const ev = oldList[idx]
+  if (!ev?.is_image) {
+    if (ev?.url) window.open(ev.url, '_blank')
+    return
+  }
+  showLightbox(imgs, newImgs.length + oldImgs.indexOf(ev.url))
 }
 
 async function openItemCamera(index) {
@@ -665,7 +750,6 @@ async function onLiveCameraCapture(payload) {
   showCameraModal.value = false
 
   try {
-    // CameraModal photo mode emits data URL string
     if (typeof payload !== 'string') {
       alert('Format capture tidak dikenali. Gunakan mode foto.')
       closeCameraModal()
@@ -673,14 +757,6 @@ async function onLiveCameraCapture(payload) {
     }
 
     const rawFile = dataUrlToFile(payload)
-
-    if (target === 'wa') {
-      form.wa_screenshots.push(rawFile)
-      waPreviews.value.push(filePreview(rawFile))
-      cameraTarget.value = null
-      return
-    }
-
     const index = Number(target)
     let meta = pendingLocation.value
     pendingLocation.value = null

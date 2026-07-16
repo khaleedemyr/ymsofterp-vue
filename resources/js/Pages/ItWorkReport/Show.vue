@@ -64,16 +64,16 @@
         <div v-if="waEvidences.length" class="mt-4">
           <h3 class="text-sm font-semibold text-gray-600 mb-2">Screenshot WhatsApp</h3>
           <div class="flex flex-wrap gap-2">
-            <a
-              v-for="ev in waEvidences"
+            <button
+              v-for="(ev, idx) in waEvidences"
               :key="ev.id"
-              :href="ev.url"
-              target="_blank"
-              class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100"
+              type="button"
+              class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100 cursor-pointer"
+              @click="openLightboxGroup(waImageUrls, waImageIndex(ev), ev)"
             >
               <img v-if="ev.is_image" :src="ev.url" class="w-full h-full object-cover" />
               <video v-else-if="ev.is_video" :src="ev.url" class="w-full h-full object-cover" />
-            </a>
+            </button>
           </div>
         </div>
       </div>
@@ -111,9 +111,10 @@
                 <div
                   v-for="ev in item.evidences"
                   :key="ev.id"
-                  class="relative w-36 rounded-lg overflow-hidden border bg-gray-100 hover:shadow-md transition"
+                  class="relative w-36 rounded-lg overflow-hidden border bg-gray-100 hover:shadow-md transition cursor-pointer"
+                  @click="openItemEvidenceLightbox(item, ev)"
                 >
-                  <a :href="ev.url" target="_blank" class="block w-full h-28">
+                  <div class="block w-full h-28">
                     <img v-if="ev.is_image" :src="ev.url" :alt="ev.original_name" class="w-full h-full object-cover" />
                     <div v-else-if="ev.is_video" class="relative w-full h-full">
                       <video :src="ev.url" class="w-full h-full object-cover" muted />
@@ -124,8 +125,8 @@
                     <div v-else class="w-full h-full flex items-center justify-center text-gray-400">
                       <i class="fa-solid fa-file text-2xl"></i>
                     </div>
-                  </a>
-                  <div class="px-2 py-1 text-[10px] leading-snug text-gray-600 bg-white border-t space-y-0.5">
+                  </div>
+                  <div class="px-2 py-1 text-[10px] leading-snug text-gray-600 bg-white border-t space-y-0.5" @click.stop>
                     <div v-if="ev.captured_at">{{ String(ev.captured_at).replace('T', ' ').slice(0, 19) }}</div>
                     <div v-if="ev.address" class="truncate" :title="ev.address">{{ ev.address }}</div>
                     <div v-if="ev.latitude != null">{{ Number(ev.latitude).toFixed(6) }}, {{ Number(ev.longitude).toFixed(6) }}</div>
@@ -147,13 +148,21 @@
         </div>
       </div>
     </div>
+
+    <VueEasyLightbox
+      :visible="lightboxVisible"
+      :imgs="lightboxImgs"
+      :index="lightboxIndex"
+      @hide="lightboxVisible = false"
+    />
   </AppLayout>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import VueEasyLightbox from 'vue-easy-lightbox'
 
 const props = defineProps({
   record: Object,
@@ -165,9 +174,41 @@ const props = defineProps({
   canDelete: Boolean,
 })
 
+const lightboxVisible = ref(false)
+const lightboxImgs = ref([])
+const lightboxIndex = ref(0)
+
 const waEvidences = computed(() =>
   (props.record.evidences || []).filter((e) => e.kind === 'wa_screenshot')
 )
+
+const waImageUrls = computed(() =>
+  waEvidences.value.filter((e) => e.is_image).map((e) => e.url)
+)
+
+function waImageIndex(ev) {
+  return waImageUrls.value.indexOf(ev.url)
+}
+
+function openLightboxGroup(images, index, ev) {
+  if (ev && !ev.is_image) {
+    if (ev.url) window.open(ev.url, '_blank')
+    return
+  }
+  if (!images?.length) return
+  lightboxImgs.value = images
+  lightboxIndex.value = Math.max(0, index)
+  lightboxVisible.value = true
+}
+
+function openItemEvidenceLightbox(item, ev) {
+  if (!ev.is_image) {
+    if (ev.url) window.open(ev.url, '_blank')
+    return
+  }
+  const imgs = (item.evidences || []).filter((e) => e.is_image).map((e) => e.url)
+  openLightboxGroup(imgs, imgs.indexOf(ev.url), ev)
+}
 
 function formatDate(value) {
   return value ? String(value).slice(0, 10) : '-'
