@@ -25,7 +25,9 @@ class ItWorkReportController extends Controller
 {
     private const SUPERADMIN_ROLE_ID = '5af56935b011a';
 
-    private const ALLOWED_MIMES = 'jpg,jpeg,png,webp,gif,pdf';
+    private const ALLOWED_MIMES = 'jpg,jpeg,png,webp,gif,mp4,mov,webm,avi,mpeg,3gp,m4v';
+
+    private const MAX_FILE_KB = 51200; // 50MB
 
     public function index(Request $request): Response
     {
@@ -157,8 +159,9 @@ class ItWorkReportController extends Controller
             ]);
 
             $this->syncItems($report, $validated['items'] ?? []);
-            $this->storeEvidences($report, $request);
-            $this->assertSubmitRequirements($report, $status);
+            $this->storeWaEvidences($report, $request);
+            $this->storeItemEvidences($report, $request);
+            $this->assertSubmitRequirements($report->fresh(['items.evidences', 'evidences']), $status);
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -179,7 +182,7 @@ class ItWorkReportController extends Controller
     public function show(ItWorkReport $itWorkReport): Response
     {
         $itWorkReport->load([
-            'items',
+            'items.evidences',
             'evidences',
             'executor:id,nama_lengkap',
             'creator:id,nama_lengkap',
@@ -202,7 +205,7 @@ class ItWorkReportController extends Controller
         abort_unless($itWorkReport->isDraft() && $this->canManage($itWorkReport), 403);
 
         $itWorkReport->load([
-            'items',
+            'items.evidences',
             'evidences',
             'ticket:id,ticket_number,title,outlet_id',
         ]);
@@ -251,12 +254,12 @@ class ItWorkReportController extends Controller
                     : null,
             ]);
 
-            $itWorkReport->items()->delete();
             $this->syncItems($itWorkReport, $validated['items'] ?? []);
 
             $this->deleteEvidencesByIds($itWorkReport, $request->input('remove_evidence_ids', []));
-            $this->storeEvidences($itWorkReport, $request);
-            $this->assertSubmitRequirements($itWorkReport->fresh(['items', 'evidences']), $status);
+            $this->storeWaEvidences($itWorkReport, $request);
+            $this->storeItemEvidences($itWorkReport, $request);
+            $this->assertSubmitRequirements($itWorkReport->fresh(['items.evidences', 'evidences']), $status);
 
             DB::commit();
         } catch (\Throwable $e) {
@@ -439,25 +442,54 @@ class ItWorkReportController extends Controller
             'items.*.device_type' => ['required_with:items', Rule::in(array_keys(ItWorkReport::DEVICE_TYPES))],
             'items.*.device_label' => 'required_with:items|string|max:255',
             'items.*.identifier' => 'nullable|string|max:255',
+            'items.*.laptop_user_name' => 'nullable|string|max:255',
+            'items.*.id' => 'nullable|integer',
             'items.*.scopes' => array_values(array_filter([
                 $submitting ? 'required' : 'nullable',
                 'array',
                 $submitting ? 'min:1' : null,
             ])),
             'items.*.scopes.*' => [Rule::in(array_keys(ItWorkReport::SCOPES))],
-            'items.*.notes' => 'nullable|string|max:2000',
+            'items.*.notes' => 'nullable|string|max:5000',
             'items.*.result' => ['nullable', Rule::in(array_keys(ItWorkReport::RESULTS))],
             'wa_screenshots' => 'nullable|array',
-            'wa_screenshots.*' => 'file|mimes:'.self::ALLOWED_MIMES.'|max:10240',
-            'work_evidences' => 'nullable|array',
-            'work_evidences.*' => 'file|mimes:'.self::ALLOWED_MIMES.'|max:10240',
-            'other_evidences' => 'nullable|array',
-            'other_evidences.*' => 'file|mimes:'.self::ALLOWED_MIMES.'|max:10240',
+            'wa_screenshots.*' => 'file|mimes:'.self::ALLOWED_MIMES.'|max:'.self::MAX_FILE_KB,
+            'item_evidences' => 'nullable|array',
+            'item_evidences.*' => 'nullable|array',
+            'item_evidences.*.*' => 'file|mimes:'.self::ALLOWED_MIMES.'|max:'.self::MAX_FILE_KB,
+            'item_evidence_meta' => 'nullable|array',
+            'item_evidence_meta.*' => 'nullable|array',
+            'item_evidence_meta.*.*.latitude' => 'nullable|numeric',
+            'item_evidence_meta.*.*.longitude' => 'nullable|numeric',
+            'item_evidence_meta.*.*.address' => 'nullable|string|max:500',
+            'item_evidence_meta.*.*.maps_url' => 'nullable|string|max:500',
+            'item_evidence_meta.*.*.captured_at' => 'nullable|date',
             'remove_evidence_ids' => 'nullable|array',
             'remove_evidence_ids.*' => 'integer',
         ];
 
-        return $request->validate($rules);
+        $validated = $request->validate($rules);
+
+        // Per-item laptop rules (required on submit)
+        if ($submitting) {
+            foreach (array_values($request->input('items', [])) as $idx => $item) {
+                if (($item['device_type'] ?? '') !== 'laptop') {
+                    continue;
+                }
+                if (trim((string) ($item['laptop_user_name'] ?? '')) === '') {
+                    throw ValidationException::withMessages([
+                        "items.{$idx}.laptop_user_name" => 'Nama pengguna laptop wajib diisi.',
+                    ]);
+                }
+                if (trim((string) ($item['identifier'] ?? '')) === '') {
+                    throw ValidationException::withMessages([
+                        "items.{$idx}.identifier" => 'Serial laptop wajib diisi.',
+                    ]);
+                }
+            }
+        }
+
+        return $validated;
     }
 
     private function assertSubmitRequirements(ItWorkReport $report, string $status): void
@@ -475,12 +507,13 @@ class ItWorkReportController extends Controller
                 if (empty($item->scopes)) {
                     $errors["items.{$idx}.scopes"] = 'Pilih minimal 1 scope pekerjaan.';
                 }
+                $evidenceCount = $item->evidences
+                    ? $item->evidences->where('kind', ItWorkReportEvidence::KIND_WORK)->count()
+                    : 0;
+                if ($evidenceCount < 1) {
+                    $errors["item_evidences.{$idx}"] = 'Minimal 1 foto/video evidence untuk perangkat ini.';
+                }
             }
-        }
-
-        $workCount = $report->evidences->where('kind', ItWorkReportEvidence::KIND_WORK)->count();
-        if ($workCount < 1) {
-            $errors['work_evidences'] = 'Minimal 1 evidence pekerjaan wajib diupload saat submit.';
         }
 
         if ($report->source_type === ItWorkReport::SOURCE_WHATSAPP) {
@@ -495,50 +528,175 @@ class ItWorkReportController extends Controller
         }
     }
 
-    private function syncItems(ItWorkReport $report, array $items): void
+    /**
+     * @return \Illuminate\Support\Collection<int, ItWorkReportItem>
+     */
+    private function syncItems(ItWorkReport $report, array $items)
     {
+        $keptIds = [];
+        $synced = collect();
+
         foreach (array_values($items) as $index => $item) {
-            ItWorkReportItem::create([
-                'it_work_report_id' => $report->id,
+            $id = isset($item['id']) ? (int) $item['id'] : 0;
+            $payload = [
                 'device_type' => $item['device_type'],
                 'device_label' => $item['device_label'],
                 'identifier' => $item['identifier'] ?? null,
+                'laptop_user_name' => ($item['device_type'] ?? '') === 'laptop'
+                    ? ($item['laptop_user_name'] ?? null)
+                    : null,
                 'scopes' => array_values($item['scopes'] ?? []),
                 'notes' => $item['notes'] ?? null,
                 'result' => $item['result'] ?? null,
                 'sort_order' => $index,
+            ];
+
+            $model = null;
+            if ($id > 0) {
+                $model = ItWorkReportItem::where('it_work_report_id', $report->id)->where('id', $id)->first();
+            }
+
+            if ($model) {
+                $model->update($payload);
+            } else {
+                $model = ItWorkReportItem::create(array_merge($payload, [
+                    'it_work_report_id' => $report->id,
+                ]));
+            }
+
+            $keptIds[] = $model->id;
+            $synced->push($model);
+        }
+
+        $toDelete = $report->items()->whereNotIn('id', $keptIds ?: [0])->with('evidences')->get();
+        foreach ($toDelete as $oldItem) {
+            foreach ($oldItem->evidences as $evidence) {
+                if ($evidence->file_path) {
+                    Storage::disk('public')->delete($evidence->file_path);
+                }
+                $evidence->delete();
+            }
+            $oldItem->delete();
+        }
+
+        return $synced;
+    }
+
+    private function storeWaEvidences(ItWorkReport $report, Request $request): void
+    {
+        if (! $request->hasFile('wa_screenshots')) {
+            return;
+        }
+
+        foreach ($request->file('wa_screenshots') as $file) {
+            if (! $file || ! $file->isValid()) {
+                continue;
+            }
+            $path = $file->store('it_work_reports/'.$report->id, 'public');
+            ItWorkReportEvidence::create([
+                'it_work_report_id' => $report->id,
+                'it_work_report_item_id' => null,
+                'kind' => ItWorkReportEvidence::KIND_WA_SCREENSHOT,
+                'file_path' => $path,
+                'original_name' => $file->getClientOriginalName(),
+                'mime_type' => $file->getClientMimeType(),
+                'file_size' => $file->getSize(),
+                'uploaded_by' => Auth::id(),
             ]);
         }
     }
 
-    private function storeEvidences(ItWorkReport $report, Request $request): void
+    private function storeItemEvidences(ItWorkReport $report, Request $request): void
     {
-        $map = [
-            'wa_screenshots' => ItWorkReportEvidence::KIND_WA_SCREENSHOT,
-            'work_evidences' => ItWorkReportEvidence::KIND_WORK,
-            'other_evidences' => ItWorkReportEvidence::KIND_OTHER,
-        ];
+        $filesByIndex = $request->file('item_evidences', []);
+        if (! is_array($filesByIndex) || $filesByIndex === []) {
+            return;
+        }
 
-        foreach ($map as $input => $kind) {
-            if (! $request->hasFile($input)) {
+        $metaByIndex = $request->input('item_evidence_meta', []);
+        $items = $report->items()->orderBy('sort_order')->orderBy('id')->get()->values();
+
+        foreach ($filesByIndex as $index => $files) {
+            $item = $items->get((int) $index);
+            if (! $item) {
                 continue;
             }
-            foreach ($request->file($input) as $file) {
+            if (! is_array($files)) {
+                $files = [$files];
+            }
+            $metas = is_array($metaByIndex[$index] ?? null) ? $metaByIndex[$index] : [];
+
+            foreach (array_values($files) as $fileIdx => $file) {
                 if (! $file || ! $file->isValid()) {
                     continue;
                 }
-                $path = $file->store('it_work_reports/'.$report->id, 'public');
+                $meta = is_array($metas[$fileIdx] ?? null) ? $metas[$fileIdx] : [];
+                $lat = isset($meta['latitude']) ? (float) $meta['latitude'] : null;
+                $lng = isset($meta['longitude']) ? (float) $meta['longitude'] : null;
+                $mapsUrl = $meta['maps_url'] ?? null;
+                if (! $mapsUrl && $lat !== null && $lng !== null) {
+                    $mapsUrl = 'https://maps.google.com/?q='.$lat.','.$lng;
+                }
+
+                $path = $file->store('it_work_reports/'.$report->id.'/items/'.$item->id, 'public');
                 ItWorkReportEvidence::create([
                     'it_work_report_id' => $report->id,
-                    'kind' => $kind,
+                    'it_work_report_item_id' => $item->id,
+                    'kind' => ItWorkReportEvidence::KIND_WORK,
                     'file_path' => $path,
                     'original_name' => $file->getClientOriginalName(),
                     'mime_type' => $file->getClientMimeType(),
                     'file_size' => $file->getSize(),
+                    'caption' => $meta['address'] ?? null,
+                    'latitude' => $lat,
+                    'longitude' => $lng,
+                    'address' => $meta['address'] ?? null,
+                    'maps_url' => $mapsUrl,
+                    'captured_at' => $meta['captured_at'] ?? now(),
                     'uploaded_by' => Auth::id(),
                 ]);
             }
         }
+    }
+
+    public function reverseGeocode(Request $request)
+    {
+        $lat = $request->input('lat');
+        $lng = $request->input('lng');
+        if (! is_numeric($lat) || ! is_numeric($lng)) {
+            return response()->json(['address' => null, 'maps_url' => null], 422);
+        }
+
+        $lat = (float) $lat;
+        $lng = (float) $lng;
+        $mapsUrl = 'https://maps.google.com/?q='.$lat.','.$lng;
+        $address = null;
+
+        try {
+            $url = 'https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat='
+                .urlencode((string) $lat).'&lon='.urlencode((string) $lng).'&zoom=18&addressdetails=1';
+            $ctx = stream_context_create([
+                'http' => [
+                    'method' => 'GET',
+                    'header' => "User-Agent: YMSoftERP-ITWorkReport/1.0\r\nAccept: application/json\r\n",
+                    'timeout' => 8,
+                ],
+            ]);
+            $raw = @file_get_contents($url, false, $ctx);
+            if ($raw) {
+                $json = json_decode($raw, true);
+                $address = $json['display_name'] ?? null;
+            }
+        } catch (\Throwable $e) {
+            $address = null;
+        }
+
+        return response()->json([
+            'address' => $address,
+            'maps_url' => $mapsUrl,
+            'latitude' => $lat,
+            'longitude' => $lng,
+        ]);
     }
 
     private function deleteEvidencesByIds(ItWorkReport $report, mixed $ids): void

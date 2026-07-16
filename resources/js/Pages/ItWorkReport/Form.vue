@@ -19,7 +19,6 @@
       </div>
 
       <form @submit.prevent="submit(false)">
-        <!-- Header -->
         <div class="bg-white rounded-xl shadow p-6 mb-6">
           <h2 class="text-lg font-semibold text-gray-800 mb-4">Informasi Kunjungan</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -55,7 +54,6 @@
               <select v-model="form.source_type" required class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500">
                 <option v-for="(label, key) in sourceOptions" :key="key" :value="key">{{ label }}</option>
               </select>
-              <p v-if="form.errors.source_type" class="text-xs text-red-500 mt-1">{{ form.errors.source_type }}</p>
             </div>
             <div class="md:col-span-3">
               <label class="block text-xs font-semibold text-gray-600 mb-1">Judul / ringkasan</label>
@@ -68,7 +66,6 @@
           </div>
         </div>
 
-        <!-- Ticket source -->
         <div v-if="form.source_type === 'ticket'" class="bg-white rounded-xl shadow p-6 mb-6">
           <h2 class="text-lg font-semibold text-gray-800 mb-4">Link Ticket</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
@@ -84,9 +81,7 @@
             </div>
             <div>
               <p class="text-xs text-gray-500 mb-1">Terpilih</p>
-              <div class="text-sm font-medium text-gray-800">
-                {{ selectedTicketLabel || 'Belum dipilih' }}
-              </div>
+              <div class="text-sm font-medium text-gray-800">{{ selectedTicketLabel || 'Belum dipilih' }}</div>
               <p v-if="form.errors.ticket_id" class="text-xs text-red-500 mt-1">{{ form.errors.ticket_id }}</p>
             </div>
           </div>
@@ -97,21 +92,17 @@
               class="px-3 py-2 text-sm hover:bg-cyan-50 cursor-pointer"
               @click="selectTicket(t)"
             >
-              <span class="font-semibold text-cyan-700">{{ t.ticket_number }}</span>
-              — {{ t.title }}
-              <span v-if="t.outlet_name" class="text-xs text-gray-500">({{ t.outlet_name }})</span>
+              <span class="font-semibold text-cyan-700">{{ t.ticket_number }}</span> — {{ t.title }}
             </li>
           </ul>
         </div>
 
-        <!-- WhatsApp source -->
         <div v-if="form.source_type === 'whatsapp'" class="bg-white rounded-xl shadow p-6 mb-6">
           <h2 class="text-lg font-semibold text-gray-800 mb-4">Sumber WhatsApp</h2>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">Nama kontak *</label>
               <input v-model="form.wa_contact_name" type="text" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
-              <p v-if="form.errors.wa_contact_name" class="text-xs text-red-500 mt-1">{{ form.errors.wa_contact_name }}</p>
             </div>
             <div>
               <label class="block text-xs font-semibold text-gray-600 mb-1">No. HP</label>
@@ -124,28 +115,38 @@
             <div class="md:col-span-3">
               <label class="block text-xs font-semibold text-gray-600 mb-1">Ringkasan chat *</label>
               <textarea v-model="form.wa_summary" rows="2" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
-              <p v-if="form.errors.wa_summary" class="text-xs text-red-500 mt-1">{{ form.errors.wa_summary }}</p>
             </div>
             <div class="md:col-span-3">
-              <label class="block text-xs font-semibold text-gray-600 mb-1">Screenshot WA (wajib saat submit)</label>
-              <input type="file" multiple accept="image/*,.pdf" @change="onFiles($event, 'wa_screenshots')" class="block w-full text-sm" />
-              <p v-if="form.errors.wa_screenshots" class="text-xs text-red-500 mt-1">{{ form.errors.wa_screenshots }}</p>
-              <div v-if="existingWa.length" class="mt-2 flex flex-wrap gap-2">
-                <div v-for="ev in existingWa" :key="ev.id" class="relative border rounded-lg p-2 text-xs">
-                  <a :href="ev.url" target="_blank" class="text-cyan-700 hover:underline">{{ ev.original_name || 'file' }}</a>
-                  <button type="button" class="ml-2 text-red-500" @click="markRemove(ev.id)">hapus</button>
+              <label class="block text-xs font-semibold text-gray-600 mb-2">Screenshot WA (wajib dari kamera saat submit)</label>
+              <div class="flex flex-wrap gap-2 mb-3">
+                <button type="button" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 text-white text-sm" @click="openWaCamera">
+                  <i class="fa-solid fa-camera"></i> Ambil dari kamera
+                </button>
+              </div>
+              <input ref="waCameraInput" type="file" accept="image/*,video/*" capture="environment" class="hidden" @change="onWaFiles($event)" />
+              <p v-if="form.errors.wa_screenshots" class="text-xs text-red-500 mb-2">{{ form.errors.wa_screenshots }}</p>
+              <div class="flex flex-wrap gap-2">
+                <div v-for="(preview, pIdx) in waPreviews" :key="'wa-new-'+pIdx" class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100">
+                  <img v-if="preview.isImage" :src="preview.url" class="w-full h-full object-cover" />
+                  <video v-else-if="preview.isVideo" :src="preview.url" class="w-full h-full object-cover" />
+                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="removeWaNew(pIdx)">×</button>
+                </div>
+                <div v-for="ev in existingWa" :key="'wa-old-'+ev.id" class="relative w-24 h-24 rounded-lg overflow-hidden border bg-gray-100">
+                  <img v-if="ev.is_image" :src="ev.url" class="w-full h-full object-cover" />
+                  <video v-else-if="ev.is_video" :src="ev.url" class="w-full h-full object-cover" />
+                  <div v-else class="w-full h-full flex items-center justify-center text-gray-400"><i class="fa-solid fa-file"></i></div>
+                  <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="markRemove(ev.id)">×</button>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Devices -->
         <div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
           <div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-cyan-50 to-white">
             <div>
               <h2 class="text-lg font-semibold text-gray-800">Perangkat dikerjakan</h2>
-              <p class="text-xs text-gray-500">Minimal 1 baris saat submit; scope multi-select per perangkat</p>
+              <p class="text-xs text-gray-500">Evidence wajib dari kamera; foto ditandai tanggal, jam, alamat & koordinat</p>
             </div>
             <button type="button" @click="addItem" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 text-sm">
               <i class="fa-solid fa-plus"></i> Tambah perangkat
@@ -153,7 +154,7 @@
           </div>
           <p v-if="form.errors.items" class="px-6 pt-4 text-sm text-red-500">{{ form.errors.items }}</p>
 
-          <div v-for="(item, index) in form.items" :key="index" class="px-6 py-5 border-b last:border-b-0">
+          <div v-for="(item, index) in form.items" :key="item._key" class="px-6 py-5 border-b last:border-b-0">
             <div class="flex items-center justify-between mb-3">
               <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-cyan-100 text-cyan-700 text-xs font-bold">{{ index + 1 }}</span>
               <button v-if="form.items.length > 1" type="button" class="text-red-500 text-sm" @click="removeItem(index)">
@@ -171,7 +172,7 @@
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Label / lokasi *</label>
                 <input v-model="item.device_label" type="text" required placeholder="PC Kasir 1" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
               </div>
-              <div>
+              <div v-if="item.device_type !== 'laptop'">
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Identifier</label>
                 <input v-model="item.identifier" type="text" placeholder="IP / hostname / serial" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
               </div>
@@ -182,6 +183,18 @@
                   <option v-for="(label, key) in resultOptions" :key="key" :value="key">{{ label }}</option>
                 </select>
               </div>
+              <template v-if="item.device_type === 'laptop'">
+                <div class="md:col-span-2">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Nama pengguna laptop *</label>
+                  <input v-model="item.laptop_user_name" type="text" required placeholder="Nama user yang memakai laptop" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+                  <p v-if="form.errors[`items.${index}.laptop_user_name`]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${index}.laptop_user_name`] }}</p>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Serial laptop *</label>
+                  <input v-model="item.identifier" type="text" required placeholder="Serial number laptop" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+                  <p v-if="form.errors[`items.${index}.identifier`]" class="text-xs text-red-500 mt-1">{{ form.errors[`items.${index}.identifier`] }}</p>
+                </div>
+              </template>
               <div class="md:col-span-4">
                 <label class="block text-xs font-semibold text-gray-600 mb-2">Scope pekerjaan *</label>
                 <div class="flex flex-wrap gap-3">
@@ -194,52 +207,76 @@
               </div>
               <div class="md:col-span-4">
                 <label class="block text-xs font-semibold text-gray-600 mb-1">Catatan perangkat</label>
-                <input v-model="item.notes" type="text" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
+                <textarea v-model="item.notes" rows="3" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" placeholder="Catatan detail pekerjaan..." />
               </div>
-            </div>
-          </div>
-        </div>
 
-        <!-- Work evidence -->
-        <div class="bg-white rounded-xl shadow p-6 mb-6">
-          <h2 class="text-lg font-semibold text-gray-800 mb-2">Evidence pekerjaan</h2>
-          <p class="text-xs text-gray-500 mb-3">Minimal 1 file wajib saat submit (foto sebelum/sesudah, dll.)</p>
-          <input type="file" multiple accept="image/*,.pdf" @change="onFiles($event, 'work_evidences')" class="block w-full text-sm" />
-          <p v-if="form.errors.work_evidences" class="text-xs text-red-500 mt-1">{{ form.errors.work_evidences }}</p>
-          <div v-if="existingWork.length" class="mt-2 flex flex-wrap gap-2">
-            <div v-for="ev in existingWork" :key="ev.id" class="relative border rounded-lg p-2 text-xs">
-              <a :href="ev.url" target="_blank" class="text-cyan-700 hover:underline">{{ ev.original_name || 'file' }}</a>
-              <button type="button" class="ml-2 text-red-500" @click="markRemove(ev.id)">hapus</button>
-            </div>
-          </div>
+              <div class="md:col-span-4 mt-1">
+                <label class="block text-xs font-semibold text-gray-600 mb-2">
+                  Evidence perangkat <span class="text-gray-400 font-normal">(wajib dari kamera + tag lokasi saat submit)</span>
+                </label>
+                <div class="flex flex-wrap gap-2 mb-3 items-center">
+                  <button
+                    type="button"
+                    :disabled="locationBusy"
+                    class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-700 text-white text-sm disabled:opacity-50"
+                    @click="openItemCamera(index)"
+                  >
+                    <i class="fa-solid fa-camera"></i>
+                    {{ locationBusy && capturingIndex === index ? 'Mengambil lokasi...' : 'Ambil dari kamera' }}
+                  </button>
+                  <span class="text-xs text-gray-500">Upload galeri tidak diizinkan. Foto otomatis ditandai tanggal, jam, alamat & koordinat.</span>
+                </div>
+                <input :ref="(el) => setCameraRef(index, el)" type="file" accept="image/*,video/*" capture="environment" class="hidden" @change="onItemCameraFiles($event, index)" />
+                <p v-if="form.errors[`item_evidences.${index}`]" class="text-xs text-red-500 mb-2">{{ form.errors[`item_evidences.${index}`] }}</p>
 
-          <div class="mt-4">
-            <label class="block text-xs font-semibold text-gray-600 mb-1">Evidence lain (opsional)</label>
-            <input type="file" multiple accept="image/*,.pdf" @change="onFiles($event, 'other_evidences')" class="block w-full text-sm" />
-            <div v-if="existingOther.length" class="mt-2 flex flex-wrap gap-2">
-              <div v-for="ev in existingOther" :key="ev.id" class="relative border rounded-lg p-2 text-xs">
-                <a :href="ev.url" target="_blank" class="text-cyan-700 hover:underline">{{ ev.original_name || 'file' }}</a>
-                <button type="button" class="ml-2 text-red-500" @click="markRemove(ev.id)">hapus</button>
+                <div class="flex flex-wrap gap-2">
+                  <div
+                    v-for="(preview, pIdx) in (itemMedia[index]?.previews || [])"
+                    :key="'new-'+index+'-'+pIdx"
+                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100"
+                  >
+                    <div class="w-28 h-24">
+                      <img v-if="preview.isImage" :src="preview.url" class="w-full h-full object-cover" />
+                      <div v-else-if="preview.isVideo" class="relative w-full h-full">
+                        <video :src="preview.url" class="w-full h-full object-cover" />
+                        <span class="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded"><i class="fa-solid fa-play"></i></span>
+                      </div>
+                    </div>
+                    <div v-if="itemMedia[index]?.metas?.[pIdx]" class="px-1 py-0.5 text-[9px] leading-tight text-gray-600 bg-white border-t truncate">
+                      {{ formatMetaShort(itemMedia[index].metas[pIdx]) }}
+                    </div>
+                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs leading-none" @click="removeItemNew(index, pIdx)">×</button>
+                  </div>
+
+                  <div
+                    v-for="ev in existingItemEvidences(item.id)"
+                    :key="'old-'+ev.id"
+                    class="relative w-28 rounded-lg overflow-hidden border bg-gray-100"
+                  >
+                    <div class="w-28 h-24">
+                      <img v-if="ev.is_image" :src="ev.url" class="w-full h-full object-cover" />
+                      <div v-else-if="ev.is_video" class="relative w-full h-full">
+                        <video :src="ev.url" class="w-full h-full object-cover" />
+                        <span class="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1 rounded"><i class="fa-solid fa-play"></i></span>
+                      </div>
+                      <div v-else class="w-full h-full flex items-center justify-center text-gray-400"><i class="fa-solid fa-file"></i></div>
+                    </div>
+                    <div v-if="ev.captured_at || ev.address || ev.latitude" class="px-1 py-0.5 text-[9px] leading-tight text-gray-600 bg-white border-t truncate">
+                      {{ formatExistingMetaShort(ev) }}
+                    </div>
+                    <button type="button" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs" @click="markRemove(ev.id)">×</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <div class="flex flex-wrap gap-3 justify-end">
-          <button
-            type="button"
-            :disabled="form.processing"
-            @click="submit(false)"
-            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50"
-          >
+          <button type="button" :disabled="form.processing" @click="submit(false)" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gray-100 text-gray-800 hover:bg-gray-200 disabled:opacity-50">
             Simpan Draft
           </button>
-          <button
-            type="button"
-            :disabled="form.processing"
-            @click="submit(true)"
-            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-50"
-          >
+          <button type="button" :disabled="form.processing" @click="submit(true)" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-50">
             <i class="fa-solid fa-paper-plane"></i>
             Submit
           </button>
@@ -250,7 +287,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import axios from 'axios'
@@ -268,12 +305,16 @@ const props = defineProps({
 })
 
 const isEdit = computed(() => !!props.record?.id)
+let keySeq = 0
 
 function emptyItem() {
   return {
+    id: null,
+    _key: `new-${++keySeq}`,
     device_type: 'pc',
     device_label: '',
     identifier: '',
+    laptop_user_name: '',
     scopes: [],
     notes: '',
     result: '',
@@ -283,9 +324,12 @@ function emptyItem() {
 function mapRecordItems(items) {
   if (!items?.length) return [emptyItem()]
   return items.map((i) => ({
+    id: i.id || null,
+    _key: `item-${i.id || ++keySeq}`,
     device_type: i.device_type || 'pc',
     device_label: i.device_label || '',
     identifier: i.identifier || '',
+    laptop_user_name: i.laptop_user_name || '',
     scopes: Array.isArray(i.scopes) ? [...i.scopes] : [],
     notes: i.notes || '',
     result: i.result || '',
@@ -299,11 +343,137 @@ function toTimeInput(value) {
 
 function toDatetimeLocal(value) {
   if (!value) return ''
-  const s = String(value).replace(' ', 'T')
-  return s.slice(0, 16)
+  return String(value).replace(' ', 'T').slice(0, 16)
+}
+
+function filePreview(file) {
+  return {
+    url: URL.createObjectURL(file),
+    isImage: (file.type || '').startsWith('image/'),
+    isVideo: (file.type || '').startsWith('video/'),
+    name: file.name,
+  }
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function formatDateTimeParts(date = new Date()) {
+  return {
+    date: `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
+    time: `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`,
+    captured_at: date.toISOString(),
+  }
+}
+
+function formatMetaShort(meta) {
+  if (!meta) return ''
+  const dt = meta.date && meta.time ? `${meta.date} ${meta.time}` : ''
+  const coord = meta.latitude != null ? `${Number(meta.latitude).toFixed(5)},${Number(meta.longitude).toFixed(5)}` : ''
+  return [dt, coord].filter(Boolean).join(' · ')
+}
+
+function formatExistingMetaShort(ev) {
+  const dt = ev.captured_at ? String(ev.captured_at).replace('T', ' ').slice(0, 19) : ''
+  const coord = ev.latitude != null ? `${Number(ev.latitude).toFixed(5)},${Number(ev.longitude).toFixed(5)}` : ''
+  return [dt, coord].filter(Boolean).join(' · ')
+}
+
+async function resolveLocationTag() {
+  if (!navigator.geolocation) {
+    throw new Error('Geolocation tidak tersedia')
+  }
+  const pos = await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 20000,
+      maximumAge: 0,
+    })
+  })
+  const latitude = pos.coords.latitude
+  const longitude = pos.coords.longitude
+  const maps_url = `https://maps.google.com/?q=${latitude},${longitude}`
+  let address = ''
+  try {
+    const { data } = await axios.get(route('it-work-reports.reverse-geocode'), {
+      params: { lat: latitude, lng: longitude },
+    })
+    address = data.address || ''
+  } catch {
+    address = ''
+  }
+  const parts = formatDateTimeParts(new Date())
+  return {
+    ...parts,
+    latitude,
+    longitude,
+    address: address || `Lokasi GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+    maps_url,
+  }
+}
+
+function stampPhotoWithTag(file, meta) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = img.width
+        canvas.height = img.height
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+
+        const lines = [
+          `${meta.date} ${meta.time}`,
+          meta.address || '',
+          `${Number(meta.latitude).toFixed(6)}, ${Number(meta.longitude).toFixed(6)}`,
+          meta.maps_url || '',
+        ].filter(Boolean)
+
+        const fontSize = Math.max(14, Math.round(img.width / 45))
+        const padding = Math.round(fontSize * 0.6)
+        const lineHeight = Math.round(fontSize * 1.35)
+        const boxHeight = padding * 2 + lineHeight * lines.length
+        const boxY = img.height - boxHeight
+
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'
+        ctx.fillRect(0, boxY, img.width, boxHeight)
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold ${fontSize}px sans-serif`
+        ctx.textBaseline = 'top'
+        lines.forEach((line, i) => {
+          ctx.fillText(line, padding, boxY + padding + i * lineHeight, img.width - padding * 2)
+        })
+
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url)
+          if (!blob) {
+            reject(new Error('Gagal menandai foto'))
+            return
+          }
+          const stamped = new File([blob], file.name.replace(/\.\w+$/, '') + '_tagged.jpg', {
+            type: 'image/jpeg',
+            lastModified: Date.now(),
+          })
+          resolve(stamped)
+        }, 'image/jpeg', 0.92)
+      } catch (e) {
+        URL.revokeObjectURL(url)
+        reject(e)
+      }
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Gagal memuat foto'))
+    }
+    img.src = url
+  })
 }
 
 const initialTicket = props.record?.ticket || props.prefillTicket || null
+const mappedItems = mapRecordItems(props.record?.items)
 
 const form = useForm({
   work_date: props.record?.work_date?.slice?.(0, 10) || String(props.record?.work_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
@@ -319,18 +489,152 @@ const form = useForm({
   wa_summary: props.record?.wa_summary || '',
   title: props.record?.title || '',
   notes: props.record?.notes || '',
-  items: mapRecordItems(props.record?.items),
+  items: mappedItems,
   wa_screenshots: [],
-  work_evidences: [],
-  other_evidences: [],
+  item_evidences: mappedItems.map(() => []),
+  item_evidence_meta: mappedItems.map(() => []),
   remove_evidence_ids: [],
   submit: 0,
 })
 
-const existingEvidences = ref([...(props.record?.evidences || [])])
-const existingWa = computed(() => existingEvidences.value.filter((e) => e.kind === 'wa_screenshot' && !form.remove_evidence_ids.includes(e.id)))
-const existingWork = computed(() => existingEvidences.value.filter((e) => e.kind === 'work' && !form.remove_evidence_ids.includes(e.id)))
-const existingOther = computed(() => existingEvidences.value.filter((e) => e.kind === 'other' && !form.remove_evidence_ids.includes(e.id)))
+const itemMedia = reactive(
+  mappedItems.map(() => ({ files: [], previews: [], metas: [] }))
+)
+const waPreviews = ref([])
+const locationBusy = ref(false)
+const capturingIndex = ref(null)
+const pendingLocation = ref(null)
+const existingEvidences = ref(
+  (() => {
+    const map = new Map()
+    ;[...(props.record?.evidences || [])].forEach((e) => map.set(e.id, e))
+    ;(props.record?.items || []).forEach((item) => {
+      ;(item.evidences || []).forEach((e) => map.set(e.id, e))
+    })
+    return Array.from(map.values())
+  })()
+)
+const existingWa = computed(() =>
+  existingEvidences.value.filter((e) => e.kind === 'wa_screenshot' && !form.remove_evidence_ids.includes(e.id))
+)
+
+function existingItemEvidences(itemId) {
+  if (!itemId) return []
+  return existingEvidences.value.filter(
+    (e) => e.it_work_report_item_id === itemId && e.kind === 'work' && !form.remove_evidence_ids.includes(e.id)
+  )
+}
+
+const cameraRefs = {}
+const waCameraInput = ref(null)
+
+function setCameraRef(index, el) {
+  if (el) cameraRefs[index] = el
+}
+
+async function openWaCamera() {
+  waCameraInput.value?.click()
+}
+
+async function openItemCamera(index) {
+  locationBusy.value = true
+  capturingIndex.value = index
+  try {
+    pendingLocation.value = await resolveLocationTag()
+    cameraRefs[index]?.click()
+  } catch (e) {
+    alert('Lokasi GPS wajib aktif untuk mengambil evidence. Izinkan akses lokasi lalu coba lagi.')
+    pendingLocation.value = null
+  } finally {
+    locationBusy.value = false
+    capturingIndex.value = null
+  }
+}
+
+function ensureItemMedia(index) {
+  while (itemMedia.length <= index) {
+    itemMedia.push({ files: [], previews: [], metas: [] })
+  }
+}
+
+function syncItemEvidenceForm(index) {
+  form.item_evidences[index] = [...itemMedia[index].files]
+  form.item_evidence_meta[index] = itemMedia[index].metas.map((m) => ({
+    latitude: m.latitude,
+    longitude: m.longitude,
+    address: m.address,
+    maps_url: m.maps_url,
+    captured_at: m.captured_at,
+  }))
+}
+
+async function onItemCameraFiles(event, index) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+  if (!files.length) return
+
+  let meta = pendingLocation.value
+  pendingLocation.value = null
+  if (!meta) {
+    locationBusy.value = true
+    try {
+      meta = await resolveLocationTag()
+    } catch {
+      alert('Lokasi GPS wajib aktif untuk evidence perangkat.')
+      locationBusy.value = false
+      return
+    }
+    locationBusy.value = false
+  }
+
+  ensureItemMedia(index)
+  for (const file of files) {
+    try {
+      let finalFile = file
+      if ((file.type || '').startsWith('image/')) {
+        finalFile = await stampPhotoWithTag(file, meta)
+      }
+      itemMedia[index].files.push(finalFile)
+      itemMedia[index].previews.push(filePreview(finalFile))
+      itemMedia[index].metas.push({ ...meta })
+    } catch (e) {
+      console.error(e)
+      alert('Gagal memproses foto evidence.')
+    }
+  }
+  syncItemEvidenceForm(index)
+}
+
+function removeItemNew(index, pIdx) {
+  const preview = itemMedia[index]?.previews?.[pIdx]
+  if (preview?.url) URL.revokeObjectURL(preview.url)
+  itemMedia[index].files.splice(pIdx, 1)
+  itemMedia[index].previews.splice(pIdx, 1)
+  itemMedia[index].metas.splice(pIdx, 1)
+  syncItemEvidenceForm(index)
+}
+
+function onWaFiles(event) {
+  const files = Array.from(event.target.files || [])
+  files.forEach((file) => {
+    form.wa_screenshots.push(file)
+    waPreviews.value.push(filePreview(file))
+  })
+  event.target.value = ''
+}
+
+function removeWaNew(pIdx) {
+  const preview = waPreviews.value[pIdx]
+  if (preview?.url) URL.revokeObjectURL(preview.url)
+  form.wa_screenshots.splice(pIdx, 1)
+  waPreviews.value.splice(pIdx, 1)
+}
+
+function markRemove(id) {
+  if (!form.remove_evidence_ids.includes(id)) {
+    form.remove_evidence_ids.push(id)
+  }
+}
 
 const ticketQuery = ref('')
 const ticketResults = ref([])
@@ -344,9 +648,6 @@ watch(() => form.source_type, (val) => {
     form.ticket_id = null
     selectedTicketLabel.value = ''
     ticketResults.value = []
-  }
-  if (val !== 'whatsapp') {
-    form.wa_screenshots = []
   }
 })
 
@@ -372,39 +673,75 @@ function onTicketSearch() {
 function selectTicket(t) {
   form.ticket_id = t.id
   selectedTicketLabel.value = t.label || `${t.ticket_number} — ${t.title}`
-  if (t.outlet_id && !form.outlet_id) {
-    form.outlet_id = t.outlet_id
-  }
+  if (t.outlet_id && !form.outlet_id) form.outlet_id = t.outlet_id
   ticketResults.value = []
   ticketQuery.value = ''
 }
 
 function addItem() {
   form.items.push(emptyItem())
+  itemMedia.push({ files: [], previews: [], metas: [] })
+  form.item_evidences.push([])
+  form.item_evidence_meta.push([])
 }
 
 function removeItem(index) {
+  ;(itemMedia[index]?.previews || []).forEach((p) => p.url && URL.revokeObjectURL(p.url))
   form.items.splice(index, 1)
-}
-
-function onFiles(event, field) {
-  form[field] = Array.from(event.target.files || [])
-}
-
-function markRemove(id) {
-  if (!form.remove_evidence_ids.includes(id)) {
-    form.remove_evidence_ids.push(id)
-  }
+  itemMedia.splice(index, 1)
+  form.item_evidences.splice(index, 1)
+  form.item_evidence_meta.splice(index, 1)
 }
 
 function submit(doSubmit) {
+  if (doSubmit) {
+    for (let i = 0; i < form.items.length; i++) {
+      const item = form.items[i]
+      if (item.device_type === 'laptop') {
+        if (!String(item.laptop_user_name || '').trim()) {
+          alert(`Perangkat #${i + 1}: nama pengguna laptop wajib diisi.`)
+          return
+        }
+        if (!String(item.identifier || '').trim()) {
+          alert(`Perangkat #${i + 1}: serial laptop wajib diisi.`)
+          return
+        }
+      }
+      const newCount = itemMedia[i]?.files?.length || 0
+      const oldCount = existingItemEvidences(item.id).length
+      if (newCount + oldCount < 1) {
+        alert(`Perangkat #${i + 1}: ambil minimal 1 evidence dari kamera.`)
+        return
+      }
+    }
+  }
+
   form.submit = doSubmit ? 1 : 0
+  form.item_evidences = itemMedia.map((m) => [...m.files])
+  form.item_evidence_meta = itemMedia.map((m) =>
+    m.metas.map((meta) => ({
+      latitude: meta.latitude,
+      longitude: meta.longitude,
+      address: meta.address,
+      maps_url: meta.maps_url,
+      captured_at: meta.captured_at,
+    }))
+  )
+  form.transform((data) => ({
+    ...data,
+    items: data.items.map(({ _key, ...rest }) => rest),
+    _method: isEdit.value ? 'put' : undefined,
+  }))
   const opts = { forceFormData: true, preserveScroll: true }
   if (isEdit.value) {
-    form.transform((data) => ({ ...data, _method: 'put' }))
     form.post(route('it-work-reports.update', props.record.id), opts)
   } else {
     form.post(route('it-work-reports.store'), opts)
   }
 }
+
+onBeforeUnmount(() => {
+  itemMedia.forEach((m) => m.previews.forEach((p) => p.url && URL.revokeObjectURL(p.url)))
+  waPreviews.value.forEach((p) => p.url && URL.revokeObjectURL(p.url))
+})
 </script>

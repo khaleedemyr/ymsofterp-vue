@@ -1093,6 +1093,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/it-work-reports/export', [\App\Http\Controllers\ItWorkReportController::class, 'export'])->name('it-work-reports.export');
     Route::get('/it-work-reports/search-tickets', [\App\Http\Controllers\ItWorkReportController::class, 'searchTickets'])->name('it-work-reports.search-tickets');
+    Route::get('/it-work-reports/reverse-geocode', [\App\Http\Controllers\ItWorkReportController::class, 'reverseGeocode'])->name('it-work-reports.reverse-geocode');
     Route::resource('it-work-reports', \App\Http\Controllers\ItWorkReportController::class);
 
     Route::get('/sop-development-completion', [SopDevelopmentCompletionController::class, 'indexPage'])->name('sop-development-completion.index');
