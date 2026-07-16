@@ -39,7 +39,8 @@ function formatScore(value) {
 }
 
 function resolveAuditResult(score) {
-  const numeric = Number(score || 0);
+  // Pembulatan standar: >= 0.5 ke atas, < 0.5 ke bawah — selaras dengan tampilan persen.
+  const numeric = Math.round(Number(score || 0));
   if (numeric >= 91) {
     return {
       label: 'EXCELLENT',

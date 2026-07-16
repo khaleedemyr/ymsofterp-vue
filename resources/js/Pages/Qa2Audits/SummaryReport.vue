@@ -33,7 +33,8 @@ function formatScore(value) {
 }
 
 function resolveAuditResult(scoreValue) {
-  const score = Number(scoreValue || 0);
+  // Pembulatan standar: >= 0.5 ke atas, < 0.5 ke bawah — selaras dengan tampilan persen.
+  const score = Math.round(Number(scoreValue || 0));
   if (score >= 91) {
     return { label: 'EXCELLENT', className: 'bg-emerald-100 text-emerald-700' };
   }

@@ -181,7 +181,8 @@ function formatScore(value) {
 }
 
 function auditResult(audit) {
-  const score = auditScore(audit);
+  // Pembulatan standar: >= 0.5 ke atas, < 0.5 ke bawah — selaras dengan tampilan persen.
+  const score = Math.round(auditScore(audit));
   if (score >= 91) {
     return {
       label: 'EXCELLENT',
