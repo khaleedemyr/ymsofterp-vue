@@ -1181,6 +1181,7 @@ class GoogleReviewController extends Controller
 
         $request->validate([
             'source' => 'required|string|in:apify_dataset,places_api,scraper_inline,manual_db,instagram_comments_db',
+            'classification_mode' => 'nullable|string|in:ai,manual',
             'dataset_id' => 'required_if:source,apify_dataset|nullable|string|max:128',
             'date_from' => 'nullable|date_format:Y-m-d',
             'date_to' => 'nullable|date_format:Y-m-d|after_or_equal:date_from',
@@ -1203,6 +1204,7 @@ class GoogleReviewController extends Controller
         ]);
 
         $source = $request->input('source');
+        $manualOnly = $request->input('classification_mode', 'ai') === 'manual';
         $place = $request->input('place', []);
         $payload = null;
         $dateFrom = $request->input('date_from');
@@ -1279,6 +1281,7 @@ class GoogleReviewController extends Controller
         \Log::info('GoogleReview AI report created', [
             'report_id' => $reportId,
             'source' => $source,
+            'classification_mode' => $manualOnly ? 'manual' : 'ai',
             'sync' => $sync,
             'queue_connection' => $queueConnection,
             'queue_name' => $queueName,
@@ -1292,21 +1295,22 @@ class GoogleReviewController extends Controller
         try {
             if ($sync) {
                 if ($source === 'instagram_comments_db') {
-                    ProcessInstagramCommentAiReportJob::dispatchSync($reportId);
+                    ProcessInstagramCommentAiReportJob::dispatchSync($reportId, $manualOnly);
                 } else {
-                    ProcessGoogleReviewAiReportJob::dispatchSync($reportId);
+                    ProcessGoogleReviewAiReportJob::dispatchSync($reportId, $manualOnly);
                 }
             } else {
                 if ($source === 'instagram_comments_db') {
-                    ProcessInstagramCommentAiReportJob::dispatch($reportId);
+                    ProcessInstagramCommentAiReportJob::dispatch($reportId, $manualOnly);
                 } else {
-                    ProcessGoogleReviewAiReportJob::dispatch($reportId);
+                    ProcessGoogleReviewAiReportJob::dispatch($reportId, $manualOnly);
                 }
             }
 
             \Log::info('GoogleReview AI report dispatched', [
                 'report_id' => $reportId,
                 'source' => $source,
+                'classification_mode' => $manualOnly ? 'manual' : 'ai',
                 'sync' => $sync,
                 'queue_connection' => $queueConnection,
                 'queue_name' => $queueName,
@@ -1315,6 +1319,7 @@ class GoogleReviewController extends Controller
             \Log::error('GoogleReview AI dispatch failed', [
                 'report_id' => $reportId,
                 'source' => $source,
+                'classification_mode' => $manualOnly ? 'manual' : 'ai',
                 'sync' => $sync,
                 'queue_connection' => $queueConnection,
                 'queue_name' => $queueName,
@@ -1338,9 +1343,14 @@ class GoogleReviewController extends Controller
         return response()->json([
             'success' => true,
             'id' => $reportId,
-            'message' => $sync
-                ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
-                : $this->aiReportQueuedMessage(),
+            'classification_mode' => $manualOnly ? 'manual' : 'ai',
+            'message' => $manualOnly
+                ? ($sync
+                    ? 'Laporan klasifikasi MANUAL diproses. Lengkapi severity/topik di detail, lalu Sync ke CVCC.'
+                    : 'Laporan klasifikasi MANUAL masuk antrian. Setelah selesai, lengkapi di detail lalu Sync ke CVCC.')
+                : ($sync
+                    ? 'Laporan AI diproses langsung (GOOGLE_REVIEW_AI_DISPATCH_SYNC). Refresh halaman detail jika browser sempat timeout.'
+                    : $this->aiReportQueuedMessage()),
         ]);
     }
 
@@ -1858,42 +1868,108 @@ class GoogleReviewController extends Controller
     }
 
     /**
-     * Update severity of a single AI review item (manual override).
+     * Update klasifikasi item (manual override): severity, topics, follow_up, impact, summary.
+     * Route lama /severity tetap didukung.
      */
     public function updateItemSeverity(Request $request, int $itemId)
     {
-        $allowed = ['positive', 'neutral', 'minor', 'major', 'critical'];
+        return $this->updateItemClassification($request, $itemId);
+    }
+
+    public function updateItemClassification(Request $request, int $itemId)
+    {
+        $allowedSeverity = ['positive', 'neutral', 'minor', 'major', 'critical'];
+        $allowedTopics = [
+            'food_quality', 'service', 'hygiene', 'ambiance', 'price', 'wait_time',
+            'parking', 'portion', 'noise', 'reservation', 'other',
+        ];
+        $allowedImpact = ['reputasi', 'finansial', 'operasional'];
 
         $request->validate([
-            'severity' => 'required|in:' . implode(',', $allowed),
+            'severity' => 'nullable|in:'.implode(',', $allowedSeverity),
+            'topics' => 'nullable|array|max:5',
+            'topics.*' => 'string|in:'.implode(',', $allowedTopics),
+            'follow_up_target' => 'nullable|in:customer,internal',
+            'impact' => 'nullable|array',
+            'impact.*' => 'string|in:'.implode(',', $allowedImpact),
+            'summary_id' => 'nullable|string|max:500',
         ]);
 
+        if (
+            ! $request->filled('severity')
+            && ! $request->has('topics')
+            && ! $request->has('follow_up_target')
+            && ! $request->has('impact')
+            && ! $request->has('summary_id')
+        ) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Tidak ada field klasifikasi yang dikirim.',
+            ], 422);
+        }
+
         $item = DB::table('google_review_ai_items')->where('id', $itemId)->first();
-        if (!$item) {
+        if (! $item) {
             if ($request->expectsJson()) {
                 return response()->json(['success' => false, 'error' => 'Item tidak ditemukan'], 404);
             }
             abort(404);
         }
 
-        if (!$this->userCanAccessReport($item->report_id)) {
+        if (! $this->userCanAccessReport($item->report_id)) {
             if ($request->expectsJson()) {
                 return response()->json(['success' => false, 'error' => 'Tidak diizinkan'], 403);
             }
             abort(403);
         }
 
-        DB::table('google_review_ai_items')
-            ->where('id', $itemId)
-            ->update([
-                'severity' => $request->severity,
-                'updated_at' => now(),
-            ]);
+        $update = ['updated_at' => now()];
+        if ($request->filled('severity')) {
+            $update['severity'] = $request->input('severity');
+        }
+        if ($request->has('topics')) {
+            $topics = array_values(array_unique(array_filter((array) $request->input('topics', []))));
+            $update['topics'] = json_encode($topics, JSON_UNESCAPED_UNICODE);
+        }
+        if ($request->has('summary_id')) {
+            $update['summary_id'] = mb_substr(trim((string) $request->input('summary_id')), 0, 500);
+        }
+        if (Schema::hasColumn('google_review_ai_items', 'follow_up_target')) {
+            if ($request->has('follow_up_target')) {
+                $fu = trim((string) $request->input('follow_up_target', ''));
+                $update['follow_up_target'] = $fu === '' ? null : $fu;
+            }
+            if ($request->has('impact')) {
+                $impact = array_values(array_unique(array_filter((array) $request->input('impact', []))));
+                $update['impact'] = json_encode($impact, JSON_UNESCAPED_UNICODE);
+            }
+        }
+
+        DB::table('google_review_ai_items')->where('id', $itemId)->update($update);
+
+        $fresh = DB::table('google_review_ai_items')->where('id', $itemId)->first();
+        $topicsOut = [];
+        if (! empty($fresh->topics)) {
+            $decoded = is_string($fresh->topics) ? json_decode($fresh->topics, true) : $fresh->topics;
+            $topicsOut = is_array($decoded) ? $decoded : [];
+        }
+        $impactOut = [];
+        if (isset($fresh->impact) && $fresh->impact !== null && $fresh->impact !== '') {
+            $decodedImp = is_string($fresh->impact) ? json_decode($fresh->impact, true) : $fresh->impact;
+            $impactOut = is_array($decodedImp) ? $decodedImp : [];
+        }
 
         return response()->json([
             'success' => true,
-            'message' => 'Severity berhasil diubah',
-            'severity' => $request->severity,
+            'message' => 'Klasifikasi berhasil disimpan',
+            'item' => [
+                'id' => (int) $fresh->id,
+                'severity' => $fresh->severity,
+                'topics' => $topicsOut,
+                'summary_id' => $fresh->summary_id,
+                'follow_up_target' => $fresh->follow_up_target ?? null,
+                'impact' => $impactOut,
+            ],
         ]);
     }
 

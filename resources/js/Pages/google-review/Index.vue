@@ -126,11 +126,20 @@
               <button
                 type="button"
                 class="btn btn-ai"
-                :disabled="!canStartFullAi || aiFullSubmitting || loading || loadingItems"
+                :disabled="!canStartFullAi || aiFullSubmitting || manualFullSubmitting || loading || loadingItems"
                 :title="fullAiTitle"
                 @click="startFullAiClassification"
               >
                 {{ aiFullSubmitting ? 'Mengirim ke antrian…' : 'Klasifikasi AI semua & simpan' }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-manual"
+                :disabled="!canStartFullAi || aiFullSubmitting || manualFullSubmitting || loading || loadingItems"
+                title="Simpan review tanpa AI — isi severity/topik manual di detail laporan, lalu Sync ke CVCC"
+                @click="startFullManualClassification"
+              >
+                {{ manualFullSubmitting ? 'Mengirim…' : 'Klasifikasi Manual & simpan' }}
               </button>
             </div>
           </div>
@@ -471,6 +480,15 @@
               >
                 Klasifikasi AI komentar DB
               </button>
+              <button
+                type="button"
+                class="btn btn-manual"
+                :disabled="igBusy || igSelectedKeys.length === 0"
+                title="Simpan komentar tanpa AI — isi klasifikasi manual di detail, lalu Sync CVCC."
+                @click="startInstagramManualClassification"
+              >
+                Klasifikasi Manual komentar DB
+              </button>
             </div>
             <div v-if="igMessage" class="notice notice-loading">{{ igMessage }}</div>
             <div v-if="igError" class="notice notice-error">{{ igError }}</div>
@@ -598,6 +616,7 @@ const loadingItems = ref(false)
 const exporting = ref(false)
 const lastFetchSource = ref('')
 const aiFullSubmitting = ref(false)
+const manualFullSubmitting = ref(false)
 const drilldown = ref({
   open: false,
   loading: false,
@@ -930,8 +949,16 @@ function exportExcel() {
   setTimeout(() => (exporting.value = false), 1500)
 }
 
+async function startFullManualClassification() {
+  return startFullClassification('manual')
+}
+
 async function startFullAiClassification() {
-  if (!canStartFullAi.value || aiFullSubmitting.value) return
+  return startFullClassification('ai')
+}
+
+async function startFullClassification(mode = 'ai') {
+  if (!canStartFullAi.value || aiFullSubmitting.value || manualFullSubmitting.value) return
   if (dateRangeInvalid(googleDateFrom.value, googleDateTo.value)) {
     error.value = 'Range tanggal Google tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
     return
@@ -947,6 +974,7 @@ async function startFullAiClassification() {
   if (datasetId.value) {
     body = {
       source: 'apify_dataset',
+      classification_mode: mode,
       dataset_id: datasetId.value,
       place_id: selectedOutlet.value || null,
       id_outlet: selectedOutletRecord.value?.id ?? null,
@@ -958,6 +986,7 @@ async function startFullAiClassification() {
   } else if (reviews.value.length && (lastFetchSource.value === 'places' || lastFetchSource.value === 'scraper')) {
     body = {
       source: lastFetchSource.value === 'places' ? 'places_api' : 'scraper_inline',
+      classification_mode: mode,
       place_id: selectedOutlet.value || null,
       id_outlet: selectedOutletRecord.value?.id ?? null,
       nama_outlet: selectedOutletRecord.value?.nama_outlet ?? null,
@@ -969,7 +998,8 @@ async function startFullAiClassification() {
     return
   }
 
-  aiFullSubmitting.value = true
+  if (mode === 'manual') manualFullSubmitting.value = true
+  else aiFullSubmitting.value = true
   error.value = ''
   try {
     const res = await fetch('/google-review/ai/reports', {
@@ -989,9 +1019,10 @@ async function startFullAiClassification() {
     }
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    error.value = e.message || 'Gagal membuat laporan AI'
+    error.value = e.message || (mode === 'manual' ? 'Gagal membuat laporan manual' : 'Gagal membuat laporan AI')
   } finally {
     aiFullSubmitting.value = false
+    manualFullSubmitting.value = false
   }
 }
 
@@ -1181,13 +1212,21 @@ async function instagramSyncComments() {
 }
 
 async function startInstagramAiClassification() {
+  return startInstagramClassification('ai')
+}
+
+async function startInstagramManualClassification() {
+  return startInstagramClassification('manual')
+}
+
+async function startInstagramClassification(mode = 'ai') {
   if (!igSelectedKeys.value.length) return
   if (dateRangeInvalid(igDateFrom.value, igDateTo.value)) {
     igError.value = 'Range tanggal Instagram tidak valid: "Sampai tanggal" harus sama/lebih besar dari "Dari tanggal".'
     return
   }
   igBusy.value = true
-  igBusyAction.value = 'ai'
+  igBusyAction.value = mode === 'manual' ? 'manual' : 'ai'
   igMessage.value = ''
   igError.value = ''
   try {
@@ -1202,6 +1241,7 @@ async function startInstagramAiClassification() {
       credentials: 'same-origin',
       body: JSON.stringify({
         source: 'instagram_comments_db',
+        classification_mode: mode,
         place: { name: 'Instagram Comments (Database)' },
         place_id: null,
         id_outlet: null,
@@ -1217,7 +1257,7 @@ async function startInstagramAiClassification() {
     }
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    igError.value = e.message || 'Gagal membuat laporan AI komentar Instagram'
+    igError.value = e.message || (mode === 'manual' ? 'Gagal membuat laporan manual komentar Instagram' : 'Gagal membuat laporan AI komentar Instagram')
   } finally {
     igBusy.value = false
     igBusyAction.value = ''
@@ -1530,6 +1570,11 @@ async function startInstagramAiClassification() {
   background: linear-gradient(135deg, #6366f1, #7c3aed);
   color: #fff;
   box-shadow: 0 6px 18px rgba(99, 102, 241, 0.22);
+}
+.btn-manual {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(13, 148, 136, 0.22);
 }
 .code-inline {
   font-size: 11px;

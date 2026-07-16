@@ -4,8 +4,8 @@
       <div class="wrap">
         <div class="head">
           <div>
-            <h1 class="title">Laporan klasifikasi AI</h1>
-            <p class="sub">Riwayat analisis sentimen (Google Review + komentar Instagram) tersimpan di database.</p>
+            <h1 class="title">Laporan klasifikasi</h1>
+            <p class="sub">Riwayat analisis (AI atau manual) Google Review + komentar Instagram. Data completed bisa di-Sync ke CVCC.</p>
           </div>
           <Link href="/google-review" class="btn-back">← Scrape review</Link>
         </div>

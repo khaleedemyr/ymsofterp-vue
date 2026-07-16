@@ -110,8 +110,9 @@
                   <th>FU ke</th>
                   <th>Dampak</th>
                   <th>Topik</th>
-                  <th>Ringkasan AI</th>
+                  <th>Ringkasan</th>
                   <th>Teks</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -130,29 +131,31 @@
                   <td>{{ it.rating || '—' }}</td>
                   <td class="muted small">{{ it.review_date }}</td>
                   <td>
-                    <select
-                      class="sev-select"
-                      :class="'s-' + sevClassKey(it.severity)"
-                      :value="it.severity"
-                      @change="changeSeverity(it, $event.target.value)"
-                      :disabled="savingSevId === it.id"
-                    >
-                      <option value="positive">Positif</option>
-                      <option value="neutral">Netral</option>
-                      <option value="minor">Minor</option>
-                      <option value="major">Major</option>
-                      <option value="critical">Critical</option>
-                    </select>
+                    <span class="sev-pill" :class="'s-' + sevClassKey(it.severity)">{{ sevLabel(it.severity) }}</span>
                   </td>
                   <td class="small">{{ fuLabel(it.follow_up_target) }}</td>
                   <td class="small">{{ impactLabel(it.impact) }}</td>
-                  <td class="small">{{ (it.topics || []).join(', ') }}</td>
+                  <td class="small">{{ topicLabels(it.topics) }}</td>
                   <td class="small sum">{{ it.summary_id }}</td>
                   <td class="txt">{{ it.text || '—' }}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn-edit"
+                      :disabled="savingId === it.id"
+                      @click="openEdit(it)"
+                    >
+                      Edit
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          <p class="hint-cvcc">
+            Setelah klasifikasi disimpan, buka menu <strong>Customer Voice Command Center</strong> → Sync Data agar masuk ke CVCC.
+          </p>
 
           <div v-if="items.links?.length > 3" class="pager">
             <Link
@@ -165,6 +168,71 @@
               v-html="l.label"
             />
           </div>
+        </div>
+      </div>
+
+      <div v-if="editItem" class="modal-backdrop" @click.self="closeEdit">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-head">
+            <h2>Edit klasifikasi #{{ editItem.sort_order + 1 }}</h2>
+            <button type="button" class="modal-x" @click="closeEdit">×</button>
+          </div>
+          <p class="modal-author">{{ editItem.author || '—' }} · Rating {{ editItem.rating || '—' }}</p>
+          <p class="modal-text">{{ editItem.text || '—' }}</p>
+
+          <label class="flab">Severity</label>
+          <select v-model="editForm.severity" class="sel wide">
+            <option value="positive">Positif</option>
+            <option value="neutral">Netral</option>
+            <option value="minor">Minor</option>
+            <option value="major">Major</option>
+            <option value="critical">Critical</option>
+          </select>
+
+          <label class="flab">Follow-up ke</label>
+          <select v-model="editForm.follow_up_target" class="sel wide">
+            <option value="">—</option>
+            <option value="customer">Customer</option>
+            <option value="internal">Internal</option>
+          </select>
+
+          <label class="flab">Topik (max 5)</label>
+          <div class="chip-grid">
+            <label v-for="t in topicOptions" :key="t.id" class="chip">
+              <input
+                type="checkbox"
+                :value="t.id"
+                :checked="editForm.topics.includes(t.id)"
+                :disabled="!editForm.topics.includes(t.id) && editForm.topics.length >= 5"
+                @change="toggleTopic(t.id)"
+              >
+              {{ t.label }}
+            </label>
+          </div>
+
+          <label class="flab">Dampak</label>
+          <div class="chip-grid">
+            <label v-for="imp in impactOptions" :key="imp.id" class="chip">
+              <input
+                type="checkbox"
+                :value="imp.id"
+                :checked="editForm.impact.includes(imp.id)"
+                @change="toggleImpact(imp.id)"
+              >
+              {{ imp.label }}
+            </label>
+          </div>
+
+          <label class="flab">Ringkasan</label>
+          <textarea v-model="editForm.summary_id" class="tarea" rows="3" maxlength="500" />
+
+          <div class="modal-actions">
+            <button type="button" class="btn-sec" :disabled="savingId" @click="closeEdit">Batal</button>
+            <button type="button" class="btn-prim" :disabled="savingId" @click="saveEdit">
+              {{ savingId ? 'Menyimpan…' : 'Simpan klasifikasi' }}
+            </button>
+          </div>
+          <p v-if="editError" class="err">{{ editError }}</p>
         </div>
       </div>
     </template>
@@ -185,7 +253,36 @@ const props = defineProps({
 
 const severity = ref(props.filters.severity || '')
 const polling = ref(false)
-const savingSevId = ref(null)
+const savingId = ref(null)
+const editItem = ref(null)
+const editError = ref('')
+const editForm = ref({
+  severity: 'neutral',
+  follow_up_target: '',
+  topics: [],
+  impact: [],
+  summary_id: '',
+})
+
+const topicOptions = [
+  { id: 'food_quality', label: 'Food quality' },
+  { id: 'service', label: 'Service' },
+  { id: 'hygiene', label: 'Hygiene' },
+  { id: 'ambiance', label: 'Ambiance' },
+  { id: 'price', label: 'Price' },
+  { id: 'wait_time', label: 'Wait time' },
+  { id: 'parking', label: 'Parking' },
+  { id: 'portion', label: 'Portion' },
+  { id: 'noise', label: 'Noise' },
+  { id: 'reservation', label: 'Reservation' },
+  { id: 'other', label: 'Other' },
+]
+const impactOptions = [
+  { id: 'reputasi', label: 'Reputasi' },
+  { id: 'finansial', label: 'Finansial' },
+  { id: 'operasional', label: 'Operasional' },
+]
+
 let timer = null
 
 function syncLiveFromReport(r) {
@@ -263,8 +360,10 @@ function phaseLabel(phase) {
     fetching: 'Mengunduh dataset',
     deduping: 'Menghapus duplikat',
     classifying: 'Klasifikasi AI',
+    manual_classifying: 'Klasifikasi manual',
     saving: 'Menyimpan',
     completed: 'Selesai',
+    manual_completed: 'Selesai (manual)',
     failed: 'Gagal',
   }
   return m[phase] || (phase ? String(phase) : 'Menunggu / memproses')
@@ -304,6 +403,12 @@ function impactLabel(arr) {
   return arr.map((k) => labels[k] || k).join(', ')
 }
 
+function topicLabels(arr) {
+  if (!arr || !arr.length) return '—'
+  const map = Object.fromEntries(topicOptions.map((t) => [t.id, t.label]))
+  return arr.map((k) => map[k] || k).join(', ')
+}
+
 function applyFilter() {
   router.get(
     `/google-review/ai/reports/${props.report.id}`,
@@ -312,11 +417,57 @@ function applyFilter() {
   )
 }
 
-async function changeSeverity(item, newSeverity) {
-  if (newSeverity === item.severity) return
-  savingSevId.value = item.id
+function normalizeTopics(raw) {
+  if (Array.isArray(raw)) return [...raw]
+  if (typeof raw === 'string' && raw) {
+    try {
+      const d = JSON.parse(raw)
+      return Array.isArray(d) ? d : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function openEdit(item) {
+  editItem.value = item
+  editError.value = ''
+  editForm.value = {
+    severity: sevClassKey(item.severity) || 'neutral',
+    follow_up_target: item.follow_up_target || '',
+    topics: normalizeTopics(item.topics).slice(0, 5),
+    impact: normalizeTopics(item.impact),
+    summary_id: item.summary_id || '',
+  }
+}
+
+function closeEdit() {
+  if (savingId.value) return
+  editItem.value = null
+  editError.value = ''
+}
+
+function toggleTopic(id) {
+  const list = editForm.value.topics
+  const i = list.indexOf(id)
+  if (i >= 0) list.splice(i, 1)
+  else if (list.length < 5) list.push(id)
+}
+
+function toggleImpact(id) {
+  const list = editForm.value.impact
+  const i = list.indexOf(id)
+  if (i >= 0) list.splice(i, 1)
+  else list.push(id)
+}
+
+async function saveEdit() {
+  if (!editItem.value) return
+  savingId.value = editItem.value.id
+  editError.value = ''
   try {
-    const res = await fetch(`/google-review/ai/items/${item.id}/severity`, {
+    const res = await fetch(`/google-review/ai/items/${editItem.value.id}/classification`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -326,16 +477,29 @@ async function changeSeverity(item, newSeverity) {
         ),
       },
       credentials: 'same-origin',
-      body: JSON.stringify({ severity: newSeverity }),
+      body: JSON.stringify({
+        severity: editForm.value.severity,
+        topics: editForm.value.topics,
+        follow_up_target: editForm.value.follow_up_target || null,
+        impact: editForm.value.impact,
+        summary_id: editForm.value.summary_id,
+      }),
     })
     const data = await res.json()
-    if (data.success) {
-      item.severity = newSeverity
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || data.message || `HTTP ${res.status}`)
     }
-  } catch {
-    /* ignore */
+    const it = editItem.value
+    it.severity = data.item.severity
+    it.topics = data.item.topics || []
+    it.follow_up_target = data.item.follow_up_target
+    it.impact = data.item.impact || []
+    it.summary_id = data.item.summary_id
+    editItem.value = null
+  } catch (e) {
+    editError.value = e.message || 'Gagal menyimpan klasifikasi'
   } finally {
-    savingSevId.value = null
+    savingId.value = null
   }
 }
 
@@ -723,5 +887,124 @@ onUnmounted(() => {
 .page-link.disabled {
   opacity: 0.4;
   pointer-events: none;
+}
+.sev-pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.btn-edit {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-edit:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.hint-cvcc {
+  margin-top: 14px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+.modal-x {
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+}
+.modal-author {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: #4b5563;
+  font-weight: 600;
+}
+.modal-text {
+  margin: 0 0 12px;
+  padding: 10px;
+  background: #f9fafb;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  max-height: 120px;
+  overflow: auto;
+}
+.flab {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+}
+.sel.wide,
+.tarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 </style>

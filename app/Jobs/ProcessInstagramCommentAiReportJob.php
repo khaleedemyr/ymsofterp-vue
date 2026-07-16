@@ -20,7 +20,7 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $reportId)
+    public function __construct(public int $reportId, public bool $manualOnly = false)
     {
         $this->onQueue((string) config('google_review.process_queue', 'google-review-ai'));
     }
@@ -39,7 +39,9 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             'progress_done' => 0,
             'updated_at' => now(),
         ]);
-        $this->pushLog('Job dimulai (klasifikasi AI komentar Instagram).');
+        $this->pushLog($this->manualOnly
+            ? 'Job Instagram dimulai (klasifikasi MANUAL).'
+            : 'Job dimulai (klasifikasi AI komentar Instagram).');
 
         try {
             $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
@@ -148,21 +150,42 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
                 'raw_review_count' => $total,
                 'dedupe_removed_count' => 0,
-                'progress_phase' => 'classifying',
+                'progress_phase' => $this->manualOnly ? 'manual_classifying' : 'classifying',
                 'progress_total' => $total,
                 'progress_done' => 0,
                 'updated_at' => now(),
             ]);
-            $this->pushLog("Klasifikasi AI dimulai ({$total} komentar).");
 
-            $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35, function ($done, $all) {
+            if ($this->manualOnly) {
+                $this->pushLog("Klasifikasi MANUAL dimulai ({$total} komentar). Lengkapi di detail laporan.");
+                $classified = [];
+                foreach ($reviews as $row) {
+                    $row = is_array($row) ? $row : (array) $row;
+                    $text = trim((string) ($row['text'] ?? ''));
+                    $row['ai_classification'] = [
+                        'severity' => 'neutral',
+                        'topics' => [],
+                        'summary_id' => $text === '' ? '' : mb_substr($text, 0, 180),
+                        'follow_up_target' => null,
+                        'impact' => [],
+                    ];
+                    $classified[] = $row;
+                }
                 DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
-                    'progress_phase' => 'classifying',
-                    'progress_total' => max(1, (int) $all),
-                    'progress_done' => (int) $done,
+                    'progress_done' => $total,
                     'updated_at' => now(),
                 ]);
-            });
+            } else {
+                $this->pushLog("Klasifikasi AI dimulai ({$total} komentar).");
+                $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35, function ($done, $all) {
+                    DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                        'progress_phase' => 'classifying',
+                        'progress_total' => max(1, (int) $all),
+                        'progress_done' => (int) $done,
+                        'updated_at' => now(),
+                    ]);
+                });
+            }
 
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
                 'progress_phase' => 'saving',
@@ -227,12 +250,14 @@ class ProcessInstagramCommentAiReportJob implements ShouldQueue
                 'review_count' => $final,
                 'source_payload' => null,
                 'error_message' => null,
-                'progress_phase' => 'completed',
+                'progress_phase' => $this->manualOnly ? 'manual_completed' : 'completed',
                 'progress_total' => max(1, $final),
                 'progress_done' => $final,
                 'updated_at' => now(),
             ]);
-            $this->pushLog("Selesai. {$final} komentar tersimpan.");
+            $this->pushLog($this->manualOnly
+                ? "Selesai (MANUAL). {$final} komentar tersimpan — lengkapi klasifikasi di detail, lalu Sync CVCC."
+                : "Selesai. {$final} komentar tersimpan.");
         } catch (\Throwable $e) {
             Log::error('ProcessInstagramCommentAiReportJob failed', [
                 'report_id' => $this->reportId,

@@ -32,11 +32,14 @@
       </div>
 
       <div class="card">
-        <h3>Klasifikasi AI dari Manual Review</h3>
+        <h3>Klasifikasi dari Manual Review</h3>
         <div class="row">
           <label><input v-model="selectAll" type="checkbox" @change="toggleAll" /> Pilih semua halaman ini</label>
-          <button class="btn btn-ai" :disabled="aiSubmitting || selectedIds.length === 0" @click="startManualAi">
+          <button class="btn btn-ai" :disabled="aiSubmitting || manualSubmitting || selectedIds.length === 0" @click="startManualAi">
             {{ aiSubmitting ? 'Mengirim...' : `Klasifikasi AI (${selectedIds.length})` }}
+          </button>
+          <button class="btn btn-manual" :disabled="aiSubmitting || manualSubmitting || selectedIds.length === 0" @click="startManualClassify">
+            {{ manualSubmitting ? 'Mengirim...' : `Klasifikasi Manual (${selectedIds.length})` }}
           </button>
         </div>
       </div>
@@ -163,6 +166,7 @@ const visiblePages = computed(() => {
 })
 const submitting = ref(false)
 const aiSubmitting = ref(false)
+const manualSubmitting = ref(false)
 const editSubmitting = ref(false)
 const editOpen = ref(false)
 const editingId = ref(null)
@@ -252,13 +256,22 @@ function isBlocked(row) {
   return blockedSet.value.has(Number(row?.id))
 }
 
+async function startManualClassify() {
+  return startManualClassification('manual')
+}
+
 async function startManualAi() {
+  return startManualClassification('ai')
+}
+
+async function startManualClassification(mode = 'ai') {
   selectedIds.value = selectedIds.value.filter((id) => !blockedSet.value.has(Number(id)))
   if (selectedIds.value.length === 0) {
     window.alert('Semua review terpilih sudah pernah/sedang diproses AI.')
     return
   }
-  aiSubmitting.value = true
+  if (mode === 'manual') manualSubmitting.value = true
+  else aiSubmitting.value = true
   const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
   try {
     const res = await fetch('/google-review/ai/reports', {
@@ -272,6 +285,7 @@ async function startManualAi() {
       credentials: 'same-origin',
       body: JSON.stringify({
         source: 'manual_db',
+        classification_mode: mode,
         place: { name: 'Manual Google Review' },
         manual_review_ids: selectedIds.value,
       }),
@@ -280,11 +294,12 @@ async function startManualAi() {
     if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`)
     router.visit(`/google-review/ai/reports/${data.id}`)
   } catch (e) {
-    const message = e?.message || 'Gagal membuat laporan AI'
+    const message = e?.message || (mode === 'manual' ? 'Gagal membuat laporan manual' : 'Gagal membuat laporan AI')
     window.alert(message)
     await router.reload({ preserveScroll: true })
   } finally {
     aiSubmitting.value = false
+    manualSubmitting.value = false
   }
 }
 
@@ -353,6 +368,7 @@ th, td { border-bottom: 1px solid #e5e7eb; padding: 8px; text-align: left; verti
 .btn-primary { background: #2563eb; color: #fff; }
 .btn-outline { background: #fff; border-color: #d1d5db; color: #111827; text-decoration: none; }
 .btn-ai { background: linear-gradient(135deg, #6366f1, #7c3aed); color: #fff; }
+.btn-manual { background: linear-gradient(135deg, #0d9488, #0f766e); color: #fff; }
 .btn-danger { background: #dc2626; color: #fff; }
 .btn-sm { padding: 6px 10px; font-size: 12px; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }

@@ -22,7 +22,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $reportId)
+    public function __construct(public int $reportId, public bool $manualOnly = false)
     {
         $this->onQueue((string) config('google_review.process_queue', 'google-review-ai'));
     }
@@ -31,6 +31,7 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
     {
         Log::info('ProcessGoogleReviewAiReportJob started', [
             'report_id' => $this->reportId,
+            'manual_only' => $this->manualOnly,
             'queue' => $this->queue,
             'connection' => $this->connection,
             'attempt' => method_exists($this, 'attempts') ? $this->attempts() : null,
@@ -51,7 +52,9 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
             'progress_done' => 0,
             'updated_at' => now(),
         ]);
-        $this->pushLog('Job dimulai (klasifikasi AI).');
+        $this->pushLog($this->manualOnly
+            ? 'Job dimulai (klasifikasi MANUAL — tanpa AI).'
+            : 'Job dimulai (klasifikasi AI).');
 
         try {
             $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
@@ -166,21 +169,44 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
 
             $toClassify = count($reviews);
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
-                'progress_phase' => 'classifying',
+                'progress_phase' => $this->manualOnly ? 'manual_classifying' : 'classifying',
                 'progress_total' => $toClassify,
                 'progress_done' => 0,
                 'updated_at' => now(),
             ]);
-            $this->pushLog("Klasifikasi AI dimulai ({$toClassify} review, per batch).");
 
-            $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35, function ($done, $total) {
+            if ($this->manualOnly) {
+                $this->pushLog("Klasifikasi MANUAL dimulai ({$toClassify} review). Severity awal dari rating; lengkapi di detail laporan.");
+                $classified = [];
+                foreach ($reviews as $row) {
+                    $row = is_array($row) ? $row : (array) $row;
+                    $severity = $this->defaultSeverityFromRating($row['rating'] ?? null);
+                    $text = trim((string) ($row['text'] ?? ''));
+                    $summary = $text === '' ? '' : mb_substr($text, 0, 180);
+                    $row['ai_classification'] = [
+                        'severity' => $severity,
+                        'topics' => [],
+                        'summary_id' => $summary,
+                        'follow_up_target' => in_array($severity, ['minor', 'major', 'critical'], true) ? 'internal' : null,
+                        'impact' => [],
+                    ];
+                    $classified[] = $row;
+                }
                 DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
-                    'progress_phase' => 'classifying',
-                    'progress_total' => max(1, (int) $total),
-                    'progress_done' => (int) $done,
+                    'progress_done' => $toClassify,
                     'updated_at' => now(),
                 ]);
-            });
+            } else {
+                $this->pushLog("Klasifikasi AI dimulai ({$toClassify} review, per batch).");
+                $classified = $ai->classifyGoogleReviewsInChunks($reviews, 35, function ($done, $total) {
+                    DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
+                        'progress_phase' => 'classifying',
+                        'progress_total' => max(1, (int) $total),
+                        'progress_done' => (int) $done,
+                        'updated_at' => now(),
+                    ]);
+                });
+            }
 
             $this->pushLog('Menyimpan hasil ke database…');
             DB::table('google_review_ai_reports')->where('id', $this->reportId)->update([
@@ -237,20 +263,24 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 'review_count' => $finalCount,
                 'source_payload' => null,
                 'error_message' => null,
-                'progress_phase' => 'completed',
+                'progress_phase' => $this->manualOnly ? 'manual_completed' : 'completed',
                 'progress_total' => max(1, $finalCount),
                 'progress_done' => $finalCount,
                 'updated_at' => now(),
             ]);
-            $this->pushLog("Selesai. {$finalCount} review tersimpan.");
+            $this->pushLog($this->manualOnly
+                ? "Selesai (MANUAL). {$finalCount} review tersimpan — lengkapi severity/topik di detail, lalu Sync CVCC."
+                : "Selesai. {$finalCount} review tersimpan.");
             Log::info('ProcessGoogleReviewAiReportJob completed', [
                 'report_id' => $this->reportId,
                 'classified_count' => $finalCount,
+                'manual_only' => $this->manualOnly,
                 'source' => $report->source,
             ]);
         } catch (\Throwable $e) {
             Log::error('ProcessGoogleReviewAiReportJob failed', [
                 'report_id' => $this->reportId,
+                'manual_only' => $this->manualOnly,
                 'error' => $e->getMessage(),
                 'trace' => mb_substr($e->getTraceAsString(), 0, 4000),
             ]);
@@ -262,6 +292,33 @@ class ProcessGoogleReviewAiReportJob implements ShouldQueue
                 'updated_at' => now(),
             ]);
         }
+    }
+
+    /**
+     * Heuristik awal severity dari rating (bisa diubah manual di UI).
+     */
+    private function defaultSeverityFromRating(mixed $rating): string
+    {
+        $raw = trim((string) $rating);
+        if ($raw === '') {
+            return 'neutral';
+        }
+        if (preg_match('/(\d+(?:[.,]\d+)?)/', $raw, $m)) {
+            $n = (float) str_replace(',', '.', $m[1]);
+            if ($n >= 4) {
+                return 'positive';
+            }
+            if ($n >= 3) {
+                return 'neutral';
+            }
+            if ($n >= 2) {
+                return 'minor';
+            }
+
+            return 'major';
+        }
+
+        return 'neutral';
     }
 
     private function pushLog(string $message): void
