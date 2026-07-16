@@ -2218,7 +2218,7 @@ class NonFoodPaymentController extends Controller
                 $updateData['approved_at'] = now();
                 $approvalLevel = 'GM Finance (Superadmin)';
                 $notificationMessage = "Non Food Payment {$nonFoodPayment->payment_number} telah disetujui oleh Superadmin.";
-            } elseif ($user->id_jabatan == 160 && $user->status == 'A') {
+            } elseif (in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') {
                 // Finance Manager approval (Level 1)
                 // Don't update status, keep it as 'pending' until GM Finance approves
                 $updateData['approved_finance_manager_by'] = Auth::id();
@@ -2301,7 +2301,7 @@ class NonFoodPaymentController extends Controller
 
             $successMessage = $isSuperadmin 
                 ? 'Non Food Payment berhasil disetujui (semua level).'
-                : ($user->id_jabatan == 160 
+                : (in_array((int) $user->id_jabatan, [160, 317], true)
                     ? 'Non Food Payment berhasil disetujui, menunggu persetujuan GM Finance.'
                     : 'Non Food Payment berhasil disetujui.');
 
@@ -2376,7 +2376,7 @@ class NonFoodPaymentController extends Controller
             ];
             
             // If Finance Manager rejects, clear their approval
-            if ($user->id_jabatan == 160 && $user->status == 'A') {
+            if (in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') {
                 $updateData['approved_finance_manager_by'] = null;
                 $updateData['approved_finance_manager_at'] = null;
             }
@@ -2867,9 +2867,9 @@ class NonFoodPaymentController extends Controller
             
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160) - Level 1
+            // Finance Manager approvals (id_jabatan == 160 / 317) - Level 1
             // Only show payments that haven't been approved by Finance Manager yet
-            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+            if ((in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') || $isSuperadmin) {
                 $query = NonFoodPayment::with(['supplier', 'creator', 'purchaseOrderOps', 'purchaseRequisition'])
                     ->where('status', 'pending')
                     ->whereNull('approved_finance_manager_by') // Only show payments not yet approved by Finance Manager
@@ -2877,7 +2877,7 @@ class NonFoodPaymentController extends Controller
                 
                 // Get approver name for this level
                 $approver = DB::table('users')
-                    ->where('id_jabatan', 160)
+                    ->whereIn('id_jabatan', [160, 317])
                     ->where('status', 'A')
                     ->select('nama_lengkap')
                     ->first();

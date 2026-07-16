@@ -262,7 +262,7 @@ const canEdit = computed(() => {
 })
 
 const canApproveFinanceManager = computed(() =>
-  ((props.user?.id_jabatan === 160 && props.user?.status === 'A') || isSuperadmin.value)
+  (([160, 317].includes(Number(props.user?.id_jabatan)) && props.user?.status === 'A') || isSuperadmin.value)
   && props.contraBon.status === 'draft'
   && !props.contraBon.finance_manager_approved_at
 )

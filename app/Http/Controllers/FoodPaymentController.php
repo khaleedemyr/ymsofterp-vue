@@ -530,7 +530,7 @@ class FoodPaymentController extends Controller
 
         // Finance Manager Approval (First level)
         if (
-            ($user->id_jabatan == 160 && $user->status == 'A' && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
+            (in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A' && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
             || ($isSuperadmin && $foodPayment->status == 'draft' && !$foodPayment->finance_manager_approved_at)
         ) {
             DB::beginTransaction();
@@ -781,11 +781,11 @@ class FoodPaymentController extends Controller
             
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160) - First level
-            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+            // Finance Manager approvals (id_jabatan == 160 / 317) - First level
+            if ((in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') || $isSuperadmin) {
                 // Get approver name for this level
                 $approver = DB::table('users')
-                    ->where('id_jabatan', 160)
+                    ->whereIn('id_jabatan', [160, 317])
                     ->where('status', 'A')
                     ->select('nama_lengkap')
                     ->first();

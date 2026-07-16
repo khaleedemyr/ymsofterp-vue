@@ -76,7 +76,7 @@ final class FoodFloorOrderApprovalService
 
     public function isSuperadmin(User $user): bool
     {
-        return ($user->id_role === '5af56935b011a' || (int) ($user->id_jabatan ?? 0) === 160)
+        return ($user->id_role === '5af56935b011a' || in_array((int) ($user->id_jabatan ?? 0), [160, 317], true))
             && $user->status === 'A';
     }
 

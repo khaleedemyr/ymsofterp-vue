@@ -846,7 +846,7 @@ class PrFoodController extends Controller
             $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
 
             if (!$isMKWarehouse && !$prFood->assistant_ssd_manager_approved_at) {
-                if (in_array($userJabatan, [172, 160], true)) {
+                if (in_array($userJabatan, [172, 160, 317], true)) {
                     $currentApprovalLevel = 'assistant_ssd_manager';
                     $currentApproverId = $user->id;
                 } elseif ($userJabatan === 161 || $isSuperadmin) {

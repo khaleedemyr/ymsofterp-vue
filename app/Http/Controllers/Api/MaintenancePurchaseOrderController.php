@@ -349,7 +349,7 @@ class MaintenancePurchaseOrderController extends Controller
 
         // Notifikasi ke Finance Manager jika PO sudah di-approve
         if ($status === 'APPROVED') {
-            $financeManagerIds = DB::table('users')->where('id_jabatan', 160)->where('status', 'A')->pluck('id')->toArray();
+            $financeManagerIds = DB::table('users')->whereIn('id_jabatan', [160, 317])->where('status', 'A')->pluck('id')->toArray();
             $notifMsg = "PO $poNumber untuk task $taskNumber - $taskTitle di outlet $outlet telah di-approve dan siap untuk payment.";
             foreach ($financeManagerIds as $fmId) {
                 NotificationService::insert([

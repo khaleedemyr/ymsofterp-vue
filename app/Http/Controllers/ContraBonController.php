@@ -1512,7 +1512,7 @@ class ContraBonController extends Controller
 
             // Send notification to Finance Manager
             $financeManagers = \DB::table('users')
-                ->where('id_jabatan', 160)
+                ->whereIn('id_jabatan', [160, 317])
                 ->where('status', 'A')
                 ->pluck('id');
             
@@ -1917,7 +1917,7 @@ class ContraBonController extends Controller
 
         // Finance Manager Approval (Only level - final approval)
         if (
-            ($user->id_jabatan == 160 && $user->status == 'A' && $contraBon->status == 'draft' && !$contraBon->finance_manager_approved_at)
+            (in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A' && $contraBon->status == 'draft' && !$contraBon->finance_manager_approved_at)
             || ($isSuperadmin && $contraBon->status == 'draft' && !$contraBon->finance_manager_approved_at)
         ) {
             $contraBon->update([
@@ -2160,9 +2160,9 @@ class ContraBonController extends Controller
             // Build approval flows from legacy approval system
             $approvalFlows = [];
             
-            // Finance Manager approval (level 1) - id_jabatan = 160
-            // Get Finance Manager user (first active user with id_jabatan = 160)
-            $financeManager = \App\Models\User::where('id_jabatan', 160)
+            // Finance Manager approval (level 1) - id_jabatan = 160 / 317
+            // Get Finance Manager user (first active user with id_jabatan = 160 / 317)
+            $financeManager = \App\Models\User::whereIn('id_jabatan', [160, 317])
                 ->where('status', 'A')
                 ->first();
             
@@ -2286,14 +2286,14 @@ class ContraBonController extends Controller
             $financeManager = null;
             $gmFinance = null;
             if ($isSuperadmin) {
-                $financeManager = \App\Models\User::where('id_jabatan', 160)->where('status', 'A')->first();
+                $financeManager = \App\Models\User::whereIn('id_jabatan', [160, 317])->where('status', 'A')->first();
                 $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
             }
-            
+
             $pendingApprovals = [];
             
-            // Finance Manager approvals (id_jabatan == 160) - Only level
-            if (($user->id_jabatan == 160 && $user->status == 'A') || $isSuperadmin) {
+            // Finance Manager approvals (id_jabatan == 160 / 317) - Only level
+            if ((in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') || $isSuperadmin) {
                 $financeManagerApprovals = (clone $query)
                     ->whereNull('finance_manager_approved_at')
                     ->get();

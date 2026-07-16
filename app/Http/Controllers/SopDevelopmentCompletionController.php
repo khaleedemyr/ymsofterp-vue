@@ -694,7 +694,7 @@ class SopDevelopmentCompletionController extends Controller
         }
 
         return (string) $user->id_role === self::SUPERADMIN_ROLE_ID
-            || (int) ($user->id_jabatan ?? 0) === 160;
+            || in_array((int) ($user->id_jabatan ?? 0), [160, 317], true);
     }
 
     private function isOwnerOrSuperAdmin(SopDevelopmentCompletion $record, $user): bool

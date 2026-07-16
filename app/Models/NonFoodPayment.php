@@ -173,7 +173,7 @@ class NonFoodPayment extends Model
         }
         
         // Finance Manager can approve if status is pending (no approval yet)
-        if ($user->id_jabatan == 160 && $user->status == 'A') {
+        if (in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') {
             return $this->status === 'pending';
         }
         

@@ -415,7 +415,7 @@ class KasbonReportController extends Controller
         abort_unless($uid, 403);
 
         $user = Auth::user();
-        if ($user && (($user->id_role ?? null) === '5af56935b011a' || (int) ($user->id_jabatan ?? 0) === 160)) {
+        if ($user && (($user->id_role ?? null) === '5af56935b011a' || in_array((int) ($user->id_jabatan ?? 0), [160, 317], true))) {
             return;
         }
 
