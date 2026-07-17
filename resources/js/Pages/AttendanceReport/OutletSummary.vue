@@ -107,63 +107,73 @@ function openEmployeeSummary(outletIdParam) {
       </div>
 
       <div class="bg-white rounded-2xl shadow p-4 mb-6">
-        <div class="flex flex-col lg:flex-row lg:items-end gap-4">
-          <div class="flex-1 min-w-[160px]">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4 items-end">
+          <div class="xl:col-span-2">
             <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
             <select v-model="outletId" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <option value="">Semua Outlet</option>
               <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </div>
-          <div class="flex-1 min-w-[220px]">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Divisi (multi)</label>
+          <div class="xl:col-span-3 filter-multiselect">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Divisi (multi, bisa dicari)</label>
             <Multiselect
               v-model="selectedDivisions"
               :options="divisions"
               :multiple="true"
               :searchable="true"
+              :internal-search="true"
               :close-on-select="false"
               :show-labels="false"
               :allow-empty="true"
+              :preserve-search="true"
+              :options-limit="300"
               label="name"
               track-by="id"
-              placeholder="Pilih atau cari divisi..."
-              class="w-full"
+              placeholder="Ketik untuk cari divisi..."
+              select-label=""
+              selected-label=""
+              deselect-label=""
             />
           </div>
-          <div class="flex-1 min-w-[220px]">
-            <label class="block text-sm font-medium text-gray-700 mb-1">Jabatan (multi)</label>
+          <div class="xl:col-span-3 filter-multiselect">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Jabatan (multi, bisa dicari)</label>
             <Multiselect
               v-model="selectedJabatan"
               :options="jabatan"
               :multiple="true"
               :searchable="true"
+              :internal-search="true"
               :close-on-select="false"
               :show-labels="false"
               :allow-empty="true"
+              :preserve-search="true"
+              :options-limit="500"
               label="name"
               track-by="id"
-              placeholder="Pilih atau cari jabatan..."
-              class="w-full"
+              placeholder="Ketik untuk cari jabatan..."
+              select-label=""
+              selected-label=""
+              deselect-label=""
             />
           </div>
-          <div class="min-w-[120px]">
+          <div class="xl:col-span-1">
             <label class="block text-sm font-medium text-gray-700 mb-1">Bulan</label>
             <select v-model="bulan" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <option v-for="(m, idx) in monthNames" :key="idx+1" :value="idx+1">{{ m }}</option>
             </select>
           </div>
-          <div class="min-w-[100px]">
+          <div class="xl:col-span-1">
             <label class="block text-sm font-medium text-gray-700 mb-1">Tahun</label>
             <select v-model="tahun" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
               <option v-for="t in tahunOptions" :key="t" :value="t">{{ t }}</option>
             </select>
           </div>
-          <div class="flex gap-2">
+          <div class="xl:col-span-2 flex flex-wrap gap-2">
             <button
               @click="applyFilter"
               :disabled="isLoading"
-              class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+              class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
             >
               <i v-if="isLoading" class="fa fa-spinner fa-spin"></i>
               <i v-else class="fa fa-search"></i>
@@ -172,10 +182,10 @@ function openEmployeeSummary(outletIdParam) {
             <button
               @click="exportExcel"
               :disabled="isLoading"
-              class="bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+              class="bg-green-600 hover:bg-green-700 disabled:bg-green-400 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
             >
               <i class="fa fa-file-excel"></i>
-              Export Excel
+              Export
             </button>
           </div>
         </div>
@@ -250,4 +260,55 @@ function openEmployeeSummary(outletIdParam) {
 <style scoped>
 table { width: 100%; border-collapse: collapse; }
 th, td { border-bottom: 1px solid #e5e7eb; }
+
+.filter-multiselect :deep(.multiselect) {
+  min-height: 42px;
+  min-width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #d1d5db;
+}
+
+.filter-multiselect :deep(.multiselect:focus-within) {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.filter-multiselect :deep(.multiselect__tags) {
+  min-height: 42px;
+  padding: 6px 40px 0 8px;
+  border: none;
+  background: transparent;
+}
+
+.filter-multiselect :deep(.multiselect__tag) {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.filter-multiselect :deep(.multiselect__option) {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+  padding: 10px 14px;
+  min-height: auto;
+}
+
+.filter-multiselect :deep(.multiselect__content-wrapper) {
+  min-width: 100%;
+  width: max(100%, 320px);
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+}
+
+.filter-multiselect :deep(.multiselect__input),
+.filter-multiselect :deep(.multiselect__placeholder) {
+  font-size: 0.875rem;
+  margin-bottom: 6px;
+}
 </style>
