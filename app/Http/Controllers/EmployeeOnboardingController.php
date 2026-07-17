@@ -30,6 +30,7 @@ class EmployeeOnboardingController extends Controller
                 $q->where(function ($inner) use ($search) {
                     $inner->where('number', 'like', "%{$search}%")
                         ->orWhere('template_name', 'like', "%{$search}%")
+                        ->orWhere('outlet_name', 'like', "%{$search}%")
                         ->orWhereHas('employee', fn ($e) => $e->where('nama_lengkap', 'like', "%{$search}%"));
                 });
             })
@@ -86,8 +87,8 @@ class EmployeeOnboardingController extends Controller
 
     public function destroy(EmployeeOnboarding $employeeOnboarding)
     {
-        if (! $this->service->canManageOnboarding($employeeOnboarding)) {
-            abort(403);
+        if (! $this->service->isSuperAdmin()) {
+            abort(403, 'Hanya superadmin yang dapat menghapus onboarding.');
         }
 
         $employeeOnboarding->delete();

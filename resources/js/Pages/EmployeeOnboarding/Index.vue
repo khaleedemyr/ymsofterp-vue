@@ -17,7 +17,7 @@
 
       <div class="bg-white rounded-xl shadow p-4 mb-6">
         <form @submit.prevent="applyFilters" class="flex flex-col md:flex-row gap-3">
-          <input v-model="filterForm.search" type="text" placeholder="Cari nomor, karyawan, template..." class="flex-1 rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" />
+          <input v-model="filterForm.search" type="text" placeholder="Cari nomor, karyawan, outlet, template..." class="flex-1 rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" />
           <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Cari</button>
         </form>
       </div>
@@ -28,7 +28,9 @@
             <tr>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Nomor</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Karyawan</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">Outlet</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Template</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal Mulai</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Minggu</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
@@ -36,16 +38,31 @@
           </thead>
           <tbody>
             <tr v-if="records.data.length === 0">
-              <td colspan="6" class="px-4 py-8 text-center text-gray-500">Belum ada onboarding.</td>
+              <td colspan="8" class="px-4 py-8 text-center text-gray-500">Belum ada onboarding.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40">
               <td class="px-4 py-3 font-medium">{{ row.number }}</td>
               <td class="px-4 py-3">{{ row.employee?.nama_lengkap || '-' }}</td>
+              <td class="px-4 py-3">{{ row.outlet_name || '-' }}</td>
               <td class="px-4 py-3">{{ row.template_name }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ formatDate(row.start_date) }}</td>
               <td class="px-4 py-3">{{ row.unlocked_week }} / {{ row.total_weeks }}</td>
               <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100">{{ statusLabel(row.status) }}</span></td>
               <td class="px-4 py-3 text-right">
-                <Link :href="route('employee-onboarding.show', row.id)" class="text-indigo-600 hover:text-indigo-800"><i class="fa-solid fa-eye"></i></Link>
+                <div class="inline-flex items-center gap-2">
+                  <Link :href="route('employee-onboarding.show', row.id)" class="text-indigo-600 hover:text-indigo-800" title="Lihat">
+                    <i class="fa-solid fa-eye"></i>
+                  </Link>
+                  <button
+                    v-if="canDelete"
+                    type="button"
+                    @click="confirmDelete(row)"
+                    class="text-red-600 hover:text-red-800"
+                    title="Hapus"
+                  >
+                    <i class="fa-solid fa-trash"></i>
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -57,13 +74,19 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, router } from '@inertiajs/vue3';
-import { reactive } from 'vue';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { computed, reactive } from 'vue';
+import Swal from 'sweetalert2';
+
+const SUPERADMIN_ROLE_ID = '5af56935b011a';
 
 const props = defineProps({
   records: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
 });
+
+const page = usePage();
+const canDelete = computed(() => String(page.props.auth?.user?.id_role || '') === SUPERADMIN_ROLE_ID);
 
 const filterForm = reactive({ search: props.filters.search || '' });
 
@@ -71,8 +94,37 @@ function applyFilters() {
   router.get(route('employee-onboarding.index'), { ...filterForm }, { preserveState: true, replace: true });
 }
 
+function formatDate(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 function statusLabel(status) {
   const map = { draft: 'Draft', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' };
   return map[status] || status;
+}
+
+function confirmDelete(row) {
+  Swal.fire({
+    title: 'Hapus onboarding?',
+    text: `Hapus ${row.number} — ${row.employee?.nama_lengkap || 'karyawan'}?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626',
+    confirmButtonText: 'Hapus',
+    cancelButtonText: 'Batal',
+  }).then((result) => {
+    if (result.isConfirmed) {
+      router.delete(route('employee-onboarding.destroy', row.id));
+    }
+  });
+}
+
+if (page.props.flash?.success) {
+  Swal.fire({ icon: 'success', title: 'Berhasil', text: page.props.flash.success, timer: 2000, showConfirmButton: false });
 }
 </script>
