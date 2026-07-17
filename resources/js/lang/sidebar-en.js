@@ -144,6 +144,7 @@ export default {
     "holiday_attendance": "Holiday Attendance",
     "extra_off_ph_report": "Extra Off & PH Report",
     "overtime_submission": "Overtime Submission",
+    "one_plus_one": "One Plus One",
     "master_payroll": "Master Payroll",
     "payroll": "Payroll",
     "employee_movement": "Employee Movement",

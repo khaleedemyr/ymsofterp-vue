@@ -9,6 +9,7 @@ use App\Exports\EmployeeSummaryExport;
 use App\Exports\OutletSummaryExport;
 use App\Services\AttendanceWorkTimelineService;
 use App\Models\OvertimeSubmissionItem;
+use App\Models\OnePlusOneSubmissionItem;
 
 class AttendanceReportController extends Controller
 {
@@ -1192,6 +1193,7 @@ class AttendanceReportController extends Controller
 
         $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
         $requestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
+        $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
 
         $rows = collect();
         foreach ($dataRows as $row) {
@@ -1208,7 +1210,11 @@ class AttendanceReportController extends Controller
             $overtimeKey = $this->overtimeMapKey((int) $row->user_id, (string) $row->tanggal);
             $extraOffPerDate = (float) ($extraOffByUserDate[$overtimeKey] ?? 0);
             $actualTotal = floor($lemburRegular + $extraOffPerDate);
-            $effectiveTotal = $this->resolveEffectiveOvertimeHours($actualTotal, $requestedByUserDate[$overtimeKey] ?? null);
+            $finalTotal = floor($this->resolveFinalOvertimeHours(
+                $actualTotal,
+                $requestedByUserDate[$overtimeKey] ?? null,
+                $onePlusOneByUserDate[$overtimeKey] ?? null
+            ));
 
             $rows->push((object) [
                 'tanggal' => $row->tanggal,
@@ -1216,7 +1222,7 @@ class AttendanceReportController extends Controller
                 'outlet_id' => $row->outlet_id,
                 'nama_outlet' => $row->nama_outlet,
                 'telat' => (int) $telatLembur['telat'],
-                'lembur' => floor($effectiveTotal),
+                'lembur' => floor($finalTotal),
                 'is_off' => $isOffDay,
             ]);
         }
@@ -1339,6 +1345,36 @@ class AttendanceReportController extends Controller
         return $result;
     }
 
+    /**
+     * @param list<int> $userIds
+     * @return array<string,float>
+     */
+    private function batchOnePlusOneHoursByUserDate(array $userIds, string $startDate, string $endDate): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $items = OnePlusOneSubmissionItem::query()
+            ->join('one_plus_one_submissions as ops', 'one_plus_one_submission_items.submission_id', '=', 'ops.id')
+            ->whereNull('ops.deleted_at')
+            ->whereIn('one_plus_one_submission_items.user_id', $userIds)
+            ->whereBetween('one_plus_one_submission_items.one_plus_one_date', [$startDate, $endDate])
+            ->get([
+                'one_plus_one_submission_items.user_id',
+                'one_plus_one_submission_items.one_plus_one_date',
+                'one_plus_one_submission_items.deduction_hours',
+            ]);
+
+        $result = [];
+        foreach ($items as $item) {
+            $key = $this->overtimeMapKey((int) $item->user_id, (string) $item->one_plus_one_date);
+            $result[$key] = ($result[$key] ?? 0) + (float) $item->deduction_hours;
+        }
+
+        return $result;
+    }
+
     private function overtimeMapKey(int $userId, string $date): string
     {
         return $userId.'_'.$date;
@@ -1351,6 +1387,17 @@ class AttendanceReportController extends Controller
         }
 
         return min($actualOvertimeHours, $requestedOvertimeHours);
+    }
+
+    private function resolveFinalOvertimeHours(
+        float $actualOvertimeHours,
+        ?float $requestedOvertimeHours,
+        ?float $onePlusOneHours
+    ): float {
+        $effective = $this->resolveEffectiveOvertimeHours($actualOvertimeHours, $requestedOvertimeHours);
+        $deduction = max(0, $onePlusOneHours ?? 0);
+
+        return max(0, $effective - $deduction);
     }
 
     /**
@@ -2114,6 +2161,7 @@ class AttendanceReportController extends Controller
                 $userIds = $rows->pluck('user_id')->unique()->toArray();
                 $overtimeRequestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
                 $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
+                $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
 
                 $allUserData = DB::table('users as u')
                     ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
@@ -2181,14 +2229,19 @@ class AttendanceReportController extends Controller
                         });
                         
                         // Siapkan data detail absensi harian untuk expandable table
-                        $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $overtimeRequestedByUserDate, $extraOffByUserDate) {
+                        $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $overtimeRequestedByUserDate, $extraOffByUserDate, $onePlusOneByUserDate) {
                             $overtimeKey = $this->overtimeMapKey((int) $firstRow->user_id, (string) $row->tanggal);
                             $extraOffOvertimeForDate = (float) ($extraOffByUserDate[$overtimeKey] ?? 0);
+                            $onePlusOneForDate = (float) ($onePlusOneByUserDate[$overtimeKey] ?? 0);
 
                             // Round down lembur biasa (bulatkan ke bawah)
                             $lemburRounded = floor($row->lembur ?? 0);
                             $actualTotal = floor($lemburRounded + $extraOffOvertimeForDate);
-                            $effectiveTotal = floor($this->resolveEffectiveOvertimeHours($actualTotal, $overtimeRequestedByUserDate[$overtimeKey] ?? null));
+                            $finalTotal = floor($this->resolveFinalOvertimeHours(
+                                $actualTotal,
+                                $overtimeRequestedByUserDate[$overtimeKey] ?? null,
+                                $onePlusOneForDate
+                            ));
                             
                             return [
                                 'tanggal' => $row->tanggal,
@@ -2197,7 +2250,8 @@ class AttendanceReportController extends Controller
                                 'telat' => $row->telat,
                                 'lembur' => $lemburRounded,
                                 'extra_off_overtime' => $extraOffOvertimeForDate,
-                                'total_lembur' => $effectiveTotal,
+                                'one_plus_one_hours' => $onePlusOneForDate,
+                                'total_lembur' => $finalTotal,
                                 'is_cross_day' => $row->is_cross_day ?? false,
                                 'is_off' => $row->is_off ?? false,
                                 'is_holiday' => $row->is_holiday ?? false,
@@ -2208,6 +2262,7 @@ class AttendanceReportController extends Controller
                         })->sortBy('tanggal')->values();
 
                         $totalLemburWithExtraOff = (int) $dailyAttendance->sum('total_lembur');
+                        $totalOnePlusOne = (int) floor($dailyAttendance->sum('one_plus_one_hours'));
                         
                         $result = [
                             'user_id' => $firstRow->user_id,
@@ -2225,6 +2280,7 @@ class AttendanceReportController extends Controller
                             'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
                             'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                             'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
+                            'total_one_plus_one' => $totalOnePlusOne,
                             'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                             // Data detail untuk expandable table
                             'daily_attendance' => $dailyAttendance,
@@ -2564,6 +2620,7 @@ class AttendanceReportController extends Controller
                 $userIds = $rows->pluck('user_id')->unique()->toArray();
                 $overtimeRequestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
                 $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
+                $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
                 $allUserData = DB::table('users as u')
                     ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
                     ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
@@ -2590,13 +2647,18 @@ class AttendanceReportController extends Controller
                     $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
                     
                     // Siapkan data detail absensi harian untuk expandable table
-                    $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $overtimeRequestedByUserDate, $extraOffByUserDate) {
+                    $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $overtimeRequestedByUserDate, $extraOffByUserDate, $onePlusOneByUserDate) {
                         $overtimeKey = $this->overtimeMapKey((int) $firstRow->user_id, (string) $row->tanggal);
                         $extraOffOvertimeForDate = (float) ($extraOffByUserDate[$overtimeKey] ?? 0);
+                        $onePlusOneForDate = (float) ($onePlusOneByUserDate[$overtimeKey] ?? 0);
                         
                         $lemburRounded = floor($row->lembur ?? 0);
                         $actualTotal = floor($lemburRounded + $extraOffOvertimeForDate);
-                        $effectiveTotal = floor($this->resolveEffectiveOvertimeHours($actualTotal, $overtimeRequestedByUserDate[$overtimeKey] ?? null));
+                        $finalTotal = floor($this->resolveFinalOvertimeHours(
+                            $actualTotal,
+                            $overtimeRequestedByUserDate[$overtimeKey] ?? null,
+                            $onePlusOneForDate
+                        ));
                         
                         return [
                             'tanggal' => $row->tanggal,
@@ -2605,7 +2667,8 @@ class AttendanceReportController extends Controller
                             'telat' => $row->telat,
                             'lembur' => $lemburRounded,
                             'extra_off_overtime' => $extraOffOvertimeForDate,
-                            'total_lembur' => $effectiveTotal,
+                            'one_plus_one_hours' => $onePlusOneForDate,
+                            'total_lembur' => $finalTotal,
                             'is_cross_day' => $row->is_cross_day ?? false,
                             'is_off' => $row->is_off ?? false,
                             'is_holiday' => $row->is_holiday ?? false,
@@ -2616,6 +2679,7 @@ class AttendanceReportController extends Controller
                     })->sortBy('tanggal')->values();
 
                     $totalLemburWithExtraOff = (int) $dailyAttendance->sum('total_lembur');
+                    $totalOnePlusOne = (int) floor($dailyAttendance->sum('one_plus_one_hours'));
                     
                     $result = (object)[
                         'user_id' => $firstRow->user_id,
@@ -2635,6 +2699,7 @@ class AttendanceReportController extends Controller
                         'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
                         'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                         'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
+                        'total_one_plus_one' => $totalOnePlusOne,
                         'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
                         // Data detail untuk expandable table
                         'daily_attendance' => $dailyAttendance,

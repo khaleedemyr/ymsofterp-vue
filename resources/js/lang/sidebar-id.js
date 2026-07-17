@@ -144,6 +144,7 @@ export default {
     "holiday_attendance": "Absensi Hari Libur",
     "extra_off_ph_report": "Laporan Extra Off & PH",
     "overtime_submission": "Pengajuan Lembur",
+    "one_plus_one": "One Plus One",
     "master_payroll": "Master Payroll",
     "payroll": "Payroll",
     "employee_movement": "Mutasi Karyawan",

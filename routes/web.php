@@ -1082,6 +1082,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers'])->name('overtime-submissions.search-users');
     Route::resource('overtime-submissions', \App\Http\Controllers\OvertimeSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
 
+    Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
+    Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
+
     Route::get('/api/fb-product-calibration/search-conductors', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchConductors'])
         ->name('fb-product-calibration.search-conductors');
     Route::get('/api/fb-product-calibration/search-participants', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchParticipants'])
