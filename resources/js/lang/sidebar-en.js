@@ -143,6 +143,7 @@ export default {
     "attendance_per_outlet": "Attendance per Outlet",
     "holiday_attendance": "Holiday Attendance",
     "extra_off_ph_report": "Extra Off & PH Report",
+    "overtime_submission": "Overtime Submission",
     "master_payroll": "Master Payroll",
     "payroll": "Payroll",
     "employee_movement": "Employee Movement",
@@ -325,3 +326,4 @@ export default {
     "just_academy_reports": "Reports"
   }
 };
+

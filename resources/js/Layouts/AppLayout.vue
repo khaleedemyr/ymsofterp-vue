@@ -267,6 +267,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.attendance_per_outlet'), icon: 'fa-solid fa-fingerprint', route: '/attendance-report/outlet-summary', code: 'attendance_outlet_summary' },
             { name: () => t('sidebar.menus.holiday_attendance'), icon: 'fa-solid fa-calendar-day', route: '/holiday-attendance', code: 'holiday_attendance' },
             { name: () => t('sidebar.menus.extra_off_ph_report'), icon: 'fa-solid fa-chart-line', route: '/extra-off-report', code: 'extra_off_report' },
+            { name: () => t('sidebar.menus.overtime_submission'), icon: 'fa-solid fa-business-time', route: '/overtime-submissions', code: 'overtime_submission' },
             { name: () => t('sidebar.menus.master_payroll'), icon: 'fa-solid fa-money-check-dollar', route: '/payroll/master', code: 'payroll_master' },
             { name: () => t('sidebar.menus.payroll'), icon: 'fa-solid fa-file-invoice-dollar', route: '/payroll/report', code: 'payroll_report' },
             { name: () => t('sidebar.menus.employee_movement'), icon: 'fa-solid fa-people-arrows', route: '/employee-movements', code: 'employee_movement' },

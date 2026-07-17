@@ -143,6 +143,7 @@ export default {
     "attendance_per_outlet": "Absensi per Outlet",
     "holiday_attendance": "Absensi Hari Libur",
     "extra_off_ph_report": "Laporan Extra Off & PH",
+    "overtime_submission": "Pengajuan Lembur",
     "master_payroll": "Master Payroll",
     "payroll": "Payroll",
     "employee_movement": "Mutasi Karyawan",
@@ -325,3 +326,4 @@ export default {
     "just_academy_reports": "Laporan"
   }
 };
+

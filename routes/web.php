@@ -1079,6 +1079,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/employee-onboarding/{employeeOnboarding}/approve', [\App\Http\Controllers\EmployeeOnboardingController::class, 'approve'])->name('employee-onboarding.approve');
     Route::resource('employee-onboarding', \App\Http\Controllers\EmployeeOnboardingController::class)->except(['edit', 'update']);
 
+    Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers'])->name('overtime-submissions.search-users');
+    Route::resource('overtime-submissions', \App\Http\Controllers\OvertimeSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
+
     Route::get('/api/fb-product-calibration/search-conductors', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchConductors'])
         ->name('fb-product-calibration.search-conductors');
     Route::get('/api/fb-product-calibration/search-participants', [\App\Http\Controllers\FbProductCalibrationController::class, 'searchParticipants'])
@@ -3885,3 +3888,5 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
 });
 
 require __DIR__.'/auth.php';
+
+
