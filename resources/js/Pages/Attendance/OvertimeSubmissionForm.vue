@@ -30,15 +30,15 @@
           </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow mb-6 overflow-hidden">
-          <div class="px-6 py-4 border-b bg-indigo-50 font-semibold text-indigo-900 flex items-center justify-between">
+        <div class="bg-white rounded-xl shadow mb-6 overflow-visible">
+          <div class="px-6 py-4 border-b bg-indigo-50 font-semibold text-indigo-900 flex items-center justify-between rounded-t-xl">
             <span>Daftar Karyawan Lembur</span>
             <button type="button" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm" @click="addRow">
               <i class="fa-solid fa-plus mr-1"></i> Tambah Baris
             </button>
           </div>
 
-          <div class="p-6 space-y-3">
+          <div class="p-6 space-y-4 overflow-visible">
             <div class="grid grid-cols-12 gap-2 text-xs font-semibold uppercase text-gray-500 px-1">
               <div class="col-span-5">Nama Karyawan *</div>
               <div class="col-span-3">Tanggal Lembur *</div>
@@ -46,14 +46,13 @@
               <div class="col-span-2">Aksi</div>
             </div>
 
-            <div v-for="(item, index) in form.items" :key="`row-${index}`" class="grid grid-cols-12 gap-2 items-start">
-              <div class="col-span-5">
+            <div v-for="(item, index) in form.items" :key="`row-${index}`" class="overtime-item-row grid grid-cols-12 gap-2 items-start pb-1">
+              <div class="col-span-5 overtime-user-select">
                 <OnboardingUserSelect
                   v-model="item.user_id"
                   search-route="overtime-submissions.search-users"
                   placeholder="Cari nama / NIK / jabatan..."
                   :allow-empty="false"
-
                 />
               </div>
               <div class="col-span-3">
@@ -134,3 +133,34 @@ function submit() {
 }
 </script>
 
+<style scoped>
+.overtime-item-row {
+  position: relative;
+  z-index: 0;
+}
+
+.overtime-item-row:has(.multiselect--active) {
+  z-index: 50;
+}
+
+.overtime-user-select :deep(.onboarding-user-select) {
+  position: relative;
+}
+
+.overtime-user-select :deep(.multiselect__content-wrapper) {
+  z-index: 9999;
+  min-width: 100%;
+  width: max(100%, 320px);
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+.overtime-user-select :deep(.multiselect__option) {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.35;
+  padding: 10px 14px;
+  min-height: auto;
+}
+</style>
