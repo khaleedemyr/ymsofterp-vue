@@ -234,6 +234,7 @@ function sourceLabel(source) {
   if (s === 'google_review') return 'Google Review'
   if (s === 'instagram_comment') return 'Instagram Comment'
   if (s === 'guest_comment') return 'Guest Comment'
+  if (s === 'manual_cs') return 'Input CS Manual'
   return s || '—'
 }
 

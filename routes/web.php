@@ -55,6 +55,7 @@ use App\Http\Controllers\ButcherProcessController;
 use App\Http\Controllers\MKProductionController;
 use App\Http\Controllers\GoogleReviewController;
 use App\Http\Controllers\GuestCommentFormController;
+use App\Http\Controllers\ManualCsComplaintController;
 use App\Http\Controllers\InstagramReviewController;
 use App\Http\Controllers\CustomerVoiceCommandCenterController;
 use App\Http\Controllers\ButcherReportController;
@@ -278,6 +279,12 @@ Route::middleware('auth')->group(function () {
     Route::get('/guest-comment-forms/{guest_comment_form}/verify', [GuestCommentFormController::class, 'verify'])->name('guest-comment-forms.verify');
     Route::put('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'update'])->name('guest-comment-forms.update');
     Route::delete('/guest-comment-forms/{guest_comment_form}', [GuestCommentFormController::class, 'destroy'])->name('guest-comment-forms.destroy');
+
+    Route::get('/manual-cs-complaints', [ManualCsComplaintController::class, 'index'])->name('manual-cs-complaints.index');
+    Route::get('/manual-cs-complaints/create', [ManualCsComplaintController::class, 'create'])->name('manual-cs-complaints.create');
+    Route::post('/manual-cs-complaints', [ManualCsComplaintController::class, 'store'])->name('manual-cs-complaints.store');
+    Route::post('/manual-cs-complaints/{manualCsComplaint}/sync', [ManualCsComplaintController::class, 'sync'])->name('manual-cs-complaints.sync');
+    Route::delete('/manual-cs-complaints/{manualCsComplaint}', [ManualCsComplaintController::class, 'destroy'])->name('manual-cs-complaints.destroy');
     
     // OPTIMASI: Single endpoint untuk semua pending approvals (mengurangi API calls dari 15+ menjadi 1)
     Route::get('/api/pending-approvals/all', [\App\Http\Controllers\PendingApprovalController::class, 'getAllPendingApprovals'])->name('pending-approvals.all');

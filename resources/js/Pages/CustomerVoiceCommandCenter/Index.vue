@@ -219,6 +219,7 @@
             <option value="google_review">Google Review</option>
             <option value="instagram_comment">Instagram Comment</option>
             <option value="guest_comment">Guest Comment</option>
+            <option value="manual_cs">Input CS Manual</option>
           </select>
           <select v-model="idOutlet" class="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100" @change="applyFilters">
             <option value="">Semua outlet</option>
@@ -919,6 +920,7 @@
               <option value="google_review">Google Review</option>
               <option value="instagram_comment">Instagram Comment</option>
               <option value="guest_comment">Guest Comment</option>
+              <option value="manual_cs">Input CS Manual</option>
             </select>
             <select v-model="archiveFilter.id_outlet" class="h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-400">
               <option value="">Semua outlet</option>
@@ -2013,6 +2015,7 @@ function sourceLabel(source) {
   if (s === 'google_review') return 'Google'
   if (s === 'instagram_comment') return 'Instagram'
   if (s === 'guest_comment') return 'Guest Comment'
+  if (s === 'manual_cs') return 'Input CS Manual'
   return s || '-'
 }
 

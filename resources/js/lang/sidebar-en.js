@@ -291,6 +291,7 @@ export default {
     "announcement": "Announcement",
     "data_member": "Data Member",
     "guest_comment_ocr": "Guest Comment (OCR)",
+    "manual_cs_complaint": "Manual CS Complaint Input",
     "manual_monthly_google_review": "Manual Monthly Google Review",
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
