@@ -2515,6 +2515,7 @@ Route::get('/item-engineering', function () {
 
     // Attendance Report per Outlet (summary)
     Route::get('/attendance-report/outlet-summary', [AttendanceReportController::class, 'outletSummary'])->name('attendance-report.outlet-summary');
+    Route::get('/attendance-report/outlet-summary/export', [AttendanceReportController::class, 'exportOutletSummary'])->name('attendance-report.outlet-summary.export');
 
 Route::get('/users/dropdown-data', [UserController::class, 'getDropdownData'])->name('users.dropdown-data');
 

@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use App\Exports\AttendanceReportExport;
 use App\Exports\EmployeeSummaryExport;
+use App\Exports\OutletSummaryExport;
 use App\Services\AttendanceWorkTimelineService;
 
 class AttendanceReportController extends Controller
@@ -1017,11 +1018,56 @@ class AttendanceReportController extends Controller
     // Ringkasan telat dan lembur per outlet dalam periode
     public function outletSummary(Request $request)
     {
+        $filters = $this->parseOutletSummaryFilters($request);
+        $jabatan = $this->getActiveUserJabatanOptions();
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
+
+        $hasExplicitFilter = $request->hasAny(['outlet_id', 'division_id', 'division_ids', 'jabatan_ids', 'bulan', 'tahun']);
+        if (! $hasExplicitFilter) {
+            return Inertia::render('AttendanceReport/OutletSummary', [
+                'rows' => [],
+                'outlets' => $outlets,
+                'divisions' => $divisions,
+                'jabatan' => $jabatan,
+                'filter' => $filters['filter'],
+                'period' => null,
+            ]);
+        }
+
+        $result = $this->buildOutletSummaryRows($filters);
+
+        return Inertia::render('AttendanceReport/OutletSummary', [
+            'rows' => $result['rows'],
+            'outlets' => $outlets,
+            'divisions' => $divisions,
+            'jabatan' => $jabatan,
+            'filter' => $filters['filter'],
+            'period' => $result['period'],
+        ]);
+    }
+
+    public function exportOutletSummary(Request $request)
+    {
+        $filters = $this->parseOutletSummaryFilters($request);
+        $result = $this->buildOutletSummaryRows($filters);
+        $period = $result['period'];
+
+        $fileName = 'outlet_summary_'.$period['start'].'_sampai_'.$period['end'].'.xlsx';
+        $export = new OutletSummaryExport($result['rows'], $fileName);
+
+        return $export->toResponse($request);
+    }
+
+    /**
+     * @return array{outlet_id: mixed, division_ids: list<int>, jabatan_ids: list<int>, bulan: mixed, tahun: mixed, filter: array<string, mixed>}
+     */
+    private function parseOutletSummaryFilters(Request $request): array
+    {
         $outletId = $request->input('outlet_id');
         $bulan = $request->input('bulan') ?: date('m');
         $tahun = $request->input('tahun') ?: date('Y');
 
-        // Multi division (prefer division_ids; keep division_id for backward compatibility)
         $divisionIds = $request->input('division_ids', []);
         if (! is_array($divisionIds)) {
             $divisionIds = array_filter(explode(',', (string) $divisionIds));
@@ -1037,36 +1083,38 @@ class AttendanceReportController extends Controller
         }
         $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
 
-        $jabatan = $this->getActiveUserJabatanOptions();
-        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
-
-        $filterPayload = [
+        return [
             'outlet_id' => $outletId,
             'division_ids' => $divisionIds,
             'jabatan_ids' => $jabatanIds,
             'bulan' => $bulan,
             'tahun' => $tahun,
+            'filter' => [
+                'outlet_id' => $outletId,
+                'division_ids' => $divisionIds,
+                'jabatan_ids' => $jabatanIds,
+                'bulan' => $bulan,
+                'tahun' => $tahun,
+            ],
         ];
+    }
 
-        // Only load heavy data when user clicked Tampilkan with period (bulan/tahun always defaulted)
-        // Treat as "empty first load" if no explicit request filters besides defaults — still allow month-only filter.
-        $hasExplicitFilter = $request->hasAny(['outlet_id', 'division_id', 'division_ids', 'jabatan_ids', 'bulan', 'tahun']);
-        if (! $hasExplicitFilter) {
-            return Inertia::render('AttendanceReport/OutletSummary', [
-                'rows' => [],
-                'outlets' => $outlets,
-                'divisions' => $divisions,
-                'jabatan' => $jabatan,
-                'filter' => $filterPayload,
-                'period' => null,
-            ]);
-        }
+    /**
+     * @param  array{outlet_id: mixed, division_ids: list<int>, jabatan_ids: list<int>, bulan: mixed, tahun: mixed}  $filters
+     * @return array{rows: \Illuminate\Support\Collection, period: array{start: string, end: string}}
+     */
+    private function buildOutletSummaryRows(array $filters): array
+    {
+        $outletId = $filters['outlet_id'];
+        $divisionIds = $filters['division_ids'];
+        $jabatanIds = $filters['jabatan_ids'];
+        $bulan = $filters['bulan'];
+        $tahun = $filters['tahun'];
 
         $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
         $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+        $period = ['start' => $start, 'end' => $end];
 
-        // Same join as Index / Employee Summary: pin must match machine outlet
         $sub = DB::table('att_log as a')
             ->join('tbl_data_outlet as scan_outlet', 'a.sn', '=', 'scan_outlet.sn')
             ->join('user_pins as up', function ($q) {
@@ -1117,7 +1165,6 @@ class AttendanceReportController extends Controller
             ];
         }
 
-        // Pair IN/OUT with same timeline service as Employee Summary / Report Attendance
         $dataRows = collect();
         foreach ($processedData as $key => $data) {
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
@@ -1128,20 +1175,12 @@ class AttendanceReportController extends Controller
         }
 
         if ($dataRows->isEmpty()) {
-            return Inertia::render('AttendanceReport/OutletSummary', [
-                'rows' => [],
-                'outlets' => $outlets,
-                'divisions' => $divisions,
-                'jabatan' => $jabatan,
-                'filter' => $filterPayload,
-                'period' => ['start' => $start, 'end' => $end],
-            ]);
+            return ['rows' => collect(), 'period' => $period];
         }
 
         $userIds = $dataRows->pluck('user_id')->unique()->filter()->values()->all();
         $tanggalList = $dataRows->pluck('tanggal')->unique()->values()->all();
 
-        // Batch-load shifts (hindari N+1) — sama pendekatan Employee Summary
         $allShiftData = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->whereIn('us.user_id', $userIds)
@@ -1150,9 +1189,7 @@ class AttendanceReportController extends Controller
             ->get()
             ->groupBy(fn ($item) => $item->user_id.'_'.$item->tanggal);
 
-        // Batch Extra Off OT & PH — sama sumber Employee Summary
         $extraOffByUser = $this->batchExtraOffOvertimeHoursByUser($userIds, $start, $end);
-        $phDaysByUser = $this->batchPHDaysByUser($userIds, $start, $end);
 
         $rows = collect();
         foreach ($dataRows as $row) {
@@ -1160,11 +1197,10 @@ class AttendanceReportController extends Controller
             $shift = $allShiftData->get($shiftKey, collect())->first();
             $isOffDay = $this->isShiftOff($shift);
 
-            // Rumus telat/lembur harian SAMA dengan Absensi per Outlet (Employee Summary)
             $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
             $lembur = (float) $telatLembur['lembur'];
             if ($lembur > 12) {
-                $lembur = 0; // safety sama Employee Summary
+                $lembur = 0;
             }
 
             $rows->push((object) [
@@ -1178,50 +1214,35 @@ class AttendanceReportController extends Controller
             ]);
         }
 
-        $byOutlet = $rows->groupBy('outlet_id')->map(function ($g) use ($extraOffByUser, $phDaysByUser) {
+        $byOutlet = $rows->groupBy('outlet_id')->map(function ($g) use ($extraOffByUser) {
             $first = $g->first();
             $nonOffDays = $g->where('is_off', false);
 
             $uniqueUserIds = $g->pluck('user_id')->unique()->filter()->values();
             $uniqueEmployees = $uniqueUserIds->count();
 
-            // Regular lembur (hari non-OFF) + Extra Off OT — sama total_lembur Employee Summary
             $regularLembur = floor($nonOffDays->sum('lembur'));
             $extraOffLembur = 0;
-            $totalPHDays = 0;
             foreach ($uniqueUserIds as $userId) {
                 $extraOffLembur += (float) ($extraOffByUser[$userId] ?? 0);
-                $totalPHDays += (float) ($phDaysByUser[$userId] ?? 0);
             }
             $totalLembur = floor($regularLembur + $extraOffLembur);
             $totalTelat = (int) $nonOffDays->sum('telat');
 
-            $averageLemburPerPerson = $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0;
-            $averageTelatPerPerson = $uniqueEmployees > 0 ? round($totalTelat / $uniqueEmployees, 2) : 0;
-
-            return [
+            return (object) [
                 'outlet_id' => $first->outlet_id ?? null,
                 'nama_outlet' => $first->nama_outlet ?? '-',
                 'employee_count' => $uniqueEmployees,
                 'total_telat' => $totalTelat,
-                'average_telat_per_person' => $averageTelatPerPerson,
+                'average_telat_per_person' => $uniqueEmployees > 0 ? round($totalTelat / $uniqueEmployees, 2) : 0,
                 'total_lembur' => $totalLembur,
-                'average_lembur_per_person' => $averageLemburPerPerson,
-                'total_ph_days' => $totalPHDays,
+                'average_lembur_per_person' => $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0,
             ];
         })->values()->sortBy('nama_outlet')->values();
 
-        return Inertia::render('AttendanceReport/OutletSummary', [
-            'rows' => $byOutlet,
-            'outlets' => $outlets,
-            'divisions' => $divisions,
-            'jabatan' => $jabatan,
-            'filter' => $filterPayload,
-            'period' => ['start' => $start, 'end' => $end],
-        ]);
+        return ['rows' => $byOutlet, 'period' => $period];
     }
-
-    /**
+/**
      * Batch Extra Off overtime hours per user (sumber sama getExtraOffOvertimeHours).
      *
      * @param  list<int>  $userIds
@@ -1257,36 +1278,7 @@ class AttendanceReportController extends Controller
     }
 
     /**
-     * Batch PH days per user (sumber sama calculatePHDays).
-     *
-     * @param  list<int>  $userIds
-     * @return array<int, float>
-     */
-    private function batchPHDaysByUser(array $userIds, string $startDate, string $endDate): array
-    {
-        if ($userIds === []) {
-            return [];
-        }
-
-        $compensations = DB::table('holiday_attendance_compensations')
-            ->whereIn('user_id', $userIds)
-            ->whereBetween('holiday_date', [$startDate, $endDate])
-            ->whereIn('status', ['approved', 'used'])
-            ->get(['user_id', 'compensation_type', 'compensation_amount']);
-
-        $result = [];
-        foreach ($compensations as $compensation) {
-            if (! in_array($compensation->compensation_type, ['extra_off', 'bonus'], true)) {
-                continue;
-            }
-            $userId = (int) $compensation->user_id;
-            $result[$userId] = ($result[$userId] ?? 0) + (float) $compensation->compensation_amount;
-        }
-
-        return $result;
-    }
-
-    /**     * Jabatan yang dipakai user aktif (status A) untuk filter dropdown.
+     * Jabatan yang dipakai user aktif (status A) untuk filter dropdown.
      */
     private function getActiveUserJabatanOptions()
     {
