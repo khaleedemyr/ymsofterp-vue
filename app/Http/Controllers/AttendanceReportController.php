@@ -1018,37 +1018,47 @@ class AttendanceReportController extends Controller
     public function outletSummary(Request $request)
     {
         $outletId = $request->input('outlet_id');
-        $divisionId = $request->input('division_id');
         $bulan = $request->input('bulan') ?: date('m');
         $tahun = $request->input('tahun') ?: date('Y');
+
+        // Multi division (prefer division_ids; keep division_id for backward compatibility)
+        $divisionIds = $request->input('division_ids', []);
+        if (! is_array($divisionIds)) {
+            $divisionIds = array_filter(explode(',', (string) $divisionIds));
+        }
+        if (empty($divisionIds) && $request->filled('division_id')) {
+            $divisionIds = [$request->input('division_id')];
+        }
+        $divisionIds = array_values(array_filter(array_map('intval', $divisionIds)));
+
         $jabatanIds = $request->input('jabatan_ids', []);
-        if (!is_array($jabatanIds)) {
+        if (! is_array($jabatanIds)) {
             $jabatanIds = array_filter(explode(',', (string) $jabatanIds));
         }
         $jabatanIds = array_values(array_filter(array_map('intval', $jabatanIds)));
 
         $jabatan = $this->getActiveUserJabatanOptions();
+        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
 
-        // ✅ OPTIMIZATION: Only load data if filters are provided
-        $hasFilters = !empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun);
-        
-        if (!$hasFilters) {
-            // Return empty data with dropdowns only
-            $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-            $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
-            
+        $filterPayload = [
+            'outlet_id' => $outletId,
+            'division_ids' => $divisionIds,
+            'jabatan_ids' => $jabatanIds,
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+        ];
+
+        // Only load heavy data when user clicked Tampilkan with period (bulan/tahun always defaulted)
+        // Treat as "empty first load" if no explicit request filters besides defaults — still allow month-only filter.
+        $hasExplicitFilter = $request->hasAny(['outlet_id', 'division_id', 'division_ids', 'jabatan_ids', 'bulan', 'tahun']);
+        if (! $hasExplicitFilter) {
             return Inertia::render('AttendanceReport/OutletSummary', [
                 'rows' => [],
                 'outlets' => $outlets,
                 'divisions' => $divisions,
                 'jabatan' => $jabatan,
-                'filter' => [
-                    'outlet_id' => $outletId,
-                    'division_id' => $divisionId,
-                    'jabatan_ids' => $jabatanIds,
-                    'bulan' => $bulan,
-                    'tahun' => $tahun,
-                ],
+                'filter' => $filterPayload,
                 'period' => null,
             ]);
         }
@@ -1056,221 +1066,227 @@ class AttendanceReportController extends Controller
         $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
         $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
 
-        // Ambil raw scan data - FIXED: Grouping berdasarkan outlet tempat user bekerja
+        // Same join as Index / Employee Summary: pin must match machine outlet
         $sub = DB::table('att_log as a')
-            ->join('user_pins as up', 'a.pin', '=', 'up.pin')
+            ->join('tbl_data_outlet as scan_outlet', 'a.sn', '=', 'scan_outlet.sn')
+            ->join('user_pins as up', function ($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('scan_outlet.id_outlet', '=', 'up.outlet_id');
+            })
             ->join('users as u', 'up.user_id', '=', 'u.id')
-            ->join('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet') // ✅ FIX: Group by user's outlet
+            ->join('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
             ->where('u.status', 'A')
             ->select(
                 'a.scan_date',
                 'a.inoutmode',
                 'u.id as user_id',
                 'u.nama_lengkap',
-                'u.id_outlet', // ✅ FIX: Add user's outlet for grouping
-                'o.nama_outlet' // ✅ FIX: Add outlet name for display
+                'u.id_outlet',
+                'o.nama_outlet'
             )
-            ->where('a.scan_date', '>=', $start . ' 00:00:00')
-            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
-        if (!empty($outletId)) {
+            ->where('a.scan_date', '>=', $start.' 00:00:00')
+            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end.' +1 day')).' 00:00:00');
+
+        if (! empty($outletId)) {
             $sub->where('u.id_outlet', $outletId);
         }
-        if (!empty($divisionId)) {
-            $sub->where('u.division_id', $divisionId);
+        if (! empty($divisionIds)) {
+            $sub->whereIn('u.division_id', $divisionIds);
         }
-        if (!empty($jabatanIds)) {
+        if (! empty($jabatanIds)) {
             $sub->whereIn('u.id_jabatan', $jabatanIds);
         }
         $rawData = $sub->orderBy('a.scan_date')->get();
 
-        // Proses data pairing IN/OUT dan cross-day seperti di index()
         $processedData = [];
         foreach ($rawData as $scan) {
             $date = date('Y-m-d', strtotime($scan->scan_date));
-            $key = $scan->user_id . '_' . $date;
-            if (!isset($processedData[$key])) {
+            $key = $scan->user_id.'_'.$date;
+            if (! isset($processedData[$key])) {
                 $processedData[$key] = [
                     'tanggal' => $date,
                     'user_id' => $scan->user_id,
                     'nama_lengkap' => $scan->nama_lengkap,
-                    'outlet_id' => $scan->id_outlet, // ✅ FIX: Use user's outlet
-                    'nama_outlet' => $scan->nama_outlet, // ✅ FIX: Use user's outlet name
-                    'scans' => []
+                    'outlet_id' => $scan->id_outlet,
+                    'nama_outlet' => $scan->nama_outlet,
+                    'scans' => [],
                 ];
             }
             $processedData[$key]['scans'][] = [
                 'scan_date' => $scan->scan_date,
                 'inoutmode' => $scan->inoutmode,
-                'outlet_id' => $scan->outlet_id ?? null,
             ];
         }
 
-        // Step 2: tentukan jam_masuk/jam_keluar dengan smart cross-day processing
-        $finalData = [];
+        // Pair IN/OUT with same timeline service as Employee Summary / Report Attendance
+        $dataRows = collect();
         foreach ($processedData as $key => $data) {
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
-            // Tambahkan outlet info untuk outletSummary
             $result['outlet_id'] = $data['outlet_id'];
             $result['nama_outlet'] = $data['nama_outlet'];
-            $result['user_id'] = $data['user_id']; // ✅ Ensure user_id is included
-            $finalData[] = $result;
+            $result['user_id'] = $data['user_id'];
+            $dataRows->push((object) $result);
         }
 
-        $dataRows = collect($finalData)->map(function($item) {
-            return (object) $item;
-        });
-
-        // Index data by tanggal & outlet - FIXED: Use user's outlet for grouping
-        $indexedData = [];
-        foreach ($dataRows as $row) {
-            $key = $row->tanggal . '_' . $row->outlet_id; // ✅ FIX: Use user's outlet
-            if (!isset($indexedData[$key])) $indexedData[$key] = [];
-            $indexedData[$key][] = $row;
+        if ($dataRows->isEmpty()) {
+            return Inertia::render('AttendanceReport/OutletSummary', [
+                'rows' => [],
+                'outlets' => $outlets,
+                'divisions' => $divisions,
+                'jabatan' => $jabatan,
+                'filter' => $filterPayload,
+                'period' => ['start' => $start, 'end' => $end],
+            ]);
         }
 
-        // Build period tanggal
-        $period = [];
-        $dt = new \DateTime($start);
-        $dtEnd = new \DateTime($end);
-        while ($dt <= $dtEnd) { $period[] = $dt->format('Y-m-d'); $dt->modify('+1 day'); }
+        $userIds = $dataRows->pluck('user_id')->unique()->filter()->values()->all();
+        $tanggalList = $dataRows->pluck('tanggal')->unique()->values()->all();
 
-        // Ambil outlet untuk flattening (filter jika outlet dipilih)
-        $allOutletsQuery = DB::table('tbl_data_outlet')->select('id_outlet', 'nama_outlet');
-        if (!empty($outletId)) {
-            $allOutletsQuery->where('id_outlet', $outletId);
-        }
-        $allOutlets = $allOutletsQuery->get();
+        // Batch-load shifts (hindari N+1) — sama pendekatan Employee Summary
+        $allShiftData = DB::table('user_shifts as us')
+            ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+            ->whereIn('us.user_id', $userIds)
+            ->whereIn('us.tanggal', $tanggalList)
+            ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+            ->get()
+            ->groupBy(fn ($item) => $item->user_id.'_'.$item->tanggal);
 
-        // Flatten sesuai tanggal x outlet - FIXED: Use user's outlet
-        $flatten = [];
-        foreach ($period as $tgl) {
-            foreach ($allOutlets as $o) {
-                $key = $tgl . '_' . $o->id_outlet;
-                if (isset($indexedData[$key])) {
-                    foreach ($indexedData[$key] as $row) { 
-                        $flatten[] = (object)$row; 
-                    }
-                }
-            }
-        }
-        $dataRows = collect($flatten);
+        // Batch Extra Off OT & PH — sama sumber Employee Summary
+        $extraOffByUser = $this->batchExtraOffOvertimeHoursByUser($userIds, $start, $end);
+        $phDaysByUser = $this->batchPHDaysByUser($userIds, $start, $end);
 
-        // Ambil libur
-        $holidays = DB::table('tbl_kalender_perusahaan')
-            ->whereBetween('tgl_libur', [$start, $end])
-            ->pluck('keterangan', 'tgl_libur');
-
-        // Hitung telat/lembur persis seperti index()
         $rows = collect();
-        foreach ($period as $tanggal) {
-            $dayData = $dataRows->where('tanggal', $tanggal);
-            if ($dayData->count() > 0) {
-                foreach ($dayData as $row) {
-                    $jam_masuk = $row->jam_masuk ? date('H:i:s', strtotime($row->jam_masuk)) : null;
-                    $jam_keluar = $row->jam_keluar ? date('H:i:s', strtotime($row->jam_keluar)) : null;
-                    $telat = 0; $lembur = 0; $is_off = false; $shift_name = null;
-                    $shift = DB::table('user_shifts as us')
-                        ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
-                        ->where('us.user_id', $row->user_id)
-                        ->where('us.tanggal', $tanggal)
-                        ->select('s.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
-                        ->first();
-                    if ($shift) {
-                        $shift_name = $shift->shift_name;
-                        if (is_null($shift->shift_id) || (strtolower($shift->shift_name ?? '') === 'off')) { $is_off = true; }
-                    }
-                    if (!$is_off) {
-                        if ($shift && $shift->time_start && $jam_masuk) {
-                            $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
-                        }
-                        
-                        // FIXED: Tambahkan telat jika checkout lebih awal dari shift end
-                        if ($shift && $shift->time_end && $jam_keluar) {
-                            // Hitung telat dari early checkout (dengan pengecekan cross-day)
-                            $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shift->time_end, $row->is_cross_day ?? false);
-                            $telat += $earlyCheckoutTelat;
-                            
-                            // Gunakan smart overtime calculation - FIXED to use new logic
-                            $lembur = $this->calculateWorkBasedOvertime(
-                                (int) ($row->work_minutes ?? 0),
-                                $shift->time_start,
-                                $shift->time_end
-                            );
-                        }
-                    } else { $jam_masuk = null; $jam_keluar = null; $telat = 0; $lembur = 0; }
+        foreach ($dataRows as $row) {
+            $shiftKey = $row->user_id.'_'.$row->tanggal;
+            $shift = $allShiftData->get($shiftKey, collect())->first();
+            $isOffDay = $this->isShiftOff($shift);
 
-                    // Deteksi attendance tanpa checkout
-                    $has_no_checkout = false;
-                    if (!$is_off && !$holidays->has($tanggal) && $jam_masuk && !$jam_keluar) {
-                        $has_no_checkout = true;
-                    }
-                    
-                    $rows->push((object) [
-                        'tanggal' => $tanggal,
-                        'user_id' => $row->user_id, // ✅ ADD: Include user_id for PH calculation
-                        'outlet_id' => $row->outlet_id, // ✅ FIX: Include user's outlet
-                        'nama_outlet' => $row->nama_outlet, // ✅ FIX: Include user's outlet name
-                        'telat' => $telat,
-                        'lembur' => $lembur,
-                        'is_off' => $is_off,
-                        'is_holiday' => $holidays->has($tanggal),
-                        'has_no_checkout' => $has_no_checkout,
-                    ]);
-                }
+            // Rumus telat/lembur harian SAMA dengan Absensi per Outlet (Employee Summary)
+            $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+            $lembur = (float) $telatLembur['lembur'];
+            if ($lembur > 12) {
+                $lembur = 0; // safety sama Employee Summary
             }
+
+            $rows->push((object) [
+                'tanggal' => $row->tanggal,
+                'user_id' => $row->user_id,
+                'outlet_id' => $row->outlet_id,
+                'nama_outlet' => $row->nama_outlet,
+                'telat' => (int) $telatLembur['telat'],
+                'lembur' => $lembur,
+                'is_off' => $isOffDay,
+            ]);
         }
 
-        // ✅ FIX: Group by user's outlet (not scan outlet)
-        $byOutlet = $rows->groupBy('outlet_id')->map(function($g) use ($start, $end) {
+        $byOutlet = $rows->groupBy('outlet_id')->map(function ($g) use ($extraOffByUser, $phDaysByUser) {
             $first = $g->first();
             $nonOffDays = $g->where('is_off', false);
-            $totalLembur = $nonOffDays->sum('lembur');
-            $totalTelat = $nonOffDays->sum('telat');
-            
-            // Calculate unique employees (users) in this outlet
-            $uniqueUserIds = $nonOffDays->pluck('user_id')->unique();
+
+            $uniqueUserIds = $g->pluck('user_id')->unique()->filter()->values();
             $uniqueEmployees = $uniqueUserIds->count();
-            $averageLemburPerPerson = $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0;
-            
-            // Calculate total PH days for all users in this outlet
+
+            // Regular lembur (hari non-OFF) + Extra Off OT — sama total_lembur Employee Summary
+            $regularLembur = floor($nonOffDays->sum('lembur'));
+            $extraOffLembur = 0;
             $totalPHDays = 0;
             foreach ($uniqueUserIds as $userId) {
-                $phDays = $this->calculatePHDays($userId, $start, $end);
-                $totalPHDays += $phDays;
+                $extraOffLembur += (float) ($extraOffByUser[$userId] ?? 0);
+                $totalPHDays += (float) ($phDaysByUser[$userId] ?? 0);
             }
-            
+            $totalLembur = floor($regularLembur + $extraOffLembur);
+            $totalTelat = (int) $nonOffDays->sum('telat');
+
+            $averageLemburPerPerson = $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0;
+            $averageTelatPerPerson = $uniqueEmployees > 0 ? round($totalTelat / $uniqueEmployees, 2) : 0;
+
             return [
                 'outlet_id' => $first->outlet_id ?? null,
                 'nama_outlet' => $first->nama_outlet ?? '-',
+                'employee_count' => $uniqueEmployees,
                 'total_telat' => $totalTelat,
+                'average_telat_per_person' => $averageTelatPerPerson,
                 'total_lembur' => $totalLembur,
                 'average_lembur_per_person' => $averageLemburPerPerson,
                 'total_ph_days' => $totalPHDays,
             ];
         })->values()->sortBy('nama_outlet')->values();
 
-        // Dropdowns
-        $outlets = DB::table('tbl_data_outlet')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
-        $divisions = DB::table('tbl_data_divisi')->select('id', 'nama_divisi as name')->orderBy('nama_divisi')->get();
-
         return Inertia::render('AttendanceReport/OutletSummary', [
             'rows' => $byOutlet,
             'outlets' => $outlets,
             'divisions' => $divisions,
             'jabatan' => $jabatan,
-            'filter' => [
-                'outlet_id' => $outletId,
-                'division_id' => $divisionId,
-                'jabatan_ids' => $jabatanIds,
-                'bulan' => $bulan,
-                'tahun' => $tahun,
-            ],
-            'period' => [ 'start' => $start, 'end' => $end ],
+            'filter' => $filterPayload,
+            'period' => ['start' => $start, 'end' => $end],
         ]);
     }
 
     /**
-     * Jabatan yang dipakai user aktif (status A) untuk filter dropdown.
+     * Batch Extra Off overtime hours per user (sumber sama getExtraOffOvertimeHours).
+     *
+     * @param  list<int>  $userIds
+     * @return array<int, float>
+     */
+    private function batchExtraOffOvertimeHoursByUser(array $userIds, string $startDate, string $endDate): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $transactions = DB::table('extra_off_transactions')
+            ->whereIn('user_id', $userIds)
+            ->where('source_type', 'overtime_work')
+            ->where('transaction_type', 'earned')
+            ->where('status', 'approved')
+            ->whereBetween('source_date', [$startDate, $endDate])
+            ->get(['user_id', 'description']);
+
+        $result = [];
+        foreach ($transactions as $transaction) {
+            $workHours = 0;
+            if (preg_match('/\(jam\s+[0-9:]+\s*-\s*[0-9:]+,\s*([0-9.]+)\s*jam\)/', (string) $transaction->description, $matches)) {
+                $workHours = (float) $matches[1];
+            } elseif (preg_match('/\(([0-9.]+)\s*jam\)/', (string) $transaction->description, $matches)) {
+                $workHours = (float) $matches[1];
+            }
+            $userId = (int) $transaction->user_id;
+            $result[$userId] = ($result[$userId] ?? 0) + floor($workHours);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Batch PH days per user (sumber sama calculatePHDays).
+     *
+     * @param  list<int>  $userIds
+     * @return array<int, float>
+     */
+    private function batchPHDaysByUser(array $userIds, string $startDate, string $endDate): array
+    {
+        if ($userIds === []) {
+            return [];
+        }
+
+        $compensations = DB::table('holiday_attendance_compensations')
+            ->whereIn('user_id', $userIds)
+            ->whereBetween('holiday_date', [$startDate, $endDate])
+            ->whereIn('status', ['approved', 'used'])
+            ->get(['user_id', 'compensation_type', 'compensation_amount']);
+
+        $result = [];
+        foreach ($compensations as $compensation) {
+            if (! in_array($compensation->compensation_type, ['extra_off', 'bonus'], true)) {
+                continue;
+            }
+            $userId = (int) $compensation->user_id;
+            $result[$userId] = ($result[$userId] ?? 0) + (float) $compensation->compensation_amount;
+        }
+
+        return $result;
+    }
+
+    /**     * Jabatan yang dipakai user aktif (status A) untuk filter dropdown.
      */
     private function getActiveUserJabatanOptions()
     {
@@ -1671,6 +1687,14 @@ class AttendanceReportController extends Controller
         
         $outletId = $request->input('outlet_id');
         $divisionId = $request->input('division_id');
+        $divisionIds = $request->input('division_ids', []);
+        if (! is_array($divisionIds)) {
+            $divisionIds = array_filter(explode(',', (string) $divisionIds));
+        }
+        $divisionIds = array_values(array_filter(array_map('intval', $divisionIds)));
+        if (empty($divisionIds) && ! empty($divisionId)) {
+            $divisionIds = [(int) $divisionId];
+        }
         $bulan = $request->input('bulan');
         $tahun = $request->input('tahun');
         $jabatanIds = $request->input('jabatan_ids', []);
@@ -1694,6 +1718,7 @@ class AttendanceReportController extends Controller
         \Log::info('Employee Summary Filter Values', [
             'outlet_id' => $outletId,
             'division_id' => $divisionId,
+            'division_ids' => $divisionIds,
             'jabatan_ids' => $jabatanIds,
             'bulan' => $bulan,
             'tahun' => $tahun,
@@ -1702,7 +1727,7 @@ class AttendanceReportController extends Controller
         $rows = collect();
         $employeeSummary = collect(); // Initialize employeeSummary to prevent undefined variable error
         
-        if (!empty($outletId) || !empty($divisionId) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun)) {
+        if (!empty($outletId) || !empty($divisionIds) || !empty($jabatanIds) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
@@ -1746,7 +1771,9 @@ class AttendanceReportController extends Controller
                     $sub->where('u.id_outlet', $outletId);
                 }
                 
-                if (!empty($divisionId)) {
+                if (!empty($divisionIds)) {
+                    $sub->whereIn('u.division_id', $divisionIds);
+                } elseif (!empty($divisionId)) {
                     $sub->where('u.division_id', $divisionId);
                 }
 
