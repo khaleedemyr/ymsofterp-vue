@@ -290,10 +290,25 @@ class ItWorkReportController extends Controller
     {
         $q = trim((string) $request->get('q', ''));
         $outletId = $request->integer('outlet_id') ?: null;
+        $executorId = $request->integer('executor_id') ?: null;
+
+        if (! $executorId) {
+            return response()->json([
+                'data' => [],
+                'message' => 'Pilih pelaksana terlebih dahulu.',
+            ]);
+        }
+
+        $activeStatusSlugs = ['open', 'in_progress', 'pending'];
 
         $query = Ticket::query()
-            ->with('outlet:id_outlet,nama_outlet')
-            ->select('id', 'ticket_number', 'title', 'outlet_id', 'created_at')
+            ->with(['outlet:id_outlet,nama_outlet', 'status:id,name,slug'])
+            ->select('id', 'ticket_number', 'title', 'outlet_id', 'status_id', 'assigned_to', 'created_at')
+            ->where(function ($builder) use ($executorId) {
+                $builder->where('assigned_to', $executorId)
+                    ->orWhereHas('assignments', fn ($a) => $a->where('user_id', $executorId));
+            })
+            ->whereHas('status', fn ($s) => $s->whereIn('slug', $activeStatusSlugs))
             ->orderByDesc('id')
             ->limit(20);
 
@@ -315,6 +330,8 @@ class ItWorkReportController extends Controller
                 'title' => $t->title,
                 'outlet_id' => $t->outlet_id,
                 'outlet_name' => $t->outlet?->nama_outlet,
+                'status' => $t->status?->slug,
+                'status_name' => $t->status?->name,
                 'label' => $t->ticket_number.' — '.$t->title,
             ]),
         ]);

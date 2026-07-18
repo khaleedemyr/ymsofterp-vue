@@ -97,7 +97,9 @@
                 placeholder="Nomor atau judul ticket..."
                 class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
                 @input="onTicketSearch"
+                @focus="onTicketSearch"
               />
+              <p class="text-xs text-gray-400 mt-1">Hanya ticket assign ke pelaksana (open / in progress / pending)</p>
             </div>
             <div>
               <p class="text-xs text-gray-500 mb-1">Terpilih</p>
@@ -112,9 +114,16 @@
               class="px-3 py-2 text-sm hover:bg-cyan-50 cursor-pointer"
               @click="selectTicket(t)"
             >
-              <span class="font-semibold text-cyan-700">{{ t.ticket_number }}</span> — {{ t.title }}
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <span class="font-semibold text-cyan-700">{{ t.ticket_number }}</span> — {{ t.title }}
+                </div>
+                <span v-if="t.status_name" class="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">{{ t.status_name }}</span>
+              </div>
+              <div v-if="t.outlet_name" class="text-xs text-gray-500 mt-0.5">{{ t.outlet_name }}</div>
             </li>
           </ul>
+          <p v-else-if="ticketSearchHint" class="mt-3 text-sm text-gray-500">{{ ticketSearchHint }}</p>
         </div>
 
         <div v-if="form.source_type === 'whatsapp'" class="bg-white rounded-xl shadow p-6 mb-6">
@@ -844,6 +853,7 @@ function markRemove(id) {
 
 const ticketQuery = ref('')
 const ticketResults = ref([])
+const ticketSearchHint = ref('')
 const selectedTicketLabel = ref(
   initialTicket ? `${initialTicket.ticket_number} — ${initialTicket.title}` : ''
 )
@@ -854,24 +864,43 @@ watch(() => form.source_type, (val) => {
     form.ticket_id = null
     selectedTicketLabel.value = ''
     ticketResults.value = []
+    ticketSearchHint.value = ''
+  } else {
+    onTicketSearch()
   }
+})
+
+watch(() => form.executor_id, () => {
+  if (form.source_type !== 'ticket') return
+  form.ticket_id = null
+  selectedTicketLabel.value = ''
+  ticketQuery.value = ''
+  onTicketSearch()
 })
 
 function onTicketSearch() {
   clearTimeout(ticketTimer)
   ticketTimer = setTimeout(async () => {
-    const q = ticketQuery.value.trim()
-    if (q.length < 2) {
+    if (!form.executor_id) {
       ticketResults.value = []
+      ticketSearchHint.value = 'Pilih pelaksana terlebih dahulu.'
       return
     }
     try {
       const { data } = await axios.get(route('it-work-reports.search-tickets'), {
-        params: { q, outlet_id: form.outlet_id || undefined },
+        params: {
+          q: ticketQuery.value.trim() || undefined,
+          outlet_id: form.outlet_id || undefined,
+          executor_id: form.executor_id,
+        },
       })
       ticketResults.value = data.data || []
+      ticketSearchHint.value = ticketResults.value.length
+        ? ''
+        : 'Tidak ada ticket aktif yang di-assign ke pelaksana ini.'
     } catch {
       ticketResults.value = []
+      ticketSearchHint.value = 'Gagal memuat daftar ticket.'
     }
   }, 300)
 }
