@@ -303,11 +303,8 @@ class ItWorkReportController extends Controller
 
         $query = Ticket::query()
             ->with(['outlet:id_outlet,nama_outlet', 'status:id,name,slug'])
-            ->select('id', 'ticket_number', 'title', 'outlet_id', 'status_id', 'assigned_to', 'created_at')
-            ->where(function ($builder) use ($executorId) {
-                $builder->where('assigned_to', $executorId)
-                    ->orWhereHas('assignments', fn ($a) => $a->where('user_id', $executorId));
-            })
+            ->select('id', 'ticket_number', 'title', 'outlet_id', 'status_id', 'created_at')
+            ->whereHas('assignments', fn ($a) => $a->where('user_id', $executorId))
             ->whereHas('status', fn ($s) => $s->whereIn('slug', $activeStatusSlugs))
             ->orderByDesc('id')
             ->limit(20);
