@@ -104,12 +104,16 @@ class MampReportController extends Controller
         $validated = $request->validate([
             'row_key' => 'required|string|max:100',
             'category_id' => 'required|integer|exists:purchase_requisition_categories,id',
+            'year' => 'nullable|integer|min:2000|max:2100',
+            'month' => 'nullable|integer|min:1|max:12',
         ]);
 
         return response()->json([
             'items' => $this->mampReportService->fetchRowItems(
                 $validated['row_key'],
-                (int) $validated['category_id']
+                (int) $validated['category_id'],
+                isset($validated['year']) ? (int) $validated['year'] : null,
+                isset($validated['month']) ? (int) $validated['month'] : null
             ),
         ]);
     }

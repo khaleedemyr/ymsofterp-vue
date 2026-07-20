@@ -480,6 +480,8 @@ async function loadRowItems(row) {
       params: {
         row_key: row.row_key,
         category_id: filters.category_id,
+        year: filters.year,
+        month: filters.month,
       },
     })
     rowItemsByKey.value[row.row_key] = data.items || []

@@ -584,10 +584,122 @@ class MampReportService
                     'description' => 'GR Marketing (Rekap FJ)',
                     'amount' => (float) $row->amount,
                     'items' => [],
-                    'expandable' => false,
+                    'expandable' => true,
                     'sort_key' => $dateTo . '_3_' . $row->outlet_name,
                 ];
             });
+    }
+
+    /**
+     * Detail item GR Marketing per outlet (agregat per item+unit dalam periode).
+     *
+     * @return array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>
+     */
+    private function fetchRekapFjMarketingItemsForOutlet(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if ($outletId <= 0) {
+            return [];
+        }
+
+        $foodPrice = 'COALESCE(fo.price, 0)';
+
+        $foodRows = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->join('units as u', 'i.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->where('gr.outlet_id', $outletId)
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
+            ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+            ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                'u.name as unit',
+                DB::raw("SUM(i.received_qty) as qty"),
+                DB::raw("SUM(i.received_qty * {$foodPrice}) as subtotal")
+            )
+            ->groupBy('it.id', 'it.name', 'u.name')
+            ->get();
+
+        $serialRows = collect();
+        if ($this->hasSerialGrTables()) {
+            $costSmall = 'COALESCE(si.cost_small, 0)';
+            $smallConv = 'COALESCE(it.small_conversion_qty, 1)';
+            $mediumConv = 'COALESCE(it.medium_conversion_qty, 1)';
+            $serialPrice = "(CASE
+                WHEN si.unit_id = it.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
+                WHEN si.unit_id = it.medium_unit_id THEN {$costSmall} * {$smallConv}
+                ELSE {$costSmall}
+            END)";
+
+            $serialRows = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->where('h.outlet_id', $outletId)
+                ->whereNull('h.deleted_at')
+                ->whereNotNull('w.name')
+                ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+                ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->select(
+                    'it.id as item_id',
+                    'it.name as item_name',
+                    'u.name as unit',
+                    DB::raw('SUM(si.qty) as qty'),
+                    DB::raw("SUM(si.qty * {$serialPrice}) as subtotal")
+                )
+                ->groupBy('it.id', 'it.name', 'u.name')
+                ->get();
+        }
+
+        $merged = [];
+        foreach ($foodRows->concat($serialRows) as $row) {
+            $key = ((int) $row->item_id) . '|' . strtolower(trim((string) ($row->unit ?? '')));
+            if (! isset($merged[$key])) {
+                $merged[$key] = [
+                    'item' => $row->item_name ?? '-',
+                    'qty' => 0.0,
+                    'unit' => $row->unit,
+                    'subtotal' => 0.0,
+                ];
+            }
+            $merged[$key]['qty'] += (float) $row->qty;
+            $merged[$key]['subtotal'] += (float) $row->subtotal;
+        }
+
+        return collect(array_values($merged))
+            ->filter(fn ($row) => (float) $row['subtotal'] > 0 || (float) $row['qty'] > 0)
+            ->map(function ($row) {
+                $qty = (float) $row['qty'];
+                $subtotal = round((float) $row['subtotal'], 2);
+
+                return [
+                    'item' => $row['item'],
+                    'qty' => round($qty, 4),
+                    'unit' => $row['unit'],
+                    'price' => $qty > 0 ? round($subtotal / $qty, 2) : 0.0,
+                    'subtotal' => $subtotal,
+                ];
+            })
+            ->sortBy('item')
+            ->values()
+            ->all();
     }
 
     private function hasSerialGrTables(): bool
@@ -862,8 +974,26 @@ class MampReportService
     /**
      * @return array<int, array{item: string, qty: float, unit: string|null, price: float, subtotal: float}>
      */
-    public function fetchRowItems(string $rowKey, int $categoryId): array
+    public function fetchRowItems(string $rowKey, int $categoryId, ?int $year = null, ?int $month = null): array
     {
+        if (str_starts_with($rowKey, 'fj_mkt_')) {
+            $outletId = (int) substr($rowKey, 7);
+            if ($outletId <= 0) {
+                return [];
+            }
+
+            $year = $year ?: (int) date('Y');
+            $month = $month ?: (int) date('n');
+            $month = max(1, min(12, $month));
+            $year = max(2000, min(2100, $year));
+
+            $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
+            $dateFrom = $periodStart->format('Y-m-d');
+            $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
+
+            return $this->fetchRekapFjMarketingItemsForOutlet($outletId, $dateFrom, $dateTo);
+        }
+
         if (str_starts_with($rowKey, 'rnf_')) {
             $retailNonFoodId = (int) substr($rowKey, 4);
             if ($retailNonFoodId <= 0) {
