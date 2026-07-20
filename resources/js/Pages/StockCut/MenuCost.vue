@@ -38,15 +38,21 @@
             </select>
           </div>
           <div class="flex items-end">
-            <button @click="loadMenuCosts" class="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition">
-              <i class="fa-solid fa-search mr-1"></i> Cari
+            <button
+              type="button"
+              @click="loadMenuCosts"
+              :disabled="loading"
+              class="w-full bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <i :class="loading ? 'fa-solid fa-spinner fa-spin mr-1' : 'fa-solid fa-search mr-1'"></i>
+              {{ loading ? 'Memuat...' : 'Cari' }}
             </button>
           </div>
         </div>
       </div>
 
       <!-- Summary Cards -->
-      <div v-if="summary" class="space-y-3 md:space-y-4 mb-6">
+      <div v-if="summary && !loading" class="space-y-3 md:space-y-4 mb-6">
         <!-- Row 1: Total Menu & Total Modifier -->
         <div class="grid grid-cols-2 gap-3 md:gap-4">
           <div class="bg-blue-50 rounded-xl p-4 md:p-6 border border-blue-200">
@@ -140,7 +146,7 @@
       </div>
       
       <!-- Cost Breakdown -->
-      <div v-if="summary" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
+      <div v-if="summary && !loading" class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
         <div class="bg-green-50 rounded-xl p-4 md:p-6 border border-green-200 min-w-0">
           <p class="text-sm md:text-base font-medium text-green-700 mb-1">Menu Cost</p>
           <p class="text-lg md:text-xl lg:text-2xl font-bold text-green-900 break-words">Rp {{ formatNumber(summary.total_menu_cost || 0) }}</p>
@@ -152,7 +158,7 @@
       </div>
 
       <!-- Periode Info -->
-      <div v-if="summary" class="bg-white rounded-xl shadow-xl p-4 mb-6">
+      <div v-if="summary && !loading" class="bg-white rounded-xl shadow-xl p-4 mb-6">
         <div class="flex items-center justify-center">
           <div class="flex items-center gap-2 text-gray-600">
             <i class="fa-solid fa-calendar text-purple-500"></i>
@@ -163,7 +169,7 @@
       </div>
 
       <!-- Menu Cost Table -->
-      <div v-if="filteredMenuCostsGrouped && Object.keys(filteredMenuCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6 mb-6">
+      <div v-if="!loading && filteredMenuCostsGrouped && Object.keys(filteredMenuCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold text-gray-800">Detail Cost Per Menu</h2>
           <div class="flex gap-2">
@@ -278,7 +284,7 @@
       </div>
 
       <!-- Modifier Cost Table -->
-      <div v-if="filteredModifierCostsGrouped && Object.keys(filteredModifierCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6">
+      <div v-if="!loading && filteredModifierCostsGrouped && Object.keys(filteredModifierCostsGrouped).length > 0" class="bg-white rounded-xl shadow-xl p-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-lg font-semibold text-gray-800">Detail Cost Per Modifier</h2>
           <input
@@ -417,6 +423,9 @@ const hasSearched = ref(false)
 const searchMenu = ref('')
 const searchModifier = ref('')
 
+let menuCostAbortController = null
+let menuCostRequestSeq = 0
+
 onMounted(async () => {
   await loadOutlets()
 })
@@ -441,19 +450,41 @@ async function loadMenuCosts() {
     return
   }
 
+  if (menuCostAbortController) {
+    menuCostAbortController.abort()
+  }
+  menuCostAbortController = new AbortController()
+  const requestSeq = ++menuCostRequestSeq
+
   loading.value = true
   hasSearched.value = true
+  summary.value = null
+  menuCosts.value = []
+  menuCostsGrouped.value = {}
+  modifierCosts.value = []
+  modifierCostsGrouped.value = {}
+  expandedMenus.value = []
+  expandedModifiers.value = []
+  searchMenu.value = ''
+  searchModifier.value = ''
+
   try {
     const params = {
       id_outlet: filters.value.outlet_id,
       tanggal: filters.value.tanggal,
-      type: filters.value.type
+      type: filters.value.type || undefined,
     }
-    
-    console.log('Loading menu costs with params:', params)
-    const response = await axios.get('/api/stock-cut/menu-cost', { params })
-    console.log('Menu costs response:', response.data)
-    
+
+    const response = await axios.get('/api/stock-cut/menu-cost', {
+      params,
+      signal: menuCostAbortController.signal,
+      timeout: 180000,
+    })
+
+    if (requestSeq !== menuCostRequestSeq) {
+      return
+    }
+
     if (response.data.status === 'success') {
       menuCosts.value = response.data.menu_costs || []
       menuCostsGrouped.value = response.data.menu_costs_grouped || {}
@@ -475,23 +506,22 @@ async function loadMenuCosts() {
         periode: response.data.periode
       }
     } else {
-      menuCosts.value = []
-      menuCostsGrouped.value = {}
-      modifierCosts.value = []
-      modifierCostsGrouped.value = {}
-      summary.value = null
       console.warn('API returned non-success status:', response.data)
     }
   } catch (error) {
+    if (axios.isCancel?.(error) || error.code === 'ERR_CANCELED') {
+      return
+    }
+    if (requestSeq !== menuCostRequestSeq) {
+      return
+    }
     console.error('Error loading menu costs:', error)
-    console.error('Error response:', error.response?.data)
-    menuCosts.value = []
-    menuCostsGrouped.value = {}
-    modifierCosts.value = []
-    modifierCostsGrouped.value = {}
-    summary.value = null
+    alert(error.response?.data?.message || 'Gagal memuat report cost menu. Coba lagi.')
   } finally {
-    loading.value = false
+    if (requestSeq === menuCostRequestSeq) {
+      loading.value = false
+      menuCostAbortController = null
+    }
   }
 }
 
@@ -586,17 +616,30 @@ function menuCostPercent(menu) {
 
 function formatDate(dateString) {
   if (!dateString) return 'Tidak ada tanggal'
-  
+
+  const parts = String(dateString).split('-')
+  if (parts.length === 3) {
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleDateString('id-ID', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    }
+  }
+
   const date = new Date(dateString)
-  if (isNaN(date.getTime())) {
+  if (Number.isNaN(date.getTime())) {
     return 'Tanggal tidak valid'
   }
-  
+
   return date.toLocaleDateString('id-ID', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
   })
 }
 
