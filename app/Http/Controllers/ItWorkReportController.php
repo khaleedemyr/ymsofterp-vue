@@ -760,7 +760,6 @@ class ItWorkReportController extends Controller
     private function activeOutlets()
     {
         return Outlet::where('status', 'A')
-            ->where('is_outlet', 1)
             ->orderBy('nama_outlet')
             ->get(['id_outlet', 'nama_outlet']);
     }

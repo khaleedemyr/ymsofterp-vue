@@ -6,6 +6,7 @@ use App\Models\PurchaseRequisitionCategory;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class MampReportService
 {
@@ -52,8 +53,8 @@ class MampReportService
                 'credit' => (float) $line->amount,
                 'row_type' => 'credit',
                 'source_type' => $line->source_type,
-                'items' => $line->items,
-                'expandable' => true,
+                'items' => $line->items ?? [],
+                'expandable' => (bool) ($line->expandable ?? true),
             ];
         }
 
@@ -134,6 +135,17 @@ class MampReportService
                 $key = (int) $row->category_id;
                 $totalsByCategoryId[$key] = ($totalsByCategoryId[$key] ?? 0) + (float) $row->total;
             });
+
+        $marcommCategory = $this->findMarcommMarketingCategory();
+        if ($marcommCategory) {
+            $marketingRow = $this->fetchRekapFjMarketingByOutlet($dateFrom, $dateTo)
+                ->firstWhere('outlet_id', $outletId);
+            $marketingTotal = (float) ($marketingRow->amount ?? 0);
+            if ($marketingTotal > 0) {
+                $key = (int) $marcommCategory->id;
+                $totalsByCategoryId[$key] = ($totalsByCategoryId[$key] ?? 0) + $marketingTotal;
+            }
+        }
 
         foreach ($totalsByCategoryId as $categoryId => $total) {
             $totalsByCategoryId[$categoryId] = round($total, 2);
@@ -232,6 +244,14 @@ class MampReportService
                 $key = $row->outlet_id ? (int) $row->outlet_id : 0;
                 $totalsByOutletId[$key] = ($totalsByOutletId[$key] ?? 0) + (float) $row->total;
             });
+
+        if ($this->isMarcommMarketingCategory($category)) {
+            $this->fetchRekapFjMarketingByOutlet($dateFrom, $dateTo)
+                ->each(function ($row) use (&$totalsByOutletId) {
+                    $key = $row->outlet_id ? (int) $row->outlet_id : 0;
+                    $totalsByOutletId[$key] = ($totalsByOutletId[$key] ?? 0) + (float) $row->amount;
+                });
+        }
 
         foreach ($totalsByOutletId as $outletId => $total) {
             $totalsByOutletId[$outletId] = round($total, 2);
@@ -412,12 +432,162 @@ class MampReportService
             ];
         });
 
-        return $rnf->concat($nfp)
+        $lines = $rnf->concat($nfp);
+
+        $category = PurchaseRequisitionCategory::query()->find($categoryId);
+        if ($this->isMarcommMarketingCategory($category)) {
+            $lines = $lines->concat(
+                $this->fetchRekapFjMarketingCreditLines($dateFrom, $dateTo)
+            );
+        }
+
+        return $lines
             ->sortBy([
                 ['transaction_date', 'asc'],
                 ['sort_key', 'asc'],
             ])
             ->values();
+    }
+
+    private function isMarcommMarketingCategory(?object $category): bool
+    {
+        if (! $category) {
+            return false;
+        }
+
+        $name = strtolower(trim((string) ($category->name ?? '')));
+
+        return $name === 'marcomm (marketing)'
+            || (str_contains($name, 'marcomm') && str_contains($name, 'marketing'));
+    }
+
+    private function findMarcommMarketingCategory(): ?PurchaseRequisitionCategory
+    {
+        return PurchaseRequisitionCategory::query()
+            ->active()
+            ->get(['id', 'name', 'division', 'subcategory', 'budget_limit'])
+            ->first(fn ($category) => $this->isMarcommMarketingCategory($category));
+    }
+
+    /**
+     * Nilai Marketing Rekap FJ (GR MAIN STORE + sub category Marketing), agregat per outlet.
+     *
+     * @return Collection<int, object{outlet_id: int, outlet_name: string, amount: float}>
+     */
+    private function fetchRekapFjMarketingByOutlet(string $dateFrom, string $dateTo): Collection
+    {
+        $foodPrice = 'COALESCE(fo.price, 0)';
+
+        $foodRows = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
+            ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+            ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->select(
+                'gr.outlet_id',
+                'o.nama_outlet as outlet_name',
+                DB::raw("SUM(i.received_qty * {$foodPrice}) as amount")
+            )
+            ->groupBy('gr.outlet_id', 'o.nama_outlet')
+            ->get();
+
+        $serialRows = collect();
+        if ($this->hasSerialGrTables()) {
+            $costSmall = 'COALESCE(si.cost_small, 0)';
+            $smallConv = 'COALESCE(it.small_conversion_qty, 1)';
+            $mediumConv = 'COALESCE(it.medium_conversion_qty, 1)';
+            $serialPrice = "(CASE
+                WHEN si.unit_id = it.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
+                WHEN si.unit_id = it.medium_unit_id THEN {$costSmall} * {$smallConv}
+                ELSE {$costSmall}
+            END)";
+
+            $serialRows = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+                ->whereNull('h.deleted_at')
+                ->whereNotNull('w.name')
+                ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+                ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->select(
+                    'h.outlet_id',
+                    'o.nama_outlet as outlet_name',
+                    DB::raw("SUM(si.qty * {$serialPrice}) as amount")
+                )
+                ->groupBy('h.outlet_id', 'o.nama_outlet')
+                ->get();
+        }
+
+        $byOutlet = [];
+        foreach ($foodRows->concat($serialRows) as $row) {
+            $outletId = (int) $row->outlet_id;
+            if (! isset($byOutlet[$outletId])) {
+                $byOutlet[$outletId] = (object) [
+                    'outlet_id' => $outletId,
+                    'outlet_name' => $row->outlet_name,
+                    'amount' => 0.0,
+                ];
+            }
+            $byOutlet[$outletId]->amount += (float) $row->amount;
+        }
+
+        return collect(array_values($byOutlet))
+            ->filter(fn ($row) => (float) $row->amount > 0)
+            ->map(function ($row) {
+                $row->amount = round((float) $row->amount, 2);
+
+                return $row;
+            })
+            ->sortBy('outlet_name')
+            ->values();
+    }
+
+    /**
+     * Credit lines agregat per outlet untuk Marcomm (Marketing).
+     */
+    private function fetchRekapFjMarketingCreditLines(string $dateFrom, string $dateTo): Collection
+    {
+        return $this->fetchRekapFjMarketingByOutlet($dateFrom, $dateTo)
+            ->map(function ($row) use ($dateTo) {
+                return (object) [
+                    'row_key' => 'fj_mkt_' . $row->outlet_id,
+                    'source_type' => 'rekap_fj_marketing',
+                    'outlet_id' => (int) $row->outlet_id,
+                    'transaction_date' => $dateTo,
+                    'outlet_name' => $row->outlet_name,
+                    'reference' => 'Rekap FJ',
+                    'description' => 'GR Marketing (Rekap FJ)',
+                    'amount' => (float) $row->amount,
+                    'items' => [],
+                    'expandable' => false,
+                    'sort_key' => $dateTo . '_3_' . $row->outlet_name,
+                ];
+            });
+    }
+
+    private function hasSerialGrTables(): bool
+    {
+        return Schema::hasTable('outlet_serial_receive_headers')
+            && Schema::hasTable('outlet_serial_receive_items');
     }
 
     /**
