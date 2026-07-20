@@ -2422,6 +2422,7 @@ class StockCutController extends Controller
             // Total profit akan dihitung setelah semua cost (menu + modifier) selesai
             $profit = $itemRevenue - $menuCost;
             $profitMargin = $itemRevenue > 0 ? ($profit / $itemRevenue) * 100 : 0;
+            $costPercent = $itemRevenue > 0 ? ($menuCost / $itemRevenue) * 100 : 0;
             
             $menuCosts[] = [
                 'item_id' => $oi->item_id,
@@ -2435,6 +2436,7 @@ class StockCutController extends Controller
                 'total_revenue' => number_format($itemRevenue, 2, '.', ''),
                 'profit' => number_format($profit, 2, '.', ''),
                 'profit_margin' => number_format($profitMargin, 2, '.', ''),
+                'cost_percent' => number_format($costPercent, 2, '.', ''),
                 'bom_details' => $bomDetails
             ];
         }
@@ -2528,6 +2530,7 @@ class StockCutController extends Controller
             'total_revenue' => number_format($totalRevenue, 2, '.', ''),
             'total_profit' => number_format($totalProfit, 2, '.', ''),
             'total_profit_margin' => $totalRevenue > 0 ? number_format(($totalProfit / $totalRevenue) * 100, 2, '.', '') : '0.00',
+            'total_cost_percent' => $totalRevenue > 0 ? number_format(($totalCost / $totalRevenue) * 100, 2, '.', '') : '0.00',
             'periode' => date('Y-m-d', strtotime($tanggal)),
             'outlet_id' => $id_outlet
         ]);

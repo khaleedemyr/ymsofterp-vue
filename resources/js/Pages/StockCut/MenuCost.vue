@@ -112,15 +112,28 @@
           </div>
         </div>
         
-        <!-- Row 5: Profit Margin -->
-        <div class="bg-indigo-50 rounded-xl p-4 md:p-6 border border-indigo-200">
-          <div class="flex items-center">
-            <div class="p-3 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">
-              <i class="fa-solid fa-percentage text-xl"></i>
+        <!-- Row 5: Profit Margin & % Cost -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+          <div class="bg-indigo-50 rounded-xl p-4 md:p-6 border border-indigo-200">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-indigo-100 text-indigo-600 flex-shrink-0">
+                <i class="fa-solid fa-percentage text-xl"></i>
+              </div>
+              <div class="ml-4 flex-1">
+                <p class="text-sm font-medium text-indigo-600">Profit Margin</p>
+                <p class="text-2xl md:text-3xl font-bold text-indigo-900">{{ summary.total_profit_margin }}%</p>
+              </div>
             </div>
-            <div class="ml-4 flex-1">
-              <p class="text-sm font-medium text-indigo-600">Profit Margin</p>
-              <p class="text-2xl md:text-3xl font-bold text-indigo-900">{{ summary.total_profit_margin }}%</p>
+          </div>
+          <div class="bg-rose-50 rounded-xl p-4 md:p-6 border border-rose-200">
+            <div class="flex items-center">
+              <div class="p-3 rounded-full bg-rose-100 text-rose-600 flex-shrink-0">
+                <i class="fa-solid fa-chart-pie text-xl"></i>
+              </div>
+              <div class="ml-4 flex-1">
+                <p class="text-sm font-medium text-rose-600">% Cost</p>
+                <p class="text-2xl md:text-3xl font-bold text-rose-900">{{ summary.total_cost_percent }}%</p>
+              </div>
             </div>
           </div>
         </div>
@@ -191,6 +204,7 @@
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Revenue</th>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Margin</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% Cost</th>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detail</th>
                 </tr>
               </thead>
@@ -224,6 +238,9 @@
                     <td class="px-4 py-4 whitespace-nowrap text-sm font-medium" :class="menu.profit_margin >= 0 ? 'text-green-600' : 'text-red-600'">
                       {{ menu.profit_margin }}%
                     </td>
+                    <td class="px-4 py-4 whitespace-nowrap text-sm font-medium text-rose-600">
+                      {{ menuCostPercent(menu) }}%
+                    </td>
                     <td class="px-4 py-4 whitespace-nowrap">
                       <button @click="toggleBomDetails(menu.item_id)" class="text-blue-600 hover:text-blue-800">
                         <i :class="expandedMenus.includes(menu.item_id) ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'"></i>
@@ -233,7 +250,7 @@
                   </tr>
                   <!-- BOM Details Row -->
                   <tr v-if="expandedMenus.includes(menu.item_id)" :key="`bom-${menu.item_id}`" class="bg-gray-50">
-                    <td colspan="10" class="px-4 py-4">
+                    <td colspan="11" class="px-4 py-4">
                       <div class="bg-white rounded-lg p-4 border">
                         <h4 class="font-medium text-gray-900 mb-3">Detail Bahan Baku:</h4>
                         <div class="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
@@ -451,6 +468,10 @@ async function loadMenuCosts() {
         total_revenue: response.data.total_revenue || 0,
         total_profit: response.data.total_profit || 0,
         total_profit_margin: response.data.total_profit_margin || 0,
+        total_cost_percent: response.data.total_cost_percent
+          ?? (Number(response.data.total_revenue) > 0
+            ? ((Number(response.data.total_cost) / Number(response.data.total_revenue)) * 100).toFixed(2)
+            : '0.00'),
         periode: response.data.periode
       }
     } else {
@@ -549,6 +570,18 @@ function formatNumber(number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(number)
+}
+
+function menuCostPercent(menu) {
+  if (menu?.cost_percent !== undefined && menu?.cost_percent !== null && menu.cost_percent !== '') {
+    return menu.cost_percent
+  }
+  const revenue = Number(menu?.total_revenue)
+  const cost = Number(menu?.total_cost)
+  if (!revenue || revenue <= 0 || Number.isNaN(revenue) || Number.isNaN(cost)) {
+    return '0.00'
+  }
+  return ((cost / revenue) * 100).toFixed(2)
 }
 
 function formatDate(dateString) {
