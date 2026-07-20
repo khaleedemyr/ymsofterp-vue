@@ -454,32 +454,49 @@ class OutletWIPController extends Controller
             ->get();
 
         // OPTIMASI: Ambil semua inventory items sekaligus untuk menghindari N+1 query
-        $materialItemIds = $bom->pluck('material_item_id')->unique()->toArray();
-        $inventoryItems = DB::table('outlet_food_inventory_items')
-            ->whereIn('item_id', $materialItemIds)
-            ->get()
-            ->keyBy('item_id');
+        $materialItemIds = $bom->pluck('material_item_id')->unique()->filter()->values()->all();
+        $inventoryItems = $materialItemIds === []
+            ? collect()
+            : DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $materialItemIds)
+                ->get()
+                ->keyBy('item_id');
+
+        $materialMasters = $materialItemIds === []
+            ? collect()
+            : DB::table('items')
+                ->whereIn('id', $materialItemIds)
+                ->get()
+                ->keyBy('id');
+
+        $unitIds = $materialMasters->flatMap(fn ($i) => [
+            $i->small_unit_id, $i->medium_unit_id, $i->large_unit_id,
+        ])->merge($bom->pluck('unit_id'))->filter()->unique()->values()->all();
+
+        $unitNameById = $unitIds === []
+            ? []
+            : DB::table('units')->whereIn('id', $unitIds)->pluck('name', 'id')->all();
 
         // OPTIMASI: Ambil semua stock data sekaligus
         $inventoryItemIds = $inventoryItems->pluck('id')->toArray();
         $stockDataMap = [];
-        if (!empty($inventoryItemIds)) {
+        if (! empty($inventoryItemIds)) {
             $stockDataList = DB::table('outlet_food_inventory_stocks')
                 ->whereIn('inventory_item_id', $inventoryItemIds)
                 ->where('id_outlet', $outlet_id)
                 ->where('warehouse_outlet_id', $warehouse_outlet_id)
                 ->get();
-            
-            // Map by inventory_item_id untuk akses cepat
+
             foreach ($stockDataList as $stockData) {
                 $stockDataMap[$stockData->inventory_item_id] = $stockData;
             }
         }
 
         $result = [];
+        $totalCost = 0.0;
         foreach ($bom as $b) {
-            // Cari inventory item untuk material dari map
             $inventoryItem = $inventoryItems->get($b->material_item_id);
+            $itemMaster = $materialMasters->get($b->material_item_id);
 
             $stock = 0;
             $stock_medium = 0;
@@ -487,6 +504,7 @@ class OutletWIPController extends Controller
             $last_cost_small = 0;
             $last_cost_medium = 0;
             $last_cost_large = 0;
+            $macPerSmall = 0.0;
 
             if ($inventoryItem) {
                 $stockData = $stockDataMap[$inventoryItem->id] ?? null;
@@ -498,17 +516,44 @@ class OutletWIPController extends Controller
                     $last_cost_small = $stockData->last_cost_small;
                     $last_cost_medium = $stockData->last_cost_medium;
                     $last_cost_large = $stockData->last_cost_large;
+                    $macPerSmall = OutletInventoryCostResolver::resolveMacFromStockRow($stockData);
                 }
             }
 
-            // Hitung qty yang dibutuhkan
-            $qty_needed = $b->qty * $qty;
+            $qty_needed = (float) $b->qty * (float) $qty;
+            $qtyNeededSmall = $qty_needed;
+            if ($itemMaster) {
+                $bomUnitName = strtolower(trim((string) ($unitNameById[$b->unit_id] ?? $b->material_unit_name ?? '')));
+                $unitSmall = strtolower(trim((string) ($unitNameById[$itemMaster->small_unit_id] ?? '')));
+                $unitMedium = strtolower(trim((string) ($unitNameById[$itemMaster->medium_unit_id] ?? '')));
+                $unitLarge = strtolower(trim((string) ($unitNameById[$itemMaster->large_unit_id] ?? '')));
+                $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+                $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+                if ($bomUnitName !== '' && $bomUnitName === $unitSmall) {
+                    $qtyNeededSmall = $qty_needed;
+                } elseif ($bomUnitName !== '' && $bomUnitName === $unitMedium) {
+                    $qtyNeededSmall = $qty_needed * $smallConv;
+                } elseif ($bomUnitName !== '' && $bomUnitName === $unitLarge) {
+                    $qtyNeededSmall = $qty_needed * $smallConv * $mediumConv;
+                }
+            }
+
+            $lineCost = round($qtyNeededSmall * $macPerSmall, 2);
+            $totalCost += $lineCost;
+
+            // MAC per satuan BOM (agar selaras dengan kolom Qty Dibutuhkan)
+            $macPerBomUnit = $macPerSmall;
+            if ($itemMaster && $qty_needed > 0 && abs($qtyNeededSmall - $qty_needed) > 0.0001) {
+                $macPerBomUnit = $lineCost / $qty_needed;
+            }
 
             $result[] = [
                 'material_item_id' => $b->material_item_id,
                 'material_name' => $b->material_name,
                 'qty' => $b->qty,
                 'qty_needed' => $qty_needed,
+                'qty_needed_small' => $qtyNeededSmall,
                 'unit_id' => $b->unit_id,
                 'material_unit_name' => $b->material_unit_name,
                 'stock' => $stock,
@@ -517,11 +562,17 @@ class OutletWIPController extends Controller
                 'last_cost_small' => $last_cost_small,
                 'last_cost_medium' => $last_cost_medium,
                 'last_cost_large' => $last_cost_large,
-                'sufficient' => $stock >= $qty_needed
+                'mac' => round($macPerBomUnit, 4),
+                'mac_per_small' => round($macPerSmall, 4),
+                'line_cost' => $lineCost,
+                'sufficient' => $stock >= $qty_needed,
             ];
         }
 
-        return response()->json($result);
+        return response()->json([
+            'items' => $result,
+            'total_cost' => round($totalCost, 2),
+        ]);
     }
 
     public function store(Request $request)

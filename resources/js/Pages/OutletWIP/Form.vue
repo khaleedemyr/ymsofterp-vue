@@ -208,7 +208,12 @@
 
             <!-- BoM Table (Expandable) -->
             <div v-if="production.showBom && production.bom && production.bom.length > 0" class="mt-3 bg-gray-50 rounded-lg p-4">
-              <h4 class="font-semibold text-gray-700 mb-3">Bill of Materials (BOM)</h4>
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <h4 class="font-semibold text-gray-700">Bill of Materials (BOM)</h4>
+                <div class="text-sm font-semibold text-blue-700">
+                  Estimasi Biaya: {{ formatCurrency(production.bomTotalCost || bomTotalCost(production)) }}
+                </div>
+              </div>
               <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                   <thead>
@@ -216,6 +221,8 @@
                       <th class="text-left py-2 px-2">Material</th>
                       <th class="text-left py-2 px-2">Qty Dibutuhkan</th>
                       <th class="text-left py-2 px-2">Stok Tersedia</th>
+                      <th class="text-right py-2 px-2">MAC</th>
+                      <th class="text-right py-2 px-2">Biaya</th>
                       <th class="text-left py-2 px-2">Status</th>
                     </tr>
                   </thead>
@@ -224,6 +231,8 @@
                       <td class="py-2 px-2">{{ bomItem.material_name }}</td>
                       <td class="py-2 px-2">{{ formatNumber(bomItem.qty_needed) }} {{ bomItem.material_unit_name }}</td>
                       <td class="py-2 px-2">{{ formatNumber(bomItem.stock) }} {{ bomItem.material_unit_name }}</td>
+                      <td class="py-2 px-2 text-right whitespace-nowrap">{{ formatCurrency(bomItem.mac) }}</td>
+                      <td class="py-2 px-2 text-right whitespace-nowrap font-medium">{{ formatCurrency(bomItem.line_cost) }}</td>
                       <td class="py-2 px-2">
                         <span 
                           :class="bomItem.sufficient ? 'text-green-600' : 'text-red-600'" 
@@ -234,6 +243,15 @@
                       </td>
                     </tr>
                   </tbody>
+                  <tfoot>
+                    <tr class="border-t bg-white/70">
+                      <td colspan="4" class="py-2 px-2 text-right font-semibold text-gray-700">Total Biaya</td>
+                      <td class="py-2 px-2 text-right font-bold text-blue-700 whitespace-nowrap">
+                        {{ formatCurrency(production.bomTotalCost || bomTotalCost(production)) }}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
@@ -321,6 +339,7 @@ const form = useForm({
           qty_jadi: detail.qty_jadi,
           unit_id: unitId,
           bom: [],
+          bomTotalCost: 0,
           showBom: false,
           loadingBom: false,
           canProduce: false,
@@ -399,6 +418,7 @@ function newProductionItem() {
     qty_jadi: 0,
     unit_id: '',
     bom: [],
+    bomTotalCost: 0,
     showBom: false,
     loadingBom: false,
     canProduce: false,
@@ -451,6 +471,7 @@ function onItemSelect(item, index) {
     production.unit_id = ''
   }
   production.bom = []
+  production.bomTotalCost = 0
   production.showBom = false
   production.canProduce = false
 
@@ -471,6 +492,7 @@ function onItemRemove(index) {
   production.itemData = null // Clear itemData
   production.unit_id = ''
   production.bom = []
+  production.bomTotalCost = 0
   production.showBom = false
   production.canProduce = false
 }
@@ -482,6 +504,7 @@ function onQtyChange(index) {
     fetchBom(index)
   } else {
     production.bom = []
+    production.bomTotalCost = 0
     production.canProduce = false
   }
 }
@@ -522,6 +545,7 @@ async function fetchBom(index) {
   const production = form.productions[index]
   if (!production.item_id || !production.qty || !form.outlet_id || !form.warehouse_outlet_id) {
     production.bom = []
+    production.bomTotalCost = 0
     production.canProduce = false
     return
   }
@@ -535,7 +559,12 @@ async function fetchBom(index) {
       warehouse_outlet_id: form.warehouse_outlet_id
     })
     
-    production.bom = response.data || []
+    const payload = response.data
+    const items = Array.isArray(payload) ? payload : (payload?.items || [])
+    production.bom = items
+    production.bomTotalCost = Array.isArray(payload)
+      ? items.reduce((sum, row) => sum + (Number(row.line_cost) || 0), 0)
+      : (Number(payload?.total_cost) || items.reduce((sum, row) => sum + (Number(row.line_cost) || 0), 0))
     production.canProduce = production.bom.length > 0 && production.bom.every(item => item.sufficient)
     
     if (production.bom.length === 0) {
@@ -556,6 +585,7 @@ async function fetchBom(index) {
   } catch (error) {
     console.error('Error fetching BOM:', error)
     production.bom = []
+    production.bomTotalCost = 0
     production.canProduce = false
     await Swal.fire({
       icon: 'error',
@@ -575,6 +605,22 @@ function formatNumber(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value)
+}
+
+function formatCurrency(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 'Rp 0'
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n)
+}
+
+function bomTotalCost(production) {
+  if (!production?.bom?.length) return 0
+  return production.bom.reduce((sum, row) => sum + (Number(row.line_cost) || 0), 0)
 }
 
 function formatTime(date) {
