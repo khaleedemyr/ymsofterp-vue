@@ -482,6 +482,27 @@ function pad2(n) {
   return String(n).padStart(2, '0')
 }
 
+/** Tanggal lokal hari ini (bukan UTC dari toISOString). */
+function todayLocalYmd() {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** Ambil Y-m-d dari string API (dukung ISO UTC lama tanpa geser hari). */
+function dateOnly(value) {
+  if (!value) return ''
+  const s = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // ISO dengan Z: konversi ke tanggal kalender lokal
+  if (s.includes('T')) {
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+    }
+  }
+  return s.slice(0, 10)
+}
+
 function formatDateTimeParts(date = new Date()) {
   return {
     date: `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`,
@@ -599,7 +620,7 @@ const initialTicket = props.record?.ticket || props.prefillTicket || null
 const mappedItems = mapRecordItems(props.record?.items)
 
 const form = useForm({
-  work_date: props.record?.work_date?.slice?.(0, 10) || String(props.record?.work_date || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+  work_date: dateOnly(props.record?.work_date) || todayLocalYmd(),
   start_time: toTimeInput(props.record?.start_time),
   end_time: toTimeInput(props.record?.end_time),
   outlet_id: props.record?.outlet_id || props.prefillTicket?.outlet_id || '',

@@ -69,7 +69,8 @@ class ItWorkReport extends Model
     ];
 
     protected $casts = [
-        'work_date' => 'date',
+        // Y-m-d agar JSON tidak jadi ISO UTC (bisa geser ±1 hari di UI)
+        'work_date' => 'date:Y-m-d',
         'wa_reported_at' => 'datetime',
         'submitted_at' => 'datetime',
     ];

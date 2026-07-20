@@ -503,6 +503,13 @@ class ItWorkReportController extends Controller
             }
         }
 
+        // Simpan tanggal sebagai Y-m-d murni (hindari geser hari karena timezone/ISO).
+        if (! empty($validated['work_date'])) {
+            $validated['work_date'] = \Illuminate\Support\Carbon::parse($validated['work_date'])
+                ->timezone(config('app.timezone'))
+                ->toDateString();
+        }
+
         return $validated;
     }
 

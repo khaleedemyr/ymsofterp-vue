@@ -211,7 +211,19 @@ function openItemEvidenceLightbox(item, ev) {
 }
 
 function formatDate(value) {
-  return value ? String(value).slice(0, 10) : '-'
+  if (!value) return '-'
+  const s = String(value)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10)) && !s.includes('T')) {
+    return s.slice(0, 10)
+  }
+  if (s.includes('T')) {
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) {
+      const p = (n) => String(n).padStart(2, '0')
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    }
+  }
+  return s.slice(0, 10)
 }
 
 function formatTime(value) {
