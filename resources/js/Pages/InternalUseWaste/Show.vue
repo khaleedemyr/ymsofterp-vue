@@ -104,6 +104,7 @@ function typeLabel(type) {
   if (type === 'internal_use') return 'Internal Use'
   if (type === 'spoil') return 'Spoil'
   if (type === 'waste') return 'Waste'
+  if (type === 'r_and_d') return 'RnD'
   return type
 }
 function formatDate(date) {

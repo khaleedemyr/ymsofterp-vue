@@ -15,6 +15,7 @@
                 <option value="internal_use">Internal Use</option>
                 <option value="spoil">Spoil</option>
                 <option value="waste">Waste</option>
+                <option value="r_and_d">RnD</option>
               </select>
             </div>
             <div>

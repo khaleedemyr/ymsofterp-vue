@@ -1695,6 +1695,7 @@ class OutletPaymentController extends Controller
                 'u.nama_lengkap as created_by_name',
                 'w.name as warehouse_name',
                 'wd.name as warehouse_division_name',
+                DB::raw('NULL as warehouse_division_id'),
                 'wo.name as warehouse_outlet_name',
                 'ffo.fo_mode',
                 'ffo.order_number as ro_number',
@@ -1722,6 +1723,7 @@ class OutletPaymentController extends Controller
                 'u.nama_lengkap as created_by_name',
                 'w.name as warehouse_name',
                 'wd.name as warehouse_division_name',
+                'rws.warehouse_division_id as warehouse_division_id',
                 DB::raw('NULL as warehouse_outlet_name'),
                 DB::raw('NULL as fo_mode'),
                 DB::raw('NULL as ro_number'),
@@ -1818,14 +1820,18 @@ class OutletPaymentController extends Controller
                 $details[$this->invoiceReportDetailKey('RWS', $row->gr_id)][] = $row;
             }
         }
-        $gsrIds = collect($paginatedData->items())->where('transaction_type', 'GSR')->pluck('gr_id')->unique()->values();
-        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrIds));
+        $gsrRows = collect($paginatedData->items())->where('transaction_type', 'GSR');
+        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrRows));
 
         $paginatedItems = collect($paginatedData->items());
         $dataArray = [];
         foreach ($paginatedItems as $row) {
             $rowData = (array) $row;
-            $detailKey = $this->invoiceReportDetailKey($rowData['transaction_type'], $rowData['gr_id']);
+            $detailKey = $this->invoiceReportDetailKey(
+                $rowData['transaction_type'],
+                $rowData['gr_id'],
+                $rowData['warehouse_division_id'] ?? null
+            );
             if ($rowData['transaction_type'] === 'GR') {
                 if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
                     $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
@@ -1856,9 +1862,13 @@ class OutletPaymentController extends Controller
                 if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
                     $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
                 } else {
-                    $rowData['payment_total'] = $this->sumInvoiceReportGsrTotal($rowData['gr_id']);
+                    $rowData['payment_total'] = $this->sumInvoiceReportGsrTotal(
+                        $rowData['gr_id'],
+                        $rowData['warehouse_division_id'] ?? null
+                    );
                 }
             }
+            $rowData['detail_key'] = $detailKey;
             $dataArray[] = $rowData;
         }
 
@@ -1914,6 +1924,7 @@ class OutletPaymentController extends Controller
                 'u.nama_lengkap as created_by_name',
                 'w.name as warehouse_name',
                 'wd.name as warehouse_division_name',
+                DB::raw('NULL as warehouse_division_id'),
                 'wo.name as warehouse_outlet_name',
                 'ffo.fo_mode',
                 'ffo.order_number as ro_number',
@@ -1942,6 +1953,7 @@ class OutletPaymentController extends Controller
                 'u.nama_lengkap as created_by_name',
                 'w.name as warehouse_name',
                 'wd.name as warehouse_division_name',
+                'rws.warehouse_division_id as warehouse_division_id',
                 DB::raw('NULL as warehouse_outlet_name'),
                 DB::raw('NULL as fo_mode'),
                 DB::raw('NULL as ro_number'),
@@ -2064,11 +2076,16 @@ class OutletPaymentController extends Controller
             }
         }
 
-        $gsrIds = $data->where('transaction_type', 'GSR')->pluck('gr_id')->unique()->values();
-        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrIds));
+        $gsrRows = $data->where('transaction_type', 'GSR');
+        $details = array_merge($details, $this->fetchInvoiceReportGsrDetails($gsrRows));
 
         foreach ($data as $row) {
-            $detailKey = $this->invoiceReportDetailKey($row->transaction_type, $row->gr_id);
+            $detailKey = $this->invoiceReportDetailKey(
+                $row->transaction_type,
+                $row->gr_id,
+                $row->warehouse_division_id ?? null
+            );
+            $row->detail_key = $detailKey;
             if ($row->transaction_type === 'GR' && isset($details[$detailKey])) {
                 $row->payment_total = collect($details[$detailKey])->sum('subtotal');
             }
@@ -2076,7 +2093,10 @@ class OutletPaymentController extends Controller
                 if (isset($details[$detailKey])) {
                     $row->payment_total = collect($details[$detailKey])->sum('subtotal');
                 } else {
-                    $row->payment_total = $this->sumInvoiceReportGsrTotal($row->gr_id);
+                    $row->payment_total = $this->sumInvoiceReportGsrTotal(
+                        $row->gr_id,
+                        $row->warehouse_division_id ?? null
+                    );
                 }
             }
         }
@@ -2266,8 +2286,12 @@ class OutletPaymentController extends Controller
         }
     }
 
-    protected function invoiceReportDetailKey(string $transactionType, $id): string
+    protected function invoiceReportDetailKey(string $transactionType, $id, $warehouseDivisionId = null): string
     {
+        if ($transactionType === 'GSR' && $warehouseDivisionId !== null && $warehouseDivisionId !== '') {
+            return "{$transactionType}-{$id}-{$warehouseDivisionId}";
+        }
+
         return "{$transactionType}-{$id}";
     }
 
@@ -2277,32 +2301,33 @@ class OutletPaymentController extends Controller
             return null;
         }
 
-        $warehouseSub = '(SELECT w.name FROM outlet_serial_receive_items si
-            INNER JOIN items it ON si.item_id = it.id
-            LEFT JOIN warehouse_division wd ON it.warehouse_division_id = wd.id
-            LEFT JOIN warehouses w ON wd.warehouse_id = w.id
-            WHERE si.header_id = h.id LIMIT 1)';
-        $wdSub = '(SELECT wd.name FROM outlet_serial_receive_items si
-            INNER JOIN items it ON si.item_id = it.id
-            LEFT JOIN warehouse_division wd ON it.warehouse_division_id = wd.id
-            WHERE si.header_id = h.id LIMIT 1)';
-        $woSub = '(SELECT wo.name FROM outlet_serial_receive_items si
-            LEFT JOIN warehouse_outlets wo ON si.warehouse_outlet_id = wo.id
-            WHERE si.header_id = h.id LIMIT 1)';
-        $foModeSub = '(SELECT ffo.fo_mode FROM outlet_serial_receive_items si
-            INNER JOIN delivery_orders do ON si.delivery_order_id = do.id
-            INNER JOIN food_floor_orders ffo ON do.floor_order_id = ffo.id
-            WHERE si.header_id = h.id LIMIT 1)';
-        $roSub = '(SELECT ffo.order_number FROM outlet_serial_receive_items si
-            INNER JOIN delivery_orders do ON si.delivery_order_id = do.id
-            INNER JOIN food_floor_orders ffo ON do.floor_order_id = ffo.id
-            WHERE si.header_id = h.id LIMIT 1)';
-
+        // Satu baris per (GSR header × warehouse_division) agar nama warehouse+division
+        // selalu pasangan yang valid (bukan LIMIT 1 beda item).
         return DB::table('outlet_serial_receive_headers as h')
             ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->join('outlet_serial_receive_items as si', 'si.header_id', '=', 'h.id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('warehouse_outlets as wo', 'si.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->whereNull('h.deleted_at')
             ->where('h.status', 'completed')
+            ->groupBy(
+                'h.id',
+                'h.number',
+                'h.created_at',
+                'h.receive_date',
+                'h.notes',
+                'o.id_outlet',
+                'o.nama_outlet',
+                'u.nama_lengkap',
+                'wd.id',
+                'w.name',
+                'wd.name'
+            )
             ->select(
                 'h.id as gr_id',
                 'h.number as gr_number',
@@ -2312,11 +2337,12 @@ class OutletPaymentController extends Controller
                 'o.id_outlet',
                 'o.nama_outlet as outlet_name',
                 'u.nama_lengkap as created_by_name',
-                DB::raw("{$warehouseSub} as warehouse_name"),
-                DB::raw("{$wdSub} as warehouse_division_name"),
-                DB::raw("{$woSub} as warehouse_outlet_name"),
-                DB::raw("{$foModeSub} as fo_mode"),
-                DB::raw("{$roSub} as ro_number"),
+                'w.name as warehouse_name',
+                'wd.name as warehouse_division_name',
+                'wd.id as warehouse_division_id',
+                DB::raw('MIN(wo.name) as warehouse_outlet_name'),
+                DB::raw('MIN(ffo.fo_mode) as fo_mode'),
+                DB::raw('MIN(ffo.order_number) as ro_number'),
                 DB::raw("'GSR' as transaction_type"),
                 DB::raw('NULL as payment_number'),
                 DB::raw('NULL as payment_total')
@@ -2348,14 +2374,7 @@ class OutletPaymentController extends Controller
         }
 
         if ($request->filled('fo_mode')) {
-            $gsrQuery->whereExists(function ($q) use ($request) {
-                $q->select(DB::raw(1))
-                    ->from('outlet_serial_receive_items as si')
-                    ->join('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
-                    ->join('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
-                    ->whereColumn('si.header_id', 'h.id')
-                    ->where('ffo.fo_mode', $request->fo_mode);
-            });
+            $gsrQuery->where('ffo.fo_mode', $request->fo_mode);
         }
     }
 
@@ -2379,10 +2398,25 @@ class OutletPaymentController extends Controller
         return $union->get()->sortByDesc('invoice_date')->values();
     }
 
-    protected function fetchInvoiceReportGsrDetails($gsrIds): array
+    /**
+     * @param  \Illuminate\Support\Collection|array  $gsrRowsOrIds
+     */
+    protected function fetchInvoiceReportGsrDetails($gsrRowsOrIds): array
     {
         $details = [];
-        if (!$gsrIds || !count($gsrIds) || !$this->rekapFjHasSerialGrTables()) {
+        if (!$gsrRowsOrIds || !count($gsrRowsOrIds) || !$this->rekapFjHasSerialGrTables()) {
+            return $details;
+        }
+
+        $collection = collect($gsrRowsOrIds);
+        $first = $collection->first();
+        $isRowObjects = is_object($first) || is_array($first);
+
+        $gsrIds = $isRowObjects
+            ? $collection->map(fn ($r) => is_array($r) ? ($r['gr_id'] ?? null) : ($r->gr_id ?? null))->filter()->unique()->values()
+            : $collection->filter()->unique()->values();
+
+        if ($gsrIds->isEmpty()) {
             return $details;
         }
 
@@ -2393,6 +2427,7 @@ class OutletPaymentController extends Controller
             ->whereIn('si.header_id', $gsrIds)
             ->select(
                 'si.header_id as gr_id',
+                'it.warehouse_division_id',
                 'it.name as item_name',
                 'si.qty as qty',
                 DB::raw('COALESCE(u.name, "-") as unit_name'),
@@ -2402,13 +2437,13 @@ class OutletPaymentController extends Controller
             ->get();
 
         foreach ($gsrItemRows as $row) {
-            $details[$this->invoiceReportDetailKey('GSR', $row->gr_id)][] = $row;
+            $details[$this->invoiceReportDetailKey('GSR', $row->gr_id, $row->warehouse_division_id)][] = $row;
         }
 
         return $details;
     }
 
-    protected function sumInvoiceReportGsrTotal($headerId): float
+    protected function sumInvoiceReportGsrTotal($headerId, $warehouseDivisionId = null): float
     {
         if (!$this->rekapFjHasSerialGrTables()) {
             return 0;
@@ -2416,10 +2451,15 @@ class OutletPaymentController extends Controller
 
         $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
 
-        return (float) DB::table('outlet_serial_receive_items as si')
+        $query = DB::table('outlet_serial_receive_items as si')
             ->join('items as it', 'si.item_id', '=', 'it.id')
-            ->where('si.header_id', $headerId)
-            ->sum(DB::raw("si.qty * ({$effectivePriceExpr})"));
+            ->where('si.header_id', $headerId);
+
+        if ($warehouseDivisionId !== null && $warehouseDivisionId !== '') {
+            $query->where('it.warehouse_division_id', $warehouseDivisionId);
+        }
+
+        return (float) $query->sum(DB::raw("si.qty * ({$effectivePriceExpr})"));
     }
 
     protected function outletPaymentSupportsGsr(): bool

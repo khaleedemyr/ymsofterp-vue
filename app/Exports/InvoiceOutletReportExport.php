@@ -110,7 +110,8 @@ class InvoiceOutletReportExport
         
         foreach ($this->data as $index => $rowData) {
             $firstItemRow = $currentRow;
-            $detailKey = ($rowData->transaction_type ?? 'GR') . '-' . $rowData->gr_id;
+            $detailKey = $rowData->detail_key
+                ?? (($rowData->transaction_type ?? 'GR') . '-' . $rowData->gr_id);
             $hasItems = isset($this->details[$detailKey]) && count($this->details[$detailKey]) > 0;
             $itemCount = $hasItems ? count($this->details[$detailKey]) : 1;
             

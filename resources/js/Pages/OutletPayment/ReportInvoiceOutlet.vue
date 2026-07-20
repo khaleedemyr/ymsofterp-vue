@@ -124,11 +124,11 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <template v-for="row in props.data" :key="row.transaction_type + '-' + row.gr_id">
+            <template v-for="row in props.data" :key="rowDetailKey(row)">
               <tr class="hover:bg-blue-50 transition-colors duration-200 group">
                 <td class="px-2 py-2 align-top">
-                  <button @click="toggleExpand(row.transaction_type + '-' + row.gr_id)" class="focus:outline-none transition-transform duration-200 group-hover:scale-110">
-                    <span v-if="expanded[row.transaction_type + '-' + row.gr_id]">▼</span>
+                  <button @click="toggleExpand(rowDetailKey(row))" class="focus:outline-none transition-transform duration-200 group-hover:scale-110">
+                    <span v-if="expanded[rowDetailKey(row)]">▼</span>
                     <span v-else>▶</span>
                   </button>
                 </td>
@@ -157,11 +157,11 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatRupiah(row.payment_total) }}</td>
               </tr>
               <transition name="fade-expand">
-                <tr v-if="expanded[row.transaction_type + '-' + row.gr_id]" :key="'detail-'+row.transaction_type+'-'+row.gr_id">
+                <tr v-if="expanded[rowDetailKey(row)]" :key="'detail-'+rowDetailKey(row)">
                   <td></td>
                   <td colspan="7" class="bg-gray-50 px-0 py-0">
                     <div class="rounded-lg border border-blue-100 bg-blue-50/60 shadow-inner mx-4 my-2 overflow-x-auto">
-                      <div v-if="!props.details[row.transaction_type + '-' + row.gr_id] || !props.details[row.transaction_type + '-' + row.gr_id].length" class="text-gray-400 py-6 text-center">Tidak ada detail.</div>
+                      <div v-if="!props.details[rowDetailKey(row)] || !props.details[rowDetailKey(row)].length" class="text-gray-400 py-6 text-center">Tidak ada detail.</div>
                       <div v-else>
                         <table class="w-full text-xs">
                           <thead class="sticky top-0 z-10 bg-blue-100/80">
@@ -174,7 +174,7 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="item in props.details[row.transaction_type + '-' + row.gr_id]" :key="item.item_name">
+                            <tr v-for="item in props.details[rowDetailKey(row)]" :key="item.item_name">
                               <td class="px-4 py-2 border-b">{{ item.item_name }}</td>
                               <td class="px-4 py-2 border-b text-right">{{ item.qty }}</td>
                               <td class="px-4 py-2 border-b">{{ item.unit_name }}</td>
@@ -526,6 +526,14 @@ function formatWarehouse(row) {
   if (row.warehouse_name) return row.warehouse_name;
   if (row.warehouse_division_name) return row.warehouse_division_name;
   return '-';
+}
+
+function rowDetailKey(row) {
+  if (row.detail_key) return row.detail_key
+  if (row.transaction_type === 'GSR' && row.warehouse_division_id) {
+    return `${row.transaction_type}-${row.gr_id}-${row.warehouse_division_id}`
+  }
+  return `${row.transaction_type}-${row.gr_id}`
 }
 
 function getTransactionTypeBadgeClass(transactionType) {

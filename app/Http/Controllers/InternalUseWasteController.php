@@ -782,7 +782,7 @@ class InternalUseWasteController extends Controller
         }
 
         $rules = [
-            'type' => 'required|in:internal_use,spoil,waste',
+            'type' => 'required|in:internal_use,spoil,waste,r_and_d',
             'date' => 'required|date',
             'warehouse_id' => 'required|integer',
             'ruko_id' => 'nullable|integer',

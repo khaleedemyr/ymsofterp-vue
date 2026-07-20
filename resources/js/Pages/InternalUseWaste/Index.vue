@@ -27,6 +27,7 @@
               <option value="internal_use">Internal Use</option>
               <option value="spoil">Spoil</option>
               <option value="waste">Waste</option>
+              <option value="r_and_d">RnD</option>
             </select>
           </div>
           <div>
@@ -317,6 +318,7 @@ function typeLabel(type) {
   if (type === 'internal_use') return 'Internal Use'
   if (type === 'spoil') return 'Spoil'
   if (type === 'waste') return 'Waste'
+  if (type === 'r_and_d') return 'RnD'
   return type
 }
 
