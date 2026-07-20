@@ -176,7 +176,7 @@
                           <tbody>
                             <tr v-for="item in props.details[rowDetailKey(row)]" :key="item.item_name">
                               <td class="px-4 py-2 border-b">{{ item.item_name }}</td>
-                              <td class="px-4 py-2 border-b text-right">{{ item.qty }}</td>
+                              <td class="px-4 py-2 border-b text-right">{{ formatQty(item.qty) }}</td>
                               <td class="px-4 py-2 border-b">{{ item.unit_name }}</td>
                               <td class="px-4 py-2 border-b text-right">{{ formatRupiah(item.price) }}</td>
                               <td class="px-4 py-2 border-b text-right">{{ formatRupiah(item.subtotal) }}</td>
@@ -519,6 +519,13 @@ function formatDate(date) {
 function formatRupiah(val) {
   if (val === null || val === undefined || isNaN(val)) return '-';
   return 'Rp ' + Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0 });
+}
+
+function formatQty(val) {
+  if (val === null || val === undefined || val === '') return '-';
+  const n = Number(val);
+  if (Number.isNaN(n)) return val;
+  return n.toLocaleString('id-ID', { maximumFractionDigits: 4, minimumFractionDigits: 0 });
 }
 
 function formatWarehouse(row) {

@@ -145,7 +145,7 @@ class InvoiceOutletReportExport
                     }
                     
                     $sheet->setCellValueByColumnAndRow(11, $currentRow, $item->item_name ?? '-');
-                    $sheet->setCellValueByColumnAndRow(12, $currentRow, $item->qty ?? 0);
+                    $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatQty($item->qty ?? 0));
                     $sheet->setCellValueByColumnAndRow(13, $currentRow, $item->unit_name ?? '-');
                     $sheet->setCellValueByColumnAndRow(14, $currentRow, $this->formatRupiah($item->price ?? 0));
                     $sheet->setCellValueByColumnAndRow(15, $currentRow, $this->formatRupiah($item->subtotal ?? 0));
@@ -213,6 +213,22 @@ class InvoiceOutletReportExport
     {
         if ($value === null || $value === '') return '0';
         return number_format((float) $value, 0, ',', '.');
+    }
+
+    private function formatQty($value)
+    {
+        if ($value === null || $value === '') {
+            return '0';
+        }
+
+        $n = (float) $value;
+        if (abs($n - round($n)) < 0.0000001) {
+            return number_format($n, 0, ',', '.');
+        }
+
+        $formatted = rtrim(rtrim(number_format($n, 4, ',', '.'), '0'), ',');
+
+        return $formatted === '' ? '0' : $formatted;
     }
     
     private function formatWarehouse($row)
