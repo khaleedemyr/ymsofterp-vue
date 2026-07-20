@@ -460,10 +460,16 @@ const menuGroups = [
                 code: 'mac_report',
             },
             {
-                name: () => t('sidebar.menus.outlet_mac_tracking'),
+                name: () => t('sidebar.menus.outlet_mac_anomaly'),
                 icon: 'fa-solid fa-triangle-exclamation',
                 route: '/mac-anomaly-tracking',
                 code: 'mac_anomaly_tracking',
+            },
+            {
+                name: () => t('sidebar.menus.outlet_mac_tracking'),
+                icon: 'fa-solid fa-clock-rotate-left',
+                route: '/outlet-mac-tracking',
+                code: 'outlet_mac_tracking',
             },
             {
                 name: () => t('sidebar.menus.warehouse_mac_tracking'),

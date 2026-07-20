@@ -529,7 +529,11 @@ class OutletRejectionController extends Controller
             return redirect()->route('outlet-rejections.index')->with('error', 'Outlet Rejection harus di-approve Asisten SSD Manager terlebih dahulu');
         }
         
-        if ($request->approved) {
+        $isApproved = $request->has('approved')
+            ? $request->boolean('approved')
+            : ! $request->boolean('reject');
+
+        if ($isApproved) {
             Log::info('Rejection approved, starting validation and processing', [
                 'rejection_id' => $rejection->id,
                 'warehouse_name' => $rejection->warehouse->name ?? 'unknown'
@@ -549,13 +553,18 @@ class OutletRejectionController extends Controller
             DB::beginTransaction();
             try {
                 // Update qty_received for each item
+                $requestItems = $request->input('items', []);
+                if (!is_array($requestItems)) {
+                    $requestItems = [];
+                }
+
                 Log::info('Updating qty_received for items', [
-                    'items_count' => count($request->items),
-                    'items_data' => $request->items
+                    'items_count' => count($requestItems),
+                    'items_data' => $requestItems
                 ]);
                 
-                if ($hasQtyLines && $request->has('items')) {
-                    foreach ($request->items as $itemData) {
+                if ($hasQtyLines && !empty($requestItems)) {
+                    foreach ($requestItems as $itemData) {
                         Log::info('Processing item data', [
                             'item_data' => $itemData,
                             'item_id' => $itemData['id'] ?? 'missing',
@@ -654,7 +663,7 @@ class OutletRejectionController extends Controller
                 return redirect()->route('outlet-rejections.show', $id)
                     ->with('success', 'Outlet Rejection berhasil di-approve dan barang telah masuk ke inventory');
                     
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 Log::error('Error in approveSsdManager transaction', [
                     'rejection_id' => $rejection->id ?? 'unknown',
                     'error_message' => $e->getMessage(),

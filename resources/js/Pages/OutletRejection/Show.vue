@@ -408,6 +408,7 @@ const props = defineProps({
 })
 
 const user = usePage().props.auth?.user || {};
+const userJabatan = Number(user?.id_jabatan ?? 0);
 
 const isSuperadmin = computed(() =>
   user?.id_role === '5af56935b011a' && user?.status === 'A'
@@ -424,7 +425,7 @@ const canApproveAssistantSSD = computed(() => {
   // Hanya untuk rejection non-MK
   if (isMKWarehouse.value) return false;
   
-  return (([172, 161].includes(user?.id_jabatan) && user?.status === 'A') || isSuperadmin.value)
+  return (([172, 161].includes(userJabatan) && user?.status === 'A') || isSuperadmin.value)
     && props.rejection.status === 'draft'
     && !props.rejection.assistant_ssd_manager_approved_at;
 });
@@ -433,7 +434,7 @@ const canApproveAssistantSSD = computed(() => {
 const canApproveSSD = computed(() => {
   if (isMKWarehouse.value) {
     // For MK warehouses, Sous Chef MK (id_jabatan=179) can approve
-    return ((user?.id_jabatan === 179 && user?.status === 'A') || isSuperadmin.value)
+    return ((userJabatan === 179 && user?.status === 'A') || isSuperadmin.value)
       && props.rejection.status === 'draft'
       && !props.rejection.ssd_manager_approved_at;
   } else {
@@ -442,12 +443,12 @@ const canApproveSSD = computed(() => {
     const assistantApproved = props.rejection.assistant_ssd_manager_approved_at;
 
     // SSD Manager (161) boleh approve meski tahap Asisten belum — backend auto-lengkapi
-    if ((user?.id_jabatan === 161 && user?.status === 'A') || isSuperadmin.value) {
+    if ((userJabatan === 161 && user?.status === 'A') || isSuperadmin.value) {
       return isDraft && pendingSsd;
     }
 
     // Asisten SSD Manager (172) hanya level 2, setelah tahap Asisten selesai
-    return (user?.id_jabatan === 172 && user?.status === 'A')
+    return (userJabatan === 172 && user?.status === 'A')
       && isDraft
       && assistantApproved
       && pendingSsd;
@@ -564,6 +565,7 @@ async function approveAssistantSSD(approved) {
 
 async function approveSSD(approved) {
   const approverTitle = getApproverTitle.value;
+  const rejectionItems = Array.isArray(props.rejection.items) ? props.rejection.items : [];
   
   if (approved) {
     // Jika approve, tampilkan form untuk input qty_received
@@ -576,7 +578,7 @@ async function approveSSD(approved) {
         </div>
         <div class="text-left">
           <label class="block text-sm font-medium text-gray-700 mb-2">Qty Received untuk setiap item:</label>
-          ${props.rejection.items.map(item => `
+          ${rejectionItems.map(item => `
             <div class="mb-3 p-3 border border-gray-200 rounded">
               <div class="font-medium text-sm">${item.item?.name}</div>
               <div class="text-xs text-gray-600 mb-2">Rejected: ${item.qty_rejected} ${item.unit?.name}</div>
@@ -600,14 +602,14 @@ async function approveSSD(approved) {
       cancelButtonText: 'Batal',
       preConfirm: () => {
         const note = document.getElementById('note').value;
-        const items = props.rejection.items.map(item => ({
+        const items = rejectionItems.map(item => ({
           id: item.id,
           qty_received: parseFloat(document.getElementById(`qty_${item.id}`).value) || 0
         }));
         
         // Validasi qty_received tidak boleh lebih dari qty_rejected
         for (let item of items) {
-          const originalItem = props.rejection.items.find(i => i.id === item.id);
+          const originalItem = rejectionItems.find(i => i.id === item.id);
           if (item.qty_received > originalItem.qty_rejected) {
             Swal.showValidationMessage(`Qty Received untuk ${originalItem.item?.name} tidak boleh lebih dari ${originalItem.qty_rejected}`);
             return false;
