@@ -456,9 +456,15 @@ class MampReportService
         }
 
         $name = strtolower(trim((string) ($category->name ?? '')));
+        $division = strtolower(trim((string) ($category->division ?? '')));
 
-        return $name === 'marcomm (marketing)'
-            || (str_contains($name, 'marcomm') && str_contains($name, 'marketing'));
+        // DB name: "Marcomm"; UI label: "Marcomm (MARKETING)"
+        if ($name === 'marcomm' || $name === 'marcomm (marketing)') {
+            return true;
+        }
+
+        return str_contains($name, 'marcomm')
+            && (str_contains($name, 'marketing') || $division === 'marketing');
     }
 
     private function findMarcommMarketingCategory(): ?PurchaseRequisitionCategory
