@@ -556,7 +556,7 @@
 
       <!-- Modal serial per dokumen -->
       <div v-if="selectedDoc" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" @click.self="closeDocumentSerials">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col">
           <div class="p-5 border-b flex justify-between items-center">
             <div>
               <h3 class="text-lg font-bold text-gray-900">Serial — {{ selectedDoc.document_number }}</h3>
@@ -575,6 +575,7 @@
                   <th class="px-3 py-2 text-left">Item</th>
                   <th class="px-3 py-2 text-left">Unit</th>
                   <th class="px-3 py-2 text-left">Status</th>
+                  <th class="px-3 py-2 text-left">No. DO</th>
                   <th class="px-3 py-2 text-center">Aksi</th>
                 </tr>
               </thead>
@@ -589,9 +590,19 @@
                   <td class="px-3 py-2">{{ s.item_name }}</td>
                   <td class="px-3 py-2">{{ s.unit_name }}</td>
                   <td class="px-3 py-2">
-                    <span v-if="s.is_out" class="text-amber-700 text-xs font-semibold">Keluar</span>
+                    <span v-if="s.is_out || s.do_id" class="text-amber-700 text-xs font-semibold">Keluar</span>
                     <span v-else-if="s.is_received" class="text-green-700 text-xs font-semibold">Di outlet</span>
                     <span v-else class="text-blue-700 text-xs font-semibold">Gudang</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <a
+                      v-if="s.do_number"
+                      :href="`/delivery-order/${s.do_id}`"
+                      class="font-mono text-xs font-semibold text-amber-700 hover:underline"
+                      target="_blank"
+                      @click.stop
+                    >{{ s.do_number }}</a>
+                    <span v-else class="text-gray-400 text-xs">—</span>
                   </td>
                   <td class="px-3 py-2 text-center">
                     <button type="button" class="text-xs text-indigo-600 hover:underline font-semibold" @click="trackFromList(s.serial_number)">Lacak</button>

@@ -571,6 +571,7 @@ class SerialTrackingController extends Controller
       ->leftJoin('items as i', 'i.id', '=', 's.item_id')
       ->leftJoin('units as u', 'u.id', '=', 's.unit_id')
       ->leftJoin('warehouses as w', 'w.id', '=', 's.warehouse_id')
+      ->leftJoin('delivery_orders as do', 'do.id', '=', 's.out_delivery_order_id')
       ->where('s.source_type', $request->source_type)
       ->where('s.source_id', $request->source_id)
       ->select(
@@ -585,7 +586,9 @@ class SerialTrackingController extends Controller
         's.is_out',
         's.is_received',
         's.generated_at',
-        's.cost_small'
+        's.cost_small',
+        's.out_delivery_order_id as do_id',
+        'do.number as do_number'
       )
       ->orderBy('s.serial_number');
 
@@ -595,6 +598,28 @@ class SerialTrackingController extends Controller
 
     $perPage = (int) $request->get('per_page', 50);
     $paginated = $query->paginate($perPage);
+
+    // Fallback: serial sudah di DO tapi out_delivery_order_id kosong — cari dari delivery_order_items
+    $missingDoIds = collect($paginated->items())
+      ->filter(fn ($row) => empty($row->do_id) && ! empty($row->serial_number))
+      ->pluck('serial_number')
+      ->unique()
+      ->values()
+      ->all();
+
+    if ($missingDoIds !== []) {
+      $doBySerial = $this->findDeliveryOrdersBySerialNumbers($missingDoIds);
+      foreach ($paginated->items() as $row) {
+        if (! empty($row->do_id) || empty($row->serial_number)) {
+          continue;
+        }
+        $hit = $doBySerial[$row->serial_number] ?? null;
+        if ($hit) {
+          $row->do_id = $hit['do_id'];
+          $row->do_number = $hit['do_number'];
+        }
+      }
+    }
 
     return response()->json($paginated);
   }
@@ -1446,5 +1471,54 @@ class SerialTrackingController extends Controller
     }
 
     return ['label' => null, 'number' => null, 'url' => null];
+  }
+
+  /**
+   * Cari DO dari JSON serial_numbers di delivery_order_items
+   * (fallback jika out_delivery_order_id di inventory_item_serials kosong).
+   *
+   * @param  list<string>  $serialNumbers
+   * @return array<string, array{do_id: int, do_number: string}>
+   */
+  private function findDeliveryOrdersBySerialNumbers(array $serialNumbers): array
+  {
+    if ($serialNumbers === []) {
+      return [];
+    }
+
+    $query = DB::table('delivery_order_items as doi')
+      ->join('delivery_orders as do', 'do.id', '=', 'doi.delivery_order_id')
+      ->whereNotNull('doi.serial_numbers')
+      ->select('doi.delivery_order_id', 'doi.serial_numbers', 'do.number as do_number', 'do.created_at')
+      ->orderByDesc('do.created_at');
+
+    $query->where(function ($q) use ($serialNumbers) {
+      foreach ($serialNumbers as $sn) {
+        $escaped = addcslashes($sn, '%_\\');
+        $q->orWhere('doi.serial_numbers', 'like', '%' . $escaped . '%');
+      }
+    });
+
+    $map = [];
+    foreach ($query->get() as $row) {
+      $nums = json_decode($row->serial_numbers, true);
+      if (! is_array($nums)) {
+        continue;
+      }
+
+      foreach ($serialNumbers as $sn) {
+        if (isset($map[$sn])) {
+          continue;
+        }
+        if (in_array($sn, $nums, true)) {
+          $map[$sn] = [
+            'do_id' => (int) $row->delivery_order_id,
+            'do_number' => (string) $row->do_number,
+          ];
+        }
+      }
+    }
+
+    return $map;
   }
 }
