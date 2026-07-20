@@ -4750,14 +4750,20 @@ class TicketController extends Controller
 
         $proposedTitle = $this->normalizeTicketTitle((string) $request->get('title', ''));
 
-        $tickets = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet', 'creator:id,nama_lengkap,email'])
+        $query = Ticket::with(['status', 'category', 'priority', 'divisi', 'outlet', 'creator:id,nama_lengkap,email'])
             ->where('outlet_id', $outletId)
             ->where('title', 'like', '%'.$area->nama_area.'%')
             ->whereHas('status', function ($statusQuery) {
                 $statusQuery->whereIn('slug', self::ACTIVE_TICKET_STATUS_SLUGS_FOR_DEDUP);
             })
             ->orderByDesc('created_at')
-            ->limit(20)
+            ->limit(20);
+
+        // Samakan visibilitas dengan halaman detail/aksi ticket agar item di panel
+        // Daily Report tidak menampilkan ticket yang nanti gagal diakses/dikomentari.
+        $this->applyTicketOutletVisibility($query, $request->user());
+
+        $tickets = $query
             ->get()
             ->map(function (Ticket $ticket) use ($proposedTitle) {
                 $normalizedTitle = $this->normalizeTicketTitle((string) $ticket->title);
