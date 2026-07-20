@@ -572,22 +572,108 @@ class MampReportService
      */
     private function fetchRekapFjMarketingCreditLines(string $dateFrom, string $dateTo): Collection
     {
-        return $this->fetchRekapFjMarketingByOutlet($dateFrom, $dateTo)
-            ->map(function ($row) use ($dateTo) {
+        $foodPrice = 'COALESCE(fo.price, 0)';
+
+        $foodRows = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
+            ->whereNull('gr.deleted_at')
+            ->whereNotNull('w.name')
+            ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+            ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->select(
+                'gr.outlet_id',
+                'o.nama_outlet as outlet_name',
+                DB::raw('DATE(gr.receive_date) as transaction_date'),
+                DB::raw("SUM(i.received_qty * {$foodPrice}) as amount")
+            )
+            ->groupBy('gr.outlet_id', 'o.nama_outlet', DB::raw('DATE(gr.receive_date)'))
+            ->get();
+
+        $serialRows = collect();
+        if ($this->hasSerialGrTables()) {
+            $costSmall = 'COALESCE(si.cost_small, 0)';
+            $smallConv = 'COALESCE(it.small_conversion_qty, 1)';
+            $mediumConv = 'COALESCE(it.medium_conversion_qty, 1)';
+            $serialPrice = "(CASE
+                WHEN si.unit_id = it.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
+                WHEN si.unit_id = it.medium_unit_id THEN {$costSmall} * {$smallConv}
+                ELSE {$costSmall}
+            END)";
+
+            $serialRows = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
+                ->whereNull('h.deleted_at')
+                ->whereNotNull('w.name')
+                ->whereRaw('UPPER(TRIM(w.name)) = ?', ['MAIN STORE'])
+                ->whereRaw('UPPER(TRIM(sc.name)) = ?', ['MARKETING'])
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->select(
+                    'h.outlet_id',
+                    'o.nama_outlet as outlet_name',
+                    DB::raw('DATE(h.receive_date) as transaction_date'),
+                    DB::raw("SUM(si.qty * {$serialPrice}) as amount")
+                )
+                ->groupBy('h.outlet_id', 'o.nama_outlet', DB::raw('DATE(h.receive_date)'))
+                ->get();
+        }
+
+        $byOutletDate = [];
+        foreach ($foodRows->concat($serialRows) as $row) {
+            $outletId = (int) $row->outlet_id;
+            $trxDate = (string) $row->transaction_date;
+            $key = $outletId . '|' . $trxDate;
+            if (! isset($byOutletDate[$key])) {
+                $byOutletDate[$key] = (object) [
+                    'outlet_id' => $outletId,
+                    'outlet_name' => $row->outlet_name,
+                    'transaction_date' => $trxDate,
+                    'amount' => 0.0,
+                ];
+            }
+            $byOutletDate[$key]->amount += (float) $row->amount;
+        }
+
+        return collect(array_values($byOutletDate))
+            ->filter(fn ($row) => (float) $row->amount > 0)
+            ->map(function ($row) {
+                $dateKey = str_replace('-', '', (string) $row->transaction_date);
                 return (object) [
-                    'row_key' => 'fj_mkt_' . $row->outlet_id,
+                    'row_key' => 'fj_mkt_' . (int) $row->outlet_id . '_' . $dateKey,
                     'source_type' => 'rekap_fj_marketing',
                     'outlet_id' => (int) $row->outlet_id,
-                    'transaction_date' => $dateTo,
+                    'transaction_date' => (string) $row->transaction_date,
                     'outlet_name' => $row->outlet_name,
                     'reference' => 'Rekap FJ',
                     'description' => 'GR Marketing (Rekap FJ)',
-                    'amount' => (float) $row->amount,
+                    'amount' => round((float) $row->amount, 2),
                     'items' => [],
                     'expandable' => true,
-                    'sort_key' => $dateTo . '_3_' . $row->outlet_name,
+                    'sort_key' => (string) $row->transaction_date . '_3_' . $row->outlet_name,
                 ];
-            });
+            })
+            ->sortBy([
+                ['transaction_date', 'asc'],
+                ['outlet_name', 'asc'],
+            ])
+            ->values();
     }
 
     /**
@@ -977,19 +1063,36 @@ class MampReportService
     public function fetchRowItems(string $rowKey, int $categoryId, ?int $year = null, ?int $month = null): array
     {
         if (str_starts_with($rowKey, 'fj_mkt_')) {
-            $outletId = (int) substr($rowKey, 7);
+            $suffix = substr($rowKey, 7);
+            $outletId = 0;
+            $rowDate = null;
+
+            if (preg_match('/^(\d+)_(\d{8})$/', $suffix, $matches) === 1) {
+                $outletId = (int) $matches[1];
+                $dateCompact = $matches[2];
+                $rowDate = substr($dateCompact, 0, 4) . '-' . substr($dateCompact, 4, 2) . '-' . substr($dateCompact, 6, 2);
+            } else {
+                // Backward compatibility untuk row_key lama: fj_mkt_{outletId}
+                $outletId = (int) $suffix;
+            }
+
             if ($outletId <= 0) {
                 return [];
             }
 
-            $year = $year ?: (int) date('Y');
-            $month = $month ?: (int) date('n');
-            $month = max(1, min(12, $month));
-            $year = max(2000, min(2100, $year));
+            if ($rowDate) {
+                $dateFrom = $rowDate;
+                $dateTo = $rowDate;
+            } else {
+                $year = $year ?: (int) date('Y');
+                $month = $month ?: (int) date('n');
+                $month = max(1, min(12, $month));
+                $year = max(2000, min(2100, $year));
 
-            $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
-            $dateFrom = $periodStart->format('Y-m-d');
-            $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
+                $periodStart = Carbon::create($year, $month, 1)->startOfMonth();
+                $dateFrom = $periodStart->format('Y-m-d');
+                $dateTo = $periodStart->copy()->endOfMonth()->format('Y-m-d');
+            }
 
             return $this->fetchRekapFjMarketingItemsForOutlet($outletId, $dateFrom, $dateTo);
         }
