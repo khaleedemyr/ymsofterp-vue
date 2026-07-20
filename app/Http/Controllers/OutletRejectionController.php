@@ -1017,6 +1017,11 @@ class OutletRejectionController extends Controller
             'saldo_qty_large' => $saldo_qty_large
         ]);
         
+             $reasonText = trim((string) ($item->rejection_reason ?? ''));
+             $stockCardDescription = $reasonText !== ''
+                 ? 'Outlet Rejection - ' . $reasonText
+                 : 'Outlet Rejection';
+
                      $stockCardData = [
                  'inventory_item_id' => $inventoryItem->id,
                  'warehouse_id' => $rejection->warehouse_id,
@@ -1038,7 +1043,7 @@ class OutletRejectionController extends Controller
                  'saldo_qty_medium' => $saldo_qty_medium,
                  'saldo_qty_large' => $saldo_qty_large,
                  'saldo_value' => $total_nilai,
-                 'description' => 'Outlet Rejection - ' . $item->rejection_reason,
+                 'description' => $stockCardDescription,
                  'created_at' => now(),
              ];
              
