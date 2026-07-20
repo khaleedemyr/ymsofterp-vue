@@ -2360,7 +2360,9 @@ class ItemController extends Controller
                     'sku' => $item->sku,
                     'category_id' => $item->category_id,
                     'category_name' => optional($item->category)->name,
-                    'unit' => optional($item->smallUnit)->name,
+                    // FO search: tampilkan & default unit medium (bukan small)
+                    'unit' => optional($item->mediumUnit)->name ?: optional($item->smallUnit)->name,
+                    'unit_small' => optional($item->smallUnit)->name,
                     'unit_medium' => optional($item->mediumUnit)->name,
                     'unit_medium_name' => optional($item->mediumUnit)->name,
                     'unit_large' => optional($item->largeUnit)->name,

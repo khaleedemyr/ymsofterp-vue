@@ -118,22 +118,74 @@ class FoodFloorOrderController extends Controller
         }
     }
 
-    private function applyServerFloorOrderPrices(array $items, $outletId): array
+    private function applyServerFloorOrderPrices(array $items, $outletId, $foMode = null): array
     {
         $regionId = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('region_id');
         $regionId = $regionId ? (int) $regionId : null;
         $outletKey = $outletId ? (string) $outletId : null;
+        // RO Utama/Tambahan/Khusus selalu order per satuan medium (Pack/Pcs), bukan Recipe/large.
+        $forceMedium = ! in_array((string) $foMode, ['RO Supplier'], true);
+
+        $itemIds = collect($items)
+            ->pluck('item_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $masters = $itemIds === []
+            ? collect()
+            : DB::table('items')->whereIn('id', $itemIds)->get()->keyBy('id');
+
+        $unitIds = $masters->flatMap(fn ($i) => [
+            $i->small_unit_id, $i->medium_unit_id, $i->large_unit_id,
+        ])->filter()->unique()->values()->all();
+
+        $unitNameById = $unitIds === []
+            ? []
+            : DB::table('units')->whereIn('id', $unitIds)->pluck('name', 'id')->all();
 
         foreach ($items as &$item) {
             if (empty($item['item_id'])) {
                 continue;
             }
-            $price = FloorOrderItemPriceResolver::resolveLineUnitPrice(
-                (int) $item['item_id'],
-                isset($item['unit']) ? (string) $item['unit'] : null,
-                $regionId,
-                $outletKey,
-            );
+
+            $itemId = (int) $item['item_id'];
+            $master = $masters->get($itemId);
+            $unitName = isset($item['unit']) ? trim((string) $item['unit']) : '';
+
+            if ($forceMedium && $master) {
+                $mediumName = trim((string) ($unitNameById[$master->medium_unit_id] ?? ''));
+                if ($mediumName !== '') {
+                    $item['unit'] = $mediumName;
+                    $unitName = $mediumName;
+                }
+                $price = FloorOrderItemPriceResolver::resolveMediumUnitPrice(
+                    $itemId,
+                    $regionId,
+                    $outletKey,
+                    $master,
+                );
+            } else {
+                $price = FloorOrderItemPriceResolver::resolveLineUnitPrice(
+                    $itemId,
+                    $unitName !== '' ? $unitName : null,
+                    $regionId,
+                    $outletKey,
+                    $master,
+                );
+                $price = FloorOrderItemPriceResolver::guardAgainstLargePriceOnMediumUnit(
+                    $price,
+                    $itemId,
+                    $unitName !== '' ? $unitName : null,
+                    $regionId,
+                    $outletKey,
+                    $master,
+                    $unitNameById,
+                );
+            }
+
             $qty = (float) ($item['qty'] ?? 0);
             $item['price'] = $price;
             $item['subtotal'] = round($qty * $price, 2);
@@ -173,7 +225,7 @@ class FoodFloorOrderController extends Controller
     private function validateAndGroupItemsBySupplier($items, $outletId, $foMode = null)
     {
         $this->assertNoAssetItemsForFloorOrder($items, $foMode);
-        $items = $this->applyServerFloorOrderPrices($items, $outletId);
+        $items = $this->applyServerFloorOrderPrices($items, $outletId, $foMode);
         $processedItems = [];
 
         foreach ($items as $item) {
@@ -479,6 +531,8 @@ class FoodFloorOrderController extends Controller
             $this->clearSupplierItemTables((int) $floorOrderId);
 
             $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
+            // Pastikan harga baris = item_prices terkini + konversi UoM (cegah large tertempel di Pack/Pcs)
+            app(FloorOrderPriceAuditor::class)->refreshOrder((int) $floorOrderId);
 
             if ($foMode === 'RO Khusus' && $approverIds !== null) {
                 $this->approvalService->syncFlows((int) $floorOrderId, $approverIds);
@@ -588,6 +642,7 @@ class FoodFloorOrderController extends Controller
         $this->clearSupplierItemTables((int) $order->id);
 
         $this->persistFloorOrderItems((int) $order->id, $processedItems);
+        app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
 
         if ($approverIds !== null) {
             $this->approvalService->syncFlows((int) $order->id, $approverIds);

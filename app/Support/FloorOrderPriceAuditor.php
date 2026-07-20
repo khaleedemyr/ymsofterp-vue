@@ -342,6 +342,16 @@ final class FloorOrderPriceAuditor
             ),
         };
 
+        $expected = FloorOrderItemPriceResolver::guardAgainstLargePriceOnMediumUnit(
+            $expected,
+            $itemId,
+            $unitName,
+            $regionId,
+            $outletId,
+            $item,
+            $this->unitNameById,
+        );
+
         return ['expected' => $expected, 'large' => $large, 'mode' => $mode, 'tier' => $tier];
     }
 

@@ -204,6 +204,52 @@ final class FloorOrderItemPriceResolver
         return (float) (ceil($price / 100) * 100);
     }
 
+    /**
+     * Guard: cegah harga large (Recipe) tertempel ke baris unit medium/small.
+     * Kasus historis: FO unit=Pack/Pcs tapi price = item_prices large.
+     */
+    public static function guardAgainstLargePriceOnMediumUnit(
+        float $resolvedPrice,
+        int $itemId,
+        ?string $unitName,
+        ?int $regionId = null,
+        ?string $outletId = null,
+        ?object $itemMaster = null,
+        ?array $unitNameById = null,
+    ): float {
+        $item = $itemMaster ?? DB::table('items')->where('id', $itemId)->first();
+        if (! $item) {
+            return $resolvedPrice;
+        }
+
+        $tier = self::detectUnitTier($item, $unitName, $unitNameById);
+        if ($tier === 'large') {
+            return $resolvedPrice;
+        }
+
+        $mediumConv = (float) ($item->medium_conversion_qty ?? 1) ?: 1;
+        if ($mediumConv <= 1.01) {
+            return $resolvedPrice;
+        }
+
+        $priceRow = self::resolvePriceRow($itemId, $regionId, $outletId);
+        $priceLarge = self::resolvePriceLarge($itemId, $priceRow);
+        if ($priceLarge <= 0) {
+            return $resolvedPrice;
+        }
+
+        $largeRounded = self::roundUpToHundred($priceLarge);
+        if (abs($resolvedPrice - $largeRounded) > 150) {
+            return $resolvedPrice;
+        }
+
+        // Harga hasil resolve = large, padahal unit medium/small → paksa konversi UoM.
+        return match ($tier) {
+            'small' => self::roundUpToHundred(self::largeToSmallPrice($priceLarge, $item)),
+            default => self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item)),
+        };
+    }
+
     public static function isAssetItem(int $itemId): bool
     {
         return (bool) DB::table('items as i')
