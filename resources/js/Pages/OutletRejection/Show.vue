@@ -360,8 +360,8 @@
                 <span v-else class="text-gray-500">Belum di-approve</span>
                 
                 <div v-if="canApproveAssistantSSD" class="mt-2">
-                  <button @click="approveAssistantSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (Asisten SSD Manager)</button>
-                  <button @click="approveAssistantSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
+                  <button type="button" @click.prevent="approveAssistantSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve (Asisten SSD Manager)</button>
+                  <button type="button" @click.prevent="approveAssistantSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
                 </div>
               </div>
               
@@ -378,8 +378,8 @@
               </div>
               
               <div v-if="canApproveSSD">
-                <button @click="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve ({{ getApproverTitle }})</button>
-                <button @click="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
+                <button type="button" @click.prevent="approveSSD(true)" class="px-4 py-2 rounded bg-green-600 text-white font-semibold hover:bg-green-700 mr-2">Approve ({{ getApproverTitle }})</button>
+                <button type="button" @click.prevent="approveSSD(false)" class="px-4 py-2 rounded bg-red-600 text-white font-semibold hover:bg-red-700">Reject</button>
               </div>
             </div>
 
@@ -559,6 +559,12 @@ async function approveAssistantSSD(approved) {
     router.post(route('outlet-rejections.approve-assistant-ssd-manager', props.rejection.id), {
       approved,
       assistant_ssd_manager_note: note,
+    }, {
+      preserveScroll: true,
+      onError: (errors) => {
+        const msg = errors?.error || Object.values(errors || {})[0] || 'Gagal memproses approval Asisten SSD Manager.';
+        Swal.fire({ icon: 'error', title: 'Gagal', text: String(msg) });
+      }
     });
   }
 }
@@ -625,6 +631,12 @@ async function approveSSD(approved) {
         approved: true,
         ssd_manager_note: formValues.note,
         items: formValues.items
+      }, {
+        preserveScroll: true,
+        onError: (errors) => {
+          const msg = errors?.error || Object.values(errors || {})[0] || 'Gagal memproses approval SSD Manager.';
+          Swal.fire({ icon: 'error', title: 'Gagal', text: String(msg) });
+        }
       });
     }
   } else {
@@ -643,6 +655,12 @@ async function approveSSD(approved) {
       router.post(route('outlet-rejections.approve-ssd-manager', props.rejection.id), {
         approved: false,
         ssd_manager_note: note,
+      }, {
+        preserveScroll: true,
+        onError: (errors) => {
+          const msg = errors?.error || Object.values(errors || {})[0] || 'Gagal memproses reject SSD Manager.';
+          Swal.fire({ icon: 'error', title: 'Gagal', text: String(msg) });
+        }
       });
     }
   }

@@ -609,6 +609,10 @@ class OutletWIPController extends Controller
         
         // For autosave, skip stock validation
         if (!$isAutosave) {
+            if ($reject = $this->rejectQtyJadiOutOfTolerance($productions)) {
+                return $reject;
+            }
+
             // Validate stock for each production (only for manual save)
             foreach ($productions as $prod) {
                 $item_id = $prod['item_id'];
@@ -804,6 +808,10 @@ class OutletWIPController extends Controller
         }
 
         if ($reject = $this->rejectZeroProductionQty($productions)) {
+            return $reject;
+        }
+
+        if ($reject = $this->rejectQtyJadiOutOfTolerance($productions)) {
             return $reject;
         }
         
@@ -1248,6 +1256,10 @@ class OutletWIPController extends Controller
         $notes = $validated['notes'] ?? '';
         $productions = $validated['productions'];
         $userId = auth()->id();
+
+        if ($reject = $this->rejectQtyJadiOutOfTolerance($productions)) {
+            return $reject;
+        }
         
         // Remove duplicates based on item_id
         $uniqueProductions = [];
@@ -2472,6 +2484,66 @@ class OutletWIPController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Qty produksi tidak boleh 0',
+                ], 422);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Qty Jadi boleh diedit maksimal ±10% dari nilai master (qty × small_conversion_qty).
+     *
+     * @param  iterable<int, object|array<string, mixed>>  $productions
+     */
+    private function rejectQtyJadiOutOfTolerance(iterable $productions): ?\Illuminate\Http\JsonResponse
+    {
+        $tolerance = 0.10;
+        $itemIds = [];
+        foreach ($productions as $prod) {
+            $itemId = (int) (is_object($prod) ? ($prod->item_id ?? 0) : ($prod['item_id'] ?? 0));
+            if ($itemId > 0) {
+                $itemIds[] = $itemId;
+            }
+        }
+
+        $conversions = [];
+        if ($itemIds !== []) {
+            $conversions = DB::table('items')
+                ->whereIn('id', array_values(array_unique($itemIds)))
+                ->pluck('small_conversion_qty', 'id')
+                ->map(fn ($v) => (float) ($v ?: 1))
+                ->all();
+        }
+
+        foreach ($productions as $prod) {
+            $itemId = (int) (is_object($prod) ? ($prod->item_id ?? 0) : ($prod['item_id'] ?? 0));
+            $qty = (float) (is_object($prod) ? ($prod->qty ?? 0) : ($prod['qty'] ?? 0));
+            $qtyJadi = (float) (is_object($prod) ? ($prod->qty_jadi ?? 0) : ($prod['qty_jadi'] ?? 0));
+
+            if ($itemId <= 0 || $qty <= 0) {
+                continue;
+            }
+
+            $conv = (float) ($conversions[$itemId] ?? 1);
+            if ($conv <= 0) {
+                $conv = 1;
+            }
+
+            $expected = round($qty * $conv, 2);
+            if ($expected <= 0) {
+                continue;
+            }
+
+            $min = round($expected * (1 - $tolerance), 2);
+            $max = round($expected * (1 + $tolerance), 2);
+
+            if ($qtyJadi < ($min - 0.0001) || $qtyJadi > ($max + 0.0001)) {
+                $itemName = DB::table('items')->where('id', $itemId)->value('name') ?: ('Item #' . $itemId);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => "Qty Jadi \"{$itemName}\" harus antara {$min} dan {$max} (±10% dari nilai master {$expected})",
                 ], 422);
             }
         }

@@ -163,11 +163,17 @@
                   step="0.01" 
                   v-model.number="production.qty_jadi" 
                   class="input input-bordered w-full" 
+                  :class="{ 'border-red-500': qtyJadiOutOfRange(production) }"
                   required 
-                  :disabled="!form.warehouse_outlet_id || !production.item_id" 
+                  :disabled="!form.warehouse_outlet_id || !production.item_id"
+                  @blur="() => clampQtyJadi(index)"
                 />
                 <p v-if="production.itemData?.small_conversion_qty" class="text-xs text-blue-600 mt-1">
-                  Otomatis dari master: {{ production.qty || 0 }} × {{ formatNumber(production.itemData.small_conversion_qty) }} — masih bisa diedit
+                  Otomatis dari master: {{ production.qty || 0 }} × {{ formatNumber(production.itemData.small_conversion_qty) }}
+                  (batas edit ±10%: {{ formatNumber(qtyJadiMin(production)) }} – {{ formatNumber(qtyJadiMax(production)) }})
+                </p>
+                <p v-if="qtyJadiOutOfRange(production)" class="text-xs text-red-600 mt-1">
+                  Qty Jadi harus antara {{ formatNumber(qtyJadiMin(production)) }} dan {{ formatNumber(qtyJadiMax(production)) }} (±10% dari nilai master)
                 </p>
               </div>
               <div class="flex-1">
@@ -365,12 +371,14 @@ const filteredWarehouseOutlets = computed(() => {
   return props.warehouse_outlets
 })
 
+const QTY_JADI_TOLERANCE = 0.10
+
 const canSaveDraft = computed(() => {
   return form.outlet_id && 
          form.warehouse_outlet_id && 
          form.production_date &&
          form.productions.length > 0 &&
-         form.productions.every(p => p.item_id && p.qty > 0 && p.qty_jadi >= 0 && p.unit_id)
+         form.productions.every(p => p.item_id && p.qty > 0 && p.qty_jadi >= 0 && p.unit_id && !qtyJadiOutOfRange(p))
 })
 
 const canSubmit = computed(() => {
@@ -390,6 +398,42 @@ function calculateQtyJadi(qty, itemData) {
   const recipeQty = Number(qty) || 0
   const result = recipeQty * getSmallConversionQty(itemData)
   return Math.round(result * 100) / 100
+}
+
+function expectedQtyJadi(production) {
+  return calculateQtyJadi(production.qty, production.itemData)
+}
+
+function qtyJadiMin(production) {
+  const expected = expectedQtyJadi(production)
+  return Math.round(expected * (1 - QTY_JADI_TOLERANCE) * 100) / 100
+}
+
+function qtyJadiMax(production) {
+  const expected = expectedQtyJadi(production)
+  return Math.round(expected * (1 + QTY_JADI_TOLERANCE) * 100) / 100
+}
+
+function qtyJadiOutOfRange(production) {
+  if (!production?.itemData || !production.item_id) return false
+  const expected = expectedQtyJadi(production)
+  if (expected <= 0) return Number(production.qty_jadi) < 0
+  const qtyJadi = Number(production.qty_jadi)
+  if (Number.isNaN(qtyJadi)) return true
+  return qtyJadi < qtyJadiMin(production) - 0.0001 || qtyJadi > qtyJadiMax(production) + 0.0001
+}
+
+function clampQtyJadi(index) {
+  const production = form.productions[index]
+  if (!production?.itemData || !production.item_id) return
+  const expected = expectedQtyJadi(production)
+  if (expected <= 0) return
+  const min = qtyJadiMin(production)
+  const max = qtyJadiMax(production)
+  let qtyJadi = Number(production.qty_jadi)
+  if (Number.isNaN(qtyJadi)) qtyJadi = expected
+  if (qtyJadi < min) production.qty_jadi = min
+  else if (qtyJadi > max) production.qty_jadi = max
 }
 
 function applyAutoQtyJadi(production) {
@@ -528,8 +572,8 @@ function onQtyBlur(index) {
 }
 
 function validateProductionQty() {
-  const invalid = form.productions.some(p => p.item_id && (!p.qty || p.qty <= 0))
-  if (invalid) {
+  const invalidQty = form.productions.some(p => p.item_id && (!p.qty || p.qty <= 0))
+  if (invalidQty) {
     Swal.fire({
       icon: 'warning',
       title: 'Qty tidak valid',
@@ -538,6 +582,18 @@ function validateProductionQty() {
     })
     return false
   }
+
+  const invalidQtyJadi = form.productions.find(p => p.item_id && qtyJadiOutOfRange(p))
+  if (invalidQtyJadi) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Qty Jadi di luar batas',
+      text: `Qty Jadi harus antara ${formatNumber(qtyJadiMin(invalidQtyJadi))} dan ${formatNumber(qtyJadiMax(invalidQtyJadi))} (±10% dari nilai master)`,
+      confirmButtonText: 'OK',
+    })
+    return false
+  }
+
   return true
 }
 
@@ -642,7 +698,7 @@ async function autosave() {
   }
   
   // Filter valid productions
-  const validProductions = form.productions.filter(p => p.item_id && p.qty > 0 && p.qty_jadi >= 0 && p.unit_id)
+  const validProductions = form.productions.filter(p => p.item_id && p.qty > 0 && p.qty_jadi >= 0 && p.unit_id && !qtyJadiOutOfRange(p))
   
   if (validProductions.length === 0) {
     return
