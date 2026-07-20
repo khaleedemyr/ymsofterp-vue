@@ -2,6 +2,8 @@
 
 namespace App\Exports;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -29,14 +31,14 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->select(
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 's.qty_small', 's.qty_medium', 's.qty_large',
@@ -47,7 +49,7 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
-            ->orderBy('oo.nama_outlet')
+            ->orderByRaw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet'))
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');

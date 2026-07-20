@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -61,17 +63,15 @@ class AssetServiceOrderController extends Controller
 
         $serviceOrders = $query->orderByDesc('s.created_at')->paginate(15)->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetServiceOrder/Index', [
             'serviceOrders' => $serviceOrders,
             'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id', 'service_type']),
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 
@@ -79,11 +79,8 @@ class AssetServiceOrderController extends Controller
     {
         $user = auth()->user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -93,6 +90,7 @@ class AssetServiceOrderController extends Controller
         return inertia('AssetServiceOrder/Form', [
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
         ]);
     }
@@ -241,7 +239,7 @@ class AssetServiceOrderController extends Controller
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
-            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $order->owner_outlet_id)->value('nama_outlet') ?? '-',
+            'owner_outlet_name' => AssetOwnership::name((int) $order->owner_outlet_id) ?? '-',
             'outlet_name' => optional($order->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($order->warehouseOutlet)->name,
             'supplier_name' => optional($order->supplier)->name,
@@ -590,11 +588,8 @@ class AssetServiceOrderController extends Controller
     {
         $user = Auth::user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -603,6 +598,7 @@ class AssetServiceOrderController extends Controller
 
         return response()->json([
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => [
                 'id' => $user->id,
@@ -675,7 +671,7 @@ class AssetServiceOrderController extends Controller
             'status' => $order->status,
             'sent_date' => $order->sent_date ? $order->sent_date->format('Y-m-d') : null,
             'return_date' => $order->return_date ? $order->return_date->format('Y-m-d') : null,
-            'owner_outlet_name' => DB::table('tbl_data_outlet')->where('id_outlet', $order->owner_outlet_id)->value('nama_outlet') ?? '-',
+            'owner_outlet_name' => AssetOwnership::name((int) $order->owner_outlet_id) ?? '-',
             'outlet_name' => optional($order->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($order->warehouseOutlet)->name,
             'supplier_name' => optional($order->supplier)->name,
@@ -1208,7 +1204,7 @@ class AssetServiceOrderController extends Controller
             's.id', 's.number', 's.date', 's.description',
             's.estimated_cost', 's.actual_cost', 's.status',
             's.sent_date', 's.return_date', 's.created_at',
-            'oo.nama_outlet as owner_outlet_name',
+            DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
             'o.nama_outlet as outlet_name',
             'wo.name as warehouse_outlet_name',
             'sp.name as supplier_name',
@@ -1237,7 +1233,7 @@ class AssetServiceOrderController extends Controller
         $hasSvcType = Schema::hasColumn('asset_service_orders', 'service_type');
 
         $rules = [
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',

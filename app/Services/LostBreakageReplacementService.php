@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\AssetOwnership;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -57,7 +58,7 @@ class LostBreakageReplacementService
                 'i.name as item_name',
                 'i.sku',
                 'u.name as unit_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('h.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'ol.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 DB::raw('COALESCE(rs.rep_sum, 0) AS qty_replaced'),

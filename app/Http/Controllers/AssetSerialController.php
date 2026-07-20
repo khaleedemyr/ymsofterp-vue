@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use App\Services\AssetInventoryStockService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,11 +33,8 @@ class AssetSerialController extends Controller
         $query = $this->buildSerialListQuery($request, $user);
         $serials = $query->paginate((int) $request->input('per_page', 25))->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -46,6 +45,7 @@ class AssetSerialController extends Controller
             'serials' => $serials,
             'filters' => $request->only(['search', 'owner_outlet_id', 'warehouse_outlet_id', 'status']),
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => $user,
             'tableReady' => true,
@@ -62,7 +62,7 @@ class AssetSerialController extends Controller
         $query = DB::table('asset_inventory_serials as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 's.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 's.tagged_by', '=', 'u.id')
@@ -70,7 +70,7 @@ class AssetSerialController extends Controller
             ->select(
                 's.*',
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 'ai.track_serial',
@@ -101,11 +101,8 @@ class AssetSerialController extends Controller
     public function create(Request $request)
     {
         $user = auth()->user();
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -114,6 +111,7 @@ class AssetSerialController extends Controller
 
         return Inertia::render('AssetSerial/Register', [
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => $user,
             'prefill' => $request->only(['owner_outlet_id', 'warehouse_outlet_id', 'inventory_item_id']),
@@ -125,7 +123,7 @@ class AssetSerialController extends Controller
     {
         $request->validate([
             'inventory_item_id' => 'required|integer',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'warehouse_outlet_id' => 'required|integer',
             'serial_number' => 'nullable|string|max:50',
             'tag_uid' => 'nullable|string|max:32',
@@ -193,11 +191,8 @@ class AssetSerialController extends Controller
     {
         $user = auth()->user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -207,6 +202,7 @@ class AssetSerialController extends Controller
         return response()->json([
             'success' => true,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => [
                 'id' => $user->id ?? null,
@@ -258,7 +254,7 @@ class AssetSerialController extends Controller
     {
         $request->validate([
             'inventory_item_id' => 'required|integer',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'warehouse_outlet_id' => 'required|integer',
             'tag_uid' => 'required|string|min:8|max:32',
         ]);
@@ -328,7 +324,7 @@ class AssetSerialController extends Controller
             'serial_number' => 'required|string|max:50',
             'tag_uid' => 'required|string|min:8|max:32',
             'inventory_item_id' => 'required|integer',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'warehouse_outlet_id' => 'required|integer',
             'unit_level' => 'nullable|in:small,medium,large',
         ]);
@@ -373,13 +369,13 @@ class AssetSerialController extends Controller
         $query = DB::table('asset_inventory_serials as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 's.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->select(
                 's.*',
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name'
             );
@@ -418,7 +414,7 @@ class AssetSerialController extends Controller
         $query = DB::table('asset_inventory_serials as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 's.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('users as u', 's.tagged_by', '=', 'u.id')
@@ -426,7 +422,7 @@ class AssetSerialController extends Controller
             ->select(
                 's.*',
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 'ai.track_serial',
@@ -470,7 +466,7 @@ class AssetSerialController extends Controller
         $query = DB::table('asset_inventory_serials as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 's.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->select(
@@ -482,7 +478,7 @@ class AssetSerialController extends Controller
                 's.tagged_at',
                 's.source_type',
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
                 'ai.track_serial'
@@ -536,7 +532,7 @@ class AssetSerialController extends Controller
         $query = DB::table('asset_inventory_stocks as st')
             ->join('asset_inventory_items as ai', 'st.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 'st.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 'st.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 'st.warehouse_outlet_id', '=', 'wo.id')
             ->where('st.owner_outlet_id', $ownerOutletId)
             ->where(function ($q) {
@@ -558,7 +554,7 @@ class AssetSerialController extends Controller
                 'ai.item_id',
                 'ai.track_serial',
                 'i.name as item_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('st.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'wo.name as warehouse_name'
             )
             ->orderBy('i.name');

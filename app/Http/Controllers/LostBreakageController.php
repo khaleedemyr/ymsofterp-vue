@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -27,7 +29,7 @@ class LostBreakageController extends Controller
             ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
             ->select(
                 'h.*',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('h.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name',
@@ -112,11 +114,9 @@ class LostBreakageController extends Controller
 
         $outlets = [];
         if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')
-                ->where('status', 'A')
-                ->select('id_outlet as id', 'nama_outlet as name')
-                ->orderBy('nama_outlet')
-                ->get();
+            $outlets = AssetOwnership::options()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values();
         }
 
         if ($request->wantsJson()) {
@@ -126,6 +126,9 @@ class LostBreakageController extends Controller
         return inertia('LostBreakage/Index', [
             'data'    => $data,
             'outlets' => $outlets,
+            'locationOutlets' => AssetOwnership::locationOptions()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values(),
             'filters' => $request->only(['search', 'outlet_id', 'status', 'date_from', 'date_to', 'per_page']),
         ]);
     }
@@ -317,11 +320,8 @@ class LostBreakageController extends Controller
     {
         $user = auth()->user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $items = $this->getAssetItems();
         $units = DB::table('units')->where('status', 'active')->get();
@@ -333,6 +333,7 @@ class LostBreakageController extends Controller
 
         return inertia('LostBreakage/Create', [
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'items'   => $items,
             'units'   => $units,
@@ -344,8 +345,8 @@ class LostBreakageController extends Controller
         $request->validate([
             'header_id'          => 'nullable|integer',
             'date'               => 'required|date',
-            'owner_outlet_id'    => 'required|integer',
-            'outlet_id'          => 'required|integer',
+            'owner_outlet_id'    => ['required', 'integer', AssetOwnership::ownerIdRule()],
+            'outlet_id'          => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'warehouse_outlet_id'=> 'nullable|integer',
             'notes'              => 'nullable|string',
             'items'              => 'nullable|array',
@@ -503,11 +504,8 @@ class LostBreakageController extends Controller
             )
             ->get();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $items = $this->getAssetItems();
         $units = DB::table('units')->where('status', 'active')->get();
@@ -540,7 +538,7 @@ class LostBreakageController extends Controller
             ->where('h.id', $id)
             ->select(
                 'h.*',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('h.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name',
@@ -1047,7 +1045,7 @@ class LostBreakageController extends Controller
             ->where('h.id', $id)
             ->select(
                 'h.*',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('h.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name',
@@ -1204,7 +1202,9 @@ class LostBreakageController extends Controller
         }
         $outlets = [];
         if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')->select('id_outlet as id', 'nama_outlet as name')->orderBy('nama_outlet')->get();
+            $outlets = AssetOwnership::options()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values();
         }
         return response()->json(['data' => $data, 'outlets' => $outlets]);
     }
@@ -1285,14 +1285,17 @@ class LostBreakageController extends Controller
 
         $outlets = [];
         if ($user->id_outlet == 1) {
-            $outlets = DB::table('tbl_data_outlet')->where('status', 'A')
-                ->select('id_outlet as id', 'nama_outlet as name')
-                ->orderBy('nama_outlet')->get();
+            $outlets = AssetOwnership::options()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values();
         }
 
         return inertia('LostBreakage/Report', [
             'data' => $data,
             'outlets' => $outlets,
+            'locationOutlets' => AssetOwnership::locationOptions()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values(),
             'filters' => $request->only(['outlet_id', 'status', 'type', 'date_from', 'date_to']),
         ]);
     }
@@ -1434,16 +1437,17 @@ class LostBreakageController extends Controller
         $filters = $request->only(['search', 'owner_outlet_id', 'outlet_id', 'type', 'date_from', 'date_to']);
         $rows = $service->pendingDetailRows($filters, $user);
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet as id', 'nama_outlet as name')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options()
+            ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+            ->values();
 
         return inertia('LostBreakage/ReplacementBacklog', [
             'rows' => $rows,
             'filters' => $filters,
             'outlets' => $outlets,
+            'locationOutlets' => AssetOwnership::locationOptions()
+                ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
+                ->values(),
             'isAdmin' => (int) ($user->id_outlet ?? 0) === 1,
             'prIntegrationReady' => $service->prLinesTableExists() && $service->replacementsTableExists(),
         ]);

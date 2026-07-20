@@ -9,8 +9,13 @@ import debounce from 'lodash/debounce';
 const props = defineProps({
     user: Object,
     outlets: Array,
+    locationOutlets: { type: Array, default: () => [] },
     warehouseOutlets: Array,
 });
+
+const locationOptions = computed(() =>
+    (props.locationOutlets?.length ? props.locationOutlets : props.outlets) || []
+);
 
 const form = useForm({
     owner_outlet_id: props.user.id_outlet == 1 ? '' : props.user.id_outlet,
@@ -240,7 +245,7 @@ function submitForm() {
                         <label class="block text-xs font-medium text-gray-500 mb-1">Outlet Lokasi</label>
                         <select v-if="isHO" v-model="form.outlet_id" class="w-full rounded-lg border-gray-300 text-sm focus:ring-teal-500 focus:border-teal-500">
                             <option value="">Pilih Outlet</option>
-                            <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                            <option v-for="o in locationOptions" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
                         </select>
                         <input v-else type="text" :value="outlets.find(o => o.id_outlet == user.id_outlet)?.nama_outlet" disabled class="w-full rounded-lg border-gray-200 bg-gray-50 text-sm" />
                     </div>

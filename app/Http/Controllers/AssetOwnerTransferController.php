@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use App\Models\AssetOwnerTransfer;
 use App\Models\AssetOwnerTransferApprovalFlow;
 use App\Models\AssetOwnerTransferItem;
@@ -27,8 +29,8 @@ class AssetOwnerTransferController extends Controller
             ->select(
                 't.id', 't.transfer_number', 't.transfer_date', 't.status',
                 't.notes', 't.created_at',
-                'of.nama_outlet as owner_from_name',
-                'ot.nama_outlet as owner_to_name',
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_from_id', 'of.nama_outlet') . ' as owner_from_name'),
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_to_id', 'ot.nama_outlet') . ' as owner_to_name'),
                 'ol.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
@@ -63,11 +65,8 @@ class AssetOwnerTransferController extends Controller
 
         $transfers = $query->orderByDesc('t.created_at')->paginate(15)->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetOwnerTransfer/Index', [
             'transfers' => $transfers,
@@ -83,7 +82,8 @@ class AssetOwnerTransferController extends Controller
 
         return inertia('AssetOwnerTransfer/Create', [
             'user' => $user,
-            'outlets' => DB::table('tbl_data_outlet')->where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'outlets' => AssetOwnership::options(),
+            'locationOutlets' => AssetOwnership::locationOptions(),
             'warehouseOutlets' => DB::table('warehouse_outlets')->select('id', 'name', 'outlet_id')->orderBy('name')->get(),
         ]);
     }
@@ -92,9 +92,9 @@ class AssetOwnerTransferController extends Controller
     {
         $validated = $request->validate([
             'transfer_date' => 'required|date',
-            'owner_outlet_from_id' => 'required|integer',
-            'owner_outlet_to_id' => 'required|integer|different:owner_outlet_from_id',
-            'outlet_id' => 'required|integer',
+            'owner_outlet_from_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
+            'owner_outlet_to_id' => ['required', 'integer', 'different:owner_outlet_from_id', AssetOwnership::ownerIdRule()],
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'warehouse_outlet_id' => 'required|integer',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -178,8 +178,8 @@ class AssetOwnerTransferController extends Controller
 
         $this->assertUserCanView($user, $transfer);
 
-        $ownerFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_from_id)->first();
-        $ownerTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_to_id)->first();
+        $ownerFromName = AssetOwnership::name((int) $transfer->owner_outlet_from_id) ?? '-';
+        $ownerToName = AssetOwnership::name((int) $transfer->owner_outlet_to_id) ?? '-';
         $location = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->outlet_id)->first();
 
         $canApprove = false;
@@ -197,8 +197,8 @@ class AssetOwnerTransferController extends Controller
                 'transfer_date' => $transfer->transfer_date->format('Y-m-d'),
                 'status' => $transfer->status,
                 'notes' => $transfer->notes,
-                'owner_from_name' => $ownerFrom->nama_outlet ?? '-',
-                'owner_to_name' => $ownerTo->nama_outlet ?? '-',
+                'owner_from_name' => $ownerFromName,
+                'owner_to_name' => $ownerToName,
                 'location_outlet_name' => $location->nama_outlet ?? '-',
                 'warehouse_outlet_name' => optional($transfer->warehouseOutlet)->name,
                 'creator_name' => optional($transfer->creator)->nama_lengkap,
@@ -400,8 +400,8 @@ class AssetOwnerTransferController extends Controller
             ->select(
                 't.id', 't.transfer_number', 't.transfer_date', 't.status',
                 't.notes', 't.created_at',
-                'of.nama_outlet as owner_from_name',
-                'ot.nama_outlet as owner_to_name',
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_from_id', 'of.nama_outlet') . ' as owner_from_name'),
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_to_id', 'ot.nama_outlet') . ' as owner_to_name'),
                 'ol.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
@@ -448,7 +448,8 @@ class AssetOwnerTransferController extends Controller
         $user = Auth::user();
 
         return response()->json([
-            'outlets' => DB::table('tbl_data_outlet')->where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'outlets' => AssetOwnership::options(),
+            'locationOutlets' => AssetOwnership::locationOptions(),
             'warehouseOutlets' => DB::table('warehouse_outlets')->select('id', 'name', 'outlet_id')->orderBy('name')->get(),
             'user' => [
                 'id' => $user->id,
@@ -470,8 +471,8 @@ class AssetOwnerTransferController extends Controller
 
         $this->assertUserCanView($user, $transfer);
 
-        $ownerFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_from_id)->first();
-        $ownerTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->owner_outlet_to_id)->first();
+        $ownerFromName = AssetOwnership::name((int) $transfer->owner_outlet_from_id) ?? '-';
+        $ownerToName = AssetOwnership::name((int) $transfer->owner_outlet_to_id) ?? '-';
         $location = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->outlet_id)->first();
 
         $canApprove = false;
@@ -490,8 +491,8 @@ class AssetOwnerTransferController extends Controller
             'notes' => $transfer->notes,
             'owner_outlet_from_id' => $transfer->owner_outlet_from_id,
             'owner_outlet_to_id' => $transfer->owner_outlet_to_id,
-            'owner_from_name' => $ownerFrom->nama_outlet ?? '-',
-            'owner_to_name' => $ownerTo->nama_outlet ?? '-',
+            'owner_from_name' => $ownerFromName,
+            'owner_to_name' => $ownerToName,
             'location_outlet_name' => $location->nama_outlet ?? '-',
             'warehouse_outlet_name' => optional($transfer->warehouseOutlet)->name,
             'creator_name' => optional($transfer->creator)->nama_lengkap,
@@ -532,9 +533,9 @@ class AssetOwnerTransferController extends Controller
     {
         $validated = $request->validate([
             'transfer_date' => 'required|date',
-            'owner_outlet_from_id' => 'required|integer',
-            'owner_outlet_to_id' => 'required|integer|different:owner_outlet_from_id',
-            'outlet_id' => 'required|integer',
+            'owner_outlet_from_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
+            'owner_outlet_to_id' => ['required', 'integer', 'different:owner_outlet_from_id', AssetOwnership::ownerIdRule()],
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
             'warehouse_outlet_id' => 'required|integer',
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
@@ -645,8 +646,8 @@ class AssetOwnerTransferController extends Controller
             ->where('t.id', $id)
             ->select(
                 't.*',
-                'of.nama_outlet as owner_from_name',
-                'ot.nama_outlet as owner_to_name',
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_from_id', 'of.nama_outlet') . ' as owner_from_name'),
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_to_id', 'ot.nama_outlet') . ' as owner_to_name'),
                 'ol.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'creator.nama_lengkap as creator_name'
@@ -709,8 +710,8 @@ class AssetOwnerTransferController extends Controller
                 't.transfer_date as date',
                 't.status',
                 't.notes',
-                'of.nama_outlet as owner_from_name',
-                'ot.nama_outlet as owner_to_name',
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_from_id', 'of.nama_outlet') . ' as owner_from_name'),
+                DB::raw(AssetOwnership::ownerNameSql('t.owner_outlet_to_id', 'ot.nama_outlet') . ' as owner_to_name'),
                 'creator.nama_lengkap as creator_name',
                 'af.approval_level',
                 'approver.nama_lengkap as approver_name'

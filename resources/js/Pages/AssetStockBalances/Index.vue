@@ -61,7 +61,11 @@
                 @change="filter"
               >
                 <option value="">Semua Lokasi</option>
-                <option v-for="outlet in outlets" :key="'l-' + outlet.id_outlet" :value="outlet.id_outlet">
+                <option
+                  v-for="outlet in (locationOutlets?.length ? locationOutlets : outlets)"
+                  :key="'l-' + outlet.id_outlet"
+                  :value="outlet.id_outlet"
+                >
                   {{ outlet.nama_outlet }}
                 </option>
               </select>
@@ -341,6 +345,7 @@ export default {
   props: {
     stockBalances: Object,
     outlets: Array,
+    locationOutlets: { type: Array, default: () => [] },
     warehouseOutlets: Array,
     filters: Object,
   },

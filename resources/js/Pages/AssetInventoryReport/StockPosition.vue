@@ -29,7 +29,7 @@
           <label class="text-sm">Lokasi Outlet</label>
           <select v-model="selectedOutlet" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500">
             <option value="">Semua Lokasi</option>
-            <option v-for="o in outlets" :key="'loc-' + o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+            <option v-for="o in locationOutlets" :key="'loc-' + o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
           </select>
         </div>
 
@@ -193,12 +193,19 @@ import axios from 'axios';
 const props = defineProps({
   stocks: Array,
   outlets: Array,
+  locationOutlets: { type: Array, default: () => [] },
   warehouseOutlets: Array,
   user: Object,
 });
 
 const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
 const outlets = computed(() => (Array.isArray(props.outlets) ? props.outlets : []));
+const locationOutlets = computed(() => {
+  if (Array.isArray(props.locationOutlets) && props.locationOutlets.length) {
+    return props.locationOutlets;
+  }
+  return outlets.value;
+});
 const isHQ = computed(() => String(props.user?.id_outlet) === '1');
 
 const search = ref('');

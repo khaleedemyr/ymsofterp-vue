@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AssetInventoryStockService;
+use App\Support\AssetOwnership;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -11,7 +13,6 @@ use App\Models\Item;
 use App\Exports\AssetStockBalanceImportTemplateExport;
 use App\Imports\AssetStockBalanceImport;
 use Maatwebsite\Excel\Facades\Excel;
-use App\Services\AssetInventoryStockService;
 
 class AssetStockBalanceController extends Controller
 {
@@ -22,7 +23,7 @@ class AssetStockBalanceController extends Controller
         $query = DB::table('asset_inventory_stocks as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->join('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
@@ -33,8 +34,8 @@ class AssetStockBalanceController extends Controller
                 'i.id as product_id',
                 'i.name as product_name',
                 'i.sku as product_code',
-                'oo.id_outlet as owner_outlet_id',
-                'oo.nama_outlet as owner_outlet_name',
+                's.owner_outlet_id',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.id_outlet',
                 'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
@@ -73,12 +74,6 @@ class AssetStockBalanceController extends Controller
 
         $stockBalances = $query->orderByDesc('s.created_at')->paginate(10)->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
-
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
             ->orderBy('name')
@@ -86,7 +81,8 @@ class AssetStockBalanceController extends Controller
 
         return Inertia::render('AssetStockBalances/Index', [
             'stockBalances' => $stockBalances,
-            'outlets' => $outlets,
+            'outlets' => AssetOwnership::options(),
+            'locationOutlets' => AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'filters' => $request->only(['search', 'owner_outlet_id', 'outlet_id', 'warehouse_outlet_id']),
         ]);
@@ -96,7 +92,7 @@ class AssetStockBalanceController extends Controller
     {
         $request->validate([
             'product_id' => 'required|exists:items,id',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
             'qty_small' => 'required|numeric|min:0',

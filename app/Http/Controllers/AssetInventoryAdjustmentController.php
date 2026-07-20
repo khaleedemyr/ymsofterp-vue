@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -28,7 +30,7 @@ class AssetInventoryAdjustmentController extends Controller
             ->select(
                 'a.id', 'a.number', 'a.date', 'a.type', 'a.reason',
                 'a.status', 'a.created_by', 'a.created_at',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('a.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
@@ -66,17 +68,15 @@ class AssetInventoryAdjustmentController extends Controller
 
         $adjustments = $query->orderByDesc('a.created_at')->paginate(15)->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetInventoryAdjustment/Index', [
             'adjustments' => $adjustments,
             'filters' => $request->only(['search', 'from', 'to', 'status', 'type', 'outlet_id', 'owner_outlet_id']),
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 
@@ -84,11 +84,8 @@ class AssetInventoryAdjustmentController extends Controller
     {
         $user = auth()->user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -98,6 +95,7 @@ class AssetInventoryAdjustmentController extends Controller
         return inertia('AssetInventoryAdjustment/Form', [
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
         ]);
     }
@@ -105,7 +103,7 @@ class AssetInventoryAdjustmentController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',
@@ -217,8 +215,6 @@ class AssetInventoryAdjustmentController extends Controller
             }
         }
 
-        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $adjustment->owner_outlet_id)->first();
-
         $adjustmentData = [
             'id' => $adjustment->id,
             'number' => $adjustment->number,
@@ -226,7 +222,7 @@ class AssetInventoryAdjustmentController extends Controller
             'type' => $adjustment->type,
             'reason' => $adjustment->reason,
             'status' => $adjustment->status,
-            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
+            'owner_outlet_name' => AssetOwnership::name((int) $adjustment->owner_outlet_id) ?? '-',
             'outlet_name' => optional($adjustment->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($adjustment->warehouseOutlet)->name,
             'creator_name' => optional($adjustment->creator)->nama_lengkap,
@@ -405,7 +401,7 @@ class AssetInventoryAdjustmentController extends Controller
             ->select(
                 'a.id', 'a.number', 'a.date', 'a.type', 'a.reason',
                 'a.status', 'a.created_at',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('a.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as creator_name'
@@ -446,11 +442,8 @@ class AssetInventoryAdjustmentController extends Controller
     {
         $user = Auth::user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -459,6 +452,7 @@ class AssetInventoryAdjustmentController extends Controller
 
         return response()->json([
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => [
                 'id' => $user->id,
@@ -496,8 +490,6 @@ class AssetInventoryAdjustmentController extends Controller
             }
         }
 
-        $ownerOutlet = DB::table('tbl_data_outlet')->where('id_outlet', $adjustment->owner_outlet_id)->first();
-
         return response()->json([
             'id' => $adjustment->id,
             'number' => $adjustment->number,
@@ -505,7 +497,7 @@ class AssetInventoryAdjustmentController extends Controller
             'type' => $adjustment->type,
             'reason' => $adjustment->reason,
             'status' => $adjustment->status,
-            'owner_outlet_name' => $ownerOutlet->nama_outlet ?? '-',
+            'owner_outlet_name' => AssetOwnership::name((int) $adjustment->owner_outlet_id) ?? '-',
             'outlet_name' => optional($adjustment->outlet)->nama_outlet,
             'warehouse_outlet_name' => optional($adjustment->warehouseOutlet)->name,
             'creator_name' => optional($adjustment->creator)->nama_lengkap,
@@ -542,7 +534,7 @@ class AssetInventoryAdjustmentController extends Controller
     public function apiStore(Request $request)
     {
         $validated = $request->validate([
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'date' => 'required|date',
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'required|integer',

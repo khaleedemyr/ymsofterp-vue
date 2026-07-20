@@ -41,7 +41,7 @@
                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option :value="null">-- Pilih Outlet Lokasi --</option>
-                  <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
+                  <option v-for="outlet in locationOutletOptions" :key="outlet.id_outlet" :value="outlet.id_outlet">
                     {{ outlet.nama_outlet }}
                   </option>
                 </select>
@@ -271,6 +271,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 const props = defineProps({
   user: Object,
   outlets: Array,
+  locationOutlets: { type: Array, default: () => [] },
 });
 
 const form = useForm({
@@ -293,6 +294,10 @@ const showScanner = ref(false);
 const cameras = ref([]);
 const selectedCameraId = ref('');
 let html5QrCode = null;
+
+const locationOutletOptions = computed(() =>
+  (props.locationOutlets?.length ? props.locationOutlets : props.outlets) || []
+);
 
 const ownerOutletDisplay = computed(() => {
   if (!form.owner_outlet_id) return '';

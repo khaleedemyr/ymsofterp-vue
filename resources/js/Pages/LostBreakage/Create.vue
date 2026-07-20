@@ -44,7 +44,7 @@
                 <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Outlet Lokasi <span class="text-red-400">*</span></label>
                 <select v-model="form.outlet_id" :disabled="outletDisabled" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-60" required>
                   <option value="">Pilih Outlet</option>
-                  <option v-for="o in props.outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                  <option v-for="o in locationOptions" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
                 </select>
               </div>
               <div>
@@ -329,11 +329,14 @@ import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
-const props = defineProps({ outlets: Array, warehouseOutlets: Array, items: Array, units: Array, header: Object, details: Array, approvalFlows: Array, isEdit: Boolean })
+const props = defineProps({ outlets: Array, locationOutlets: { type: Array, default: () => [] }, warehouseOutlets: Array, items: Array, units: Array, header: Object, details: Array, approvalFlows: Array, isEdit: Boolean })
 
 const page = usePage()
 const userOutletId = computed(() => page.props.auth?.user?.id_outlet || '')
 const outletDisabled = computed(() => userOutletId.value != 1)
+const locationOptions = computed(() =>
+  (props.locationOutlets?.length ? props.locationOutlets : props.outlets) || []
+)
 const isEdit = computed(() => props.isEdit || false)
 const assetItems = computed(() => props.items || [])
 const lightboxSrc = ref(null)

@@ -1,0 +1,9 @@
+-- Asset virtual ownership (bukan baris tbl_data_outlet)
+--
+-- Reserved owner_outlet_id (INT UNSIGNED) di kode App\Support\AssetOwnership:
+--   90001 = Pak Yudi
+--   90002 = PT BAA
+--
+-- Tidak ada INSERT ke tbl_data_outlet.
+-- Nama di-resolve via CASE di query / AssetOwnership::name().
+-- Virtual ID hanya untuk ownership, bukan lokasi fisik.

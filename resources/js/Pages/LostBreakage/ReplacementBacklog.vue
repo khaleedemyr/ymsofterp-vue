@@ -46,7 +46,7 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Lokasi</label>
             <select v-model="filters.outlet_id" class="w-full px-3 py-2 border rounded-lg text-sm">
               <option value="">Semua</option>
-              <option v-for="o in outlets" :key="'loc-' + o.id" :value="o.id">{{ o.name }}</option>
+              <option v-for="o in locationOutletOptions" :key="'loc-' + o.id" :value="o.id">{{ o.name }}</option>
             </select>
           </div>
           <div>
@@ -212,9 +212,14 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },
   filters: { type: Object, default: () => ({}) },
   outlets: { type: Array, default: () => [] },
+  locationOutlets: { type: Array, default: () => [] },
   isAdmin: Boolean,
   prIntegrationReady: Boolean,
 })
+
+const locationOutletOptions = computed(() =>
+  (props.locationOutlets?.length ? props.locationOutlets : props.outlets) || []
+)
 
 const filters = ref({ ...props.filters })
 const selectedIds = ref([])

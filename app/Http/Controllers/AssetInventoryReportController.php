@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Exports\AssetStockPositionExport;
@@ -20,7 +22,7 @@ class AssetInventoryReportController extends Controller
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
@@ -30,7 +32,7 @@ class AssetInventoryReportController extends Controller
                 'i.name as item_name',
                 'ai.id as inventory_item_id',
                 's.owner_outlet_id',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.id_outlet as outlet_id',
                 'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
@@ -47,7 +49,7 @@ class AssetInventoryReportController extends Controller
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
-            ->orderBy('oo.nama_outlet')
+            ->orderByRaw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet'))
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');
@@ -66,11 +68,8 @@ class AssetInventoryReportController extends Controller
 
         $data = $query->get();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -80,6 +79,7 @@ class AssetInventoryReportController extends Controller
         return inertia('AssetInventoryReport/StockPosition', [
             'stocks' => $data,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouseOutlets' => $warehouseOutlets,
             'user' => $user,
         ]);
@@ -137,7 +137,7 @@ class AssetInventoryReportController extends Controller
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
-            ->join('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
+            ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
@@ -147,7 +147,7 @@ class AssetInventoryReportController extends Controller
                 'i.name as item_name',
                 'ai.id as inventory_item_id',
                 's.owner_outlet_id',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.id_outlet as outlet_id',
                 'o.nama_outlet as location_outlet_name',
                 'wo.id as warehouse_outlet_id',
@@ -164,7 +164,7 @@ class AssetInventoryReportController extends Controller
                 'um.name as medium_unit_name',
                 'ul.name as large_unit_name'
             )
-            ->orderBy('oo.nama_outlet')
+            ->orderByRaw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet'))
             ->orderBy('o.nama_outlet')
             ->orderBy('wo.name')
             ->orderBy('i.name');
@@ -196,17 +196,15 @@ class AssetInventoryReportController extends Controller
             ->orderBy('name')
             ->get();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return response()->json([
             'success' => true,
             'stocks' => $data,
             'warehouseOutlets' => $warehouseOutlets,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 

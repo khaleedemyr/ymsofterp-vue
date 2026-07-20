@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\AssetOwnership;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -38,7 +40,7 @@ class AssetGoodReceiveController extends Controller
                 'gr.created_at',
                 'gr.updated_at',
                 'po.number as po_number',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('gr.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
@@ -75,17 +77,15 @@ class AssetGoodReceiveController extends Controller
 
         $goodReceives = $query->orderByDesc('gr.created_at')->paginate(15)->withQueryString();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetGoodReceive/Index', [
             'goodReceives' => $goodReceives,
             'filters' => $request->only(['search', 'from', 'to', 'status', 'outlet_id']),
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 
@@ -93,15 +93,13 @@ class AssetGoodReceiveController extends Controller
     {
         $user = auth()->user();
 
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetGoodReceive/Create', [
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 
@@ -163,7 +161,7 @@ class AssetGoodReceiveController extends Controller
     {
         $request->validate([
             'po_id' => 'required|integer',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -291,7 +289,7 @@ class AssetGoodReceiveController extends Controller
                 'po.number as po_number',
                 'po.date as po_date',
                 's.name as supplier_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('gr.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
@@ -339,7 +337,7 @@ class AssetGoodReceiveController extends Controller
                 'po.number as po_number',
                 'po.date as po_date',
                 's.name as supplier_name',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('gr.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'u.nama_lengkap as received_by_name'
@@ -374,16 +372,14 @@ class AssetGoodReceiveController extends Controller
         $gr->items = $items;
 
         $user = auth()->user();
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         return inertia('AssetGoodReceive/Edit', [
             'goodReceive' => $gr,
             'user' => $user,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
         ]);
     }
 
@@ -416,7 +412,7 @@ class AssetGoodReceiveController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -933,7 +929,7 @@ class AssetGoodReceiveController extends Controller
                 'gr.created_at',
                 'gr.updated_at',
                 'po.number as po_number',
-                'oo.nama_outlet as owner_outlet_name',
+                DB::raw(AssetOwnership::ownerNameSql('gr.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
@@ -1064,11 +1060,8 @@ class AssetGoodReceiveController extends Controller
         $supplier = DB::table('suppliers')->where('id', $po->supplier_id)->first();
 
         $user = auth()->user();
-        $outlets = DB::table('tbl_data_outlet')
-            ->where('status', 'A')
-            ->select('id_outlet', 'nama_outlet')
-            ->orderBy('nama_outlet')
-            ->get();
+        $outlets = AssetOwnership::options();
+        $locationOutlets = AssetOwnership::locationOptions();
 
         $warehouseOutlets = DB::table('warehouse_outlets')
             ->select('id', 'name', 'outlet_id')
@@ -1084,6 +1077,7 @@ class AssetGoodReceiveController extends Controller
             'items' => $poItems,
             'suggested_owner_outlet_id' => $suggestedOwnerOutletId,
             'outlets' => $outlets,
+            'locationOutlets' => $locationOutlets ?? AssetOwnership::locationOptions(),
             'warehouse_outlets' => $warehouseOutlets,
             'user' => ['id_outlet' => $user->id_outlet],
         ]);
@@ -1093,7 +1087,7 @@ class AssetGoodReceiveController extends Controller
     {
         $request->validate([
             'po_id' => 'required|integer',
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',
@@ -1200,7 +1194,7 @@ class AssetGoodReceiveController extends Controller
     public function apiUpdate(Request $request, $id)
     {
         $request->validate([
-            'owner_outlet_id' => 'required|integer',
+            'owner_outlet_id' => ['required', 'integer', AssetOwnership::ownerIdRule()],
             'outlet_id' => 'required|integer',
             'warehouse_outlet_id' => 'nullable|integer',
             'receive_date' => 'required|date',

@@ -7,7 +7,7 @@ import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
 import { formatAssetQty } from '@/utils/formatAssetQty';
 
-const props = defineProps({ user: Object, outlets: Array, warehouseOutlets: Array });
+const props = defineProps({ user: Object, outlets: Array, locationOutlets: { type: Array, default: () => [] }, warehouseOutlets: Array });
 
 const form = useForm({
     transfer_date: new Date().toISOString().slice(0, 10),
@@ -122,7 +122,7 @@ function submitForm() {
                     <label class="text-xs text-gray-500">Outlet Lokasi *</label>
                     <select v-model="form.outlet_id" class="w-full rounded-lg border-gray-300 text-sm">
                         <option value="">Pilih</option>
-                        <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+                        <option v-for="o in (locationOutlets.length ? locationOutlets : outlets)" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
                     </select>
                 </div>
                 <div>
