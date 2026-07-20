@@ -2278,9 +2278,9 @@ class StockCutController extends Controller
                                                             ->first();
                                                         
                                                         if ($stock) {
-                                                            $costPerUnit = $stock->last_cost_small ?? 0;
+                                                            $costPerUnit = $this->toNumeric($stock->last_cost_small ?? 0);
                                                             // modifierQty dari POS = total porsi modifier; qty pakai = BOM × modifierQty
-                                                            $qtyNeeded = $bomItem['qty'] * (float) $modifierQty;
+                                                            $qtyNeeded = $this->toNumeric($bomItem['qty']) * $this->toNumeric($modifierQty);
                                                             $totalCostForModifier = $costPerUnit * $qtyNeeded;
                                                             
                                                             $materialName = DB::table('items')
@@ -2394,8 +2394,8 @@ class StockCutController extends Controller
                         
                         if ($stock) {
                             // Hitung cost berdasarkan last_cost_small
-                            $costPerUnit = $stock->last_cost_small ?? 0;
-                            $qtyNeeded = $bom->qty * $totalQty; // Gunakan total_qty yang sudah di-sum
+                            $costPerUnit = $this->toNumeric($stock->last_cost_small ?? 0);
+                            $qtyNeeded = $this->toNumeric($bom->qty) * $totalQty; // Gunakan total_qty yang sudah di-sum
                             $totalCostForBom = $costPerUnit * $qtyNeeded;
                             $menuCost += $totalCostForBom;
                             
