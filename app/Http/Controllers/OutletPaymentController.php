@@ -2421,18 +2421,28 @@ class OutletPaymentController extends Controller
         }
 
         $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+        // Aggregate per item (GSR = 1 baris per serial) supaya detail laporan tidak berulang.
         $gsrItemRows = DB::table('outlet_serial_receive_items as si')
             ->join('items as it', 'si.item_id', '=', 'it.id')
             ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
             ->whereIn('si.header_id', $gsrIds)
+            ->groupBy(
+                'si.header_id',
+                'it.warehouse_division_id',
+                'si.item_id',
+                'it.name',
+                'si.unit_id',
+                'u.name'
+            )
+            ->orderBy('it.name')
             ->select(
                 'si.header_id as gr_id',
                 'it.warehouse_division_id',
                 'it.name as item_name',
-                'si.qty as qty',
+                DB::raw('SUM(si.qty) as qty'),
                 DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("({$effectivePriceExpr}) as price"),
-                DB::raw("(si.qty * ({$effectivePriceExpr})) as subtotal")
+                DB::raw("CASE WHEN SUM(si.qty) > 0 THEN SUM(si.qty * ({$effectivePriceExpr})) / SUM(si.qty) ELSE MAX({$effectivePriceExpr}) END as price"),
+                DB::raw("SUM(si.qty * ({$effectivePriceExpr})) as subtotal")
             )
             ->get();
 
