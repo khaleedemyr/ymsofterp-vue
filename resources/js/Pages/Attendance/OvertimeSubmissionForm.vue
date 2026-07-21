@@ -59,7 +59,7 @@
                 <input v-model="item.overtime_date" type="date" required class="w-full rounded-lg border-gray-300" />
               </div>
               <div class="col-span-2">
-                <input v-model.number="item.requested_hours" type="number" min="0.01" max="24" step="0.25" required class="w-full rounded-lg border-gray-300" />
+                <input v-model.number="item.requested_hours" type="number" min="1" max="24" step="1" required class="w-full rounded-lg border-gray-300" />
               </div>
               <div class="col-span-2">
                 <button type="button" @click="removeRow(index)" class="px-3 py-2 rounded-lg bg-red-100 text-red-700 hover:bg-red-200">

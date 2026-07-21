@@ -52,7 +52,7 @@ class OvertimeSubmissionController extends Controller
             'items' => 'required|array|min:1',
             'items.*.user_id' => 'required|integer|exists:users,id',
             'items.*.overtime_date' => 'required|date',
-            'items.*.requested_hours' => 'required|numeric|min:0.01|max:24',
+            'items.*.requested_hours' => 'required|integer|min:1|max:24',
             'items.*.notes' => 'nullable|string|max:255',
             'approvers' => 'required|array|min:1',
             'approvers.*' => 'required|integer|exists:users,id',
