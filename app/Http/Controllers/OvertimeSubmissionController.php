@@ -41,7 +41,6 @@ class OvertimeSubmissionController extends Controller
         return Inertia::render('Attendance/OvertimeSubmissionForm', [
             'outlets' => Outlet::query()
                 ->where('status', 'A')
-                ->where('is_outlet', 1)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet']),
             'today' => now()->format('Y-m-d'),
@@ -179,7 +178,6 @@ class OvertimeSubmissionController extends Controller
             'success' => true,
             'outlets' => Outlet::query()
                 ->where('status', 'A')
-                ->where('is_outlet', 1)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet']),
             'today' => now()->format('Y-m-d'),
