@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="max-w-7xl mx-auto py-8 px-2">
+    <div class="w-full max-w-none py-8 px-4 lg:px-6">
       <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 class="text-2xl font-bold flex items-center gap-2">
           <i class="fa-solid fa-minus-circle text-amber-500"></i> Laporan Qty Minus Stock Cut
