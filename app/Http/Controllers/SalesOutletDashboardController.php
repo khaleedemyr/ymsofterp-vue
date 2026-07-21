@@ -15,7 +15,7 @@ class SalesOutletDashboardController extends Controller
     public function dashboardApi(Request $request)
     {
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $dateTo = $request->get('date_to', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
         // Get dashboard data (always use daily period)
         $dashboardData = $this->getDashboardData($dateFrom, $dateTo, 'daily');
@@ -33,7 +33,7 @@ class SalesOutletDashboardController extends Controller
     public function index(Request $request)
     {
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $dateTo = $request->get('date_to', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
         // Get dashboard data (always use daily period)
         $dashboardData = $this->getDashboardData($dateFrom, $dateTo, 'daily');
@@ -1241,7 +1241,7 @@ class SalesOutletDashboardController extends Controller
     {
         $itemName = $request->get('item_name');
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $dateTo = $request->get('date_to', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
         if (!$itemName) {
             return response()->json(['error' => 'Item name is required'], 400);

@@ -83,10 +83,44 @@ const promoUsageLoading = ref(false);
 const expandedRegions = ref(new Set());
 const expandedOutlets = ref(new Set());
 
-// Filter states
+// Filter states — UI bulan; API tetap date_from / date_to
+function getMonthRange(monthValue) {
+    if (!monthValue) {
+        return { date_from: '', date_to: '' };
+    }
+    const [year, month] = monthValue.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    return {
+        date_from: `${monthValue}-01`,
+        date_to: `${monthValue}-${String(lastDay).padStart(2, '0')}`,
+    };
+}
+
+function currentMonthValue() {
+    return new Date().toISOString().substring(0, 7);
+}
+
+const selectedMonth = ref(
+    props.filters?.date_from?.substring(0, 7) || currentMonthValue()
+);
+
+const initialRange = getMonthRange(selectedMonth.value);
 const filters = ref({
-    date_from: props.filters.date_from || new Date().toISOString().split('T')[0],
-    date_to: props.filters.date_to || new Date().toISOString().split('T')[0]
+    date_from: props.filters?.date_from || initialRange.date_from,
+    date_to: props.filters?.date_to || initialRange.date_to,
+});
+
+const selectedMonthLabel = computed(() => {
+    if (!selectedMonth.value) return '';
+    const [year, month] = selectedMonth.value.split('-').map(Number);
+    const label = new Date(year, month - 1, 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+});
+
+const periodRangeLabel = computed(() => {
+    if (!filters.value.date_from || !filters.value.date_to) return '';
+    const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${fmt(filters.value.date_from)} – ${fmt(filters.value.date_to)}`;
 });
 
 // Computed property for dashboard data
@@ -1895,12 +1929,19 @@ function applyFilters() {
 }
 
 function resetFilters() {
-    filters.value = {
-        date_from: new Date().toISOString().split('T')[0],
-        date_to: new Date().toISOString().split('T')[0]
-    };
+    selectedMonth.value = currentMonthValue();
+    filters.value = getMonthRange(selectedMonth.value);
     applyFilters();
 }
+
+watch(selectedMonth, (month) => {
+    const range = getMonthRange(month);
+    if (filters.value.date_from === range.date_from && filters.value.date_to === range.date_to) {
+        return;
+    }
+    filters.value.date_from = range.date_from;
+    filters.value.date_to = range.date_to;
+});
 
 
 // Watch for filter changes
@@ -2678,25 +2719,23 @@ const menuRegionChartOptions = computed(() => ({
 
                 <!-- Filters -->
                 <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Date From -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
-                            <input 
-                                v-model="filters.date_from"
-                                type="date"
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Bulan</label>
+                            <input
+                                v-model="selectedMonth"
+                                type="month"
                                 class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
                             />
+                            <p v-if="periodRangeLabel" class="text-xs text-gray-500 mt-2">
+                                Periode: {{ periodRangeLabel }}
+                            </p>
                         </div>
-
-                        <!-- Date To -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
-                            <input 
-                                v-model="filters.date_to"
-                                type="date"
-                                class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                            />
+                        <div class="hidden md:block">
+                            <p class="text-sm text-gray-600">
+                                Menampilkan data sales outlet untuk
+                                <span class="font-semibold text-gray-900">{{ selectedMonthLabel }}</span>
+                            </p>
                         </div>
                     </div>
 
