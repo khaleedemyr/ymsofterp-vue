@@ -10,8 +10,23 @@ use Inertia\Inertia;
 
 class SerialTrackingController extends Controller
 {
-  /** @var array<int, array<string, mixed>|null> */
-  private array $outletTransferMetaCache = [];
+  /** Status ORJ yang masih "mengunci" serial dari daftar Belum GR Outlet. */
+  private const ACTIVE_OUTLET_REJECTION_STATUSES = ['draft', 'submitted', 'approved'];
+
+  /**
+   * Serial sudah dicatat di Outlet Rejection aktif — bukan lagi menunggu GR outlet.
+   */
+  private function applyExcludeSerialsInActiveOutletRejection($query, string $serialAlias = 's'): void
+  {
+    $query->whereNotExists(function ($sub) use ($serialAlias) {
+      $sub->select(DB::raw(1))
+        ->from('outlet_rejection_serial_items as orsi')
+        ->join('outlet_rejections as orj', 'orj.id', '=', 'orsi.outlet_rejection_id')
+        ->whereColumn('orsi.serial_id', "{$serialAlias}.id")
+        ->whereIn('orj.status', self::ACTIVE_OUTLET_REJECTION_STATUSES);
+    });
+  }
+
 
   /** @var array<int, array<string, mixed>|null> */
   private array $deliveryOrderMetaCache = [];
@@ -400,8 +415,10 @@ class SerialTrackingController extends Controller
         $sub->select(DB::raw(1))
           ->from('outlet_serial_receive_items as osri')
           ->whereColumn('osri.serial_id', 's.id');
-      })
-      ->select(
+      });
+    $this->applyExcludeSerialsInActiveOutletRejection($query);
+
+    $query->select(
         's.id as serial_id',
         's.serial_number',
         's.item_id',
