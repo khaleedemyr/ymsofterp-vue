@@ -2601,17 +2601,22 @@ class StockCutController extends Controller
         ];
 
         $total = (clone $query)->count();
+        $canManage = $this->userCanManageStockCutVariance($user);
         $rows = $query->orderByDesc('scv.created_at')
             ->skip(($page - 1) * $perPage)
             ->take($perPage)
             ->get()
-            ->map(function ($row) {
+            ->map(function ($row) use ($canManage) {
                 $created = $row->created_at ? \Carbon\Carbon::parse($row->created_at) : null;
                 $row->age_hours = $created && $row->status === 'open'
                     ? $created->diffInHours(now())
                     : null;
                 $row->type_filter_label = $this->stockCutTypeFilterLabel($row->type_filter);
                 $row->closed_via_label = $this->stockCutVarianceClosedViaLabel($row->closed_via);
+                $row->can_adjust = $canManage && $row->status === 'open';
+                $row->can_rollback = $canManage && $this->isStockCutVarianceAdjustRollbackable($row);
+                $row->adjust_reference_id = $this->stockCutVarianceAdjustReferenceId($row);
+
                 return $row;
             });
 
@@ -2619,11 +2624,379 @@ class StockCutController extends Controller
             'status' => 'success',
             'data' => $rows,
             'summary' => $summary,
+            'can_manage_variance' => $canManage,
             'current_page' => $page,
             'per_page' => $perPage,
             'total' => $total,
             'last_page' => (int) ceil($total / $perPage),
         ]);
+    }
+
+    /**
+     * Balancing stok minus ke 0 + tulis kartu IN + tutup variance Open (tanpa approval).
+     */
+    public function adjustVariance(Request $request, $id)
+    {
+        if (! \Schema::hasTable('stock_cut_variances')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tabel stock_cut_variances belum ada.',
+            ], 503);
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (! $this->userCanManageStockCutVariance($user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya superadmin atau divisi Cost Control yang dapat Adjust.',
+            ], 403);
+        }
+
+        $varianceId = (int) $id;
+
+        try {
+            $result = DB::transaction(function () use ($user, $varianceId) {
+                $variance = DB::table('stock_cut_variances')
+                    ->where('id', $varianceId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $variance) {
+                    throw new \RuntimeException('Data minus tidak ditemukan.');
+                }
+
+                $userOutletId = (int) ($user->id_outlet ?? 0);
+                if ($userOutletId > 0 && $userOutletId !== 1 && (int) $variance->outlet_id !== $userOutletId) {
+                    throw new \RuntimeException('Anda tidak berhak adjust minus outlet lain.');
+                }
+
+                if ($variance->status !== 'open') {
+                    throw new \RuntimeException('Variance sudah closed, tidak perlu adjust.');
+                }
+
+                $inventoryItemId = (int) $variance->inventory_item_id;
+                $outletId = (int) $variance->outlet_id;
+                $warehouseId = (int) $variance->warehouse_outlet_id;
+
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $stock) {
+                    $stock = $this->ensureOutletStockRowForCut($inventoryItemId, $outletId, $warehouseId);
+                    if (! $stock) {
+                        throw new \RuntimeException('Baris stok tidak ditemukan.');
+                    }
+                    $stock = DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->lockForUpdate()
+                        ->first();
+                }
+
+                $qtyBefore = (float) $stock->qty_small;
+                $qtyToAdd = max(0.0, -$qtyBefore);
+                $didStockIn = false;
+                $costPerSmall = (float) ($stock->last_cost_small ?? 0);
+                if ($costPerSmall <= 0) {
+                    $costPerSmall = (float) ($variance->cost_per_small ?? 0);
+                }
+
+                if ($qtyToAdd > 0) {
+                    $itemMaster = DB::table('items')->where('id', $variance->item_id)->first();
+                    $smallConv = $itemMaster ? ((float) ($itemMaster->small_conversion_qty ?: 1)) : 1;
+                    $mediumConv = $itemMaster ? ((float) ($itemMaster->medium_conversion_qty ?: 1)) : 1;
+
+                    $qtyAddMedium = $smallConv > 0 ? ($qtyToAdd / $smallConv) : 0;
+                    $qtyAddLarge = ($smallConv > 0 && $mediumConv > 0)
+                        ? ($qtyToAdd / ($smallConv * $mediumConv))
+                        : 0;
+
+                    $newQtySmall = $qtyBefore + $qtyToAdd; // target 0
+                    $newQtyMedium = (float) $stock->qty_medium + $qtyAddMedium;
+                    $newQtyLarge = (float) $stock->qty_large + $qtyAddLarge;
+                    $newValue = $newQtySmall * $costPerSmall;
+
+                    $costPerMedium = $costPerSmall * $smallConv;
+                    $costPerLarge = $costPerMedium * $mediumConv;
+
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $newQtySmall,
+                            'qty_medium' => $newQtyMedium,
+                            'qty_large' => $newQtyLarge,
+                            'value' => $newValue,
+                            'last_cost_small' => $costPerSmall,
+                            'last_cost_medium' => $costPerMedium,
+                            'last_cost_large' => $costPerLarge,
+                            'updated_at' => now(),
+                        ]);
+
+                    DB::table('outlet_food_inventory_cards')->insert([
+                        'inventory_item_id' => $inventoryItemId,
+                        'id_outlet' => $outletId,
+                        'warehouse_outlet_id' => $warehouseId,
+                        'date' => now()->toDateString(),
+                        'reference_type' => 'stock_cut_variance_adjustment',
+                        'reference_id' => $varianceId,
+                        'in_qty_small' => $qtyToAdd,
+                        'in_qty_medium' => $qtyAddMedium,
+                        'in_qty_large' => $qtyAddLarge,
+                        'out_qty_small' => 0,
+                        'out_qty_medium' => 0,
+                        'out_qty_large' => 0,
+                        'cost_per_small' => $costPerSmall,
+                        'cost_per_medium' => $costPerMedium,
+                        'cost_per_large' => $costPerLarge,
+                        'value_in' => $qtyToAdd * $costPerSmall,
+                        'value_out' => 0,
+                        'saldo_qty_small' => $newQtySmall,
+                        'saldo_qty_medium' => $newQtyMedium,
+                        'saldo_qty_large' => $newQtyLarge,
+                        'saldo_value' => $newValue,
+                        'description' => 'Stock In - Adjust minus stock cut (balancing ke 0)',
+                        'created_at' => now(),
+                    ]);
+
+                    $didStockIn = true;
+                }
+
+                $closedCount = app(StockCutVarianceService::class)->closeOpenForStockKey(
+                    $inventoryItemId,
+                    $outletId,
+                    $warehouseId,
+                    'adjustment',
+                    'stock_cut_variance_adjustment',
+                    $varianceId,
+                    (int) $user->id
+                );
+
+                return [
+                    'qty_before' => $qtyBefore,
+                    'qty_added' => $qtyToAdd,
+                    'qty_after' => $qtyBefore + $qtyToAdd,
+                    'did_stock_in' => $didStockIn,
+                    'closed_count' => $closedCount,
+                    'cost_per_small' => $costPerSmall,
+                ];
+            });
+
+            $message = $result['did_stock_in']
+                ? 'Stok di-balancing ke 0 dan variance Open ditutup.'
+                : 'Stok sudah tidak minus; variance Open ditutup tanpa stock in.';
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'data' => $result,
+            ]);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('adjustVariance failed', [
+                'variance_id' => $varianceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal adjust: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Rollback Adjust: reverse kartu IN, kurangi stok, buka lagi variance yang ditutup oleh adjust tersebut.
+     */
+    public function rollbackVarianceAdjust(Request $request, $id)
+    {
+        if (! \Schema::hasTable('stock_cut_variances')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tabel stock_cut_variances belum ada.',
+            ], 503);
+        }
+
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (! $this->userCanManageStockCutVariance($user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya superadmin atau divisi Cost Control yang dapat Rollback Adjust.',
+            ], 403);
+        }
+
+        $varianceId = (int) $id;
+
+        try {
+            $result = DB::transaction(function () use ($user, $varianceId) {
+                $variance = DB::table('stock_cut_variances')
+                    ->where('id', $varianceId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $variance) {
+                    throw new \RuntimeException('Data minus tidak ditemukan.');
+                }
+
+                $userOutletId = (int) ($user->id_outlet ?? 0);
+                if ($userOutletId > 0 && $userOutletId !== 1 && (int) $variance->outlet_id !== $userOutletId) {
+                    throw new \RuntimeException('Anda tidak berhak rollback adjust outlet lain.');
+                }
+
+                $adjustRefId = $this->stockCutVarianceAdjustReferenceId($variance);
+                if (! $adjustRefId) {
+                    throw new \RuntimeException('Baris ini tidak ditutup via Adjust, tidak bisa di-rollback.');
+                }
+
+                $inventoryItemId = (int) $variance->inventory_item_id;
+                $outletId = (int) $variance->outlet_id;
+                $warehouseId = (int) $variance->warehouse_outlet_id;
+
+                $cards = DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'stock_cut_variance_adjustment')
+                    ->where('reference_id', $adjustRefId)
+                    ->where('inventory_item_id', $inventoryItemId)
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseId)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
+
+                $qtyReversed = 0.0;
+                $cardsDeleted = 0;
+
+                if ($cards->isNotEmpty()) {
+                    $stock = DB::table('outlet_food_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryItemId)
+                        ->where('id_outlet', $outletId)
+                        ->where('warehouse_outlet_id', $warehouseId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $stock) {
+                        throw new \RuntimeException('Baris stok tidak ditemukan untuk rollback.');
+                    }
+
+                    $itemMaster = DB::table('items')->where('id', $variance->item_id)->first();
+                    $smallConv = $itemMaster ? ((float) ($itemMaster->small_conversion_qty ?: 1)) : 1;
+                    $mediumConv = $itemMaster ? ((float) ($itemMaster->medium_conversion_qty ?: 1)) : 1;
+                    $costPerSmall = (float) ($stock->last_cost_small ?? 0);
+
+                    $qtyRevSmall = 0.0;
+                    $qtyRevMedium = 0.0;
+                    $qtyRevLarge = 0.0;
+                    foreach ($cards as $card) {
+                        $qtyRevSmall += (float) ($card->in_qty_small ?? 0);
+                        $qtyRevMedium += (float) ($card->in_qty_medium ?? 0);
+                        $qtyRevLarge += (float) ($card->in_qty_large ?? 0);
+                    }
+
+                    // Fallback konversi jika medium/large di kartu kosong
+                    if ($qtyRevMedium <= 0 && $qtyRevSmall > 0 && $smallConv > 0) {
+                        $qtyRevMedium = $qtyRevSmall / $smallConv;
+                    }
+                    if ($qtyRevLarge <= 0 && $qtyRevSmall > 0 && $smallConv > 0 && $mediumConv > 0) {
+                        $qtyRevLarge = $qtyRevSmall / ($smallConv * $mediumConv);
+                    }
+
+                    $newQtySmall = (float) $stock->qty_small - $qtyRevSmall;
+                    $newQtyMedium = (float) $stock->qty_medium - $qtyRevMedium;
+                    $newQtyLarge = (float) $stock->qty_large - $qtyRevLarge;
+                    if ($costPerSmall <= 0) {
+                        $costPerSmall = (float) ($variance->cost_per_small ?? 0);
+                    }
+                    $newValue = $newQtySmall * $costPerSmall;
+
+                    DB::table('outlet_food_inventory_stocks')
+                        ->where('id', $stock->id)
+                        ->update([
+                            'qty_small' => $newQtySmall,
+                            'qty_medium' => $newQtyMedium,
+                            'qty_large' => $newQtyLarge,
+                            'value' => $newValue,
+                            'updated_at' => now(),
+                        ]);
+
+                    $cardIds = $cards->pluck('id')->all();
+                    DB::table('outlet_food_inventory_cards')->whereIn('id', $cardIds)->delete();
+
+                    $qtyReversed = $qtyRevSmall;
+                    $cardsDeleted = count($cardIds);
+                }
+
+                $reopened = app(StockCutVarianceService::class)->reopenClosedByAdjustment($adjustRefId);
+
+                return [
+                    'adjust_reference_id' => $adjustRefId,
+                    'qty_reversed' => $qtyReversed,
+                    'cards_deleted' => $cardsDeleted,
+                    'reopened_count' => $reopened,
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Rollback Adjust berhasil. Variance dibuka kembali'
+                    .($result['qty_reversed'] > 0 ? ' dan stok IN dibatalkan.' : '.'),
+                'data' => $result,
+            ]);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('rollbackVarianceAdjust failed', [
+                'variance_id' => $varianceId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal rollback: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function userCanManageStockCutVariance($user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        return ($user->id_role === '5af56935b011a')
+            || ((int) ($user->division_id ?? 0) === 11);
+    }
+
+    private function isStockCutVarianceAdjustRollbackable(object $row): bool
+    {
+        return $row->status === 'closed'
+            && ($row->closed_via ?? null) === 'adjustment'
+            && ($row->closed_reference_type ?? null) === 'stock_cut_variance_adjustment'
+            && ! empty($row->closed_reference_id);
+    }
+
+    private function stockCutVarianceAdjustReferenceId(object $row): ?int
+    {
+        if (! $this->isStockCutVarianceAdjustRollbackable($row)) {
+            return null;
+        }
+
+        return (int) $row->closed_reference_id;
     }
 
     private function stockCutTypeFilterLabel($typeFilter): string

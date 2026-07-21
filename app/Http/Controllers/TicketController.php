@@ -3815,6 +3815,9 @@ class TicketController extends Controller
 
             $closedAtAttrs = $this->closedAtAttributesForStatusChange($oldStatusSlug, $newStatus);
 
+            $categoryChanged = (int) $oldData['category_id'] !== (int) $request->category_id;
+            $outletChanged = (int) $oldData['outlet_id'] !== (int) $request->outlet_id;
+
             $ticket->update(array_merge([
                 'title' => $request->title,
                 'description' => $request->description,
@@ -3833,13 +3836,19 @@ class TicketController extends Controller
             // Create ticket history for changes
             $this->createTicketHistory($ticket, 'updated', null, null, 'Ticket updated');
 
+            // Category/outlet change can map to a different team setting — re-assign accordingly.
+            if ($categoryChanged || $outletChanged) {
+                $ticket->unsetRelation('outlet');
+                $ticket->unsetRelation('category');
+                $this->reassignTeamFromSetting($ticket);
+            }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Ticket berhasil diperbarui',
-                'data' => $ticket->load(['category', 'priority', 'status', 'divisi', 'outlet', 'creator'])
+                'data' => $ticket->load(['category', 'priority', 'status', 'divisi', 'outlet', 'creator', 'assignedUsers'])
             ]);
 
         } catch (\Exception $e) {
@@ -4675,6 +4684,21 @@ class TicketController extends Controller
             app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, auth()->id());
         } catch (\Throwable $e) {
             \Log::error('Ticket auto-assign from team setting failed', [
+                'ticket_id' => $ticket->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Re-assign team after category/outlet update using team settings.
+     */
+    protected function reassignTeamFromSetting(Ticket $ticket): void
+    {
+        try {
+            app(TicketTeamAutoAssignService::class)->reassignIfMatch($ticket, auth()->id());
+        } catch (\Throwable $e) {
+            \Log::error('Ticket re-assign from team setting failed', [
                 'ticket_id' => $ticket->id,
                 'error' => $e->getMessage(),
             ]);

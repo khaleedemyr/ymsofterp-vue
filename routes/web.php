@@ -2409,6 +2409,8 @@ Route::get('/stock-cut/variance-report', function () {
 
 Route::get('/api/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
 Route::get('/api/stock-cut/variance-report', [\App\Http\Controllers\StockCutController::class, 'getVarianceReport']);
+Route::post('/api/stock-cut/variance-report/{id}/adjust', [\App\Http\Controllers\StockCutController::class, 'adjustVariance']);
+Route::post('/api/stock-cut/variance-report/{id}/rollback-adjust', [\App\Http\Controllers\StockCutController::class, 'rollbackVarianceAdjust']);
 Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
 Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
 Route::get('/stock-cut/recipe-checker', [\App\Http\Controllers\RecipeCheckerController::class, 'index'])

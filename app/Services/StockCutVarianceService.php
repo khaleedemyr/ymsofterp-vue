@@ -191,6 +191,30 @@ class StockCutVarianceService
     }
 
     /**
+     * Tutup semua variance Open untuk item + outlet + gudang (setelah balancing/adjust).
+     * Memerlukan stok qty_small sudah tidak negatif.
+     */
+    public function closeOpenForStockKey(
+        int $inventoryItemId,
+        int $outletId,
+        int $warehouseOutletId,
+        string $closedVia = 'adjustment',
+        ?string $referenceType = 'stock_cut_variance_adjustment',
+        ?int $referenceId = null,
+        ?int $closedBy = null
+    ): int {
+        return $this->closeOpenIfStockNonNegative(
+            $inventoryItemId,
+            $outletId,
+            $warehouseOutletId,
+            $closedVia,
+            $referenceType,
+            $referenceId,
+            $closedBy
+        );
+    }
+
+    /**
      * Tutup variance open jika stok qty_small sudah tidak negatif.
      */
     public function closeOpenIfStockNonNegative(
@@ -249,6 +273,31 @@ class StockCutVarianceService
                 'closed_at' => now(),
                 'closed_via' => $closedVia,
                 'closed_by' => auth()->id(),
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
+     * Buka kembali variance yang ditutup oleh Adjust (reference_id kartu/adjust trigger).
+     */
+    public function reopenClosedByAdjustment(int $adjustReferenceId): int
+    {
+        if (! $this->tableExists() || $adjustReferenceId <= 0) {
+            return 0;
+        }
+
+        return DB::table('stock_cut_variances')
+            ->where('status', 'closed')
+            ->where('closed_via', 'adjustment')
+            ->where('closed_reference_type', 'stock_cut_variance_adjustment')
+            ->where('closed_reference_id', $adjustReferenceId)
+            ->update([
+                'status' => 'open',
+                'closed_at' => null,
+                'closed_via' => null,
+                'closed_reference_type' => null,
+                'closed_reference_id' => null,
+                'closed_by' => null,
                 'updated_at' => now(),
             ]);
     }

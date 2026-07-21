@@ -84,16 +84,17 @@
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Eksekutor</th>
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Status</th>
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Ditutup Via</th>
+                <th class="px-3 py-3 text-center font-semibold text-gray-600">Aksi</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
               <tr v-if="loading">
-                <td colspan="12" class="px-4 py-10 text-center text-gray-500">
+                <td colspan="13" class="px-4 py-10 text-center text-gray-500">
                   <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data...
                 </td>
               </tr>
               <tr v-else-if="rows.length === 0">
-                <td colspan="12" class="px-4 py-10 text-center text-gray-500">Tidak ada data</td>
+                <td colspan="13" class="px-4 py-10 text-center text-gray-500">Tidak ada data</td>
               </tr>
               <tr v-else v-for="row in rows" :key="row.id" class="hover:bg-gray-50">
                 <td class="px-3 py-2 whitespace-nowrap">{{ row.tanggal }}</td>
@@ -123,6 +124,33 @@
                     <div class="text-xs text-gray-500">{{ formatDateTime(row.closed_at) }}</div>
                   </template>
                   <span v-else class="text-gray-400">-</span>
+                </td>
+                <td class="px-3 py-2 text-center whitespace-nowrap">
+                  <div class="inline-flex flex-col gap-1 items-center">
+                    <button
+                      v-if="row.can_adjust"
+                      type="button"
+                      class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                      @click="confirmAdjust(row)"
+                    >
+                      <i v-if="actionId === row.id && actionType === 'adjust'" class="fa-solid fa-spinner fa-spin"></i>
+                      <i v-else class="fa-solid fa-sliders"></i>
+                      Adjust
+                    </button>
+                    <button
+                      v-if="row.can_rollback"
+                      type="button"
+                      class="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      :disabled="actionId === row.id"
+                      @click="confirmRollback(row)"
+                    >
+                      <i v-if="actionId === row.id && actionType === 'rollback'" class="fa-solid fa-spinner fa-spin"></i>
+                      <i v-else class="fa-solid fa-rotate-left"></i>
+                      Rollback
+                    </button>
+                    <span v-if="!row.can_adjust && !row.can_rollback" class="text-gray-300">-</span>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -154,6 +182,9 @@ const rows = ref([])
 const summary = ref(null)
 const outlets = ref([])
 const loading = ref(false)
+const canManageVariance = ref(false)
+const actionId = ref(null)
+const actionType = ref(null)
 const currentPage = ref(1)
 const lastPage = ref(1)
 const total = ref(0)
@@ -190,6 +221,7 @@ async function loadData(page = 1) {
     })
     rows.value = res.data.data || []
     summary.value = res.data.summary || null
+    canManageVariance.value = !!res.data.can_manage_variance
     currentPage.value = res.data.current_page || 1
     lastPage.value = res.data.last_page || 1
     total.value = res.data.total || 0
@@ -201,6 +233,95 @@ async function loadData(page = 1) {
     })
   } finally {
     loading.value = false
+  }
+}
+
+async function confirmAdjust(row) {
+  if (!row.can_adjust) return
+
+  const result = await Swal.fire({
+    icon: 'question',
+    title: 'Adjust stok ke 0?',
+    html: `
+      <div class="text-left text-sm space-y-1">
+        <p><strong>Item:</strong> ${row.item_name || '-'}</p>
+        <p><strong>Outlet:</strong> ${row.outlet_name || '-'}</p>
+        <p><strong>Gudang:</strong> ${row.warehouse_name || '-'}</p>
+        <p><strong>Saldo setelah cut:</strong> ${formatQty(row.qty_after)}</p>
+        <p class="text-gray-600 mt-2">Sistem akan menaikkan stok <em>saat ini</em> sampai 0, menulis kartu stock IN, lalu menutup semua minus Open untuk item + gudang ini.</p>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Adjust',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#059669',
+  })
+
+  if (!result.isConfirmed) return
+
+  actionId.value = row.id
+  actionType.value = 'adjust'
+  try {
+    const res = await axios.post(`/api/stock-cut/variance-report/${row.id}/adjust`)
+    await Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: res.data?.message || 'Adjust berhasil',
+    })
+    await loadData(currentPage.value)
+  } catch (e) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal adjust minus',
+    })
+  } finally {
+    actionId.value = null
+    actionType.value = null
+  }
+}
+
+async function confirmRollback(row) {
+  if (!row.can_rollback) return
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'Rollback Adjust?',
+    html: `
+      <div class="text-left text-sm space-y-1">
+        <p><strong>Item:</strong> ${row.item_name || '-'}</p>
+        <p><strong>Outlet:</strong> ${row.outlet_name || '-'}</p>
+        <p><strong>Gudang:</strong> ${row.warehouse_name || '-'}</p>
+        <p class="text-gray-600 mt-2">Kartu stock IN dari Adjust akan dihapus, stok dikurangi lagi, dan semua variance yang ditutup oleh Adjust ini akan dibuka kembali (Open).</p>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Rollback',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#e11d48',
+  })
+
+  if (!result.isConfirmed) return
+
+  actionId.value = row.id
+  actionType.value = 'rollback'
+  try {
+    const res = await axios.post(`/api/stock-cut/variance-report/${row.id}/rollback-adjust`)
+    await Swal.fire({
+      icon: 'success',
+      title: 'Berhasil',
+      text: res.data?.message || 'Rollback berhasil',
+    })
+    await loadData(currentPage.value)
+  } catch (e) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal rollback adjust',
+    })
+  } finally {
+    actionId.value = null
+    actionType.value = null
   }
 }
 

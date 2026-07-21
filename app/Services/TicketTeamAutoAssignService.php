@@ -15,8 +15,11 @@ class TicketTeamAutoAssignService
     /**
      * Resolve team setting and assign users when ticket is created.
      */
-    public function assignIfMatch(Ticket $ticket, ?int $assignedBy = null): bool
-    {
+    public function assignIfMatch(
+        Ticket $ticket,
+        ?int $assignedBy = null,
+        string $historyLabel = 'Auto-assign team'
+    ): bool {
         $setting = $this->resolveForTicket($ticket);
         if (! $setting) {
             return false;
@@ -34,9 +37,22 @@ class TicketTeamAutoAssignService
             $primaryUserId = $userIds->first();
         }
 
-        $this->assignUsers($ticket, $userIds, $primaryUserId, $assignedBy, $setting);
+        // Skip if current assignees already match the setting (same users + same primary).
+        if ($this->assignmentsAlreadyMatch($ticket, $userIds, $primaryUserId)) {
+            return false;
+        }
+
+        $this->assignUsers($ticket, $userIds, $primaryUserId, $assignedBy, $setting, true, $historyLabel);
 
         return true;
+    }
+
+    /**
+     * Re-resolve team setting after category/outlet change and replace assignees.
+     */
+    public function reassignIfMatch(Ticket $ticket, ?int $assignedBy = null): bool
+    {
+        return $this->assignIfMatch($ticket, $assignedBy, 'Re-assign team (category/outlet updated)');
     }
 
     /**
@@ -172,6 +188,29 @@ class TicketTeamAutoAssignService
         return 0;
     }
 
+    /**
+     * @param  Collection<int, int>  $userIds
+     */
+    private function assignmentsAlreadyMatch(Ticket $ticket, Collection $userIds, int $primaryUserId): bool
+    {
+        $current = TicketAssignment::where('ticket_id', $ticket->id)
+            ->get(['user_id', 'is_primary']);
+
+        if ($current->isEmpty()) {
+            return false;
+        }
+
+        $currentIds = $current->pluck('user_id')->map(fn ($id) => (int) $id)->sort()->values();
+        $expectedIds = $userIds->map(fn ($id) => (int) $id)->sort()->values();
+        if ($currentIds->values()->all() !== $expectedIds->values()->all()) {
+            return false;
+        }
+
+        $currentPrimary = (int) ($current->firstWhere('is_primary', true)?->user_id ?? 0);
+
+        return $currentPrimary === (int) $primaryUserId;
+    }
+
     private function assignUsers(
         Ticket $ticket,
         Collection $userIds,
@@ -181,6 +220,16 @@ class TicketTeamAutoAssignService
         bool $sendNotifications = true,
         string $historyLabel = 'Auto-assign team'
     ): void {
+        $oldNames = TicketAssignment::query()
+            ->with('user:id,nama_lengkap')
+            ->where('ticket_id', $ticket->id)
+            ->orderByDesc('is_primary')
+            ->get()
+            ->pluck('user.nama_lengkap')
+            ->filter()
+            ->values()
+            ->all();
+
         TicketAssignment::where('ticket_id', $ticket->id)->delete();
 
         foreach ($userIds as $userId) {
@@ -201,8 +250,8 @@ class TicketTeamAutoAssignService
             'user_id' => $assignedBy,
             'action' => 'assigned',
             'field_name' => 'assigned_users',
-            'old_value' => null,
-            'new_value' => null,
+            'old_value' => $oldNames !== [] ? implode(', ', $oldNames) : null,
+            'new_value' => implode(', ', $assignedNames),
             'description' => $historyLabel . ' (' . $label . '): ' . implode(', ', $assignedNames),
         ]);
 

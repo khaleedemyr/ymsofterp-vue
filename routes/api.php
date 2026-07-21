@@ -658,6 +658,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/stock-cut/form-data', [\App\Http\Controllers\StockCutController::class, 'apiFormData']);
         Route::get('/stock-cut/logs', [\App\Http\Controllers\StockCutController::class, 'getLogs']);
         Route::get('/stock-cut/variance-report', [\App\Http\Controllers\StockCutController::class, 'getVarianceReport']);
+        Route::post('/stock-cut/variance-report/{id}/adjust', [\App\Http\Controllers\StockCutController::class, 'adjustVariance'])->where('id', '[0-9]+');
+        Route::post('/stock-cut/variance-report/{id}/rollback-adjust', [\App\Http\Controllers\StockCutController::class, 'rollbackVarianceAdjust'])->where('id', '[0-9]+');
         Route::post('/stock-cut/check-status', [\App\Http\Controllers\StockCutController::class, 'checkStockCutStatus']);
         Route::post('/stock-cut/status', [\App\Http\Controllers\StockCutController::class, 'status']);
         Route::post('/stock-cut/cek-kebutuhan', [\App\Http\Controllers\StockCutController::class, 'cekKebutuhanStockV2']);
