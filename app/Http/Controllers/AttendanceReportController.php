@@ -1332,6 +1332,7 @@ class AttendanceReportController extends Controller
         $items = OvertimeSubmissionItem::query()
             ->join('overtime_submissions as os', 'overtime_submission_items.submission_id', '=', 'os.id')
             ->whereNull('os.deleted_at')
+            ->where('os.status', 'APPROVED')
             ->whereIn('overtime_submission_items.user_id', $userIds)
             ->whereBetween('overtime_submission_items.overtime_date', [$startDate, $endDate])
             ->get(['overtime_submission_items.user_id', 'overtime_submission_items.overtime_date', 'overtime_submission_items.requested_hours']);

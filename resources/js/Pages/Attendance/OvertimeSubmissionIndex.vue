@@ -7,7 +7,7 @@
             <i class="fa-solid fa-business-time text-indigo-600"></i>
             Pengajuan Lembur
           </h1>
-          <p class="text-sm text-gray-500 mt-1">Input jam pengajuan lembur per karyawan (tanpa approval)</p>
+          <p class="text-sm text-gray-500 mt-1">Hanya status Approved yang dipakai di laporan attendance</p>
         </div>
         <Link :href="route('overtime-submissions.create')" class="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition">
           <i class="fa-solid fa-plus"></i>
@@ -29,6 +29,7 @@
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Nomor</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Pembuat</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Karyawan</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Item</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
@@ -36,12 +37,17 @@
           </thead>
           <tbody>
             <tr v-if="records.data.length === 0">
-              <td colspan="6" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
+              <td colspan="7" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40">
               <td class="px-4 py-3 font-medium">{{ row.number }}</td>
               <td class="px-4 py-3">{{ formatDate(row.submission_date) }}</td>
               <td class="px-4 py-3">{{ row.creator?.nama_lengkap || '-' }}</td>
+              <td class="px-4 py-3">
+                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusClass(row.status)">
+                  {{ statusLabel(row.status) }}
+                </span>
+              </td>
               <td class="px-4 py-3 text-right">{{ row.employee_count || 0 }}</td>
               <td class="px-4 py-3 text-right">{{ row.items_count || 0 }}</td>
               <td class="px-4 py-3 text-right">
@@ -86,6 +92,19 @@ function applyFilters() {
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function statusLabel(status) {
+  if (status === 'APPROVED') return 'Approved';
+  if (status === 'REJECTED') return 'Rejected';
+  if (status === 'SUBMITTED') return 'Waiting Approval';
+  return status || '-';
+}
+
+function statusClass(status) {
+  if (status === 'APPROVED') return 'bg-green-100 text-green-800';
+  if (status === 'REJECTED') return 'bg-red-100 text-red-800';
+  return 'bg-amber-100 text-amber-800';
 }
 
 function confirmDelete(row) {

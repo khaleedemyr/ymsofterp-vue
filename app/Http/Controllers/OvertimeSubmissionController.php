@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Outlet;
 use App\Models\OvertimeSubmission;
+use App\Models\OvertimeSubmissionApprovalFlow;
 use App\Models\User;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -17,7 +19,7 @@ class OvertimeSubmissionController extends Controller
         $search = trim((string) $request->get('search', ''));
 
         $records = OvertimeSubmission::query()
-            ->with(['creator:id,nama_lengkap'])
+            ->with(['creator:id,nama_lengkap', 'approvalFlows.approver:id,nama_lengkap'])
             ->withCount('items')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
@@ -52,7 +54,22 @@ class OvertimeSubmissionController extends Controller
             'items.*.overtime_date' => 'required|date',
             'items.*.requested_hours' => 'required|numeric|min:0.01|max:24',
             'items.*.notes' => 'nullable|string|max:255',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+        ], [
+            'approvers.required' => 'Pilih minimal 1 approver sebelum menyimpan.',
+            'approvers.min' => 'Pilih minimal 1 approver sebelum menyimpan.',
         ]);
+
+        $approverIds = collect($validated['approvers'])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($approverIds === []) {
+            return back()->withErrors(['approvers' => 'Pilih minimal 1 approver sebelum menyimpan.'])->withInput();
+        }
 
         DB::beginTransaction();
         try {
@@ -60,6 +77,7 @@ class OvertimeSubmissionController extends Controller
                 'number' => $this->generateNumber(),
                 'submission_date' => $validated['submission_date'],
                 'notes' => $validated['notes'] ?? null,
+                'status' => OvertimeSubmission::STATUS_SUBMITTED,
                 'created_by' => auth()->id(),
             ]);
 
@@ -72,13 +90,25 @@ class OvertimeSubmissionController extends Controller
                 ]);
             }
 
+            foreach ($approverIds as $index => $approverId) {
+                OvertimeSubmissionApprovalFlow::create([
+                    'overtime_submission_id' => $submission->id,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                ]);
+            }
+
+            $this->notifyNextApprover($submission);
+
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;
         }
 
-        return redirect()->route('overtime-submissions.index')->with('success', 'Pengajuan lembur berhasil disimpan.');
+        return redirect()->route('overtime-submissions.index')
+            ->with('success', 'Pengajuan lembur berhasil disimpan dan menunggu approval.');
     }
 
     public function destroy(OvertimeSubmission $overtimeSubmission)
@@ -120,6 +150,267 @@ class OvertimeSubmissionController extends Controller
             ]);
 
         return response()->json(['success' => true, 'users' => $users]);
+    }
+
+    public function getApprovers(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+
+        $users = User::query()
+            ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+            ->where('users.status', 'A')
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('users.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('users.email', 'like', "%{$search}%")
+                        ->orWhere('j.nama_jabatan', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('users.nama_lengkap')
+            ->limit(40)
+            ->get([
+                'users.id',
+                'users.nama_lengkap',
+                'users.email',
+                DB::raw('j.nama_jabatan as jabatan_name'),
+            ]);
+
+        return response()->json(['success' => true, 'approvers' => $users]);
+    }
+
+    public function getPendingApprovals()
+    {
+        $currentUser = auth()->user();
+        if (! $currentUser) {
+            return response()->json(['success' => false, 'submissions' => []], 401);
+        }
+
+        $isSuperadmin = $currentUser->id_role === '5af56935b011a';
+
+        $query = OvertimeSubmission::query()
+            ->where('status', OvertimeSubmission::STATUS_SUBMITTED)
+            ->whereHas('approvalFlows', function ($q) use ($currentUser, $isSuperadmin) {
+                $q->where('status', 'PENDING');
+                if (! $isSuperadmin) {
+                    $q->where('approver_id', $currentUser->id);
+                }
+            })
+            ->with([
+                'creator:id,nama_lengkap',
+                'items.user:id,nama_lengkap,nik',
+                'approvalFlows.approver:id,nama_lengkap',
+            ])
+            ->orderByDesc('created_at');
+
+        $pending = $query->get();
+
+        if (! $isSuperadmin) {
+            $pending = $pending->filter(function (OvertimeSubmission $submission) use ($currentUser) {
+                $next = $submission->approvalFlows->where('status', 'PENDING')->sortBy('approval_level')->first();
+
+                return $next && (int) $next->approver_id === (int) $currentUser->id;
+            })->values();
+        }
+
+        $pending = $pending->map(function (OvertimeSubmission $submission) {
+            $next = $submission->approvalFlows->where('status', 'PENDING')->sortBy('approval_level')->first();
+            $submission->approver_name = $next?->approver?->nama_lengkap;
+            $submission->approval_level = $next?->approval_level;
+            $submission->employee_count = $submission->items->pluck('user_id')->unique()->count();
+            $submission->total_hours = round((float) $submission->items->sum('requested_hours'), 2);
+
+            return $submission;
+        });
+
+        return response()->json([
+            'success' => true,
+            'submissions' => $pending->values(),
+        ]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $user = auth()->user();
+        $submission = OvertimeSubmission::with([
+            'creator:id,nama_lengkap',
+            'items.user:id,nama_lengkap,nik',
+            'approvalFlows.approver:id,nama_lengkap',
+        ])->findOrFail($id);
+
+        $canApprove = false;
+        if ($user && $submission->status === OvertimeSubmission::STATUS_SUBMITTED) {
+            $canApprove = (bool) $this->resolveCurrentApprovalFlow($submission, $user);
+        }
+        $submission->setAttribute('can_approve', $canApprove);
+
+        return response()->json([
+            'success' => true,
+            'submission' => $submission,
+        ]);
+    }
+
+    public function approve(Request $request, $id)
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $comments = $request->input('comments');
+
+        try {
+            DB::beginTransaction();
+
+            $submission = OvertimeSubmission::with('approvalFlows')->findOrFail($id);
+            if ($submission->status !== OvertimeSubmission::STATUS_SUBMITTED) {
+                throw new \RuntimeException('Pengajuan tidak dalam status menunggu approval.');
+            }
+
+            $flow = $this->resolveCurrentApprovalFlow($submission, $user);
+            if (! $flow) {
+                throw new \RuntimeException('Anda bukan approver berikutnya untuk pengajuan ini.');
+            }
+
+            $flow->update([
+                'status' => 'APPROVED',
+                'approved_at' => now(),
+                'comments' => $comments,
+            ]);
+
+            $stillPending = $submission->approvalFlows()
+                ->where('status', 'PENDING')
+                ->exists();
+
+            if ($stillPending) {
+                $this->notifyNextApprover($submission->fresh('approvalFlows'));
+            } else {
+                $submission->update([
+                    'status' => OvertimeSubmission::STATUS_APPROVED,
+                    'updated_by' => $user->id,
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $stillPending
+                    ? 'Approval berhasil. Menunggu approver berikutnya.'
+                    : 'Pengajuan lembur fully approved.',
+            ]);
+        } catch (\RuntimeException $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => 'Gagal approve: '.$e->getMessage()], 500);
+        }
+    }
+
+    public function reject(Request $request, $id)
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => 'nullable|string|max:500',
+            'comments' => 'nullable|string|max:500',
+        ]);
+        $comments = $validated['rejection_reason'] ?? $validated['comments'] ?? null;
+
+        try {
+            DB::beginTransaction();
+
+            $submission = OvertimeSubmission::with('approvalFlows')->findOrFail($id);
+            if ($submission->status !== OvertimeSubmission::STATUS_SUBMITTED) {
+                throw new \RuntimeException('Pengajuan tidak dalam status menunggu approval.');
+            }
+
+            $flow = $this->resolveCurrentApprovalFlow($submission, $user);
+            if (! $flow) {
+                throw new \RuntimeException('Anda bukan approver berikutnya untuk pengajuan ini.');
+            }
+
+            $flow->update([
+                'status' => 'REJECTED',
+                'rejected_at' => now(),
+                'comments' => $comments,
+            ]);
+
+            $submission->update([
+                'status' => OvertimeSubmission::STATUS_REJECTED,
+                'updated_by' => $user->id,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pengajuan lembur ditolak.',
+            ]);
+        } catch (\RuntimeException $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'message' => 'Gagal reject: '.$e->getMessage()], 500);
+        }
+    }
+
+    private function resolveCurrentApprovalFlow(OvertimeSubmission $submission, $user): ?OvertimeSubmissionApprovalFlow
+    {
+        $pending = $submission->approvalFlows->where('status', 'PENDING')->sortBy('approval_level');
+        $next = $pending->first();
+        if (! $next) {
+            return null;
+        }
+
+        $isSuperadmin = $user->id_role === '5af56935b011a';
+        if ($isSuperadmin || (int) $next->approver_id === (int) $user->id) {
+            return $next;
+        }
+
+        return null;
+    }
+
+    private function notifyNextApprover(OvertimeSubmission $submission): void
+    {
+        try {
+            $next = $submission->approvalFlows()
+                ->where('status', 'PENDING')
+                ->orderBy('approval_level')
+                ->first();
+
+            if (! $next) {
+                return;
+            }
+
+            $creatorName = User::where('id', $submission->created_by)->value('nama_lengkap') ?? 'User';
+            $message = "Pengajuan lembur menunggu approval Anda:\n\n";
+            $message .= "No: {$submission->number}\n";
+            $message .= "Tanggal: {$submission->submission_date}\n";
+            $message .= "Dibuat oleh: {$creatorName}";
+
+            NotificationService::insert([
+                'user_id' => $next->approver_id,
+                'task_id' => $submission->id,
+                'type' => 'overtime_submission_approval',
+                'message' => $message,
+                'url' => config('app.url').'/overtime-submissions',
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Failed to notify overtime submission approver', [
+                'submission_id' => $submission->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function generateNumber(): string

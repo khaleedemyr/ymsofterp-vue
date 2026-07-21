@@ -16,6 +16,7 @@ import ROKhususApprovalCard from '@/Components/ROKhususApprovalCard.vue';
 import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApprovalCard.vue';
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
+import OvertimeSubmissionApprovalCard from '@/Components/OvertimeSubmissionApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
 import RegionalVisitTargetCard from '@/Components/RegionalVisitTargetCard.vue';
@@ -6261,6 +6262,14 @@ function handleSopDevelopmentRejected(itemId) {
     console.log('SOP Development rejected:', itemId);
 }
 
+function handleOvertimeSubmissionApproved(submissionId) {
+    console.log('Overtime Submission approved:', submissionId);
+}
+
+function handleOvertimeSubmissionRejected(submissionId) {
+    console.log('Overtime Submission rejected:', submissionId);
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7337,6 +7346,13 @@ watch(locale, () => {
                     :is-night="isNight"
                     @approved="handleSopDevelopmentApproved"
                     @rejected="handleSopDevelopmentRejected"
+                />
+
+                <!-- Overtime Submission Approval Section -->
+                <OvertimeSubmissionApprovalCard
+                    :is-night="isNight"
+                    @approved="handleOvertimeSubmissionApproved"
+                    @rejected="handleOvertimeSubmissionRejected"
                 />
 
                 <!-- Contra Bon Approval Section -->

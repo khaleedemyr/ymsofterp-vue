@@ -1087,7 +1087,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('employee-onboarding', \App\Http\Controllers\EmployeeOnboardingController::class)->except(['edit', 'update']);
 
     Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers'])->name('overtime-submissions.search-users');
+    Route::get('/overtime-submissions/approvers', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovers'])->name('overtime-submissions.approvers');
     Route::resource('overtime-submissions', \App\Http\Controllers\OvertimeSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
+    Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve'])->name('overtime-submissions.approve');
+    Route::post('/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject'])->name('overtime-submissions.reject');
 
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
     Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
@@ -2780,6 +2783,10 @@ Route::resource('employee-movements', \App\Http\Controllers\EmployeeMovementCont
 Route::get('employee-resignations/get-employees', [\App\Http\Controllers\EmployeeResignationController::class, 'getEmployeesByOutlet'])->name('employee-resignations.get-employees');
 Route::get('employee-resignations/approvers', [\App\Http\Controllers\EmployeeResignationController::class, 'getApprovers'])->name('employee-resignations.approvers');
 Route::get('/api/employee-resignations/pending-approvals', [\App\Http\Controllers\EmployeeResignationController::class, 'pendingApprovals'])->name('employee-resignations.pending-approvals')->middleware('auth');
+Route::get('/api/overtime-submissions/pending-approvals', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getPendingApprovals'])->name('overtime-submissions.pending-approvals')->middleware('auth');
+Route::get('/api/overtime-submissions/{id}/approval-details', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovalDetails'])->name('overtime-submissions.approval-details')->middleware('auth');
+Route::post('/api/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve'])->name('api.overtime-submissions.approve')->middleware('auth');
+Route::post('/api/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject'])->name('api.overtime-submissions.reject')->middleware('auth');
 Route::get('/api/sop-development-completion/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('sop-development-completion.pending-approvals')->middleware('auth');
 Route::get('/api/sop-development-completion/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('sop-development-completion.show')->middleware('auth');
 Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('sop-development-completion.approve')->middleware('auth');

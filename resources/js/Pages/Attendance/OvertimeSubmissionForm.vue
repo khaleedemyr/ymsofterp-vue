@@ -4,7 +4,7 @@
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 class="text-2xl font-bold text-gray-800">Buat Pengajuan Lembur</h1>
-          <p class="text-sm text-gray-500 mt-1">Satu record bisa berisi beberapa nama karyawan</p>
+          <p class="text-sm text-gray-500 mt-1">Wajib pilih approver. Baru berfungsi di laporan setelah fully approved.</p>
         </div>
         <Link :href="route('overtime-submissions.index')" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
           <i class="fa-solid fa-arrow-left"></i> Kembali
@@ -73,9 +73,70 @@
           </div>
         </div>
 
+        <!-- Approval Flow -->
+        <div class="bg-white rounded-xl shadow mb-6 p-6">
+          <h2 class="text-lg font-semibold text-gray-800 mb-1">Approval Flow *</h2>
+          <p class="text-sm text-gray-500 mb-4">
+            Tambahkan approver dari level terendah ke tertinggi. Tanpa approver, data tidak bisa disimpan.
+          </p>
+
+          <div class="flex flex-col sm:flex-row gap-3 mb-4">
+            <input
+              v-model="approverSearch"
+              type="text"
+              placeholder="Cari nama / jabatan approver..."
+              class="flex-1 rounded-lg border-gray-300"
+              @input="searchApprovers"
+            />
+          </div>
+
+          <div v-if="approverResults.length > 0" class="border rounded-lg mb-4 max-h-48 overflow-y-auto divide-y">
+            <button
+              v-for="user in approverResults"
+              :key="user.id"
+              type="button"
+              class="w-full text-left px-4 py-2 hover:bg-indigo-50 text-sm"
+              @click="addApprover(user)"
+            >
+              <div class="font-medium text-gray-800">{{ user.nama_lengkap }}</div>
+              <div class="text-xs text-gray-500">{{ user.jabatan_name || '-' }} · {{ user.email }}</div>
+            </button>
+          </div>
+
+          <div v-if="form.approvers.length === 0" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Belum ada approver. Tambahkan minimal 1 orang.
+          </div>
+
+          <div v-else class="space-y-2">
+            <div
+              v-for="(approver, index) in form.approvers"
+              :key="approver.id"
+              class="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 bg-gray-50"
+            >
+              <div>
+                <div class="text-xs font-semibold text-indigo-600">Level {{ index + 1 }}</div>
+                <div class="font-medium text-gray-800">{{ approver.nama_lengkap }}</div>
+                <div class="text-xs text-gray-500">{{ approver.jabatan_name || '-' }}</div>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" class="px-2 py-1 text-xs rounded border" :disabled="index === 0" @click="moveApprover(index, index - 1)">↑</button>
+                <button type="button" class="px-2 py-1 text-xs rounded border" :disabled="index === form.approvers.length - 1" @click="moveApprover(index, index + 1)">↓</button>
+                <button type="button" class="px-2 py-1 text-xs rounded bg-red-100 text-red-700" @click="removeApprover(index)">Hapus</button>
+              </div>
+            </div>
+          </div>
+          <p v-if="form.errors.approvers" class="text-sm text-red-600 mt-2">{{ form.errors.approvers }}</p>
+        </div>
+
         <div class="flex justify-end gap-3">
           <Link :href="route('overtime-submissions.index')" class="px-5 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200">Batal</Link>
-          <button type="submit" :disabled="form.processing || form.items.length === 0" class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">Simpan</button>
+          <button
+            type="submit"
+            :disabled="form.processing || form.items.length === 0 || form.approvers.length === 0"
+            class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            Simpan
+          </button>
         </div>
       </form>
     </div>
@@ -87,6 +148,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import OnboardingUserSelect from '@/Components/EmployeeOnboarding/OnboardingUserSelect.vue';
 import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   outlets: { type: Array, default: () => [] },
@@ -94,6 +157,9 @@ const props = defineProps({
 });
 
 const selectedOutletId = ref('');
+const approverSearch = ref('');
+const approverResults = ref([]);
+let searchTimer = null;
 
 const form = useForm({
   submission_date: props.today,
@@ -106,6 +172,7 @@ const form = useForm({
       notes: '',
     },
   ],
+  approvers: [],
 });
 
 function addRow() {
@@ -122,13 +189,61 @@ function removeRow(index) {
   form.items.splice(index, 1);
 }
 
+function searchApprovers() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = approverSearch.value.trim();
+    if (q.length < 2) {
+      approverResults.value = [];
+      return;
+    }
+    try {
+      const res = await axios.get(route('overtime-submissions.approvers'), { params: { search: q } });
+      approverResults.value = (res.data.approvers || []).filter(
+        (u) => !form.approvers.some((a) => Number(a.id) === Number(u.id))
+      );
+    } catch (e) {
+      console.error(e);
+      approverResults.value = [];
+    }
+  }, 300);
+}
+
+function addApprover(user) {
+  if (form.approvers.some((a) => Number(a.id) === Number(user.id))) return;
+  form.approvers.push({
+    id: user.id,
+    nama_lengkap: user.nama_lengkap,
+    jabatan_name: user.jabatan_name,
+    email: user.email,
+  });
+  approverResults.value = [];
+  approverSearch.value = '';
+}
+
+function removeApprover(index) {
+  form.approvers.splice(index, 1);
+}
+
+function moveApprover(from, to) {
+  if (to < 0 || to >= form.approvers.length) return;
+  const item = form.approvers.splice(from, 1)[0];
+  form.approvers.splice(to, 0, item);
+}
+
 function submit() {
+  if (form.approvers.length === 0) {
+    Swal.fire('Approver wajib', 'Pilih minimal 1 approver sebelum menyimpan.', 'warning');
+    return;
+  }
+
   form.transform((data) => ({
     ...data,
     items: data.items.map((item) => ({
       ...item,
       user_id: Number(item.user_id),
     })),
+    approvers: data.approvers.map((a) => Number(a.id)),
   })).post(route('overtime-submissions.store'));
 }
 </script>
