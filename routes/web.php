@@ -2049,6 +2049,7 @@ Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWare
 
 // Sales Outlet Dashboard Routes
 Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboardController::class, 'index'])->name('sales-outlet-dashboard.index');
+Route::get('/sales-trend-dashboard', [App\Http\Controllers\SalesTrendDashboardController::class, 'index'])->name('sales-trend-dashboard.index');
 Route::get('/outlet-analyzer', [App\Http\Controllers\OutletAnalyzerController::class, 'index'])->name('outlet-analyzer.index');
 Route::get('/opex-outlet-dashboard', [App\Http\Controllers\OpexOutletDashboardController::class, 'index'])->name('opex-outlet-dashboard.index');
 Route::get('/opex-outlet-dashboard/category-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCategoryDetail'])->name('opex-outlet-dashboard.category-detail');

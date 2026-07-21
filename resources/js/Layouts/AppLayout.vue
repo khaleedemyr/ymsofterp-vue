@@ -90,6 +90,7 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.dashboard'), icon: 'fa-solid fa-home', route: '/home', code: 'dashboard' },
             { name: () => t('sidebar.menus.sales_outlet_dashboard'), icon: 'fa-solid fa-chart-line', route: '/sales-outlet-dashboard', code: 'sales_outlet_dashboard' },
+            { name: () => t('sidebar.menus.sales_trend_dashboard'), icon: 'fa-solid fa-chart-area', route: '/sales-trend-dashboard', code: 'sales_trend_dashboard' },
             { name: () => t('sidebar.menus.outlet_analyzer'), icon: 'fa-solid fa-magnifying-glass-chart', route: '/outlet-analyzer', code: 'outlet_analyzer' },
             { name: () => t('sidebar.menus.marketing_dashboard'), icon: 'fa-solid fa-bullhorn', route: '/marketing/dashboard', code: 'marketing_dashboard' },
             { name: () => t('sidebar.menus.dashboard_crm'), icon: 'fa-solid fa-chart-line', route: '/crm/dashboard', code: 'crm_dashboard' },

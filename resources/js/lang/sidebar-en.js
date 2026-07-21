@@ -25,6 +25,7 @@ export default {
   },
   "menus": {
     "sales_outlet_dashboard": "Sales Outlet Dashboard",
+    "sales_trend_dashboard": "Sales Trend Dashboard",
     "outlet_analyzer": "Outlet Analyzer",
     "marketing_dashboard": "Marketing Dashboard",
     "dashboard_crm": "Dashboard CRM",

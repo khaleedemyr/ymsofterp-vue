@@ -25,6 +25,7 @@ export default {
   },
   "menus": {
     "sales_outlet_dashboard": "Dashboard Penjualan Outlet",
+    "sales_trend_dashboard": "Dashboard Sales Trend",
     "outlet_analyzer": "Outlet Analyzer",
     "marketing_dashboard": "Dashboard Marketing",
     "dashboard_crm": "Dashboard CRM",
