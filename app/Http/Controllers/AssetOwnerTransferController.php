@@ -302,6 +302,11 @@ class AssetOwnerTransferController extends Controller
         $transfer = AssetOwnerTransfer::with(['approvalFlows', 'items'])->findOrFail($id);
         $this->assertUserCanView($user, $transfer);
 
+        // Swal tanpa input bisa mengirim comments=true (boolean) — paksa jadi string.
+        if ($request->has('comments') && ! is_string($request->input('comments')) && $request->input('comments') !== null) {
+            $request->merge(['comments' => '']);
+        }
+
         $validated = $request->validate([
             'action' => 'required|in:approve,reject',
             'comments' => 'nullable|string',

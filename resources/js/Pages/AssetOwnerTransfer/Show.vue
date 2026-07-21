@@ -114,11 +114,11 @@ async function handleApproval(action) {
     if (action === 'reject') {
         const { value } = await Swal.fire({ title: 'Reject', input: 'textarea', inputValidator: v => !v && 'Wajib' });
         if (!value) return;
-        comments = value;
+        comments = String(value);
     } else {
-        const { isConfirmed, value } = await Swal.fire({ title: 'Approve?', showCancelButton: true });
+        const { isConfirmed } = await Swal.fire({ title: 'Approve?', showCancelButton: true });
         if (!isConfirmed) return;
-        comments = value || '';
+        comments = '';
     }
     busy.value = true;
     try {
