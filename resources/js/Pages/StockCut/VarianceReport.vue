@@ -66,12 +66,96 @@
         </div>
       </div>
 
+      <!-- Bulk actions -->
+      <div
+        v-if="canManageVariance"
+        class="bg-white rounded-xl shadow border border-gray-100 px-4 py-3 mb-4 flex flex-wrap items-center gap-2 justify-between"
+      >
+        <div class="text-sm text-gray-600">
+          Terpilih: <span class="font-semibold text-gray-900">{{ selectedIds.length }}</span>
+          <span class="text-gray-400 mx-1">|</span>
+          Adjustable di halaman: {{ adjustableRows.length }}
+          <span class="text-gray-400 mx-1">|</span>
+          Rollbackable di halaman: {{ rollbackableRows.length }}
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            @click="selectAllAdjustable"
+          >
+            Pilih semua Adjustable
+          </button>
+          <button
+            type="button"
+            class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            @click="selectAllRollbackable"
+          >
+            Pilih semua Rollbackable
+          </button>
+          <button
+            type="button"
+            class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            @click="clearSelection"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+            :disabled="bulkLoading || selectedAdjustableIds.length === 0"
+            @click="confirmBulkAdjust(false)"
+          >
+            <i v-if="bulkLoading && bulkAction === 'adjust'" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-else class="fa-solid fa-sliders"></i>
+            Adjust terpilih ({{ selectedAdjustableIds.length }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+            :disabled="bulkLoading || adjustableRows.length === 0"
+            @click="confirmBulkAdjust(true)"
+          >
+            <i class="fa-solid fa-check-double"></i>
+            Adjust All Open
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+            :disabled="bulkLoading || selectedRollbackableIds.length === 0"
+            @click="confirmBulkRollback(false)"
+          >
+            <i v-if="bulkLoading && bulkAction === 'rollback'" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-else class="fa-solid fa-rotate-left"></i>
+            Rollback terpilih ({{ selectedRollbackableIds.length }})
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 bg-rose-700 hover:bg-rose-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+            :disabled="bulkLoading || rollbackableRows.length === 0"
+            @click="confirmBulkRollback(true)"
+          >
+            <i class="fa-solid fa-rotate-left"></i>
+            Rollback All Adjust
+          </button>
+        </div>
+      </div>
+
       <!-- Table -->
       <div class="bg-white rounded-xl shadow-xl overflow-hidden">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
               <tr>
+                <th v-if="canManageVariance" class="px-3 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    class="rounded border-gray-300"
+                    :checked="allSelectableChecked"
+                    :indeterminate.prop="someSelectableChecked && !allSelectableChecked"
+                    @change="toggleSelectAllPage($event.target.checked)"
+                  />
+                </th>
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Tanggal Cut</th>
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Outlet</th>
                 <th class="px-3 py-3 text-left font-semibold text-gray-600">Item</th>
@@ -89,14 +173,24 @@
             </thead>
             <tbody class="divide-y divide-gray-100">
               <tr v-if="loading">
-                <td colspan="13" class="px-4 py-10 text-center text-gray-500">
+                <td :colspan="canManageVariance ? 14 : 13" class="px-4 py-10 text-center text-gray-500">
                   <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data...
                 </td>
               </tr>
               <tr v-else-if="rows.length === 0">
-                <td colspan="13" class="px-4 py-10 text-center text-gray-500">Tidak ada data</td>
+                <td :colspan="canManageVariance ? 14 : 13" class="px-4 py-10 text-center text-gray-500">Tidak ada data</td>
               </tr>
               <tr v-else v-for="row in rows" :key="row.id" class="hover:bg-gray-50">
+                <td v-if="canManageVariance" class="px-3 py-2 text-center">
+                  <input
+                    v-if="row.can_adjust || row.can_rollback"
+                    type="checkbox"
+                    class="rounded border-gray-300"
+                    :checked="selectedIds.includes(row.id)"
+                    @change="toggleRow(row.id, $event.target.checked)"
+                  />
+                  <span v-else class="text-gray-300">-</span>
+                </td>
                 <td class="px-3 py-2 whitespace-nowrap">{{ row.tanggal }}</td>
                 <td class="px-3 py-2">{{ row.outlet_name }}</td>
                 <td class="px-3 py-2 font-medium">{{ row.item_name }}</td>
@@ -131,7 +225,7 @@
                       v-if="row.can_adjust"
                       type="button"
                       class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                      :disabled="actionId === row.id"
+                      :disabled="actionId === row.id || bulkLoading"
                       @click="confirmAdjust(row)"
                     >
                       <i v-if="actionId === row.id && actionType === 'adjust'" class="fa-solid fa-spinner fa-spin"></i>
@@ -142,7 +236,7 @@
                       v-if="row.can_rollback"
                       type="button"
                       class="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
-                      :disabled="actionId === row.id"
+                      :disabled="actionId === row.id || bulkLoading"
                       @click="confirmRollback(row)"
                     >
                       <i v-if="actionId === row.id && actionType === 'rollback'" class="fa-solid fa-spinner fa-spin"></i>
@@ -173,7 +267,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Link } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
@@ -185,6 +279,9 @@ const loading = ref(false)
 const canManageVariance = ref(false)
 const actionId = ref(null)
 const actionType = ref(null)
+const bulkLoading = ref(false)
+const bulkAction = ref(null)
+const selectedIds = ref([])
 const currentPage = ref(1)
 const lastPage = ref(1)
 const total = ref(0)
@@ -195,6 +292,22 @@ const filters = ref({
   date_from: '',
   date_to: '',
 })
+
+const adjustableRows = computed(() => rows.value.filter((r) => r.can_adjust))
+const rollbackableRows = computed(() => rows.value.filter((r) => r.can_rollback))
+const selectableRows = computed(() => rows.value.filter((r) => r.can_adjust || r.can_rollback))
+const selectedAdjustableIds = computed(() =>
+  selectedIds.value.filter((id) => adjustableRows.value.some((r) => r.id === id))
+)
+const selectedRollbackableIds = computed(() =>
+  selectedIds.value.filter((id) => rollbackableRows.value.some((r) => r.id === id))
+)
+const allSelectableChecked = computed(() =>
+  selectableRows.value.length > 0 && selectableRows.value.every((r) => selectedIds.value.includes(r.id))
+)
+const someSelectableChecked = computed(() =>
+  selectableRows.value.some((r) => selectedIds.value.includes(r.id))
+)
 
 onMounted(async () => {
   try {
@@ -225,6 +338,9 @@ async function loadData(page = 1) {
     currentPage.value = res.data.current_page || 1
     lastPage.value = res.data.last_page || 1
     total.value = res.data.total || 0
+    // keep selection only for ids still on page
+    const pageIds = new Set(rows.value.map((r) => r.id))
+    selectedIds.value = selectedIds.value.filter((id) => pageIds.has(id))
   } catch (e) {
     Swal.fire({
       icon: 'error',
@@ -234,6 +350,36 @@ async function loadData(page = 1) {
   } finally {
     loading.value = false
   }
+}
+
+function toggleRow(id, checked) {
+  if (checked) {
+    if (!selectedIds.value.includes(id)) selectedIds.value.push(id)
+  } else {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id)
+  }
+}
+
+function toggleSelectAllPage(checked) {
+  if (checked) {
+    const ids = selectableRows.value.map((r) => r.id)
+    selectedIds.value = Array.from(new Set([...selectedIds.value, ...ids]))
+  } else {
+    const pageSelectable = new Set(selectableRows.value.map((r) => r.id))
+    selectedIds.value = selectedIds.value.filter((id) => !pageSelectable.has(id))
+  }
+}
+
+function selectAllAdjustable() {
+  selectedIds.value = adjustableRows.value.map((r) => r.id)
+}
+
+function selectAllRollbackable() {
+  selectedIds.value = rollbackableRows.value.map((r) => r.id)
+}
+
+function clearSelection() {
+  selectedIds.value = []
 }
 
 async function confirmAdjust(row) {
@@ -322,6 +468,88 @@ async function confirmRollback(row) {
   } finally {
     actionId.value = null
     actionType.value = null
+  }
+}
+
+async function confirmBulkAdjust(allOnPage) {
+  const ids = allOnPage
+    ? adjustableRows.value.map((r) => r.id)
+    : selectedAdjustableIds.value
+
+  if (ids.length === 0) return
+
+  const result = await Swal.fire({
+    icon: 'question',
+    title: allOnPage ? 'Adjust All Open di halaman ini?' : 'Adjust terpilih?',
+    html: `<p class="text-sm text-gray-600">Akan memproses <strong>${ids.length}</strong> baris Open. Item+outlet+gudang yang sama hanya di-adjust sekali.</p>`,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Adjust',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#059669',
+  })
+  if (!result.isConfirmed) return
+
+  bulkLoading.value = true
+  bulkAction.value = 'adjust'
+  try {
+    const res = await axios.post('/api/stock-cut/variance-report/bulk-adjust', { ids })
+    await Swal.fire({
+      icon: 'success',
+      title: 'Selesai',
+      text: res.data?.message || 'Bulk adjust selesai',
+    })
+    selectedIds.value = []
+    await loadData(currentPage.value)
+  } catch (e) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal bulk adjust',
+    })
+  } finally {
+    bulkLoading.value = false
+    bulkAction.value = null
+  }
+}
+
+async function confirmBulkRollback(allOnPage) {
+  const ids = allOnPage
+    ? rollbackableRows.value.map((r) => r.id)
+    : selectedRollbackableIds.value
+
+  if (ids.length === 0) return
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: allOnPage ? 'Rollback All Adjust di halaman ini?' : 'Rollback terpilih?',
+    html: `<p class="text-sm text-gray-600">Akan memproses <strong>${ids.length}</strong> baris. Adjust reference yang sama hanya di-rollback sekali.</p>`,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Rollback',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#e11d48',
+  })
+  if (!result.isConfirmed) return
+
+  bulkLoading.value = true
+  bulkAction.value = 'rollback'
+  try {
+    const res = await axios.post('/api/stock-cut/variance-report/bulk-rollback-adjust', { ids })
+    await Swal.fire({
+      icon: 'success',
+      title: 'Selesai',
+      text: res.data?.message || 'Bulk rollback selesai',
+    })
+    selectedIds.value = []
+    await loadData(currentPage.value)
+  } catch (e) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal bulk rollback',
+    })
+  } finally {
+    bulkLoading.value = false
+    bulkAction.value = null
   }
 }
 
