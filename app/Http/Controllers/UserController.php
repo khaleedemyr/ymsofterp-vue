@@ -573,41 +573,81 @@ class UserController extends Controller
     private function updatePublicHolidayBalance($userId, $amount, $notes = null)
     {
         try {
-            // Check if user has existing public holiday balance record
-            $existingBalance = DB::table('holiday_attendance_compensations')
-                ->where('user_id', $userId)
-                ->where('compensation_type', 'bonus')
-                ->where('status', 'approved')
-                ->sum('compensation_amount');
-                
-            $currentBalance = $existingBalance ?: 0;
-            $difference = $amount - $currentBalance;
-            
+            $service = app(\App\Services\HolidayAttendanceService::class);
+            // Basis = sisa tersedia (sama dengan tampilan Input Saldo / form izin)
+            $currentAvailable = $service->getAvailablePublicHolidayBonusDays((int) $userId);
+            $target = (float) $amount;
+            $difference = $target - $currentAvailable;
+
             \Log::info('Public Holiday Balance Update', [
                 'user_id' => $userId,
-                'amount' => $amount,
-                'current_balance' => $currentBalance,
-                'difference' => $difference
+                'amount' => $target,
+                'current_available' => $currentAvailable,
+                'difference' => $difference,
             ]);
-            
-            if ($difference != 0) {
-                // Create adjustment transaction
+
+            if (abs($difference) < 0.00001) {
+                return;
+            }
+
+            if ($difference > 0) {
                 DB::table('holiday_attendance_compensations')->insert([
                     'user_id' => $userId,
                     'holiday_date' => now()->toDateString(),
                     'compensation_type' => 'bonus',
                     'compensation_amount' => $difference,
+                    'used_amount' => 0,
                     'compensation_description' => $notes ?: 'Manual adjustment - Public Holiday Balance',
                     'status' => 'approved',
                     'created_at' => now(),
-                    'updated_at' => now()
+                    'updated_at' => now(),
                 ]);
-                
-                \Log::info('Public Holiday Balance transaction created', [
+
+                \Log::info('Public Holiday Balance credit created', [
                     'user_id' => $userId,
-                    'difference' => $difference
+                    'difference' => $difference,
                 ]);
+
+                return;
             }
+
+            // Kurangi sisa: tandai used_amount (FIFO), selaras dengan pemakaian cuti PH
+            $remaining = abs($difference);
+            $rows = DB::table('holiday_attendance_compensations')
+                ->where('user_id', $userId)
+                ->where('compensation_type', 'bonus')
+                ->where('status', 'approved')
+                ->orderBy('holiday_date')
+                ->orderBy('id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $rowAvailable = max(0, (float) $row->compensation_amount - (float) ($row->used_amount ?? 0));
+                if ($rowAvailable <= 0) {
+                    continue;
+                }
+
+                $burn = min($rowAvailable, $remaining);
+                DB::table('holiday_attendance_compensations')
+                    ->where('id', $row->id)
+                    ->update([
+                        'used_amount' => (float) ($row->used_amount ?? 0) + $burn,
+                        'used_date' => now()->toDateString(),
+                        'notes' => $notes ?: 'Manual adjustment - reduce Public Holiday Balance',
+                        'updated_at' => now(),
+                    ]);
+
+                $remaining -= $burn;
+                if ($remaining <= 0) {
+                    break;
+                }
+            }
+
+            \Log::info('Public Holiday Balance reduced', [
+                'user_id' => $userId,
+                'requested_reduce' => abs($difference),
+                'remaining_unburned' => $remaining,
+            ]);
         } catch (\Exception $e) {
             \Log::error('Error updating public holiday balance: ' . $e->getMessage());
             throw $e;
@@ -706,8 +746,10 @@ class UserController extends Controller
 
         return response()->json([
             'success' => true,
-            'balance' => $totalBalance,
+            // balance = sisa real yang masih bisa dipakai (selaras form izin PH)
+            'balance' => $availableBalance,
             'available_balance' => $availableBalance,
+            'total_balance' => $totalBalance,
         ]);
     }
 

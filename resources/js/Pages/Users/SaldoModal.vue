@@ -75,6 +75,13 @@
                 min="0"
                 step="0.5"
               />
+              <p class="text-xs text-gray-500 mt-1">
+                Sisa yang masih bisa dipakai
+                <span v-if="phTotalRecorded > phAvailableLoaded">
+                  (tercatat {{ Number(phTotalRecorded).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} hari,
+                  sudah terpakai {{ Number(phTotalRecorded - phAvailableLoaded).toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} hari)
+                </span>
+              </p>
             </div>
             <div class="flex items-end">
               <span class="text-sm text-gray-600">hari</span>
@@ -154,6 +161,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'success']);
 
 const loading = ref(false);
+const phTotalRecorded = ref(0);
+const phAvailableLoaded = ref(0);
 const form = ref({
   cuti: '',
   public_holiday: '',
@@ -180,11 +189,14 @@ async function loadCurrentSaldo() {
       form.value.extra_off = data.balance || 0;
     }
     
-    // Load public holiday balance (if exists)
+    // Load public holiday balance (sisa tersedia, bukan total bruto)
     const phResponse = await fetch(`/api/users/${props.user.id}/public-holiday-balance`);
     if (phResponse.ok) {
       const phData = await phResponse.json();
-      form.value.public_holiday = phData.balance || 0;
+      const available = Number(phData.available_balance ?? phData.balance ?? 0) || 0;
+      form.value.public_holiday = available;
+      phAvailableLoaded.value = available;
+      phTotalRecorded.value = Number(phData.total_balance ?? 0) || 0;
     }
   } catch (error) {
     console.error('Error loading current saldo:', error);
