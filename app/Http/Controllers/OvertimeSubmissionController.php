@@ -39,7 +39,11 @@ class OvertimeSubmissionController extends Controller
     public function create(): Response
     {
         return Inertia::render('Attendance/OvertimeSubmissionForm', [
-            'outlets' => Outlet::where('status', 'A')->where('is_outlet', 1)->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+            'outlets' => Outlet::query()
+                ->where('status', 'A')
+                ->where('is_outlet', 1)
+                ->orderBy('nama_outlet')
+                ->get(['id_outlet', 'nama_outlet']),
             'today' => now()->format('Y-m-d'),
         ]);
     }
@@ -68,6 +72,13 @@ class OvertimeSubmissionController extends Controller
             ->all();
 
         if ($approverIds === []) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pilih minimal 1 approver sebelum menyimpan.',
+                ], 422);
+            }
+
             return back()->withErrors(['approvers' => 'Pilih minimal 1 approver sebelum menyimpan.'])->withInput();
         }
 
@@ -107,6 +118,20 @@ class OvertimeSubmissionController extends Controller
             throw $e;
         }
 
+        if ($request->expectsJson() || $request->wantsJson()) {
+            $submission->load([
+                'creator:id,nama_lengkap',
+                'items.user:id,nama_lengkap,nik',
+                'approvalFlows.approver:id,nama_lengkap',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pengajuan lembur berhasil disimpan dan menunggu approval.',
+                'submission' => $submission,
+            ]);
+        }
+
         return redirect()->route('overtime-submissions.index')
             ->with('success', 'Pengajuan lembur berhasil disimpan dan menunggu approval.');
     }
@@ -120,6 +145,64 @@ class OvertimeSubmissionController extends Controller
         $overtimeSubmission->delete();
 
         return redirect()->route('overtime-submissions.index')->with('success', 'Pengajuan lembur berhasil dihapus.');
+    }
+
+    public function apiIndex(Request $request)
+    {
+        $search = trim((string) $request->get('search', ''));
+        $perPage = min(50, max(1, (int) $request->get('per_page', 15)));
+
+        $records = OvertimeSubmission::query()
+            ->with(['creator:id,nama_lengkap', 'approvalFlows.approver:id,nama_lengkap'])
+            ->withCount('items')
+            ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('number', 'like', "%{$search}%")
+                        ->orWhereHas('creator', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"));
+                });
+            })
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'data' => $records,
+            'can_delete' => (string) (auth()->user()?->id_role ?? '') === '5af56935b011a',
+        ]);
+    }
+
+    public function apiCreateMeta()
+    {
+        return response()->json([
+            'success' => true,
+            'outlets' => Outlet::query()
+                ->where('status', 'A')
+                ->where('is_outlet', 1)
+                ->orderBy('nama_outlet')
+                ->get(['id_outlet', 'nama_outlet']),
+            'today' => now()->format('Y-m-d'),
+            'can_delete' => (string) (auth()->user()?->id_role ?? '') === '5af56935b011a',
+        ]);
+    }
+
+    public function apiDestroy($id)
+    {
+        if ((string) (auth()->user()?->id_role ?? '') !== '5af56935b011a') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Hanya superadmin yang dapat menghapus data pengajuan lembur.',
+            ], 403);
+        }
+
+        $submission = OvertimeSubmission::findOrFail($id);
+        $submission->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pengajuan lembur berhasil dihapus.',
+        ]);
     }
 
     public function searchUsers(Request $request)

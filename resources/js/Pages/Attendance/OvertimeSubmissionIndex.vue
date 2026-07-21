@@ -30,6 +30,7 @@
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Pembuat</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">Approver</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Karyawan</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Item</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
@@ -37,9 +38,9 @@
           </thead>
           <tbody>
             <tr v-if="records.data.length === 0">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
+              <td colspan="8" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
             </tr>
-            <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40">
+            <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40 align-top">
               <td class="px-4 py-3 font-medium">{{ row.number }}</td>
               <td class="px-4 py-3">{{ formatDate(row.submission_date) }}</td>
               <td class="px-4 py-3">{{ row.creator?.nama_lengkap || '-' }}</td>
@@ -47,6 +48,31 @@
                 <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusClass(row.status)">
                   {{ statusLabel(row.status) }}
                 </span>
+              </td>
+              <td class="px-4 py-3">
+                <div v-if="sortedFlows(row).length === 0" class="text-gray-400">-</div>
+                <ul v-else class="space-y-1.5 min-w-[220px]">
+                  <li
+                    v-for="flow in sortedFlows(row)"
+                    :key="flow.id"
+                    class="text-xs leading-snug"
+                  >
+                    <div class="font-medium text-gray-800">
+                      L{{ flow.approval_level }} · {{ flow.approver?.nama_lengkap || '-' }}
+                    </div>
+                    <div :class="flowStatusClass(flow.status)">
+                      <template v-if="flow.status === 'APPROVED'">
+                        Approved · {{ formatDateTime(flow.approved_at) }}
+                      </template>
+                      <template v-else-if="flow.status === 'REJECTED'">
+                        Rejected · {{ formatDateTime(flow.rejected_at) }}
+                      </template>
+                      <template v-else>
+                        Waiting
+                      </template>
+                    </div>
+                  </li>
+                </ul>
               </td>
               <td class="px-4 py-3 text-right">{{ row.employee_count || 0 }}</td>
               <td class="px-4 py-3 text-right">{{ row.items_count || 0 }}</td>
@@ -94,6 +120,22 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function formatDateTime(value) {
+  if (!value) return '-';
+  return new Date(value).toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function sortedFlows(row) {
+  const flows = row.approval_flows || [];
+  return [...flows].sort((a, b) => (Number(a.approval_level) || 0) - (Number(b.approval_level) || 0));
+}
+
 function statusLabel(status) {
   if (status === 'APPROVED') return 'Approved';
   if (status === 'REJECTED') return 'Rejected';
@@ -105,6 +147,12 @@ function statusClass(status) {
   if (status === 'APPROVED') return 'bg-green-100 text-green-800';
   if (status === 'REJECTED') return 'bg-red-100 text-red-800';
   return 'bg-amber-100 text-amber-800';
+}
+
+function flowStatusClass(status) {
+  if (status === 'APPROVED') return 'text-green-700';
+  if (status === 'REJECTED') return 'text-red-700';
+  return 'text-amber-700';
 }
 
 function confirmDelete(row) {

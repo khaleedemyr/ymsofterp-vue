@@ -10,6 +10,7 @@ const props = defineProps({
   placeholder: { type: String, default: 'Cari user...' },
   initialUser: { type: Object, default: null },
   allowEmpty: { type: Boolean, default: true },
+  searchParams: { type: Object, default: () => ({}) },
 });
 
 const emit = defineEmits(['update:modelValue', 'user-selected']);
@@ -66,7 +67,12 @@ function refreshSearch(query, immediate = false) {
 
   searchTimer = setTimeout(async () => {
     try {
-      const { data } = await axios.get(route(props.searchRoute), { params: { search: trimmed } });
+      const { data } = await axios.get(route(props.searchRoute), {
+        params: {
+          search: trimmed,
+          ...(props.searchParams || {}),
+        },
+      });
       if (requestId !== searchRequestId) return;
       replaceSearchResults(data.users || []);
     } catch (error) {
@@ -111,6 +117,14 @@ watch(
     options.value = selectedOnlyOptions();
   },
   { deep: true, immediate: true },
+);
+
+watch(
+  () => props.searchParams,
+  () => {
+    refreshSearch('', true);
+  },
+  { deep: true },
 );
 </script>
 

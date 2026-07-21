@@ -53,6 +53,7 @@
                   search-route="overtime-submissions.search-users"
                   placeholder="Cari nama / NIK / jabatan..."
                   :allow-empty="false"
+                  :search-params="userSearchParams"
                 />
               </div>
               <div class="col-span-3">
@@ -147,7 +148,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import OnboardingUserSelect from '@/Components/EmployeeOnboarding/OnboardingUserSelect.vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 
@@ -160,6 +161,11 @@ const selectedOutletId = ref('');
 const approverSearch = ref('');
 const approverResults = ref([]);
 let searchTimer = null;
+
+const userSearchParams = computed(() => {
+  if (!selectedOutletId.value) return {};
+  return { outlet_id: selectedOutletId.value };
+});
 
 const form = useForm({
   submission_date: props.today,

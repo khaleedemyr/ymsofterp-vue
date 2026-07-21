@@ -1332,6 +1332,18 @@ Route::prefix('approval-app')->group(function () {
         
         // Employee Resignation routes
         Route::get('/employee-resignation/pending-approvals', [\App\Http\Controllers\EmployeeResignationController::class, 'pendingApprovals']);
+
+        // Overtime Submission approval + CRUD (ymsoftapp)
+        Route::get('/overtime-submissions', [\App\Http\Controllers\OvertimeSubmissionController::class, 'apiIndex']);
+        Route::get('/overtime-submissions/create-meta', [\App\Http\Controllers\OvertimeSubmissionController::class, 'apiCreateMeta']);
+        Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers']);
+        Route::get('/overtime-submissions/approvers', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovers']);
+        Route::post('/overtime-submissions', [\App\Http\Controllers\OvertimeSubmissionController::class, 'store']);
+        Route::get('/overtime-submissions/pending-approvals', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getPendingApprovals']);
+        Route::get('/overtime-submissions/{id}/approval-details', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovalDetails']);
+        Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve']);
+        Route::post('/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject']);
+        Route::delete('/overtime-submissions/{id}', [\App\Http\Controllers\OvertimeSubmissionController::class, 'apiDestroy']);
         
         // Attendance routes
         Route::get('/attendance/data', [\App\Http\Controllers\AttendanceController::class, 'getAttendanceDataApi'])->name('api.approval-app.attendance.data');
