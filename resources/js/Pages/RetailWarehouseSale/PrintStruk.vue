@@ -135,6 +135,11 @@ const strukText = computed(() => {
       // Price info
       const priceLine = `    @${formatCurrency(item.price || 0)} = ${formatCurrency(item.subtotal || 0)}`;
       lines.push(priceLine);
+
+      if (item.serial_number) {
+        const sn = String(item.serial_number);
+        lines.push(sn.length <= 28 ? `    SN:${sn}` : `    SN:${sn.slice(0, 25)}...`);
+      }
     });
   } else {
     lines.push('TIDAK ADA ITEM');

@@ -12,8 +12,9 @@ export async function generateStrukPDF({ sale, items, customer, warehouse, divis
   // Hitung tinggi untuk items
   if (items && items.length) {
     items.forEach(i => {
-      const itemLines = i.item_name.length > 20 ? Math.ceil(i.item_name.length / 20) : 1;
+      const itemLines = (i.item_name || '').length > 20 ? Math.ceil((i.item_name || '').length / 20) : 1;
       totalHeight += (itemLines * 3.5) + 8; // 3.5mm per line + 8mm spacing (termasuk price)
+      if (i.serial_number) totalHeight += 3.5;
     });
   } else {
     totalHeight += 8; // "TIDAK ADA ITEM" - dikurangi
@@ -107,6 +108,12 @@ export async function generateStrukPDF({ sale, items, customer, warehouse, divis
       const priceLine = `    @${formatCurrency(item.price || 0)} = ${formatCurrency(item.subtotal || 0)}`;
       pdf.text(priceLine, 2, y);
       y += 4.5; // Extra space for price line
+
+      if (item.serial_number) {
+        const sn = String(item.serial_number);
+        pdf.text(sn.length <= 28 ? `    SN:${sn}` : `    SN:${sn.slice(0, 25)}...`, 2, y);
+        y += 3.5;
+      }
     });
   } else {
     pdf.text('TIDAK ADA ITEM', 2, y);

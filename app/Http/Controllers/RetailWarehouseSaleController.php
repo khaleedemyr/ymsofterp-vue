@@ -981,14 +981,33 @@ class RetailWarehouseSaleController extends Controller
                 'rwsi.qty',
                 'rwsi.unit',
                 'rwsi.price',
-                'rwsi.subtotal'
+                'rwsi.subtotal',
+                DB::raw('NULL as serial_number')
             )
             ->where('rwsi.retail_warehouse_sale_id', $id)
             ->get();
 
+        $serialItems = DB::table('retail_warehouse_sale_serial_items as rwss')
+            ->leftJoin('items as i', 'rwss.item_id', '=', 'i.id')
+            ->select(
+                'rwss.id',
+                'i.name as item_name',
+                'rwss.serial_number as barcode',
+                'rwss.qty',
+                'rwss.unit_name as unit',
+                'rwss.price',
+                'rwss.subtotal',
+                'rwss.serial_number'
+            )
+            ->where('rwss.retail_warehouse_sale_id', $id)
+            ->get();
+
+        // Cetak: gabungkan item biasa + serial (serial sebelumnya tidak ikut → "TIDAK ADA ITEM")
+        $printItems = $items->concat($serialItems)->values();
+
         return Inertia::render('RetailWarehouseSale/PrintStruk', [
             'sale' => $sale,
-            'items' => $items,
+            'items' => $printItems,
             'customer' => [
                 'name' => $sale->customer_name,
                 'code' => $sale->customer_code,
