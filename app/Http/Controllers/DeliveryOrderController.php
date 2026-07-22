@@ -84,8 +84,12 @@ class DeliveryOrderController extends Controller
 
     public function create(Request $request)
     {
-        // Ambil daftar packing list yang belum/do belum dibuat
-        $usedPackingListIds = DB::table('delivery_orders')->whereNotNull('packing_list_id')->pluck('packing_list_id')->toArray();
+        // Ambil daftar packing list yang belum/do belum dibuat (exclude 0 = RO Supplier GR placeholder)
+        $usedPackingListIds = DB::table('delivery_orders')
+            ->whereNotNull('packing_list_id')
+            ->where('packing_list_id', '>', 0)
+            ->pluck('packing_list_id')
+            ->toArray();
         
         // Filter tanggal: hanya 1 minggu ke belakang dari hari ini
         $today = date('Y-m-d');
@@ -292,6 +296,36 @@ class DeliveryOrderController extends Controller
         
         DB::beginTransaction();
         try {
+            // Guard race/double-submit: 1 packing list / 1 RO Supplier GR = 1 DO
+            if ($isROSupplierGR) {
+                $existingDo = DB::table('delivery_orders')
+                    ->where('ro_supplier_gr_id', $grId)
+                    ->lockForUpdate()
+                    ->first();
+                if ($existingDo) {
+                    throw new \Exception('Delivery Order untuk RO Supplier GR ini sudah pernah dibuat (' . $existingDo->number . ').');
+                }
+            } else {
+                $packingListId = (int) $request->packing_list_id;
+                // Lock packing list row so concurrent submit cannot both pass the check
+                $lockedPackingList = DB::table('food_packing_lists')
+                    ->where('id', $packingListId)
+                    ->lockForUpdate()
+                    ->first();
+                if (!$lockedPackingList) {
+                    throw new \Exception('Packing list tidak ditemukan');
+                }
+
+                $existingDo = DB::table('delivery_orders')
+                    ->where('packing_list_id', $packingListId)
+                    ->where('packing_list_id', '>', 0)
+                    ->lockForUpdate()
+                    ->first();
+                if ($existingDo) {
+                    throw new \Exception('Delivery Order untuk packing list ini sudah pernah dibuat (' . $existingDo->number . ').');
+                }
+            }
+
             $doNumber = $this->generateDONumber();
             $insertData = [
                 'number' => $doNumber,
@@ -2753,7 +2787,11 @@ class DeliveryOrderController extends Controller
      */
     public function apiCreateData()
     {
-        $usedPackingListIds = DB::table('delivery_orders')->whereNotNull('packing_list_id')->pluck('packing_list_id')->toArray();
+        $usedPackingListIds = DB::table('delivery_orders')
+            ->whereNotNull('packing_list_id')
+            ->where('packing_list_id', '>', 0)
+            ->pluck('packing_list_id')
+            ->toArray();
 
         $today = date('Y-m-d');
         $oneWeekAgo = date('Y-m-d', strtotime('-7 days'));

@@ -234,10 +234,9 @@ class OutletFoodGoodReceiveController extends Controller
                 ], 422);
             }
             
-            // Additional check: Check if there's already a GR for this DO from this user
+            // Additional check: GR untuk DO ini sudah ada (user mana pun)
             $existingGR = DB::table('outlet_food_good_receives')
                 ->where('delivery_order_id', $validated['delivery_order_id'])
-                ->where('created_by', $user->id)
                 ->whereNull('deleted_at')
                 ->first();
                 
@@ -253,10 +252,35 @@ class OutletFoodGoodReceiveController extends Controller
                     ]
                 ], 422);
             }
+
+            $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
+            if (!$do) {
+                return response()->json(['success' => false, 'message' => 'Delivery Order tidak ditemukan'], 404);
+            }
+
+            // Guard: packing list yang sama tidak boleh di-GR lebih dari sekali (cegah DO duplikat)
+            if (!empty($do->packing_list_id) && (int) $do->packing_list_id > 0) {
+                $siblingGr = DB::table('outlet_food_good_receives as gr')
+                    ->join('delivery_orders as do2', 'gr.delivery_order_id', '=', 'do2.id')
+                    ->where('do2.packing_list_id', $do->packing_list_id)
+                    ->whereNull('gr.deleted_at')
+                    ->select('gr.id', 'gr.number', 'gr.created_at', 'do2.number as do_number')
+                    ->first();
+                if ($siblingGr) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Good Receive untuk packing list yang sama sudah pernah dibuat (' . $siblingGr->number . ' dari ' . $siblingGr->do_number . ').',
+                        'duplicate_info' => [
+                            'existing_id' => $siblingGr->id,
+                            'existing_number' => $siblingGr->number,
+                            'submitted_at' => $siblingGr->created_at,
+                            'delivery_order_number' => $siblingGr->do_number,
+                        ]
+                    ], 422);
+                }
+            }
             
             DB::beginTransaction();
-            $do = DB::table('delivery_orders')->where('id', $validated['delivery_order_id'])->first();
-            if (!$do) throw new \Exception('Delivery Order tidak ditemukan');
             
             $outletId = $user->id_outlet;
             $warehouseOutletId = null;
