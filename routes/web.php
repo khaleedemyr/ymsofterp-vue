@@ -558,6 +558,7 @@ Route::middleware(['auth'])->group(function () {
     // Purchase Requisition API endpoints (must be before resource routes)
     Route::get('/purchase-requisitions/categories', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getCategories'])->name('purchase-requisitions.categories')->middleware('auth');
     Route::get('/purchase-requisitions/tickets', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getTickets'])->name('purchase-requisitions.tickets')->middleware('auth');
+    Route::get('/purchase-requisitions/search-tickets', [\App\Http\Controllers\PurchaseRequisitionController::class, 'searchTickets'])->name('purchase-requisitions.search-tickets')->middleware('auth');
     Route::get('/purchase-requisitions/budget-info', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getBudgetInfo'])->name('purchase-requisitions.budget-info')->middleware('auth');
     Route::get('/purchase-requisitions/approvers', [\App\Http\Controllers\PurchaseRequisitionController::class, 'getApprovers'])->name('purchase-requisitions.approvers')->middleware('auth');
     Route::get('/purchase-requisitions/check-kasbon-period', [\App\Http\Controllers\PurchaseRequisitionController::class, 'checkKasbonPeriod'])->name('purchase-requisitions.check-kasbon-period')->middleware('auth');

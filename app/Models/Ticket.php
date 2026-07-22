@@ -122,6 +122,17 @@ class Ticket extends Model
         return $this->hasMany(PurchaseRequisition::class, 'ticket_id');
     }
 
+    /**
+     * PR yang terhubung via pivot (bisa lebih dari ticket_id primary).
+     */
+    public function linkedPurchaseRequisitions()
+    {
+        return $this->belongsToMany(
+            PurchaseRequisition::class,
+            'purchase_requisition_tickets'
+        )->withTimestamps();
+    }
+
     // Scopes
     public function scopeOpen($query)
     {

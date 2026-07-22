@@ -368,7 +368,54 @@
             </div>
 
             <!-- Ticket (Hidden for travel_application and kasbon mode) -->
-            <div v-if="form.mode !== 'travel_application' && form.mode !== 'kasbon'">
+            <div v-if="form.mode === 'pr_ops' || form.mode === 'purchase_payment'">
+              <label class="block text-sm font-medium text-gray-700 mb-2">Related Tickets</label>
+              <multiselect
+                v-model="selectedTickets"
+                :options="ticketOptions"
+                :multiple="true"
+                :searchable="true"
+                :internal-search="false"
+                :loading="ticketSearchLoading"
+                :close-on-select="false"
+                :clear-on-select="false"
+                :preserve-search="true"
+                placeholder="Cari nomor / judul ticket..."
+                label="label"
+                track-by="id"
+                :options-limit="40"
+                @search-change="onTicketSearch"
+                class="pr-ticket-multiselect"
+              >
+                <template #option="{ option }">
+                  <div class="py-1">
+                    <div class="text-sm font-semibold text-blue-700">{{ option.ticket_number }}</div>
+                    <div class="text-xs text-gray-600 truncate">{{ option.title }}</div>
+                    <div v-if="option.outlet_name || option.outlet?.nama_outlet" class="text-[11px] text-gray-400">
+                      {{ option.outlet_name || option.outlet?.nama_outlet }}
+                      <span v-if="option.status_name || option.status?.name"> · {{ option.status_name || option.status?.name }}</span>
+                    </div>
+                  </div>
+                </template>
+                <template #tag="{ option, remove }">
+                  <span class="multiselect__tag">
+                    <a
+                      :href="`/tickets/${option.id}`"
+                      target="_blank"
+                      class="font-semibold hover:underline"
+                      @click.stop
+                    >{{ option.ticket_number }}</a>
+                    <span class="ml-1 text-xs opacity-80">{{ option.title }}</span>
+                    <i class="multiselect__tag-icon" @mousedown.prevent="remove(option)"></i>
+                  </span>
+                </template>
+                <template #noResult>
+                  <span class="text-sm text-gray-500">Tidak ada ticket ditemukan</span>
+                </template>
+              </multiselect>
+              <p class="mt-1 text-xs text-gray-500">Bisa pilih lebih dari satu ticket. Ketik untuk mencari.</p>
+            </div>
+            <div v-else-if="form.mode !== 'travel_application' && form.mode !== 'kasbon'">
               <label class="block text-sm font-medium text-gray-700 mb-2">Related Ticket</label>
               <select
                 v-model="form.ticket_id"
@@ -2808,6 +2855,7 @@ const form = reactive({
   category_id: '', // For non-pr_ops mode
   outlet_id: '', // For non-pr_ops mode
   ticket_id: '',
+  ticket_ids: [],
   currency: 'IDR',
   priority: 'MEDIUM',
   items: [newItem()], // For non-pr_ops mode
@@ -2822,6 +2870,82 @@ const form = reactive({
   approvers: [],
   mode: lbHasPrefill ? 'pr_assets' : (props.initialMode || 'pr_ops'),
 })
+
+const selectedTickets = ref([])
+const ticketOptions = ref([])
+const ticketSearchLoading = ref(false)
+let ticketSearchTimer = null
+
+function mapTicketOption(ticket) {
+  if (!ticket) return null
+  const outletName = ticket.outlet_name || ticket.outlet?.nama_outlet || ''
+  const statusName = ticket.status_name || ticket.status?.name || ''
+  return {
+    id: ticket.id,
+    ticket_number: ticket.ticket_number,
+    title: ticket.title,
+    outlet: ticket.outlet || null,
+    outlet_name: outletName,
+    status: ticket.status || null,
+    status_name: statusName,
+    label: `${ticket.ticket_number} — ${ticket.title || ''}${outletName ? ` (${outletName})` : ''}`,
+  }
+}
+
+async function onTicketSearch(query) {
+  clearTimeout(ticketSearchTimer)
+  ticketSearchTimer = setTimeout(async () => {
+    ticketSearchLoading.value = true
+    try {
+      const { data } = await axios.get('/purchase-requisitions/search-tickets', {
+        params: { q: (query || '').trim() || undefined },
+      })
+      const list = (data.tickets || data.data || []).map(mapTicketOption).filter(Boolean)
+      // Keep selected options visible in dropdown
+      const selectedIds = new Set(selectedTickets.value.map((t) => t.id))
+      const merged = [...selectedTickets.value]
+      list.forEach((opt) => {
+        if (!selectedIds.has(opt.id)) merged.push(opt)
+      })
+      ticketOptions.value = merged
+    } catch (e) {
+      console.error('Ticket search failed', e)
+    } finally {
+      ticketSearchLoading.value = false
+    }
+  }, 300)
+}
+
+async function hydrateInitialTickets() {
+  const ids = []
+  if (props.initialTicketId) {
+    ids.push(Number(props.initialTicketId))
+  }
+  if (!ids.length) {
+    // Seed options with initial tickets prop for empty search
+    ticketOptions.value = (props.tickets || []).slice(0, 40).map(mapTicketOption).filter(Boolean)
+    return
+  }
+  try {
+    const { data } = await axios.get('/purchase-requisitions/search-tickets', {
+      params: { ids: ids.join(',') },
+    })
+    const list = (data.tickets || data.data || []).map(mapTicketOption).filter(Boolean)
+    selectedTickets.value = list
+    ticketOptions.value = list
+    form.ticket_id = list[0]?.id ? String(list[0].id) : ''
+    form.ticket_ids = list.map((t) => t.id)
+  } catch (e) {
+    console.error('Failed to hydrate initial tickets', e)
+    ticketOptions.value = (props.tickets || []).map(mapTicketOption).filter(Boolean)
+  }
+}
+
+watch(selectedTickets, (tickets) => {
+  const ids = (tickets || []).map((t) => t.id)
+  form.ticket_ids = ids
+  form.ticket_id = ids[0] ? String(ids[0]) : ''
+}, { deep: true })
 
 // Filtered categories based on mode and search (must be after form declaration)
 const filteredCategories = computed(() => {
@@ -2914,6 +3038,7 @@ onMounted(() => {
   if (props.initialTicketId) {
     form.ticket_id = String(props.initialTicketId)
   }
+  hydrateInitialTickets()
 
   clickOutsideHandler = (event) => {
     const target = event.target
@@ -3934,6 +4059,12 @@ const submitForm = async () => {
   // Filter out any undefined/null approvers before mapping
   const formData = {
     ...form,
+    ticket_ids: (form.mode === 'pr_ops' || form.mode === 'purchase_payment')
+      ? (selectedTickets.value || []).map((t) => t.id)
+      : (form.ticket_id ? [Number(form.ticket_id)] : []),
+    ticket_id: (form.mode === 'pr_ops' || form.mode === 'purchase_payment')
+      ? (selectedTickets.value[0]?.id || null)
+      : (form.ticket_id || null),
     approvers: form.approvers
       .filter(approver => approver && approver.id)
       .map(approver => approver.id)
@@ -4351,6 +4482,12 @@ watch(approverSearch, (newSearch) => {
 .pra-multiselect .multiselect__content-wrapper { border-radius: 0.75rem; border-color: #e2e8f0; box-shadow: 0 20px 60px -15px rgba(0,0,0,0.15); margin-top: 4px; }
 .pra-multiselect .multiselect__option--highlight { background: #eff6ff; color: #1d4ed8; }
 .pra-multiselect .multiselect__option--selected { background: #f1f5f9; color: #334155; font-weight: 600; }
+
+.pr-ticket-multiselect .multiselect__tags { border-radius: 0.5rem; border-color: #d1d5db; min-height: 42px; }
+.pr-ticket-multiselect .multiselect__tags:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+.pr-ticket-multiselect .multiselect__tag { background: #dbeafe; color: #1e40af; }
+.pr-ticket-multiselect .multiselect__tag-icon:after { color: #1e40af; }
+.pr-ticket-multiselect .multiselect__option--highlight { background: #eff6ff; color: #1d4ed8; }
 
 .lightbox-fade-enter-active { transition: all 0.25s ease; }
 .lightbox-fade-leave-active { transition: all 0.2s ease; }

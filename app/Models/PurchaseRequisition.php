@@ -77,6 +77,16 @@ class PurchaseRequisition extends Model
         return $this->belongsTo(Ticket::class, 'ticket_id');
     }
 
+    /**
+     * Semua ticket terhubung (1 PR → banyak ticket).
+     * Kolom ticket_id tetap sebagai ticket utama / primary.
+     */
+    public function tickets()
+    {
+        return $this->belongsToMany(Ticket::class, 'purchase_requisition_tickets')
+            ->withTimestamps();
+    }
+
     public function requester()
     {
         return $this->belongsTo(User::class, 'requested_by');
@@ -166,7 +176,12 @@ class PurchaseRequisition extends Model
 
     public function scopeByTicket($query, $ticketId)
     {
-        return $query->where('ticket_id', $ticketId);
+        return $query->where(function ($q) use ($ticketId) {
+            $q->where('ticket_id', $ticketId)
+                ->orWhereHas('tickets', function ($tq) use ($ticketId) {
+                    $tq->where('tickets.id', $ticketId);
+                });
+        });
     }
 
     // Accessors

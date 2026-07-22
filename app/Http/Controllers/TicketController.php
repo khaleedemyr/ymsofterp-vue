@@ -943,7 +943,10 @@ class TicketController extends Controller
             } elseif ($paymentStatus === 'no_pr') {
                 $query->whereDoesntHave('purchaseRequisitions');
             } elseif ($paymentStatus === 'with_pr') {
-                $query->whereHas('purchaseRequisitions');
+                $query->where(function ($q) {
+                    $q->whereHas('purchaseRequisitions')
+                        ->orWhereHas('linkedPurchaseRequisitions');
+                });
             }
         }
 
@@ -956,14 +959,9 @@ class TicketController extends Controller
         $paymentStatsByPr = collect();
 
         if (!empty($ticketIds)) {
-            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
-                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
-                ->orderBy('created_at', 'desc')
-                ->get();
+            $prsByTicket = $this->groupPurchaseRequisitionsByTicketIds($ticketIds);
 
-            $prsByTicket = $prs->groupBy('ticket_id');
-
-            $prIds = $prs->pluck('id')->toArray();
+            $prIds = $prsByTicket->flatten(1)->pluck('id')->unique()->values()->all();
             if (!empty($prIds)) {
                 $paymentStatsByPr = DB::table('non_food_payments')
                     ->whereIn('purchase_requisition_id', $prIds)
@@ -1150,7 +1148,10 @@ class TicketController extends Controller
             } elseif ($paymentStatus === 'no_pr') {
                 $query->whereDoesntHave('purchaseRequisitions');
             } elseif ($paymentStatus === 'with_pr') {
-                $query->whereHas('purchaseRequisitions');
+                $query->where(function ($q) {
+                    $q->whereHas('purchaseRequisitions')
+                        ->orWhereHas('linkedPurchaseRequisitions');
+                });
             }
         }
 
@@ -1161,13 +1162,8 @@ class TicketController extends Controller
         $paymentStatsByPr = collect();
 
         if (!empty($ticketIds)) {
-            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
-                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode')
-                ->orderBy('created_at', 'desc')
-                ->get();
-            $prsByTicket = $prs->groupBy('ticket_id');
-
-            $prIds = $prs->pluck('id')->toArray();
+            $prsByTicket = $this->groupPurchaseRequisitionsByTicketIds($ticketIds);
+            $prIds = $prsByTicket->flatten(1)->pluck('id')->unique()->values()->all();
             if (!empty($prIds)) {
                 $paymentStatsByPr = DB::table('non_food_payments')
                     ->whereIn('purchase_requisition_id', $prIds)
@@ -2806,13 +2802,8 @@ class TicketController extends Controller
         $paymentStatsByPr = collect();
 
         if (!empty($ticketIds)) {
-            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
-                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
-                ->orderBy('created_at', 'desc')
-                ->get();
-            $prsByTicket = $prs->groupBy('ticket_id');
-
-            $prIds = $prs->pluck('id')->toArray();
+            $prsByTicket = $this->groupPurchaseRequisitionsByTicketIds($ticketIds);
+            $prIds = $prsByTicket->flatten(1)->pluck('id')->unique()->values()->all();
             if (!empty($prIds)) {
                 $paymentStatsByPr = DB::table('non_food_payments')
                     ->whereIn('purchase_requisition_id', $prIds)
@@ -3404,7 +3395,13 @@ class TicketController extends Controller
         $ticketData = $ticket->toArray();
         $ticketData['attachments'] = $ticket->attachments->toArray();
 
-        $relatedPrs = PurchaseRequisition::where('ticket_id', $ticket->id)
+        $relatedPrs = PurchaseRequisition::query()
+            ->where(function ($q) use ($ticket) {
+                $q->where('ticket_id', $ticket->id)
+                    ->orWhereHas('tickets', function ($tq) use ($ticket) {
+                        $tq->where('tickets.id', $ticket->id);
+                    });
+            })
             ->select('id', 'pr_number', 'status', 'mode', 'created_at')
             ->orderBy('created_at', 'desc')
             ->get();
@@ -3601,7 +3598,10 @@ class TicketController extends Controller
             } elseif ($paymentStatus === 'no_pr') {
                 $query->whereDoesntHave('purchaseRequisitions');
             } elseif ($paymentStatus === 'with_pr') {
-                $query->whereHas('purchaseRequisitions');
+                $query->where(function ($q) {
+                    $q->whereHas('purchaseRequisitions')
+                        ->orWhereHas('linkedPurchaseRequisitions');
+                });
             }
         }
 
@@ -3613,14 +3613,8 @@ class TicketController extends Controller
         $paymentStatsByPr = collect();
 
         if (! empty($ticketIds)) {
-            $prs = PurchaseRequisition::whereIn('ticket_id', $ticketIds)
-                ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
-                ->orderBy('created_at', 'desc')
-                ->get();
-
-            $prsByTicket = $prs->groupBy('ticket_id');
-
-            $prIds = $prs->pluck('id')->toArray();
+            $prsByTicket = $this->groupPurchaseRequisitionsByTicketIds($ticketIds);
+            $prIds = $prsByTicket->flatten(1)->pluck('id')->unique()->values()->all();
             if (! empty($prIds)) {
                 $paymentStatsByPr = DB::table('non_food_payments')
                     ->whereIn('purchase_requisition_id', $prIds)
@@ -4876,5 +4870,55 @@ class TicketController extends Controller
         $normalized = preg_replace('/\s+/', ' ', trim($title));
 
         return strtolower((string) $normalized);
+    }
+
+    /**
+     * Group PRs by ticket id, including pivot links (not only primary ticket_id).
+     *
+     * @param  array<int, int|string>  $ticketIds
+     * @return \Illuminate\Support\Collection<int|string, \Illuminate\Support\Collection>
+     */
+    protected function groupPurchaseRequisitionsByTicketIds(array $ticketIds)
+    {
+        $ticketIds = array_values(array_unique(array_map('intval', $ticketIds)));
+        if ($ticketIds === []) {
+            return collect();
+        }
+
+        $prs = PurchaseRequisition::query()
+            ->where(function ($q) use ($ticketIds) {
+                $q->whereIn('ticket_id', $ticketIds)
+                    ->orWhereHas('tickets', function ($tq) use ($ticketIds) {
+                        $tq->whereIn('tickets.id', $ticketIds);
+                    });
+            })
+            ->with(['tickets:id'])
+            ->select('id', 'ticket_id', 'pr_number', 'status', 'mode', 'created_at')
+            ->orderByDesc('created_at')
+            ->get();
+
+        $byTicket = collect();
+        foreach ($ticketIds as $tid) {
+            $byTicket[$tid] = collect();
+        }
+
+        foreach ($prs as $pr) {
+            $linkedIds = $pr->tickets->pluck('id')->map(fn ($id) => (int) $id)->all();
+            if ($pr->ticket_id) {
+                $linkedIds[] = (int) $pr->ticket_id;
+            }
+            $linkedIds = array_values(array_unique($linkedIds));
+
+            foreach ($linkedIds as $tid) {
+                if (! in_array($tid, $ticketIds, true)) {
+                    continue;
+                }
+                if (! $byTicket[$tid]->contains(fn ($row) => (int) $row->id === (int) $pr->id)) {
+                    $byTicket[$tid]->push($pr);
+                }
+            }
+        }
+
+        return $byTicket;
     }
 }

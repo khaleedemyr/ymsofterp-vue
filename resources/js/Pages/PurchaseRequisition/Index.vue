@@ -205,20 +205,29 @@
                   </div>
                 </td>
                 <td class="px-6 py-4 text-sm text-gray-900">
-                  <div v-if="pr.ticket" class="space-y-1">
-                    <a
-                      :href="`/tickets/${pr.ticket.id}`"
-                      class="text-blue-600 hover:text-blue-800 font-semibold"
+                  <div v-if="getTicketList(pr).length" class="space-y-2">
+                    <div
+                      v-for="ticket in getTicketList(pr).slice(0, 2)"
+                      :key="ticket.id"
+                      class="space-y-1"
                     >
-                      {{ pr.ticket.ticket_number }}
-                    </a>
-                    <div class="text-xs text-gray-600 max-w-[220px] whitespace-normal break-words">{{ pr.ticket.title || '-' }}</div>
-                    <span
-                      v-if="pr.ticket.status?.name"
-                      class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700"
-                    >
-                      {{ pr.ticket.status.name }}
-                    </span>
+                      <a
+                        :href="`/tickets/${ticket.id}`"
+                        class="text-blue-600 hover:text-blue-800 font-semibold"
+                      >
+                        {{ ticket.ticket_number }}
+                      </a>
+                      <div class="text-xs text-gray-600 max-w-[220px] whitespace-normal break-words">{{ ticket.title || '-' }}</div>
+                      <span
+                        v-if="ticket.status?.name"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700"
+                      >
+                        {{ ticket.status.name }}
+                      </span>
+                    </div>
+                    <div v-if="getTicketList(pr).length > 2" class="text-xs text-gray-500">
+                      +{{ getTicketList(pr).length - 2 }} ticket lain
+                    </div>
                   </div>
                   <span v-else class="text-gray-400">-</span>
                 </td>
@@ -1736,6 +1745,14 @@ function getCategoriesList(pr) {
   return categories;
 }
 
+
+function getTicketList(pr) {
+  if (!pr) return [];
+  if (Array.isArray(pr.tickets) && pr.tickets.length) {
+    return pr.tickets;
+  }
+  return pr.ticket ? [pr.ticket] : [];
+}
 
 function getOutletList(pr) {
   if (!pr) return [];

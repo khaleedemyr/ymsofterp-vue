@@ -116,6 +116,8 @@ class PurchaseRequisitionController extends Controller
             'division',
             'outlet',
             'ticket.status',
+            'tickets.outlet',
+            'tickets.status',
             'category',
             'creator',
             'heldBy', // Load user who held the PR
@@ -177,6 +179,10 @@ class PurchaseRequisitionController extends Controller
                   ->orWhereHas('ticket', function($q) use ($search) {
                       $q->where('ticket_number', 'like', "%{$search}%")
                         ->orWhere('title', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('tickets', function($q) use ($search) {
+                      $q->where('ticket_number', 'like', "%{$search}%")
+                        ->orWhere('title', 'like', "%{$search}%");
                   });
             });
         }
@@ -236,9 +242,12 @@ class PurchaseRequisitionController extends Controller
         }
 
         if ($hasTicket === 'yes') {
-            $query->whereNotNull('ticket_id');
+            $query->where(function ($q) {
+                $q->whereNotNull('ticket_id')
+                    ->orWhereHas('tickets');
+            });
         } elseif ($hasTicket === 'no') {
-            $query->whereNull('ticket_id');
+            $query->whereNull('ticket_id')->whereDoesntHave('tickets');
         }
 
         // Date range filter
@@ -726,6 +735,8 @@ class PurchaseRequisitionController extends Controller
             'category_id' => 'nullable|exists:purchase_requisition_categories,id',
             'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
             'ticket_id' => 'nullable|exists:tickets,id',
+            'ticket_ids' => 'nullable|array',
+            'ticket_ids.*' => 'integer|exists:tickets,id',
             'amount' => 'required|numeric|min:0',
             'currency' => 'string|in:IDR,USD',
             'priority' => 'string|in:LOW,MEDIUM,HIGH,URGENT',
@@ -904,11 +915,20 @@ class PurchaseRequisitionController extends Controller
         $validated['mode'] = $validated['mode'] ?? 'pr_ops';
         $validated['created_by'] = auth()->id();
 
+        $ticketIds = $this->normalizeTicketIds(
+            $validated['mode'] ?? null,
+            $validated['ticket_ids'] ?? null,
+            $validated['ticket_id'] ?? null
+        );
+        $validated['ticket_id'] = $ticketIds[0] ?? null;
+        unset($validated['ticket_ids']);
+
         try {
             DB::beginTransaction();
             
             // Create purchase requisition
             $purchaseRequisition = PurchaseRequisition::create($validated);
+            $this->syncPurchaseRequisitionTickets($purchaseRequisition, $ticketIds);
             
             // For kasbon mode, create item automatically from kasbon_amount and kasbon_reason
             if ($validated['mode'] === 'kasbon') {
@@ -1034,7 +1054,10 @@ class PurchaseRequisitionController extends Controller
         $purchaseRequisition = PurchaseRequisition::with([
             'division',
             'outlet',
-            'ticket',
+            'ticket.outlet',
+            'ticket.status',
+            'tickets.outlet',
+            'tickets.status',
             'category',
             'creator',
             'comments.user',
@@ -1193,7 +1216,28 @@ class PurchaseRequisitionController extends Controller
                 $prData['ticket'] = $purchaseRequisition->ticket ? [
                     'id' => $purchaseRequisition->ticket->id,
                     'ticket_number' => $purchaseRequisition->ticket->ticket_number,
+                    'title' => $purchaseRequisition->ticket->title,
                 ] : null;
+            }
+
+            if ($purchaseRequisition->relationLoaded('tickets')) {
+                $prData['tickets'] = $purchaseRequisition->tickets->map(function ($ticket) {
+                    return [
+                        'id' => $ticket->id,
+                        'ticket_number' => $ticket->ticket_number,
+                        'title' => $ticket->title,
+                        'outlet' => $ticket->outlet ? [
+                            'id_outlet' => $ticket->outlet->id_outlet,
+                            'nama_outlet' => $ticket->outlet->nama_outlet,
+                        ] : null,
+                        'status' => $ticket->status ? [
+                            'id' => $ticket->status->id,
+                            'name' => $ticket->status->name,
+                            'slug' => $ticket->status->slug,
+                        ] : null,
+                    ];
+                })->values()->all();
+                $prData['ticket_ids'] = $purchaseRequisition->tickets->pluck('id')->values()->all();
             }
             
             if ($purchaseRequisition->relationLoaded('category')) {
@@ -1308,6 +1352,10 @@ class PurchaseRequisitionController extends Controller
 
         // Load purchase requisition with all necessary relationships
         $purchaseRequisition->load([
+            'ticket.outlet',
+            'ticket.status',
+            'tickets.outlet',
+            'tickets.status',
             'attachments.uploader',
             'attachments.outlet',
             'items.outlet',
@@ -1376,6 +1424,8 @@ class PurchaseRequisitionController extends Controller
             'category_id' => 'nullable|exists:purchase_requisition_categories,id',
             'outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
             'ticket_id' => 'nullable|exists:tickets,id',
+            'ticket_ids' => 'nullable|array',
+            'ticket_ids.*' => 'integer|exists:tickets,id',
             'currency' => 'string|in:IDR,USD',
             'priority' => 'string|in:LOW,MEDIUM,HIGH,URGENT',
             'items' => 'required|array|min:1',
@@ -1412,6 +1462,14 @@ class PurchaseRequisitionController extends Controller
             $validated['kasbon_termin'] = null;
         }
         $validated['amount'] = $totalAmount;
+
+        $ticketIds = $this->normalizeTicketIds(
+            $validated['mode'] ?? null,
+            $validated['ticket_ids'] ?? null,
+            $validated['ticket_id'] ?? null
+        );
+        $validated['ticket_id'] = $ticketIds[0] ?? null;
+        unset($validated['ticket_ids']);
 
         // Check budget limit before updating (exclude current record from calculation)
         // For pr_ops, purchase_payment, and pr_assets mode, check budget per outlet/category from items
@@ -1512,6 +1570,7 @@ class PurchaseRequisitionController extends Controller
             
             // Update purchase requisition
             $purchaseRequisition->update($validated);
+            $this->syncPurchaseRequisitionTickets($purchaseRequisition, $ticketIds);
             
             // Delete existing items
             $purchaseRequisition->items()->delete();
@@ -2638,15 +2697,150 @@ class PurchaseRequisitionController extends Controller
      */
     public function getTickets(Request $request)
     {
-        $tickets = Ticket::whereHas('status', function($query) {
-                        $query->whereNotIn('slug', ['closed', 'cancelled']);
-                    })
-                    ->with(['outlet', 'category', 'status'])
-                    ->orderBy('created_at', 'desc')
-                    ->limit(100)
-                    ->get();
-        
-        return response()->json(['success' => true, 'tickets' => $tickets]);
+        return $this->searchTickets($request);
+    }
+
+    /**
+     * Search tickets for PR Ops / Purchase Payment multi-select.
+     */
+    public function searchTickets(Request $request)
+    {
+        $q = trim((string) $request->get('q', $request->get('search', '')));
+        $ids = $request->input('ids', []);
+        if (! is_array($ids)) {
+            $ids = array_filter(array_map('intval', explode(',', (string) $ids)));
+        } else {
+            $ids = array_values(array_filter(array_map('intval', $ids)));
+        }
+
+        $query = Ticket::query()
+            ->with([
+                'outlet:id_outlet,nama_outlet',
+                'category:id,name',
+                'status:id,name,slug',
+            ])
+            ->select('id', 'ticket_number', 'title', 'outlet_id', 'category_id', 'status_id', 'created_at')
+            ->orderByDesc('id')
+            ->limit(40);
+
+        if ($ids !== []) {
+            // Prefill selected tickets (include even if closed)
+            $selected = Ticket::query()
+                ->with([
+                    'outlet:id_outlet,nama_outlet',
+                    'category:id,name',
+                    'status:id,name,slug',
+                ])
+                ->whereIn('id', $ids)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'tickets' => $selected->map(fn (Ticket $t) => $this->formatTicketOption($t))->values(),
+                'data' => $selected->map(fn (Ticket $t) => $this->formatTicketOption($t))->values(),
+            ]);
+        }
+
+        $query->whereHas('status', function ($statusQuery) {
+            $statusQuery->whereNotIn('slug', ['closed', 'cancelled']);
+        });
+
+        if ($q !== '') {
+            $query->where(function ($builder) use ($q) {
+                $builder->where('ticket_number', 'like', "%{$q}%")
+                    ->orWhere('title', 'like', "%{$q}%")
+                    ->orWhereHas('outlet', function ($oq) use ($q) {
+                        $oq->where('nama_outlet', 'like', "%{$q}%");
+                    });
+            });
+        }
+
+        $tickets = $query->get()->map(fn (Ticket $t) => $this->formatTicketOption($t))->values();
+
+        return response()->json([
+            'success' => true,
+            'tickets' => $tickets,
+            'data' => $tickets,
+        ]);
+    }
+
+    /**
+     * @param  array<int, mixed>|null  $ticketIds
+     * @return array<int, int>
+     */
+    protected function normalizeTicketIds(?string $mode, $ticketIds, $ticketId = null): array
+    {
+        $ids = [];
+
+        if (is_array($ticketIds)) {
+            foreach ($ticketIds as $id) {
+                $intId = (int) $id;
+                if ($intId > 0) {
+                    $ids[] = $intId;
+                }
+            }
+        }
+
+        $singleId = (int) ($ticketId ?? 0);
+        if ($singleId > 0) {
+            array_unshift($ids, $singleId);
+        }
+
+        $ids = array_values(array_unique($ids));
+
+        // Multi-ticket hanya untuk pr_ops & purchase_payment
+        if (! in_array($mode, ['pr_ops', 'purchase_payment'], true)) {
+            return $ids === [] ? [] : [$ids[0]];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param  array<int, int>  $ticketIds
+     */
+    protected function syncPurchaseRequisitionTickets(PurchaseRequisition $purchaseRequisition, array $ticketIds): void
+    {
+        if (! in_array($purchaseRequisition->mode, ['pr_ops', 'purchase_payment'], true)) {
+            // Mode lain: tetap single ticket via ticket_id, kosongkan pivot bila ada
+            $purchaseRequisition->tickets()->sync($ticketIds === [] ? [] : [$ticketIds[0]]);
+            return;
+        }
+
+        $purchaseRequisition->tickets()->sync($ticketIds);
+    }
+
+    protected function formatTicketOption(Ticket $ticket): array
+    {
+        $outletName = $ticket->outlet?->nama_outlet;
+
+        return [
+            'id' => $ticket->id,
+            'ticket_number' => $ticket->ticket_number,
+            'title' => $ticket->title,
+            'outlet_id' => $ticket->outlet_id,
+            'outlet' => $ticket->outlet ? [
+                'id_outlet' => $ticket->outlet->id_outlet,
+                'nama_outlet' => $ticket->outlet->nama_outlet,
+            ] : null,
+            'outlet_name' => $outletName,
+            'status' => $ticket->status ? [
+                'id' => $ticket->status->id,
+                'name' => $ticket->status->name,
+                'slug' => $ticket->status->slug,
+            ] : null,
+            'status_name' => $ticket->status?->name,
+            'category' => $ticket->category ? [
+                'id' => $ticket->category->id,
+                'name' => $ticket->category->name,
+            ] : null,
+            'label' => trim(
+                ($ticket->ticket_number ?? '')
+                .' — '
+                .($ticket->title ?? '')
+                .($outletName ? ' ('.$outletName.')' : '')
+            ),
+        ];
     }
 
     /**

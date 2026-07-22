@@ -500,19 +500,32 @@
             </div>
           </div>
 
-          <!-- Related Ticket (hidden for travel_application and kasbon modes) -->
-          <div v-if="purchaseRequisition.ticket && !['travel_application', 'kasbon'].includes(purchaseRequisition.mode)" class="bg-white rounded-xl shadow-lg p-6">
-            <h2 class="text-lg font-semibold text-gray-800 mb-4">Related Ticket</h2>
-            <div class="p-4 bg-blue-50 rounded-lg">
-              <Link
-                :href="`/tickets/${purchaseRequisition.ticket.id}`"
-                class="text-blue-600 hover:text-blue-800 font-medium"
+          <!-- Related Tickets (hidden for travel_application and kasbon modes) -->
+          <div
+            v-if="relatedTickets.length && !['travel_application', 'kasbon'].includes(purchaseRequisition.mode)"
+            class="bg-white rounded-xl shadow-lg p-6"
+          >
+            <h2 class="text-lg font-semibold text-gray-800 mb-4">
+              Related Ticket{{ relatedTickets.length > 1 ? 's' : '' }}
+            </h2>
+            <div class="space-y-3">
+              <div
+                v-for="ticket in relatedTickets"
+                :key="ticket.id"
+                class="p-4 bg-blue-50 rounded-lg"
               >
-                {{ purchaseRequisition.ticket.ticket_number }} - {{ purchaseRequisition.ticket.title }}
-              </Link>
-              <p class="text-sm text-gray-500 mt-1">
-                {{ purchaseRequisition.ticket.outlet?.nama_outlet }} - {{ formatDate(purchaseRequisition.ticket.created_at) }}
-              </p>
+                <Link
+                  :href="`/tickets/${ticket.id}`"
+                  class="text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  {{ ticket.ticket_number }} - {{ ticket.title }}
+                </Link>
+                <p class="text-sm text-gray-500 mt-1">
+                  <span v-if="ticket.outlet?.nama_outlet">{{ ticket.outlet.nama_outlet }}</span>
+                  <span v-if="ticket.status?.name"> · {{ ticket.status.name }}</span>
+                  <span v-if="ticket.created_at"> · {{ formatDate(ticket.created_at) }}</span>
+                </p>
+              </div>
             </div>
           </div>
 
@@ -865,6 +878,14 @@ const props = defineProps({
   budgetInfo: Object,
   modeSpecificData: Object,
   currentUser: Object,
+})
+
+const relatedTickets = computed(() => {
+  const pr = props.purchaseRequisition || {}
+  if (Array.isArray(pr.tickets) && pr.tickets.length) {
+    return pr.tickets
+  }
+  return pr.ticket ? [pr.ticket] : []
 })
 
 const newComment = ref('')
