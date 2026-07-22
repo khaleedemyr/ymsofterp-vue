@@ -93,6 +93,7 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nomor</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Judul</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Tanggal</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Outlet</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Sumber</th>
@@ -104,10 +105,19 @@
             </thead>
             <tbody class="divide-y divide-gray-100">
               <tr v-for="row in reports.data" :key="row.id" class="hover:bg-cyan-50/40">
-                <td class="px-4 py-3 text-sm font-medium text-cyan-700">
+                <td class="px-4 py-3 text-sm font-medium text-cyan-700 whitespace-nowrap">
                   <Link :href="route('it-work-reports.show', row.id)">{{ row.number }}</Link>
                 </td>
-                <td class="px-4 py-3 text-sm text-gray-700">{{ formatDate(row.work_date) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-800 max-w-xs">
+                  <Link
+                    :href="route('it-work-reports.show', row.id)"
+                    class="line-clamp-2 hover:text-cyan-700"
+                    :title="row.title || ''"
+                  >
+                    {{ row.title || '—' }}
+                  </Link>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">{{ formatDate(row.work_date) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700">{{ row.outlet_name }}</td>
                 <td class="px-4 py-3 text-sm">
                   <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">
@@ -134,7 +144,7 @@
                 </td>
               </tr>
               <tr v-if="!reports.data?.length">
-                <td colspan="8" class="px-4 py-10 text-center text-gray-500">Belum ada IT Work Report.</td>
+                <td colspan="9" class="px-4 py-10 text-center text-gray-500">Belum ada IT Work Report.</td>
               </tr>
             </tbody>
           </table>
