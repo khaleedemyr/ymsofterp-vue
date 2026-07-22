@@ -3886,6 +3886,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/schedules/create', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'create'])->name('schedules.create');
     Route::post('/schedules', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'store'])->name('schedules.store');
     Route::get('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'show'])->name('schedules.show');
+    Route::get('/schedules/{schedule}/quiz-attempts/{attempt}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'quizAttemptDetail'])->whereNumber('attempt')->name('schedules.quiz-attempts.show');
     Route::get('/schedules/{schedule}/edit', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'edit'])->name('schedules.edit');
     Route::put('/schedules/{schedule}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'update'])->name('schedules.update');
     Route::delete('/schedules/{id}', [\App\Http\Controllers\JustAcademy\ScheduleController::class, 'destroy'])->whereNumber('id')->name('schedules.destroy');

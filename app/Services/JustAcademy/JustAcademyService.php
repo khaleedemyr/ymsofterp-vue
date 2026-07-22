@@ -652,6 +652,147 @@ class JustAcademyService
         })->filter()->values();
     }
 
+    /**
+     * Ringkasan hasil quiz peserta untuk satu training plan.
+     *
+     * @return array{quizzes: array<int, array>, rows: array<int, array>}
+     */
+    public function getScheduleQuizResults(JaSchedule $schedule): array
+    {
+        $schedule->loadMissing([
+            'program.items.quiz',
+            'participants.user:id,nama_lengkap',
+        ]);
+
+        if (!$schedule->program) {
+            return ['quizzes' => [], 'rows' => []];
+        }
+
+        $quizzes = $this->getProgramCurriculum($schedule->program)
+            ->filter(fn (JaProgramItem $item) => $item->item_type === 'quiz' && $item->quiz)
+            ->map(fn (JaProgramItem $item) => [
+                'id' => $item->quiz->id,
+                'title' => $item->quiz->title,
+                'pass_score' => (float) $item->quiz->pass_score,
+            ])
+            ->values();
+
+        if ($quizzes->isEmpty()) {
+            return ['quizzes' => [], 'rows' => []];
+        }
+
+        $quizIds = $quizzes->pluck('id')->all();
+        $attemptsByKey = JaQuizAttempt::query()
+            ->where('schedule_id', $schedule->id)
+            ->whereIn('quiz_id', $quizIds)
+            ->get()
+            ->groupBy(fn (JaQuizAttempt $attempt) => $attempt->user_id . ':' . $attempt->quiz_id);
+
+        $rows = [];
+        foreach ($schedule->participants as $participant) {
+            if (!$participant->user_id) {
+                continue;
+            }
+
+            foreach ($quizzes as $quiz) {
+                $key = $participant->user_id . ':' . $quiz['id'];
+                $userAttempts = $attemptsByKey->get($key, collect());
+                $attempt = $userAttempts
+                    ->filter(fn (JaQuizAttempt $a) => $a->submitted_at !== null)
+                    ->sortByDesc('submitted_at')
+                    ->first()
+                    ?? $userAttempts->sortByDesc('id')->first();
+
+                $status = 'not_started';
+                if ($attempt) {
+                    $status = $attempt->submitted_at ? 'submitted' : 'in_progress';
+                }
+
+                $rows[] = [
+                    'attempt_id' => $attempt?->id,
+                    'quiz_id' => $quiz['id'],
+                    'quiz_title' => $quiz['title'],
+                    'pass_score' => $quiz['pass_score'],
+                    'user_id' => $participant->user_id,
+                    'user_name' => $participant->user?->nama_lengkap ?? '—',
+                    'status' => $status,
+                    'score' => ($attempt && $attempt->submitted_at) ? (float) $attempt->score : null,
+                    'passed' => ($attempt && $attempt->submitted_at) ? (bool) $attempt->passed : null,
+                    'started_at' => $attempt?->started_at?->toIso8601String(),
+                    'submitted_at' => $attempt?->submitted_at?->toIso8601String(),
+                ];
+            }
+        }
+
+        return [
+            'quizzes' => $quizzes->all(),
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * Detail jawaban satu attempt quiz (untuk admin / trainer).
+     *
+     * @return array{attempt: array, answers: array<int, array>}
+     */
+    public function getQuizAttemptDetail(JaSchedule $schedule, JaQuizAttempt $attempt): array
+    {
+        if ((int) $attempt->schedule_id !== (int) $schedule->id) {
+            abort(404, 'Attempt tidak ditemukan pada training plan ini.');
+        }
+
+        $attempt->load([
+            'user:id,nama_lengkap,email',
+            'quiz:id,title,pass_score',
+            'answers.question.options',
+            'answers.option',
+        ]);
+
+        $order = collect($attempt->question_ids ?? [])->values();
+        $answers = $attempt->answers
+            ->sortBy(function (JaQuizAnswer $answer) use ($order) {
+                $idx = $order->search($answer->question_id);
+                return $idx === false ? PHP_INT_MAX : $idx;
+            })
+            ->values()
+            ->map(function (JaQuizAnswer $answer, int $index) {
+                $question = $answer->question;
+                $correctOption = $question?->options?->firstWhere('is_correct', true);
+
+                return [
+                    'number' => $index + 1,
+                    'question_id' => $answer->question_id,
+                    'question' => $question?->question ?? '—',
+                    'type' => $question?->type ?? 'mcq',
+                    'points' => (float) ($question?->points ?? 0),
+                    'points_earned' => (float) ($answer->points_earned ?? 0),
+                    'is_correct' => $answer->is_correct,
+                    'selected_option' => $answer->option?->option_text,
+                    'answer_text' => $answer->answer_text,
+                    'correct_option' => $correctOption?->option_text,
+                ];
+            })
+            ->all();
+
+        return [
+            'attempt' => [
+                'id' => $attempt->id,
+                'quiz_id' => $attempt->quiz_id,
+                'quiz_title' => $attempt->quiz?->title,
+                'pass_score' => (float) ($attempt->quiz?->pass_score ?? 0),
+                'user_id' => $attempt->user_id,
+                'user_name' => $attempt->user?->nama_lengkap ?? '—',
+                'user_email' => $attempt->user?->email,
+                'score' => $attempt->submitted_at ? (float) $attempt->score : null,
+                'passed' => $attempt->submitted_at ? (bool) $attempt->passed : null,
+                'status' => $attempt->submitted_at ? 'submitted' : 'in_progress',
+                'started_at' => $attempt->started_at?->toIso8601String(),
+                'submitted_at' => $attempt->submitted_at?->toIso8601String(),
+            ],
+            'answers' => $answers,
+        ];
+    }
+
     public function syncProgramCurriculum(JaProgram $program, array $items): void
     {
         DB::transaction(function () use ($program, $items) {

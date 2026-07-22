@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue';
 import { Link, useForm } from '@inertiajs/vue3';
+import axios from 'axios';
 import QRCode from 'qrcode';
 import VueEasyLightbox from 'vue-easy-lightbox';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
@@ -10,6 +11,10 @@ import { jaUi, jaConfirmDelete, jaDelete, jaFormErrors, jaToastSuccess } from '@
 const props = defineProps({
   schedule: Object,
   curriculum: { type: Array, default: () => [] },
+  quizResults: {
+    type: Object,
+    default: () => ({ quizzes: [], rows: [] }),
+  },
   qrUrl: String,
   jabatanList: { type: Array, default: () => [] },
   divisions: { type: Array, default: () => [] },
@@ -21,12 +26,40 @@ const qrCodeDataUrl = ref('');
 const qrLightboxVisible = ref(false);
 const markingUserId = ref(null);
 const selectedInviteUsers = ref([]);
+const selectedQuizFilter = ref('all');
+const attemptDetailOpen = ref(false);
+const attemptDetailLoading = ref(false);
+const attemptDetailError = ref('');
+const attemptDetail = ref(null);
 
 const inviteForm = useForm({ user_ids: [], jabatan_ids: [], outlet_ids: [] });
 const attendanceForm = useForm({ user_id: '', notes: '' });
 
 const participantCount = () => props.schedule.participants?.length || 0;
 const trainerCount = () => props.schedule.trainers?.length || 0;
+
+const quizResultQuizzes = computed(() => props.quizResults?.quizzes || []);
+const quizResultRows = computed(() => props.quizResults?.rows || []);
+
+const filteredQuizRows = computed(() => {
+  const rows = quizResultRows.value;
+  if (selectedQuizFilter.value === 'all') return rows;
+  return rows.filter((r) => String(r.quiz_id) === String(selectedQuizFilter.value));
+});
+
+const quizResultSummary = computed(() => {
+  const rows = filteredQuizRows.value;
+  const submitted = rows.filter((r) => r.status === 'submitted');
+  const passed = submitted.filter((r) => r.passed);
+  return {
+    total: rows.length,
+    submitted: submitted.length,
+    passed: passed.length,
+    avgScore: submitted.length
+      ? Math.round((submitted.reduce((sum, r) => sum + (Number(r.score) || 0), 0) / submitted.length) * 10) / 10
+      : null,
+  };
+});
 
 const attendedUserIds = computed(() => {
   const ids = new Set();
@@ -63,6 +96,25 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatScore(score) {
+  if (score === null || score === undefined || score === '') return '—';
+  const n = Number(score);
+  if (Number.isNaN(n)) return '—';
+  return Number.isInteger(n) ? `${n}` : n.toFixed(1);
+}
+
+function statusLabel(status) {
+  if (status === 'submitted') return 'Selesai';
+  if (status === 'in_progress') return 'Sedang dikerjakan';
+  return 'Belum mengerjakan';
+}
+
+function statusClass(status) {
+  if (status === 'submitted') return 'bg-emerald-100 text-emerald-700';
+  if (status === 'in_progress') return 'bg-amber-100 text-amber-700';
+  return 'bg-slate-100 text-slate-500';
 }
 
 async function generateQrCode() {
@@ -170,6 +222,34 @@ function materialTypeLabel(type) {
 function materialLink(item) {
   return item.file_path || item.url || null;
 }
+
+async function openAttemptDetail(row) {
+  if (!row?.attempt_id || row.status !== 'submitted') return;
+
+  attemptDetailOpen.value = true;
+  attemptDetailLoading.value = true;
+  attemptDetailError.value = '';
+  attemptDetail.value = null;
+
+  try {
+    const { data } = await axios.get(
+      route('just-academy.schedules.quiz-attempts.show', [props.schedule.id, row.attempt_id]),
+    );
+    attemptDetail.value = data.data;
+  } catch (error) {
+    attemptDetailError.value =
+      error?.response?.data?.message || error?.message || 'Gagal memuat detail jawaban.';
+  } finally {
+    attemptDetailLoading.value = false;
+  }
+}
+
+function closeAttemptDetail() {
+  attemptDetailOpen.value = false;
+  attemptDetailLoading.value = false;
+  attemptDetailError.value = '';
+  attemptDetail.value = null;
+}
 </script>
 
 <template>
@@ -239,6 +319,100 @@ function materialLink(item) {
             </div>
           </li>
         </ul>
+      </div>
+
+      <div v-if="quizResultQuizzes.length" :class="[jaUi.card, jaUi.cardBody]">
+        <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 class="font-semibold text-slate-800">Hasil Quiz Peserta</h2>
+            <p class="mt-1 text-xs text-slate-500">
+              {{ quizResultSummary.submitted }}/{{ quizResultSummary.total }} selesai
+              <span v-if="quizResultSummary.avgScore !== null">
+                · rata-rata {{ formatScore(quizResultSummary.avgScore) }}
+              </span>
+              <span v-if="quizResultSummary.submitted">
+                · lulus {{ quizResultSummary.passed }}/{{ quizResultSummary.submitted }}
+              </span>
+            </p>
+          </div>
+          <select
+            v-if="quizResultQuizzes.length > 1"
+            v-model="selectedQuizFilter"
+            :class="jaUi.select"
+            class="sm:w-64"
+          >
+            <option value="all">Semua quiz</option>
+            <option v-for="q in quizResultQuizzes" :key="q.id" :value="String(q.id)">
+              {{ q.title }}
+            </option>
+          </select>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-100">
+          <table :class="jaUi.table">
+            <thead :class="jaUi.thead">
+              <tr>
+                <th :class="jaUi.th">Peserta</th>
+                <th :class="jaUi.th">Quiz</th>
+                <th :class="jaUi.th">Status</th>
+                <th :class="jaUi.th">Nilai</th>
+                <th :class="jaUi.th">Hasil</th>
+                <th :class="jaUi.th">Submit</th>
+                <th :class="jaUi.th"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, idx) in filteredQuizRows" :key="`${row.user_id}-${row.quiz_id}-${idx}`" :class="jaUi.tr">
+                <td :class="jaUi.td" class="font-medium text-slate-800">{{ row.user_name }}</td>
+                <td :class="jaUi.td">{{ row.quiz_title }}</td>
+                <td :class="jaUi.td">
+                  <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusClass(row.status)">
+                    {{ statusLabel(row.status) }}
+                  </span>
+                </td>
+                <td :class="jaUi.td">
+                  <span v-if="row.status === 'submitted'">{{ formatScore(row.score) }}</span>
+                  <span v-else class="text-slate-400">—</span>
+                </td>
+                <td :class="jaUi.td">
+                  <span
+                    v-if="row.status === 'submitted' && row.passed"
+                    class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                  >
+                    Lulus
+                  </span>
+                  <span
+                    v-else-if="row.status === 'submitted'"
+                    class="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700"
+                  >
+                    Belum lulus
+                  </span>
+                  <span v-else class="text-slate-400">—</span>
+                </td>
+                <td :class="jaUi.td" class="whitespace-nowrap text-xs text-slate-500">
+                  {{ row.submitted_at ? formatDateTime(row.submitted_at) : '—' }}
+                </td>
+                <td :class="jaUi.td" class="text-right">
+                  <button
+                    v-if="row.status === 'submitted' && row.attempt_id"
+                    type="button"
+                    :class="jaUi.btnLink"
+                    class="!text-xs"
+                    @click="openAttemptDetail(row)"
+                  >
+                    Lihat jawaban
+                  </button>
+                  <span v-else class="text-xs text-slate-300">—</span>
+                </td>
+              </tr>
+              <tr v-if="!filteredQuizRows.length">
+                <td :class="jaUi.td" colspan="7" class="text-center text-slate-500">
+                  Belum ada data hasil quiz untuk filter ini.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div v-if="qrUrl" :class="[jaUi.card, jaUi.cardBody]">
@@ -372,5 +546,83 @@ function materialLink(item) {
       :rotate-disabled="true"
       @hide="qrLightboxVisible = false"
     />
+
+    <div
+      v-if="attemptDetailOpen"
+      :class="jaUi.modalOverlay"
+      @click.self="closeAttemptDetail"
+    >
+      <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl">
+        <div class="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-4">
+          <div>
+            <h3 class="font-semibold text-slate-800">Detail Jawaban Quiz</h3>
+            <p v-if="attemptDetail?.attempt" class="mt-1 text-sm text-slate-500">
+              {{ attemptDetail.attempt.user_name }} · {{ attemptDetail.attempt.quiz_title }}
+            </p>
+          </div>
+          <button type="button" class="text-slate-400 hover:text-slate-600" @click="closeAttemptDetail">
+            ✕
+          </button>
+        </div>
+
+        <div class="overflow-y-auto px-6 py-4">
+          <div v-if="attemptDetailLoading" class="py-10 text-center text-sm text-slate-500">Memuat jawaban...</div>
+          <div v-else-if="attemptDetailError" class="py-10 text-center text-sm text-rose-600">{{ attemptDetailError }}</div>
+          <template v-else-if="attemptDetail">
+            <div class="mb-4 flex flex-wrap gap-3 text-sm">
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+                Nilai: <strong>{{ formatScore(attemptDetail.attempt.score) }}</strong>
+              </span>
+              <span
+                class="rounded-full px-3 py-1"
+                :class="attemptDetail.attempt.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'"
+              >
+                {{ attemptDetail.attempt.passed ? 'Lulus' : 'Belum lulus' }}
+                (pass {{ formatScore(attemptDetail.attempt.pass_score) }})
+              </span>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+                Submit: {{ formatDateTime(attemptDetail.attempt.submitted_at) || '—' }}
+              </span>
+            </div>
+
+            <ul class="space-y-3">
+              <li
+                v-for="ans in attemptDetail.answers"
+                :key="ans.question_id"
+                class="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-sm"
+              >
+                <div class="mb-2 flex items-start justify-between gap-3">
+                  <p class="font-medium text-slate-800">
+                    {{ ans.number }}. {{ ans.question }}
+                  </p>
+                  <span
+                    class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                    :class="ans.is_correct ? 'bg-emerald-100 text-emerald-700' : ans.type === 'essay' ? 'bg-slate-100 text-slate-500' : 'bg-rose-100 text-rose-700'"
+                  >
+                    <template v-if="ans.type === 'essay'">Essay</template>
+                    <template v-else>{{ ans.is_correct ? 'Benar' : 'Salah' }}</template>
+                  </span>
+                </div>
+                <p class="text-slate-700">
+                  Jawaban:
+                  <span class="font-medium">
+                    {{ ans.type === 'essay' ? (ans.answer_text || '—') : (ans.selected_option || '—') }}
+                  </span>
+                </p>
+                <p v-if="ans.type !== 'essay' && !ans.is_correct && ans.correct_option" class="mt-1 text-xs text-emerald-700">
+                  Kunci: {{ ans.correct_option }}
+                </p>
+                <p class="mt-1 text-xs text-slate-400">
+                  Poin {{ formatScore(ans.points_earned) }} / {{ formatScore(ans.points) }}
+                </p>
+              </li>
+            </ul>
+            <p v-if="!attemptDetail.answers?.length" class="py-6 text-center text-sm text-slate-500">
+              Tidak ada jawaban tersimpan.
+            </p>
+          </template>
+        </div>
+      </div>
+    </div>
   </JaLayout>
 </template>

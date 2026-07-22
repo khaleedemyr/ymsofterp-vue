@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Divisi;
 use App\Models\Jabatan;
 use App\Models\JustAcademy\JaProgram;
+use App\Models\JustAcademy\JaQuizAttempt;
 use App\Models\JustAcademy\JaSchedule;
 use App\Models\JustAcademy\JaScheduleTrainer;
 use App\Models\Outlet;
@@ -171,12 +172,23 @@ class ScheduleController extends Controller
         return Inertia::render('JustAcademy/Schedules/Show', [
             'schedule' => $schedule,
             'curriculum' => $curriculum,
+            'quizResults' => $this->service->getScheduleQuizResults($schedule),
             'qrUrl' => $schedule->qr_token
                 ? url('/just-academy/check-in?token=' . $schedule->qr_token . '&schedule_id=' . $schedule->id)
                 : null,
             'jabatanList' => Jabatan::orderBy('nama_jabatan')->get(['id_jabatan', 'nama_jabatan']),
             'divisions' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
             'outlets' => Outlet::orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
+        ]);
+    }
+
+    public function quizAttemptDetail(JaSchedule $schedule, int $attemptId)
+    {
+        $attempt = JaQuizAttempt::findOrFail($attemptId);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->service->getQuizAttemptDetail($schedule, $attempt),
         ]);
     }
 
