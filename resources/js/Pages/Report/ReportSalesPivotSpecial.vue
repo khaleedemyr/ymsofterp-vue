@@ -440,7 +440,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="item in items" :key="item.item_name">
+                  <tr v-for="(item, idx) in items" :key="retailDetailRowKey(item, idx)">
                     <td class="py-1">{{ item.item_name }}</td>
                     <td class="py-1 text-right">
                       <span v-if="modalCustomer.includes('(Warehouse)')">
@@ -644,6 +644,15 @@ const showModal = ref(false);
 const modalCustomer = ref('');
 const detailData = ref({});
 const loadingDetail = ref(false);
+
+function retailDetailRowKey(item, idx) {
+  return [
+    item.sale_number || '',
+    item.item_name || '',
+    item.qty || '',
+    idx,
+  ].join('|');
+}
 
 async function showDetail(customer) {
   showModal.value = true;

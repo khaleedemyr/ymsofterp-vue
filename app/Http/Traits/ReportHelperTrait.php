@@ -871,6 +871,7 @@ trait ReportHelperTrait
 
     /**
      * Detail item RWS (normal + serial) untuk satu customer.
+     * Baris serial digabung per item + sale (qty & subtotal di-sum).
      *
      * @return \Illuminate\Support\Collection<int, object>
      */
@@ -886,6 +887,7 @@ trait ReportHelperTrait
             ->select(
                 DB::raw('COALESCE(cat.name, "Uncategorized") as category'),
                 DB::raw('COALESCE(sc.name, "Uncategorized") as sub_category'),
+                'it.id as item_id',
                 'it.name as item_name',
                 'rwsi.qty',
                 DB::raw('COALESCE(rwsi.unit, "Pcs") as unit'),
@@ -909,6 +911,7 @@ trait ReportHelperTrait
                 ->select(
                     DB::raw('COALESCE(cat.name, "Uncategorized") as category'),
                     DB::raw('COALESCE(sc.name, "Uncategorized") as sub_category'),
+                    'it.id as item_id',
                     'it.name as item_name',
                     'rwss.qty',
                     DB::raw('COALESCE(rwss.unit_name, "Pcs") as unit'),
@@ -921,11 +924,39 @@ trait ReportHelperTrait
             $items = $items->concat($serial->get());
         }
 
+        // Satukan baris (termasuk multi-serial) per item + sale + unit + harga
         return $items
+            ->groupBy(function ($item) {
+                return implode('|', [
+                    $item->sale_number ?? '',
+                    $item->item_id ?? $item->item_name,
+                    $item->unit ?? '',
+                    (string) ((float) ($item->price ?? 0)),
+                ]);
+            })
+            ->map(function (Collection $group) {
+                $first = $group->first();
+                $qty = (float) $group->sum(fn ($row) => (float) $row->qty);
+                $subtotal = (float) $group->sum(fn ($row) => (float) $row->subtotal);
+
+                return (object) [
+                    'category' => $first->category ?: 'Uncategorized',
+                    'sub_category' => $first->sub_category ?: 'Uncategorized',
+                    'item_id' => $first->item_id ?? null,
+                    'item_name' => $first->item_name,
+                    'qty' => $qty,
+                    'unit' => $first->unit ?: 'Pcs',
+                    'price' => (float) ($first->price ?? 0),
+                    'subtotal' => $subtotal,
+                    'sale_number' => $first->sale_number,
+                    'sale_date' => $first->sale_date,
+                ];
+            })
             ->sortBy([
                 ['category', 'asc'],
                 ['sub_category', 'asc'],
                 ['item_name', 'asc'],
+                ['sale_number', 'asc'],
             ])
             ->values();
     }
