@@ -76,6 +76,16 @@
             <label class="block text-xs font-semibold text-gray-600 mb-1">Sampai</label>
             <input v-model="filterForm.date_to" type="date" class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500" />
           </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Per page</label>
+            <select
+              v-model.number="filterForm.per_page"
+              class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+              @change="changePerPage"
+            >
+              <option v-for="n in perPageOptions" :key="n" :value="n">{{ n }}</option>
+            </select>
+          </div>
           <div class="xl:col-span-8 flex gap-2">
             <button type="submit" class="inline-flex items-center gap-2 bg-cyan-600 text-white px-4 py-2 rounded-lg hover:bg-cyan-700">
               <i class="fa-solid fa-filter"></i> Filter
@@ -150,19 +160,41 @@
           </table>
         </div>
 
-        <div v-if="reports.last_page > 1" class="px-4 py-3 border-t flex items-center justify-between text-sm text-gray-600">
-          <span>Halaman {{ reports.current_page }} / {{ reports.last_page }}</span>
-          <div class="flex gap-2">
+        <div
+          v-if="reports.total > 0"
+          class="px-4 py-3 border-t flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600"
+        >
+          <div class="flex flex-wrap items-center gap-3">
+            <span>
+              Menampilkan {{ showingFrom }}–{{ showingTo }} dari {{ reports.total }} data
+            </span>
+            <label class="inline-flex items-center gap-2">
+              <span class="text-xs font-semibold text-gray-500">Per page</span>
+              <select
+                v-model.number="filterForm.per_page"
+                class="rounded-lg border-gray-300 text-sm focus:border-cyan-500 focus:ring-cyan-500 py-1"
+                @change="changePerPage"
+              >
+                <option v-for="n in perPageOptions" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">Halaman {{ reports.current_page }} / {{ reports.last_page }}</span>
             <Link
               v-if="reports.prev_page_url"
               :href="reports.prev_page_url"
               class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+              preserve-scroll
             >Prev</Link>
+            <span v-else class="px-3 py-1 rounded bg-gray-50 text-gray-300 cursor-not-allowed">Prev</span>
             <Link
               v-if="reports.next_page_url"
               :href="reports.next_page_url"
               class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+              preserve-scroll
             >Next</Link>
+            <span v-else class="px-3 py-1 rounded bg-gray-50 text-gray-300 cursor-not-allowed">Next</span>
           </div>
         </div>
       </div>
@@ -171,7 +203,7 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -184,6 +216,8 @@ const props = defineProps({
   sourceOptions: Object,
 })
 
+const perPageOptions = [10, 15, 25, 50, 100]
+
 const filterForm = reactive({
   search: props.filters?.search || '',
   outlet_id: props.filters?.outlet_id || '',
@@ -192,11 +226,29 @@ const filterForm = reactive({
   scope: props.filters?.scope || '',
   date_from: props.filters?.date_from || '',
   date_to: props.filters?.date_to || '',
-  per_page: props.filters?.per_page || 15,
+  per_page: Number(props.filters?.per_page) || 15,
+})
+
+const showingFrom = computed(() => {
+  if (!props.reports?.total) return 0
+  return ((props.reports.current_page - 1) * props.reports.per_page) + 1
+})
+
+const showingTo = computed(() => {
+  if (!props.reports?.total) return 0
+  return Math.min(props.reports.current_page * props.reports.per_page, props.reports.total)
 })
 
 function applyFilters() {
-  router.get(route('it-work-reports.index'), { ...filterForm }, { preserveState: true, replace: true })
+  router.get(
+    route('it-work-reports.index'),
+    { ...filterForm, page: 1 },
+    { preserveState: true, replace: true },
+  )
+}
+
+function changePerPage() {
+  applyFilters()
 }
 
 function resetFilters() {
