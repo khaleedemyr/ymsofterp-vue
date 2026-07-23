@@ -6,7 +6,8 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
-import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
+import { getRecaptchaToken, isRecaptchaEnabled, preloadRecaptcha } from '@/utils/recaptcha';
+import { onMounted } from 'vue';
 
 const form = useForm({
     name: '',
@@ -14,6 +15,12 @@ const form = useForm({
     password: '',
     password_confirmation: '',
     recaptcha_token: null,
+});
+
+onMounted(() => {
+    if (isRecaptchaEnabled()) {
+        preloadRecaptcha();
+    }
 });
 
 // Field display names mapping
@@ -63,7 +70,7 @@ const submit = async () => {
         Swal.fire({
             icon: 'error',
             title: 'reCAPTCHA Gagal',
-            text: 'Gagal memuat reCAPTCHA. Silakan refresh halaman lalu coba lagi.',
+            text: 'Gagal memuat reCAPTCHA. Pastikan koneksi aktif dan domain ymsofterp.com sudah terdaftar di Google reCAPTCHA, lalu refresh halaman.',
             confirmButtonColor: '#ef4444',
             confirmButtonText: 'OK',
         });

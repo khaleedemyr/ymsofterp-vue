@@ -8,7 +8,7 @@ import { useForm } from '@inertiajs/vue3';
 import { ref, watch, computed } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
+import { getRecaptchaToken, isRecaptchaEnabled, preloadRecaptcha } from '@/utils/recaptcha';
 
 
 const props = defineProps({
@@ -19,6 +19,16 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'success']);
+
+watch(
+    () => props.show,
+    (visible) => {
+        if (visible && isRecaptchaEnabled()) {
+            preloadRecaptcha();
+        }
+    },
+    { immediate: true },
+);
 
 const activeTab = ref('personal');
 
@@ -322,7 +332,12 @@ const submitRegister = async () => {
     try {
         recaptchaToken = await getRecaptchaToken('register');
     } catch (error) {
-        showModalAlert('Gagal memuat reCAPTCHA. Silakan refresh halaman lalu coba lagi.', 'error');
+        console.error('reCAPTCHA error:', error);
+        const detail = error?.message ? `\n\nDetail: ${error.message}` : '';
+        showModalAlert(
+            'Gagal memuat reCAPTCHA. Pastikan koneksi internet aktif, domain ymsofterp.com sudah terdaftar di Google reCAPTCHA, lalu segarkan halaman dan coba lagi.' + detail,
+            'error',
+        );
         isLoading.value = false;
         return;
     }

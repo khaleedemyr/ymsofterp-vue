@@ -7,9 +7,9 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import RegisterModal from '@/Components/RegisterModal.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import axios from 'axios';
-import { getRecaptchaToken, isRecaptchaEnabled } from '@/utils/recaptcha';
+import { getRecaptchaToken, isRecaptchaEnabled, preloadRecaptcha } from '@/utils/recaptcha';
 
 defineProps({
     canResetPassword: {
@@ -26,6 +26,12 @@ const remember = ref(false);
 const errorMsg = ref('');
 const processing = ref(false);
 const showRegisterModal = ref(false);
+
+onMounted(() => {
+    if (isRecaptchaEnabled()) {
+        preloadRecaptcha();
+    }
+});
 
 const submit = async () => {
     errorMsg.value = '';
