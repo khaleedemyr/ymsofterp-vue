@@ -861,36 +861,8 @@ class SalesReportController extends Controller
         // Sort the merged report
         $report = $mergedReport->sortByDesc('is_outlet')->sortBy('customer')->values();
 
-        // Query untuk retail warehouse sales dengan filter yang benar
-        // Gunakan warehouse dari item (warehouse_division), bukan dari rws.warehouse_id
-        $retailQuery = DB::table('retail_warehouse_sales as rws')
-            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->whereNotNull('w.name') // Filter only items with valid warehouse (to ensure proper categorization)
-            ->select(
-                'c.name as customer',
-                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) as main_store"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
-                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
-                DB::raw("SUM(rwsi.subtotal) as line_total")
-            );
-
-        if ($request->filled('from')) {
-            $retailQuery->whereDate('rws.created_at', '>=', $request->from);
-        }
-        if ($request->filled('to')) {
-            $retailQuery->whereDate('rws.created_at', '<=', $request->to);
-        }
-
-        $retailReport = $retailQuery->groupBy('c.name')
-            ->orderBy('c.name')
-            ->get();
+        // Query untuk retail warehouse sales (barcode/normal + nomor seri)
+        $retailReport = $this->rekapFjFetchRetailWarehousePivotReport($from, $to);
 
         // Query untuk warehouse sales (penjualan antar gudang)
         $warehouseQuery = DB::table('warehouse_sales as ws')
@@ -1038,36 +1010,8 @@ class SalesReportController extends Controller
             // Sort the merged report
             $report = $mergedReport->sortByDesc('is_outlet')->sortBy('customer')->values();
 
-            // Query untuk retail warehouse sales dengan filter yang benar
-            // Gunakan warehouse dari item (warehouse_division), bukan dari rws.warehouse_id
-            $retailQuery = DB::table('retail_warehouse_sales as rws')
-                ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
-                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-                ->join('items as it', 'rwsi.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
-                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-                ->whereNotNull('w.name') // Filter only items with valid warehouse (to ensure proper categorization)
-                ->select(
-                    'c.name as customer',
-                    DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) as main_store"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
-                    DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
-                    DB::raw("SUM(rwsi.subtotal) as line_total")
-                );
-
-            if ($request->filled('from')) {
-                $retailQuery->whereDate('rws.created_at', '>=', $request->from);
-            }
-            if ($request->filled('to')) {
-                $retailQuery->whereDate('rws.created_at', '<=', $request->to);
-            }
-
-            $retailReport = $retailQuery->groupBy('c.name')
-                ->orderBy('c.name')
-                ->get();
+            // Query untuk retail warehouse sales (barcode/normal + nomor seri)
+            $retailReport = $this->rekapFjFetchRetailWarehousePivotReport($from, $to);
 
             // Query untuk warehouse sales (penjualan antar gudang)
             $warehouseQuery = DB::table('warehouse_sales as ws')

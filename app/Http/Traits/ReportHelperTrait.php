@@ -753,4 +753,180 @@ trait ReportHelperTrait
             $query->whereNotIn("{$subCategoryAlias}.name", $excludeSubCategories);
         }
     }
+
+    /**
+     * Apakah tabel item serial RWS tersedia.
+     */
+    protected function rekapFjHasRetailWarehouseSerialItemsTable(): bool
+    {
+        static $cached = null;
+        if ($cached === null) {
+            $cached = Schema::hasTable('retail_warehouse_sale_serial_items');
+        }
+
+        return $cached;
+    }
+
+    /**
+     * Pivot Retail Warehouse Sales (barcode/normal + nomor seri) per customer.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    protected function rekapFjFetchRetailWarehousePivotReport(?string $from, ?string $to): Collection
+    {
+        $rows = $this->rekapFjFetchRetailWarehouseNormalPivotRows($from, $to);
+
+        if ($this->rekapFjHasRetailWarehouseSerialItemsTable()) {
+            $rows = $rows->concat($this->rekapFjFetchRetailWarehouseSerialPivotRows($from, $to));
+        }
+
+        return $rows
+            ->groupBy('customer')
+            ->map(function (Collection $group, string $customer) {
+                $obj = new \stdClass();
+                $obj->customer = $customer;
+                $obj->main_kitchen = (float) $group->sum('main_kitchen');
+                $obj->main_store = (float) $group->sum('main_store');
+                $obj->chemical = (float) $group->sum('chemical');
+                $obj->stationary = (float) $group->sum('stationary');
+                $obj->marketing = (float) $group->sum('marketing');
+                $obj->line_total = (float) $group->sum('line_total');
+
+                return $obj;
+            })
+            ->sortBy('customer')
+            ->values();
+    }
+
+    /**
+     * Pivot dari retail_warehouse_sale_items (scan barcode / normal).
+     */
+    protected function rekapFjFetchRetailWarehouseNormalPivotRows(?string $from, ?string $to): Collection
+    {
+        $query = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereNotNull('w.name')
+            ->select(
+                'c.name as customer',
+                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwsi.subtotal ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwsi.subtotal ELSE 0 END) as main_store"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwsi.subtotal ELSE 0 END) as chemical"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwsi.subtotal ELSE 0 END) as stationary"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwsi.subtotal ELSE 0 END) as marketing"),
+                DB::raw('SUM(rwsi.subtotal) as line_total')
+            );
+
+        $this->rekapFjApplyRetailWarehouseDateFilter($query, $from, $to);
+
+        return $query->groupBy('c.name')->get();
+    }
+
+    /**
+     * Pivot dari retail_warehouse_sale_serial_items (transaksi nomor seri).
+     */
+    protected function rekapFjFetchRetailWarehouseSerialPivotRows(?string $from, ?string $to): Collection
+    {
+        $query = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_serial_items as rwss', 'rws.id', '=', 'rwss.retail_warehouse_sale_id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwss.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereNotNull('w.name')
+            ->select(
+                'c.name as customer',
+                DB::raw("SUM(CASE WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN rwss.subtotal ELSE 0 END) as main_kitchen"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name NOT IN ('Chemical', 'Stationary', 'Marketing') THEN rwss.subtotal ELSE 0 END) as main_store"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN rwss.subtotal ELSE 0 END) as chemical"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Stationary' THEN rwss.subtotal ELSE 0 END) as stationary"),
+                DB::raw("SUM(CASE WHEN w.name = 'MAIN STORE' AND sc.name = 'Marketing' THEN rwss.subtotal ELSE 0 END) as marketing"),
+                DB::raw('SUM(rwss.subtotal) as line_total')
+            );
+
+        $this->rekapFjApplyRetailWarehouseDateFilter($query, $from, $to);
+
+        return $query->groupBy('c.name')->get();
+    }
+
+    /**
+     * Filter tanggal RWS: pakai sale_date bila ada, fallback created_at.
+     */
+    protected function rekapFjApplyRetailWarehouseDateFilter($query, ?string $from, ?string $to): void
+    {
+        $dateExpr = 'COALESCE(rws.sale_date, DATE(rws.created_at))';
+
+        if ($from) {
+            $query->whereRaw("{$dateExpr} >= ?", [$from]);
+        }
+        if ($to) {
+            $query->whereRaw("{$dateExpr} <= ?", [$to]);
+        }
+    }
+
+    /**
+     * Detail item RWS (normal + serial) untuk satu customer.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    protected function rekapFjFetchRetailWarehouseDetailItems(string $customer, string $from, string $to): Collection
+    {
+        $normal = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->leftJoin('categories as cat', 'it.category_id', '=', 'cat.id')
+            ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('c.name', $customer)
+            ->select(
+                DB::raw('COALESCE(cat.name, "Uncategorized") as category'),
+                DB::raw('COALESCE(sc.name, "Uncategorized") as sub_category'),
+                'it.name as item_name',
+                'rwsi.qty',
+                DB::raw('COALESCE(rwsi.unit, "Pcs") as unit'),
+                'rwsi.price',
+                'rwsi.subtotal',
+                'rws.number as sale_number',
+                DB::raw('COALESCE(rws.sale_date, DATE(rws.created_at)) as sale_date')
+            );
+        $this->rekapFjApplyRetailWarehouseDateFilter($normal, $from, $to);
+
+        $items = $normal->get();
+
+        if ($this->rekapFjHasRetailWarehouseSerialItemsTable()) {
+            $serial = DB::table('retail_warehouse_sales as rws')
+                ->join('retail_warehouse_sale_serial_items as rwss', 'rws.id', '=', 'rwss.retail_warehouse_sale_id')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->join('items as it', 'rwss.item_id', '=', 'it.id')
+                ->leftJoin('categories as cat', 'it.category_id', '=', 'cat.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->where('c.name', $customer)
+                ->select(
+                    DB::raw('COALESCE(cat.name, "Uncategorized") as category'),
+                    DB::raw('COALESCE(sc.name, "Uncategorized") as sub_category'),
+                    'it.name as item_name',
+                    'rwss.qty',
+                    DB::raw('COALESCE(rwss.unit_name, "Pcs") as unit'),
+                    'rwss.price',
+                    'rwss.subtotal',
+                    'rws.number as sale_number',
+                    DB::raw('COALESCE(rws.sale_date, DATE(rws.created_at)) as sale_date')
+                );
+            $this->rekapFjApplyRetailWarehouseDateFilter($serial, $from, $to);
+            $items = $items->concat($serial->get());
+        }
+
+        return $items
+            ->sortBy([
+                ['category', 'asc'],
+                ['sub_category', 'asc'],
+                ['item_name', 'asc'],
+            ])
+            ->values();
+    }
 }
