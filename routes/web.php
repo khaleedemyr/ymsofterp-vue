@@ -1093,6 +1093,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve'])->name('overtime-submissions.approve');
     Route::post('/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject'])->name('overtime-submissions.reject');
 
+    Route::get('/wfh-requests/approvers', [\App\Http\Controllers\WfhRequestController::class, 'getApprovers'])->name('wfh-requests.approvers');
+    Route::get('/wfh-requests/check-shift', [\App\Http\Controllers\WfhRequestController::class, 'checkShift'])->name('wfh-requests.check-shift');
+    Route::resource('wfh-requests', \App\Http\Controllers\WfhRequestController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
+    Route::post('/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve'])->name('wfh-requests.approve');
+    Route::post('/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject'])->name('wfh-requests.reject');
+
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
     Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
 
@@ -2790,6 +2796,10 @@ Route::get('/api/overtime-submissions/pending-approvals', [\App\Http\Controllers
 Route::get('/api/overtime-submissions/{id}/approval-details', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovalDetails'])->name('overtime-submissions.approval-details')->middleware('auth');
 Route::post('/api/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve'])->name('api.overtime-submissions.approve')->middleware('auth');
 Route::post('/api/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject'])->name('api.overtime-submissions.reject')->middleware('auth');
+Route::get('/api/wfh-requests/pending-approvals', [\App\Http\Controllers\WfhRequestController::class, 'getPendingApprovals'])->name('wfh-requests.pending-approvals')->middleware('auth');
+Route::get('/api/wfh-requests/{id}/approval-details', [\App\Http\Controllers\WfhRequestController::class, 'getApprovalDetails'])->name('wfh-requests.approval-details')->middleware('auth');
+Route::post('/api/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve'])->name('api.wfh-requests.approve')->middleware('auth');
+Route::post('/api/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject'])->name('api.wfh-requests.reject')->middleware('auth');
 Route::get('/api/sop-development-completion/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('sop-development-completion.pending-approvals')->middleware('auth');
 Route::get('/api/sop-development-completion/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('sop-development-completion.show')->middleware('auth');
 Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('sop-development-completion.approve')->middleware('auth');

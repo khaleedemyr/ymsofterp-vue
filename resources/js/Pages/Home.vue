@@ -17,6 +17,7 @@ import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApp
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import OvertimeSubmissionApprovalCard from '@/Components/OvertimeSubmissionApprovalCard.vue';
+import WfhRequestApprovalCard from '@/Components/WfhRequestApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
 import RegionalVisitTargetCard from '@/Components/RegionalVisitTargetCard.vue';
@@ -6270,6 +6271,14 @@ function handleOvertimeSubmissionRejected(submissionId) {
     console.log('Overtime Submission rejected:', submissionId);
 }
 
+function handleWfhRequestApproved(requestId) {
+    console.log('WFH Request approved:', requestId);
+}
+
+function handleWfhRequestRejected(requestId) {
+    console.log('WFH Request rejected:', requestId);
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7353,6 +7362,13 @@ watch(locale, () => {
                     :is-night="isNight"
                     @approved="handleOvertimeSubmissionApproved"
                     @rejected="handleOvertimeSubmissionRejected"
+                />
+
+                <!-- WFH Request Approval Section -->
+                <WfhRequestApprovalCard
+                    :is-night="isNight"
+                    @approved="handleWfhRequestApproved"
+                    @rejected="handleWfhRequestRejected"
                 />
 
                 <!-- Contra Bon Approval Section -->
