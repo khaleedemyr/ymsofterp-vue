@@ -113,10 +113,15 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   records: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
+  canDelete: { type: Boolean, default: false },
 });
 
 const page = usePage();
-const canDelete = computed(() => String(page.props.auth?.user?.id_role || '') === '5af56935b011a');
+const canDelete = computed(() => {
+  if (props.canDelete) return true;
+  const user = page.props.auth?.user || {};
+  return String(user.id_role || '') === '5af56935b011a' || Number(user.division_id || 0) === 6;
+});
 const filterForm = reactive({ search: props.filters.search || '' });
 
 function applyFilters() {

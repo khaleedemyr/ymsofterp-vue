@@ -49,6 +49,7 @@ class WfhRequestController extends Controller
         return Inertia::render('WfhRequest/Index', [
             'records' => $records,
             'filters' => ['search' => $search],
+            'canDelete' => $this->canDeleteWfh($user),
         ]);
     }
 
@@ -104,11 +105,26 @@ class WfhRequestController extends Controller
             ->all();
 
         if ($approverIds === []) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pilih minimal 1 approver sebelum menyimpan.',
+                ], 422);
+            }
+
             return back()->withErrors(['approvers' => 'Pilih minimal 1 approver sebelum menyimpan.'])->withInput();
         }
 
         $shiftContext = $this->resolveShiftContext($user->id, $validated['wfh_date']);
         if (! $shiftContext['ok']) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $shiftContext['message'],
+                    'errors' => ['wfh_date' => [$shiftContext['message']]],
+                ], 422);
+            }
+
             return back()->withErrors(['wfh_date' => $shiftContext['message']])->withInput();
         }
 
@@ -119,9 +135,16 @@ class WfhRequestController extends Controller
             ->exists();
 
         if ($duplicate) {
-            return back()->withErrors([
-                'wfh_date' => 'Sudah ada pengajuan WFH aktif untuk tanggal ini.',
-            ])->withInput();
+            $msg = 'Sudah ada pengajuan WFH aktif untuk tanggal ini.';
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $msg,
+                    'errors' => ['wfh_date' => [$msg]],
+                ], 422);
+            }
+
+            return back()->withErrors(['wfh_date' => $msg])->withInput();
         }
 
         DB::beginTransaction();
@@ -176,22 +199,156 @@ class WfhRequestController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
 
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
             return back()->withErrors(['wfh_date' => $e->getMessage()])->withInput();
+        }
+
+        if ($request->expectsJson() || $request->wantsJson()) {
+            $wfh->load([
+                'user:id,nama_lengkap,nik',
+                'creator:id,nama_lengkap',
+                'tasks',
+                'approvalFlows.approver:id,nama_lengkap',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pengajuan WFH berhasil disimpan dan menunggu approval.',
+                'request' => $wfh,
+            ]);
         }
 
         return redirect()->route('wfh-requests.index')
             ->with('success', 'Pengajuan WFH berhasil disimpan dan menunggu approval.');
     }
 
-    public function destroy(WfhRequest $wfhRequest)
+    public function apiIndex(Request $request)
     {
-        if (! $this->isSuperadmin(auth()->user())) {
-            abort(403, 'Hanya superadmin yang dapat menghapus pengajuan WFH.');
+        $search = trim((string) $request->get('search', ''));
+        $user = auth()->user();
+        $isSuperadmin = $this->isSuperadmin($user);
+        $perPage = min(50, max(1, (int) $request->get('per_page', 15)));
+
+        $records = WfhRequest::query()
+            ->with([
+                'user:id,nama_lengkap,nik,id_jabatan,division_id',
+                'user.jabatan:id_jabatan,nama_jabatan',
+                'creator:id,nama_lengkap',
+                'approvalFlows.approver:id,nama_lengkap',
+            ])
+            ->withCount('tasks')
+            ->when(! $isSuperadmin, function ($q) use ($user) {
+                $q->where(function ($inner) use ($user) {
+                    $inner->where('user_id', $user->id)
+                        ->orWhere('created_by', $user->id)
+                        ->orWhereHas('approvalFlows', fn ($f) => $f->where('approver_id', $user->id));
+                });
+            })
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('number', 'like', "%{$search}%")
+                        ->orWhere('reason', 'like', "%{$search}%")
+                        ->orWhereHas('user', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"));
+                });
+            })
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'data' => $records,
+            'can_delete' => $this->canDeleteWfh($user),
+        ]);
+    }
+
+    public function apiCreateMeta()
+    {
+        $user = auth()->user()->load(['jabatan:id_jabatan,nama_jabatan', 'divisi:id,nama_divisi']);
+
+        return response()->json([
+            'success' => true,
+            'employee' => [
+                'id' => $user->id,
+                'nama_lengkap' => $user->nama_lengkap,
+                'nik' => $user->nik,
+                'jabatan' => $user->jabatan?->nama_jabatan,
+                'divisi' => $user->divisi?->nama_divisi,
+            ],
+            'today' => now()->format('Y-m-d'),
+            'can_delete' => $this->canDeleteWfh($user),
+        ]);
+    }
+
+    public function apiDestroy($id)
+    {
+        $user = auth()->user();
+        if (! $this->canDeleteWfh($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak berhak menghapus pengajuan WFH.',
+            ], 403);
         }
 
-        $wfhRequest->delete();
+        $wfhRequest = WfhRequest::findOrFail($id);
 
-        return redirect()->route('wfh-requests.index')->with('success', 'Pengajuan WFH berhasil dihapus.');
+        try {
+            DB::beginTransaction();
+            if ($wfhRequest->status === WfhRequest::STATUS_APPROVED || $wfhRequest->att_log_written_at) {
+                $this->removeAttendanceLogs($wfhRequest);
+            }
+            $wfhRequest->delete();
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus: '.$e->getMessage(),
+            ], 500);
+        }
+
+        $this->clearPendingApprovalsCache($user?->id);
+        $this->clearPendingApprovalsCache((int) $wfhRequest->created_by);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pengajuan WFH berhasil dihapus beserta data absensi WFH-nya.',
+        ]);
+    }
+
+    public function destroy(WfhRequest $wfhRequest)
+    {
+        if (! $this->canDeleteWfh(auth()->user())) {
+            abort(403, 'Anda tidak berhak menghapus pengajuan WFH.');
+        }
+
+        DB::beginTransaction();
+        try {
+            if ($wfhRequest->status === WfhRequest::STATUS_APPROVED || $wfhRequest->att_log_written_at) {
+                $this->removeAttendanceLogs($wfhRequest);
+            }
+
+            $wfhRequest->delete();
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return redirect()->route('wfh-requests.index')
+                ->with('error', 'Gagal menghapus pengajuan WFH: '.$e->getMessage());
+        }
+
+        $this->clearPendingApprovalsCache(auth()->id());
+        $this->clearPendingApprovalsCache((int) $wfhRequest->created_by);
+
+        return redirect()->route('wfh-requests.index')->with('success', 'Pengajuan WFH berhasil dihapus beserta data absensi WFH-nya.');
     }
 
     public function checkShift(Request $request)
@@ -564,6 +721,61 @@ class WfhRequestController extends Controller
         $this->upsertAttLog($sn, $pin, $outScan, 2);
     }
 
+    private function removeAttendanceLogs(WfhRequest $wfh): void
+    {
+        $scans = $this->resolveWfhScanDatetimes($wfh);
+        if ($scans === null) {
+            return;
+        }
+
+        foreach ([$scans['in'], $scans['out']] as $scanDate) {
+            DB::table('att_log')
+                ->where('sn', $scans['sn'])
+                ->where('pin', $scans['pin'])
+                ->where('scan_date', $scanDate)
+                ->where('device_ip', 'WFH')
+                ->delete();
+        }
+    }
+
+    /**
+     * @return array{sn: string, pin: string, in: string, out: string}|null
+     */
+    private function resolveWfhScanDatetimes(WfhRequest $wfh): ?array
+    {
+        $sn = $wfh->sn;
+        $pin = $wfh->pin;
+        $timeStart = $wfh->time_start ? substr((string) $wfh->time_start, 0, 8) : null;
+        $timeEnd = $wfh->time_end ? substr((string) $wfh->time_end, 0, 8) : null;
+        $wfhDate = $wfh->wfh_date?->format('Y-m-d');
+
+        if ((! $sn || ! $pin || ! $timeStart || ! $timeEnd || ! $wfhDate) && $wfhDate) {
+            $context = $this->resolveShiftContext((int) $wfh->user_id, $wfhDate);
+            if ($context['ok']) {
+                $sn = $sn ?: $context['sn'];
+                $pin = $pin ?: $context['pin'];
+                $timeStart = $timeStart ?: $context['time_start'];
+                $timeEnd = $timeEnd ?: $context['time_end'];
+            }
+        }
+
+        if (! $sn || ! $pin || ! $timeStart || ! $timeEnd || ! $wfhDate) {
+            return null;
+        }
+
+        $inScan = $wfhDate.' '.$timeStart;
+        $outDate = $timeEnd <= $timeStart
+            ? date('Y-m-d', strtotime($wfhDate.' +1 day'))
+            : $wfhDate;
+
+        return [
+            'sn' => $sn,
+            'pin' => $pin,
+            'in' => $inScan,
+            'out' => $outDate.' '.$timeEnd,
+        ];
+    }
+
     private function upsertAttLog(string $sn, string $pin, string $scanDate, int $inoutmode): void
     {
         $existing = DB::table('att_log')
@@ -728,6 +940,19 @@ class WfhRequestController extends Controller
     private function isSuperadmin($user): bool
     {
         return $user && (string) ($user->id_role ?? '') === '5af56935b011a';
+    }
+
+    private function canDeleteWfh($user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->isSuperadmin($user)) {
+            return true;
+        }
+
+        return (int) ($user->division_id ?? 0) === 6;
     }
 
     private function clearPendingApprovalsCache(?int $userId = null): void

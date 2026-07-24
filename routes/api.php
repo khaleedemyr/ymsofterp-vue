@@ -1344,6 +1344,18 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve']);
         Route::post('/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject']);
         Route::delete('/overtime-submissions/{id}', [\App\Http\Controllers\OvertimeSubmissionController::class, 'apiDestroy']);
+
+        // WFH Request approval + CRUD (ymsoftapp)
+        Route::get('/wfh-requests', [\App\Http\Controllers\WfhRequestController::class, 'apiIndex']);
+        Route::get('/wfh-requests/create-meta', [\App\Http\Controllers\WfhRequestController::class, 'apiCreateMeta']);
+        Route::get('/wfh-requests/check-shift', [\App\Http\Controllers\WfhRequestController::class, 'checkShift']);
+        Route::get('/wfh-requests/approvers', [\App\Http\Controllers\WfhRequestController::class, 'getApprovers']);
+        Route::post('/wfh-requests', [\App\Http\Controllers\WfhRequestController::class, 'store']);
+        Route::get('/wfh-requests/pending-approvals', [\App\Http\Controllers\WfhRequestController::class, 'getPendingApprovals']);
+        Route::get('/wfh-requests/{id}/approval-details', [\App\Http\Controllers\WfhRequestController::class, 'getApprovalDetails']);
+        Route::post('/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve']);
+        Route::post('/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject']);
+        Route::delete('/wfh-requests/{id}', [\App\Http\Controllers\WfhRequestController::class, 'apiDestroy']);
         
         // Attendance routes
         Route::get('/attendance/data', [\App\Http\Controllers\AttendanceController::class, 'getAttendanceDataApi'])->name('api.approval-app.attendance.data');
