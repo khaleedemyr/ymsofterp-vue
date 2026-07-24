@@ -826,11 +826,14 @@ class SerialTrackingController extends Controller
     if ($this->isTruthy($serial->is_transferred ?? null) || !empty($serial->transfer_id)) {
       return ['code' => 'transferred', 'label' => 'Sudah ditransfer', 'color' => 'indigo'];
     }
-    if ($outletReceive || $this->isTruthy($serial->is_received ?? null) || !empty($serial->received_outlet_gr_id)) {
+    // Only treat as "Diterima outlet" when GSR item still exists or is_received is true.
+    // Stale received_outlet_gr_id after ORJ must not keep the green badge.
+    if ($outletReceive || $this->isTruthy($serial->is_received ?? null)) {
       $receiveNumber = $outletReceive->gr_number ?? null;
       if (!$receiveNumber && !empty($serial->received_outlet_gr_id)) {
         $receiveNumber = DB::table('outlet_serial_receive_headers')
           ->where('id', $serial->received_outlet_gr_id)
+          ->whereNull('deleted_at')
           ->value('number');
       }
 

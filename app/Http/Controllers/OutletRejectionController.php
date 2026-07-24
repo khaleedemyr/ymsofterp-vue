@@ -1844,6 +1844,10 @@ class OutletRejectionController extends Controller
 
     private function processSerialInventoryForORJ($rejection, $serialRow): void
     {
+        // Void related outlet serial GR line first so Rekap FJ no longer bills this serial,
+        // and outlet stock from GSR is rolled back before warehouse stock-in.
+        $this->voidOutletSerialReceiveForRejectedSerial($rejection, $serialRow);
+
         $virtual = (object) [
             'item_id' => $serialRow->item_id,
             'unit_id' => $serialRow->unit_id,
@@ -1861,6 +1865,9 @@ class OutletRejectionController extends Controller
             'out_outlet_rejection_id' => null,
             'is_out' => 0,
             'is_received' => 0,
+            'received_at' => null,
+            'received_by' => null,
+            'received_outlet_gr_id' => null,
             'updated_at' => $now,
         ]);
 
@@ -1877,6 +1884,219 @@ class OutletRejectionController extends Controller
             'notes' => 'Outlet rejection return to warehouse',
             'created_at' => $now,
             'updated_at' => $now,
+        ]);
+    }
+
+    /**
+     * Void GSR line(s) for a serial returned via ORJ (same effect as deleting that serial from GSR):
+     * rollback outlet inventory, delete receive item, soft-delete header if empty.
+     * Public so backfill command can reuse for already-completed ORJ.
+     */
+    public function voidOutletSerialReceiveForRejectedSerial($rejection, $serialRow): void
+    {
+        $serialId = (int) ($serialRow->serial_id ?? 0);
+        $serialNumber = (string) ($serialRow->serial_number ?? '');
+        if ($serialId <= 0 && $serialNumber === '') {
+            return;
+        }
+
+        $gsrItems = DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+            ->whereNull('h.deleted_at')
+            ->where(function ($q) use ($serialId, $serialNumber) {
+                if ($serialId > 0) {
+                    $q->where('si.serial_id', $serialId);
+                } elseif ($serialNumber !== '') {
+                    $q->where('si.serial_number', $serialNumber);
+                } else {
+                    $q->whereRaw('1 = 0');
+                }
+            })
+            ->select('si.*', 'h.number as gsr_number', 'h.outlet_id as header_outlet_id')
+            ->get();
+
+        if ($gsrItems->isEmpty()) {
+            // Fallback: resolve via serial.received_outlet_gr_id if still set
+            $receivedGrId = $serialId > 0
+                ? DB::table('inventory_item_serials')
+                    ->where('id', $serialId)
+                    ->value('received_outlet_gr_id')
+                : null;
+            if ($receivedGrId) {
+                $gsrItems = DB::table('outlet_serial_receive_items as si')
+                    ->join('outlet_serial_receive_headers as h', 'h.id', '=', 'si.header_id')
+                    ->whereNull('h.deleted_at')
+                    ->where('si.header_id', $receivedGrId)
+                    ->where(function ($q) use ($serialId, $serialNumber) {
+                        if ($serialId > 0) {
+                            $q->where('si.serial_id', $serialId);
+                        } elseif ($serialNumber !== '') {
+                            $q->where('si.serial_number', $serialNumber);
+                        } else {
+                            $q->whereRaw('1 = 0');
+                        }
+                    })
+                    ->select('si.*', 'h.number as gsr_number', 'h.outlet_id as header_outlet_id')
+                    ->get();
+            }
+        }
+
+        if ($gsrItems->isEmpty()) {
+            Log::info('ORJ: no active GSR line found to void for serial', [
+                'rejection_id' => $rejection->id ?? null,
+                'serial_id' => $serialId,
+                'serial_number' => $serialNumber,
+            ]);
+
+            return;
+        }
+
+        foreach ($gsrItems as $gsrItem) {
+            $headerId = (int) $gsrItem->header_id;
+
+            $hasPayment = DB::table('outlet_payments')
+                ->where('gsr_id', $headerId)
+                ->where('status', '!=', 'cancelled')
+                ->exists();
+            if ($hasPayment) {
+                Log::warning('ORJ: voiding GSR serial line that already has outlet payment', [
+                    'rejection_id' => $rejection->id ?? null,
+                    'gsr_id' => $headerId,
+                    'gsr_number' => $gsrItem->gsr_number ?? null,
+                    'serial_id' => $serialId,
+                    'serial_number' => $serialNumber,
+                ]);
+            }
+
+            $itemMaster = DB::table('items')->where('id', $gsrItem->item_id)->first();
+            if ($itemMaster) {
+                $this->rollbackOutletSerialReceiveInventory($gsrItem, $itemMaster);
+            }
+
+            DB::table('outlet_serial_receive_items')->where('id', $gsrItem->id)->delete();
+
+            $remaining = DB::table('outlet_serial_receive_items')
+                ->where('header_id', $headerId)
+                ->count();
+            if ($remaining === 0) {
+                DB::table('outlet_serial_receive_headers')
+                    ->where('id', $headerId)
+                    ->whereNull('deleted_at')
+                    ->update([
+                        'deleted_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+            }
+
+            Log::info('ORJ: voided GSR serial line', [
+                'rejection_id' => $rejection->id ?? null,
+                'gsr_id' => $headerId,
+                'gsr_number' => $gsrItem->gsr_number ?? null,
+                'gsr_item_id' => $gsrItem->id,
+                'serial_id' => $serialId,
+                'serial_number' => $serialNumber,
+                'header_soft_deleted' => $remaining === 0,
+            ]);
+        }
+    }
+
+    /**
+     * Mirror of OutletSerialReceiveController::rollbackInventory for a single GSR item.
+     */
+    private function rollbackOutletSerialReceiveInventory(object $item, object $itemMaster): void
+    {
+        $unitId = (int) $item->unit_id;
+        $effectiveQty = (float) $item->qty;
+        $costSmall = (float) $item->cost_small;
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+        $qtySmall = 0;
+        $qtyMedium = 0;
+        $qtyLarge = 0;
+        if ($unitId === (int) $itemMaster->small_unit_id) {
+            $qtySmall = $effectiveQty;
+            $qtyMedium = $smallConv > 0 ? $qtySmall / $smallConv : 0;
+            $qtyLarge = ($smallConv > 0 && $mediumConv > 0) ? $qtySmall / ($smallConv * $mediumConv) : 0;
+        } elseif (! empty($itemMaster->medium_unit_id) && $unitId === (int) $itemMaster->medium_unit_id) {
+            $qtyMedium = $effectiveQty;
+            $qtySmall = $qtyMedium * $smallConv;
+            $qtyLarge = $mediumConv > 0 ? $qtyMedium / $mediumConv : 0;
+        } elseif (! empty($itemMaster->large_unit_id) && $unitId === (int) $itemMaster->large_unit_id) {
+            $qtyLarge = $effectiveQty;
+            $qtyMedium = $qtyLarge * $mediumConv;
+            $qtySmall = $qtyMedium * $smallConv;
+        } else {
+            $qtySmall = $effectiveQty;
+            $qtyMedium = $smallConv > 0 ? $qtySmall / $smallConv : 0;
+            $qtyLarge = ($smallConv > 0 && $mediumConv > 0) ? $qtySmall / ($smallConv * $mediumConv) : 0;
+        }
+
+        $nilaiBaru = $qtySmall * $costSmall;
+        $inventoryItem = DB::table('outlet_food_inventory_items')
+            ->where('item_id', $item->item_id)
+            ->first();
+
+        if (! $inventoryItem) {
+            return;
+        }
+
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('id_outlet', $item->outlet_id)
+            ->where('warehouse_outlet_id', $item->warehouse_outlet_id)
+            ->first();
+
+        if ($stock) {
+            $newQtySmall = max(0, (float) $stock->qty_small - $qtySmall);
+            $newValue = max(0, (float) $stock->value - $nilaiBaru);
+            $newMac = $newQtySmall > 0 ? $newValue / $newQtySmall : 0;
+
+            DB::table('outlet_food_inventory_stocks')
+                ->where('id', $stock->id)
+                ->update([
+                    'qty_small' => $newQtySmall,
+                    'qty_medium' => max(0, (float) $stock->qty_medium - $qtyMedium),
+                    'qty_large' => max(0, (float) $stock->qty_large - $qtyLarge),
+                    'value' => $newValue,
+                    'last_cost_small' => $newMac,
+                    'updated_at' => now(),
+                ]);
+        }
+
+        $lastCard = DB::table('outlet_food_inventory_cards')
+            ->where('inventory_item_id', $inventoryItem->id)
+            ->where('id_outlet', $item->outlet_id)
+            ->where('warehouse_outlet_id', $item->warehouse_outlet_id)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->first();
+
+        DB::table('outlet_food_inventory_cards')->insert([
+            'inventory_item_id' => $inventoryItem->id,
+            'id_outlet' => $item->outlet_id,
+            'warehouse_outlet_id' => $item->warehouse_outlet_id,
+            'date' => now()->toDateString(),
+            'reference_type' => 'serial_receive_rollback',
+            'reference_id' => $item->header_id,
+            'in_qty_small' => 0,
+            'in_qty_medium' => 0,
+            'in_qty_large' => 0,
+            'out_qty_small' => $qtySmall,
+            'out_qty_medium' => $qtyMedium,
+            'out_qty_large' => $qtyLarge,
+            'cost_per_small' => $costSmall,
+            'cost_per_medium' => $costSmall * $smallConv,
+            'cost_per_large' => $costSmall * $smallConv * $mediumConv,
+            'value_in' => 0,
+            'value_out' => $nilaiBaru,
+            'saldo_qty_small' => ($lastCard ? (float) $lastCard->saldo_qty_small : 0) - $qtySmall,
+            'saldo_qty_medium' => ($lastCard ? (float) $lastCard->saldo_qty_medium : 0) - $qtyMedium,
+            'saldo_qty_large' => ($lastCard ? (float) $lastCard->saldo_qty_large : 0) - $qtyLarge,
+            'saldo_value' => max(0, (($lastCard ? (float) $lastCard->saldo_qty_small : 0) - $qtySmall) * ($stock ? (float) $stock->last_cost_small : $costSmall)),
+            'description' => 'Rollback Serial Receive via ORJ: '.$item->serial_number,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
     }
 
