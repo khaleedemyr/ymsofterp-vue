@@ -17,22 +17,52 @@ class OvertimeSubmissionController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->get('search', ''));
+        $perPage = (int) $request->get('per_page', 15);
+        if (! in_array($perPage, [10, 15, 25, 50, 100], true)) {
+            $perPage = 15;
+        }
 
         $records = OvertimeSubmission::query()
             ->with(['creator:id,nama_lengkap', 'approvalFlows.approver:id,nama_lengkap'])
             ->withCount('items')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
-                $q->where('number', 'like', "%{$search}%")
-                    ->orWhereHas('creator', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"));
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('number', 'like', "%{$search}%")
+                        ->orWhereHas('creator', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"));
+                });
             })
             ->orderByDesc('id')
-            ->paginate(15)
+            ->paginate($perPage)
             ->withQueryString();
 
         return Inertia::render('Attendance/OvertimeSubmissionIndex', [
             'records' => $records,
-            'filters' => ['search' => $search],
+            'filters' => [
+                'search' => $search,
+                'per_page' => $perPage,
+            ],
+        ]);
+    }
+
+    public function show(OvertimeSubmission $overtimeSubmission): Response
+    {
+        $user = auth()->user();
+        $overtimeSubmission->load([
+            'creator:id,nama_lengkap',
+            'items.user:id,nama_lengkap,nik',
+            'approvalFlows.approver:id,nama_lengkap',
+        ]);
+
+        $canApprove = false;
+        if ($user && $overtimeSubmission->status === OvertimeSubmission::STATUS_SUBMITTED) {
+            $canApprove = (bool) $this->resolveCurrentApprovalFlow($overtimeSubmission, $user);
+        }
+
+        return Inertia::render('Attendance/OvertimeSubmissionShow', [
+            'record' => $overtimeSubmission,
+            'canApprove' => $canApprove,
+            'canDelete' => (string) ($user?->id_role ?? '') === '5af56935b011a',
         ]);
     }
 

@@ -1089,7 +1089,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers'])->name('overtime-submissions.search-users');
     Route::get('/overtime-submissions/approvers', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovers'])->name('overtime-submissions.approvers');
-    Route::resource('overtime-submissions', \App\Http\Controllers\OvertimeSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
+    Route::resource('overtime-submissions', \App\Http\Controllers\OvertimeSubmissionController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
     Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve'])->name('overtime-submissions.approve');
     Route::post('/overtime-submissions/{id}/reject', [\App\Http\Controllers\OvertimeSubmissionController::class, 'reject'])->name('overtime-submissions.reject');
 
