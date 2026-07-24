@@ -35,8 +35,8 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
 
     public function map($row): array
     {
-        // Status: OFF/libur/masuk
-        $status = $row->is_off ? 'OFF' : ($row->is_holiday ? 'LIBUR' : 'MASUK');
+        // Status: OFF/libur/wfh/masuk
+        $status = $row->is_off ? 'OFF' : ($row->is_holiday ? 'LIBUR' : (($row->is_wfh ?? false) ? 'WFH' : 'MASUK'));
         // Detail: jam masuk/keluar per outlet (jika ada)
         $detail = $row->detail ?? '';
         // Shift: nama, jam mulai, jam selesai

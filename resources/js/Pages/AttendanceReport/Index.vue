@@ -149,6 +149,9 @@ const getRowTooltip = (row) => {
   if (row.is_holiday) {
     return row.holiday_name;
   }
+  if (row.is_wfh) {
+    return row.wfh_reason ? `WFH: ${row.wfh_reason}` : (row.wfh_number || 'WFH');
+  }
   if (row.is_approved_absent) {
     return row.approved_absent_name;
   }
@@ -260,20 +263,26 @@ const getRowTooltip = (row) => {
             <tr v-for="(row, idx) in props.data" :key="row.tanggal + '-' + row.nama_lengkap + '-' + (row.outlet_id || 'no-outlet')"
               :class="[
                 row.is_holiday ? 'bg-red-100 text-red-700 font-bold' : '',
-                !row.is_holiday && row.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
-                !row.is_holiday && !row.is_approved_absent && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
-                !row.is_holiday && !row.is_approved_absent && !row.is_off && row.has_no_checkout ? 'bg-red-200 text-red-800 font-semibold' : '',
-                !row.is_holiday && !row.is_approved_absent && !row.is_off && !row.has_no_checkout && idx % 2 === 1 ? 'bg-blue-50' : ''
+                !row.is_holiday && row.is_wfh ? 'bg-teal-100 text-teal-800 font-semibold' : '',
+                !row.is_holiday && !row.is_wfh && row.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && row.has_no_checkout ? 'bg-red-200 text-red-800 font-semibold' : '',
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && !row.has_no_checkout && idx % 2 === 1 ? 'bg-blue-50' : ''
               ]">
               <td class="px-4 py-2 whitespace-nowrap font-mono" :title="getRowTooltip(row)">
                 {{ row.tanggal }}
                 <span v-if="row.is_holiday && row.holiday_name" class="ml-1 text-xs font-semibold">({{ row.holiday_name }})</span>
-                <span v-if="!row.is_holiday && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
+                <span v-if="!row.is_holiday && row.is_wfh" class="ml-1 text-xs font-semibold">(WFH)</span>
+                <span v-if="!row.is_holiday && !row.is_wfh && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
                 <span v-if="row.has_no_checkout" class="ml-1 text-xs font-semibold text-red-600">(TIDAK CHECKOUT)</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
                 <div class="text-gray-900 font-semibold">{{ row.nama_lengkap }}</div>
                 <div class="text-gray-500 text-xs mt-1">{{ row.jabatan || '-' }}</div>
+                <div v-if="row.is_wfh" class="text-teal-700 text-xs mt-1 font-semibold">
+                  <i class="fa-solid fa-house-laptop mr-1"></i>WFH
+                  <span v-if="row.wfh_number" class="font-normal">({{ row.wfh_number }})</span>
+                </div>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
                 <span v-if="row.is_off">OFF</span>

@@ -117,6 +117,7 @@ class AttendanceController extends Controller
         
         // Get approved absent requests for the date range
         $approvedAbsents = $this->getApprovedAbsentRequests($user->id, $startDate, $endDate);
+        $approvedWfhs = $this->getApprovedWfhRequests($user->id, $startDate, $endDate);
         
         // Get user's leave requests (for cancel functionality)
         $userLeaveRequests = $this->getUserLeaveRequests($user->id, $startDate, $endDate);
@@ -147,6 +148,7 @@ class AttendanceController extends Controller
             'calendar' => $calendar,
             'holidays' => $holidays,
             'approvedAbsents' => $approvedAbsents,
+            'approvedWfhs' => $approvedWfhs,
             'userLeaveRequests' => $userLeaveRequests,
             'leaveTypes' => $leaveTypes,
             'availableApprovers' => $availableApprovers,
@@ -1261,6 +1263,21 @@ class AttendanceController extends Controller
             
         return $approvedAbsents;
     }
+
+    /**
+     * Get approved WFH requests for the user in the date range
+     */
+    private function getApprovedWfhRequests($userId, $startDate, $endDate)
+    {
+        return DB::table('wfh_requests')
+            ->where('user_id', $userId)
+            ->where('status', 'APPROVED')
+            ->whereNull('deleted_at')
+            ->whereBetween('wfh_date', [$startDate, $endDate])
+            ->select(['id', 'number', 'wfh_date', 'reason', 'shift_name', 'time_start', 'time_end'])
+            ->orderBy('wfh_date')
+            ->get();
+    }
     
     /**
      * Get user's leave requests for the date range
@@ -1769,6 +1786,7 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
         
         // Get approved absent requests
         $approvedAbsents = $this->getApprovedAbsentRequests($user->id, $startDate, $endDate);
+        $approvedWfhs = $this->getApprovedWfhRequests($user->id, $startDate, $endDate);
         
         // Get user's leave requests
         $userLeaveRequests = $this->getUserLeaveRequests($user->id, $startDate, $endDate);
@@ -1795,6 +1813,7 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
             'calendar' => $calendar,
             'holidays' => $holidays,
             'approvedAbsents' => $approvedAbsents,
+            'approvedWfhs' => $approvedWfhs,
             'userLeaveRequests' => $userLeaveRequests,
             'leaveTypes' => $leaveTypes,
             'phData' => $phData,

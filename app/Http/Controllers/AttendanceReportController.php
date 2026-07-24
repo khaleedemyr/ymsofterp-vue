@@ -41,6 +41,7 @@ class AttendanceReportController extends Controller
 
             // Get approved absent requests for the date range
             $approvedAbsents = $this->getApprovedAbsentRequests($start, $end);
+            $approvedWfhs = $this->getApprovedWfhRequests($start, $end);
 
             // Query data absensi - Ambil semua scan dan proses manual
             $sub = DB::table('att_log as a')
@@ -269,10 +270,7 @@ class AttendanceReportController extends Controller
                         $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($rowUserId, $tanggal);
                         // Round down total lembur (bulatkan ke bawah)
                         $totalLembur = floor($lembur + $extraOffOvertime);
-                        
-                        $summary['total_telat'] += $telat;
-                        $summary['total_lembur'] += $totalLembur;
-                        
+
                         // Check if user has approved absent for this date
                         $approvedAbsent = null;
                         $is_approved_absent = false;
@@ -282,10 +280,21 @@ class AttendanceReportController extends Controller
                             $is_approved_absent = true;
                             $approved_absent_name = $approvedAbsent['leave_type_name'];
                         }
+
+                        $wfhInfo = $approvedWfhs[$rowUserId][$tanggal] ?? null;
+                        $is_wfh = (bool) $wfhInfo;
+                        if ($is_wfh) {
+                            $telat = 0;
+                            $lembur = 0;
+                            $totalLembur = floor($extraOffOvertime);
+                        }
+                        
+                        $summary['total_telat'] += $telat;
+                        $summary['total_lembur'] += $totalLembur;
                         
                         // Deteksi attendance tanpa checkout
                         $has_no_checkout = false;
-                        if (!$is_off && !$is_holiday && !$is_approved_absent && $jam_masuk && !$jam_keluar) {
+                        if (!$is_off && !$is_holiday && !$is_approved_absent && !$is_wfh && $jam_masuk && !$jam_keluar) {
                             $has_no_checkout = true;
                         }
                         
@@ -310,6 +319,9 @@ class AttendanceReportController extends Controller
                             'approved_absent' => $approvedAbsent,
                             'is_approved_absent' => $is_approved_absent,
                             'approved_absent_name' => $approved_absent_name,
+                            'is_wfh' => $is_wfh,
+                            'wfh_number' => $wfhInfo['number'] ?? null,
+                            'wfh_reason' => $wfhInfo['reason'] ?? null,
                             'has_no_checkout' => $has_no_checkout,
                         ]);
                     }
@@ -349,8 +361,6 @@ class AttendanceReportController extends Controller
                     // Round down total lembur (bulatkan ke bawah)
                     $totalLembur = floor($lembur + $extraOffOvertime);
                     
-                    $summary['total_lembur'] += $totalLembur;
-                    
                     // Check if user has approved absent for this date
                     $approvedAbsent = null;
                     $is_approved_absent = false;
@@ -360,6 +370,16 @@ class AttendanceReportController extends Controller
                         $is_approved_absent = true;
                         $approved_absent_name = $approvedAbsent['leave_type_name'];
                     }
+
+                    $wfhInfo = $approvedWfhs[$rowUserId][$tanggal] ?? null;
+                    $is_wfh = (bool) $wfhInfo;
+                    if ($is_wfh) {
+                        $telat = 0;
+                        $lembur = 0;
+                        $totalLembur = floor($extraOffOvertime);
+                    }
+                    
+                    $summary['total_lembur'] += $totalLembur;
                     
                     $rows->push((object)[
                         'tanggal' => $tanggal,
@@ -384,6 +404,9 @@ class AttendanceReportController extends Controller
                         'approved_absent' => $approvedAbsent,
                         'is_approved_absent' => $is_approved_absent,
                         'approved_absent_name' => $approved_absent_name,
+                        'is_wfh' => $is_wfh,
+                        'wfh_number' => $wfhInfo['number'] ?? null,
+                        'wfh_reason' => $wfhInfo['reason'] ?? null,
                         'has_no_checkout' => false, // Tidak ada data attendance sama sekali
                     ]);
                 }
@@ -659,6 +682,10 @@ class AttendanceReportController extends Controller
 
         $rows = collect();
         $summary = [ 'total_telat' => 0, 'total_lembur' => 0 ];
+        $approvedWfhs = [];
+        $start = date('Y-m-d', strtotime(date('Y-m-26') . ' -1 month'));
+        $end = date('Y-m-d', strtotime(date('Y-m-25')));
+        $namaKaryawan = null;
         if (!empty($outletId) || !empty($divisionId) || !empty($search) || !empty($bulan) || !empty($tahun)) {
             $bulan = $bulan ?: date('m');
             $tahun = $tahun ?: date('Y');
@@ -667,6 +694,7 @@ class AttendanceReportController extends Controller
 
             // Get approved absent requests for the date range
             $approvedAbsents = $this->getApprovedAbsentRequests($start, $end);
+            $approvedWfhs = $this->getApprovedWfhRequests($start, $end);
 
             $period = [];
             $dt = new \DateTime($start);
@@ -1012,6 +1040,7 @@ class AttendanceReportController extends Controller
         $fileName = 'attendance_';
         $fileName .= $namaKaryawan ? str_replace(' ', '_', $namaKaryawan) : 'all';
         $fileName .= '_' . $start . '_sampai_' . $end . '.xlsx';
+        $rows = $this->attachWfhFlagsToRows($rows, $approvedWfhs);
         $export = new AttendanceReportExport($rows);
         $export->fileName = $fileName;
         return $export;
@@ -2818,6 +2847,62 @@ class AttendanceReportController extends Controller
         }
         
         return $groupedAbsents;
+    }
+
+    /**
+     * Approved WFH requests keyed by user_id + date.
+     *
+     * @return array<int, array<string, array{number: string, reason: string}>>
+     */
+    private function getApprovedWfhRequests($startDate, $endDate, $userId = null): array
+    {
+        $query = DB::table('wfh_requests')
+            ->where('status', 'APPROVED')
+            ->whereNull('deleted_at')
+            ->whereBetween('wfh_date', [$startDate, $endDate]);
+
+        if ($userId) {
+            $query->where('user_id', $userId);
+        }
+
+        $rows = $query->select(['user_id', 'wfh_date', 'number', 'reason'])->get();
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $dateStr = $row->wfh_date instanceof \DateTimeInterface
+                ? $row->wfh_date->format('Y-m-d')
+                : date('Y-m-d', strtotime((string) $row->wfh_date));
+
+            $grouped[$row->user_id][$dateStr] = [
+                'number' => $row->number,
+                'reason' => $row->reason,
+            ];
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * Attach WFH flags to report rows (used by Excel export).
+     */
+    private function attachWfhFlagsToRows($rows, array $approvedWfhs)
+    {
+        return collect($rows)->map(function ($row) use ($approvedWfhs) {
+            $uid = $row->user_id ?? null;
+            $tgl = $row->tanggal ?? null;
+            $wfh = ($uid && $tgl) ? ($approvedWfhs[$uid][$tgl] ?? null) : null;
+            $row->is_wfh = (bool) $wfh;
+            $row->wfh_number = $wfh['number'] ?? null;
+            $row->wfh_reason = $wfh['reason'] ?? null;
+            if ($row->is_wfh) {
+                $row->telat = 0;
+                $row->lembur = 0;
+                $extra = (float) ($row->extra_off_overtime ?? 0);
+                $row->total_lembur = floor($extra);
+            }
+
+            return $row;
+        })->values();
     }
 
     // Method untuk employee summary attendance detail

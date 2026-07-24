@@ -186,7 +186,8 @@
                   class="min-h-[60px] sm:min-h-[100px] border border-gray-200 dark:border-gray-600 p-0.5 sm:p-1 relative"
                   :class="{
                     'bg-gray-50 dark:bg-gray-700': !day.isInPayrollPeriod,
-                    'bg-white dark:bg-gray-800': day.isInPayrollPeriod && !day.holiday,
+                    'bg-white dark:bg-gray-800': day.isInPayrollPeriod && !day.holiday && !getApprovedWfhForDate(day.date),
+                    'bg-teal-50 dark:bg-teal-900/40': day.isInPayrollPeriod && !day.holiday && !!getApprovedWfhForDate(day.date),
                     'bg-blue-50 dark:bg-blue-900': day.isToday,
                     'bg-red-100 dark:bg-red-900': day.holiday
                   }"
@@ -288,6 +289,18 @@
                     </div>
                     <div class="text-xs text-green-600 dark:text-green-400 mt-0.5">
                       {{ getApprovedAbsentForDate(day.date).reason }}
+                    </div>
+                  </div>
+
+                  <!-- Approved WFH Display -->
+                  <div v-else-if="getApprovedWfhForDate(day.date)" class="mt-1">
+                    <div class="w-full text-xs bg-teal-500 text-white px-1 py-0.5 rounded">
+                      <i class="fa-solid fa-house-laptop sm:mr-1"></i>
+                      <span class="hidden sm:inline">WFH</span>
+                      <span class="sm:hidden">WFH</span>
+                    </div>
+                    <div class="text-xs text-teal-600 dark:text-teal-400 mt-0.5 truncate" :title="getApprovedWfhForDate(day.date).reason">
+                      {{ getApprovedWfhForDate(day.date).reason }}
                     </div>
                   </div>
                   
@@ -1350,6 +1363,7 @@ const props = defineProps({
   calendar: Object,
   holidays: Array,
   approvedAbsents: Array,
+  approvedWfhs: { type: Array, default: () => [] },
   userLeaveRequests: Array,
   leaveTypes: Array,
   availableApprovers: Array,
@@ -1452,6 +1466,17 @@ const getApprovedAbsentForDate = computed(() => {
       
       return date >= fromDate && date <= toDate
     })
+  }
+})
+
+const getApprovedWfhForDate = computed(() => {
+  return (dateString) => {
+    if (!props.approvedWfhs || !props.approvedWfhs.length) return null
+    const date = new Date(dateString).toISOString().split('T')[0]
+    return props.approvedWfhs.find((wfh) => {
+      const wfhDate = new Date(wfh.wfh_date).toISOString().split('T')[0]
+      return wfhDate === date
+    }) || null
   }
 })
 
