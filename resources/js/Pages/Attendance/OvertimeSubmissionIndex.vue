@@ -44,6 +44,7 @@
               <tr>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Nomor</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-700">Outlet</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Pembuat</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Approver</th>
@@ -54,7 +55,7 @@
             </thead>
             <tbody>
               <tr v-if="records.data.length === 0">
-                <td colspan="8" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
+                <td colspan="9" class="px-4 py-8 text-center text-gray-500">Belum ada pengajuan lembur.</td>
               </tr>
               <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40 align-top">
                 <td class="px-4 py-3 font-medium">
@@ -63,6 +64,10 @@
                   </Link>
                 </td>
                 <td class="px-4 py-3">{{ formatDate(row.submission_date) }}</td>
+                <td class="px-4 py-3">
+                  <span v-if="row.outlet_name" class="text-gray-800">{{ row.outlet_name }}</span>
+                  <span v-else class="text-gray-400">-</span>
+                </td>
                 <td class="px-4 py-3">{{ row.creator?.nama_lengkap || '-' }}</td>
                 <td class="px-4 py-3">
                   <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusClass(row.status)">

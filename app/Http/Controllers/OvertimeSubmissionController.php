@@ -23,7 +23,13 @@ class OvertimeSubmissionController extends Controller
         }
 
         $records = OvertimeSubmission::query()
-            ->with(['creator:id,nama_lengkap', 'approvalFlows.approver:id,nama_lengkap'])
+            ->with([
+                'creator:id,nama_lengkap',
+                'approvalFlows.approver:id,nama_lengkap',
+                'items:id,submission_id,user_id',
+                'items.user:id,id_outlet',
+                'items.user.outlet:id_outlet,nama_outlet',
+            ])
             ->withCount('items')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
@@ -35,6 +41,8 @@ class OvertimeSubmissionController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
+
+        $this->attachOutletNames($records);
 
         return Inertia::render('Attendance/OvertimeSubmissionIndex', [
             'records' => $records,
@@ -182,7 +190,13 @@ class OvertimeSubmissionController extends Controller
         $perPage = min(50, max(1, (int) $request->get('per_page', 15)));
 
         $records = OvertimeSubmission::query()
-            ->with(['creator:id,nama_lengkap', 'approvalFlows.approver:id,nama_lengkap'])
+            ->with([
+                'creator:id,nama_lengkap',
+                'approvalFlows.approver:id,nama_lengkap',
+                'items:id,submission_id,user_id',
+                'items.user:id,id_outlet',
+                'items.user.outlet:id_outlet,nama_outlet',
+            ])
             ->withCount('items')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
@@ -194,6 +208,8 @@ class OvertimeSubmissionController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
+
+        $this->attachOutletNames($records);
 
         return response()->json([
             'success' => true,
@@ -472,6 +488,24 @@ class OvertimeSubmissionController extends Controller
 
             return response()->json(['success' => false, 'message' => 'Gagal reject: '.$e->getMessage()], 500);
         }
+    }
+
+    private function attachOutletNames($paginator): void
+    {
+        $paginator->getCollection()->transform(function (OvertimeSubmission $row) {
+            $names = $row->items
+                ->map(fn ($item) => $item->user?->outlet?->nama_outlet)
+                ->filter(fn ($name) => filled($name))
+                ->unique()
+                ->values()
+                ->all();
+
+            $row->setAttribute('outlet_names', $names);
+            $row->setAttribute('outlet_name', $names === [] ? null : implode(', ', $names));
+            $row->unsetRelation('items');
+
+            return $row;
+        });
     }
 
     private function resolveCurrentApprovalFlow(OvertimeSubmission $submission, $user): ?OvertimeSubmissionApprovalFlow
