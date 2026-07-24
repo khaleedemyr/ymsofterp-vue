@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\CvccRegionalCapaHomeService;
 use App\Services\RegionalVisitAnalyticsService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -35,6 +36,21 @@ class HomeController extends Controller
             'success' => true,
             'is_regional' => true,
             'data' => $summary,
+        ]);
+    }
+
+    /**
+     * Kasus CVCC yang di-tag ke user login dan masih perlu CAPA (belum isi + approved).
+     */
+    public function cvccRegionalCapaPending(Request $request, CvccRegionalCapaHomeService $service)
+    {
+        $userId = (int) ($request->user()->id ?? 0);
+        $payload = $service->pendingForUser($userId);
+
+        return response()->json([
+            'success' => true,
+            'count' => $payload['count'],
+            'items' => $payload['items'],
         ]);
     }
 }

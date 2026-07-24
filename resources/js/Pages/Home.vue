@@ -20,6 +20,7 @@ import OvertimeSubmissionApprovalCard from '@/Components/OvertimeSubmissionAppro
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
 import RegionalVisitTargetCard from '@/Components/RegionalVisitTargetCard.vue';
+import CvccRegionalCapaCard from '@/Components/CvccRegionalCapaCard.vue';
 import CapaVerificationCard from '@/Components/CapaVerificationCard.vue';
 import Qa2CapApprovalModal from '@/Components/Qa2CapApprovalModal.vue';
 import PurchaseRequisitionCommentSection from '@/Components/PurchaseRequisitionCommentSection.vue';
@@ -6629,6 +6630,9 @@ watch(locale, () => {
                                             </div>
                                         </template>
                                     </div>
+
+                                    <!-- CVCC CAPA untuk regional yang di-tag -->
+                                    <CvccRegionalCapaCard :is-night="isNight" compact />
 
                                     <!-- Training Plan — selalu terlihat di area profil -->
                                     <div class="mt-3">
