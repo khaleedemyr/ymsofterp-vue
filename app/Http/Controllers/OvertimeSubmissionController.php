@@ -30,7 +30,7 @@ class OvertimeSubmissionController extends Controller
                 'items.user:id,id_outlet',
                 'items.user.outlet:id_outlet,nama_outlet',
             ])
-            ->withCount('items')
+            ->withSum('items as total_hours', 'requested_hours')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {
@@ -197,7 +197,7 @@ class OvertimeSubmissionController extends Controller
                 'items.user:id,id_outlet',
                 'items.user.outlet:id_outlet,nama_outlet',
             ])
-            ->withCount('items')
+            ->withSum('items as total_hours', 'requested_hours')
             ->withCount(['items as employee_count' => fn ($q) => $q->select(DB::raw('COUNT(DISTINCT user_id)'))])
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {

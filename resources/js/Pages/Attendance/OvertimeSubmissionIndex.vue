@@ -49,7 +49,7 @@
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Approver</th>
                 <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Karyawan</th>
-                <th class="px-4 py-3 text-right font-semibold text-gray-700">Jumlah Item</th>
+                <th class="px-4 py-3 text-right font-semibold text-gray-700">Total Jam Lembur</th>
                 <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
               </tr>
             </thead>
@@ -100,7 +100,7 @@
                   </ul>
                 </td>
                 <td class="px-4 py-3 text-right">{{ row.employee_count || 0 }}</td>
-                <td class="px-4 py-3 text-right">{{ row.items_count || 0 }}</td>
+                <td class="px-4 py-3 text-right font-semibold text-indigo-700">{{ formatHours(row.total_hours) }}</td>
                 <td class="px-4 py-3 text-right whitespace-nowrap">
                   <Link
                     :href="route('overtime-submissions.show', row.id)"
@@ -212,6 +212,13 @@ function changePerPage() {
 function formatDate(value) {
   if (!value) return '-';
   return new Date(value).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatHours(value) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return '0 jam';
+  const rounded = Math.round(n * 100) / 100;
+  return `${rounded} jam`;
 }
 
 function formatDateTime(value) {
