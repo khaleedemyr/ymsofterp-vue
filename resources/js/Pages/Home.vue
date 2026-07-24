@@ -17,7 +17,6 @@ import EmployeeResignationApprovalCard from '@/Components/EmployeeResignationApp
 import CctvAccessRequestApprovalCard from '@/Components/CctvAccessRequestApprovalCard.vue';
 import SopDevelopmentCompletionApprovalCard from '@/Components/SopDevelopmentCompletionApprovalCard.vue';
 import OvertimeSubmissionApprovalCard from '@/Components/OvertimeSubmissionApprovalCard.vue';
-import WfhRequestApprovalCard from '@/Components/WfhRequestApprovalCard.vue';
 import AssetModuleApprovalModal from '@/Components/AssetModuleApprovalModal.vue';
 import JustAcademyHomeSchedulesCard from '@/Components/JustAcademy/JustAcademyHomeSchedulesCard.vue';
 import RegionalVisitTargetCard from '@/Components/RegionalVisitTargetCard.vue';
@@ -71,6 +70,15 @@ const isSelectingPrApprovals = ref(false); // Toggle select mode
 const showLightbox = ref(false);
 const lightboxImage = ref(null);
 const lightboxType = ref('pr'); // 'pr' or 'po'
+
+// WFH Request approvals
+const pendingWfhApprovals = ref([]);
+const loadingWfhApprovals = ref(false);
+const showWfhApprovalModal = ref(false);
+const selectedWfhApproval = ref(null);
+const selectedWfhApprovals = ref(new Set());
+const isSelectingWfhApprovals = ref(false);
+const showAllWfhModal = ref(false);
 
 // Purchase Order Ops approvals
 const pendingPoOpsApprovals = ref([]);
@@ -810,6 +818,11 @@ const prApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const wfhApprovalCount = computed(() => {
+    const count = pendingWfhApprovals.value.length;
+    return count > 0 ? count : 0;
+});
+
 const poOpsApprovalCount = computed(() => {
     const count = pendingPoOpsApprovals.value.length;
     return count > 0 ? count : 0;
@@ -1115,6 +1128,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingMovementApprovals.value = true;
     loadingCoachingApprovals.value = true;
     loadingCorrectionApprovals.value = true;
+    loadingWfhApprovals.value = true;
     
     try {
         const response = await axios.get('/api/pending-approvals/all', {
@@ -1126,6 +1140,7 @@ async function loadAllPendingApprovalsOptimized() {
             
             // Assign ke variabel yang sudah ada
             pendingPrApprovals.value = data.purchase_requisitions || [];
+            pendingWfhApprovals.value = data.wfh_requests || [];
             pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
             pendingContraBonApprovals.value = data.contra_bons || [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
@@ -1151,6 +1166,7 @@ async function loadAllPendingApprovalsOptimized() {
             
             // Set loading states to false
             loadingPrApprovals.value = false;
+            loadingWfhApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1176,6 +1192,7 @@ async function loadAllPendingApprovalsOptimized() {
         } else {
             // Set loading states to false jika response tidak success
             loadingPrApprovals.value = false;
+            loadingWfhApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1198,6 +1215,7 @@ async function loadAllPendingApprovalsOptimized() {
         console.warn('⚠️ Optimized endpoint failed, falling back to individual endpoints:', error);
         // Set loading states to false untuk fallback
         loadingPrApprovals.value = false;
+        loadingWfhApprovals.value = false;
         loadingPoOpsApprovals.value = false;
         loadingContraBonApprovals.value = false;
         loadingCategoryCostApprovals.value = false;
@@ -1229,6 +1247,20 @@ async function loadPendingPrApprovals() {
         console.error('Error loading pending PR approvals:', error);
     } finally {
         loadingPrApprovals.value = false;
+    }
+}
+
+async function loadPendingWfhApprovals() {
+    loadingWfhApprovals.value = true;
+    try {
+        const response = await axios.get('/api/wfh-requests/pending-approvals');
+        if (response.data.success) {
+            pendingWfhApprovals.value = response.data.requests || [];
+        }
+    } catch (error) {
+        console.error('Error loading pending WFH approvals:', error);
+    } finally {
+        loadingWfhApprovals.value = false;
     }
 }
 
@@ -6271,12 +6303,143 @@ function handleOvertimeSubmissionRejected(submissionId) {
     console.log('Overtime Submission rejected:', submissionId);
 }
 
-function handleWfhRequestApproved(requestId) {
-    console.log('WFH Request approved:', requestId);
+async function showWfhApprovalDetails(wfhId) {
+    try {
+        if (showAllWfhModal.value) {
+            showAllWfhModal.value = false;
+        }
+        const response = await axios.get(`/api/wfh-requests/${wfhId}/approval-details`);
+        if (response.data.success) {
+            selectedWfhApproval.value = response.data.request;
+            showWfhApprovalModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal memuat detail WFH', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading WFH approval details:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail WFH', 'error');
+    }
 }
 
-function handleWfhRequestRejected(requestId) {
-    console.log('WFH Request rejected:', requestId);
+function toggleWfhApprovalSelection(wfhId) {
+    if (selectedWfhApprovals.value.has(wfhId)) {
+        selectedWfhApprovals.value.delete(wfhId);
+    } else {
+        selectedWfhApprovals.value.add(wfhId);
+    }
+}
+
+function selectAllWfhApprovals() {
+    pendingWfhApprovals.value.forEach((item) => {
+        selectedWfhApprovals.value.add(item.id);
+    });
+}
+
+async function approveMultipleWfh() {
+    if (selectedWfhApprovals.value.size === 0) {
+        Swal.fire('Warning', 'Pilih minimal satu pengajuan WFH untuk di-approve', 'warning');
+        return;
+    }
+
+    const result = await Swal.fire({
+        title: 'Approve Multiple WFH?',
+        text: `Apakah Anda yakin ingin approve ${selectedWfhApprovals.value.size} pengajuan WFH?`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Ya, Approve',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#14b8a6',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Sedang memproses approval...',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading(),
+        });
+
+        const ids = Array.from(selectedWfhApprovals.value);
+        const results = await Promise.all(
+            ids.map((id) => axios.post(`/api/wfh-requests/${id}/approve`, { comments: '' }).catch((err) => ({ error: err, id })))
+        );
+        const success = results.filter((r) => !r.error).length;
+        const failed = results.filter((r) => r.error).length;
+
+        selectedWfhApprovals.value.clear();
+        isSelectingWfhApprovals.value = false;
+        await loadPendingWfhApprovals();
+
+        if (failed === 0) {
+            Swal.fire('Success', `${success} pengajuan WFH berhasil disetujui`, 'success');
+        } else {
+            Swal.fire('Partial Success', `${success} berhasil, ${failed} gagal`, 'warning');
+        }
+    } catch (error) {
+        console.error('Error approving multiple WFH:', error);
+        Swal.fire('Error', 'Gagal menyetujui WFH', 'error');
+    }
+}
+
+async function approveWfh(wfhId) {
+    try {
+        const response = await axios.post(`/api/wfh-requests/${wfhId}/approve`, { comments: '' });
+        if (response.data?.success) {
+            Swal.fire('Success', response.data.message || 'Pengajuan WFH berhasil disetujui', 'success');
+            showWfhApprovalModal.value = false;
+            await loadPendingWfhApprovals();
+        } else {
+            Swal.fire('Error', response.data?.message || 'Gagal menyetujui WFH', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving WFH:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui WFH', 'error');
+    }
+}
+
+function showRejectWfhModal(wfhId) {
+    Swal.fire({
+        title: 'Tolak Pengajuan WFH',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan penolakan harus diisi!';
+        },
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        try {
+            const response = await axios.post(`/api/wfh-requests/${wfhId}/reject`, {
+                rejection_reason: result.value,
+            });
+            if (response.data?.success) {
+                Swal.fire('Success', response.data.message || 'Pengajuan WFH berhasil ditolak', 'success');
+                showWfhApprovalModal.value = false;
+                await loadPendingWfhApprovals();
+            } else {
+                Swal.fire('Error', response.data?.message || 'Gagal menolak WFH', 'error');
+            }
+        } catch (error) {
+            console.error('Error rejecting WFH:', error);
+            Swal.fire('Error', error.response?.data?.message || 'Gagal menolak WFH', 'error');
+        }
+    });
+}
+
+function openAllWfhModal() {
+    showAllWfhModal.value = true;
+}
+
+function formatWfhTime(value) {
+    if (!value) return '-';
+    return String(value).substring(0, 5);
 }
 
 onMounted(async () => {
@@ -6294,6 +6457,7 @@ onMounted(async () => {
         console.log('⚠️ Using individual endpoints (fallback)');
         loadPendingApprovals();
         loadPendingPrApprovals();
+        loadPendingWfhApprovals();
         loadPendingPoOpsApprovals();
         loadPendingCategoryCostApprovals();
         loadPendingStockAdjustmentApprovals();
@@ -7007,6 +7171,115 @@ watch(locale, () => {
                     </div>
                 </div>
 
+                <!-- WFH Request Approval Section -->
+                <div v-if="wfhApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-teal-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-house-laptop mr-2 text-teal-500"></i>
+                                    WFH Approval
+                                </h3>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button
+                                    v-if="!isSelectingWfhApprovals"
+                                    @click.stop="isSelectingWfhApprovals = true"
+                                    class="text-xs bg-teal-500 text-white px-2 py-1 rounded hover:bg-teal-600 transition"
+                                >
+                                    <i class="fa fa-check-square mr-1"></i>Multi Approve
+                                </button>
+                                <button
+                                    v-else
+                                    @click.stop="isSelectingWfhApprovals = false; selectedWfhApprovals.clear()"
+                                    class="text-xs bg-gray-500 text-white px-2 py-1 rounded hover:bg-gray-600 transition"
+                                >
+                                    <i class="fa fa-times mr-1"></i>Cancel
+                                </button>
+                                <div class="bg-teal-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                    {{ wfhApprovalCount }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="isSelectingWfhApprovals && selectedWfhApprovals.size > 0" class="mb-3 p-2 bg-teal-100 dark:bg-teal-900/30 rounded-lg flex items-center justify-between">
+                            <span class="text-sm font-medium text-teal-800 dark:text-teal-200">
+                                {{ selectedWfhApprovals.size }} item dipilih
+                            </span>
+                            <div class="flex gap-2">
+                                <button
+                                    @click="selectAllWfhApprovals"
+                                    class="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition"
+                                >
+                                    <i class="fa fa-check-double mr-1"></i>Select All
+                                </button>
+                                <button
+                                    @click="approveMultipleWfh"
+                                    class="text-xs bg-teal-600 text-white px-2 py-1 rounded hover:bg-teal-700 transition"
+                                >
+                                    <i class="fa fa-check mr-1"></i>Approve Selected
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-if="loadingWfhApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-teal-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="wfh in pendingWfhApprovals.slice(0, 3)"
+                                :key="'wfh-approval-' + wfh.id"
+                                @click="isSelectingWfhApprovals ? toggleWfhApprovalSelection(wfh.id) : showWfhApprovalDetails(wfh.id)"
+                                class="p-3 rounded-lg transition-all duration-200"
+                                :class="[
+                                    isSelectingWfhApprovals ? 'cursor-default' : 'cursor-pointer hover:scale-105',
+                                    isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-teal-50 hover:bg-teal-100',
+                                    selectedWfhApprovals.has(wfh.id) ? 'ring-2 ring-teal-500' : ''
+                                ]"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2 flex-1">
+                                        <input
+                                            v-if="isSelectingWfhApprovals"
+                                            type="checkbox"
+                                            :checked="selectedWfhApprovals.has(wfh.id)"
+                                            @click.stop="toggleWfhApprovalSelection(wfh.id)"
+                                            class="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                                        />
+                                        <div class="flex-1">
+                                            <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                                {{ wfh.number }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                                {{ wfh.user?.nama_lengkap || wfh.creator?.nama_lengkap || '-' }}
+                                            </div>
+                                            <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                                <i class="fa fa-calendar mr-1 text-teal-500"></i>
+                                                {{ formatDate(wfh.wfh_date) }}
+                                                · {{ wfh.shift_name || '-' }}
+                                                ({{ formatWfhTime(wfh.time_start) }} – {{ formatWfhTime(wfh.time_end) }})
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-teal-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ wfh.approver_name || 'WFH Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingWfhApprovals.length > 3" class="text-center pt-2">
+                                <button @click="openAllWfhModal" class="text-sm text-teal-500 hover:text-teal-700 font-medium">
+                                    Lihat {{ pendingWfhApprovals.length - 3 }} WFH lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Purchase Order Ops Approval Section -->
                 <div v-if="poOpsApprovalCount > 0" class="flex-shrink-0 mb-4">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
@@ -7362,13 +7635,6 @@ watch(locale, () => {
                     :is-night="isNight"
                     @approved="handleOvertimeSubmissionApproved"
                     @rejected="handleOvertimeSubmissionRejected"
-                />
-
-                <!-- WFH Request Approval Section -->
-                <WfhRequestApprovalCard
-                    :is-night="isNight"
-                    @approved="handleWfhRequestApproved"
-                    @rejected="handleWfhRequestRejected"
                 />
 
                 <!-- Contra Bon Approval Section -->
@@ -9165,6 +9431,140 @@ watch(locale, () => {
                             class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
                         <i class="fa fa-times mr-2"></i>Reject
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WFH Approval Detail Modal -->
+        <div v-if="showWfhApprovalModal && selectedWfhApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showWfhApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa-solid fa-house-laptop mr-2 text-teal-500"></i>
+                        Detail Pengajuan WFH
+                    </h3>
+                    <button @click="showWfhApprovalModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Informasi Dasar</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Nomor</div>
+                                <div class="text-lg font-semibold text-gray-900 dark:text-white">{{ selectedWfhApproval.number }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Status</div>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    {{ selectedWfhApproval.status }}
+                                </span>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Karyawan</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedWfhApproval.user?.nama_lengkap || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Jabatan</div>
+                                <div class="text-gray-900 dark:text-white">{{ selectedWfhApproval.user?.jabatan?.nama_jabatan || '-' }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Tanggal WFH</div>
+                                <div class="text-gray-900 dark:text-white">{{ formatDate(selectedWfhApproval.wfh_date) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Shift</div>
+                                <div class="text-gray-900 dark:text-white">
+                                    {{ selectedWfhApproval.shift_name || '-' }}
+                                    ({{ formatWfhTime(selectedWfhApproval.time_start) }} – {{ formatWfhTime(selectedWfhApproval.time_end) }})
+                                </div>
+                            </div>
+                            <div class="md:col-span-2">
+                                <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Alasan</div>
+                                <div class="text-gray-900 dark:text-white mt-1 whitespace-pre-wrap">{{ selectedWfhApproval.reason }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">List yang dikerjakan</h4>
+                        <ol class="list-decimal list-inside space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                            <li v-for="task in selectedWfhApproval.tasks || []" :key="task.id">{{ task.description }}</li>
+                        </ol>
+                    </div>
+
+                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-2">
+                            <div
+                                v-for="flow in (selectedWfhApproval.approval_flows || []).slice().sort((a, b) => a.approval_level - b.approval_level)"
+                                :key="flow.id"
+                                class="flex items-center justify-between p-3 rounded-lg"
+                                :class="flow.status === 'APPROVED' ? 'bg-green-100' : flow.status === 'REJECTED' ? 'bg-red-100' : 'bg-gray-100'"
+                            >
+                                <div>
+                                    <div class="text-xs font-semibold text-teal-600">Level {{ flow.approval_level }}</div>
+                                    <div class="font-medium text-gray-900">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <span
+                                    class="px-2 py-1 rounded text-xs font-medium text-white"
+                                    :class="flow.status === 'APPROVED' ? 'bg-green-500' : flow.status === 'REJECTED' ? 'bg-red-500' : 'bg-amber-500'"
+                                >
+                                    {{ flow.status }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button
+                        @click="showWfhApprovalModal = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Tutup
+                    </button>
+                    <button
+                        v-if="selectedWfhApproval.can_approve"
+                        @click="approveWfh(selectedWfhApproval.id)"
+                        class="px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors"
+                    >
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button
+                        v-if="selectedWfhApproval.can_approve"
+                        @click="showRejectWfhModal(selectedWfhApproval.id)"
+                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                    >
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All WFH Modal -->
+        <div v-if="showAllWfhModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllWfhModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Semua WFH Pending</h3>
+                    <button @click="showAllWfhModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div
+                        v-for="wfh in pendingWfhApprovals"
+                        :key="'all-wfh-' + wfh.id"
+                        @click="showWfhApprovalDetails(wfh.id)"
+                        class="p-3 rounded-lg cursor-pointer border hover:border-teal-400 bg-gray-50 hover:bg-teal-50"
+                    >
+                        <div class="font-semibold text-sm">{{ wfh.number }}</div>
+                        <div class="text-xs text-gray-500">
+                            {{ wfh.user?.nama_lengkap || '-' }} · {{ formatDate(wfh.wfh_date) }} · {{ wfh.approver_name || `Level ${wfh.approval_level || 1}` }}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

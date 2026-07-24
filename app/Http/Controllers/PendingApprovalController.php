@@ -34,7 +34,7 @@ class PendingApprovalController extends Controller
 
             // OPTIMASI: Cache hasil untuk 120 detik per user
             // Cache key berdasarkan user ID untuk personalisasi
-            $cacheKey = 'all_pending_approvals_v2_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v3_' . $user->id;
             $cacheTTL = 120; // 120 detik
             
             // Check if data is cached (before calling Cache::remember)
@@ -74,6 +74,7 @@ class PendingApprovalController extends Controller
                 'asset_owner_transfer' => [],
                 'npd_plan_reports' => [],
                 'employee_onboardings' => [],
+                'wfh_requests' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -534,6 +535,21 @@ class PendingApprovalController extends Controller
                 Log::error('Error loading SOP Development Completion approvals: ' . $e->getMessage());
             }
 
+            // 28. WFH Requests
+            try {
+                $wfhController = app(\App\Http\Controllers\WfhRequestController::class);
+                $wfhResponse = $wfhController->getPendingApprovals();
+                if ($wfhResponse->getStatusCode() === 200) {
+                    $wfhData = json_decode($wfhResponse->getContent(), true);
+                    $data['wfh_requests'] = $wfhData['requests'] ?? [];
+                    if ($limit > 0 && count($data['wfh_requests']) > $limit) {
+                        $data['wfh_requests'] = array_slice($data['wfh_requests'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading WFH Request approvals: ' . $e->getMessage());
+            }
+
                 return $data;
             });
             
@@ -575,7 +591,7 @@ class PendingApprovalController extends Controller
                 ], 401);
             }
 
-            $cacheKey = 'all_pending_approvals_v2_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v3_' . $user->id;
             Cache::forget($cacheKey);
             
             return response()->json([

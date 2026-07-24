@@ -7,6 +7,7 @@ use App\Models\WfhRequest;
 use App\Models\WfhRequestApprovalFlow;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -168,6 +169,10 @@ class WfhRequestController extends Controller
             $this->notifyNextApprover($wfh);
 
             DB::commit();
+            $this->clearPendingApprovalsCache($user->id);
+            foreach ($approverIds as $approverId) {
+                $this->clearPendingApprovalsCache($approverId);
+            }
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -357,6 +362,12 @@ class WfhRequestController extends Controller
 
             DB::commit();
 
+            $this->clearPendingApprovalsCache($user->id);
+            $this->clearPendingApprovalsCache((int) $wfh->created_by);
+            foreach ($wfh->approvalFlows as $flowRow) {
+                $this->clearPendingApprovalsCache((int) $flowRow->approver_id);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => $stillPending
@@ -414,6 +425,12 @@ class WfhRequestController extends Controller
             $this->notifyCreatorRejected($wfh, $comments);
 
             DB::commit();
+
+            $this->clearPendingApprovalsCache($user->id);
+            $this->clearPendingApprovalsCache((int) $wfh->created_by);
+            foreach ($wfh->approvalFlows as $flowRow) {
+                $this->clearPendingApprovalsCache((int) $flowRow->approver_id);
+            }
 
             return response()->json([
                 'success' => true,
@@ -711,5 +728,15 @@ class WfhRequestController extends Controller
     private function isSuperadmin($user): bool
     {
         return $user && (string) ($user->id_role ?? '') === '5af56935b011a';
+    }
+
+    private function clearPendingApprovalsCache(?int $userId = null): void
+    {
+        $ids = collect([$userId, auth()->id()])->filter()->unique();
+        foreach ($ids as $id) {
+            Cache::forget('all_pending_approvals_v3_'.$id);
+            Cache::forget('all_pending_approvals_v2_'.$id);
+            Cache::forget('all_pending_approvals_'.$id);
+        }
     }
 }
