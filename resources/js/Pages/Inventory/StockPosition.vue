@@ -400,6 +400,8 @@ function formatReference(card) {
     ref += ' #' + card.transfer_number;
   } else if (card.reference_type === 'delivery_order' && card.do_number) {
     ref += ' #' + card.do_number;
+  } else if (card.reference_type === 'repack' && (card.repack_number || card.reference_id)) {
+    ref += ' #' + (card.repack_number || card.reference_id);
   } else if (card.reference_id) {
     ref += ' #' + card.reference_id;
   }

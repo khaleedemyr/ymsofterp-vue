@@ -227,6 +227,8 @@ function formatReference(card) {
     ref += ' #' + card.transfer_number;
   } else if (card.reference_type === 'delivery_order' && card.do_number) {
     ref += ' #' + card.do_number;
+  } else if (card.reference_type === 'repack' && (card.repack_number || card.reference_id)) {
+    ref += ' #' + (card.repack_number || card.reference_id);
   } else if (card.reference_id) {
     ref += ' #' + card.reference_id;
   }
@@ -325,7 +327,10 @@ const filteredCards = computed(() => {
     (row.item_name && row.item_name.toLowerCase().includes(s)) ||
     (row.warehouse_name && row.warehouse_name.toLowerCase().includes(s)) ||
     (row.reference_type && row.reference_type.toLowerCase().includes(s)) ||
-    (row.description && row.description.toLowerCase().includes(s))
+    (row.description && row.description.toLowerCase().includes(s)) ||
+    (row.repack_item_hasil_name && row.repack_item_hasil_name.toLowerCase().includes(s)) ||
+    (row.repack_item_asal_name && row.repack_item_asal_name.toLowerCase().includes(s)) ||
+    (row.repack_counterpart_name && row.repack_counterpart_name.toLowerCase().includes(s))
   );
 });
 

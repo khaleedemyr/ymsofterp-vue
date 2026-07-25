@@ -245,6 +245,7 @@ class InventoryReportController extends Controller
                     'i.small_conversion_qty',
                     'i.medium_conversion_qty'
                 );
+            $this->applyWarehouseStockCardRepackJoins($query);
             
             // Apply filters
             if ($itemId) $query->where('i.id', $itemId);
@@ -438,6 +439,7 @@ class InventoryReportController extends Controller
                     'i.small_conversion_qty',
                     'i.medium_conversion_qty'
                 );
+            $this->applyWarehouseStockCardRepackJoins($query);
 
             if ($itemId) {
                 $query->where('i.id', $itemId);
@@ -672,6 +674,7 @@ class InventoryReportController extends Controller
                 'i.small_conversion_qty',
                 'i.medium_conversion_qty'
             );
+        $this->applyWarehouseStockCardRepackJoins($query);
         
         $query->orderBy('c.date')->orderBy('c.id');
         $data = $query->get();
@@ -684,6 +687,28 @@ class InventoryReportController extends Controller
             'saldo_awal' => $saldoAwal,
             'count' => count($groupedCards),
         ]);
+    }
+
+    /**
+     * Additive left-joins for repack tracking on stock card.
+     * Does not filter rows or change qty/saldo calculations.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     */
+    private function applyWarehouseStockCardRepackJoins($query): void
+    {
+        $query
+            ->leftJoin('food_repacks as rp', function ($join) {
+                $join->on('c.reference_id', '=', 'rp.id')
+                    ->where('c.reference_type', '=', 'repack');
+            })
+            ->leftJoin('items as rp_asal', 'rp.item_asal_id', '=', 'rp_asal.id')
+            ->leftJoin('items as rp_hasil', 'rp.item_hasil_id', '=', 'rp_hasil.id')
+            ->addSelect([
+                'rp.repack_number as repack_number',
+                'rp_asal.name as repack_item_asal_name',
+                'rp_hasil.name as repack_item_hasil_name',
+            ]);
     }
 
     /**
@@ -705,6 +730,27 @@ class InventoryReportController extends Controller
                     }
                 }
                 $row->description = $description;
+            }
+
+            // Enrich display only: show counterpart item for repack OUT/IN.
+            if (($row->reference_type ?? null) === 'repack') {
+                $base = trim((string) ($row->description ?? ''));
+                $hasilName = trim((string) ($row->repack_item_hasil_name ?? ''));
+                $asalName = trim((string) ($row->repack_item_asal_name ?? ''));
+                $outQty = (float) ($row->out_qty_small ?? 0)
+                    + (float) ($row->out_qty_medium ?? 0)
+                    + (float) ($row->out_qty_large ?? 0);
+                $inQty = (float) ($row->in_qty_small ?? 0)
+                    + (float) ($row->in_qty_medium ?? 0)
+                    + (float) ($row->in_qty_large ?? 0);
+
+                if ($outQty > 0 && $hasilName !== '' && stripos($base, $hasilName) === false) {
+                    $row->description = ($base !== '' ? $base : 'Repack OUT').' → '.$hasilName;
+                    $row->repack_counterpart_name = $hasilName;
+                } elseif ($inQty > 0 && $asalName !== '' && stripos($base, $asalName) === false) {
+                    $row->description = ($base !== '' ? $base : 'Repack IN').' ← '.$asalName;
+                    $row->repack_counterpart_name = $asalName;
+                }
             }
 
             return $row;
