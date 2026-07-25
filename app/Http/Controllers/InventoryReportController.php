@@ -253,8 +253,8 @@ class InventoryReportController extends Controller
             if ($from) $query->whereDate('c.date', '>=', $from);
             if ($to) $query->whereDate('c.date', '<=', $to);
             
-            // Add pagination untuk mencegah memory overflow
-            $query->orderBy('c.date')->orderBy('c.id');
+            // Chronological: date, then created_at (so mid-day adjustments sit correctly), then id
+            $query->orderBy('c.date')->orderBy('c.created_at')->orderBy('c.id');
             
             // Limit hasil untuk performa yang lebih baik
             $query->limit(10000);
@@ -454,7 +454,7 @@ class InventoryReportController extends Controller
                 $query->whereDate('c.date', '<=', $to);
             }
 
-            $query->orderBy('c.date')->orderBy('c.id')->limit(10000);
+            $query->orderBy('c.date')->orderBy('c.created_at')->orderBy('c.id')->limit(10000);
             $data = $query->get();
 
             $data = $this->mapWarehouseStockCardRows($data);
@@ -676,7 +676,7 @@ class InventoryReportController extends Controller
             );
         $this->applyWarehouseStockCardRepackJoins($query);
         
-        $query->orderBy('c.date')->orderBy('c.id');
+        $query->orderBy('c.date')->orderBy('c.created_at')->orderBy('c.id');
         $data = $query->get();
         
         $data = $this->mapWarehouseStockCardRows($data);

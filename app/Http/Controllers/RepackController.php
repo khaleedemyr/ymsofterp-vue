@@ -236,6 +236,7 @@ class RepackController extends Controller
 
         $itemAsal = Item::findOrFail($request->item_asal_id);
         $itemHasil = Item::findOrFail($request->item_hasil_id);
+        $sameItem = (int) $request->item_asal_id === (int) $request->item_hasil_id;
 
         $qtyHasilConv = $this->convertQtyByUnit($itemHasil, (int) $request->unit_hasil_id, $qtyHasil);
         $qtyAsalConv = $this->convertSmallToAll($itemAsal, $qtyHasilConv['small']);
@@ -253,7 +254,9 @@ class RepackController extends Controller
                 throw new \RuntimeException('Inventory item asal belum tersedia.');
             }
 
-            $inventoryHasil = DB::table('food_inventory_items')->where('item_id', $itemHasil->id)->first();
+            $inventoryHasil = $sameItem
+                ? $inventoryAsal
+                : DB::table('food_inventory_items')->where('item_id', $itemHasil->id)->first();
             if (!$inventoryHasil) {
                 $inventoryHasilId = DB::table('food_inventory_items')->insertGetId([
                     'item_id' => $itemHasil->id,
@@ -289,37 +292,57 @@ class RepackController extends Controller
                 $costLarge = $costMedium * $mediumConvAsal;
             }
 
-            $newAsalQtySmall = (float) $stockAsal->qty_small - $qtyAsalConv['small'];
-            $newAsalQtyMedium = (float) ($stockAsal->qty_medium ?? 0) - $qtyAsalConv['medium'];
-            $newAsalQtyLarge = (float) ($stockAsal->qty_large ?? 0) - $qtyAsalConv['large'];
-            $newAsalValue = (float) ($stockAsal->value ?? 0) - ($qtyAsalConv['small'] * $costSmall);
-
-            DB::table('food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryAsal->id)
-                ->where('warehouse_id', $warehouseId)
-                ->update([
-                    'qty_small' => $newAsalQtySmall,
-                    'qty_medium' => $newAsalQtyMedium,
-                    'qty_large' => $newAsalQtyLarge,
-                    'value' => $newAsalValue,
-                    'updated_at' => now(),
-                ]);
-
-            $stockHasil = DB::table('food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryHasil->id)
-                ->where('warehouse_id', $warehouseId)
-                ->first();
-
-            if ($stockHasil) {
-                $newHasilQtySmall = (float) $stockHasil->qty_small + $qtyHasilConv['small'];
-                $newHasilQtyMedium = (float) ($stockHasil->qty_medium ?? 0) + $qtyHasilConv['medium'];
-                $newHasilQtyLarge = (float) ($stockHasil->qty_large ?? 0) + $qtyHasilConv['large'];
-                $newHasilValue = (float) ($stockHasil->value ?? 0) + ($qtyHasilConv['small'] * $costSmall);
+            // Same-item repack = label/serial only. Skip stock OUT/IN + kartu stock.
+            if (!$sameItem) {
+                $newAsalQtySmall = (float) $stockAsal->qty_small - $qtyAsalConv['small'];
+                $newAsalQtyMedium = (float) ($stockAsal->qty_medium ?? 0) - $qtyAsalConv['medium'];
+                $newAsalQtyLarge = (float) ($stockAsal->qty_large ?? 0) - $qtyAsalConv['large'];
+                $newAsalValue = (float) ($stockAsal->value ?? 0) - ($qtyAsalConv['small'] * $costSmall);
 
                 DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryHasil->id)
+                    ->where('inventory_item_id', $inventoryAsal->id)
                     ->where('warehouse_id', $warehouseId)
                     ->update([
+                        'qty_small' => $newAsalQtySmall,
+                        'qty_medium' => $newAsalQtyMedium,
+                        'qty_large' => $newAsalQtyLarge,
+                        'value' => $newAsalValue,
+                        'updated_at' => now(),
+                    ]);
+
+                $stockHasil = DB::table('food_inventory_stocks')
+                    ->where('inventory_item_id', $inventoryHasil->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+
+                if ($stockHasil) {
+                    $newHasilQtySmall = (float) $stockHasil->qty_small + $qtyHasilConv['small'];
+                    $newHasilQtyMedium = (float) ($stockHasil->qty_medium ?? 0) + $qtyHasilConv['medium'];
+                    $newHasilQtyLarge = (float) ($stockHasil->qty_large ?? 0) + $qtyHasilConv['large'];
+                    $newHasilValue = (float) ($stockHasil->value ?? 0) + ($qtyHasilConv['small'] * $costSmall);
+
+                    DB::table('food_inventory_stocks')
+                        ->where('inventory_item_id', $inventoryHasil->id)
+                        ->where('warehouse_id', $warehouseId)
+                        ->update([
+                            'qty_small' => $newHasilQtySmall,
+                            'qty_medium' => $newHasilQtyMedium,
+                            'qty_large' => $newHasilQtyLarge,
+                            'value' => $newHasilValue,
+                            'last_cost_small' => $costSmall,
+                            'last_cost_medium' => $costMedium,
+                            'last_cost_large' => $costLarge,
+                            'updated_at' => now(),
+                        ]);
+                } else {
+                    $newHasilQtySmall = $qtyHasilConv['small'];
+                    $newHasilQtyMedium = $qtyHasilConv['medium'];
+                    $newHasilQtyLarge = $qtyHasilConv['large'];
+                    $newHasilValue = $qtyHasilConv['small'] * $costSmall;
+
+                    DB::table('food_inventory_stocks')->insert([
+                        'inventory_item_id' => $inventoryHasil->id,
+                        'warehouse_id' => $warehouseId,
                         'qty_small' => $newHasilQtySmall,
                         'qty_medium' => $newHasilQtyMedium,
                         'qty_large' => $newHasilQtyLarge,
@@ -327,27 +350,10 @@ class RepackController extends Controller
                         'last_cost_small' => $costSmall,
                         'last_cost_medium' => $costMedium,
                         'last_cost_large' => $costLarge,
+                        'created_at' => now(),
                         'updated_at' => now(),
                     ]);
-            } else {
-                $newHasilQtySmall = $qtyHasilConv['small'];
-                $newHasilQtyMedium = $qtyHasilConv['medium'];
-                $newHasilQtyLarge = $qtyHasilConv['large'];
-                $newHasilValue = $qtyHasilConv['small'] * $costSmall;
-
-                DB::table('food_inventory_stocks')->insert([
-                    'inventory_item_id' => $inventoryHasil->id,
-                    'warehouse_id' => $warehouseId,
-                    'qty_small' => $newHasilQtySmall,
-                    'qty_medium' => $newHasilQtyMedium,
-                    'qty_large' => $newHasilQtyLarge,
-                    'value' => $newHasilValue,
-                    'last_cost_small' => $costSmall,
-                    'last_cost_medium' => $costMedium,
-                    'last_cost_large' => $costLarge,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                }
             }
 
             if ($isUpdate) {
@@ -371,50 +377,64 @@ class RepackController extends Controller
                 ]);
             }
 
-            DB::table('food_inventory_cards')->insert([
-                [
-                    'inventory_item_id' => $inventoryAsal->id,
-                    'warehouse_id' => $warehouseId,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'repack',
-                    'reference_id' => $repack->id,
-                    'out_qty_small' => $qtyAsalConv['small'],
-                    'out_qty_medium' => $qtyAsalConv['medium'],
-                    'out_qty_large' => $qtyAsalConv['large'],
-                    'cost_per_small' => $costSmall,
-                    'cost_per_medium' => $costMedium,
-                    'cost_per_large' => $costLarge,
-                    'value_out' => $qtyAsalConv['small'] * $costSmall,
-                    'saldo_qty_small' => $newAsalQtySmall,
-                    'saldo_qty_medium' => $newAsalQtyMedium,
-                    'saldo_qty_large' => $newAsalQtyLarge,
-                    'saldo_value' => $newAsalValue,
-                    'description' => 'Repack OUT ' . ($itemAsal->name ?? ''),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ],
-                [
-                    'inventory_item_id' => $inventoryHasil->id,
-                    'warehouse_id' => $warehouseId,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'repack',
-                    'reference_id' => $repack->id,
-                    'in_qty_small' => $qtyHasilConv['small'],
-                    'in_qty_medium' => $qtyHasilConv['medium'],
-                    'in_qty_large' => $qtyHasilConv['large'],
-                    'cost_per_small' => $costSmall,
-                    'cost_per_medium' => $costMedium,
-                    'cost_per_large' => $costLarge,
-                    'value_in' => $qtyHasilConv['small'] * $costSmall,
-                    'saldo_qty_small' => $newHasilQtySmall,
-                    'saldo_qty_medium' => $newHasilQtyMedium,
-                    'saldo_qty_large' => $newHasilQtyLarge,
-                    'saldo_value' => $newHasilValue,
-                    'description' => 'Repack IN ' . ($itemHasil->name ?? ''),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ],
-            ]);
+            if (!$sameItem) {
+                // IMPORTANT: both rows must use identical keys. Laravel multi-row insert
+                // misaligns values when keys differ (historical Repack IN cards were corrupt).
+                $now = now();
+                $cardDate = $now->toDateString();
+                DB::table('food_inventory_cards')->insert([
+                    [
+                        'inventory_item_id' => $inventoryAsal->id,
+                        'warehouse_id' => $warehouseId,
+                        'date' => $cardDate,
+                        'reference_type' => 'repack',
+                        'reference_id' => $repack->id,
+                        'in_qty_small' => 0,
+                        'in_qty_medium' => 0,
+                        'in_qty_large' => 0,
+                        'out_qty_small' => $qtyAsalConv['small'],
+                        'out_qty_medium' => $qtyAsalConv['medium'],
+                        'out_qty_large' => $qtyAsalConv['large'],
+                        'cost_per_small' => $costSmall,
+                        'cost_per_medium' => $costMedium,
+                        'cost_per_large' => $costLarge,
+                        'value_in' => 0,
+                        'value_out' => $qtyAsalConv['small'] * $costSmall,
+                        'saldo_qty_small' => $newAsalQtySmall,
+                        'saldo_qty_medium' => $newAsalQtyMedium,
+                        'saldo_qty_large' => $newAsalQtyLarge,
+                        'saldo_value' => $newAsalValue,
+                        'description' => 'Repack OUT ' . ($itemAsal->name ?? ''),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                    [
+                        'inventory_item_id' => $inventoryHasil->id,
+                        'warehouse_id' => $warehouseId,
+                        'date' => $cardDate,
+                        'reference_type' => 'repack',
+                        'reference_id' => $repack->id,
+                        'in_qty_small' => $qtyHasilConv['small'],
+                        'in_qty_medium' => $qtyHasilConv['medium'],
+                        'in_qty_large' => $qtyHasilConv['large'],
+                        'out_qty_small' => 0,
+                        'out_qty_medium' => 0,
+                        'out_qty_large' => 0,
+                        'cost_per_small' => $costSmall,
+                        'cost_per_medium' => $costMedium,
+                        'cost_per_large' => $costLarge,
+                        'value_in' => $qtyHasilConv['small'] * $costSmall,
+                        'value_out' => 0,
+                        'saldo_qty_small' => $newHasilQtySmall,
+                        'saldo_qty_medium' => $newHasilQtyMedium,
+                        'saldo_qty_large' => $newHasilQtyLarge,
+                        'saldo_value' => $newHasilValue,
+                        'description' => 'Repack IN ' . ($itemHasil->name ?? ''),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ],
+                ]);
+            }
 
             $barcodes = [];
             $serialRows = [];
@@ -466,13 +486,20 @@ class RepackController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'message' => $isUpdate
+            $message = $sameItem
+                ? ($isUpdate
+                    ? 'Repack berhasil diupdate (item sama: tanpa pergerakan stok).'
+                    : 'Repack berhasil disimpan (item sama: tanpa pergerakan stok).')
+                : ($isUpdate
                     ? 'Repack berhasil diupdate dan stok sudah terintegrasi.'
-                    : 'Repack berhasil disimpan dan stok sudah terintegrasi.',
+                    : 'Repack berhasil disimpan dan stok sudah terintegrasi.');
+
+            return response()->json([
+                'message' => $message,
                 'repack' => $repack,
                 'barcodes' => $barcodes,
                 'serial_total' => count($serialRows),
+                'stock_moved' => !$sameItem,
             ]);
         } catch (\Throwable $e) {
             DB::rollBack();

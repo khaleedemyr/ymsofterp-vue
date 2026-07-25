@@ -615,9 +615,9 @@ if (userOutletId && userOutletId != 1) {
                 v-model="correctionType"
                 class="w-full form-input rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
               >
-                <option value="schedule">Schedule Correction</option>
-                <option value="attendance">Attendance Correction</option>
-                <option value="manual_attendance">Manual Attendance Entry</option>
+                <option value="schedule">Working schedule correction</option>
+                <option value="attendance">Working time correction</option>
+                <option value="manual_attendance">No fingerprint in/out correction</option>
               </select>
             </div>
           </div>
@@ -723,7 +723,7 @@ if (userOutletId && userOutletId != 1) {
         <!-- Manual Attendance Entry -->
         <div v-if="correctionType === 'manual_attendance'" class="bg-white rounded-2xl shadow-lg p-6">
           <div class="px-6 py-4 bg-purple-600 text-white -m-6 mb-6">
-            <h3 class="text-lg font-semibold">Manual Attendance Entry</h3>
+            <h3 class="text-lg font-semibold">No fingerprint in/out correction</h3>
             <p class="text-sm opacity-90">Input absen manual untuk karyawan yang lupa absen</p>
           </div>
           
@@ -879,7 +879,7 @@ if (userOutletId && userOutletId != 1) {
         <div class="mt-3">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-medium text-gray-900">
-              Koreksi {{ correctionData.type === 'schedule' ? 'Schedule' : 'Attendance' }}
+              Koreksi {{ correctionData.type === 'schedule' ? 'Working schedule' : 'Working time' }}
             </h3>
             <button @click="closeCorrectionModal" class="text-gray-400 hover:text-gray-600">
               <i class="fa-solid fa-times"></i>

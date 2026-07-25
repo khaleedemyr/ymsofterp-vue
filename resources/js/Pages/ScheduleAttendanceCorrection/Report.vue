@@ -78,8 +78,8 @@
                                 <select v-model="filters.type" 
                                         class="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     <option value="">Semua Tipe</option>
-                                    <option value="schedule">Schedule</option>
-                                    <option value="attendance">Attendance</option>
+                                    <option value="schedule">Working schedule correction</option>
+                                    <option value="attendance">Working time correction</option>
                                 </select>
                             </div>
                         </div>
@@ -200,7 +200,7 @@
                                         <td class="px-4 py-3 whitespace-nowrap">
                                             <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full"
                                                   :class="item.type === 'schedule' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'">
-                                                {{ item.type === 'schedule' ? 'Schedule' : 'Attendance' }}
+                                                {{ item.type === 'schedule' ? 'Working schedule correction' : 'Working time correction' }}
                                             </span>
                                         </td>
                                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
