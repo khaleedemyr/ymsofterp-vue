@@ -78,7 +78,8 @@ function getLeaveStyle(name) {
   if (n.includes('matrimony') || n.includes('nikah') || n.includes('pernikahan')) return { icon: 'fa-heart', tone: 'pink' }
   if (n.includes('public holiday') || n.includes('hari libur')) return { icon: 'fa-star', tone: 'sky' }
   if (n.includes('extra off')) return { icon: 'fa-calendar-plus', tone: 'violet' }
-  if (n.includes('annual') || n.includes('cuti tahunan') || n.includes('cuti')) return { icon: 'fa-umbrella-beach', tone: 'emerald' }
+  if (n.includes('cuti khusus')) return { icon: 'fa-star-of-life', tone: 'indigo' }
+  if (n.includes('annual') || n.includes('cuti tahunan')) return { icon: 'fa-umbrella-beach', tone: 'emerald' }
   if (n.includes('unpaid')) return { icon: 'fa-ban', tone: 'amber' }
   return { icon: 'fa-file-medical', tone: 'slate' }
 }

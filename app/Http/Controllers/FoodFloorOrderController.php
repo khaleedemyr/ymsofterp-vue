@@ -307,16 +307,44 @@ class FoodFloorOrderController extends Controller
 
     private function persistFloorOrderItems(int $floorOrderId, array $processedItems): void
     {
+        $header = DB::table('food_floor_orders as ffo')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
+            ->where('ffo.id', $floorOrderId)
+            ->select('ffo.id_outlet', 'o.region_id')
+            ->first();
+        $regionId = $header && $header->region_id ? (int) $header->region_id : null;
+        $outletId = $header && $header->id_outlet ? (string) $header->id_outlet : null;
+
         foreach ($processedItems as $item) {
             $masterItem = Item::find($item['item_id']);
+            $qty = (float) ($item['qty'] ?? 0);
+            // Jangan percaya harga dari client: hitung ulang dari item_prices + konversi UoM.
+            $resolvedPrice = FloorOrderItemPriceResolver::resolveLineUnitPrice(
+                (int) $item['item_id'],
+                $item['unit'] ?? null,
+                $regionId,
+                $outletId,
+                $masterItem,
+            );
+            $price = $resolvedPrice > 0 ? $resolvedPrice : (float) ($item['price'] ?? 0);
+            $price = FloorOrderItemPriceResolver::guardAgainstLargePriceOnMediumUnit(
+                $price,
+                (int) $item['item_id'],
+                $item['unit'] ?? null,
+                $regionId,
+                $outletId,
+                $masterItem,
+            );
+            $subtotal = round($price * $qty, 2);
+
             DB::table('food_floor_order_items')->insert([
                 'floor_order_id' => $floorOrderId,
                 'item_id' => $item['item_id'],
                 'item_name' => $item['item_name'],
-                'qty' => $item['qty'],
+                'qty' => $qty,
                 'unit' => $item['unit'],
-                'price' => $item['price'],
-                'subtotal' => $item['subtotal'],
+                'price' => $price,
+                'subtotal' => $subtotal,
                 'category_id' => $masterItem ? $masterItem->category_id : null,
                 'warehouse_division_id' => $masterItem ? $masterItem->warehouse_division_id : null,
                 'created_at' => now(),

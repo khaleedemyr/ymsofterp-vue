@@ -120,14 +120,26 @@ class SyncFloorOrderPricesCommand extends Command
             return self::SUCCESS;
         }
 
-        DB::beginTransaction();
+        // Commit per batch supaya tidak lock-wait timeout di FO besar.
+        $updated = 0;
+        $ordersRecalculated = 0;
         try {
-            $stats = $auditor->applyFixes($mismatches);
-            DB::commit();
-            $this->info("Selesai. Baris diupdate: {$stats['updated']}, FO total dihitung ulang: {$stats['orders_recalculated']}");
+            foreach (array_chunk($mismatches, 100) as $chunk) {
+                DB::beginTransaction();
+                try {
+                    $stats = $auditor->applyFixes($chunk);
+                    DB::commit();
+                    $updated += $stats['updated'];
+                    $ordersRecalculated += $stats['orders_recalculated'];
+                } catch (\Throwable $e) {
+                    DB::rollBack();
+                    throw $e;
+                }
+            }
+            $this->info("Selesai. Baris diupdate: {$updated}, FO total dihitung ulang: {$ordersRecalculated}");
         } catch (\Throwable $e) {
-            DB::rollBack();
-            $this->error('Gagal: ' . $e->getMessage());
+            $this->error('Gagal setelah update sebagian: ' . $e->getMessage());
+            $this->warn("Sudah ter-commit: {$updated} baris. Jalankan ulang command untuk sisa selisih.");
 
             return self::FAILURE;
         }

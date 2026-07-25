@@ -1581,11 +1581,11 @@ const isPublicHolidayType = computed(() => {
 })
 
 // Computed property untuk mengecek apakah leave type adalah annual leave
+// Jangan match generik "cuti" — "Cuti Khusus" dll tidak potong saldo tahunan.
 const isAnnualLeaveType = computed(() => {
   return selectedLeaveType.value && selectedLeaveType.value.name && 
          (selectedLeaveType.value.name.toLowerCase().includes('annual leave') ||
-          selectedLeaveType.value.name.toLowerCase().includes('cuti tahunan') ||
-          selectedLeaveType.value.name.toLowerCase().includes('cuti'))
+          selectedLeaveType.value.name.toLowerCase().includes('cuti tahunan'))
 })
 
 // Computed property untuk mengecek apakah leave type adalah extra off
