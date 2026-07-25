@@ -17,13 +17,12 @@ class RepackController extends Controller
     public function apiIndex(Request $request)
     {
         $query = Repack::with(['itemAsal', 'itemHasil', 'creator']);
-        if ($request->search) {
+        if ($request->filled('search')) {
             $keyword = trim((string) $request->search);
             $query->where(function ($q) use ($keyword) {
                 $q->where('repack_number', 'like', '%' . $keyword . '%')
                     ->orWhere('status', 'like', '%' . $keyword . '%')
                     ->orWhere('qty_hasil', 'like', '%' . $keyword . '%')
-                    ->orWhereDate('created_at', $keyword)
                     ->orWhereHas('itemAsal', function ($itemQ) use ($keyword) {
                         $itemQ->where('name', 'like', '%' . $keyword . '%')
                             ->orWhere('sku', 'like', '%' . $keyword . '%');
@@ -32,12 +31,21 @@ class RepackController extends Controller
                         $itemQ->where('name', 'like', '%' . $keyword . '%')
                             ->orWhere('sku', 'like', '%' . $keyword . '%');
                     })
+                    // users table uses nama_lengkap (no name/username columns)
                     ->orWhereHas('creator', function ($userQ) use ($keyword) {
-                        $userQ->where('name', 'like', '%' . $keyword . '%')
-                            ->orWhere('nama_lengkap', 'like', '%' . $keyword . '%')
-                            ->orWhere('username', 'like', '%' . $keyword . '%')
-                            ->orWhere('email', 'like', '%' . $keyword . '%');
+                        $userQ->where('nama_lengkap', 'like', '%' . $keyword . '%')
+                            ->orWhere('email', 'like', '%' . $keyword . '%')
+                            ->orWhere('nik', 'like', '%' . $keyword . '%');
                     });
+
+                if (ctype_digit($keyword)) {
+                    $q->orWhere('id', (int) $keyword);
+                }
+
+                // Only apply date match when keyword is a real date (avoid SQL cast issues)
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $keyword)) {
+                    $q->orWhereDate('created_at', $keyword);
+                }
             });
         }
         if ($request->status) {
@@ -50,7 +58,7 @@ class RepackController extends Controller
             $query->whereDate('created_at', '<=', $request->to);
         }
 
-        $perPage = (int) $request->get('per_page', 20);
+        $perPage = max(1, min(100, (int) $request->get('per_page', 20)));
         $paginated = $query->orderByDesc('created_at')->paginate($perPage);
 
         return response()->json([
