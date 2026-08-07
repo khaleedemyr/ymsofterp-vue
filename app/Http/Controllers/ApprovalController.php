@@ -1088,6 +1088,25 @@ class ApprovalController extends Controller
     }
 
     /**
+     * Ringkasan antrian izin/cuti (atasan + HRD) — khusus HRD / superadmin.
+     */
+    public function getLeaveApprovalSummary()
+    {
+        $user = auth()->user();
+        if (! $user || ! HrdApprovalAccess::canAccessHrdApprovals($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access',
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'summary' => HrdApprovalAccess::leaveApprovalQueueSummary(),
+        ]);
+    }
+
+    /**
      * Mark notification as read
      */
     public function markNotificationAsRead(Request $request, $id)

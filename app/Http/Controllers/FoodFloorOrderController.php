@@ -605,6 +605,8 @@ class FoodFloorOrderController extends Controller
             $this->clearSupplierItemTables((int) $floorOrderId);
 
             $this->persistFloorOrderItems((int) $floorOrderId, $processedItems);
+            // Safety net: jika race residual sempat insert dobel dalam jendela yang sama
+            app(\App\Services\FoodFloorOrderItemDedupeService::class)->dedupeFloorOrder((int) $floorOrderId);
             // Pastikan harga baris = item_prices terkini + konversi UoM (cegah large tertempel di Pack/Pcs)
             app(FloorOrderPriceAuditor::class)->refreshOrder((int) $floorOrderId);
 
@@ -719,6 +721,7 @@ class FoodFloorOrderController extends Controller
             $this->clearSupplierItemTables((int) $order->id);
 
             $this->persistFloorOrderItems((int) $order->id, $processedItems);
+            app(\App\Services\FoodFloorOrderItemDedupeService::class)->dedupeFloorOrder((int) $order->id);
             app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
 
             if ($approverIds !== null) {
@@ -811,24 +814,46 @@ class FoodFloorOrderController extends Controller
     // Submit draft
     public function submit(Request $request, $id)
     {
-        $order = FoodFloorOrder::with(['approvalFlows.approver', 'warehouseOutlet'])->findOrFail($id);
+        try {
+            \DB::beginTransaction();
 
-        if ($order->fo_mode === 'RO Khusus') {
-            if (! $this->approvalService->usesCustomFlow($order)) {
+            // Kunci baris FO: autosave update concurrent menunggu, lalu ditolak jika sudah bukan draft
+            $order = FoodFloorOrder::with(['approvalFlows.approver', 'warehouseOutlet'])
+                ->where('id', $id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($order->status !== 'draft') {
+                \DB::rollBack();
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Approver wajib dipilih sebelum mengirim RO Khusus.',
+                    'message' => 'Request Order sudah dikirim / tidak berstatus draft.',
                 ], 422);
             }
-        }
 
-        try {
+            if ($order->fo_mode === 'RO Khusus') {
+                if (! $this->approvalService->usesCustomFlow($order)) {
+                    \DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Approver wajib dipilih sebelum mengirim RO Khusus.',
+                    ], 422);
+                }
+            }
+
+            // Rapikan sisa race delete+insert sebelum budget & nomor RO dikunci
+            app(\App\Services\FoodFloorOrderItemDedupeService::class)->dedupeFloorOrder((int) $order->id);
+
             // Pastikan harga baris FO = item_prices / FGR +12% terkini sebelum budget & approve
             app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
             $order->refresh();
             $order->load('items');
 
             if ($order->items->isEmpty()) {
+                \DB::rollBack();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Request Order tidak memiliki item. Tambahkan minimal 1 item sebelum submit.',
@@ -837,9 +862,9 @@ class FoodFloorOrderController extends Controller
 
             // Budget checking untuk RO yang akan di-approve (RO Utama/Tambahan)
             if ($order->fo_mode !== 'RO Khusus') {
-
                 $budgetCheckResult = $this->checkBudgetForFloorOrder($order);
                 if (! $budgetCheckResult['success']) {
+                    \DB::rollBack();
                     \Log::error('FO_SUBMIT: Budget check failed', [
                         'order_id' => $order->id,
                         'message' => $budgetCheckResult['message'],
@@ -850,7 +875,6 @@ class FoodFloorOrderController extends Controller
                         'message' => $budgetCheckResult['message'],
                     ], 422);
                 }
-
             }
 
             $oldData = $order->toArray();
@@ -864,7 +888,9 @@ class FoodFloorOrderController extends Controller
                 'order_number' => $order_number,
             ]);
 
-            // Kirim notifikasi jika RO Khusus
+            \DB::commit();
+
+            // Kirim notifikasi jika RO Khusus (di luar transaksi kunci)
             if ($order->fo_mode === 'RO Khusus' && $order->status === 'submitted') {
                 $order->refresh();
                 $order->load(['approvalFlows.approver', 'warehouseOutlet']);
@@ -886,6 +912,7 @@ class FoodFloorOrderController extends Controller
 
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
+            \DB::rollBack();
             \Log::error('FO_SUBMIT: Error', [
                 'order_id' => $id,
                 'error' => $e->getMessage(),

@@ -33,9 +33,13 @@ import { parseRupiahInput, formatKasbonAmountForInput } from '@/utils/parseRupia
 const page = usePage();
 const user = page.props.auth?.user || {};
 
-const HR_APPROVER_JABATAN_ID = 309;
+/** 309 = HR Generalist, 153 = GM HR — boleh approve HRD (izin/cuti + koreksi absensi) */
+const HR_APPROVER_JABATAN_IDS = [309, 153];
 function canAccessHrdApprovals() {
-    return user.id_role === '5af56935b011a' || Number(user.id_jabatan) === HR_APPROVER_JABATAN_ID || user.can_access_hrd_approvals === true;
+    const jabatanId = Number(user.id_jabatan);
+    return user.id_role === '5af56935b011a'
+        || HR_APPROVER_JABATAN_IDS.includes(jabatanId)
+        || user.can_access_hrd_approvals === true;
 }
 
 const { t, locale } = useI18n();
@@ -659,6 +663,10 @@ const loadingNotifications = ref(false);
 // HRD approvals
 const pendingHrdApprovals = ref([]);
 const loadingHrdApprovals = ref(false);
+
+/** Ringkasan antrian izin/cuti company-wide (khusus HRD) */
+const leaveApprovalSummary = ref(null);
+const loadingLeaveApprovalSummary = ref(false);
 
 // Correction approvals
 const pendingCorrectionApprovals = ref([]);
@@ -3853,10 +3861,38 @@ async function loadLeaveNotifications() {
 }
 
 // HRD approval functions
+async function loadLeaveApprovalSummary() {
+    if (!canAccessHrdApprovals()) return;
+    loadingLeaveApprovalSummary.value = true;
+    try {
+        const response = await axios.get('/api/approval/leave-summary');
+        if (response.data.success) {
+            leaveApprovalSummary.value = response.data.summary;
+        }
+    } catch (error) {
+        console.error('Error loading leave approval summary:', error);
+    } finally {
+        loadingLeaveApprovalSummary.value = false;
+    }
+}
+
+function formatLeaveSummaryDateTime(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
 async function loadPendingHrdApprovals() {
     // Superadmin (id_role = '5af56935b011a') can see all approvals
     const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!canAccessHrdApprovals()) return; // Only HR approver (jabatan 309) or superadmin
+    if (!canAccessHrdApprovals()) return; // HRD approver (jabatan 309/153) atau superadmin
     
     loadingHrdApprovals.value = true;
     try {
@@ -3888,7 +3924,7 @@ async function loadPendingHrdApprovals() {
 async function loadPendingCorrectionApprovals() {
     // Superadmin (id_role = '5af56935b011a') can see all approvals
     const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!canAccessHrdApprovals()) return; // Only HR approver (jabatan 309) or superadmin
+    if (!canAccessHrdApprovals()) return; // HRD approver (jabatan 309/153) atau superadmin
     
     loadingCorrectionApprovals.value = true;
     try {
@@ -5412,6 +5448,7 @@ async function hrdApproveRequest(approvalId) {
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
+                await loadLeaveApprovalSummary();
                 await loadAllApprovals();
                 await loadLeaveNotifications();
             }
@@ -5461,6 +5498,7 @@ async function hrdRejectRequest(approvalId) {
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
+                await loadLeaveApprovalSummary();
                 await loadAllApprovals();
                 await loadLeaveNotifications();
             }
@@ -5652,6 +5690,7 @@ async function reloadUnifiedApprovalSources() {
         loadPendingHrdApprovals(),
         loadPendingCorrectionApprovals(),
         loadLeaveNotifications(),
+        loadLeaveApprovalSummary(),
     ]);
     if (showAllApprovalsModal.value) {
         await loadAllApprovals();
@@ -6482,6 +6521,7 @@ onMounted(async () => {
     // Load yang tidak termasuk di optimized endpoint
     loadLeaveNotifications();
     loadPendingHrdApprovals();
+    loadLeaveApprovalSummary();
     loadJustAcademySchedules();
     // loadTrainingInvitations();
     // loadAvailableTrainings();
@@ -6715,8 +6755,8 @@ watch(locale, () => {
                 </div>
 
 
-                <!-- Notifications Section - Only show if there are unread notifications -->
-                <div v-if="totalNotificationsCount > 0" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
+                <!-- Notifications Section - HRD selalu lihat ringkasan; kartu list jika ada notifikasi -->
+                <div v-if="totalNotificationsCount > 0 || (canAccessHrdApprovals() && (leaveApprovalSummary || loadingLeaveApprovalSummary))" class="flex-shrink-0 mb-4 px-4 md:px-6 max-w-full">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         <div class="flex items-center justify-between mb-3">
@@ -6726,8 +6766,45 @@ watch(locale, () => {
                                     Notifikasi Izin/Cuti
                                 </h3>
                             </div>
-                            <div class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                            <div v-if="totalNotificationsCount > 0" class="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
                                 {{ totalNotificationsCount }}
+                            </div>
+                        </div>
+
+                        <!-- Ringkasan antrian (HRD / GM HR / superadmin) -->
+                        <div v-if="canAccessHrdApprovals()" class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div class="rounded-xl p-3 border"
+                                :class="isNight ? 'bg-blue-950/40 border-blue-700/40' : 'bg-blue-50 border-blue-100'">
+                                <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                    :class="isNight ? 'text-blue-300' : 'text-blue-700'">Belum approve atasan</div>
+                                <div class="mt-1 flex items-end justify-between gap-2">
+                                    <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                        {{ leaveApprovalSummary?.pending_supervisor_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                    </div>
+                                    <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        <div>Paling lama</div>
+                                        <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_supervisor_oldest_at) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rounded-xl p-3 border"
+                                :class="isNight ? 'bg-purple-950/40 border-purple-700/40' : 'bg-purple-50 border-purple-100'">
+                                <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                    :class="isNight ? 'text-purple-300' : 'text-purple-700'">Belum approve HRD</div>
+                                <div class="mt-1 flex items-end justify-between gap-2">
+                                    <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                        {{ leaveApprovalSummary?.pending_hrd_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                    </div>
+                                    <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                        <div>Paling lama</div>
+                                        <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_hrd_oldest_at) }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sm:col-span-2 rounded-xl px-3 py-2 border text-xs flex flex-wrap items-center justify-between gap-2"
+                                :class="isNight ? 'bg-emerald-950/30 border-emerald-700/40 text-emerald-200' : 'bg-emerald-50 border-emerald-100 text-emerald-800'">
+                                <span class="font-medium">HRD terakhir approve</span>
+                                <span class="font-semibold">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.last_hrd_approved_at) }}</span>
                             </div>
                         </div>
 
@@ -6758,12 +6835,12 @@ watch(locale, () => {
                             </div>
                         </div>
                         
-                        <div v-if="loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals" class="text-center py-4">
+                        <div v-if="totalNotificationsCount > 0 && (loadingApprovals || loadingNotifications || loadingHrdApprovals || loadingCorrectionApprovals)" class="text-center py-4">
                             <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
                             <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
                         </div>
                         
-                        <div v-else class="space-y-2">
+                        <div v-else-if="totalNotificationsCount > 0" class="space-y-2">
                             <!-- Approval Requests (Supervisor) -->
                             <div v-for="approval in pendingApprovals.slice(0, 2)" :key="'approval-' + approval.id"
                                 class="p-3 rounded-lg transition-all duration-200 hover:scale-[1.02]"

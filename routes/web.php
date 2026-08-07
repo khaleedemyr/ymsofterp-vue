@@ -3512,6 +3512,7 @@ Route::middleware(['auth'])->prefix('api')->group(function () {
 Route::middleware(['auth', 'verified'])->prefix('api/approval')->group(function () {
     Route::get('/pending', [\App\Http\Controllers\ApprovalController::class, 'getPendingApprovals'])->name('api.approval.pending');
     Route::get('/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals'])->name('api.approval.pending-hrd');
+    Route::get('/leave-summary', [\App\Http\Controllers\ApprovalController::class, 'getLeaveApprovalSummary'])->name('api.approval.leave-summary');
     Route::get('/stats', [\App\Http\Controllers\ApprovalController::class, 'getApprovalStats'])->name('api.approval.stats');
     Route::get('/my-requests', [\App\Http\Controllers\ApprovalController::class, 'getMyRequests'])->name('api.approval.my-requests');
     Route::get('/notifications', [\App\Http\Controllers\ApprovalController::class, 'getNotifications'])->name('api.approval.notifications');

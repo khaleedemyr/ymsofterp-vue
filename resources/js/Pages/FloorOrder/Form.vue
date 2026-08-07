@@ -953,18 +953,33 @@ function buildCleanItems() {
   if (mode.value === 'tab') {
     syncTabItemsToForm();
   }
-  return form.value.items
+  // Satu baris per item_id (cegah payload ganda ke autosave/submit)
+  const byId = new Map();
+  form.value.items
     .filter(item => item.item_id && Number(item.qty) > 0)
-    .map(item => ({
-      item_id: item.item_id,
-      item_name: item.item_name,
-      qty: item.qty,
-      unit: item.unit,
-      price: item.price,
-      subtotal: item.subtotal,
-      category_id: item.category_id,
-      category_name: item.category_name,
-    }));
+    .forEach(item => {
+      const id = String(item.item_id);
+      const qty = Number(item.qty) || 0;
+      const price = Number(item.price) || 0;
+      if (byId.has(id)) {
+        const cur = byId.get(id);
+        const newQty = (Number(cur.qty) || 0) + qty;
+        cur.qty = newQty;
+        cur.subtotal = newQty * (Number(cur.price) || 0);
+        return;
+      }
+      byId.set(id, {
+        item_id: item.item_id,
+        item_name: item.item_name,
+        qty: item.qty,
+        unit: item.unit,
+        price: item.price,
+        subtotal: qty * price || item.subtotal,
+        category_id: item.category_id,
+        category_name: item.category_name,
+      });
+    });
+  return Array.from(byId.values());
 }
 
 function buildSavePayload(cleanItems) {
