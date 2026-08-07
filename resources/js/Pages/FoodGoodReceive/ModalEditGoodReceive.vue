@@ -35,6 +35,7 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Received</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Ditolak</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
@@ -55,6 +56,16 @@
                                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                                             :min="0"
                                             step="0.01"
+                                        />
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <input
+                                            type="number"
+                                            v-model="item.qty_rejected"
+                                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                            :min="0"
+                                            step="0.01"
+                                            placeholder="—"
                                         />
                                     </td>
                                 </tr>
@@ -119,7 +130,10 @@ export default defineComponent({
             this.saving = true;
             const items = this.gr.items.map(item => ({
                 id: item.id,
-                qty_received: parseFloat(item.qty_received)
+                qty_received: parseFloat(item.qty_received),
+                qty_rejected: item.qty_rejected === null || item.qty_rejected === '' || item.qty_rejected === undefined
+                    ? null
+                    : parseFloat(item.qty_rejected),
             }));
 
             axios.put(`/food-good-receive/${this.gr.id}`, { items })

@@ -75,6 +75,7 @@ class FoodGoodReceiveController extends Controller
                         'i.name as item_name',
                         'gri.qty_ordered',
                         'gri.qty_received',
+                        'gri.qty_rejected',
                         'gri.unit_id',
                         'u.name as unit_name',
                         'gri.notes',
@@ -184,6 +185,7 @@ class FoodGoodReceiveController extends Controller
             'items.*.item_id' => 'required|integer',
             'items.*.qty_ordered' => 'required|numeric',
             'items.*.qty_received' => 'required|numeric',
+            'items.*.qty_rejected' => 'nullable|numeric|min:0',
             'items.*.unit_id' => 'required|integer',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -209,12 +211,17 @@ class FoodGoodReceiveController extends Controller
             $po = DB::table('purchase_order_foods')->where('id', $request->po_id)->first();
             
             foreach ($request->items as $item) {
+                $qtyRejected = array_key_exists('qty_rejected', $item) && $item['qty_rejected'] !== null && $item['qty_rejected'] !== ''
+                    ? (float) $item['qty_rejected']
+                    : null;
+
                 DB::table('food_good_receive_items')->insert([
                     'good_receive_id' => $goodReceiveId,
                     'po_item_id' => $item['po_item_id'],
                     'item_id' => $item['item_id'],
                     'qty_ordered' => $item['qty_ordered'],
                     'qty_received' => $item['qty_received'],
+                    'qty_rejected' => $qtyRejected,
                     'used_qty' => $item['qty_received'],
                     'unit_id' => $item['unit_id'],
                     'notes' => $item['notes'] ?? null,
@@ -497,6 +504,7 @@ class FoodGoodReceiveController extends Controller
                 'i.name as item_name',
                 'gri.qty_ordered',
                 'gri.qty_received',
+                'gri.qty_rejected',
                 'gri.unit_id',
                 'u.name as unit_name',
                 'gri.notes',
@@ -516,6 +524,7 @@ class FoodGoodReceiveController extends Controller
             'items' => 'required|array',
             'items.*.id' => 'required|integer',
             'items.*.qty_received' => 'required|numeric',
+            'items.*.qty_rejected' => 'nullable|numeric|min:0',
         ]);
 
         DB::beginTransaction();
@@ -562,10 +571,15 @@ class FoodGoodReceiveController extends Controller
 
             // 4. Update good_receive_items sesuai input
             foreach ($request->items as $item) {
+                $qtyRejected = array_key_exists('qty_rejected', $item) && $item['qty_rejected'] !== null && $item['qty_rejected'] !== ''
+                    ? (float) $item['qty_rejected']
+                    : null;
+
                 DB::table('food_good_receive_items')
                     ->where('id', $item['id'])
                     ->update([
                         'qty_received' => $item['qty_received'],
+                        'qty_rejected' => $qtyRejected,
                         'updated_at' => now()
                     ]);
             }

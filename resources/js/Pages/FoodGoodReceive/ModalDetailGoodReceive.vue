@@ -1,6 +1,6 @@
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
       <h2 class="text-xl font-bold mb-4 flex items-center gap-2">
         <i class="fa-solid fa-file-lines text-blue-500"></i>
         Detail Good Receive
@@ -33,6 +33,7 @@
             <tr>
               <th class="border px-2 py-1">Nama Item</th>
               <th class="border px-2 py-1">Qty Diterima</th>
+              <th class="border px-2 py-1">Qty Ditolak</th>
               <th class="border px-2 py-1">Unit</th>
               <th class="border px-2 py-1">Harga</th>
               <th class="border px-2 py-1">Total</th>
@@ -43,6 +44,7 @@
             <tr v-for="item in gr.items || []" :key="item.id">
               <td class="border px-2 py-1">{{ item.item_name }}</td>
               <td class="border px-2 py-1">{{ item.qty_received }}</td>
+              <td class="border px-2 py-1">{{ item.qty_rejected ?? '—' }}</td>
               <td class="border px-2 py-1">{{ item.unit_name }}</td>
               <td class="border px-2 py-1 text-right">{{ formatRupiah(item.price) }}</td>
               <td class="border px-2 py-1 text-right">{{ formatRupiah(item.qty_received * item.price) }}</td>

@@ -65,11 +65,12 @@
                   <th class="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase">Barang</th>
                   <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty PO</th>
                   <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty Diterima</th>
+                  <th class="px-2 py-1 text-right text-xs font-medium text-gray-500 uppercase">Qty Ditolak</th>
                 </tr>
                 <tr>
-                  <th colspan="3" class="px-2 py-1 text-center text-xs text-blue-600 bg-blue-50">
+                  <th colspan="4" class="px-2 py-1 text-center text-xs text-blue-600 bg-blue-50">
                     <i class="fa fa-info-circle mr-1"></i>
-                    Toleransi maksimal 10% dari Qty PO
+                    Toleransi maksimal 10% dari Qty PO · Qty Ditolak opsional (tidak mempengaruhi stok)
                   </th>
                 </tr>
               </thead>
@@ -98,6 +99,16 @@
                       @input="validateQty(item)"
                     />
                     <div v-if="item.qty_error" class="text-red-500 text-xs mt-1">{{ item.qty_error }}</div>
+                  </td>
+                  <td class="px-2 py-1 text-right">
+                    <input
+                      v-model.number="item.qty_rejected"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="w-20 px-2 py-1 border rounded"
+                      placeholder="—"
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -195,7 +206,8 @@ const fetchPO = async () => {
     items.value = res.data.items.map(item => ({
       ...item,
       quantity: parseFloat(item.quantity) || 0,
-      qty_received: parseFloat(item.quantity) || 0
+      qty_received: parseFloat(item.quantity) || 0,
+      qty_rejected: null,
     }));
     poFetched.value = true;
     // Reset notes when fetching new PO
@@ -264,6 +276,9 @@ const submit = async () => {
         item_id: item.item_id,
         qty_ordered: parseFloat(item.quantity) || 0,
         qty_received: parseFloat(item.qty_received) || 0,
+        qty_rejected: item.qty_rejected === null || item.qty_rejected === '' || item.qty_rejected === undefined
+          ? null
+          : (parseFloat(item.qty_rejected) || 0),
         unit_id: item.unit_id || 1,
       })),
       notes: notes.value || '',
