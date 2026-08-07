@@ -1114,6 +1114,111 @@ class ApprovalController extends Controller
     }
 
     /**
+     * Daftar izin/cuti yang masih menunggu atasan (periode HRD queue) + nama approver saat ini.
+     */
+    public function getPendingSupervisorQueue()
+    {
+        $user = auth()->user();
+        if (! $user || ! HrdApprovalAccess::canAccessHrdApprovals($user)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access',
+            ], 403);
+        }
+
+        $period = AttendancePayrollPeriod::forHrdApprovalQueue();
+
+        $rows = DB::table('approval_requests as apr')
+            ->join('users as u', 'apr.user_id', '=', 'u.id')
+            ->join('leave_types as lt', 'apr.leave_type_id', '=', 'lt.id')
+            ->leftJoin('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->leftJoin('users as old_approver', 'apr.approver_id', '=', 'old_approver.id')
+            ->where('apr.status', 'pending')
+            ->where(function ($q) use ($period) {
+                HrdApprovalAccess::applyLeaveDateOverlapsPeriod($q, $period['start'], $period['end'], 'apr');
+            })
+            ->select([
+                'apr.id',
+                'apr.user_id',
+                'apr.approver_id',
+                'apr.date_from',
+                'apr.date_to',
+                'apr.reason',
+                'apr.created_at',
+                'u.nama_lengkap as user_name',
+                'lt.name as leave_type_name',
+                'o.nama_outlet',
+                'old_approver.nama_lengkap as old_approver_name',
+            ])
+            ->orderBy('apr.created_at')
+            ->get();
+
+        $absentByApprovalId = DB::table('absent_requests')
+            ->whereIn('approval_request_id', $rows->pluck('id')->all())
+            ->pluck('id', 'approval_request_id');
+
+        $absentIds = $absentByApprovalId->values()->all();
+        $nextApproverByAbsentId = [];
+        if ($absentIds !== []) {
+            $pendingFlows = DB::table('absent_request_approval_flows as arf')
+                ->join('users as au', 'arf.approver_id', '=', 'au.id')
+                ->whereIn('arf.absent_request_id', $absentIds)
+                ->where('arf.status', 'PENDING')
+                ->orderBy('arf.absent_request_id')
+                ->orderBy('arf.approval_level')
+                ->select([
+                    'arf.absent_request_id',
+                    'arf.approver_id',
+                    'arf.approval_level',
+                    'au.nama_lengkap as approver_name',
+                ])
+                ->get()
+                ->groupBy('absent_request_id');
+
+            foreach ($pendingFlows as $absentId => $flows) {
+                $next = $flows->first();
+                $nextApproverByAbsentId[(int) $absentId] = [
+                    'approver_id' => (int) $next->approver_id,
+                    'approver_name' => $next->approver_name,
+                    'approval_level' => (int) $next->approval_level,
+                ];
+            }
+        }
+
+        $items = $rows->map(function ($row) use ($absentByApprovalId, $nextApproverByAbsentId) {
+            $absentId = $absentByApprovalId->get($row->id);
+            $next = $absentId ? ($nextApproverByAbsentId[(int) $absentId] ?? null) : null;
+
+            $approverId = $next['approver_id'] ?? ($row->approver_id ? (int) $row->approver_id : null);
+            $approverName = $next['approver_name'] ?? ($row->old_approver_name ?: '—');
+            $approvalLevel = $next['approval_level'] ?? null;
+
+            return [
+                'id' => (int) $row->id,
+                'user_id' => (int) $row->user_id,
+                'user_name' => $row->user_name,
+                'outlet_name' => $row->nama_outlet,
+                'leave_type_name' => $row->leave_type_name,
+                'date_from' => $row->date_from,
+                'date_to' => $row->date_to,
+                'reason' => $row->reason,
+                'created_at' => $row->created_at,
+                'approver_id' => $approverId,
+                'approver_name' => $approverName,
+                'approval_level' => $approvalLevel,
+                'duration_text' => $this->calculateDuration($row->date_from, $row->date_to),
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'period' => $period,
+            'count' => $items->count(),
+            'items' => $items,
+        ]);
+    }
+
+    /**
      * Mark notification as read
      */
     public function markNotificationAsRead(Request $request, $id)

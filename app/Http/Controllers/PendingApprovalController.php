@@ -34,7 +34,7 @@ class PendingApprovalController extends Controller
 
             // OPTIMASI: Cache hasil untuk 120 detik per user
             // Cache key berdasarkan user ID untuk personalisasi
-            $cacheKey = 'all_pending_approvals_v3_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v4_' . $user->id;
             $cacheTTL = 120; // 120 detik
             
             // Check if data is cached (before calling Cache::remember)
@@ -263,14 +263,16 @@ class PendingApprovalController extends Controller
             }
 
             // 12. Schedule Attendance Correction (getPendingApprovals return key: 'approvals')
+            // HRD/superadmin butuh daftar penuh (jangan di-cap limit 30 seperti modul lain)
             try {
                 $sacController = app(\App\Http\Controllers\ScheduleAttendanceCorrectionController::class);
                 $sacResponse = $sacController->getPendingApprovals($request);
                 if ($sacResponse->getStatusCode() === 200) {
                     $sacData = json_decode($sacResponse->getContent(), true);
                     $data['schedule_attendance_correction'] = $sacData['data'] ?? $sacData['corrections'] ?? $sacData['approvals'] ?? [];
-                    if ($limit > 0 && count($data['schedule_attendance_correction']) > $limit) {
-                        $data['schedule_attendance_correction'] = array_slice($data['schedule_attendance_correction'], 0, $limit);
+                    $sacLimit = \App\Support\HrdApprovalAccess::canAccessHrdApprovals($user) ? 0 : $limit;
+                    if ($sacLimit > 0 && count($data['schedule_attendance_correction']) > $sacLimit) {
+                        $data['schedule_attendance_correction'] = array_slice($data['schedule_attendance_correction'], 0, $sacLimit);
                     }
                 }
             } catch (\Exception $e) {
@@ -591,7 +593,7 @@ class PendingApprovalController extends Controller
                 ], 401);
             }
 
-            $cacheKey = 'all_pending_approvals_v3_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v4_' . $user->id;
             Cache::forget($cacheKey);
             
             return response()->json([

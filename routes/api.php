@@ -1022,6 +1022,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/approval/pending', [\App\Http\Controllers\ApprovalController::class, 'getPendingApprovals']);
         Route::get('/approval/pending-hrd', [\App\Http\Controllers\ApprovalController::class, 'getPendingHrdApprovals']);
         Route::get('/approval/leave-summary', [\App\Http\Controllers\ApprovalController::class, 'getLeaveApprovalSummary']);
+        Route::get('/approval/pending-supervisor-queue', [\App\Http\Controllers\ApprovalController::class, 'getPendingSupervisorQueue']);
         Route::get('/approval/{id}', [\App\Http\Controllers\ApprovalController::class, 'getApprovalDetails']);
         Route::post('/approval/{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
         Route::post('/approval/{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);

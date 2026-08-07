@@ -668,6 +668,12 @@ const loadingHrdApprovals = ref(false);
 const leaveApprovalSummary = ref(null);
 const loadingLeaveApprovalSummary = ref(false);
 
+const showPendingSupervisorModal = ref(false);
+const loadingPendingSupervisorQueue = ref(false);
+const pendingSupervisorQueue = ref([]);
+const pendingSupervisorQueuePeriod = ref(null);
+const pendingSupervisorSearch = ref('');
+
 // Correction approvals
 const pendingCorrectionApprovals = ref([]);
 const loadingCorrectionApprovals = ref(false);
@@ -3894,6 +3900,61 @@ function formatLeaveSummaryDateTime(value) {
     });
 }
 
+function formatLeaveSummaryDate(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('id-ID', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    });
+}
+
+const filteredPendingSupervisorQueue = computed(() => {
+    const q = (pendingSupervisorSearch.value || '').trim().toLowerCase();
+    if (!q) return pendingSupervisorQueue.value;
+    return pendingSupervisorQueue.value.filter((item) => {
+        const hay = [
+            item.user_name,
+            item.approver_name,
+            item.leave_type_name,
+            item.outlet_name,
+            item.reason,
+        ].map((v) => String(v || '').toLowerCase()).join(' ');
+        return hay.includes(q);
+    });
+});
+
+async function openPendingSupervisorModal() {
+    if (!canAccessHrdApprovals()) return;
+    showPendingSupervisorModal.value = true;
+    pendingSupervisorSearch.value = '';
+    loadingPendingSupervisorQueue.value = true;
+    try {
+        const response = await axios.get('/api/approval/pending-supervisor-queue');
+        if (response.data.success) {
+            pendingSupervisorQueue.value = response.data.items || [];
+            pendingSupervisorQueuePeriod.value = response.data.period || null;
+        }
+    } catch (error) {
+        console.error('Error loading pending supervisor queue:', error);
+        pendingSupervisorQueue.value = [];
+        await Swal.fire({
+            icon: 'error',
+            title: 'Gagal',
+            text: 'Tidak bisa memuat daftar pending atasan.',
+            confirmButtonColor: '#EF4444',
+        });
+    } finally {
+        loadingPendingSupervisorQueue.value = false;
+    }
+}
+
+function closePendingSupervisorModal() {
+    showPendingSupervisorModal.value = false;
+}
+
 async function loadPendingHrdApprovals() {
     // Superadmin (id_role = '5af56935b011a') can see all approvals
     const isSuperadmin = user.id_role === '5af56935b011a';
@@ -6527,6 +6588,10 @@ onMounted(async () => {
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadLeaveApprovalSummary();
+    // Optimized endpoint memotong banyak tipe ke 30 item — koreksi HRD harus full
+    if (canAccessHrdApprovals()) {
+        loadPendingCorrectionApprovals();
+    }
     loadJustAcademySchedules();
     // loadTrainingInvitations();
     // loadAvailableTrainings();
@@ -6836,10 +6901,17 @@ watch(locale, () => {
 
                             <!-- Detail tahap izin/cuti -->
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                <div class="rounded-xl p-3 border"
-                                    :class="isNight ? 'bg-blue-950/40 border-blue-700/40' : 'bg-blue-50 border-blue-100'">
-                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
-                                        :class="isNight ? 'text-blue-300' : 'text-blue-700'">Belum approve atasan</div>
+                                <button type="button"
+                                    class="rounded-xl p-3 border text-left transition-all hover:scale-[1.01] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    :class="isNight ? 'bg-blue-950/40 border-blue-700/40' : 'bg-blue-50 border-blue-100'"
+                                    @click="openPendingSupervisorModal">
+                                    <div class="flex items-center justify-between gap-2">
+                                        <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                            :class="isNight ? 'text-blue-300' : 'text-blue-700'">Belum approve atasan</div>
+                                        <div class="text-[10px] font-medium" :class="isNight ? 'text-blue-300/80' : 'text-blue-600'">
+                                            Klik untuk detail <i class="fa-solid fa-chevron-right ml-0.5"></i>
+                                        </div>
+                                    </div>
                                     <div class="mt-1 flex items-end justify-between gap-2">
                                         <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
                                             {{ leaveApprovalSummary?.pending_supervisor_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
@@ -6849,7 +6921,7 @@ watch(locale, () => {
                                             <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_supervisor_oldest_at) }}</div>
                                         </div>
                                     </div>
-                                </div>
+                                </button>
                                 <div class="rounded-xl p-3 border"
                                     :class="isNight ? 'bg-purple-950/40 border-purple-700/40' : 'bg-purple-50 border-purple-100'">
                                     <div class="text-[11px] font-semibold uppercase tracking-wide"
@@ -7065,6 +7137,10 @@ watch(locale, () => {
                                 </button>
                                 <div class="text-[11px] mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                     {{ pendingApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
+                                </div>
+                                <div v-if="canAccessHrdApprovals() && leaveApprovalSummary && pendingCorrectionApprovals.length !== (leaveApprovalSummary.pending_correction_count || 0)"
+                                    class="text-[11px] mt-0.5" :class="isNight ? 'text-amber-300' : 'text-amber-700'">
+                                    Ringkasan perusahaan: {{ leaveApprovalSummary.pending_correction_count }} koreksi (sedang memuat daftar penuh…)
                                 </div>
                             </div>
                             
@@ -13852,6 +13928,90 @@ watch(locale, () => {
         <p class="text-sm text-gray-500 dark:text-gray-400">
             Crafted with ❤️ by IT Department-Justus Group © 2025
         </p>
+    </div>
+
+    <!-- Pending Supervisor Queue Modal (HRD follow-up) -->
+    <div v-if="showPendingSupervisorModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" @click.self="closePendingSupervisorModal">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl" @click.stop>
+            <div class="flex items-start justify-between gap-3 p-5 border-b border-gray-200 dark:border-gray-700">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                        <i class="fa-solid fa-user-clock mr-2 text-blue-500"></i>
+                        Belum Approve Atasan
+                    </h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Periode: {{ pendingSupervisorQueuePeriod?.label || leaveApprovalSummary?.period?.label || '—' }}
+                    </p>
+                </div>
+                <button type="button" @click="closePendingSupervisorModal" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="p-5 border-b border-gray-100 dark:border-gray-700">
+                <div class="relative">
+                    <input
+                        v-model="pendingSupervisorSearch"
+                        type="text"
+                        placeholder="Cari pemohon, approver, outlet, jenis izin..."
+                        class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                    >
+                    <i class="fa-solid fa-search absolute left-3 top-2.5 text-gray-400"></i>
+                </div>
+                <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    Menampilkan {{ filteredPendingSupervisorQueue.length }} dari {{ pendingSupervisorQueue.length }} permohonan
+                </div>
+            </div>
+
+            <div class="overflow-y-auto max-h-[calc(90vh-190px)]">
+                <div v-if="loadingPendingSupervisorQueue" class="py-12 text-center text-gray-500">
+                    <div class="inline-block animate-spin rounded-full h-7 w-7 border-b-2 border-blue-500 mb-2"></div>
+                    <div class="text-sm">Memuat data...</div>
+                </div>
+                <div v-else-if="filteredPendingSupervisorQueue.length === 0" class="py-12 text-center text-gray-500 text-sm">
+                    Tidak ada data pending atasan.
+                </div>
+                <div v-else class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-slate-50 dark:bg-gray-900/50 sticky top-0">
+                            <tr class="text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                <th class="px-4 py-3 font-semibold">Pemohon</th>
+                                <th class="px-4 py-3 font-semibold">Jenis / Tanggal</th>
+                                <th class="px-4 py-3 font-semibold">Approver (ingat ke)</th>
+                                <th class="px-4 py-3 font-semibold">Diajukan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                            <tr v-for="item in filteredPendingSupervisorQueue" :key="'sup-q-' + item.id"
+                                class="hover:bg-blue-50/60 dark:hover:bg-gray-700/40">
+                                <td class="px-4 py-3 align-top">
+                                    <div class="font-semibold text-gray-900 dark:text-white">{{ item.user_name }}</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">{{ item.outlet_name || '—' }}</div>
+                                </td>
+                                <td class="px-4 py-3 align-top">
+                                    <div class="font-medium text-gray-800 dark:text-gray-100">{{ item.leave_type_name }}</div>
+                                    <div class="text-xs text-gray-500 dark:text-gray-400">
+                                        {{ formatLeaveSummaryDate(item.date_from) }} – {{ formatLeaveSummaryDate(item.date_to) }}
+                                        <span v-if="item.duration_text"> · {{ item.duration_text }}</span>
+                                    </div>
+                                    <div v-if="item.reason" class="text-xs text-gray-400 mt-1 line-clamp-2">{{ item.reason }}</div>
+                                </td>
+                                <td class="px-4 py-3 align-top">
+                                    <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200 font-semibold">
+                                        <i class="fa-solid fa-bell text-[10px]"></i>
+                                        {{ item.approver_name || '—' }}
+                                    </div>
+                                    <div v-if="item.approval_level" class="text-[11px] text-gray-500 mt-1">Level {{ item.approval_level }}</div>
+                                </td>
+                                <td class="px-4 py-3 align-top text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    {{ formatLeaveSummaryDateTime(item.created_at) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- All Approvals Modal -->
