@@ -94,6 +94,15 @@ onMounted(() => {
           </div>
         </div>
         <div class="text-right">
+          <div class="mb-2 flex justify-end">
+            <a
+              :href="route('kpi-evaluations.export-pdf', evaluation.id)"
+              target="_blank"
+              class="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-slate-800 text-white hover:bg-slate-700"
+            >
+              <i class="fa-solid fa-file-pdf"></i> Export PDF
+            </a>
+          </div>
           <span class="px-3 py-1 rounded-full text-sm bg-green-100 text-green-800">{{ evaluation.eval_status }}</span>
           <div v-if="totalScoreFlag" class="mt-2">
             <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" :class="totalScoreFlag.className">
@@ -120,7 +129,16 @@ onMounted(() => {
       </div>
 
       <div class="bg-white rounded-2xl shadow mb-6 overflow-hidden">
-        <div class="bg-indigo-700 text-white px-4 py-3 font-semibold">Data Parameter</div>
+        <div class="bg-indigo-700 text-white px-4 py-3 font-semibold flex justify-between items-center gap-2 flex-wrap">
+          <span>Data Parameter</span>
+          <a
+            :href="route('kpi-evaluations.export-pdf', evaluation.id)"
+            target="_blank"
+            class="text-sm bg-white/15 hover:bg-white/25 px-3 py-1 rounded-lg"
+          >
+            <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
+          </a>
+        </div>
         <div class="px-4 py-2 text-xs text-indigo-900 bg-indigo-50 border-b border-indigo-100">
           Kolom Frequency menunjukkan periode penghitungan parameter (Monthly = 1 bulan, Quarterly = 3 bulan).
         </div>

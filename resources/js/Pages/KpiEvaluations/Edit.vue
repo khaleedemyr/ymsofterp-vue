@@ -550,6 +550,13 @@ onMounted(() => {
         <div class="bg-indigo-700 text-white px-4 py-3 flex justify-between items-center gap-2 flex-wrap">
           <span class="font-semibold">Data Parameter (D*)</span>
           <div class="flex gap-2">
+            <a
+              :href="route('kpi-evaluations.export-pdf', evaluation.id)"
+              target="_blank"
+              class="text-sm bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg"
+            >
+              <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
+            </a>
             <button type="button" class="text-sm bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg" @click="recalculateScores">
               <i class="fa-solid fa-calculator mr-1"></i> Hitung Ulang Skor
             </button>

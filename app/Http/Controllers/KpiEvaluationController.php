@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\KpiEvaluation;
 use App\Models\User;
 use App\Services\KpiEvaluationService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -94,6 +95,34 @@ class KpiEvaluationController extends Controller
             'evaluation' => $this->formatEvaluation($evaluation),
             'outlets' => $this->evaluationService->outletOptions(),
         ]);
+    }
+
+    public function exportPdf(KpiEvaluation $kpiEvaluation)
+    {
+        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
+        $data = $this->formatEvaluation($evaluation);
+
+        $outletIds = $this->evaluationService->resolveErpOutletIds($evaluation);
+        $outletMap = collect($this->evaluationService->outletOptions())->keyBy('id');
+        $scopeOutletLabels = collect($outletIds)
+            ->map(fn ($id) => $outletMap->get((int) $id)['label'] ?? ('Outlet #'.$id))
+            ->values()
+            ->all();
+
+        $scopeLabels = collect($this->erpScopeOptions())->keyBy('value');
+        $scopeLabel = $scopeLabels->get($data['erp_data_scope'])['label'] ?? ($data['erp_data_scope'] ?? '—');
+
+        $pdf = Pdf::loadView('exports.kpi_evaluation_pdf', [
+            'evaluation' => $data,
+            'scoreFlag' => $this->resolveTotalScoreFlag($data['total_score'] ?? null),
+            'scopeLabel' => $scopeLabel,
+            'scopeOutletLabels' => $scopeOutletLabels,
+            'generatedAt' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'landscape');
+
+        $filename = ($data['evaluation_code'] ?? 'KPI').'-'.$data['period_month'].'.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function edit(KpiEvaluation $kpiEvaluation)
@@ -396,5 +425,30 @@ class KpiEvaluationController extends Controller
             'strategies' => $strategies,
             'items' => $enrichedItems,
         ];
+    }
+
+    /**
+     * @return array{key: string, label: string}|null
+     */
+    protected function resolveTotalScoreFlag(mixed $scoreValue): ?array
+    {
+        if ($scoreValue === null || $scoreValue === '') {
+            return null;
+        }
+
+        $score = (float) $scoreValue;
+        if (! is_finite($score)) {
+            return null;
+        }
+
+        if ($score >= 91) {
+            return ['key' => 'excellence', 'label' => 'EXCELLENCE'];
+        }
+
+        if ($score >= 85) {
+            return ['key' => 'satisfactory', 'label' => 'SATISFACTORY'];
+        }
+
+        return ['key' => 'to_improve', 'label' => 'TO IMPROVE'];
     }
 }
