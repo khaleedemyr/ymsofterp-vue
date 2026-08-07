@@ -452,10 +452,11 @@ class StockCutController extends Controller
         }
         $shortfallPreview = count($kurang);
         if ($shortfallPreview > 0) {
-            $this->putStockCutProgress($progressKey, 'running', "Ada {$shortfallPreview} item kurang — akan dipotong dengan qty minus", 55, [
+            $this->putStockCutProgress($progressKey, 'running', "Ada {$shortfallPreview} item kurang — stok fisik dipotong sampai 0, kekurangan ke Laporan Minus (HPP tetap full)", 55, [
                 'phase' => 'stock_validation',
                 'total_kurang' => $shortfallPreview,
-                'allow_negative' => true,
+                'allow_negative' => false,
+                'physical_cap_at_zero' => true,
             ]);
         }
 
@@ -558,22 +559,30 @@ class StockCutController extends Controller
             }
 
             $qty_available_before = (float) $stock->qty_small;
-            $qty_shortfall = max(0, $qty_small - $qty_available_before);
+            // Fisik: potong hanya sampai stok tersedia (tidak pernah minus). Teoritis/HPP tetap full BOM.
+            $qty_cut_physical_small = min($qty_small, max(0.0, $qty_available_before));
+            $qty_shortfall = max(0.0, $qty_small - $qty_cut_physical_small);
+            $qty_cut_physical_medium = $smallConv > 0 ? ($qty_cut_physical_small / $smallConv) : 0;
+            $qty_cut_physical_large = ($smallConv > 0 && $mediumConv > 0)
+                ? ($qty_cut_physical_small / ($smallConv * $mediumConv))
+                : 0;
 
             \Log::info('Stock sebelum dipotong', [
                 'inventory_item_id' => $inventory_item_id,
                 'stock_before_small' => $stock->qty_small,
                 'stock_before_medium' => $stock->qty_medium,
                 'stock_before_large' => $stock->qty_large,
-                'qty_to_cut_small' => $qty_small,
+                'qty_needed_small' => $qty_small,
+                'qty_cut_physical_small' => $qty_cut_physical_small,
+                'qty_shortfall' => $qty_shortfall,
                 'qty_to_cut_medium' => $qty_medium,
                 'qty_to_cut_large' => $qty_large
             ]);
             
-            // Update stok di semua unit (mengikuti pola OutletInternalUseWasteController)
-            $new_qty_small = $stock->qty_small - $qty_small;
-            $new_qty_medium = $stock->qty_medium - $qty_medium;
-            $new_qty_large = $stock->qty_large - $qty_large;
+            // Update stok fisik (hasil >= 0)
+            $new_qty_small = max(0.0, (float) $stock->qty_small - $qty_cut_physical_small);
+            $new_qty_medium = max(0.0, (float) $stock->qty_medium - $qty_cut_physical_medium);
+            $new_qty_large = max(0.0, (float) $stock->qty_large - $qty_cut_physical_large);
             
             // Hitung value baru berdasarkan qty_small dan last_cost_small
             $new_value = $new_qty_small * $stock->last_cost_small;
@@ -596,37 +605,39 @@ class StockCutController extends Controller
                 'stock_after_small' => $new_qty_small,
                 'stock_before_value' => $stock->value,
                 'stock_after_value' => $new_value,
-                'qty_cut_small' => $qty_small,
-                'qty_cut_medium' => $qty_medium,
-                'qty_cut_large' => $qty_large,
+                'qty_needed_small' => $qty_small,
+                'qty_cut_physical_small' => $qty_cut_physical_small,
+                'qty_shortfall' => $qty_shortfall,
                 'last_cost_small' => $stock->last_cost_small
             ]);
             
-            // Catat kartu stok (mengikuti pola OutletInternalUseWasteController lengkap)
-            DB::table('outlet_food_inventory_cards')->insert([
-                'inventory_item_id' => $inventory_item_id,
-                'id_outlet' => $id_outlet,
-                'warehouse_outlet_id' => $warehouse_id,
-                'stock_cut_log_id' => $stockCutLog ? $stockCutLog->id : null,
-                'date' => $tanggal,
-                'reference_type' => 'order_items',
-                'reference_id' => null,
-                'out_qty_small' => $qty_small,
-                'out_qty_medium' => $qty_medium,
-                'out_qty_large' => $qty_large,
-                'cost_per_small' => $stock->last_cost_small,
-                'cost_per_medium' => $stock->last_cost_medium,
-                'cost_per_large' => $stock->last_cost_large,
-                'value_out' => $qty_small * $stock->last_cost_small,
-                'saldo_qty_small' => $stock->qty_small - $qty_small,
-                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                'saldo_qty_large' => $stock->qty_large - $qty_large,
-                'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
-                'description' => $qty_shortfall > 0
-                    ? 'Stock Out - Potong stock otomatis (qty minus ' . $qty_shortfall . ')'
-                    : 'Stock Out - Potong stock otomatis dari order_items',
-                'created_at' => now(),
-            ]);
+            // Kartu stok: hanya qty fisik yang benar-benar terpotong (skip jika 0)
+            if ($qty_cut_physical_small > 0) {
+                DB::table('outlet_food_inventory_cards')->insert([
+                    'inventory_item_id' => $inventory_item_id,
+                    'id_outlet' => $id_outlet,
+                    'warehouse_outlet_id' => $warehouse_id,
+                    'stock_cut_log_id' => $stockCutLog ? $stockCutLog->id : null,
+                    'date' => $tanggal,
+                    'reference_type' => 'order_items',
+                    'reference_id' => null,
+                    'out_qty_small' => $qty_cut_physical_small,
+                    'out_qty_medium' => $qty_cut_physical_medium,
+                    'out_qty_large' => $qty_cut_physical_large,
+                    'cost_per_small' => $stock->last_cost_small,
+                    'cost_per_medium' => $stock->last_cost_medium,
+                    'cost_per_large' => $stock->last_cost_large,
+                    'value_out' => $qty_cut_physical_small * $stock->last_cost_small,
+                    'saldo_qty_small' => $new_qty_small,
+                    'saldo_qty_medium' => $new_qty_medium,
+                    'saldo_qty_large' => $new_qty_large,
+                    'saldo_value' => $new_value,
+                    'description' => $qty_shortfall > 0
+                        ? 'Stock Out - Potong stock otomatis (fisik sampai 0; shortfall ' . $qty_shortfall . ' ke Laporan Minus)'
+                        : 'Stock Out - Potong stock otomatis dari order_items',
+                    'created_at' => now(),
+                ]);
+            }
 
             if ($qty_shortfall > 0) {
                 $varianceRows[] = [
@@ -648,7 +659,7 @@ class StockCutController extends Controller
                 ];
             }
             
-            // Simpan detail untuk insert ke stock_cut_details
+            // Detail teoritis: qty BOM penuh + HPP full (meski fisik hanya partial)
             $stockCutDetails[] = [
                 'inventory_item_id' => $inventory_item_id,
                 'item_id' => $item_id,
@@ -766,14 +777,15 @@ class StockCutController extends Controller
 
         $message = 'Potong stock berhasil';
         if (count($varianceRows) > 0) {
-            $message .= ' (' . count($varianceRows) . ' item dengan qty minus — tercatat di laporan minus)';
+            $message .= ' (' . count($varianceRows) . ' item stok fisik sampai 0 — kekurangan tercatat di Laporan Minus, HPP tetap full)';
         }
 
         return response()->json([
             'status' => 'success',
             'message' => $message,
             'total_variance_items' => count($varianceRows),
-            'had_negative_stock' => count($varianceRows) > 0,
+            'had_negative_stock' => false,
+            'had_shortfall' => count($varianceRows) > 0,
         ]);
     }
 
@@ -1286,7 +1298,8 @@ class StockCutController extends Controller
                 'stock_tersedia' => $stockTersediaSmall,
                 'selisih' => $selisihSmall,
                 'status' => $selisihSmall > 0 ? 'minus' : 'cukup',
-                'will_go_negative' => $selisihSmall > 0,
+                'will_go_negative' => false,
+                'physical_cap_at_zero' => $selisihSmall > 0,
                 'contributing_menus' => $aggregatedData['contributing_menus'],
                 // Konversi unit - Small
                 'kebutuhan_small' => $kebutuhanSmall,
@@ -1324,7 +1337,8 @@ class StockCutController extends Controller
             'total_kurang' => $totalKurang,
             'total_minus' => $totalKurang,
             'total_cukup' => count($laporanStock) - $totalKurang,
-            'allow_negative' => true,
+            'allow_negative' => false,
+            'physical_cap_at_zero' => true,
             'can_cut' => count($laporanStock) > 0,
         ]);
     }
@@ -2779,6 +2793,223 @@ class StockCutController extends Controller
     }
 
     /**
+     * Normalisasi historis: semua outlet stock qty_small < 0 dinaikkan ke 0 + kartu IN + tutup variance open.
+     * Tidak rewrite kartu OUT lama.
+     */
+    public function normalizeNegativeOutletStocks(Request $request)
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return response()->json(['status' => 'error', 'message' => 'Unauthorized'], 401);
+        }
+
+        if (! $this->userCanManageStockCutVariance($user)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Hanya superadmin atau divisi Cost Control yang dapat normalize stok minus.',
+            ], 403);
+        }
+
+        $outletId = $request->filled('outlet_id') ? (int) $request->outlet_id : null;
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        if ($userOutletId > 0 && $userOutletId !== 1) {
+            $outletId = $userOutletId;
+        }
+
+        try {
+            $result = $this->runNormalizeNegativeOutletStocks($user, $outletId);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "Normalize selesai: {$result['normalized']} baris stok di-balancing ke 0"
+                    .($result['closed_variances'] > 0 ? ", {$result['closed_variances']} variance ditutup" : '')
+                    .'.',
+                'data' => $result,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('normalizeNegativeOutletStocks failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal normalize: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * @return array{normalized:int,skipped:int,closed_variances:int,details:array<int,array<string,mixed>>}
+     */
+    public function runNormalizeNegativeOutletStocks($user, ?int $outletId = null): array
+    {
+        $query = DB::table('outlet_food_inventory_stocks')
+            ->where('qty_small', '<', 0)
+            ->orderBy('id');
+
+        if ($outletId) {
+            $query->where('id_outlet', $outletId);
+        }
+
+        $stockIds = $query->pluck('id')->all();
+        $normalized = 0;
+        $skipped = 0;
+        $closedVariances = 0;
+        $details = [];
+
+        foreach ($stockIds as $stockId) {
+            try {
+                $rowResult = DB::transaction(fn () => $this->processNormalizeNegativeStock($user, (int) $stockId));
+                if ($rowResult['did_stock_in']) {
+                    $normalized++;
+                    $closedVariances += (int) ($rowResult['closed_count'] ?? 0);
+                    $details[] = $rowResult;
+                } else {
+                    $skipped++;
+                }
+            } catch (\Throwable $e) {
+                $skipped++;
+                $details[] = [
+                    'stock_id' => (int) $stockId,
+                    'error' => $e->getMessage(),
+                ];
+            }
+        }
+
+        return [
+            'normalized' => $normalized,
+            'skipped' => $skipped,
+            'closed_variances' => $closedVariances,
+            'scanned' => count($stockIds),
+            'details' => $details,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function processNormalizeNegativeStock($user, int $stockId): array
+    {
+        $stock = DB::table('outlet_food_inventory_stocks')
+            ->where('id', $stockId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            throw new \RuntimeException('Baris stok tidak ditemukan.');
+        }
+
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        if ($userOutletId > 0 && $userOutletId !== 1 && (int) $stock->id_outlet !== $userOutletId) {
+            throw new \RuntimeException('Anda tidak berhak normalize stok outlet lain.');
+        }
+
+        $inventoryItemId = (int) $stock->inventory_item_id;
+        $outletId = (int) $stock->id_outlet;
+        $warehouseId = (int) $stock->warehouse_outlet_id;
+
+        $qtyBefore = (float) $stock->qty_small;
+        $qtyToAdd = max(0.0, -$qtyBefore);
+        $didStockIn = false;
+        $costPerSmall = (float) ($stock->last_cost_small ?? 0);
+
+        $inventoryItem = DB::table('outlet_food_inventory_items')->where('id', $inventoryItemId)->first();
+        $itemId = $inventoryItem ? (int) $inventoryItem->item_id : 0;
+
+        if ($costPerSmall <= 0 && \Schema::hasTable('stock_cut_variances')) {
+            $costPerSmall = (float) (DB::table('stock_cut_variances')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('outlet_id', $outletId)
+                ->where('warehouse_outlet_id', $warehouseId)
+                ->orderByDesc('id')
+                ->value('cost_per_small') ?? 0);
+        }
+
+        if ($qtyToAdd > 0) {
+            $itemMaster = $itemId > 0 ? DB::table('items')->where('id', $itemId)->first() : null;
+            $smallConv = $itemMaster ? ((float) ($itemMaster->small_conversion_qty ?: 1)) : 1;
+            $mediumConv = $itemMaster ? ((float) ($itemMaster->medium_conversion_qty ?: 1)) : 1;
+
+            $qtyAddMedium = $smallConv > 0 ? ($qtyToAdd / $smallConv) : 0;
+            $qtyAddLarge = ($smallConv > 0 && $mediumConv > 0)
+                ? ($qtyToAdd / ($smallConv * $mediumConv))
+                : 0;
+
+            $newQtySmall = $qtyBefore + $qtyToAdd;
+            $newQtyMedium = max(0.0, (float) $stock->qty_medium + $qtyAddMedium);
+            $newQtyLarge = max(0.0, (float) $stock->qty_large + $qtyAddLarge);
+            $newValue = $newQtySmall * $costPerSmall;
+
+            $costPerMedium = $costPerSmall * $smallConv;
+            $costPerLarge = $costPerMedium * $mediumConv;
+
+            DB::table('outlet_food_inventory_stocks')
+                ->where('id', $stock->id)
+                ->update([
+                    'qty_small' => $newQtySmall,
+                    'qty_medium' => $newQtyMedium,
+                    'qty_large' => $newQtyLarge,
+                    'value' => $newValue,
+                    'last_cost_small' => $costPerSmall > 0 ? $costPerSmall : $stock->last_cost_small,
+                    'last_cost_medium' => $costPerSmall > 0 ? $costPerMedium : $stock->last_cost_medium,
+                    'last_cost_large' => $costPerSmall > 0 ? $costPerLarge : $stock->last_cost_large,
+                    'updated_at' => now(),
+                ]);
+
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventoryItemId,
+                'id_outlet' => $outletId,
+                'warehouse_outlet_id' => $warehouseId,
+                'date' => now()->toDateString(),
+                'reference_type' => 'stock_cut_variance_adjustment',
+                'reference_id' => $stockId,
+                'in_qty_small' => $qtyToAdd,
+                'in_qty_medium' => $qtyAddMedium,
+                'in_qty_large' => $qtyAddLarge,
+                'out_qty_small' => 0,
+                'out_qty_medium' => 0,
+                'out_qty_large' => 0,
+                'cost_per_small' => $costPerSmall,
+                'cost_per_medium' => $costPerMedium,
+                'cost_per_large' => $costPerLarge,
+                'value_in' => $qtyToAdd * $costPerSmall,
+                'value_out' => 0,
+                'saldo_qty_small' => $newQtySmall,
+                'saldo_qty_medium' => $newQtyMedium,
+                'saldo_qty_large' => $newQtyLarge,
+                'saldo_value' => $newValue,
+                'description' => 'Stock In - Normalize minus stock cut (balancing ke 0)',
+                'created_at' => now(),
+            ]);
+
+            $didStockIn = true;
+        }
+
+        $closedCount = 0;
+        if (\Schema::hasTable('stock_cut_variances')) {
+            $closedCount = app(StockCutVarianceService::class)->closeOpenForStockKey(
+                $inventoryItemId,
+                $outletId,
+                $warehouseId,
+                'adjustment',
+                'stock_cut_variance_adjustment',
+                $stockId,
+                (int) $user->id
+            );
+        }
+
+        return [
+            'stock_id' => $stockId,
+            'inventory_item_id' => $inventoryItemId,
+            'outlet_id' => $outletId,
+            'warehouse_outlet_id' => $warehouseId,
+            'qty_before' => $qtyBefore,
+            'qty_added' => $qtyToAdd,
+            'qty_after' => $qtyBefore + $qtyToAdd,
+            'did_stock_in' => $didStockIn,
+            'closed_count' => $closedCount,
+        ];
+    }
+
+    /**
      * Rollback Adjust: reverse kartu IN, kurangi stok, buka lagi variance yang ditutup oleh adjust tersebut.
      */
     public function rollbackVarianceAdjust(Request $request, $id)
@@ -3220,7 +3451,7 @@ class StockCutController extends Controller
     }
 
     /**
-     * Pastikan baris stok outlet ada (qty 0) agar bisa minus saat stock cut.
+     * Pastikan baris stok outlet ada (qty 0) agar stock cut bisa jalan meski belum ada stok.
      */
     private function ensureOutletStockRowForCut(int $inventoryItemId, int $outletId, int $warehouseId): ?object
     {

@@ -2428,6 +2428,7 @@ Route::post('/api/stock-cut/variance-report/{id}/adjust', [\App\Http\Controllers
 Route::post('/api/stock-cut/variance-report/{id}/rollback-adjust', [\App\Http\Controllers\StockCutController::class, 'rollbackVarianceAdjust']);
 Route::post('/api/stock-cut/variance-report/bulk-adjust', [\App\Http\Controllers\StockCutController::class, 'bulkAdjustVariance']);
 Route::post('/api/stock-cut/variance-report/bulk-rollback-adjust', [\App\Http\Controllers\StockCutController::class, 'bulkRollbackVarianceAdjust']);
+Route::post('/api/stock-cut/variance-report/normalize-negative-stocks', [\App\Http\Controllers\StockCutController::class, 'normalizeNegativeOutletStocks']);
 Route::delete('/stock-cut/{id}', [\App\Http\Controllers\StockCutController::class, 'rollback']);
 Route::get('/api/stock-cut/menu-cost', [\App\Http\Controllers\StockCutController::class, 'calculateMenuCost']);
 Route::get('/stock-cut/recipe-checker', [\App\Http\Controllers\RecipeCheckerController::class, 'index'])

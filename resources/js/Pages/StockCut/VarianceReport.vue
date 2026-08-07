@@ -121,6 +121,16 @@
           </button>
           <button
             type="button"
+            class="inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
+            :disabled="bulkLoading"
+            @click="confirmNormalizeNegative"
+          >
+            <i v-if="bulkLoading && bulkAction === 'normalize'" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-else class="fa-solid fa-scale-balanced"></i>
+            Normalize Stok Fisik Minus → 0
+          </button>
+          <button
+            type="button"
             class="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50"
             :disabled="bulkLoading || selectedRollbackableIds.length === 0"
             @click="confirmBulkRollback(false)"
@@ -468,6 +478,52 @@ async function confirmRollback(row) {
   } finally {
     actionId.value = null
     actionType.value = null
+  }
+}
+
+async function confirmNormalizeNegative() {
+  const outletLabel = filters.outlet_id
+    ? `outlet terfilter (#${filters.outlet_id})`
+    : 'semua outlet'
+
+  const result = await Swal.fire({
+    icon: 'warning',
+    title: 'Normalize stok fisik minus → 0?',
+    html: `
+      <div class="text-left text-sm space-y-2">
+        <p>Semua baris <strong>last stock outlet</strong> dengan qty kecil &lt; 0 akan dinaikkan ke <strong>0</strong>.</p>
+        <p>Scope: <strong>${outletLabel}</strong>.</p>
+        <p class="text-gray-600">Kartu OUT historis tidak diubah. Sistem menulis 1 kartu IN balancing per baris, lalu menutup variance Open terkait.</p>
+      </div>
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Normalize',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#d97706',
+  })
+  if (!result.isConfirmed) return
+
+  bulkLoading.value = true
+  bulkAction.value = 'normalize'
+  try {
+    const payload = {}
+    if (filters.outlet_id) payload.outlet_id = filters.outlet_id
+    const res = await axios.post('/api/stock-cut/variance-report/normalize-negative-stocks', payload)
+    await Swal.fire({
+      icon: 'success',
+      title: 'Selesai',
+      text: res.data?.message || 'Normalize selesai',
+    })
+    await loadData(currentPage.value)
+  } catch (e) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Gagal',
+      text: e.response?.data?.message || 'Gagal normalize stok minus',
+    })
+  } finally {
+    bulkLoading.value = false
+    bulkAction.value = null
   }
 }
 

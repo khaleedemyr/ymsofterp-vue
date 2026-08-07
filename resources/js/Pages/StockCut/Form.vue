@@ -245,13 +245,13 @@
               <p class="text-blue-700 font-medium">Memuat data laporan stock...</p>
             </div>
 
-            <!-- Shortfall items (qty minus) -->
+            <!-- Shortfall items (fisik sampai 0) -->
             <div v-if="shortfallItems.length > 0" class="mb-4 bg-amber-50 border border-amber-300 rounded-lg p-4">
               <h4 class="font-semibold text-amber-900 mb-2">
                 <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                Item Akan Minus ({{ shortfallItems.length }})
+                Item Kekurangan Stok ({{ shortfallItems.length }})
               </h4>
-              <p class="text-sm text-amber-800 mb-3">Item berikut kebutuhannya melebihi stok tersedia — tetap bisa dipotong dengan qty minus.</p>
+              <p class="text-sm text-amber-800 mb-3">Item berikut kebutuhannya melebihi stok tersedia — stok fisik dipotong sampai 0; kekurangan masuk Laporan Minus; HPP tetap dihitung penuh dari BOM.</p>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm divide-y divide-amber-200">
                   <thead class="bg-amber-100">
@@ -286,7 +286,7 @@
                       <h4 class="font-bold text-lg text-gray-800">{{ warehouseName }} ({{ getWarehouseItemCount(warehouseData) }} items)</h4>
                       <div class="text-sm text-gray-600">
                         <span class="text-green-600">{{ getWarehouseCukupCount(warehouseData) }} cukup</span> | 
-                        <span class="text-red-600">{{ getWarehouseKurangCount(warehouseData) }} minus</span>
+                        <span class="text-red-600">{{ getWarehouseKurangCount(warehouseData) }} kekurangan</span>
                       </div>
                     </div>
                     <i :class="{'fa-chevron-down': !expandedWarehouse[warehouseName], 'fa-chevron-up': expandedWarehouse[warehouseName]}" class="fa-solid text-gray-600"></i>
@@ -302,7 +302,7 @@
                           <h5 class="font-semibold text-blue-800">{{ categoryName }} ({{ getCategoryItemCount(categoryData) }} items)</h5>
                           <div class="text-xs text-blue-600">
                             <span class="text-green-600">{{ getCategoryCukupCount(categoryData) }} cukup</span> | 
-                            <span class="text-red-600">{{ getCategoryKurangCount(categoryData) }} minus</span>
+                            <span class="text-red-600">{{ getCategoryKurangCount(categoryData) }} kekurangan</span>
                           </div>
                         </div>
                         <i :class="{'fa-chevron-down': !expandedCategory[warehouseName+categoryName], 'fa-chevron-up': expandedCategory[warehouseName+categoryName]}" class="fa-solid text-blue-600"></i>
@@ -318,7 +318,7 @@
                               <h6 class="font-medium text-blue-700 text-sm">{{ subCategoryName }} ({{ subCategoryData.length }} items)</h6>
                               <div class="text-xs text-blue-600">
                                 <span class="text-green-600">{{ subCategoryData.filter(item => item.status === 'cukup').length }} cukup</span> | 
-                                <span class="text-red-600">{{ subCategoryData.filter(isShortfallItem).length }} minus</span>
+                                <span class="text-red-600">{{ subCategoryData.filter(isShortfallItem).length }} kekurangan</span>
                               </div>
                             </div>
                             <i :class="{'fa-chevron-down': !expandedSubCategory[warehouseName+categoryName+subCategoryName], 'fa-chevron-up': expandedSubCategory[warehouseName+categoryName+subCategoryName]}" class="fa-solid text-blue-600"></i>
@@ -362,8 +362,8 @@
                                     <span v-if="item.status === 'cukup'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                       Cukup
                                     </span>
-                                    <span v-else-if="item.status === 'minus'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title="Akan dipotong dengan qty minus">
-                                      Minus
+                                    <span v-else-if="item.status === 'minus'" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" title="Stok fisik dipotong sampai 0; shortfall ke Laporan Minus">
+                                      Kekurangan
                                     </span>
                                     <span v-else class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                       Kurang
@@ -642,7 +642,7 @@ const shortfallItems = computed(() => {
 })
 
 function isShortfallItem(item) {
-  return item?.status === 'kurang' || item?.status === 'minus' || item?.will_go_negative === true
+  return item?.status === 'kurang' || item?.status === 'minus' || item?.will_go_negative === true || item?.physical_cap_at_zero === true
 }
 
 // Lifecycle
@@ -916,7 +916,7 @@ async function cekKebutuhan() {
       } else {
         bolehPotong.value = true
         if (adaYangKurang) {
-          successMsg.value = `Siap potong stock. ${res.data.total_minus || res.data.total_kurang} item akan qty minus (cost tetap full BOM, tercatat di Laporan Minus).`
+          successMsg.value = `Siap potong stock. ${res.data.total_minus || res.data.total_kurang} item kekurangan stok (fisik sampai 0, HPP full BOM, tercatat di Laporan Minus).`
           expandShortfallSections()
         } else {
           successMsg.value = 'Stock cukup, siap untuk potong stock!'
@@ -970,8 +970,8 @@ async function potongStockAsync() {
     })
     if (res.data.status === 'success') {
       successMsg.value = res.data.message || 'Potong stock berhasil.'
-      if (res.data.had_negative_stock) {
-        successMsg.value += ' Lihat Laporan Minus untuk detail qty minus.'
+      if (res.data.had_negative_stock || res.data.had_shortfall) {
+        successMsg.value += ' Lihat Laporan Minus untuk detail kekurangan stok.'
       }
       bolehPotong.value = false
       // Refresh stock cut status setelah berhasil
