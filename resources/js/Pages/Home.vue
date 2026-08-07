@@ -822,6 +822,11 @@ const totalNotificationsCount = computed(() => {
     return total > 0 ? total : 0;
 });
 
+/** Antrian yang bisa diproses akun ini (bukan company-wide) */
+const myActionableApprovalCount = computed(() =>
+    pendingApprovals.value.length + pendingHrdApprovals.value.length + pendingCorrectionApprovals.value.length
+);
+
 const prApprovalCount = computed(() => {
     const count = pendingPrApprovals.value.length;
     return count > 0 ? count : 0;
@@ -6771,39 +6776,99 @@ watch(locale, () => {
                             </div>
                         </div>
 
-                        <!-- Ringkasan antrian (HRD / GM HR / superadmin) -->
-                        <div v-if="canAccessHrdApprovals()" class="mb-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <div class="rounded-xl p-3 border"
-                                :class="isNight ? 'bg-blue-950/40 border-blue-700/40' : 'bg-blue-50 border-blue-100'">
-                                <div class="text-[11px] font-semibold uppercase tracking-wide"
-                                    :class="isNight ? 'text-blue-300' : 'text-blue-700'">Belum approve atasan</div>
-                                <div class="mt-1 flex items-end justify-between gap-2">
-                                    <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
-                                        {{ leaveApprovalSummary?.pending_supervisor_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                        <!-- Ringkasan antrian company-wide (HRD / GM HR / superadmin) -->
+                        <div v-if="canAccessHrdApprovals()" class="mb-3 space-y-2">
+                            <div class="text-[11px] font-medium" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                Periode absen
+                                <span class="font-semibold" :class="isNight ? 'text-slate-200' : 'text-slate-700'">
+                                    {{ leaveApprovalSummary?.period?.label || '…' }}
+                                </span>
+                                <span v-if="leaveApprovalSummary?.period?.include_previous" class="opacity-70">
+                                    (berjalan + periode sebelumnya)
+                                </span>
+                                <span v-else class="opacity-70">(26 bln lalu – 25 bln ini)</span>
+                            </div>
+
+                            <!-- Total per jenis -->
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div class="rounded-xl p-3 border"
+                                    :class="isNight ? 'bg-indigo-950/40 border-indigo-700/40' : 'bg-indigo-50 border-indigo-100'">
+                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                        :class="isNight ? 'text-indigo-300' : 'text-indigo-700'">Izin / Cuti</div>
+                                    <div class="mt-1 flex items-end justify-between gap-2">
+                                        <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                            {{ leaveApprovalSummary?.pending_leave_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                        </div>
+                                        <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <div>{{ leaveApprovalSummary?.pending_supervisor_count ?? 0 }} atasan · {{ leaveApprovalSummary?.pending_hrd_count ?? 0 }} HRD</div>
+                                            <div class="font-medium mt-0.5">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_leave_oldest_at) }}</div>
+                                        </div>
                                     </div>
-                                    <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                        <div>Paling lama</div>
-                                        <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_supervisor_oldest_at) }}</div>
+                                </div>
+                                <div class="rounded-xl p-3 border"
+                                    :class="isNight ? 'bg-orange-950/40 border-orange-700/40' : 'bg-orange-50 border-orange-100'">
+                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                        :class="isNight ? 'text-orange-300' : 'text-orange-700'">Koreksi Absensi</div>
+                                    <div class="mt-1 flex items-end justify-between gap-2">
+                                        <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                            {{ leaveApprovalSummary?.pending_correction_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                        </div>
+                                        <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <div>Paling lama</div>
+                                            <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_correction_oldest_at) }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="rounded-xl p-3 border"
+                                    :class="isNight ? 'bg-slate-700/50 border-slate-500/40' : 'bg-slate-50 border-slate-200'">
+                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                        :class="isNight ? 'text-slate-300' : 'text-slate-600'">Total Semua</div>
+                                    <div class="mt-1 flex items-end justify-between gap-2">
+                                        <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                            {{ leaveApprovalSummary?.pending_total_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                        </div>
+                                        <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            izin/cuti + koreksi
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="rounded-xl p-3 border"
-                                :class="isNight ? 'bg-purple-950/40 border-purple-700/40' : 'bg-purple-50 border-purple-100'">
-                                <div class="text-[11px] font-semibold uppercase tracking-wide"
-                                    :class="isNight ? 'text-purple-300' : 'text-purple-700'">Belum approve HRD</div>
-                                <div class="mt-1 flex items-end justify-between gap-2">
-                                    <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
-                                        {{ leaveApprovalSummary?.pending_hrd_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+
+                            <!-- Detail tahap izin/cuti -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div class="rounded-xl p-3 border"
+                                    :class="isNight ? 'bg-blue-950/40 border-blue-700/40' : 'bg-blue-50 border-blue-100'">
+                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                        :class="isNight ? 'text-blue-300' : 'text-blue-700'">Belum approve atasan</div>
+                                    <div class="mt-1 flex items-end justify-between gap-2">
+                                        <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                            {{ leaveApprovalSummary?.pending_supervisor_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                        </div>
+                                        <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <div>Paling lama</div>
+                                            <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_supervisor_oldest_at) }}</div>
+                                        </div>
                                     </div>
-                                    <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                        <div>Paling lama</div>
-                                        <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_hrd_oldest_at) }}</div>
+                                </div>
+                                <div class="rounded-xl p-3 border"
+                                    :class="isNight ? 'bg-purple-950/40 border-purple-700/40' : 'bg-purple-50 border-purple-100'">
+                                    <div class="text-[11px] font-semibold uppercase tracking-wide"
+                                        :class="isNight ? 'text-purple-300' : 'text-purple-700'">Belum approve HRD</div>
+                                    <div class="mt-1 flex items-end justify-between gap-2">
+                                        <div class="text-2xl font-bold leading-none" :class="isNight ? 'text-white' : 'text-slate-900'">
+                                            {{ leaveApprovalSummary?.pending_hrd_count ?? (loadingLeaveApprovalSummary ? '…' : 0) }}
+                                        </div>
+                                        <div class="text-[11px] text-right" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            <div>Paling lama</div>
+                                            <div class="font-medium">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.pending_hrd_oldest_at) }}</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="sm:col-span-2 rounded-xl px-3 py-2 border text-xs flex flex-wrap items-center justify-between gap-2"
+
+                            <div class="rounded-xl px-3 py-2 border text-xs flex flex-wrap items-center justify-between gap-2"
                                 :class="isNight ? 'bg-emerald-950/30 border-emerald-700/40 text-emerald-200' : 'bg-emerald-50 border-emerald-100 text-emerald-800'">
-                                <span class="font-medium">HRD terakhir approve</span>
+                                <span class="font-medium">HRD terakhir approve (izin/cuti)</span>
                                 <span class="font-semibold">{{ formatLeaveSummaryDateTime(leaveApprovalSummary?.last_hrd_approved_at) }}</span>
                             </div>
                         </div>
@@ -6992,12 +7057,15 @@ watch(locale, () => {
                                 </button>
                             </div>
                             
-                            <!-- Tombol untuk melihat semua approval yang pending -->
-                            <div v-if="(pendingApprovals.length > 0 || pendingHrdApprovals.length > 0 || pendingCorrectionApprovals.length > 0)" class="text-center pt-2">
+                            <!-- Tombol untuk melihat semua approval yang pending di akun ini -->
+                            <div v-if="myActionableApprovalCount > 0" class="text-center pt-2">
                                 <button @click="showAllApprovals" class="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors">
                                     <i class="fa-solid fa-list-check mr-1"></i>
-                                    Lihat Semua Approval ({{ pendingApprovals.length + pendingHrdApprovals.length + pendingCorrectionApprovals.length }})
+                                    Lihat Antrian Saya ({{ myActionableApprovalCount }})
                                 </button>
+                                <div class="text-[11px] mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                    {{ pendingApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
+                                </div>
                             </div>
                             
                         </div>

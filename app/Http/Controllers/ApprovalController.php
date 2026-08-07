@@ -12,6 +12,7 @@ use App\Services\LeaveManagementService;
 use App\Services\HolidayAttendanceService;
 use App\Services\NotificationService;
 use App\Support\HrdApprovalAccess;
+use App\Support\AttendancePayrollPeriod;
 
 class ApprovalController extends Controller
 {
@@ -712,12 +713,17 @@ class ApprovalController extends Controller
             ], 403);
         }
         
-        // Get pending approval requests that need HRD approval
+        // Get pending approval requests that need HRD approval (periode absen berjalan saja)
+        $period = AttendancePayrollPeriod::forHrdApprovalQueue();
         $approvals = DB::table('approval_requests')
             ->join('users', 'approval_requests.user_id', '=', 'users.id')
             ->join('leave_types', 'approval_requests.leave_type_id', '=', 'leave_types.id')
             ->where('approval_requests.status', 'approved')
-            ->where('approval_requests.hrd_status', 'pending')
+            ->where('approval_requests.hrd_status', 'pending');
+
+        HrdApprovalAccess::applyLeaveDateOverlapsPeriod($approvals, $period['start'], $period['end']);
+
+        $approvals = $approvals
             ->select([
                 'approval_requests.id',
                 'approval_requests.user_id',
@@ -764,7 +770,8 @@ class ApprovalController extends Controller
             
         return response()->json([
             'success' => true,
-            'approvals' => $formattedApprovals
+            'approvals' => $formattedApprovals,
+            'period' => $period,
         ]);
     }
     

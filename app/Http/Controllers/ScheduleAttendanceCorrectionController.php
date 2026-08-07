@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Shift;
 use App\Services\NotificationService;
 use App\Support\HrdApprovalAccess;
+use App\Support\AttendancePayrollPeriod;
 use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -561,11 +562,13 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 403);
         }
         
+        $period = AttendancePayrollPeriod::forHrdApprovalQueue();
         $approvals = DB::table('schedule_attendance_correction_approvals as saca')
             ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
             ->leftJoin('users as employee', 'saca.user_id', '=', 'employee.id')
             ->leftJoin('tbl_data_outlet', 'saca.outlet_id', '=', 'tbl_data_outlet.id_outlet')
             ->where('saca.status', 'pending')
+            ->whereBetween('saca.tanggal', [$period['start'], $period['end']])
             ->select([
                 'saca.*',
                 'requester.nama_lengkap as requested_by_name',
@@ -581,7 +584,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             
         return response()->json([
             'success' => true,
-            'approvals' => $approvals
+            'approvals' => $approvals,
+            'period' => $period,
         ]);
     }
     
