@@ -5440,16 +5440,14 @@ async function approveRequest(approvalId) {
                     confirmButtonColor: '#10B981'
                 });
                 showApprovalModal.value = false;
-                await loadPendingApprovals();
-                await loadAllApprovals();
-                await loadLeaveNotifications();
+                await reloadUnifiedApprovalSources();
             }
         } catch (error) {
             console.error('Error approving request:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menyetujui permohonan',
+                text: error.response?.data?.message || 'Gagal menyetujui permohonan',
                 confirmButtonText: 'OK',
                 confirmButtonColor: '#EF4444'
             });
@@ -5489,16 +5487,14 @@ async function rejectRequest(approvalId) {
                     confirmButtonColor: '#10B981'
                 });
                 showApprovalModal.value = false;
-                await loadPendingApprovals();
-                await loadAllApprovals();
-                await loadLeaveNotifications();
+                await reloadUnifiedApprovalSources();
             }
         } catch (error) {
             console.error('Error rejecting request:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menolak permohonan',
+                text: error.response?.data?.message || 'Gagal menolak permohonan',
                 confirmButtonText: 'OK',
                 confirmButtonColor: '#EF4444'
             });
@@ -8782,8 +8778,8 @@ watch(locale, () => {
 
         </div>
 
-        <!-- Approval Detail Modal -->
-        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showApprovalModal = false">
+        <!-- Approval Detail Modal (di atas modal antrian) -->
+        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80]" @click="showApprovalModal = false">
             <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden" @click.stop>
                 <!-- Modal Header -->
                 <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -14052,7 +14048,7 @@ watch(locale, () => {
     </div>
 
     <!-- All Approvals Modal -->
-    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click.self="closeAllApprovalsModal">
+    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click.self="closeAllApprovalsModal">
         <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden" @click.stop>
             <!-- Modal Header -->
             <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">

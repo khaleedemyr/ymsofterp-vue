@@ -314,6 +314,8 @@ class ApprovalController extends Controller
         }
         
         $userId = auth()->id();
+        $user = auth()->user();
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
         
         // Get approval request
         $approvalRequest = DB::table('approval_requests')
@@ -344,7 +346,7 @@ class ApprovalController extends Controller
         $currentApprovalFlow = null;
         
         if ($absentRequest) {
-            // Check new flow: user must be the next approver in line
+            // Check new flow: user must be the next approver in line (superadmin boleh override)
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $absentRequest->id)
                 ->where('absent_request_approval_flows.status', 'PENDING')
@@ -353,7 +355,7 @@ class ApprovalController extends Controller
             
             if (!$pendingFlows->isEmpty()) {
                 $nextApprover = $pendingFlows->first();
-                if ($nextApprover->approver_id == $userId) {
+                if ($nextApprover->approver_id == $userId || $isSuperadmin) {
                     $isValidApprover = true;
                     $currentApprovalFlow = DB::table('absent_request_approval_flows')
                         ->where('id', $nextApprover->id)
@@ -363,7 +365,7 @@ class ApprovalController extends Controller
         }
         
         // Fallback to old flow check
-        if (!$isValidApprover && $approvalRequest->approver_id == $userId) {
+        if (!$isValidApprover && ($approvalRequest->approver_id == $userId || $isSuperadmin)) {
             $isValidApprover = true;
         }
         
@@ -568,6 +570,8 @@ class ApprovalController extends Controller
         }
         
         $userId = auth()->id();
+        $user = auth()->user();
+        $isSuperadmin = $user && $user->id_role === '5af56935b011a';
         
         // Get approval request
         $approvalRequest = DB::table('approval_requests')
@@ -598,7 +602,7 @@ class ApprovalController extends Controller
         $currentApprovalFlow = null;
         
         if ($absentRequest) {
-            // Check new flow: user must be the next approver in line
+            // Check new flow: user must be the next approver in line (superadmin boleh override)
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $absentRequest->id)
                 ->where('absent_request_approval_flows.status', 'PENDING')
@@ -607,7 +611,7 @@ class ApprovalController extends Controller
             
             if (!$pendingFlows->isEmpty()) {
                 $nextApprover = $pendingFlows->first();
-                if ($nextApprover->approver_id == $userId) {
+                if ($nextApprover->approver_id == $userId || $isSuperadmin) {
                     $isValidApprover = true;
                     $currentApprovalFlow = DB::table('absent_request_approval_flows')
                         ->where('id', $nextApprover->id)
@@ -617,7 +621,7 @@ class ApprovalController extends Controller
         }
         
         // Fallback to old flow check
-        if (!$isValidApprover && $approvalRequest->approver_id == $userId) {
+        if (!$isValidApprover && ($approvalRequest->approver_id == $userId || $isSuperadmin)) {
             $isValidApprover = true;
         }
         
