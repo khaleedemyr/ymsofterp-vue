@@ -17,6 +17,15 @@
           <div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Packing List:</span> {{ order.packing_number || '-' }}</div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Floor Order:</span> {{ order.floor_order_number || '-' }}</div>
+            <div class="mb-2">
+              <span class="font-semibold text-gray-600">Tipe RO:</span>
+              <span
+                v-if="order.floor_order_mode"
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ml-1"
+                :class="foModeBadgeClass(order.floor_order_mode)"
+              >{{ order.floor_order_mode }}</span>
+              <span v-else>-</span>
+            </div>
             <div class="mb-2"><span class="font-semibold text-gray-600">Tanggal Packing:</span> {{ formatDate(order.packing_date) }}</div>
             <div class="mb-2">
               <span class="font-semibold text-gray-600">Mode Scan:</span>
@@ -99,6 +108,15 @@ const props = defineProps({
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function foModeBadgeClass(mode) {
+  const m = String(mode || '').toLowerCase();
+  if (m.includes('utama')) return 'bg-blue-100 text-blue-800';
+  if (m.includes('tambahan')) return 'bg-amber-100 text-amber-800';
+  if (m.includes('khusus')) return 'bg-purple-100 text-purple-800';
+  if (m.includes('supplier')) return 'bg-teal-100 text-teal-800';
+  return 'bg-gray-100 text-gray-700';
 }
 
 function formatQty(val) {

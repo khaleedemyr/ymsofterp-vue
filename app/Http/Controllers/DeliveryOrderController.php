@@ -198,6 +198,7 @@ class DeliveryOrderController extends Controller
                 'do.*',
                 'pl.packing_number',
                 'fo.order_number as floor_order_number',
+                'fo.fo_mode as floor_order_mode',
                 'pl.created_at as packing_date',
                 'fo.tanggal as floor_order_date',
                 'u.nama_lengkap as created_by_name'
@@ -1080,6 +1081,7 @@ class DeliveryOrderController extends Controller
                 u.nama_lengkap as created_by_name,
                 COALESCE(pl.packing_number, gr.gr_number) as packing_number,
                 fo.order_number as floor_order_number,
+                fo.fo_mode as floor_order_mode,
                 o.nama_outlet,
                 wo.name as warehouse_outlet_name,
                 CONCAT(COALESCE(w.name, ''), CASE WHEN w.name IS NOT NULL AND wd.name IS NOT NULL THEN ' - ' ELSE '' END, COALESCE(wd.name, '')) as warehouse_info
@@ -2892,6 +2894,7 @@ class DeliveryOrderController extends Controller
                 'do.*',
                 'pl.packing_number',
                 'fo.order_number as floor_order_number',
+                'fo.fo_mode as floor_order_mode',
                 'pl.created_at as packing_date',
                 'fo.tanggal as floor_order_date',
                 'u.nama_lengkap as created_by_name'

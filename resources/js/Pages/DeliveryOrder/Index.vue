@@ -145,7 +145,17 @@
                 </div>
               </td>
               <td class="px-6 py-3">{{ order.packing_number || '-' }}</td>
-              <td class="px-6 py-3">{{ order.floor_order_number || '-' }}</td>
+              <td class="px-6 py-3">
+                <div class="text-sm">
+                  <div class="font-medium">{{ order.floor_order_number || '-' }}</div>
+                  <div v-if="order.floor_order_mode" class="mt-0.5">
+                    <span
+                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold"
+                      :class="foModeBadgeClass(order.floor_order_mode)"
+                    >{{ order.floor_order_mode }}</span>
+                  </div>
+                </div>
+              </td>
               <td class="px-6 py-3">{{ order.created_by_name || '-' }}</td>
               <td class="px-6 py-3">
                 <Link :href="`/delivery-order/${order.id}`" class="inline-flex items-center btn btn-xs bg-blue-100 text-blue-800 hover:bg-blue-200 rounded px-2 py-1 font-semibold transition">
@@ -330,6 +340,15 @@ watch(perPage, (newPerPage) => {
 function formatDate(date) {
   if (!date) return '-';
   return new Date(date).toLocaleDateString('id-ID');
+}
+
+function foModeBadgeClass(mode) {
+  const m = String(mode || '').toLowerCase();
+  if (m.includes('utama')) return 'bg-blue-100 text-blue-800';
+  if (m.includes('tambahan')) return 'bg-amber-100 text-amber-800';
+  if (m.includes('khusus')) return 'bg-purple-100 text-purple-800';
+  if (m.includes('supplier')) return 'bg-teal-100 text-teal-800';
+  return 'bg-gray-100 text-gray-700';
 }
 
 function formatTime(date) {
