@@ -559,6 +559,14 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/it-work-reports/{id}', [\App\Http\Controllers\ItWorkReportController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::delete('/it-work-reports/{id}', [\App\Http\Controllers\ItWorkReportController::class, 'apiDestroy'])->where('id', '[0-9]+');
 
+        // Logbook Driver (Approval App — selaras web /logbook-drivers)
+        Route::get('/logbook-drivers/create-data', [\App\Http\Controllers\LogbookDriverController::class, 'apiCreateData']);
+        Route::get('/logbook-drivers', [\App\Http\Controllers\LogbookDriverController::class, 'apiIndex']);
+        Route::post('/logbook-drivers', [\App\Http\Controllers\LogbookDriverController::class, 'apiStore']);
+        Route::get('/logbook-drivers/{id}', [\App\Http\Controllers\LogbookDriverController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::post('/logbook-drivers/{id}', [\App\Http\Controllers\LogbookDriverController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/logbook-drivers/{id}', [\App\Http\Controllers\LogbookDriverController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
         // QA2 Audits (Approval App — selaras web /qa2-audits)
         Route::get('/qa2-audits/create-data', [\App\Http\Controllers\Qa2AuditController::class, 'apiCreateData']);
         Route::get('/qa2-audits/report-summary', [\App\Http\Controllers\Qa2AuditController::class, 'apiReportSummary']);

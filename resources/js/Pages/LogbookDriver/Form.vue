@@ -32,14 +32,14 @@
               />
             </div>
             <div>
-              <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal <span class="text-red-500">*</span></label>
+              <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal</label>
               <input
-                v-model="form.log_date"
                 type="date"
-                required
-                class="w-full rounded-lg border-gray-300 focus:border-cyan-500 focus:ring-cyan-500"
+                :value="form.log_date"
+                readonly
+                class="w-full rounded-lg border-gray-300 bg-gray-50 text-gray-700"
               />
-              <p v-if="form.errors.log_date" class="text-xs text-red-600 mt-1">{{ form.errors.log_date }}</p>
+              <p class="text-[11px] text-gray-400 mt-1">Tanggal otomatis (tidak bisa diubah)</p>
             </div>
             <div class="md:col-span-2">
               <label class="block text-xs font-semibold text-gray-600 mb-1">Outlet <span class="text-red-500">*</span></label>

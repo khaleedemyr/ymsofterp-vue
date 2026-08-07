@@ -95,7 +95,7 @@ class LogbookDriverController extends Controller
 
             $record = LogbookDriver::create([
                 'number' => $this->generateNumber(),
-                'log_date' => $validated['log_date'],
+                'log_date' => now()->toDateString(),
                 'outlet_id' => $outlet->id_outlet,
                 'outlet_name' => (string) $outlet->nama_outlet,
                 'driver_id' => $user->id,
@@ -161,7 +161,6 @@ class LogbookDriverController extends Controller
             $outlet = Outlet::findOrFail($validated['outlet_id']);
 
             $logbookDriver->update([
-                'log_date' => $validated['log_date'],
                 'outlet_id' => $outlet->id_outlet,
                 'outlet_name' => (string) $outlet->nama_outlet,
                 'notes' => $validated['notes'] ?? null,
@@ -196,8 +195,23 @@ class LogbookDriverController extends Controller
 
     private function validatePayload(Request $request): array
     {
+        if ($request->has('items') && is_array($request->input('items'))) {
+            $items = $request->input('items');
+            foreach ($items as $i => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $time = $item['log_time'] ?? null;
+                if ($time === '' || $time === null) {
+                    $items[$i]['log_time'] = null;
+                } elseif (is_string($time) && preg_match('/^\d{2}:\d{2}/', $time)) {
+                    $items[$i]['log_time'] = substr($time, 0, 5);
+                }
+            }
+            $request->merge(['items' => $items]);
+        }
+
         $validated = $request->validate([
-            'log_date' => ['required', 'date'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'items' => ['required', 'array', 'min:1'],
@@ -331,5 +345,196 @@ class LogbookDriverController extends Controller
         if (! $this->canManage($record)) {
             abort(403);
         }
+    }
+
+    // ─── Approval App API ────────────────────────────────────────────
+
+    public function apiIndex(Request $request)
+    {
+        $query = LogbookDriver::query()
+            ->withCount('items')
+            ->orderByDesc('log_date')
+            ->orderByDesc('id');
+
+        if (! $this->isSuperAdmin()) {
+            $query->where('driver_id', Auth::id());
+        }
+
+        if ($request->filled('outlet_id')) {
+            $query->where('outlet_id', (int) $request->outlet_id);
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('log_date', '>=', $request->string('date_from')->toString());
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('log_date', '<=', $request->string('date_to')->toString());
+        }
+
+        if ($search = trim((string) $request->get('search', ''))) {
+            $query->where(function ($q) use ($search) {
+                $q->where('number', 'like', "%{$search}%")
+                    ->orWhere('outlet_name', 'like', "%{$search}%")
+                    ->orWhere('driver_name', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = (int) $request->get('per_page', 15);
+        if ($perPage < 1 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $query->paginate($perPage),
+            'outlets' => $this->activeOutlets(),
+            'filters' => $request->only(['search', 'outlet_id', 'date_from', 'date_to']),
+        ]);
+    }
+
+    public function apiCreateData()
+    {
+        $user = Auth::user();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'outlets' => $this->activeOutlets(),
+                'driver' => [
+                    'id' => $user->id,
+                    'name' => (string) ($user->nama_lengkap ?? $user->name ?? ''),
+                ],
+                'log_date' => now()->toDateString(),
+            ],
+        ]);
+    }
+
+    public function apiShow($id)
+    {
+        $record = LogbookDriver::with(['items', 'creator:id,nama_lengkap'])->findOrFail($id);
+        if (! $this->canManage($record)) {
+            return response()->json(['success' => false, 'message' => 'Tidak punya akses.'], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $record,
+            'outlets' => $this->activeOutlets(),
+            'canEdit' => $this->canManage($record),
+            'canDelete' => $this->canManage($record),
+        ]);
+    }
+
+    public function apiStore(Request $request)
+    {
+        try {
+            $validated = $this->validatePayload($request);
+            $record = null;
+            DB::beginTransaction();
+            try {
+                $outlet = Outlet::findOrFail($validated['outlet_id']);
+                $user = Auth::user();
+
+                $record = LogbookDriver::create([
+                    'number' => $this->generateNumber(),
+                    'log_date' => now()->toDateString(),
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'driver_id' => $user->id,
+                    'driver_name' => (string) ($user->nama_lengkap ?? $user->name ?? ''),
+                    'notes' => $validated['notes'] ?? null,
+                    'created_by' => $user->id,
+                    'updated_by' => $user->id,
+                ]);
+
+                $this->syncItems($record, $validated['items'] ?? [], $request);
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                if ($record?->id) {
+                    Storage::disk('public')->deleteDirectory('logbook_drivers/'.$record->id);
+                }
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Logbook Driver berhasil disimpan.',
+                'data' => $record->fresh(['items']),
+            ], 201);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiUpdate(Request $request, $id)
+    {
+        $record = LogbookDriver::findOrFail($id);
+        if (! $this->canManage($record)) {
+            return response()->json(['success' => false, 'message' => 'Tidak bisa mengedit logbook ini.'], 403);
+        }
+
+        try {
+            $validated = $this->validatePayload($request);
+            DB::beginTransaction();
+            try {
+                $outlet = Outlet::findOrFail($validated['outlet_id']);
+                $record->update([
+                    'outlet_id' => $outlet->id_outlet,
+                    'outlet_name' => (string) $outlet->nama_outlet,
+                    'notes' => $validated['notes'] ?? null,
+                    'updated_by' => Auth::id(),
+                ]);
+                $this->syncItems($record, $validated['items'] ?? [], $request);
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Logbook Driver berhasil diperbarui.',
+                'data' => $record->fresh(['items']),
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function apiDestroy($id)
+    {
+        $record = LogbookDriver::findOrFail($id);
+        if (! $this->canManage($record)) {
+            return response()->json(['success' => false, 'message' => 'Tidak bisa menghapus logbook ini.'], 403);
+        }
+
+        $id = $record->id;
+        $record->delete();
+        Storage::disk('public')->deleteDirectory('logbook_drivers/'.$id);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Logbook Driver dihapus.',
+        ]);
     }
 }
