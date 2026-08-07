@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -205,6 +206,41 @@ final class FloorOrderItemPriceResolver
     }
 
     /**
+     * Harga aman untuk baris FO non-supplier: selalu medium + guard UoM.
+     * Tidak pernah memakai harga client mentah.
+     */
+    public static function sanitizeNonSupplierLinePrice(
+        int $itemId,
+        ?string $unitName,
+        ?int $regionId = null,
+        ?string $outletId = null,
+        ?object $itemMaster = null,
+        ?array $unitNameById = null,
+        float $clientPrice = 0.0,
+    ): float {
+        $item = $itemMaster ?? DB::table('items')->where('id', $itemId)->first();
+        if (! $item) {
+            return 0.0;
+        }
+
+        // RO Utama/Tambahan/Khusus order per medium — abaikan label unit client (Recipe/Pack).
+        $price = self::resolveMediumUnitPrice($itemId, $regionId, $outletId, $item);
+        if ($price <= 0 && $clientPrice > 0) {
+            $price = $clientPrice;
+        }
+
+        return self::guardAgainstLargePriceOnMediumUnit(
+            $price,
+            $itemId,
+            $unitName,
+            $regionId,
+            $outletId,
+            $item,
+            $unitNameById,
+        );
+    }
+
+    /**
      * Guard: cegah harga large (Recipe) tertempel ke baris unit medium/small.
      * Kasus historis: FO unit=Pack/Pcs tapi price = item_prices large.
      */
@@ -218,7 +254,7 @@ final class FloorOrderItemPriceResolver
         ?array $unitNameById = null,
     ): float {
         $item = $itemMaster ?? DB::table('items')->where('id', $itemId)->first();
-        if (! $item) {
+        if (! $item || $resolvedPrice <= 0) {
             return $resolvedPrice;
         }
 
@@ -239,15 +275,41 @@ final class FloorOrderItemPriceResolver
         }
 
         $largeRounded = self::roundUpToHundred($priceLarge);
-        if (abs($resolvedPrice - $largeRounded) > 150) {
+        $expectedMedium = self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item));
+        $expectedSmall = self::roundUpToHundred(self::largeToSmallPrice($priceLarge, $item));
+        $corrected = $tier === 'small' ? $expectedSmall : $expectedMedium;
+
+        if ($corrected <= 0) {
             return $resolvedPrice;
         }
 
-        // Harga hasil resolve = large, padahal unit medium/small → paksa konversi UoM.
-        return match ($tier) {
-            'small' => self::roundUpToHundred(self::largeToSmallPrice($priceLarge, $item)),
-            default => self::roundUpToHundred(self::largeToMediumPrice($priceLarge, $item)),
-        };
+        $matchesLarge = abs($resolvedPrice - $largeRounded) <= max(150.0, $largeRounded * 0.02);
+        // Harga ~N× medium (N ≈ medium_conversion_qty) → hampir pasti large tertempel di Pack/Pcs.
+        $ratio = $resolvedPrice / $corrected;
+        $looksLikeUnconvertedLarge = $ratio >= max(1.8, $mediumConv * 0.7)
+            && $ratio <= $mediumConv * 1.35;
+
+        if (! $matchesLarge && ! $looksLikeUnconvertedLarge) {
+            return $resolvedPrice;
+        }
+
+        if (abs($resolvedPrice - $corrected) < 0.01) {
+            return $resolvedPrice;
+        }
+
+        Log::warning('FloorOrderItemPriceResolver: corrected large-on-medium FO price', [
+            'item_id' => $itemId,
+            'unit' => $unitName,
+            'tier' => $tier,
+            'from' => $resolvedPrice,
+            'to' => $corrected,
+            'price_large' => $priceLarge,
+            'medium_conv' => $mediumConv,
+            'matches_large' => $matchesLarge,
+            'ratio' => round($ratio, 3),
+        ]);
+
+        return $corrected;
     }
 
     public static function isAssetItem(int $itemId): bool

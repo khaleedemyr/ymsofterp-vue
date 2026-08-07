@@ -89,8 +89,31 @@ final class FloorOrderPriceAuditor
             $outletId = $row->id_outlet ? (string) $row->id_outlet : null;
             $unitName = (string) ($row->unit ?? '');
 
-            $resolved = $this->resolveExpected($itemId, $unitName, $regionId, $outletId);
-            $expected = $resolved['expected'];
+            // RO Utama/Tambahan: expected selalu medium + guard (abaikan label Recipe di unit).
+            $expected = FloorOrderItemPriceResolver::sanitizeNonSupplierLinePrice(
+                $itemId,
+                $unitName !== '' ? $unitName : null,
+                $regionId,
+                $outletId,
+                $item,
+                $this->unitNameById,
+                (float) $row->price,
+            );
+            $tier = FloorOrderItemPriceResolver::detectUnitTier($item, $unitName, $this->unitNameById);
+            $cacheKey = $itemId . '|' . ($regionId ?? 0) . '|' . ($outletId ?? '0');
+            if (! isset($this->largePriceCache[$cacheKey])) {
+                $priceRows = $this->priceRowsByItem->get($itemId, collect());
+                $priceRow = $this->pickPriceRow($priceRows, $regionId, $outletId);
+                $large = $this->resolveLarge($itemId, $priceRow);
+                $mode = ($priceRow && ($priceRow->pricing_mode ?? '') === 'auto') ? 'auto' : 'manual';
+                $this->largePriceCache[$cacheKey] = ['large' => $large, 'mode' => $mode];
+            }
+            $resolved = [
+                'expected' => $expected,
+                'large' => $this->largePriceCache[$cacheKey]['large'],
+                'mode' => $this->largePriceCache[$cacheKey]['mode'],
+                'tier' => $tier,
+            ];
 
             if ($expected <= 0) {
                 $skippedNoPrice++;
@@ -187,7 +210,7 @@ final class FloorOrderPriceAuditor
         $header = DB::table('food_floor_orders as ffo')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
             ->where('ffo.id', $floorOrderId)
-            ->select('ffo.id', 'ffo.id_outlet', 'o.region_id')
+            ->select('ffo.id', 'ffo.id_outlet', 'ffo.fo_mode', 'o.region_id')
             ->first();
 
         if (! $header) {
@@ -219,16 +242,38 @@ final class FloorOrderPriceAuditor
 
         $regionId = $header->region_id ? (int) $header->region_id : null;
         $outletId = $header->id_outlet ? (string) $header->id_outlet : null;
+        $forceMedium = ! in_array((string) ($header->fo_mode ?? ''), ['RO Supplier'], true);
         $fixes = [];
 
         foreach ($rows as $row) {
-            $resolved = $this->resolveExpected(
-                (int) $row->item_id,
-                (string) ($row->unit ?? ''),
-                $regionId,
-                $outletId,
-            );
-            $expected = $resolved['expected'];
+            $itemId = (int) $row->item_id;
+            $unitName = (string) ($row->unit ?? '');
+            $item = $this->items[$itemId] ?? null;
+
+            if ($forceMedium && $item) {
+                $mediumName = trim((string) ($this->unitNameById[$item->medium_unit_id] ?? ''));
+                $unitForPrice = $mediumName !== '' ? $mediumName : $unitName;
+                $expected = FloorOrderItemPriceResolver::sanitizeNonSupplierLinePrice(
+                    $itemId,
+                    $unitForPrice !== '' ? $unitForPrice : null,
+                    $regionId,
+                    $outletId,
+                    $item,
+                    $this->unitNameById,
+                    (float) $row->price,
+                );
+                // Rapikan label unit ke medium jika masih Recipe/large tertempel.
+                if ($mediumName !== '' && strtolower(trim($unitName)) !== strtolower($mediumName)) {
+                    DB::table('food_floor_order_items')->where('id', $row->id)->update([
+                        'unit' => $mediumName,
+                        'updated_at' => now(),
+                    ]);
+                }
+            } else {
+                $resolved = $this->resolveExpected($itemId, $unitName, $regionId, $outletId);
+                $expected = $resolved['expected'];
+            }
+
             if ($expected <= 0) {
                 continue;
             }

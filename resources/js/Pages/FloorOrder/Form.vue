@@ -29,6 +29,7 @@ const todaySchedules = ref([]);
 const todayScheduleNotes = ref('');
 const showPreview = ref(false);
 const isSubmitting = ref(false);
+const isAutosaving = ref(false);
 const formSubmitted = ref(false);
 
 const warehouseOutlets = ref([]);
@@ -934,6 +935,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleF1Key);
   clearTimeout(forecastBudgetDebounce);
+  stopAutosave();
 });
 
 function formatRupiah(val) {
@@ -992,23 +994,65 @@ async function persistDraftItems() {
     throw new Error('Pilih warehouse outlet terlebih dahulu.');
   }
 
-  const payload = buildSavePayload(cleanItems);
-  if (draftId.value) {
-    await axios.put(`/floor-order/${draftId.value}`, payload);
-    return;
-  }
+  // Tunggu autosave in-flight selesai supaya tidak race delete+insert
+  await waitForAutosaveIdle();
 
-  const res = await axios.post('/floor-order', payload);
-  handleStoreResponse(res);
-  if (!draftId.value) {
-    throw new Error('Draft Order belum tersimpan. Silakan coba lagi.');
+  const payload = buildSavePayload(cleanItems);
+  isAutosaving.value = true;
+  try {
+    if (draftId.value) {
+      await axios.put(`/floor-order/${draftId.value}`, payload);
+      return;
+    }
+
+    const res = await axios.post('/floor-order', payload);
+    handleStoreResponse(res);
+    if (!draftId.value) {
+      throw new Error('Draft Order belum tersimpan. Silakan coba lagi.');
+    }
+  } finally {
+    isAutosaving.value = false;
   }
 }
 
 let autosaveTimeout = null;
-function triggerAutosave() {
+function stopAutosave() {
   clearTimeout(autosaveTimeout);
+  autosaveTimeout = null;
+}
+
+function waitForAutosaveIdle(maxMs = 60000) {
+  if (!isAutosaving.value) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (!isAutosaving.value) {
+        clearInterval(timer);
+        resolve();
+      } else if (Date.now() - started > maxMs) {
+        clearInterval(timer);
+        reject(new Error('Timeout menunggu autosave selesai.'));
+      }
+    }, 100);
+  });
+}
+
+function triggerAutosave() {
+  if (isSubmitting.value) {
+    return;
+  }
+  stopAutosave();
   autosaveTimeout = setTimeout(async () => {
+    if (isSubmitting.value) {
+      return;
+    }
+    // Masih ada request jalan: jadwalkan ulang supaya perubahan terakhir tetap tersimpan
+    if (isAutosaving.value) {
+      triggerAutosave();
+      return;
+    }
     if (selectedFOMode.value === 'RO Khusus' && approvers.value.length === 0) {
       return;
     }
@@ -1023,6 +1067,7 @@ function triggerAutosave() {
       return;
     }
     const payload = buildSavePayload(cleanItems);
+    isAutosaving.value = true;
     try {
       if (draftId.value) {
         await axios.put(`/floor-order/${draftId.value}`, payload);
@@ -1032,6 +1077,8 @@ function triggerAutosave() {
       }
     } catch (e) {
       console.error('Autosave floor order failed:', e);
+    } finally {
+      isAutosaving.value = false;
     }
   }, 2000);
 }
@@ -1093,6 +1140,7 @@ function submitOrderWithLoading() {
   }).then(async (result) => {
     if (result.isConfirmed) {
       isSubmitting.value = true;
+      stopAutosave();
       Swal.fire({
         title: 'Mengirim...',
         text: 'Mohon tunggu, RO sedang diproses.',

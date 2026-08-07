@@ -169,13 +169,14 @@ class Kernel extends ConsoleKernel
             ->appendOutputTo(storage_path('logs/feedback-escalation.log'))
             ->description('Escalate overdue feedback cases and queue internal alerts');
 
-        // Sinkron harga draft/submitted FO (3 hari terakhir) — cegah large tertempel di Pack/Pcs
-        $schedule->command('floor-order:sync-prices --from=' . now()->subDays(3)->toDateString() . ' --apply --force')
+        // Sinkron harga FO 7 hari terakhir (semua status, termasuk approved)
+        // supaya large-on-medium yang lolos save tetap ter-koreksi.
+        $schedule->command('floor-order:sync-prices --from=' . now()->subDays(7)->toDateString() . ' --all-statuses --apply --force')
             ->dailyAt('03:15')
             ->withoutOverlapping()
             ->runInBackground()
             ->appendOutputTo(storage_path('logs/floor-order-price-sync.log'))
-            ->description('Sync FO line prices vs item_prices + UoM for draft/submitted');
+            ->description('Sync FO line prices vs item_prices + UoM (all statuses, 7 days)');
     }
 
     /**

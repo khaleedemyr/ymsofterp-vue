@@ -161,11 +161,14 @@ class FoodFloorOrderController extends Controller
                     $item['unit'] = $mediumName;
                     $unitName = $mediumName;
                 }
-                $price = FloorOrderItemPriceResolver::resolveMediumUnitPrice(
+                $price = FloorOrderItemPriceResolver::sanitizeNonSupplierLinePrice(
                     $itemId,
+                    $unitName !== '' ? $unitName : null,
                     $regionId,
                     $outletKey,
                     $master,
+                    $unitNameById,
+                    (float) ($item['price'] ?? 0),
                 );
             } else {
                 $price = FloorOrderItemPriceResolver::resolveLineUnitPrice(
@@ -310,31 +313,70 @@ class FoodFloorOrderController extends Controller
         $header = DB::table('food_floor_orders as ffo')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
             ->where('ffo.id', $floorOrderId)
-            ->select('ffo.id_outlet', 'o.region_id')
+            ->select('ffo.id_outlet', 'ffo.fo_mode', 'o.region_id')
             ->first();
         $regionId = $header && $header->region_id ? (int) $header->region_id : null;
         $outletId = $header && $header->id_outlet ? (string) $header->id_outlet : null;
+        $foMode = $header->fo_mode ?? null;
+        $forceMedium = ! in_array((string) $foMode, ['RO Supplier'], true);
+
+        $itemIds = collect($processedItems)
+            ->pluck('item_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $masters = $itemIds === []
+            ? collect()
+            : DB::table('items')->whereIn('id', $itemIds)->get()->keyBy('id');
+        $unitIds = $masters->flatMap(fn ($i) => [
+            $i->small_unit_id, $i->medium_unit_id, $i->large_unit_id,
+        ])->filter()->unique()->values()->all();
+        $unitNameById = $unitIds === []
+            ? []
+            : DB::table('units')->whereIn('id', $unitIds)->pluck('name', 'id')->all();
 
         foreach ($processedItems as $item) {
-            $masterItem = Item::find($item['item_id']);
+            $itemId = (int) ($item['item_id'] ?? 0);
+            $masterItem = $masters->get($itemId);
             $qty = (float) ($item['qty'] ?? 0);
-            // Jangan percaya harga dari client: hitung ulang dari item_prices + konversi UoM.
-            $resolvedPrice = FloorOrderItemPriceResolver::resolveLineUnitPrice(
-                (int) $item['item_id'],
-                $item['unit'] ?? null,
-                $regionId,
-                $outletId,
-                $masterItem,
-            );
-            $price = $resolvedPrice > 0 ? $resolvedPrice : (float) ($item['price'] ?? 0);
-            $price = FloorOrderItemPriceResolver::guardAgainstLargePriceOnMediumUnit(
-                $price,
-                (int) $item['item_id'],
-                $item['unit'] ?? null,
-                $regionId,
-                $outletId,
-                $masterItem,
-            );
+            $unitName = isset($item['unit']) ? trim((string) $item['unit']) : '';
+
+            if ($forceMedium && $masterItem) {
+                $mediumName = trim((string) ($unitNameById[$masterItem->medium_unit_id] ?? ''));
+                if ($mediumName !== '') {
+                    $unitName = $mediumName;
+                }
+                // Kunci: selalu harga medium + guard UoM. Jangan percaya harga client.
+                $price = FloorOrderItemPriceResolver::sanitizeNonSupplierLinePrice(
+                    $itemId,
+                    $unitName !== '' ? $unitName : null,
+                    $regionId,
+                    $outletId,
+                    $masterItem,
+                    $unitNameById,
+                    (float) ($item['price'] ?? 0),
+                );
+            } else {
+                $resolvedPrice = FloorOrderItemPriceResolver::resolveLineUnitPrice(
+                    $itemId,
+                    $unitName !== '' ? $unitName : null,
+                    $regionId,
+                    $outletId,
+                    $masterItem,
+                );
+                $price = $resolvedPrice > 0 ? $resolvedPrice : (float) ($item['price'] ?? 0);
+                $price = FloorOrderItemPriceResolver::guardAgainstLargePriceOnMediumUnit(
+                    $price,
+                    $itemId,
+                    $unitName !== '' ? $unitName : null,
+                    $regionId,
+                    $outletId,
+                    $masterItem,
+                    $unitNameById,
+                );
+            }
             $subtotal = round($price * $qty, 2);
 
             DB::table('food_floor_order_items')->insert([
@@ -342,7 +384,7 @@ class FoodFloorOrderController extends Controller
                 'item_id' => $item['item_id'],
                 'item_name' => $item['item_name'],
                 'qty' => $qty,
-                'unit' => $item['unit'],
+                'unit' => $unitName !== '' ? $unitName : ($item['unit'] ?? null),
                 'price' => $price,
                 'subtotal' => $subtotal,
                 'category_id' => $masterItem ? $masterItem->category_id : null,
@@ -501,12 +543,14 @@ class FoodFloorOrderController extends Controller
             }
 
             // Cek apakah sudah ada draft untuk user, tanggal, outlet, warehouse, status draft
+            // lockForUpdate: cegah race autosave concurrent (delete+insert item dobel)
             $existingOrder = \DB::table('food_floor_orders')
                 ->where('user_id', $userId)
                 ->where('id_outlet', $idOutlet)
                 ->where('warehouse_outlet_id', $warehouseOutletId)
                 ->where('tanggal', $tanggal)
                 ->where('status', 'draft')
+                ->lockForUpdate()
                 ->first();
 
             if ($existingOrder) {
@@ -540,6 +584,8 @@ class FoodFloorOrderController extends Controller
                 ];
                 $inserted = \DB::table('food_floor_orders')->insert($headerData);
                 $floorOrderId = \DB::getPdo()->lastInsertId();
+                // Kunci baris baru agar request store overlapping menunggu
+                \DB::table('food_floor_orders')->where('id', $floorOrderId)->lockForUpdate()->first();
             }
 
             // Ambil data outlet
@@ -617,77 +663,102 @@ class FoodFloorOrderController extends Controller
                 'message' => 'Tanggal kedatangan wajib diisi'
             ], 422);
         }
-        
-        $order = FoodFloorOrder::findOrFail($id);
-        if ($order->status !== 'draft') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Hanya draft yang dapat diubah.',
-            ], 422);
-        }
-        if (! $order->isWithinEditWindow()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Request Order tidak dapat diubah karena sudah melewati batas waktu edit (besok jam 07:00).',
-            ], 422);
-        }
 
-        $oldData = $order->toArray();
         $approverIds = null;
         try {
+            \DB::beginTransaction();
+
+            // Kunci baris FO supaya autosave concurrent tidak delete+insert bersamaan
+            $order = FoodFloorOrder::where('id', $id)->lockForUpdate()->firstOrFail();
+            if ($order->status !== 'draft') {
+                \DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hanya draft yang dapat diubah.',
+                ], 422);
+            }
+            if (! $order->isWithinEditWindow()) {
+                \DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Request Order tidak dapat diubah karena sudah melewati batas waktu edit (besok jam 07:00).',
+                ], 422);
+            }
+
+            $oldData = $order->toArray();
             if (($request->fo_mode ?? $order->fo_mode) === 'RO Khusus') {
                 $approverIds = $this->approvalService->validateAndNormalizeApproverIds($request);
             }
+
+            // --- VALIDASI warehouse_outlet_id ---
+            $warehouseOutletId = $request->warehouse_outlet_id;
+            $warehouseOutlet = \App\Models\WarehouseOutlet::where('id', $warehouseOutletId)
+                ->where('outlet_id', $order->id_outlet)
+                ->where('status', 'active')
+                ->first();
+            if (! $warehouseOutlet) {
+                \DB::rollBack();
+
+                return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak valid atau tidak aktif untuk outlet ini.'], 422);
+            }
+            $order->update(array_merge(
+                $request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id', 'arrival_date']),
+                ['warehouse_outlet_id' => $warehouseOutletId]
+            ));
+
+            // Proses item tanpa validasi supplier
+            $processedItems = $this->dedupeProcessedItemsByItemId(
+                $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode)
+            );
+            $this->assertHasProcessedItems($processedItems, 'mengubah');
+
+            // Hapus data item lama
+            $order->items()->delete();
+            $this->clearSupplierItemTables((int) $order->id);
+
+            $this->persistFloorOrderItems((int) $order->id, $processedItems);
+            app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
+
+            if ($approverIds !== null) {
+                $this->approvalService->syncFlows((int) $order->id, $approverIds);
+            }
+
+            \DB::commit();
+
+            \App\Models\ActivityLog::create([
+                'user_id' => auth()->id(),
+                'activity_type' => 'update',
+                'module' => 'food_floor_order',
+                'description' => 'Update Floor Order: ' . $order->id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'old_data' => $oldData,
+                'new_data' => $order->fresh()->toArray(),
+            ]);
+
+            return response()->json(['success' => true, 'message' => 'Floor Order berhasil diupdate']);
         } catch (ValidationException $e) {
+            \DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'message' => collect($e->errors())->flatten()->first() ?: 'Validasi gagal.',
                 'errors' => $e->errors(),
             ], 422);
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            \Log::error('Error dalam update floor order', [
+                'order_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+            ], 500);
         }
-        // --- VALIDASI warehouse_outlet_id ---
-        $warehouseOutletId = $request->warehouse_outlet_id;
-        $warehouseOutlet = \App\Models\WarehouseOutlet::where('id', $warehouseOutletId)
-            ->where('outlet_id', $order->id_outlet)
-            ->where('status', 'active')
-            ->first();
-        if (!$warehouseOutlet) {
-            return response()->json(['success' => false, 'message' => 'Warehouse outlet tidak valid atau tidak aktif untuk outlet ini.'], 422);
-        }
-        $order->update(array_merge(
-            $request->only(['tanggal', 'description', 'fo_mode', 'input_mode', 'fo_schedule_id', 'arrival_date']),
-            ['warehouse_outlet_id' => $warehouseOutletId]
-        ));
-
-        // Proses item tanpa validasi supplier
-        $processedItems = $this->dedupeProcessedItemsByItemId(
-            $this->validateAndGroupItemsBySupplier($request->items, $order->id_outlet, $order->fo_mode)
-        );
-        $this->assertHasProcessedItems($processedItems, 'mengubah');
-
-        // Hapus data item lama
-        $order->items()->delete();
-        $this->clearSupplierItemTables((int) $order->id);
-
-        $this->persistFloorOrderItems((int) $order->id, $processedItems);
-        app(FloorOrderPriceAuditor::class)->refreshOrder((int) $order->id);
-
-        if ($approverIds !== null) {
-            $this->approvalService->syncFlows((int) $order->id, $approverIds);
-        }
-
-        \App\Models\ActivityLog::create([
-            'user_id' => auth()->id(),
-            'activity_type' => 'update',
-            'module' => 'food_floor_order',
-            'description' => 'Update Floor Order: ' . $order->id,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'old_data' => $oldData,
-            'new_data' => $order->fresh()->toArray(),
-        ]);
-
-        return response()->json(['success' => true, 'message' => 'Floor Order berhasil diupdate']);
     }
 
     // Method destroy untuk menghapus floor order
