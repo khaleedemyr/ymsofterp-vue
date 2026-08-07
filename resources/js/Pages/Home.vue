@@ -5416,6 +5416,11 @@ async function showAllPendingApprovals() {
     }
 }
 
+function bumpSwalAboveModals() {
+    const el = document.querySelector('.swal2-container');
+    if (el) el.style.zIndex = '20000';
+}
+
 async function approveRequest(approvalId) {
     const result = await Swal.fire({
         title: 'Setujui Permohonan?',
@@ -5425,7 +5430,8 @@ async function approveRequest(approvalId) {
         confirmButtonText: 'Ya, Setujui',
         cancelButtonText: 'Batal',
         confirmButtonColor: '#10B981',
-        cancelButtonColor: '#6B7280'
+        cancelButtonColor: '#6B7280',
+        didOpen: bumpSwalAboveModals,
     });
 
     if (result.isConfirmed) {
@@ -5437,7 +5443,8 @@ async function approveRequest(approvalId) {
                     title: 'Berhasil!',
                     text: response.data.message,
                     confirmButtonText: 'OK',
-                    confirmButtonColor: '#10B981'
+                    confirmButtonColor: '#10B981',
+                    didOpen: bumpSwalAboveModals,
                 });
                 showApprovalModal.value = false;
                 await reloadUnifiedApprovalSources();
@@ -5449,7 +5456,8 @@ async function approveRequest(approvalId) {
                 title: 'Error',
                 text: error.response?.data?.message || 'Gagal menyetujui permohonan',
                 confirmButtonText: 'OK',
-                confirmButtonColor: '#EF4444'
+                confirmButtonColor: '#EF4444',
+                didOpen: bumpSwalAboveModals,
             });
         }
     }
@@ -5470,7 +5478,8 @@ async function rejectRequest(approvalId) {
         confirmButtonText: 'Tolak',
         cancelButtonText: 'Batal',
         confirmButtonColor: '#EF4444',
-        cancelButtonColor: '#6B7280'
+        cancelButtonColor: '#6B7280',
+        didOpen: bumpSwalAboveModals,
     });
 
     if (notes) {
@@ -5484,7 +5493,8 @@ async function rejectRequest(approvalId) {
                     title: 'Berhasil!',
                     text: response.data.message,
                     confirmButtonText: 'OK',
-                    confirmButtonColor: '#10B981'
+                    confirmButtonColor: '#10B981',
+                    didOpen: bumpSwalAboveModals,
                 });
                 showApprovalModal.value = false;
                 await reloadUnifiedApprovalSources();
@@ -5496,7 +5506,8 @@ async function rejectRequest(approvalId) {
                 title: 'Error',
                 text: error.response?.data?.message || 'Gagal menolak permohonan',
                 confirmButtonText: 'OK',
-                confirmButtonColor: '#EF4444'
+                confirmButtonColor: '#EF4444',
+                didOpen: bumpSwalAboveModals,
             });
         }
     }
@@ -5511,7 +5522,8 @@ async function hrdApproveRequest(approvalId) {
         confirmButtonText: 'Ya, Setujui',
         cancelButtonText: 'Batal',
         confirmButtonColor: '#10B981',
-        cancelButtonColor: '#6B7280'
+        cancelButtonColor: '#6B7280',
+        didOpen: bumpSwalAboveModals,
     });
 
     if (result.isConfirmed) {
@@ -5523,7 +5535,8 @@ async function hrdApproveRequest(approvalId) {
                     title: 'Berhasil!',
                     text: response.data.message,
                     confirmButtonText: 'OK',
-                    confirmButtonColor: '#10B981'
+                    confirmButtonColor: '#10B981',
+                    didOpen: bumpSwalAboveModals,
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
@@ -5536,9 +5549,10 @@ async function hrdApproveRequest(approvalId) {
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menyetujui permohonan',
+                text: error.response?.data?.message || 'Gagal menyetujui permohonan',
                 confirmButtonText: 'OK',
-                confirmButtonColor: '#EF4444'
+                confirmButtonColor: '#EF4444',
+                didOpen: bumpSwalAboveModals,
             });
         }
     }
@@ -5559,7 +5573,8 @@ async function hrdRejectRequest(approvalId) {
         confirmButtonText: 'Tolak',
         cancelButtonText: 'Batal',
         confirmButtonColor: '#EF4444',
-        cancelButtonColor: '#6B7280'
+        cancelButtonColor: '#6B7280',
+        didOpen: bumpSwalAboveModals,
     });
 
     if (notes) {
@@ -5573,7 +5588,8 @@ async function hrdRejectRequest(approvalId) {
                     title: 'Berhasil!',
                     text: response.data.message,
                     confirmButtonText: 'OK',
-                    confirmButtonColor: '#10B981'
+                    confirmButtonColor: '#10B981',
+                    didOpen: bumpSwalAboveModals,
                 });
                 showApprovalModal.value = false;
                 await loadPendingHrdApprovals();
@@ -5586,9 +5602,10 @@ async function hrdRejectRequest(approvalId) {
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menolak permohonan',
+                text: error.response?.data?.message || 'Gagal menolak permohonan',
                 confirmButtonText: 'OK',
-                confirmButtonColor: '#EF4444'
+                confirmButtonColor: '#EF4444',
+                didOpen: bumpSwalAboveModals,
             });
         }
     }
@@ -8778,8 +8795,9 @@ watch(locale, () => {
 
         </div>
 
-        <!-- Approval Detail Modal (di atas modal antrian) -->
-        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80]" @click="showApprovalModal = false">
+        <!-- Approval Detail Modal — Teleport ke body agar di atas modal antrian -->
+        <Teleport to="body">
+        <div v-if="showApprovalModal && selectedApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000]" @click="showApprovalModal = false">
             <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-lg mx-4 max-h-[90vh] overflow-hidden" @click.stop>
                 <!-- Modal Header -->
                 <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -8977,6 +8995,7 @@ watch(locale, () => {
                 </div>
             </div>
         </div>
+        </Teleport>
 
         <!-- Purchase Requisition Approval Detail Modal -->
         <div v-if="showPrApprovalModal && selectedPrApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showPrApprovalModal = false">
@@ -14048,7 +14067,8 @@ watch(locale, () => {
     </div>
 
     <!-- All Approvals Modal -->
-    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]" @click.self="closeAllApprovalsModal">
+    <Teleport to="body">
+    <div v-if="showAllApprovalsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9998]" @click.self="closeAllApprovalsModal">
         <div class="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden" @click.stop>
             <!-- Modal Header -->
             <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
@@ -14293,6 +14313,7 @@ watch(locale, () => {
             </div>
         </div>
     </div>
+    </Teleport>
 
     <Qa2CapApprovalModal
         :show="showQa2CapApprovalModal"
