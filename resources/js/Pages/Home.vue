@@ -817,8 +817,17 @@ const isTrainer = computed(() => {
     const jabatan = userJabatan.value.toLowerCase();
     return jabatan.includes('trainer') || jabatan.includes('instruktur') || jabatan.includes('pengajar');
 });
+/**
+ * Cuti tahap atasan di antrian approval.
+ * HRD Generalist / GM HR: jangan tampilkan (hanya HRD + koreksi);
+ * backlog atasan tetap lewat card modal "Belum approve atasan".
+ */
+const queueSupervisorLeaveApprovals = computed(() =>
+    canAccessHrdApprovals() ? [] : pendingApprovals.value
+);
+
 const totalNotificationsCount = computed(() => {
-    const approvalCount = pendingApprovals.value.length;
+    const approvalCount = queueSupervisorLeaveApprovals.value.length;
     const hrdApprovalCount = pendingHrdApprovals.value.length;
     const correctionApprovalCount = pendingCorrectionApprovals.value.length;
     const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && isNotificationForCurrentUser(n)).length;
@@ -830,7 +839,7 @@ const totalNotificationsCount = computed(() => {
 
 /** Antrian yang bisa diproses akun ini (bukan company-wide) */
 const myActionableApprovalCount = computed(() =>
-    pendingApprovals.value.length + pendingHrdApprovals.value.length + pendingCorrectionApprovals.value.length
+    queueSupervisorLeaveApprovals.value.length + pendingHrdApprovals.value.length + pendingCorrectionApprovals.value.length
 );
 
 const prApprovalCount = computed(() => {
@@ -973,7 +982,7 @@ function parseUnifiedApprovalStoreKey(key) {
 
 const dashboardBulkRows = computed(() => {
     const rows = [];
-    pendingApprovals.value.slice(0, 2).forEach((a) => {
+    queueSupervisorLeaveApprovals.value.slice(0, 2).forEach((a) => {
         rows.push({ type: 'leave', id: a.id });
     });
     pendingHrdApprovals.value.slice(0, 2).forEach((a) => {
@@ -1017,7 +1026,7 @@ const dashboardLeaveNotifPendingList = computed(() =>
 
 const dashboardTotalRowsCount = computed(
     () =>
-        pendingApprovals.value.length +
+        queueSupervisorLeaveApprovals.value.length +
         pendingHrdApprovals.value.length +
         pendingCorrectionApprovals.value.length +
         dashboardLeaveNotifPendingList.value.length
@@ -1025,7 +1034,7 @@ const dashboardTotalRowsCount = computed(
 
 const dashboardVisibleRowsCount = computed(
     () =>
-        Math.min(2, pendingApprovals.value.length) +
+        Math.min(2, queueSupervisorLeaveApprovals.value.length) +
         Math.min(2, pendingHrdApprovals.value.length) +
         Math.min(2, pendingCorrectionApprovals.value.length) +
         Math.min(2, dashboardLeaveNotifPendingList.value.length)
@@ -1169,7 +1178,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingStockOpnameApprovals.value = data.stock_opnames || [];
             pendingOutletTransferApprovals.value = data.outlet_transfer || [];
             pendingWarehouseStockOpnameApprovals.value = data.warehouse_stock_opnames || [];
-            pendingApprovals.value = data.approval || [];
+            pendingApprovals.value = canAccessHrdApprovals() ? [] : (data.approval || []);
             pendingMovementApprovals.value = data.employee_movements || [];
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
@@ -4016,8 +4025,8 @@ async function loadAllApprovals() {
         // This ensures consistency with the count displayed
         const allApprovalsData = [];
         
-        // Add leave approvals (from pendingApprovals)
-        pendingApprovals.value.forEach(approval => {
+        // Cuti tahap atasan: HRD/GM HR tidak ikut antrian (lihat card "Belum approve atasan")
+        queueSupervisorLeaveApprovals.value.forEach(approval => {
             allApprovalsData.push({
                 ...approval,
                 type: 'leave',
@@ -4049,7 +4058,7 @@ async function loadAllApprovals() {
         allApprovals.value = allApprovalsData;
         
         console.log('All approvals loaded:', {
-            leave: pendingApprovals.value.length,
+            leave: queueSupervisorLeaveApprovals.value.length,
             hrd: pendingHrdApprovals.value.length,
             correction: pendingCorrectionApprovals.value.length,
             total: allApprovalsData.length
@@ -5751,13 +5760,18 @@ function resolveBulkUnifiedItems(keysSet) {
 }
 
 async function reloadUnifiedApprovalSources() {
-    await Promise.all([
-        loadPendingApprovals(),
+    const reloadTasks = [
         loadPendingHrdApprovals(),
         loadPendingCorrectionApprovals(),
         loadLeaveNotifications(),
         loadLeaveApprovalSummary(),
-    ]);
+    ];
+    if (canAccessHrdApprovals()) {
+        pendingApprovals.value = [];
+    } else {
+        reloadTasks.unshift(loadPendingApprovals());
+    }
+    await Promise.all(reloadTasks);
     if (showAllApprovalsModal.value) {
         await loadAllApprovals();
     }
@@ -6561,7 +6575,11 @@ onMounted(async () => {
     if (!optimizedLoaded) {
         // Fallback ke individual endpoints jika endpoint baru error
         console.log('⚠️ Using individual endpoints (fallback)');
-        loadPendingApprovals();
+        if (!canAccessHrdApprovals()) {
+            loadPendingApprovals();
+        } else {
+            pendingApprovals.value = [];
+        }
         loadPendingPrApprovals();
         loadPendingWfhApprovals();
         loadPendingPoOpsApprovals();
@@ -6588,8 +6606,10 @@ onMounted(async () => {
     loadLeaveNotifications();
     loadPendingHrdApprovals();
     loadLeaveApprovalSummary();
-    // Optimized endpoint memotong banyak tipe ke 30 item — koreksi HRD harus full
+    // Optimized endpoint memotong banyak tipe ke 30 item — koreksi HRD harus full (periode queue).
+    // Cuti tahap atasan tidak dimuat ke antrian HRD (hanya card "Belum approve atasan").
     if (canAccessHrdApprovals()) {
+        pendingApprovals.value = [];
         loadPendingCorrectionApprovals();
     }
     loadJustAcademySchedules();
@@ -6978,8 +6998,8 @@ watch(locale, () => {
                         </div>
                         
                         <div v-else-if="totalNotificationsCount > 0" class="space-y-2">
-                            <!-- Approval Requests (Supervisor) -->
-                            <div v-for="approval in pendingApprovals.slice(0, 2)" :key="'approval-' + approval.id"
+                            <!-- Approval Requests (Supervisor) — hidden for HRD; use card "Belum approve atasan" -->
+                            <div v-for="approval in queueSupervisorLeaveApprovals.slice(0, 2)" :key="'approval-' + approval.id"
                                 class="p-3 rounded-lg transition-all duration-200 hover:scale-[1.02]"
                                 :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-blue-50 hover:bg-blue-100'">
                                 <div class="flex gap-2 items-start">
@@ -7136,7 +7156,12 @@ watch(locale, () => {
                                     Lihat Antrian Saya ({{ myActionableApprovalCount }})
                                 </button>
                                 <div class="text-[11px] mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    {{ pendingApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
+                                    <template v-if="canAccessHrdApprovals()">
+                                        {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
+                                    </template>
+                                    <template v-else>
+                                        {{ queueSupervisorLeaveApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
+                                    </template>
                                 </div>
                                 <div v-if="canAccessHrdApprovals() && leaveApprovalSummary && pendingCorrectionApprovals.length !== (leaveApprovalSummary.pending_correction_count || 0)"
                                     class="text-[11px] mt-0.5" :class="isNight ? 'text-amber-300' : 'text-amber-700'">

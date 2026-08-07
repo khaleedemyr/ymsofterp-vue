@@ -28,6 +28,11 @@ class ApprovalController extends Controller
         
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+        // HRD/superadmin: hide cuti di luar jendela periode (sama seperti koreksi)
+        $restrictToHrdQueuePeriod = HrdApprovalAccess::canAccessHrdApprovals($user);
+        $hrdQueuePeriod = $restrictToHrdQueuePeriod
+            ? AttendancePayrollPeriod::forHrdApprovalQueue()
+            : null;
         
         // Get pending approvals from approval flows (new flow - sequential approval)
         // Only show if there are pending approval flows (supervisors haven't all approved)
@@ -45,6 +50,15 @@ class ApprovalController extends Controller
                 $query->whereNull('apr.hrd_status')
                       ->orWhere('apr.hrd_status', '!=', 'pending');
             });
+
+        if ($hrdQueuePeriod) {
+            HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
+                $approvalFlowsQuery,
+                $hrdQueuePeriod['start'],
+                $hrdQueuePeriod['end'],
+                'apr'
+            );
+        }
         
         // Superadmin can see all, regular users only their own
         if (!$isSuperadmin) {
@@ -98,6 +112,14 @@ class ApprovalController extends Controller
             })
             ->where('approval_requests.status', 'pending')
             ->whereNull('absent_request_approval_flows.id'); // Only old flow (no approval flows)
+
+        if ($hrdQueuePeriod) {
+            HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
+                $oldApprovalsQuery,
+                $hrdQueuePeriod['start'],
+                $hrdQueuePeriod['end']
+            );
+        }
         
         // Superadmin can see all, regular users only their own
         if (!$isSuperadmin) {
