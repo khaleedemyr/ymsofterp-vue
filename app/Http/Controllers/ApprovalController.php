@@ -82,24 +82,32 @@ class ApprovalController extends Controller
             ->orderBy('apr.created_at', 'desc')
             ->get();
         
-        // Filter: Only show if current user is the next approver in line (skip for superadmin)
+        // Filter: Only show if current user is the next approver in line
+        // Superadmin: tetap hanya 1 baris per permohonan (level pending terendah) agar tidak double
         $filteredApprovals = $approvalFlows->filter(function($approval) use ($isSuperadmin) {
-            if ($isSuperadmin) {
-                return true; // Superadmin can see all
-            }
-            
-            // Get all pending flows for this absent request
             $pendingFlows = DB::table('absent_request_approval_flows')
                 ->where('absent_request_id', $approval->absent_request_id)
                 ->where('absent_request_approval_flows.status', 'PENDING')
                 ->orderBy('approval_level')
                 ->get();
             
-            // Check if current user is the first pending approver (next in line)
-            if ($pendingFlows->isEmpty()) return false;
+            if ($pendingFlows->isEmpty()) {
+                return false;
+            }
+
             $nextApprover = $pendingFlows->first();
-            return $nextApprover->approver_id == auth()->id();
-        });
+
+            // Hanya tampilkan baris level yang sedang giliran (hindari duplikat multi-level)
+            if ((int) $approval->approval_level !== (int) $nextApprover->approval_level) {
+                return false;
+            }
+
+            if ($isSuperadmin) {
+                return true;
+            }
+
+            return (int) $nextApprover->approver_id === (int) auth()->id();
+        })->unique('id')->values();
         
         // Also get old flow approvals (backward compatibility)
         $oldApprovalsQuery = DB::table('approval_requests')

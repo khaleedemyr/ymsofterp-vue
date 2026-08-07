@@ -4034,7 +4034,11 @@ async function loadAllApprovals() {
         const allApprovalsData = [];
         
         // Cuti tahap atasan: HRD/GM HR tidak ikut antrian (lihat card "Belum approve atasan")
+        const leaveSeen = new Set();
         queueSupervisorLeaveApprovals.value.forEach(approval => {
+            const key = String(approval.id);
+            if (leaveSeen.has(key)) return;
+            leaveSeen.add(key);
             allApprovalsData.push({
                 ...approval,
                 type: 'leave',
@@ -4043,7 +4047,11 @@ async function loadAllApprovals() {
         });
 
         // Add HRD approvals (from pendingHrdApprovals)
+        const hrdSeen = new Set();
         pendingHrdApprovals.value.forEach(approval => {
+            const key = String(approval.id);
+            if (hrdSeen.has(key)) return;
+            hrdSeen.add(key);
             allApprovalsData.push({
                 ...approval,
                 type: 'hrd_leave',
@@ -4052,7 +4060,11 @@ async function loadAllApprovals() {
         });
 
         // Add correction approvals (from pendingCorrectionApprovals)
+        const correctionSeen = new Set();
         pendingCorrectionApprovals.value.forEach(approval => {
+            const key = String(approval.id);
+            if (correctionSeen.has(key)) return;
+            correctionSeen.add(key);
             allApprovalsData.push({
                 ...approval,
                 type: 'correction',
