@@ -35,11 +35,19 @@ const user = page.props.auth?.user || {};
 
 /** 309 = HR Generalist, 153 = GM HR — boleh approve HRD (izin/cuti + koreksi absensi) */
 const HR_APPROVER_JABATAN_IDS = [309, 153];
+const SUPERADMIN_ROLE_ID = '5af56935b011a';
+function isSuperadminUser() {
+    return user.id_role === SUPERADMIN_ROLE_ID;
+}
 function canAccessHrdApprovals() {
     const jabatanId = Number(user.id_jabatan);
-    return user.id_role === '5af56935b011a'
+    return isSuperadminUser()
         || HR_APPROVER_JABATAN_IDS.includes(jabatanId)
         || user.can_access_hrd_approvals === true;
+}
+/** HRD staff (bukan superadmin): antrian hanya tahap HRD; backlog atasan lewat card modal */
+function isHrdStaffOnly() {
+    return canAccessHrdApprovals() && !isSuperadminUser();
 }
 
 const { t, locale } = useI18n();
@@ -819,11 +827,11 @@ const isTrainer = computed(() => {
 });
 /**
  * Cuti tahap atasan di antrian approval.
- * HRD Generalist / GM HR: jangan tampilkan (hanya HRD + koreksi);
- * backlog atasan tetap lewat card modal "Belum approve atasan".
+ * HRD Generalist / GM HR: jangan tampilkan (hanya HRD + koreksi); backlog via card modal.
+ * Superadmin: tampilkan agar bisa approve level atasan maupun HRD.
  */
 const queueSupervisorLeaveApprovals = computed(() =>
-    canAccessHrdApprovals() ? [] : pendingApprovals.value
+    isHrdStaffOnly() ? [] : pendingApprovals.value
 );
 
 const totalNotificationsCount = computed(() => {
@@ -1178,7 +1186,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingStockOpnameApprovals.value = data.stock_opnames || [];
             pendingOutletTransferApprovals.value = data.outlet_transfer || [];
             pendingWarehouseStockOpnameApprovals.value = data.warehouse_stock_opnames || [];
-            pendingApprovals.value = canAccessHrdApprovals() ? [] : (data.approval || []);
+            pendingApprovals.value = isHrdStaffOnly() ? [] : (data.approval || []);
             pendingMovementApprovals.value = data.employee_movements || [];
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
@@ -5766,7 +5774,7 @@ async function reloadUnifiedApprovalSources() {
         loadLeaveNotifications(),
         loadLeaveApprovalSummary(),
     ];
-    if (canAccessHrdApprovals()) {
+    if (isHrdStaffOnly()) {
         pendingApprovals.value = [];
     } else {
         reloadTasks.unshift(loadPendingApprovals());
@@ -6575,10 +6583,10 @@ onMounted(async () => {
     if (!optimizedLoaded) {
         // Fallback ke individual endpoints jika endpoint baru error
         console.log('⚠️ Using individual endpoints (fallback)');
-        if (!canAccessHrdApprovals()) {
-            loadPendingApprovals();
-        } else {
+        if (isHrdStaffOnly()) {
             pendingApprovals.value = [];
+        } else {
+            loadPendingApprovals();
         }
         loadPendingPrApprovals();
         loadPendingWfhApprovals();
@@ -6607,9 +6615,13 @@ onMounted(async () => {
     loadPendingHrdApprovals();
     loadLeaveApprovalSummary();
     // Optimized endpoint memotong banyak tipe ke 30 item — koreksi HRD harus full (periode queue).
-    // Cuti tahap atasan tidak dimuat ke antrian HRD (hanya card "Belum approve atasan").
+    // HRD staff: cuti tahap atasan tidak di antrian. Superadmin: load full cuti atasan agar bisa approve.
     if (canAccessHrdApprovals()) {
-        pendingApprovals.value = [];
+        if (isHrdStaffOnly()) {
+            pendingApprovals.value = [];
+        } else {
+            loadPendingApprovals();
+        }
         loadPendingCorrectionApprovals();
     }
     loadJustAcademySchedules();
@@ -7156,7 +7168,7 @@ watch(locale, () => {
                                     Lihat Antrian Saya ({{ myActionableApprovalCount }})
                                 </button>
                                 <div class="text-[11px] mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <template v-if="canAccessHrdApprovals()">
+                                    <template v-if="isHrdStaffOnly()">
                                         {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
                                     </template>
                                     <template v-else>
