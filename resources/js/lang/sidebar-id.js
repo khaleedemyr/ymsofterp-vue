@@ -102,6 +102,7 @@ export default {
     "daily_report": "Laporan Harian",
     "ticketing_system": "Sistem Tiket",
     "it_work_report": "IT Work Report",
+    "logbook_driver": "Logbook Driver",
     "pr_tracking_report": "Laporan Pelacakan PR",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",

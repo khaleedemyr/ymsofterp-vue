@@ -425,6 +425,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.stock_adjustment'), icon: 'fa-solid fa-boxes-stacked', route: '/food-inventory-adjustment', code: 'stock_adjustment' },
             { name: () => t('sidebar.menus.packing_list'), icon: 'fa-solid fa-box', route: '/packing-list', code: 'packing_list' },
             { name: () => t('sidebar.menus.delivery_order'), icon: 'fa-solid fa-truck-arrow-right', route: '/delivery-order', code: 'delivery_order' },
+            { name: () => t('sidebar.menus.logbook_driver'), icon: 'fa-solid fa-truck', route: '/logbook-drivers', code: 'logbook_driver' },
             { name: () => t('sidebar.menus.penjualan_warehouse_retail'), icon: 'fa-solid fa-store', route: '/retail-warehouse-sale', code: 'retail_warehouse_sale' },
             { name: () => t('sidebar.menus.warehouse_retail_food'), icon: 'fa-solid fa-warehouse', route: '/retail-warehouse-food', code: 'view-retail-warehouse-food' },
             { name: () => t('sidebar.menus.saldo_awal_stok'), icon: 'fa-solid fa-money-bill-wave', route: '/food-stock-balances', code: 'food_stock_balances' },

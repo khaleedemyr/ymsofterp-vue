@@ -1120,6 +1120,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/it-work-reports/reverse-geocode', [\App\Http\Controllers\ItWorkReportController::class, 'reverseGeocode'])->name('it-work-reports.reverse-geocode');
     Route::resource('it-work-reports', \App\Http\Controllers\ItWorkReportController::class);
 
+    Route::resource('logbook-drivers', \App\Http\Controllers\LogbookDriverController::class);
+
     Route::get('/sop-development-completion', [SopDevelopmentCompletionController::class, 'indexPage'])->name('sop-development-completion.index');
     Route::get('/sop-development-completion/{sopDevelopmentCompletion}/file', [SopDevelopmentCompletionController::class, 'serveFile'])->name('sop-development-completion.file');
 

@@ -102,6 +102,7 @@ export default {
     "daily_report": "Daily Report",
     "ticketing_system": "Ticketing System",
     "it_work_report": "IT Work Report",
+    "logbook_driver": "Logbook Driver",
     "pr_tracking_report": "PR Tracking Report",
     "ro_vs_forecast_harian": "RO vs Forecast Harian",
     "upselling_sales_achievement": "Upselling Sales Achievement",
