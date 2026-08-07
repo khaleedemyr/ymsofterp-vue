@@ -668,12 +668,22 @@ class KpiEvaluationService
         $template = $this->resolveTemplate((int) $user->id_jabatan, $periodMonth);
         $period = $this->buildKpiPeriodInfo($periodMonth);
 
+        $existing = KpiEvaluation::query()
+            ->where('user_id', $userId)
+            ->where('period_month', $periodMonth)
+            ->first(['id', 'evaluation_code', 'eval_status']);
+
         return [
             'user' => $user,
             'template' => $template,
             'period' => $period,
             'template_hint' => $template ? null : $this->explainMissingTemplate((int) $user->id_jabatan, $periodMonth),
             'erp_scope_suggestion' => $this->suggestErpScopeFromRegional($userId),
+            'existing_evaluation' => $existing ? [
+                'id' => $existing->id,
+                'evaluation_code' => $existing->evaluation_code,
+                'eval_status' => $existing->eval_status,
+            ] : null,
         ];
     }
 
@@ -734,8 +744,16 @@ class KpiEvaluationService
         }
 
         if (KpiEvaluation::where('user_id', $userId)->where('period_month', $periodMonth)->exists()) {
+            $existing = KpiEvaluation::where('user_id', $userId)
+                ->where('period_month', $periodMonth)
+                ->first(['id', 'evaluation_code', 'eval_status']);
+
             throw ValidationException::withMessages([
-                'period_month' => 'Evaluasi untuk karyawan dan periode ini sudah ada.',
+                'period_month' => sprintf(
+                    'Evaluasi untuk karyawan dan periode ini sudah ada (%s · %s). Buka draft yang sudah ada, jangan buat ulang.',
+                    $existing?->evaluation_code ?? 'KPI',
+                    $existing?->eval_status ?? 'draft',
+                ),
             ]);
         }
 

@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 import Multiselect from 'vue-multiselect';
 import 'vue-multiselect/dist/vue-multiselect.min.css';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -190,9 +191,29 @@ function submit() {
       { at: 55, message: 'Menyimpan draft ke database...' },
     ],
   });
+  form.clearErrors();
   form.post(route('kpi-evaluations.store'), {
-    onFinish: () => finishProgress('Draft evaluasi dibuat.'),
-    onError: () => failProgress('Gagal membuat draft evaluasi.'),
+    preserveScroll: true,
+    onSuccess: () => {
+      finishProgress('Draft evaluasi dibuat.');
+    },
+    onError: (errors) => {
+      failProgress('Gagal membuat draft evaluasi.');
+      const messages = Object.values(errors || {}).flat().filter(Boolean);
+      const text = messages.length
+        ? messages.join('\n')
+        : 'Gagal membuat draft evaluasi. Periksa isian form.';
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal membuat draft',
+        text,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#E11D48',
+      });
+    },
+    onFinish: () => {
+      if (form.processing) return;
+    },
   });
 }
 
@@ -225,11 +246,13 @@ function back() {
             :allow-empty="true"
             :show-labels="false"
           />
+          <div v-if="form.errors.user_id" class="text-xs text-red-500 mt-1">{{ form.errors.user_id }}</div>
         </div>
 
         <div>
           <label class="block text-sm font-medium mb-1">Periode Evaluasi (Bulan)</label>
           <input v-model="periodMonth" type="month" class="w-full rounded-xl border-gray-300" />
+          <div v-if="form.errors.period_month" class="text-xs text-red-500 mt-1">{{ form.errors.period_month }}</div>
           <p class="text-xs text-gray-500 mt-1">
             KPI dihitung <strong>back month</strong>: pilih Juli 2026 → data parameter dari <strong>Juni 2026</strong> (1–30 Juni).
             Parameter terkait attendance memakai periode payroll (contoh: 26 Mei – 25 Juni).
@@ -310,9 +333,33 @@ function back() {
             <span class="text-gray-500">Template:</span>
             <strong>{{ preview.template.name }}</strong>
           </div>
+          <div
+            v-if="preview.existing_evaluation"
+            class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900"
+          >
+            <p class="font-semibold">
+              <i class="fa-solid fa-circle-info mr-1"></i>
+              Evaluasi periode ini sudah ada: {{ preview.existing_evaluation.evaluation_code }}
+              ({{ preview.existing_evaluation.eval_status }})
+            </p>
+            <button
+              type="button"
+              class="mt-1 text-sm font-semibold text-rose-700 underline"
+              @click="router.visit(route('kpi-evaluations.edit', preview.existing_evaluation.id))"
+            >
+              Buka draft yang sudah ada
+            </button>
+          </div>
         </div>
 
         <div v-if="previewError" class="text-sm text-red-600 bg-red-50 rounded-xl p-3">{{ previewError }}</div>
+
+        <div v-if="Object.keys(form.errors).length" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3 space-y-1">
+          <p class="font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Tidak bisa membuat draft</p>
+          <ul class="list-disc list-inside space-y-0.5">
+            <li v-for="(msg, key) in form.errors" :key="key">{{ msg }}</li>
+          </ul>
+        </div>
 
         <div class="flex justify-end gap-3 pt-2">
           <button type="button" class="px-4 py-2 rounded-xl border" @click="back">Batal</button>
