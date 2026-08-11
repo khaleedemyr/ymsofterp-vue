@@ -23,6 +23,10 @@ class EmployeeOnboardingController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->get('search', ''));
+        $perPage = (int) $request->input('per_page', 15);
+        if (! in_array($perPage, [10, 15, 25, 50, 100], true)) {
+            $perPage = 15;
+        }
 
         $records = EmployeeOnboarding::query()
             ->with(['employee:id,nama_lengkap', 'creator:id,nama_lengkap'])
@@ -35,12 +39,15 @@ class EmployeeOnboardingController extends Controller
                 });
             })
             ->orderByDesc('id')
-            ->paginate(15)
+            ->paginate($perPage)
             ->withQueryString();
 
         return Inertia::render('EmployeeOnboarding/Index', [
             'records' => $records,
-            'filters' => ['search' => $search],
+            'filters' => [
+                'search' => $search,
+                'per_page' => $perPage,
+            ],
         ]);
     }
 
