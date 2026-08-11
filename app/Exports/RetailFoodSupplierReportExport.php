@@ -105,10 +105,8 @@ class RetailFoodSupplierReportExport
         foreach ($this->suppliers as $supplier) {
             foreach ($supplier['outlets'] as $outlet) {
                 foreach ($outlet['transactions'] as $transaction) {
-                    $firstItemRow = $currentRow;
                     $items = $transaction['items'] ?? [];
-                    $itemCount = count($items) > 0 ? count($items) : 1;
-                    
+
                     // If no items, still show one row with transaction info
                     if (empty($items)) {
                         $sheet->setCellValueByColumnAndRow(1, $currentRow, $no);
@@ -127,37 +125,22 @@ class RetailFoodSupplierReportExport
                         $currentRow++;
                         $no++;
                     } else {
-                        // Show each item as a separate row
+                        // Show each item as a separate row — isi semua kolom di setiap baris
                         foreach ($items as $item) {
-                            if ($currentRow > $firstItemRow) {
-                                // Repeat transaction data for subsequent items
-                                $sheet->setCellValueByColumnAndRow(1, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(2, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(3, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(4, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(5, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(6, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(12, $currentRow, '');
-                                $sheet->setCellValueByColumnAndRow(13, $currentRow, '');
-                            } else {
-                                // First row of transaction
-                                $sheet->setCellValueByColumnAndRow(1, $currentRow, $no);
-                                $sheet->setCellValueByColumnAndRow(2, $currentRow, $supplier['name']);
-                                $sheet->setCellValueByColumnAndRow(3, $currentRow, $supplier['code'] ?? '-');
-                                $sheet->setCellValueByColumnAndRow(4, $currentRow, $outlet['name']);
-                                $sheet->setCellValueByColumnAndRow(5, $currentRow, $transaction['retail_number']);
-                                $sheet->setCellValueByColumnAndRow(6, $currentRow, $this->formatDate($transaction['transaction_date']));
-                                $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatRupiah($transaction['total_amount']));
-                                $sheet->setCellValueByColumnAndRow(13, $currentRow, $transaction['notes'] ?? '-');
-                            }
-                            
-                            // Item details
+                            $sheet->setCellValueByColumnAndRow(1, $currentRow, $no);
+                            $sheet->setCellValueByColumnAndRow(2, $currentRow, $supplier['name']);
+                            $sheet->setCellValueByColumnAndRow(3, $currentRow, $supplier['code'] ?? '-');
+                            $sheet->setCellValueByColumnAndRow(4, $currentRow, $outlet['name']);
+                            $sheet->setCellValueByColumnAndRow(5, $currentRow, $transaction['retail_number']);
+                            $sheet->setCellValueByColumnAndRow(6, $currentRow, $this->formatDate($transaction['transaction_date']));
                             $sheet->setCellValueByColumnAndRow(7, $currentRow, $item['item_name'] ?? '-');
                             $sheet->setCellValueByColumnAndRow(8, $currentRow, $this->formatNumber($item['qty'] ?? 0));
                             $sheet->setCellValueByColumnAndRow(9, $currentRow, $item['unit'] ?? '-');
                             $sheet->setCellValueByColumnAndRow(10, $currentRow, $this->formatRupiah($item['price'] ?? 0));
                             $sheet->setCellValueByColumnAndRow(11, $currentRow, $this->formatRupiah($item['subtotal'] ?? 0));
-                            
+                            $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatRupiah($transaction['total_amount']));
+                            $sheet->setCellValueByColumnAndRow(13, $currentRow, $transaction['notes'] ?? '-');
+
                             $currentRow++;
                         }
                         $no++;
