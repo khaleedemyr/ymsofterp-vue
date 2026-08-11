@@ -14,7 +14,8 @@
 --   D050  Category Cost %    → Manual COGS, Deviation & Catcost
 --   D051  L&B %              → Asset Manual Monthly Lost & Breakage
 --   D008  Petty Cash Usage   → Retail Food + Non Food (non contra bon)
---   D009  Petty Cash Budget  → Petty Cash Lock Budget (Revenue Targets)
+--   D001  Revenue MTD        → dipakai juga oleh KPI06 (usage / revenue)
+--   D009  Petty Cash Budget  → Petty Cash Lock Budget (Revenue Targets; locking RF/RNF)
 --   D052  Labor Cost %       → Manual Monthly Labor Cost
 --   D053  Resolution Hours   → CVCC (regional_assigned_at → resolved_at)
 --   D054  Service Complaints → CVCC negative + CAPA Service filled
@@ -105,7 +106,7 @@ INSERT INTO `kpi_parameters` (
 ('KPI_GM03','Deviation',                                   'hybrid', 'outlet',   'percent', 'Deviation from Manual COGS menu',                          '<= 2%',           'lower_better',  'monthly',   'D049',                    1, 'A', NOW(), NOW()),
 ('KPI_GM04','Category Cost',                               'hybrid', 'outlet',   'percent', 'Category cost from Manual COGS menu',                      '<= 2-5%',         'lower_better',  'monthly',   'D050',                    1, 'A', NOW(), NOW()),
 ('KPI_GM05','Monthly Loss & Breakage Control',             'hybrid', 'outlet',   'percent', 'L&B from Asset Manual Monthly L&B',                        '<= 0.2%',         'lower_better',  'monthly',   'D051',                    1, 'A', NOW(), NOW()),
-('KPI06',  'Petty Cash Usage Control',                     'hybrid', 'outlet',   'percent', 'Petty cash usage vs lock budget',                          '<= 1%',           'lower_better',  'monthly',   'D008 / D009 * 100',       1, 'A', NOW(), NOW()),
+('KPI06',  'Petty Cash Usage Control',                     'hybrid', 'outlet',   'percent', 'Petty cash usage vs MTD actual F&B revenue',               '<= 1%',           'lower_better',  'monthly',   'D008 / D001 * 100',       1, 'A', NOW(), NOW()),
 ('KPI_GM07','Monthly Labor Cost',                          'hybrid', 'outlet',   'percent', 'Labor cost from Manual Monthly Labor Cost',                '<= 11-13%',       'lower_better',  'monthly',   'D052',                    1, 'A', NOW(), NOW()),
 ('KPI_GM08','Customer Complaint Resolution',               'hybrid', 'outlet',   'hours',   'Avg complaint resolution from CVCC',                       '<= 24 hours',     'lower_better',  'monthly',   'D053',                    1, 'A', NOW(), NOW()),
 ('KPI_GM09','Service Complaint Ratio',                     'hybrid', 'outlet',   'percent', 'Negative CVCC w/ Service CAPA / Total Review',             '<= 0.50%',        'lower_better',  'monthly',   'D054 / D055 * 100',       1, 'A', NOW(), NOW()),

@@ -1439,6 +1439,197 @@ class JustAcademyService
             ->map(fn (array $row, int $index) => array_merge($row, ['no' => $index + 1]));
     }
 
+    /**
+     * Rekap kehadiran per training plan: roster peserta + status hadir + hasil test (jika ada quiz).
+     *
+     * @return Collection<int, array{
+     *   schedule_id: int,
+     *   title: string,
+     *   training_date: string|null,
+     *   venue: string,
+     *   trainer: string,
+     *   method: string,
+     *   status: string,
+     *   quizzes: array<int, array{id: int, title: string, pass_score: float}>,
+     *   summary: array{registered: int, attendees: int, attendance_rate: float|null},
+     *   participants: array<int, array>
+     * }>
+     */
+    public function buildAttendanceRecap(int $year, int $month, ?int $divisionId = null, ?int $scheduleId = null): Collection
+    {
+        $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        $query = JaSchedule::query()
+            ->with([
+                'program.category:id,name',
+                'outlet:id_outlet,nama_outlet',
+                'trainers.user:id,nama_lengkap',
+                'program.items' => fn ($q) => $q->where('item_type', 'quiz')->orderBy('sort_order'),
+                'program.items.quiz:id,title,pass_score',
+                'participants',
+            ])
+            ->whereIn('status', ['published', 'ongoing', 'completed'])
+            ->where('start_at', '>=', $rangeStart)
+            ->where('start_at', '<=', $rangeEnd)
+            ->orderBy('start_at');
+
+        if ($scheduleId) {
+            $query->where('id', $scheduleId);
+        }
+
+        $schedules = $query->get();
+        if ($schedules->isEmpty()) {
+            return collect();
+        }
+
+        $scheduleIds = $schedules->pluck('id')->all();
+
+        $attendances = JaAttendance::query()
+            ->whereIn('schedule_id', $scheduleIds)
+            ->whereNotNull('check_in_at')
+            ->get(['schedule_id', 'user_id', 'check_in_at', 'method'])
+            ->groupBy('schedule_id');
+
+        $allQuizIds = $schedules
+            ->flatMap(fn (JaSchedule $schedule) => $schedule->program?->items
+                ?->where('item_type', 'quiz')
+                ->map(fn (JaProgramItem $item) => $item->quiz_id)
+                ->filter() ?? collect())
+            ->unique()
+            ->values()
+            ->all();
+
+        $attemptsBySchedule = collect();
+        if ($allQuizIds !== []) {
+            $attemptsBySchedule = JaQuizAttempt::query()
+                ->whereIn('schedule_id', $scheduleIds)
+                ->whereIn('quiz_id', $allQuizIds)
+                ->get()
+                ->groupBy('schedule_id');
+        }
+
+        $sections = [];
+        foreach ($schedules as $schedule) {
+            $participants = $this->scheduleParticipantUsers($schedule, $divisionId);
+            if ($divisionId && $participants->isEmpty()) {
+                continue;
+            }
+
+            $quizzes = ($schedule->program?->items ?? collect())
+                ->where('item_type', 'quiz')
+                ->filter(fn (JaProgramItem $item) => $item->quiz)
+                ->map(fn (JaProgramItem $item) => [
+                    'id' => (int) $item->quiz->id,
+                    'title' => $item->quiz->title,
+                    'pass_score' => (float) $item->quiz->pass_score,
+                ])
+                ->values();
+
+            $attendanceByUser = ($attendances->get($schedule->id) ?? collect())
+                ->keyBy('user_id');
+
+            $attemptsForSchedule = $attemptsBySchedule->get($schedule->id, collect())
+                ->groupBy(fn (JaQuizAttempt $attempt) => $attempt->user_id . ':' . $attempt->quiz_id);
+
+            $participantRows = [];
+            $attendeeCount = 0;
+
+            foreach ($participants as $user) {
+                $attendance = $attendanceByUser->get($user->id);
+                $attended = (bool) $attendance?->check_in_at;
+                if ($attended) {
+                    $attendeeCount++;
+                }
+
+                $quizResults = [];
+                foreach ($quizzes as $quiz) {
+                    $key = $user->id . ':' . $quiz['id'];
+                    $userAttempts = $attemptsForSchedule->get($key, collect());
+                    $attempt = $userAttempts
+                        ->filter(fn (JaQuizAttempt $a) => $a->submitted_at !== null)
+                        ->sortByDesc('submitted_at')
+                        ->first()
+                        ?? $userAttempts->sortByDesc('id')->first();
+
+                    $status = 'not_started';
+                    if ($attempt) {
+                        $status = $attempt->submitted_at ? 'submitted' : 'in_progress';
+                    }
+
+                    $quizResults[] = [
+                        'quiz_id' => $quiz['id'],
+                        'status' => $status,
+                        'score' => ($attempt && $attempt->submitted_at) ? (float) $attempt->score : null,
+                        'passed' => ($attempt && $attempt->submitted_at) ? (bool) $attempt->passed : null,
+                        'submitted_at' => $attempt?->submitted_at?->toIso8601String(),
+                    ];
+                }
+
+                $participantRows[] = [
+                    'user_id' => $user->id,
+                    'user_name' => $user->nama_lengkap ?: '—',
+                    'attended' => $attended,
+                    'check_in_at' => $attendance?->check_in_at
+                        ? $attendance->check_in_at->timezone(config('app.timezone'))->format('d/m/Y H:i')
+                        : null,
+                    'method' => $attendance?->method,
+                    'quiz_results' => $quizResults,
+                ];
+            }
+
+            $registered = count($participantRows);
+            $sections[] = [
+                'schedule_id' => $schedule->id,
+                'title' => $schedule->title,
+                'training_date' => $schedule->start_at
+                    ? $schedule->start_at->timezone(config('app.timezone'))->format('d/m/Y H:i')
+                    : null,
+                'venue' => $schedule->location ?: $schedule->outlet?->nama_outlet ?: '—',
+                'trainer' => $this->formatScheduleTrainers($schedule),
+                'method' => $schedule->program?->category?->name ?: '—',
+                'status' => $schedule->status,
+                'quizzes' => $quizzes->all(),
+                'summary' => [
+                    'registered' => $registered,
+                    'attendees' => $attendeeCount,
+                    'attendance_rate' => $registered > 0
+                        ? round(($attendeeCount / $registered) * 100, 1)
+                        : null,
+                ],
+                'participants' => $participantRows,
+            ];
+        }
+
+        return collect($sections)->values();
+    }
+
+    /**
+     * Daftar jadwal untuk filter dropdown rekap kehadiran.
+     *
+     * @return Collection<int, array{id: int, title: string, start_at: string|null}>
+     */
+    public function attendanceRecapScheduleOptions(int $year, int $month): Collection
+    {
+        $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+
+        return JaSchedule::query()
+            ->whereIn('status', ['published', 'ongoing', 'completed'])
+            ->where('start_at', '>=', $rangeStart)
+            ->where('start_at', '<=', $rangeEnd)
+            ->orderBy('start_at')
+            ->get(['id', 'title', 'start_at'])
+            ->map(fn (JaSchedule $schedule) => [
+                'id' => $schedule->id,
+                'title' => $schedule->title,
+                'start_at' => $schedule->start_at
+                    ? $schedule->start_at->timezone(config('app.timezone'))->format('d/m/Y')
+                    : null,
+            ])
+            ->values();
+    }
+
     private function mapDepartmentalPlanRow(JaSchedule $schedule, ?int $divisionId): ?array
     {
         $participants = $this->scheduleParticipantUsers($schedule, $divisionId);

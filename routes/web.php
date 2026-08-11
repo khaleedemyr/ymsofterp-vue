@@ -3922,6 +3922,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::post('/my-training/{schedule}/feedback', [\App\Http\Controllers\JustAcademy\MyTrainingController::class, 'submitFeedback'])->name('my-training.feedback');
 
     Route::get('/reports', [\App\Http\Controllers\JustAcademy\ReportController::class, 'index'])->name('reports.index');
+    Route::get('/attendance-recap', [\App\Http\Controllers\JustAcademy\AttendanceRecapController::class, 'index'])->name('attendance-recap.index');
 
     Route::prefix('api')->name('api.')->group(function () {
         Route::get('/users/search', [\App\Http\Controllers\JustAcademy\LookupController::class, 'searchUsers'])->name('users.search');

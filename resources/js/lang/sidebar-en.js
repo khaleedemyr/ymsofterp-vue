@@ -329,6 +329,7 @@ export default {
     "just_academy_programs": "Programs",
     "just_academy_schedules": "Training Plan",
     "just_academy_my_training": "My Training",
+    "just_academy_attendance_recap": "Attendance Recap",
     "just_academy_reports": "Reports"
   }
 };

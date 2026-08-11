@@ -36,6 +36,7 @@ INSERT INTO `erp_menu` (`name`, `code`, `parent_id`, `route`, `icon`, `created_a
 ('Programs',         'just_academy_programs',     @ja_parent_id, '/just-academy/programs',      'fa-solid fa-book-open',       NOW(), NOW()),
 ('Training Plan',    'just_academy_schedules',    @ja_parent_id, '/just-academy/schedules',     'fa-solid fa-calendar-days',   NOW(), NOW()),
 ('My Training',      'just_academy_my_training',  @ja_parent_id, '/just-academy/my-training',   'fa-solid fa-user-graduate',   NOW(), NOW()),
+('Rekap Kehadiran',  'just_academy_attendance_recap', @ja_parent_id, '/just-academy/attendance-recap', 'fa-solid fa-clipboard-user', NOW(), NOW()),
 ('Reports',          'just_academy_reports',      @ja_parent_id, '/just-academy/reports',       'fa-solid fa-chart-column',    NOW(), NOW())
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`),
@@ -55,6 +56,7 @@ WHERE `code` IN (
     'just_academy_programs',
     'just_academy_schedules',
     'just_academy_my_training',
+    'just_academy_attendance_recap',
     'just_academy_reports'
 );
 
@@ -111,6 +113,12 @@ ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
 SET @menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy_my_training' LIMIT 1);
 INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
 (@menu_id, 'view', 'just_academy_my_training_view', NOW(), NOW())
+ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
+
+-- Permissions: Attendance Recap
+SET @menu_id := (SELECT `id` FROM `erp_menu` WHERE `code` = 'just_academy_attendance_recap' LIMIT 1);
+INSERT INTO `erp_permission` (`menu_id`, `action`, `code`, `created_at`, `updated_at`) VALUES
+(@menu_id, 'view', 'just_academy_attendance_recap_view', NOW(), NOW())
 ON DUPLICATE KEY UPDATE `menu_id` = VALUES(`menu_id`), `updated_at` = NOW();
 
 -- Permissions: Dashboard
