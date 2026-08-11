@@ -20,6 +20,10 @@ class KpiEvaluationController extends Controller
         $search = $request->input('search');
         $periodMonth = $request->input('period_month');
         $evalStatus = $request->input('eval_status');
+        $perPage = (int) $request->input('per_page', 15);
+        if (! in_array($perPage, [10, 15, 25, 50, 100], true)) {
+            $perPage = 15;
+        }
 
         $query = KpiEvaluation::with('template:id,code,name')
             ->orderByDesc('id');
@@ -41,7 +45,7 @@ class KpiEvaluationController extends Controller
             $query->where('eval_status', $evalStatus);
         }
 
-        $evaluations = $query->paginate(15)->withQueryString();
+        $evaluations = $query->paginate($perPage)->withQueryString();
 
         return Inertia::render('KpiEvaluations/Index', [
             'evaluations' => $evaluations,
@@ -49,6 +53,7 @@ class KpiEvaluationController extends Controller
                 'search' => $search,
                 'period_month' => $periodMonth,
                 'eval_status' => $evalStatus,
+                'per_page' => $perPage,
             ],
         ]);
     }

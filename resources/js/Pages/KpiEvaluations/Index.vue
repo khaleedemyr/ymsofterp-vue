@@ -1,6 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
+import { Link, router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
 import AppLayout from '@/Layouts/AppLayout.vue';
@@ -11,19 +11,48 @@ const props = defineProps({
   filters: Object,
 });
 
+const perPageOptions = [10, 15, 25, 50, 100];
+
 const search = ref(props.filters?.search || '');
 const periodMonth = ref(props.filters?.period_month || '');
 const evalStatus = ref(props.filters?.eval_status || '');
+const perPage = ref(Number(props.filters?.per_page) || 15);
 
-const debouncedSearch = debounce(() => {
-  router.get(route('kpi-evaluations.index'), {
+const showingFrom = computed(() => {
+  if (!props.evaluations?.total) return 0;
+  return ((props.evaluations.current_page - 1) * props.evaluations.per_page) + 1;
+});
+
+const showingTo = computed(() => {
+  if (!props.evaluations?.total) return 0;
+  return Math.min(props.evaluations.current_page * props.evaluations.per_page, props.evaluations.total);
+});
+
+function filterParams(extra = {}) {
+  return {
     search: search.value || undefined,
     period_month: periodMonth.value || undefined,
     eval_status: evalStatus.value || undefined,
-  }, { preserveState: true, replace: true });
+    per_page: perPage.value || 15,
+    ...extra,
+  };
+}
+
+const debouncedSearch = debounce(() => {
+  router.get(route('kpi-evaluations.index'), filterParams({ page: 1 }), {
+    preserveState: true,
+    replace: true,
+  });
 }, 400);
 
 watch([periodMonth, evalStatus], () => debouncedSearch());
+
+function changePerPage() {
+  router.get(route('kpi-evaluations.index'), filterParams({ page: 1 }), {
+    preserveState: true,
+    replace: true,
+  });
+}
 
 function statusBadge(st) {
   const map = {
@@ -77,6 +106,9 @@ async function hapus(row) {
           <option value="submitted">Submitted</option>
           <option value="locked">Locked</option>
         </select>
+        <select v-model.number="perPage" class="px-3 py-2 rounded-xl border" @change="changePerPage">
+          <option v-for="n in perPageOptions" :key="n" :value="n">{{ n }} / page</option>
+        </select>
       </div>
 
       <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -128,6 +160,44 @@ async function hapus(row) {
             </tr>
           </tbody>
         </table>
+
+        <div
+          v-if="evaluations.total > 0"
+          class="px-4 py-3 border-t flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-gray-600"
+        >
+          <div class="flex flex-wrap items-center gap-3">
+            <span>
+              Menampilkan {{ showingFrom }}–{{ showingTo }} dari {{ evaluations.total }} data
+            </span>
+            <label class="inline-flex items-center gap-2">
+              <span class="text-xs font-semibold text-gray-500">Per page</span>
+              <select
+                v-model.number="perPage"
+                class="rounded-lg border-gray-300 text-sm focus:border-rose-500 focus:ring-rose-500 py-1"
+                @change="changePerPage"
+              >
+                <option v-for="n in perPageOptions" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500">Halaman {{ evaluations.current_page }} / {{ evaluations.last_page }}</span>
+            <Link
+              v-if="evaluations.prev_page_url"
+              :href="evaluations.prev_page_url"
+              class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+              preserve-scroll
+            >Prev</Link>
+            <span v-else class="px-3 py-1 rounded bg-gray-50 text-gray-300 cursor-not-allowed">Prev</span>
+            <Link
+              v-if="evaluations.next_page_url"
+              :href="evaluations.next_page_url"
+              class="px-3 py-1 rounded bg-gray-100 hover:bg-gray-200"
+              preserve-scroll
+            >Next</Link>
+            <span v-else class="px-3 py-1 rounded bg-gray-50 text-gray-300 cursor-not-allowed">Next</span>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>
