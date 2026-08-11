@@ -1,6 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { router } from '@inertiajs/vue3';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
 import JaLayout from '@/Components/JustAcademy/JaLayout.vue';
 import { jaUi } from '@/composables/useJustAcademyUi';
 
@@ -14,8 +16,52 @@ const props = defineProps({
 
 const year = ref(props.filters?.year || new Date().getFullYear());
 const month = ref(props.filters?.month || new Date().getMonth() + 1);
-const divisionId = ref(props.filters?.division_id || '');
-const scheduleId = ref(props.filters?.schedule_id || '');
+
+const allDivisionOption = { id: '', label: 'Semua departemen' };
+const allScheduleOption = { id: '', label: 'Semua training plan' };
+
+const divisionOptions = computed(() => [
+  allDivisionOption,
+  ...props.divisions.map((d) => ({
+    id: d.id,
+    label: d.nama_divisi,
+  })),
+]);
+
+const scheduleSelectOptions = computed(() => [
+  allScheduleOption,
+  ...props.scheduleOptions.map((s) => ({
+    id: s.id,
+    label: s.start_at ? `${s.start_at} — ${s.title}` : s.title,
+  })),
+]);
+
+function resolveDivisionSelection() {
+  const currentId = props.filters?.division_id ?? '';
+  return divisionOptions.value.find((d) => d.id === currentId || d.id === Number(currentId)) || allDivisionOption;
+}
+
+function resolveScheduleSelection() {
+  const currentId = props.filters?.schedule_id ?? '';
+  return scheduleSelectOptions.value.find((s) => s.id === currentId || s.id === Number(currentId)) || allScheduleOption;
+}
+
+const selectedDivision = ref(resolveDivisionSelection());
+const selectedSchedule = ref(resolveScheduleSelection());
+
+watch(
+  () => [props.filters?.division_id, props.divisions],
+  () => {
+    selectedDivision.value = resolveDivisionSelection();
+  },
+);
+
+watch(
+  () => [props.filters?.schedule_id, props.scheduleOptions],
+  () => {
+    selectedSchedule.value = resolveScheduleSelection();
+  },
+);
 
 const totalRegistered = computed(() => props.sections.reduce((sum, s) => sum + (s.summary?.registered || 0), 0));
 const totalAttendees = computed(() => props.sections.reduce((sum, s) => sum + (s.summary?.attendees || 0), 0));
@@ -24,8 +70,8 @@ function applyFilters() {
   router.get(route('just-academy.attendance-recap.index'), {
     year: year.value,
     month: month.value,
-    division_id: divisionId.value || undefined,
-    schedule_id: scheduleId.value || undefined,
+    division_id: selectedDivision.value?.id || undefined,
+    schedule_id: selectedSchedule.value?.id || undefined,
   }, { preserveState: true });
 }
 
@@ -81,21 +127,33 @@ function quizResultClass(result) {
         <label class="mb-1 block text-xs font-medium text-slate-500">Tahun</label>
         <input v-model.number="year" type="number" min="2020" max="2100" :class="[jaUi.input, 'w-28']" />
       </div>
-      <div class="min-w-[14rem]">
+      <div class="min-w-[16rem] w-full sm:w-64">
         <label class="mb-1 block text-xs font-medium text-slate-500">Departemen</label>
-        <select v-model="divisionId" :class="jaUi.select">
-          <option value="">Semua departemen</option>
-          <option v-for="d in divisions" :key="d.id" :value="d.id">{{ d.nama_divisi }}</option>
-        </select>
+        <Multiselect
+          v-model="selectedDivision"
+          :options="divisionOptions"
+          label="label"
+          track-by="id"
+          placeholder="Cari departemen..."
+          :searchable="true"
+          :allow-empty="false"
+          :show-labels="false"
+          :options-limit="300"
+        />
       </div>
-      <div class="min-w-[18rem] flex-1">
+      <div class="min-w-[20rem] flex-1">
         <label class="mb-1 block text-xs font-medium text-slate-500">Training Plan</label>
-        <select v-model="scheduleId" :class="jaUi.select">
-          <option value="">Semua training plan</option>
-          <option v-for="s in scheduleOptions" :key="s.id" :value="s.id">
-            {{ s.start_at ? `${s.start_at} — ` : '' }}{{ s.title }}
-          </option>
-        </select>
+        <Multiselect
+          v-model="selectedSchedule"
+          :options="scheduleSelectOptions"
+          label="label"
+          track-by="id"
+          placeholder="Cari training plan..."
+          :searchable="true"
+          :allow-empty="false"
+          :show-labels="false"
+          :options-limit="500"
+        />
       </div>
       <button type="button" :class="jaUi.btnPrimary" @click="applyFilters">Tampilkan</button>
       <button type="button" :class="jaUi.btnSecondary" @click="printReport">
