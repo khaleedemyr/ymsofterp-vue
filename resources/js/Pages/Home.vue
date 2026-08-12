@@ -45,10 +45,6 @@ function canAccessHrdApprovals() {
         || HR_APPROVER_JABATAN_IDS.includes(jabatanId)
         || user.can_access_hrd_approvals === true;
 }
-/** HRD staff (bukan superadmin): antrian hanya tahap HRD; backlog atasan lewat card modal */
-function isHrdStaffOnly() {
-    return canAccessHrdApprovals() && !isSuperadminUser();
-}
 
 const { t, locale } = useI18n();
 
@@ -826,19 +822,16 @@ const isTrainer = computed(() => {
     return jabatan.includes('trainer') || jabatan.includes('instruktur') || jabatan.includes('pengajar');
 });
 /**
- * Cuti tahap atasan di antrian approval.
- * HRD Generalist / GM HR: jangan tampilkan (hanya HRD + koreksi); backlog via card modal.
+ * Cuti tahap atasan di antrian approval (termasuk HRD yang ditunjuk sebagai atasan).
  * Superadmin: tampilkan agar bisa approve level atasan maupun HRD.
  */
-const queueSupervisorLeaveApprovals = computed(() =>
-    isHrdStaffOnly() ? [] : pendingApprovals.value
-);
+const queueSupervisorLeaveApprovals = computed(() => pendingApprovals.value);
 
 const totalNotificationsCount = computed(() => {
     const approvalCount = queueSupervisorLeaveApprovals.value.length;
     const hrdApprovalCount = pendingHrdApprovals.value.length;
     const correctionApprovalCount = pendingCorrectionApprovals.value.length;
-    const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') && isNotificationForCurrentUser(n)).length;
+    const leaveNotificationCount = leaveNotifications.value.filter(n => !n.is_read && (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_approval_request' || n.type === 'leave_hrd_approval_request') && isNotificationForCurrentUser(n)).length;
     const total = approvalCount + hrdApprovalCount + correctionApprovalCount + leaveNotificationCount;
     
     // Only return count if there are actual unread notifications
@@ -1026,7 +1019,7 @@ const isModalBulkSelectAllFilteredChecked = computed(() => {
 const dashboardLeaveNotifPendingList = computed(() =>
     leaveNotifications.value.filter(
         (n) =>
-            (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_hrd_approval_request') &&
+            (n.type === 'leave_approved' || n.type === 'leave_rejected' || n.type === 'leave_approval_request' || n.type === 'leave_hrd_approval_request') &&
             !n.is_read &&
             isNotificationForCurrentUser(n)
     )
@@ -1186,7 +1179,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingStockOpnameApprovals.value = data.stock_opnames || [];
             pendingOutletTransferApprovals.value = data.outlet_transfer || [];
             pendingWarehouseStockOpnameApprovals.value = data.warehouse_stock_opnames || [];
-            pendingApprovals.value = isHrdStaffOnly() ? [] : (data.approval || []);
+            pendingApprovals.value = data.approval || [];
             pendingMovementApprovals.value = data.employee_movements || [];
             pendingCoachingApprovals.value = data.coaching || [];
             pendingCorrectionApprovals.value = data.schedule_attendance_correction || [];
@@ -4033,7 +4026,7 @@ async function loadAllApprovals() {
         // This ensures consistency with the count displayed
         const allApprovalsData = [];
         
-        // Cuti tahap atasan: HRD/GM HR tidak ikut antrian (lihat card "Belum approve atasan")
+        // Cuti tahap atasan (termasuk jika HRD ditunjuk sebagai atasan)
         const leaveSeen = new Set();
         queueSupervisorLeaveApprovals.value.forEach(approval => {
             const key = String(approval.id);
@@ -5363,19 +5356,15 @@ async function findApprovalIdFromNotification(notification) {
             return notification.approval_id;
         }
         
-        // Fallback: cari dari pending approvals
-        if (canAccessHrdApprovals()) {
-            // Jika user adalah HRD, cari di pending HRD approvals
+        // Fallback: cari dari pending sesuai tipe notifikasi
+        if (notification.type === 'leave_hrd_approval_request') {
             const response = await axios.get('/api/approval/pending-hrd');
             if (response.data.success && response.data.approvals.length > 0) {
-                // Ambil approval terbaru yang sesuai
                 return response.data.approvals[0].id;
             }
         } else {
-            // Jika user adalah atasan, cari di pending approvals
             const response = await axios.get('/api/approval/pending');
             if (response.data.success && response.data.approvals.length > 0) {
-                // Ambil approval terbaru yang sesuai
                 return response.data.approvals[0].id;
             }
         }
@@ -5794,16 +5783,12 @@ function resolveBulkUnifiedItems(keysSet) {
 
 async function reloadUnifiedApprovalSources() {
     const reloadTasks = [
+        loadPendingApprovals(),
         loadPendingHrdApprovals(),
         loadPendingCorrectionApprovals(),
         loadLeaveNotifications(),
         loadLeaveApprovalSummary(),
     ];
-    if (isHrdStaffOnly()) {
-        pendingApprovals.value = [];
-    } else {
-        reloadTasks.unshift(loadPendingApprovals());
-    }
     await Promise.all(reloadTasks);
     if (showAllApprovalsModal.value) {
         await loadAllApprovals();
@@ -6248,16 +6233,15 @@ function isNotificationForCurrentUser(notification) {
         return false; // These notifications are for the requester, not the approver
     }
     
-    // For HRD users, only show leave_hrd_approval_request notifications
-    // For supervisor users, only show leave_approval_request notifications
-    if (canAccessHrdApprovals()) { // HR approver
-        if (notification.type === 'leave_approval_request') {
-            return false; // This is for supervisor, not HRD
-        }
-    } else { // Supervisor user
-        if (notification.type === 'leave_hrd_approval_request') {
-            return false; // This is for HRD, not supervisor
-        }
+    // HRD users can also be personal atasan — show both atasan + HRD stage notifications
+    if (canAccessHrdApprovals()) {
+        return notification.type === 'leave_approval_request'
+            || notification.type === 'leave_hrd_approval_request';
+    }
+
+    // Supervisor non-HRD: only atasan-stage notifications
+    if (notification.type === 'leave_hrd_approval_request') {
+        return false;
     }
     
     return true; // Other notifications can be shown
@@ -6608,11 +6592,7 @@ onMounted(async () => {
     if (!optimizedLoaded) {
         // Fallback ke individual endpoints jika endpoint baru error
         console.log('⚠️ Using individual endpoints (fallback)');
-        if (isHrdStaffOnly()) {
-            pendingApprovals.value = [];
-        } else {
-            loadPendingApprovals();
-        }
+        loadPendingApprovals();
         loadPendingPrApprovals();
         loadPendingWfhApprovals();
         loadPendingPoOpsApprovals();
@@ -6640,13 +6620,9 @@ onMounted(async () => {
     loadPendingHrdApprovals();
     loadLeaveApprovalSummary();
     // Optimized endpoint memotong banyak tipe ke 30 item — koreksi HRD harus full (periode queue).
-    // HRD staff: cuti tahap atasan tidak di antrian. Superadmin: load full cuti atasan agar bisa approve.
+    // HRD/superadmin: pastikan antrian cuti tahap atasan (personal) ikut ter-load penuh.
     if (canAccessHrdApprovals()) {
-        if (isHrdStaffOnly()) {
-            pendingApprovals.value = [];
-        } else {
-            loadPendingApprovals();
-        }
+        loadPendingApprovals();
         loadPendingCorrectionApprovals();
     }
     loadJustAcademySchedules();
@@ -7193,12 +7169,7 @@ watch(locale, () => {
                                     Lihat Antrian Saya ({{ myActionableApprovalCount }})
                                 </button>
                                 <div class="text-[11px] mt-1" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
-                                    <template v-if="isHrdStaffOnly()">
-                                        {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
-                                    </template>
-                                    <template v-else>
-                                        {{ queueSupervisorLeaveApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
-                                    </template>
+                                    {{ queueSupervisorLeaveApprovals.length }} atasan · {{ pendingHrdApprovals.length }} HRD · {{ pendingCorrectionApprovals.length }} koreksi
                                 </div>
                                 <div v-if="canAccessHrdApprovals() && leaveApprovalSummary && pendingCorrectionApprovals.length !== (leaveApprovalSummary.pending_correction_count || 0)"
                                     class="text-[11px] mt-0.5" :class="isNight ? 'text-amber-300' : 'text-amber-700'">

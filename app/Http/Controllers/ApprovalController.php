@@ -28,8 +28,9 @@ class ApprovalController extends Controller
         
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
-        // HRD/superadmin: hide cuti di luar jendela periode (sama seperti koreksi)
-        $restrictToHrdQueuePeriod = HrdApprovalAccess::canAccessHrdApprovals($user);
+        // Period filter hanya untuk superadmin (company-wide).
+        // HRD sebagai atasan personal harus tetap melihat semua cuti yang ditugaskan ke mereka.
+        $restrictToHrdQueuePeriod = $isSuperadmin;
         $hrdQueuePeriod = $restrictToHrdQueuePeriod
             ? AttendancePayrollPeriod::forHrdApprovalQueue()
             : null;
@@ -831,8 +832,8 @@ class ApprovalController extends Controller
                 
             // Filter based on user role
             if (HrdApprovalAccess::canAccessHrdApprovals($user)) {
-                // HR approvers should only see leave_hrd_approval_request notifications
-                $query->where('type', 'leave_hrd_approval_request');
+                // HRD can also be personal atasan — show both stages
+                $query->whereIn('type', ['leave_hrd_approval_request', 'leave_approval_request']);
             } else {
                 // Supervisor users should only see leave_approval_request notifications
                 $query->where('type', 'leave_approval_request');

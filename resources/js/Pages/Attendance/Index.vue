@@ -1005,6 +1005,7 @@
                 
                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Ketik minimal 2 karakter untuk mencari atasan. Anda dapat menambahkan multiple approvers berjenjang (Level 1, 2, 3, dst). Setelah semua approver approve, baru akan muncul di approval HRD.
+                  <span class="font-bold text-red-600 dark:text-red-400"> Notes: jangan pilih HRD hanya untuk melewati tahap atasan (tahap HRD otomatis). Jika atasan langsung Anda dari HRD, tetap boleh dipilih.</span>
                 </p>
               </div>
               
