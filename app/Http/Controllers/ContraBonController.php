@@ -950,6 +950,7 @@ class ContraBonController extends Controller
         $retailNonFoodQuery = DB::table('retail_non_food as rnf')
             ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
             ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
             ->where('rnf.payment_method', 'contra_bon')
             ->where('rnf.status', 'approved')
             ->whereNull('rnf.deleted_at')
@@ -961,8 +962,10 @@ class ContraBonController extends Controller
                 'rnf.supplier_id',
                 'rnf.outlet_id',
                 'rnf.notes',
+                'rnf.category_budget_id',
                 's.name as supplier_name',
-                'o.nama_outlet as outlet_name'
+                'o.nama_outlet as outlet_name',
+                'prc.name as category_name'
             );
 
         // Apply filters
@@ -2518,6 +2521,7 @@ class ContraBonController extends Controller
             $query = DB::table('retail_non_food as rnf')
                 ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
                 ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
+                ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
                 ->where('rnf.payment_method', 'contra_bon')
                 ->where('rnf.status', 'approved')
                 ->whereNull('rnf.deleted_at')
@@ -2535,15 +2539,18 @@ class ContraBonController extends Controller
                     'rnf.supplier_id',
                     'rnf.outlet_id',
                     'rnf.notes',
+                    'rnf.category_budget_id',
                     's.name as supplier_name',
-                    'o.nama_outlet as outlet_name'
+                    'o.nama_outlet as outlet_name',
+                    'prc.name as category_name'
                 );
 
             if ($search) {
                 $query->where(function ($q) use ($search) {
                     $q->where('rnf.retail_number', 'like', "%{$search}%")
                       ->orWhere('s.name', 'like', "%{$search}%")
-                      ->orWhere('o.nama_outlet', 'like', "%{$search}%");
+                      ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                      ->orWhere('prc.name', 'like', "%{$search}%");
                 });
             }
 
@@ -3790,6 +3797,7 @@ class ContraBonController extends Controller
             'sources.retailFood',
             'sources.warehouseRetailFood',
             'sources.retailNonFood',
+            'sources.retailNonFood.categoryBudget',
             'items.item',
             'items.unit',
             'items.grItem' => function($query) {

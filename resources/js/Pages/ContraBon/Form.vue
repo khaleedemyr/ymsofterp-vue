@@ -192,14 +192,16 @@ onMounted(async () => {
             // Gunakan camelCase untuk relasi Laravel
             const retailNonFood = source.retailNonFood || source.retail_non_food;
             const retailNumber = retailNonFood?.retail_number || 'Retail Non Food';
+            const categoryName = getRetailNonFoodCategoryName(retailNonFood);
             selectedSources.value.push({
               key: `rnf-${source.source_id}`,
               type: 'retail_non_food',
               source_id: source.source_id,
               display: retailNumber,
+              category_name: categoryName,
               supplier_id: props.contraBon.supplier_id,
               supplier_name: props.contraBon.supplier?.name || '',
-              data: null
+              data: retailNonFood
             });
           }
         });
@@ -237,14 +239,16 @@ onMounted(async () => {
             data: null
           });
         } else if (props.contraBon.source_type === 'retail_non_food' && props.contraBon.source_id) {
+          const retailNonFood = props.contraBon.retailNonFood || props.contraBon.retail_non_food;
           selectedSources.value.push({
             key: `rnf-${props.contraBon.source_id}`,
             type: 'retail_non_food',
             source_id: props.contraBon.source_id,
-            display: props.contraBon.retailNonFood?.retail_number || 'Retail Non Food',
+            display: retailNonFood?.retail_number || 'Retail Non Food',
+            category_name: getRetailNonFoodCategoryName(retailNonFood),
             supplier_id: props.contraBon.supplier_id,
             supplier_name: props.contraBon.supplier?.name || '',
-            data: null
+            data: retailNonFood
           });
         }
       }
@@ -537,6 +541,14 @@ function closeRetailNonFoodModal() {
   retailNonFoodSearchQuery.value = '';
 }
 
+function getRetailNonFoodCategoryName(rnf) {
+  if (!rnf) return '';
+  return rnf.category_name
+    || rnf.categoryBudget?.name
+    || rnf.category_budget?.name
+    || '';
+}
+
 async function loadRetailNonFoodList(searchQuery = '') {
   loadingPOGR.value = true;
   try {
@@ -592,6 +604,8 @@ async function selectRetailNonFoodFromModal(rnf) {
   try {
     const response = await axios.get(`/non-food-payments/retail-non-food-items/${rnf.id}`);
     const itemsData = response.data.items_by_outlet || {};
+    const firstOutlet = Object.values(itemsData)[0] || {};
+    const categoryName = getRetailNonFoodCategoryName(rnf) || firstOutlet.category_name || '';
     
     // Add source to selectedSources
     const sourceKey = `rnf-${rnf.id}`;
@@ -600,6 +614,7 @@ async function selectRetailNonFoodFromModal(rnf) {
       type: 'retail_non_food',
       source_id: rnf.id,
       display: `${rnf.retail_number} - ${rnf.supplier_name}`,
+      category_name: categoryName,
       supplier_id: rnf.supplier_id,
       supplier_name: rnf.supplier_name,
       data: rnf
@@ -629,6 +644,7 @@ async function selectRetailNonFoodFromModal(rnf) {
           source_type: 'retail_non_food',
           source_id: rnf.id,
           source_display: rnf.retail_number,
+          category_name: categoryName,
           po_id: null,
           gr_id: null,
           _rowKey: Date.now() + '-' + Math.random() + '-rnf',
@@ -1775,6 +1791,12 @@ function getUnitName(item) {
                   <i class="fa fa-shopping-bag"></i>
                 </span>
                 <span class="font-medium text-gray-700">{{ source.display }}</span>
+                <span
+                  v-if="source.type === 'retail_non_food' && source.category_name"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                >
+                  {{ source.category_name }}
+                </span>
               </div>
               <button 
                 type="button"
@@ -1873,9 +1895,12 @@ function getUnitName(item) {
                        <i class="fa fa-warehouse mr-1"></i>
                        {{ item.source_display || 'Warehouse RF' }}
                      </span>
-                     <span v-else-if="item.source_type === 'retail_non_food'" class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                       <i class="fa fa-shopping-bag mr-1"></i>
-                       {{ item.source_display || 'Retail Non Food' }}
+                     <span v-else-if="item.source_type === 'retail_non_food'" class="inline-flex flex-col items-start gap-1">
+                       <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                         <i class="fa fa-shopping-bag mr-1"></i>
+                         {{ item.source_display || 'Retail Non Food' }}
+                       </span>
+                       <span v-if="item.category_name" class="text-xs text-green-700">{{ item.category_name }}</span>
                      </span>
                      <span v-else class="text-gray-400">-</span>
                    </td>
@@ -2202,7 +2227,7 @@ function getUnitName(item) {
               @input="filterRetailNonFoodList"
               type="text" 
               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" 
-              placeholder="Cari Retail Non Food, Supplier, atau Outlet..."
+              placeholder="Cari Retail Non Food, Supplier, Outlet, atau Category..."
             />
           </div>
         </div>
@@ -2226,6 +2251,9 @@ function getUnitName(item) {
                 <div class="flex-1">
                   <div class="font-semibold text-lg">{{ rnf.retail_number }}</div>
                   <div class="text-gray-600">{{ rnf.supplier_name }}</div>
+                  <div v-if="getRetailNonFoodCategoryName(rnf)" class="text-sm text-green-700 mt-1">
+                    <i class="fa fa-tags"></i> {{ getRetailNonFoodCategoryName(rnf) }}
+                  </div>
                   <div v-if="rnf.outlet_name" class="text-sm text-green-600 mt-1">
                     <i class="fa fa-map-marker-alt"></i> {{ rnf.outlet_name }}
                   </div>
@@ -2235,6 +2263,9 @@ function getUnitName(item) {
                 </div>
                 <div class="text-right">
                   <div class="text-sm text-gray-500">Retail Non Food</div>
+                  <div v-if="getRetailNonFoodCategoryName(rnf)" class="text-sm font-medium text-green-700 mt-1">
+                    {{ getRetailNonFoodCategoryName(rnf) }}
+                  </div>
                 </div>
               </div>
             </div>
