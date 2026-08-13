@@ -14,6 +14,10 @@ const props = defineProps({
   mode: String,
   audit: Object,
   outlets: Array,
+  warehouseDivisions: {
+    type: Array,
+    default: () => [],
+  },
   users: Array,
   templates: Array,
   tree: Array,
@@ -35,6 +39,7 @@ const showCapApproverDropdown = ref(false);
 const capSubmitting = ref(false);
 
 const selectedOutlet = ref(null);
+const selectedWarehouse = ref(null);
 const selectedTemplate = ref(null);
 const selectedAuditors = ref([]);
 const selectedAuditees = ref([]);
@@ -72,6 +77,9 @@ function hydrateFromAudit() {
   }
 
   selectedOutlet.value = props.outlets.find((x) => Number(x.id_outlet) === Number(props.audit.outlet_id)) || null;
+  selectedWarehouse.value = (props.warehouseDivisions || []).find(
+    (x) => Number(x.id) === Number(props.audit.warehouse_division_id)
+  ) || null;
   selectedTemplate.value = props.templates.find((x) => Number(x.id) === Number(props.audit.template_id)) || null;
   selectedAuditors.value = props.users.filter((u) => (props.audit.auditor_ids || []).includes(u.id));
   selectedAuditees.value = props.users.filter((u) => (props.audit.auditee_ids || []).includes(u.id));
@@ -89,6 +97,15 @@ hydrateFromAudit();
 
 watch(() => [props.mode, props.audit?.id], () => {
   hydrateFromAudit();
+});
+
+const HO_OUTLET_ID = 1;
+const isHoOutletSelected = computed(() => Number(selectedOutlet.value?.id_outlet) === HO_OUTLET_ID);
+
+watch(selectedOutlet, (outlet) => {
+  if (Number(outlet?.id_outlet) !== HO_OUTLET_ID) {
+    selectedWarehouse.value = null;
+  }
 });
 
 const isDraftManage = computed(() => canManage.value && props.audit?.status === 'draft');
@@ -288,6 +305,7 @@ const overallAuditResult = computed(() => resolveAuditResult(summaryTotal.value.
 
 const draftPayload = computed(() => ({
   outlet_id: selectedOutlet.value?.id_outlet || null,
+  warehouse_division_id: isHoOutletSelected.value ? (selectedWarehouse.value?.id || null) : null,
   auditor_ids: selectedAuditors.value.map((u) => u.id),
   auditee_ids: selectedAuditees.value.map((u) => u.id),
   notes: notes.value,
@@ -537,8 +555,14 @@ async function createDraft() {
     return;
   }
 
+  if (Number(selectedOutlet.value.id_outlet) === HO_OUTLET_ID && !selectedWarehouse.value) {
+    await Swal.fire('Validasi', 'Warehouse wajib dipilih untuk outlet ini.', 'warning');
+    return;
+  }
+
   router.post(route('qa2-audits.store'), {
     outlet_id: selectedOutlet.value.id_outlet,
+    warehouse_division_id: selectedWarehouse.value?.id || null,
     template_id: selectedTemplate.value.id,
     auditor_ids: selectedAuditors.value.map((x) => x.id),
     auditee_ids: selectedAuditees.value.map((x) => x.id),
@@ -878,6 +902,18 @@ function formatUserLabel(user) {
               track-by="id_outlet"
               label="nama_outlet"
               placeholder="Pilih outlet"
+            />
+          </div>
+
+          <div v-if="isHoOutletSelected">
+            <label class="mb-1 block text-sm font-medium text-gray-700">Warehouse</label>
+            <Multiselect
+              v-model="selectedWarehouse"
+              :options="warehouseDivisions"
+              :disabled="!isCreate && !canManage"
+              track-by="id"
+              label="name"
+              placeholder="Pilih warehouse"
             />
           </div>
 

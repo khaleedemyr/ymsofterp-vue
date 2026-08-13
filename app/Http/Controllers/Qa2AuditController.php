@@ -17,6 +17,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class Qa2AuditController extends Controller
 {
+    private const HO_OUTLET_ID = 1;
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -32,20 +34,22 @@ class Qa2AuditController extends Controller
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
             ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->leftJoin('users as u', 'u.id', '=', 'a.created_by')
-            ->select([
+            ->leftJoin('users as u', 'u.id', '=', 'a.created_by');
+        $this->joinWarehouseDivision($query);
+        $query->select([
                 'a.id',
                 'a.audit_number',
                 'a.audit_datetime',
                 'a.status',
                 'a.cap_submission_status',
                 'a.outlet_id',
+                'a.warehouse_division_id',
                 'a.audit_time_start',
                 'a.audit_time_end',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'u.nama_lengkap as created_by_name',
             ])
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na")
@@ -69,6 +73,7 @@ class Qa2AuditController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('a.audit_number', 'like', "%{$search}%")
                     ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('qa2_wd.name', 'like', "%{$search}%")
                     ->orWhere('t.name', 'like', "%{$search}%")
                     ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
                     ->orWhereExists(function ($sub) use ($search) {
@@ -669,16 +674,18 @@ class Qa2AuditController extends Controller
     ): array {
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
-            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->where('a.status', 'submitted')
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id');
+        $this->joinWarehouseDivision($query);
+        $query->where('a.status', 'submitted')
             ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
             ->select([
                 'a.id',
                 'a.outlet_id',
+                'a.warehouse_division_id',
                 'a.template_id',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
             ])
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
 
@@ -689,7 +696,9 @@ class Qa2AuditController extends Controller
         }
 
         $rows = $query->get()
-            ->groupBy('outlet_id')
+            ->groupBy(function ($row) {
+                return ((int) ($row->outlet_id ?? 0)) . ':' . ((int) ($row->warehouse_division_id ?? 0));
+            })
             ->map(function ($group) {
                 $avgScore = $group->avg(function ($r) {
                     $c = (float) ($r->count_c ?? 0);
@@ -814,16 +823,18 @@ class Qa2AuditController extends Controller
     ): \Illuminate\Support\Collection {
         $query = DB::table('qa2_audits as a')
             ->join('qa2_audit_items as i', 'i.audit_id', '=', 'a.id')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
-            ->where('a.status', 'submitted')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id');
+        $this->joinWarehouseDivision($query);
+        $query->where('a.status', 'submitted')
             ->where('i.result', 'NC')
             ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
             ->selectRaw("DATE_FORMAT(a.audit_datetime, '%Y-%m') as month_key")
             ->selectRaw('a.outlet_id as outlet_id')
-            ->selectRaw('COALESCE(o.nama_outlet, "-") as outlet_name')
+            ->selectRaw('a.warehouse_division_id as warehouse_division_id')
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw('COUNT(i.id) as nc_count')
             ->selectRaw('COUNT(DISTINCT a.id) as audit_count')
-            ->groupBy('month_key', 'a.outlet_id', 'o.nama_outlet');
+            ->groupBy('month_key', 'a.outlet_id', 'a.warehouse_division_id', 'o.nama_outlet', 'qa2_wd.name');
 
         if (! $isHo) {
             $query->where('a.outlet_id', $userOutletId);
@@ -917,8 +928,9 @@ class Qa2AuditController extends Controller
             ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
             ->leftJoin('qa2_categories as c', 'c.id', '=', 'i.category_id')
             ->leftJoin('qa2_subcategories as s', 's.id', '=', 'i.subcategory_id')
-            ->leftJoin('qa2_audit_caps as cap', 'cap.audit_item_id', '=', 'i.id')
-            ->where('a.status', 'submitted')
+            ->leftJoin('qa2_audit_caps as cap', 'cap.audit_item_id', '=', 'i.id');
+        $this->joinWarehouseDivision($query);
+        $query->where('a.status', 'submitted')
             ->where('i.result', 'NC')
             ->whereBetween('a.audit_datetime', [$fromDateTime, $toDateTime])
             ->select([
@@ -928,7 +940,6 @@ class Qa2AuditController extends Controller
                 'a.outlet_id',
                 'i.id as audit_item_id',
                 'cap.id as cap_id',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'c.name as category_name',
                 's.name as subcategory_name',
@@ -941,6 +952,7 @@ class Qa2AuditController extends Controller
                 'cap.target_date as cap_target_date',
                 'cap.status as cap_status',
             ])
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditors aa join users u on u.id = aa.user_id where aa.audit_id = a.id) as auditors")
             ->selectRaw("(select group_concat(distinct u.nama_lengkap order by u.nama_lengkap separator ', ') from qa2_audit_auditees ad join users u on u.id = ad.user_id where ad.audit_id = a.id) as auditees")
             ->orderByDesc('a.audit_datetime')
@@ -1057,6 +1069,7 @@ class Qa2AuditController extends Controller
             'mode' => 'create',
             'audit' => null,
             'outlets' => $this->allowedOutlets(true, (int) $user->id_outlet),
+            'warehouseDivisions' => $this->warehouseDivisions(),
             'users' => $this->usersForSelector(),
             'templates' => $templates,
             'tree' => [],
@@ -1073,6 +1086,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
             'template_id' => 'required|exists:qa2_templates,id',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
@@ -1082,6 +1096,10 @@ class Qa2AuditController extends Controller
         ]);
 
         $user = auth()->user();
+        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+            (int) $validated['outlet_id'],
+            $validated['warehouse_division_id'] ?? null
+        );
 
         // Tarik dulu data template dan pastikan ada item sebelum membuat draft audit.
         $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
@@ -1091,11 +1109,12 @@ class Qa2AuditController extends Controller
             ]);
         }
 
-        $auditId = DB::transaction(function () use ($validated, $user, $templateRows) {
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouseDivisionId) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
                 'outlet_id' => (int) $validated['outlet_id'],
+                'warehouse_division_id' => $warehouseDivisionId,
                 'template_id' => (int) $validated['template_id'],
                 'created_by' => (int) $user->id,
                 'audit_time_start' => now(),
@@ -1140,6 +1159,7 @@ class Qa2AuditController extends Controller
             'mode' => 'edit',
             'audit' => $this->auditPayload($id, !$canManage),
             'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
+            'warehouseDivisions' => $this->warehouseDivisions((int) ($audit->warehouse_division_id ?? 0) ?: null),
             'users' => $this->usersForSelector(),
             'templates' => DB::table('qa2_templates')
                 ->where('status', 'A')
@@ -1225,6 +1245,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
             'auditee_ids' => 'nullable|array',
@@ -1237,9 +1258,15 @@ class Qa2AuditController extends Controller
             'items.*.due_date' => 'nullable|date',
         ]);
 
-        DB::transaction(function () use ($id, $validated) {
+        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+            (int) $validated['outlet_id'],
+            $validated['warehouse_division_id'] ?? null
+        );
+
+        DB::transaction(function () use ($id, $validated, $warehouseDivisionId) {
             DB::table('qa2_audits')->where('id', $id)->update([
                 'outlet_id' => (int) $validated['outlet_id'],
+                'warehouse_division_id' => $warehouseDivisionId,
                 'notes' => $validated['notes'] ?? null,
                 'updated_at' => now(),
             ]);
@@ -1556,6 +1583,13 @@ class Qa2AuditController extends Controller
         $outletName = (string) DB::table('tbl_data_outlet')
             ->where('id_outlet', (int) ($audit->outlet_id ?? 0))
             ->value('nama_outlet');
+        $warehouseName = null;
+        if (!empty($audit->warehouse_division_id)) {
+            $warehouseName = DB::table('warehouse_division')
+                ->where('id', (int) $audit->warehouse_division_id)
+                ->value('name');
+        }
+        $outletName = $this->formatOutletLabel($outletName, $warehouseName);
 
         $templateName = (string) DB::table('qa2_templates')
             ->where('id', (int) ($audit->template_id ?? 0))
@@ -1574,8 +1608,69 @@ class Qa2AuditController extends Controller
 
     private function ensureHo(): void
     {
-        $isHo = (int) (auth()->user()->id_outlet ?? 0) === 1;
+        $isHo = (int) (auth()->user()->id_outlet ?? 0) === self::HO_OUTLET_ID;
         abort_if(!$isHo, 403);
+    }
+
+    private function warehouseDivisions(?int $includeId = null)
+    {
+        return DB::table('warehouse_division')
+            ->select('id', 'name')
+            ->where(function ($q) use ($includeId) {
+                $q->where('status', 'active');
+                if ($includeId) {
+                    $q->orWhere('id', $includeId);
+                }
+            })
+            ->orderBy('name')
+            ->get();
+    }
+
+    private function joinWarehouseDivision($query)
+    {
+        return $query->leftJoin('warehouse_division as qa2_wd', 'qa2_wd.id', '=', 'a.warehouse_division_id');
+    }
+
+    private function formattedOutletNameSql(): string
+    {
+        return "CASE WHEN qa2_wd.name IS NOT NULL AND TRIM(qa2_wd.name) <> '' THEN CONCAT(o.nama_outlet, '-', qa2_wd.name) ELSE o.nama_outlet END";
+    }
+
+    private function formatOutletLabel(?string $outletName, ?string $warehouseName): string
+    {
+        $outlet = trim((string) $outletName);
+        $warehouse = trim((string) $warehouseName);
+        if ($outlet === '') {
+            return '-';
+        }
+        if ($warehouse === '') {
+            return $outlet;
+        }
+
+        return $outlet . '-' . $warehouse;
+    }
+
+    private function resolveWarehouseDivisionId(int $outletId, $rawId): ?int
+    {
+        if ($outletId !== self::HO_OUTLET_ID) {
+            return null;
+        }
+
+        $id = (int) $rawId;
+        if ($id <= 0) {
+            throw ValidationException::withMessages([
+                'warehouse_division_id' => 'Warehouse wajib dipilih untuk outlet ini.',
+            ]);
+        }
+
+        $exists = DB::table('warehouse_division')->where('id', $id)->exists();
+        if (!$exists) {
+            throw ValidationException::withMessages([
+                'warehouse_division_id' => 'Warehouse tidak valid.',
+            ]);
+        }
+
+        return $id;
     }
 
     /**
@@ -1809,8 +1904,9 @@ class Qa2AuditController extends Controller
     {
         $audit = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
-            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->select([
+            ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id');
+        $this->joinWarehouseDivision($audit);
+        $audit = $audit->select([
                 'a.id',
                 'a.audit_number',
                 'a.audit_datetime',
@@ -1821,11 +1917,12 @@ class Qa2AuditController extends Controller
                 'a.cap_submitted_at',
                 'a.cap_submitted_by',
                 'a.outlet_id',
+                'a.warehouse_division_id',
                 'a.template_id',
                 'a.notes',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
             ])
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->where('a.id', $id)
             ->first();
 
@@ -1993,6 +2090,7 @@ class Qa2AuditController extends Controller
             'cap_submitted_by' => $audit->cap_submitted_by ? (int) $audit->cap_submitted_by : null,
             'cap_approval_flows' => $this->capApprovalFlowsForAudit($id),
             'outlet_id' => (int) $audit->outlet_id,
+            'warehouse_division_id' => $audit->warehouse_division_id ? (int) $audit->warehouse_division_id : null,
             'template_id' => (int) $audit->template_id,
             'notes' => $audit->notes,
             'outlet_name' => $audit->outlet_name,
@@ -2083,20 +2181,22 @@ class Qa2AuditController extends Controller
         $query = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
             ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->leftJoin('users as u', 'u.id', '=', 'a.created_by')
-            ->select([
+            ->leftJoin('users as u', 'u.id', '=', 'a.created_by');
+        $this->joinWarehouseDivision($query);
+        $query->select([
                 'a.id',
                 'a.audit_number',
                 'a.audit_datetime',
                 'a.status',
                 'a.cap_submission_status',
                 'a.outlet_id',
+                'a.warehouse_division_id',
                 'a.audit_time_start',
                 'a.audit_time_end',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'u.nama_lengkap as created_by_name',
             ])
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na")
@@ -2120,6 +2220,7 @@ class Qa2AuditController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('a.audit_number', 'like', "%{$search}%")
                     ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('qa2_wd.name', 'like', "%{$search}%")
                     ->orWhere('t.name', 'like', "%{$search}%")
                     ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
                     ->orWhereExists(function ($sub) use ($search) {
@@ -2246,6 +2347,7 @@ class Qa2AuditController extends Controller
         return response()->json([
             'success' => true,
             'outlets' => $this->allowedOutlets(true, (int) $user->id_outlet),
+            'warehouse_divisions' => $this->warehouseDivisions(),
             'users' => $this->usersForSelector(),
             'templates' => DB::table('qa2_templates')
                 ->where('status', 'A')
@@ -2265,6 +2367,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
             'template_id' => 'required|exists:qa2_templates,id',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
@@ -2274,6 +2377,10 @@ class Qa2AuditController extends Controller
         ]);
 
         $user = auth()->user();
+        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+            (int) $validated['outlet_id'],
+            $validated['warehouse_division_id'] ?? null
+        );
         $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
         if (empty($templateRows)) {
             return response()->json([
@@ -2282,11 +2389,12 @@ class Qa2AuditController extends Controller
             ], 422);
         }
 
-        $auditId = DB::transaction(function () use ($validated, $user, $templateRows) {
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouseDivisionId) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
                 'outlet_id' => (int) $validated['outlet_id'],
+                'warehouse_division_id' => $warehouseDivisionId,
                 'template_id' => (int) $validated['template_id'],
                 'created_by' => (int) $user->id,
                 'audit_time_start' => now(),
@@ -2534,8 +2642,9 @@ class Qa2AuditController extends Controller
             ->join('qa2_audit_cap_approval_flows as af', 'a.id', '=', 'af.audit_id')
             ->join('tbl_data_outlet as o', 'a.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id')
-            ->where('af.status', 'PENDING')
+            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id');
+        $this->joinWarehouseDivision($query);
+        $query->where('af.status', 'PENDING')
             ->where('a.cap_submission_status', 'pending_approval');
 
         if (!$isSuperadmin) {
@@ -2549,12 +2658,12 @@ class Qa2AuditController extends Controller
                 'a.audit_number',
                 'a.audit_datetime',
                 'a.cap_submitted_at',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'submitter.nama_lengkap as submitter_name',
                 'af.approval_level',
                 'approver.nama_lengkap as approver_name'
             )
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as nc_count")
             ->get()
             ->filter(function ($row) use ($currentUser, $isSuperadmin) {
@@ -2580,14 +2689,15 @@ class Qa2AuditController extends Controller
         $audit = DB::table('qa2_audits as a')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
             ->leftJoin('qa2_templates as t', 't.id', '=', 'a.template_id')
-            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id')
-            ->where('a.id', $id)
+            ->leftJoin('users as submitter', 'a.cap_submitted_by', '=', 'submitter.id');
+        $this->joinWarehouseDivision($audit);
+        $audit = $audit->where('a.id', $id)
             ->select(
                 'a.*',
-                'o.nama_outlet as outlet_name',
                 't.name as template_name',
                 'submitter.nama_lengkap as submitter_name'
             )
+            ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->first();
 
         if (!$audit) {
@@ -2869,9 +2979,11 @@ class Qa2AuditController extends Controller
             }
 
             $audit = DB::table('qa2_audits as a')
-                ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id')
-                ->where('a.id', $auditId)
-                ->select('a.audit_number', 'o.nama_outlet')
+                ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'a.outlet_id');
+            $this->joinWarehouseDivision($audit);
+            $audit = $audit->where('a.id', $auditId)
+                ->select('a.audit_number')
+                ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
                 ->first();
 
             if (!$audit) {
@@ -2882,7 +2994,7 @@ class Qa2AuditController extends Controller
                 'user_id' => (int) $next->id,
                 'type' => 'qa2_cap_approval',
                 'title' => 'Approval CAP QA2',
-                'message' => "CAP audit {$audit->audit_number} ({$audit->nama_outlet}) menunggu approval Anda.",
+                'message' => "CAP audit {$audit->audit_number} ({$audit->outlet_name}) menunggu approval Anda.",
                 'is_read' => 0,
             ]);
         } catch (\Throwable $e) {
