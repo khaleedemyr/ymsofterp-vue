@@ -1912,12 +1912,14 @@ class OutletInternalUseWasteController extends Controller
         $query = DB::table('outlet_food_inventory_stocks as ofs')
             ->join('outlet_food_inventory_items as ofii', 'ofii.id', '=', 'ofs.inventory_item_id')
             ->join('items as i', 'i.id', '=', 'ofii.item_id')
+            ->join('categories as c', 'c.id', '=', 'i.category_id')
             ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
             ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
             ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
             ->where('ofs.id_outlet', $outletId)
             ->where('ofs.warehouse_outlet_id', $warehouseOutletId)
             ->where('i.status', 'active')
+            ->where('c.is_asset', '0')
             ->where(function ($sub) {
                 $sub->where('ofs.qty_small', '>', 0)
                     ->orWhere('ofs.qty_medium', '>', 0)
@@ -1995,17 +1997,19 @@ class OutletInternalUseWasteController extends Controller
         }
 
         $query = DB::table('items')
-            ->where('status', 'active')
-            ->select('id', 'name', 'sku');
+            ->join('categories', 'categories.id', '=', 'items.category_id')
+            ->where('items.status', 'active')
+            ->where('categories.is_asset', '0')
+            ->select('items.id', 'items.name', 'items.sku');
 
         if ($search !== '') {
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('sku', 'like', "%{$search}%");
+                $q->where('items.name', 'like', "%{$search}%")
+                  ->orWhere('items.sku', 'like', "%{$search}%");
             });
         }
 
-        $items = $query->orderBy('name')->limit($limit)->get();
+        $items = $query->orderBy('items.name')->limit($limit)->get();
 
         return response()->json($items);
     }
