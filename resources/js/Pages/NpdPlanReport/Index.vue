@@ -122,7 +122,7 @@
                     <i class="fa-solid fa-eye"></i>
                   </Link>
                   <Link
-                    v-if="['rejected', 'requires_revision'].includes(row.status)"
+                    v-if="['submitted', 'approved', 'rejected', 'requires_revision'].includes(row.status)"
                     :href="route('npd-plan-report.edit', row.id)"
                     class="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 transition"
                     title="Edit"

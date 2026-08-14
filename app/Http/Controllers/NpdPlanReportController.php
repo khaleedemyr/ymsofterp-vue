@@ -115,8 +115,8 @@ class NpdPlanReportController extends Controller
         return Inertia::render('NpdPlanReport/Show', [
             'record' => $npdPlanReport,
             'purposeOptions' => $this->purposeOptions(),
-            'canEdit' => in_array($npdPlanReport->status, ['rejected', 'requires_revision'], true) && $this->canManage($npdPlanReport),
-            'canDelete' => in_array($npdPlanReport->status, ['rejected', 'requires_revision'], true) && $this->canManage($npdPlanReport),
+            'canEdit' => $this->canEditReport($npdPlanReport),
+            'canDelete' => $this->canDeleteReport($npdPlanReport),
             'canApprove' => $this->canApprove($npdPlanReport),
             'currentApprovalFlow' => $this->currentApprovalFlow($npdPlanReport),
         ]);
@@ -124,7 +124,7 @@ class NpdPlanReportController extends Controller
 
     public function edit(NpdPlanReport $npdPlanReport): Response
     {
-        $this->ensureRejectedEditable($npdPlanReport);
+        $this->ensureEditable($npdPlanReport);
         $npdPlanReport->load('items');
 
         return Inertia::render('NpdPlanReport/Form', array_merge(
@@ -135,38 +135,18 @@ class NpdPlanReportController extends Controller
 
     public function update(Request $request, NpdPlanReport $npdPlanReport)
     {
-        $this->ensureRejectedEditable($npdPlanReport);
+        $this->ensureEditable($npdPlanReport);
         $validated = $this->validatePayload($request, true);
-
-        DB::beginTransaction();
-        try {
-            $outlet = Outlet::findOrFail($validated['outlet_id']);
-            $npdPlanReport->update([
-                'report_month' => $validated['report_month'].'-01',
-                'outlet_id' => $outlet->id_outlet,
-                'outlet_name' => (string) $outlet->nama_outlet,
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'submitted',
-                'updated_by' => Auth::id(),
-            ]);
-
-            $this->syncItems($npdPlanReport, $validated['items']);
-            $this->syncApprovalFlows($npdPlanReport, $validated['approvers']);
-
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        $this->persistReport($request, $npdPlanReport, $validated);
 
         return redirect()
             ->route('npd-plan-report.show', $npdPlanReport->id)
-            ->with('success', 'NPD Plan & Report berhasil diperbarui dan diajukan ulang untuk approval.');
+            ->with('success', 'NPD Plan & Report berhasil diperbarui.');
     }
 
     public function destroy(NpdPlanReport $npdPlanReport)
     {
-        $this->ensureRejectedEditable($npdPlanReport);
+        $this->ensureDeletable($npdPlanReport);
         $npdPlanReport->delete();
 
         return redirect()
@@ -551,13 +531,29 @@ class NpdPlanReportController extends Controller
         return $this->isSuperAdmin() || (int) Auth::id() === (int) $report->created_by;
     }
 
-    private function ensureRejectedEditable(NpdPlanReport $report): void
+    private function canEditReport(NpdPlanReport $report): bool
     {
-        if (! in_array($report->status, ['rejected', 'requires_revision'], true)) {
-            abort(403, 'Report hanya dapat diubah saat status rejected atau requires revision.');
-        }
-        if (! $this->canManage($report)) {
+        return in_array($report->status, ['submitted', 'approved', 'rejected', 'requires_revision'], true)
+            && $this->canManage($report);
+    }
+
+    private function canDeleteReport(NpdPlanReport $report): bool
+    {
+        return in_array($report->status, ['rejected', 'requires_revision'], true)
+            && $this->canManage($report);
+    }
+
+    private function ensureEditable(NpdPlanReport $report): void
+    {
+        if (! $this->canEditReport($report)) {
             abort(403, 'Anda tidak memiliki akses untuk mengubah report ini.');
+        }
+    }
+
+    private function ensureDeletable(NpdPlanReport $report): void
+    {
+        if (! $this->canDeleteReport($report)) {
+            abort(403, 'Report hanya dapat dihapus saat status rejected atau requires revision.');
         }
     }
 
@@ -676,7 +672,7 @@ class NpdPlanReportController extends Controller
         if ($id !== null) {
             $record = NpdPlanReport::with(['items', 'approvalFlows.approver:id,nama_lengkap'])->findOrFail($id);
             try {
-                $this->ensureRejectedEditable($record);
+            $this->ensureEditable($record);
             } catch (\Throwable $e) {
                 return response()->json([
                     'success' => false,
@@ -704,8 +700,8 @@ class NpdPlanReportController extends Controller
             'success' => true,
             'record' => $this->serializeDetailRecord($report, true),
             'purpose_options' => $this->purposeOptions(),
-            'can_edit' => in_array($report->status, ['rejected', 'requires_revision'], true) && $this->canManage($report),
-            'can_delete' => in_array($report->status, ['rejected', 'requires_revision'], true) && $this->canManage($report),
+            'can_edit' => $this->canEditReport($report),
+            'can_delete' => $this->canDeleteReport($report),
             'can_approve' => $this->canApprove($report),
             'current_approval_flow' => $this->currentApprovalFlow($report)?->only([
                 'id', 'approval_level', 'status', 'approver_id', 'comments',
@@ -738,13 +734,13 @@ class NpdPlanReportController extends Controller
         $report = NpdPlanReport::findOrFail($id);
 
         try {
-            $this->ensureRejectedEditable($report);
+            $this->ensureEditable($report);
             $validated = $this->validatePayload($request, true);
             $report = $this->persistReport($request, $report, $validated);
 
             return response()->json([
                 'success' => true,
-                'message' => 'NPD Plan & Report berhasil diperbarui dan diajukan ulang untuk approval.',
+                'message' => 'NPD Plan & Report berhasil diperbarui.',
                 'id' => $report->id,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -766,7 +762,7 @@ class NpdPlanReportController extends Controller
         $report = NpdPlanReport::findOrFail($id);
 
         try {
-            $this->ensureRejectedEditable($report);
+            $this->ensureDeletable($report);
             $report->delete();
 
             return response()->json([
@@ -808,16 +804,23 @@ class NpdPlanReportController extends Controller
             $outlet = Outlet::findOrFail($validated['outlet_id']);
 
             if ($existing) {
+                $resetApproval = in_array($existing->status, ['submitted', 'rejected', 'requires_revision'], true);
+                $nextStatus = in_array($existing->status, ['rejected', 'requires_revision'], true)
+                    ? 'submitted'
+                    : $existing->status;
+
                 $existing->update([
                     'report_month' => $validated['report_month'].'-01',
                     'outlet_id' => $outlet->id_outlet,
                     'outlet_name' => (string) $outlet->nama_outlet,
                     'notes' => $validated['notes'] ?? null,
-                    'status' => 'submitted',
+                    'status' => $nextStatus,
                     'updated_by' => Auth::id(),
                 ]);
                 $this->syncItems($existing, $validated['items']);
-                $this->syncApprovalFlows($existing, $validated['approvers']);
+                if ($resetApproval) {
+                    $this->syncApprovalFlows($existing, $validated['approvers']);
+                }
                 DB::commit();
 
                 return $existing->fresh(['items', 'approvalFlows']);
