@@ -34,7 +34,7 @@ class PendingApprovalController extends Controller
 
             // OPTIMASI: Cache hasil untuk 120 detik per user
             // Cache key berdasarkan user ID untuk personalisasi
-            $cacheKey = 'all_pending_approvals_v6_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v7_' . $user->id;
             $cacheTTL = 120; // 120 detik
             
             // Check if data is cached (before calling Cache::remember)
@@ -112,20 +112,8 @@ class PendingApprovalController extends Controller
                 Log::error('Error loading PO Ops approvals: ' . $e->getMessage());
             }
 
-            // 3. Contra Bon
-            try {
-                $cbController = app(\App\Http\Controllers\ContraBonController::class);
-                $cbResponse = $cbController->getPendingApprovals($request);
-                if ($cbResponse->getStatusCode() === 200) {
-                    $cbData = json_decode($cbResponse->getContent(), true);
-                    $data['contra_bons'] = $cbData['contra_bons'] ?? [];
-                    if ($limit > 0 && count($data['contra_bons']) > $limit) {
-                        $data['contra_bons'] = array_slice($data['contra_bons'], 0, $limit);
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::error('Error loading Contra Bon approvals: ' . $e->getMessage());
-            }
+            // 3. Contra Bon — approval dihapus, dokumen langsung approved saat dibuat
+            $data['contra_bons'] = [];
 
             // 4. Approval (General)
             try {
@@ -595,7 +583,7 @@ class PendingApprovalController extends Controller
                 ], 401);
             }
 
-            $cacheKey = 'all_pending_approvals_v6_' . $user->id;
+            $cacheKey = 'all_pending_approvals_v7_' . $user->id;
             Cache::forget($cacheKey);
             
             return response()->json([

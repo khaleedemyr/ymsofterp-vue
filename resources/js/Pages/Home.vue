@@ -1172,7 +1172,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingPrApprovals.value = data.purchase_requisitions || [];
             pendingWfhApprovals.value = data.wfh_requests || [];
             pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
-            pendingContraBonApprovals.value = data.contra_bons || [];
+            pendingContraBonApprovals.value = [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
             pendingStockAdjustmentApprovals.value = data.outlet_food_inventory_adjustment || [];
             pendingWarehouseStockAdjustmentApprovals.value = data.food_inventory_adjustment || [];
@@ -6599,7 +6599,6 @@ onMounted(async () => {
         loadPendingCategoryCostApprovals();
         loadPendingStockAdjustmentApprovals();
         loadPendingWarehouseStockAdjustmentApprovals();
-        loadPendingContraBonApprovals();
         loadPendingStockOpnameApprovals();
         loadPendingOutletTransferApprovals();
         loadPendingWarehouseStockOpnameApprovals();
@@ -7895,8 +7894,8 @@ watch(locale, () => {
                     @rejected="handleOvertimeSubmissionRejected"
                 />
 
-                <!-- Contra Bon Approval Section -->
-                <div v-if="contraBonApprovalCount > 0" class="flex-shrink-0 mb-4">
+                <!-- Contra Bon Approval Section (disabled — dokumen langsung approved) -->
+                <div v-if="false" class="flex-shrink-0 mb-4">
                     <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
                         :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
                         <div class="flex items-center justify-between mb-3">

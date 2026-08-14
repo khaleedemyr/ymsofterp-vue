@@ -261,21 +261,9 @@ const canEdit = computed(() => {
   return canEditByJabatan || isSuperadmin.value;
 })
 
-const canApproveFinanceManager = computed(() =>
-  (([160, 317].includes(Number(props.user?.id_jabatan)) && props.user?.status === 'A') || isSuperadmin.value)
-  && props.contraBon.status === 'draft'
-  && !props.contraBon.finance_manager_approved_at
-)
+const canApproveFinanceManager = computed(() => false)
 
-const canApproveGMFinance = computed(() =>
-  (
-    (props.user?.id_jabatan === 152 && props.user?.status === 'A') ||
-    (props.user?.id_role === '5af56935b011a' && props.user?.status === 'A')
-  )
-  && props.contraBon.status === 'draft'
-  && props.contraBon.finance_manager_approved_at
-  && !props.contraBon.gm_finance_approved_at
-)
+const canApproveGMFinance = computed(() => false)
 
 const loadingApprove = ref(false);
 

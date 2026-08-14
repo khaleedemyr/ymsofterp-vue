@@ -1219,8 +1219,12 @@ class ContraBonController extends Controller
                 'discount_total_amount' => $discountTotalAmount,
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
-                'status' => 'draft',
+                'status' => 'approved',
                 'created_by' => Auth::id(),
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+                'finance_manager_approved_at' => now(),
+                'finance_manager_approved_by' => Auth::id(),
                 'supplier_invoice_number' => $request->supplier_invoice_number,
                 'source_type' => $sourceType,
             ];
@@ -1512,20 +1516,6 @@ class ContraBonController extends Controller
                 'old_data' => null,
                 'new_data' => $contraBon->fresh()->toArray(),
             ]);
-
-            // Send notification to Finance Manager
-            $financeManagers = \DB::table('users')
-                ->whereIn('id_jabatan', [160, 317])
-                ->where('status', 'A')
-                ->pluck('id');
-            
-            $this->sendNotification(
-                $financeManagers,
-                'contra_bon_approval',
-                'Approval Contra Bon',
-                "Contra Bon {$contraBon->number} menunggu approval Anda.",
-                route('contra-bons.show', $contraBon->id)
-            );
 
             DB::commit();
             
@@ -2252,151 +2242,23 @@ class ContraBonController extends Controller
     }
 
     /**
-     * Get pending Contra Bon approvals for current user
+     * Get pending Contra Bon approvals for current user.
+     * Approval Contra Bon sudah dihapus — dokumen langsung approved saat dibuat.
      */
     public function getPendingApprovals(Request $request)
     {
-        try {
-            $user = Auth::user();
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized: User not authenticated',
-                    'contra_bons' => []
-                ], 401);
-            }
-            
-            $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
-            
-            $query = ContraBon::with([
-                'supplier',
-                'purchaseOrder',
-                'retailFood.outlet',
-                'warehouseRetailFood.warehouse',
-                'warehouseRetailFood.warehouseDivision',
-                'retailNonFood.outlet',
-                'creator',
-                'sources.purchaseOrder',
-                'sources.retailFood.outlet',
-                'sources.warehouseRetailFood.warehouse',
-                'sources.warehouseRetailFood.warehouseDivision',
-                'sources.retailNonFood.outlet'
-            ])
-                ->where('status', 'draft')
-                ->orderByDesc('created_at');
-            
-            // OPTIMASI: Batch load approvers sekali untuk menghindari query di loop
-            $financeManager = null;
-            $gmFinance = null;
-            if ($isSuperadmin) {
-                $financeManager = \App\Models\User::whereIn('id_jabatan', [160, 317])->where('status', 'A')->first();
-                $gmFinance = \App\Models\User::whereIn('id_jabatan', [152, 381])->where('status', 'A')->first();
-            }
-
-            $pendingApprovals = [];
-            
-            // Finance Manager approvals (id_jabatan == 160 / 317) - Only level
-            if ((in_array((int) $user->id_jabatan, [160, 317], true) && $user->status == 'A') || $isSuperadmin) {
-                $financeManagerApprovals = (clone $query)
-                    ->whereNull('finance_manager_approved_at')
-                    ->get();
-                
-                foreach ($financeManagerApprovals as $cb) {
-                    // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
-                    if (!$cb->relationLoaded('warehouseRetailFood')) {
-                        $cb->load('warehouseRetailFood');
-                    }
-                    
-                    // Get source_types array (same logic as index method)
-                    $sourceTypes = $this->getSourceTypes($cb);
-                    
-                    // OPTIMASI: Get approver name dari batch loaded data
-                    $approverName = null;
-                    if ($isSuperadmin) {
-                        // For superadmin, get the next approver (Finance Manager if not approved, GM Finance if Finance Manager approved)
-                        if (!$cb->finance_manager_approved_at) {
-                            $approverName = $financeManager ? $financeManager->nama_lengkap : 'Finance Manager';
-                        } elseif (!$cb->gm_finance_approved_at) {
-                            $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
-                        }
-                    } else {
-                        // For Finance Manager, they are the approver
-                        $approverName = $user->nama_lengkap;
-                    }
-                    
-                    $pendingApprovals[] = [
-                        'id' => $cb->id,
-                        'number' => $cb->number,
-                        'date' => $cb->date,
-                        'total_amount' => $cb->total_amount,
-                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
-                        'source_type' => $cb->source_type,
-                        'source_type_display' => $this->getSourceTypeDisplay($cb),
-                        'source_types' => $sourceTypes,
-                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
-                        'approval_level' => 'finance_manager',
-                        'approval_level_display' => 'Finance Manager',
-                        'approver_name' => $approverName
-                    ];
-                }
-            }
-            
-            // GM Finance approvals (id_jabatan == 152 atau 381)
-            if ((in_array($user->id_jabatan, [152, 381]) && $user->status == 'A') || $isSuperadmin) {
-                $gmFinanceApprovals = (clone $query)
-                    ->whereNotNull('finance_manager_approved_at')
-                    ->whereNull('gm_finance_approved_at')
-                    ->get();
-                
-                foreach ($gmFinanceApprovals as $cb) {
-                    // Ensure warehouseRetailFood is loaded if source_type is warehouse_retail_food
-                    if (!$cb->relationLoaded('warehouseRetailFood')) {
-                        $cb->load('warehouseRetailFood');
-                    }
-                    
-                    // Get source_types array (same logic as index method)
-                    $sourceTypes = $this->getSourceTypes($cb);
-                    
-                    // OPTIMASI: Get approver name dari batch loaded data
-                    $approverName = null;
-                    if ($isSuperadmin) {
-                        // For superadmin, get GM Finance approver (sudah di-load di atas)
-                        $approverName = $gmFinance ? $gmFinance->nama_lengkap : 'GM Finance';
-                    } else {
-                        // For GM Finance, they are the approver
-                        $approverName = $user->nama_lengkap;
-                    }
-                    
-                    $pendingApprovals[] = [
-                        'id' => $cb->id,
-                        'number' => $cb->number,
-                        'date' => $cb->date,
-                        'total_amount' => $cb->total_amount,
-                        'supplier' => $cb->supplier ? ['name' => $cb->supplier->name] : null,
-                        'source_type' => $cb->source_type,
-                        'source_type_display' => $this->getSourceTypeDisplay($cb),
-                        'source_types' => $sourceTypes,
-                        'creator' => $cb->creator ? ['nama_lengkap' => $cb->creator->nama_lengkap] : null,
-                        'approval_level' => 'gm_finance',
-                        'approval_level_display' => 'GM Finance',
-                        'approver_name' => $approverName
-                    ];
-                }
-            }
-            
-            return response()->json([
-                'success' => true,
-                'contra_bons' => $pendingApprovals
-            ]);
-            
-        } catch (\Exception $e) {
-            \Log::error('Error loading pending Contra Bon approvals: ' . $e->getMessage());
+        if (!Auth::user()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal memuat data approval Contra Bon',
+                'message' => 'Unauthorized: User not authenticated',
                 'contra_bons' => []
-            ], 500);
+            ], 401);
         }
+
+        return response()->json([
+            'success' => true,
+            'contra_bons' => []
+        ]);
     }
     
     private function getSourceTypeDisplay($contraBon)
