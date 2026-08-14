@@ -8,7 +8,7 @@ use App\Exports\AttendanceReportExport;
 use App\Exports\EmployeeSummaryExport;
 use App\Exports\OutletSummaryExport;
 use App\Services\AttendanceWorkTimelineService;
-use App\Models\OvertimeSubmissionItem;
+use App\Services\OvertimeSubmissionFilterService;
 use App\Models\OnePlusOneSubmissionItem;
 
 class AttendanceReportController extends Controller
@@ -201,6 +201,12 @@ class AttendanceReportController extends Controller
                 ->whereBetween('tgl_libur', [$start, $end])
                 ->pluck('keterangan', 'tgl_libur'); // key: tgl_libur, value: keterangan
 
+            $overtimeUserIds = $dataRows->pluck('user_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+            if ($userId) {
+                $overtimeUserIds[] = (int) $userId;
+            }
+            $overtimeSubmissions = $this->overtimeFilter()->batchApprovedByUserDate($overtimeUserIds, $start, $end);
+
             // Build rows for each tanggal in period
             $rows = collect();
             foreach ($period as $tanggal) {
@@ -251,11 +257,12 @@ class AttendanceReportController extends Controller
                                         );
                                     }
                                 }
-                                if ($shift && $shift->time_end && ! empty($row->work_minutes)) {
-                                    $lembur = floor($this->workTimelineService()->calculateOvertimeHours(
-                                        (int) $row->work_minutes,
-                                        $shift->time_start,
-                                        $shift->time_end
+                                if ($shift && $shift->time_end && $row->jam_keluar) {
+                                    $lembur = floor($this->workTimelineService()->calculateOvertimeHoursFromShiftOut(
+                                        $row->jam_keluar,
+                                        $shift->time_start ?? null,
+                                        $shift->time_end,
+                                        $tanggal
                                     ));
                                 }
                             } else {
@@ -293,6 +300,16 @@ class AttendanceReportController extends Controller
                             $lembur = 0;
                             $totalLembur = floor($extraOffOvertime);
                         }
+
+                        $appliedOvertime = $this->applyOvertimeSubmissionFilter(
+                            (float) $lembur,
+                            (float) $extraOffOvertime,
+                            $rowUserId ? (int) $rowUserId : null,
+                            $tanggal,
+                            $overtimeSubmissions
+                        );
+                        $lembur = $appliedOvertime['lembur'];
+                        $totalLembur = $appliedOvertime['total_lembur'];
                         
                         $summary['total_telat'] += $telat;
                         $summary['total_lembur'] += $totalLembur;
@@ -339,6 +356,8 @@ class AttendanceReportController extends Controller
                             'wfh_reason' => $wfhInfo['reason'] ?? null,
                             'has_no_checkout' => $has_no_checkout,
                             'is_alpha' => $is_alpha,
+                            'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                            'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                         ]);
                     }
                 } else {
@@ -395,6 +414,16 @@ class AttendanceReportController extends Controller
                         $lembur = 0;
                         $totalLembur = floor($extraOffOvertime);
                     }
+
+                    $appliedOvertime = $this->applyOvertimeSubmissionFilter(
+                        (float) $lembur,
+                        (float) $extraOffOvertime,
+                        $rowUserId ? (int) $rowUserId : null,
+                        $tanggal,
+                        $overtimeSubmissions
+                    );
+                    $lembur = $appliedOvertime['lembur'];
+                    $totalLembur = $appliedOvertime['total_lembur'];
                     
                     $summary['total_lembur'] += $totalLembur;
 
@@ -436,6 +465,8 @@ class AttendanceReportController extends Controller
                         'wfh_reason' => $wfhInfo['reason'] ?? null,
                         'has_no_checkout' => false, // Tidak ada data attendance sama sekali
                         'is_alpha' => $is_alpha,
+                        'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                        'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                     ]);
                 }
             }
@@ -890,6 +921,12 @@ class AttendanceReportController extends Controller
                 ->whereBetween('tgl_libur', [$start, $end])
                 ->pluck('keterangan', 'tgl_libur');
 
+            $overtimeUserIds = $dataRows->pluck('user_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all();
+            if ($userId) {
+                $overtimeUserIds[] = (int) $userId;
+            }
+            $overtimeSubmissions = $this->overtimeFilter()->batchApprovedByUserDate($overtimeUserIds, $start, $end);
+
             foreach ($period as $tanggal) {
                 // Ambil semua data untuk tanggal ini
                 $dayData = $dataRows->where('tanggal', $tanggal);
@@ -945,14 +982,14 @@ class AttendanceReportController extends Controller
                                     }
                                 }
                                 
-                                if ($shift && $shift->time_end && $jam_keluar) {
-                                    // Gunakan smart overtime calculation
+                                if ($shift && $shift->time_end && $row->jam_keluar) {
                                     $lembur = $this->calculateWorkBasedOvertime(
                                         (int) ($row->work_minutes ?? 0),
                                         $shift->time_start,
-                                        $shift->time_end
+                                        $shift->time_end,
+                                        $row->jam_keluar,
+                                        $tanggal
                                     );
-                                    
                                 }
                             } else {
                                 $jam_masuk = null;
@@ -985,6 +1022,15 @@ class AttendanceReportController extends Controller
                             $jam_masuk,
                             $tanggal
                         );
+
+                        $appliedOvertime = $this->applyOvertimeSubmissionFilter(
+                            (float) $lembur,
+                            0,
+                            $rowUserId ? (int) $rowUserId : null,
+                            $tanggal,
+                            $overtimeSubmissions
+                        );
+                        $lembur = $appliedOvertime['lembur'];
                         
                     $rows->push((object)[
                         'tanggal' => $tanggal,
@@ -1008,6 +1054,8 @@ class AttendanceReportController extends Controller
                         'is_cross_day' => $row->is_cross_day ?? false,
                         'has_no_checkout' => $has_no_checkout,
                         'is_alpha' => $is_alpha,
+                        'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                        'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                     ]);
                     }
                 } else {
@@ -1073,6 +1121,14 @@ class AttendanceReportController extends Controller
                         null,
                         $tanggal
                     );
+                    $appliedOvertime = $this->applyOvertimeSubmissionFilter(
+                        (float) $lembur,
+                        0,
+                        $rowUserId ? (int) $rowUserId : null,
+                        $tanggal,
+                        $overtimeSubmissions
+                    );
+                    $lembur = $appliedOvertime['lembur'];
                     $rows->push((object)[
                         'tanggal' => $tanggal,
                         'user_id' => $rowUserId,
@@ -1095,6 +1151,8 @@ class AttendanceReportController extends Controller
                         'is_cross_day' => false,
                         'has_no_checkout' => false, // Tidak ada data attendance sama sekali
                         'is_alpha' => $is_alpha,
+                        'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                        'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                     ]);
                 }
             }
@@ -1424,18 +1482,11 @@ class AttendanceReportController extends Controller
             return [];
         }
 
-        $items = OvertimeSubmissionItem::query()
-            ->join('overtime_submissions as os', 'overtime_submission_items.submission_id', '=', 'os.id')
-            ->whereNull('os.deleted_at')
-            ->where('os.status', 'APPROVED')
-            ->whereIn('overtime_submission_items.user_id', $userIds)
-            ->whereBetween('overtime_submission_items.overtime_date', [$startDate, $endDate])
-            ->get(['overtime_submission_items.user_id', 'overtime_submission_items.overtime_date', 'overtime_submission_items.requested_hours']);
+        $items = $this->overtimeFilter()->batchApprovedByUserDate($userIds, $startDate, $endDate);
 
         $result = [];
-        foreach ($items as $item) {
-            $key = $this->overtimeMapKey((int) $item->user_id, (string) $item->overtime_date);
-            $result[$key] = ($result[$key] ?? 0) + (float) $item->requested_hours;
+        foreach ($items as $key => $item) {
+            $result[$key] = (float) ($item['hours'] ?? 0);
         }
 
         return $result;
@@ -1471,9 +1522,33 @@ class AttendanceReportController extends Controller
         return $result;
     }
 
+    private function overtimeFilter(): OvertimeSubmissionFilterService
+    {
+        return app(OvertimeSubmissionFilterService::class);
+    }
+
+    /**
+     * @param  array<string, array{hours: float, reason: ?string}>  $submissions
+     * @return array{lembur: float, total_lembur: float, overtime_submission_hours: ?float, overtime_submission_reason: ?string}
+     */
+    private function applyOvertimeSubmissionFilter(
+        float $lemburActual,
+        float $extraOffHours,
+        ?int $userId,
+        string $tanggal,
+        array $submissions,
+        ?float $onePlusOneHours = null
+    ): array {
+        $submission = ($userId && $tanggal)
+            ? ($submissions[$this->overtimeFilter()->mapKey((int) $userId, $tanggal)] ?? null)
+            : null;
+
+        return $this->overtimeFilter()->applyToDay($lemburActual, $extraOffHours, $submission, $onePlusOneHours);
+    }
+
     private function overtimeMapKey(int $userId, string $date): string
     {
-        return $userId.'_'.$date;
+        return $this->overtimeFilter()->mapKey($userId, $date);
     }
 
     private function resolveEffectiveOvertimeHours(float $actualOvertimeHours, ?float $requestedOvertimeHours): float
@@ -2123,7 +2198,9 @@ class AttendanceReportController extends Controller
                         $row->lembur = $this->calculateWorkBasedOvertime(
                             (int) ($row->work_minutes ?? 0),
                             $shiftStart,
-                            $shiftEnd
+                            $shiftEnd,
+                            $row->jam_keluar ?? null,
+                            $row->tanggal ?? null
                         );
                         if ($row->lembur > 0) {
                             $overtimeCount++;
@@ -2650,7 +2727,9 @@ class AttendanceReportController extends Controller
                         $row->lembur = $this->calculateWorkBasedOvertime(
                             (int) ($row->work_minutes ?? 0),
                             $shiftStart,
-                            $shiftEnd
+                            $shiftEnd,
+                            $row->jam_keluar ?? null,
+                            $row->tanggal ?? null
                         );
                     } else {
                         $row->lembur = 0;
@@ -3372,15 +3451,13 @@ class AttendanceReportController extends Controller
             );
         }
 
-        if ($shift && $processedRow->jam_keluar) {
-            $workMinutes = (int) ($processedRow->work_minutes ?? 0);
-            if ($workMinutes > 0 && $shift->time_start && $shift->time_end) {
-                $lembur = floor(app(AttendanceWorkTimelineService::class)->calculateOvertimeHours(
-                    $workMinutes,
-                    $shift->time_start,
-                    $shift->time_end
-                ));
-            }
+        if ($shift && $processedRow->jam_keluar && $shift->time_end) {
+            $lembur = floor(app(AttendanceWorkTimelineService::class)->calculateOvertimeHoursFromShiftOut(
+                $processedRow->jam_keluar,
+                $shift->time_start ?? null,
+                $shift->time_end,
+                $tanggal
+            ));
         }
 
         return ['telat' => $telat, 'lembur' => $lembur];
@@ -3424,8 +3501,22 @@ class AttendanceReportController extends Controller
         return app(AttendanceWorkTimelineService::class);
     }
 
-    private function calculateWorkBasedOvertime(?int $workMinutes, ?string $shiftStart, ?string $shiftEnd): int
-    {
+    private function calculateWorkBasedOvertime(
+        ?int $workMinutes,
+        ?string $shiftStart,
+        ?string $shiftEnd,
+        $jamKeluar = null,
+        ?string $tanggal = null
+    ): int {
+        if ($jamKeluar && $shiftEnd) {
+            return (int) floor($this->workTimelineService()->calculateOvertimeHoursFromShiftOut(
+                $jamKeluar,
+                $shiftStart,
+                $shiftEnd,
+                $tanggal
+            ));
+        }
+
         if (! $workMinutes || ! $shiftStart || ! $shiftEnd) {
             return 0;
         }

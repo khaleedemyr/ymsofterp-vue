@@ -3903,13 +3903,12 @@ class PayrollReportController extends Controller
             $shiftData = $allShiftData->get($shiftKey, collect())->first();
             
             if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
-                // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
-                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHours(
-                    (int) ($row->work_minutes ?? 0),
+                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHoursFromShiftOut(
+                    $row->jam_keluar,
                     $shiftData->time_start,
-                    $shiftData->time_end
+                    $shiftData->time_end,
+                    $row->tanggal
                 ));
-                // Round down (bulatkan ke bawah)
                 $row->lembur = floor($row->lembur);
             } else {
                 $row->lembur = 0;
@@ -3968,8 +3967,11 @@ class PayrollReportController extends Controller
                     
                     // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
                     $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($row->user_id, $row->tanggal);
-                    // Round down total lembur (bulatkan ke bawah)
-                    $totalLembur = floor($lembur + $extraOffOvertime);
+                    $attendanceInfo = $attendanceDataWithFirstInLastOut[$row->tanggal] ?? [];
+                    $lembur = $attendanceInfo['lembur'] ?? $lembur;
+                    $totalLembur = $attendanceInfo['total_lembur'] ?? floor($lembur + $extraOffOvertime);
+                    $overtimeSubmissionHours = $attendanceInfo['overtime_submission_hours'] ?? null;
+                    $overtimeSubmissionReason = $attendanceInfo['overtime_submission_reason'] ?? null;
                     
                     // Check if user has approved absent for this date
                     $approvedAbsent = null;
@@ -3999,6 +4001,8 @@ class PayrollReportController extends Controller
                         'lembur' => $lembur,
                         'extra_off_overtime' => $extraOffOvertime,
                         'total_lembur' => $totalLembur,
+                        'overtime_submission_hours' => $overtimeSubmissionHours,
+                        'overtime_submission_reason' => $overtimeSubmissionReason,
                         'shift_name' => $shift_name,
                         'is_cross_day' => $row->is_cross_day ?? false,
                         'is_off' => $is_off,
@@ -4038,6 +4042,10 @@ class PayrollReportController extends Controller
                 
                 // Check for Extra Off overtime on this date
                 $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+                $attendanceInfo = $attendanceDataWithFirstInLastOut[$tanggal] ?? [];
+                $overtimeSubmissionHours = $attendanceInfo['overtime_submission_hours'] ?? null;
+                $overtimeSubmissionReason = $attendanceInfo['overtime_submission_reason'] ?? null;
+                $totalLembur = $attendanceInfo['total_lembur'] ?? $extraOffOvertime;
                 
                 // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, tidak ada Extra Off overtime, dan tanggal sudah terlewati
                 $is_alpha = false;
@@ -4056,7 +4064,9 @@ class PayrollReportController extends Controller
                     'telat' => 0,
                     'lembur' => 0,
                     'extra_off_overtime' => $extraOffOvertime,
-                    'total_lembur' => $extraOffOvertime,
+                    'total_lembur' => $totalLembur,
+                    'overtime_submission_hours' => $overtimeSubmissionHours,
+                    'overtime_submission_reason' => $overtimeSubmissionReason,
                     'shift_name' => $shift_name,
                     'is_cross_day' => false,
                     'is_off' => $is_off,

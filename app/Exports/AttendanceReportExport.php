@@ -29,7 +29,7 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
     public function headings(): array
     {
         return [
-            'Tanggal', 'Nama Karyawan', 'Outlet', 'Jam Masuk', 'Jam Keluar', 'Total IN', 'Total OUT', 'Telat (menit)', 'Lembur (jam)', 'Status', 'Nama Libur', 'Detail', 'Shift'
+            'Tanggal', 'Nama Karyawan', 'Outlet', 'Jam Masuk', 'Jam Keluar', 'Total IN', 'Total OUT', 'Telat (menit)', 'Lembur (jam)', 'Pengajuan Lembur (jam)', 'Alasan Pengajuan', 'Status', 'Nama Libur', 'Detail', 'Shift'
         ];
     }
 
@@ -66,6 +66,8 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
             $row->total_keluar ?? 0,
             $row->telat ?? 0,
             $lembur_display,
+            $row->overtime_submission_hours ?? '-',
+            $row->overtime_submission_reason ?? '',
             $status,
             $row->holiday_name ?? '',
             $detail,
@@ -76,7 +78,7 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
     public function styles(Worksheet $sheet)
     {
         // Header style
-        $sheet->getStyle('A1:M1')->applyFromArray([
+        $sheet->getStyle('A1:O1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -85,7 +87,7 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
         ]);
         
         // Auto-size columns
-        foreach (range('A', 'M') as $column) {
+        foreach (range('A', 'O') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
     }
@@ -102,10 +104,12 @@ class AttendanceReportExport implements FromCollection, WithHeadings, WithMappin
             'G' => 8,  // Total OUT
             'H' => 12, // Telat
             'I' => 12, // Lembur
-            'J' => 10, // Status
-            'K' => 20, // Nama Libur
-            'L' => 40, // Detail
-            'M' => 25, // Shift
+            'J' => 18, // Pengajuan Lembur
+            'K' => 30, // Alasan Pengajuan
+            'L' => 10, // Status
+            'M' => 20, // Nama Libur
+            'N' => 40, // Detail
+            'O' => 25, // Shift
         ];
     }
 

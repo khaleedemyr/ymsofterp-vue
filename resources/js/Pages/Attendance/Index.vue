@@ -239,7 +239,7 @@
                             </div>
                             
                             <!-- Telat and Lembur -->
-                            <div v-if="schedule.telat > 0 || (schedule.total_lembur || schedule.lembur) > 0" class="mt-1 space-y-0.5">
+                            <div v-if="schedule.telat > 0 || (schedule.total_lembur || schedule.lembur) > 0 || schedule.overtime_submission_hours" class="mt-1 space-y-0.5">
                               <div v-if="schedule.telat > 0" class="flex items-center gap-1">
                                 <i class="fa-solid fa-clock text-yellow-400"></i>
                                 <span class="text-yellow-400">Telat {{ schedule.telat }} Menit</span>
@@ -248,6 +248,12 @@
                                 <div class="flex items-center gap-1">
                                   <i class="fa-solid fa-hourglass-half text-orange-400"></i>
                                   <span class="text-orange-400">Lembur {{ Math.floor(schedule.total_lembur || schedule.lembur || 0) }} Jam</span>
+                                </div>
+                                <div v-if="schedule.overtime_submission_hours" class="ml-5 text-xs text-indigo-200" :title="schedule.overtime_submission_reason || ''">
+                                  Pengajuan {{ Math.floor(schedule.overtime_submission_hours) }} jam
+                                </div>
+                                <div v-if="schedule.overtime_submission_reason" class="ml-5 text-xs text-white/80 truncate" :title="schedule.overtime_submission_reason">
+                                  {{ schedule.overtime_submission_reason }}
                                 </div>
                                 <div v-if="schedule.extra_off_overtime && schedule.extra_off_overtime > 0" class="flex items-center gap-1 ml-5">
                                   <span class="text-xs text-purple-400">(+{{ Math.floor(schedule.extra_off_overtime) }} EO)</span>

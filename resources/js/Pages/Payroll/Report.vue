@@ -1809,6 +1809,7 @@ onMounted(() => {
                                 <th class="px-3 py-2 text-center border-b">IN/OUT</th>
                                 <th class="px-3 py-2 text-center border-b">Telat (menit)</th>
                                 <th class="px-3 py-2 text-center border-b">Lembur (jam)</th>
+                                <th class="px-3 py-2 text-center border-b">Pengajuan Lembur</th>
                                 <th class="px-3 py-2 text-center border-b">OT dari EO</th>
                                 <th class="px-3 py-2 text-center border-b">Total Lembur</th>
                                 <th class="px-3 py-2 text-center border-b">Shift</th>
@@ -1848,6 +1849,17 @@ onMounted(() => {
                                   <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else-if="detail.lembur > 0" class="text-green-600 font-semibold">{{ Math.floor(detail.lembur || 0) }}</span>
                                   <span v-else class="text-gray-500">0</span>
+                                </td>
+                                <td class="px-3 py-2 text-center text-xs">
+                                  <div v-if="detail.overtime_submission_hours" class="flex flex-col items-center gap-0.5">
+                                    <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-semibold">
+                                      {{ Math.floor(detail.overtime_submission_hours) }} jam
+                                    </span>
+                                    <span v-if="detail.overtime_submission_reason" class="text-gray-500 max-w-[160px] truncate" :title="detail.overtime_submission_reason">
+                                      {{ detail.overtime_submission_reason }}
+                                    </span>
+                                  </div>
+                                  <span v-else class="text-gray-400">-</span>
                                 </td>
                                 <td class="px-3 py-2 text-center">
                                   <span v-if="detail.extra_off_overtime > 0" class="text-purple-600 font-semibold">{{ Math.floor(detail.extra_off_overtime || 0) }}</span>

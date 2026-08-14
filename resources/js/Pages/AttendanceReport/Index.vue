@@ -330,17 +330,19 @@ const getRowTooltip = (row) => {
                   <span v-else class="text-gray-500">OFF</span>
                 </template>
                 <template v-else>
-                  <div v-if="row.extra_off_overtime && row.extra_off_overtime > 0" class="flex flex-col">
+                  <div class="flex flex-col items-center gap-0.5">
                     <span>{{ Math.floor(row.total_lembur || row.lembur || 0) }}</span>
-                    <span class="text-xs text-purple-600" title="Extra Off Overtime: {{ row.extra_off_overtime }} jam">
+                    <span v-if="row.overtime_submission_hours" class="text-xs text-indigo-600 font-semibold" :title="row.overtime_submission_reason || ''">
+                      Pengajuan {{ Math.floor(row.overtime_submission_hours) }} jam
+                    </span>
+                    <span v-if="row.overtime_submission_reason" class="text-xs text-gray-500 max-w-[180px] truncate" :title="row.overtime_submission_reason">
+                      {{ row.overtime_submission_reason }}
+                    </span>
+                    <span v-if="row.extra_off_overtime && row.extra_off_overtime > 0" class="text-xs text-purple-600" title="Extra Off Overtime: {{ row.extra_off_overtime }} jam">
                       (+{{ row.extra_off_overtime }} EO)
                     </span>
+                    <span v-if="row.is_cross_day" class="text-xs text-orange-600 font-semibold" title="Cross-day overtime">🌙</span>
                   </div>
-                  <span v-else>{{ Math.floor(row.total_lembur || row.lembur || 0) }}</span>
-                  <span v-if="row.is_cross_day" 
-                        class="text-xs text-orange-600 font-semibold ml-1" title="Cross-day overtime">
-                    🌙
-                  </span>
                 </template>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">

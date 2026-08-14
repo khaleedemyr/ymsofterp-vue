@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use App\Models\LeaveType;
 use App\Services\NotificationService;
 use App\Services\HolidayAttendanceService;
+use App\Services\OvertimeSubmissionFilterService;
 use App\Support\HrdApprovalAccess;
 
 class AttendanceController extends Controller
@@ -66,6 +67,8 @@ class AttendanceController extends Controller
                 'lembur' => $lembur,
                 'extra_off_overtime' => $extraOffOvertime,
                 'total_lembur' => $totalLembur,
+                'overtime_submission_hours' => $attendanceInfo['overtime_submission_hours'] ?? null,
+                'overtime_submission_reason' => $attendanceInfo['overtime_submission_reason'] ?? null,
                 'has_attendance' => $attendanceInfo ? true : false,
                 'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
             ];
@@ -90,6 +93,7 @@ class AttendanceController extends Controller
             $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($user->id, $date);
             
             if ($extraOffOvertime > 0) {
+                $attendanceInfo = $attendanceData[$date] ?? [];
                 $calendar[$date][$user->id] = [
                     'user_id' => $user->id,
                     'nama_lengkap' => $user->nama_lengkap,
@@ -102,7 +106,9 @@ class AttendanceController extends Controller
                     'telat' => 0,
                     'lembur' => 0,
                     'extra_off_overtime' => $extraOffOvertime,
-                    'total_lembur' => $extraOffOvertime,
+                    'total_lembur' => $attendanceInfo['total_lembur'] ?? $extraOffOvertime,
+                    'overtime_submission_hours' => $attendanceInfo['overtime_submission_hours'] ?? null,
+                    'overtime_submission_reason' => $attendanceInfo['overtime_submission_reason'] ?? null,
                     'has_attendance' => false,
                     'has_no_checkout' => false,
                 ];
@@ -476,6 +482,9 @@ class AttendanceController extends Controller
 
     public function getAttendanceDataWithFirstInLastOut($userId, $startDate, $endDate)
     {
+        $overtimeFilter = app(OvertimeSubmissionFilterService::class);
+        $overtimeSubmissions = $overtimeFilter->batchApprovedByUserDate([(int) $userId], $startDate, $endDate);
+
         // Following AttendanceReportController logic for first in and last out
         $rawData = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
@@ -582,8 +591,13 @@ class AttendanceController extends Controller
             
             // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
             $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($data['user_id'], $data['tanggal']);
-            // Round down total lembur (bulatkan ke bawah)
-            $totalLembur = floor($lembur + $extraOffOvertime);
+            $appliedOvertime = $overtimeFilter->applyToDay(
+                (float) $lembur,
+                (float) $extraOffOvertime,
+                $overtimeSubmissions[$overtimeFilter->mapKey((int) $data['user_id'], $data['tanggal'])] ?? null
+            );
+            $lembur = $appliedOvertime['lembur'];
+            $totalLembur = $appliedOvertime['total_lembur'];
             
             // Deteksi attendance tanpa checkout
             $has_no_checkout = false;
@@ -601,6 +615,8 @@ class AttendanceController extends Controller
                 'lembur' => $lembur,
                 'extra_off_overtime' => $extraOffOvertime,
                 'total_lembur' => $totalLembur,
+                'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                 'has_no_checkout' => $has_no_checkout
             ];
         }
@@ -618,7 +634,11 @@ class AttendanceController extends Controller
             if (!isset($attendanceData[$dateStr])) {
                 $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $dateStr);
                 if ($extraOffOvertime > 0) {
-                    // Add entry for this date with only Extra Off overtime
+                    $appliedOvertime = $overtimeFilter->applyToDay(
+                        0,
+                        (float) $extraOffOvertime,
+                        $overtimeSubmissions[$overtimeFilter->mapKey((int) $userId, $dateStr)] ?? null
+                    );
                     $attendanceData[$dateStr] = [
                         'first_in' => null,
                         'last_out' => null,
@@ -626,7 +646,9 @@ class AttendanceController extends Controller
                         'telat' => 0,
                         'lembur' => 0,
                         'extra_off_overtime' => $extraOffOvertime,
-                        'total_lembur' => $extraOffOvertime,
+                        'total_lembur' => $appliedOvertime['total_lembur'],
+                        'overtime_submission_hours' => $appliedOvertime['overtime_submission_hours'],
+                        'overtime_submission_reason' => $appliedOvertime['overtime_submission_reason'],
                         'has_no_checkout' => false
                     ];
                 }
@@ -1778,6 +1800,8 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
                 'lembur' => $lembur,
                 'extra_off_overtime' => $extraOffOvertime,
                 'total_lembur' => $totalLembur,
+                'overtime_submission_hours' => $attendanceInfo['overtime_submission_hours'] ?? null,
+                'overtime_submission_reason' => $attendanceInfo['overtime_submission_reason'] ?? null,
                 'has_attendance' => $attendanceInfo ? true : false,
                 'has_no_checkout' => $attendanceInfo['has_no_checkout'] ?? false,
             ];

@@ -83,7 +83,61 @@ class AttendanceWorkTimelineService
     }
 
     /**
+     * Lembur (jam, dibulatkan ke bawah) dihitung dari jam keluar vs jam shift out.
+     * Datang lebih awal dari shift in tidak dihitung lembur.
+     */
+    public function calculateOvertimeHoursFromShiftOut(
+        ?string $jamKeluar,
+        ?string $shiftStart,
+        ?string $shiftEnd,
+        ?string $workDate = null
+    ): int {
+        if (! $jamKeluar || ! $shiftEnd) {
+            return 0;
+        }
+
+        $checkoutTs = strtotime($jamKeluar);
+        if ($checkoutTs === false) {
+            return 0;
+        }
+
+        $hasDate = (bool) preg_match('/\d{4}-\d{2}-\d{2}/', $jamKeluar);
+        if (! $hasDate && $workDate) {
+            $checkoutTs = strtotime($workDate.' '.$jamKeluar);
+            if ($checkoutTs === false) {
+                return 0;
+            }
+        }
+
+        $datePrefix = $workDate ? $workDate.' ' : '';
+        $shiftEndTs = strtotime($datePrefix.$shiftEnd);
+        if ($shiftEndTs === false) {
+            return 0;
+        }
+
+        if ($shiftStart) {
+            $shiftStartTs = strtotime($datePrefix.$shiftStart);
+            if ($shiftStartTs !== false && $shiftEndTs <= $shiftStartTs) {
+                $shiftEndTs += 86400;
+            }
+        }
+
+        if (! $hasDate && $workDate && $checkoutTs < $shiftEndTs) {
+            $checkoutHour = (int) date('G', $checkoutTs);
+            $shiftEndHour = (int) date('G', $shiftEndTs);
+            if ($checkoutHour <= 12 && $shiftEndHour >= 12) {
+                $checkoutTs += 86400;
+            }
+        }
+
+        $hours = (int) floor(max(0, $checkoutTs - $shiftEndTs) / 3600);
+
+        return min($hours, 12);
+    }
+
+    /**
      * Lembur (jam, dibulatkan ke bawah) = selisih jam kerja efektif vs durasi shift.
+     * Lebih aman pakai calculateOvertimeHoursFromShiftOut: datang awal tidak dihitung lembur.
      */
     public function calculateOvertimeHours(int $workMinutes, ?string $shiftStart, ?string $shiftEnd): int
     {

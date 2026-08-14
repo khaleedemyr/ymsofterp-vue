@@ -47,6 +47,42 @@ class AttendanceWorkTimelineServiceTest extends TestCase
         $this->assertSame(1, $hours); // 10 - 9 = 1 jam lembur
     }
 
+    public function test_early_check_in_is_not_overtime(): void
+    {
+        $hours = $this->service->calculateOvertimeHoursFromShiftOut(
+            '2026-08-14 17:00:00',
+            '08:00:00',
+            '17:00:00',
+            '2026-08-14'
+        );
+
+        $this->assertSame(0, $hours);
+    }
+
+    public function test_overtime_is_from_shift_out_not_shift_in(): void
+    {
+        $hours = $this->service->calculateOvertimeHoursFromShiftOut(
+            '2026-08-14 22:00:00',
+            '08:00:00',
+            '17:00:00',
+            '2026-08-14'
+        );
+
+        $this->assertSame(5, $hours);
+    }
+
+    public function test_checkout_before_shift_end_is_zero_overtime(): void
+    {
+        $hours = $this->service->calculateOvertimeHoursFromShiftOut(
+            '2026-08-14 16:00:00',
+            '08:00:00',
+            '17:00:00',
+            '2026-08-14'
+        );
+
+        $this->assertSame(0, $hours);
+    }
+
     public function test_process_day_sets_last_outlet_and_cross_day(): void
     {
         $all = [
