@@ -323,6 +323,17 @@
                       <span class="hidden sm:inline">Absent</span>
                     </button>
                   </div>
+
+                  <div v-if="canCorrectDate(day.date)" class="mt-1">
+                    <button
+                      type="button"
+                      @click.stop="openCorrectionModal(day.date)"
+                      class="w-full text-xs bg-orange-500 hover:bg-orange-600 text-white px-1 py-0.5 rounded transition-colors"
+                    >
+                      <i class="fa-solid fa-pen-to-square sm:mr-1"></i>
+                      <span class="hidden sm:inline">Koreksi</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1283,6 +1294,162 @@
     <!-- Hidden Canvas for Photo Capture -->
     <canvas ref="canvasRef" style="display: none;"></canvas>
 
+    <!-- My Attendance Correction Modal -->
+    <div v-if="showCorrectionModalFlag" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-hidden">
+        <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Ajukan Koreksi - {{ formatDate(correctionForm.tanggal) }}
+          </h3>
+          <button type="button" @click="closeCorrectionModal" class="text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-times text-xl"></i>
+          </button>
+        </div>
+        <div class="p-4 overflow-y-auto max-h-[70vh] space-y-4">
+          <div v-if="loadingCorrectionForm" class="text-center py-8">
+            <i class="fa-solid fa-spinner fa-spin text-2xl text-orange-500"></i>
+            <p class="mt-2 text-sm text-gray-500">Memuat data koreksi...</p>
+          </div>
+          <template v-else>
+            <p v-if="correctionFormMeta.remaining_hours != null" class="text-xs text-orange-600">
+              Sisa waktu pengajuan: {{ correctionFormMeta.remaining_hours }} jam (maks. 2×24 jam).
+            </p>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Jenis Koreksi <span class="text-red-500">*</span></label>
+              <select v-model="correctionForm.type" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
+                <option value="schedule">Koreksi Jadwal</option>
+                <option value="attendance">Koreksi Kehadiran</option>
+                <option value="manual_attendance">Tambah Absen Manual</option>
+              </select>
+            </div>
+
+            <div v-if="correctionForm.type === 'schedule'">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Shift baru</label>
+              <p class="text-xs text-gray-500 mb-1">Saat ini: {{ correctionFormMeta.schedule?.shift_name || 'OFF' }}</p>
+              <select v-model="correctionForm.shift_id" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
+                <option value="">OFF</option>
+                <option v-for="shift in correctionFormMeta.shifts" :key="shift.id" :value="shift.id">
+                  {{ shift.shift_name }} ({{ shift.time_start }} - {{ shift.time_end }})
+                </option>
+              </select>
+            </div>
+
+            <div v-else-if="correctionForm.type === 'attendance'" class="space-y-3">
+              <div v-if="!correctionFormMeta.scans?.length" class="text-sm text-red-600">
+                Tidak ada scan absensi pada tanggal ini. Gunakan Tambah Absen Manual.
+              </div>
+              <template v-else>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Pilih scan yang dikoreksi</label>
+                  <select v-model="correctionForm.old_scan_date" @change="onCorrectionScanSelected" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
+                    <option value="">-- pilih --</option>
+                    <option v-for="scan in correctionFormMeta.scans" :key="scan.scan_date" :value="scan.scan_date">
+                      {{ scan.inoutmode_label }} · {{ scan.scan_date }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Waktu baru</label>
+                  <input v-model="correctionForm.scan_date" type="datetime-local" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium mb-1">Mode</label>
+                  <select v-model="correctionForm.inoutmode" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
+                    <option value="1">IN</option>
+                    <option value="2">OUT</option>
+                    <option value="4">KEMBALI</option>
+                  </select>
+                </div>
+              </template>
+            </div>
+
+            <div v-else class="space-y-3">
+              <p class="text-xs text-gray-500">Sisa kuota absen manual periode ini: {{ correctionFormMeta.manual_remaining }}x</p>
+              <div>
+                <label class="block text-sm font-medium mb-1">Waktu absen</label>
+                <input v-model="correctionForm.scan_date" type="datetime-local" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium mb-1">Mode</label>
+                <select v-model="correctionForm.inoutmode" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
+                  <option value="1">IN</option>
+                  <option value="2">OUT</option>
+                  <option value="4">KEMBALI</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Catatan / Alasan <span class="text-red-500">*</span></label>
+              <textarea v-model="correctionForm.reason" rows="3" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100" placeholder="Wajib diisi..."></textarea>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Pilih Atasan <span class="text-red-500">*</span>
+              </label>
+              <div class="relative">
+                <input
+                  v-model="correctionApproverSearch"
+                  type="text"
+                  placeholder="Cari atasan berdasarkan nama, email, atau jabatan..."
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100"
+                  @focus="correctionApproverSearch.length >= 2 && loadCorrectionApprovers(correctionApproverSearch)"
+                  @input="onCorrectionApproverSearchInput"
+                />
+                <div v-if="showCorrectionApproverDropdown && correctionApproverResults.length > 0" class="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  <div
+                    v-for="user in correctionApproverResults"
+                    :key="user.id"
+                    @click="addCorrectionApprover(user)"
+                    class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer border-b border-gray-200 dark:border-gray-500 last:border-b-0"
+                  >
+                    <div class="font-medium text-gray-900 dark:text-white">{{ user.nama_lengkap }}</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">{{ user.email }}</div>
+                    <div v-if="user.nama_jabatan" class="text-xs text-blue-600">{{ user.nama_jabatan }}</div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="correctionSelectedApprovers.length > 0" class="mt-3 space-y-2">
+                <div
+                  v-for="(approver, index) in correctionSelectedApprovers"
+                  :key="approver.id || index"
+                  class="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md"
+                >
+                  <div class="flex items-start justify-between">
+                    <div>
+                      <span class="text-xs font-semibold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">Level {{ index + 1 }}</span>
+                      <div class="font-medium text-blue-900 dark:text-blue-100">{{ approver.nama_lengkap }}</div>
+                      <div class="text-sm text-blue-700">{{ approver.email }}</div>
+                    </div>
+                    <button type="button" @click="removeCorrectionApprover(index)" class="text-red-500">
+                      <i class="fa fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Ketik minimal 2 karakter untuk mencari atasan. Anda dapat menambahkan multiple approvers berjenjang (Level 1, 2, 3, dst). Setelah semua atasan approve, baru akan muncul di approval HRD.
+                <span class="font-bold text-red-600"> Notes: jangan pilih HRD hanya untuk melewati tahap atasan (tahap HRD otomatis). Jika atasan langsung Anda dari HRD, tetap boleh dipilih.</span>
+              </p>
+            </div>
+          </template>
+        </div>
+        <div class="flex justify-end gap-3 p-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" @click="closeCorrectionModal" class="px-4 py-2 text-sm bg-gray-100 dark:bg-gray-600 rounded-md">Batal</button>
+          <button
+            type="button"
+            @click="submitCorrectionRequest"
+            :disabled="submittingCorrection || loadingCorrectionForm || correctionSelectedApprovers.length === 0"
+            class="px-4 py-2 text-sm text-white bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 rounded-md"
+          >
+            <i v-if="submittingCorrection" class="fa-solid fa-spinner fa-spin mr-1"></i>
+            Ajukan Koreksi
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Correction Requests Section - Moved to bottom -->
     <div v-if="correctionRequests && correctionRequests.length > 0" class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-lg mb-4">
       <div class="p-4">
@@ -1299,13 +1466,15 @@
                   <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
                         :class="{
                           'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200': request.status === 'pending',
+                          'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200': request.status === 'supervisor_approved',
                           'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': request.status === 'approved',
                           'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200': request.status === 'rejected'
                         }">
                     <i class="fas fa-clock mr-1" v-if="request.status === 'pending'"></i>
+                    <i class="fas fa-user-check mr-1" v-if="request.status === 'supervisor_approved'"></i>
                     <i class="fas fa-check mr-1" v-if="request.status === 'approved'"></i>
                     <i class="fas fa-times mr-1" v-if="request.status === 'rejected'"></i>
-                    {{ getStatusText(request.status) }}
+                    {{ request.status_text || getStatusText(request.status) }}
                   </span>
                   <span class="text-sm text-gray-500 dark:text-gray-400">
                     {{ formatDate(request.tanggal) }}
@@ -2280,6 +2449,229 @@ const onApproverSearchInput = () => {
   }
 }
 
+const canCorrectDate = (dateStr) => {
+  if (!dateStr) return false
+  const day = new Date(dateStr + 'T00:00:00')
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (day > today) return false
+  const hours = (now - day) / 36e5
+  return hours <= 48
+}
+
+const toDatetimeLocal = (scanDate) => {
+  if (!scanDate) return ''
+  const d = new Date(scanDate)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const fromDatetimeLocal = (value) => {
+  if (!value) return ''
+  const normalized = value.replace('T', ' ')
+  return normalized.length === 16 ? `${normalized}:00` : normalized
+}
+
+const showCorrectionModalFlag = ref(false)
+const loadingCorrectionForm = ref(false)
+const submittingCorrection = ref(false)
+const correctionFormMeta = ref({
+  remaining_hours: null,
+  schedule: null,
+  shifts: [],
+  scans: [],
+  manual_remaining: 0,
+  sn: null,
+  pin: null,
+  outlet_id: null
+})
+const correctionForm = ref({
+  type: 'schedule',
+  tanggal: '',
+  reason: '',
+  shift_id: '',
+  old_scan_date: '',
+  scan_date: '',
+  inoutmode: '1',
+  sn: '',
+  pin: ''
+})
+const correctionApproverSearch = ref('')
+const correctionApproverResults = ref([])
+const showCorrectionApproverDropdown = ref(false)
+const correctionSelectedApprovers = ref([])
+
+const resetCorrectionForm = () => {
+  correctionForm.value = {
+    type: 'schedule',
+    tanggal: '',
+    reason: '',
+    shift_id: '',
+    old_scan_date: '',
+    scan_date: '',
+    inoutmode: '1',
+    sn: '',
+    pin: ''
+  }
+  correctionFormMeta.value = {
+    remaining_hours: null,
+    schedule: null,
+    shifts: [],
+    scans: [],
+    manual_remaining: 0,
+    sn: null,
+    pin: null,
+    outlet_id: null
+  }
+  correctionSelectedApprovers.value = []
+  correctionApproverSearch.value = ''
+  correctionApproverResults.value = []
+  showCorrectionApproverDropdown.value = false
+}
+
+const openCorrectionModal = async (date) => {
+  resetCorrectionForm()
+  correctionForm.value.tanggal = date
+  showCorrectionModalFlag.value = true
+  loadingCorrectionForm.value = true
+  try {
+    const response = await axios.get('/api/attendance/correction-form', { params: { tanggal: date } })
+    if (!response.data.success || !response.data.can_correct) {
+      showCorrectionModalFlag.value = false
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Tidak dapat dikoreksi',
+        text: response.data.message || 'Koreksi hanya dalam 2×24 jam'
+      })
+      return
+    }
+    correctionFormMeta.value = response.data
+    correctionForm.value.sn = response.data.sn || ''
+    correctionForm.value.pin = response.data.pin || ''
+    correctionForm.value.shift_id = response.data.schedule?.shift_id || ''
+    if (!response.data.scans?.length) {
+      correctionForm.value.scan_date = `${date}T08:00`
+    }
+  } catch (error) {
+    showCorrectionModalFlag.value = false
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal memuat form',
+      text: error.response?.data?.message || error.message
+    })
+  } finally {
+    loadingCorrectionForm.value = false
+  }
+}
+
+const closeCorrectionModal = () => {
+  showCorrectionModalFlag.value = false
+  resetCorrectionForm()
+}
+
+const onCorrectionScanSelected = () => {
+  const scan = (correctionFormMeta.value.scans || []).find(s => s.scan_date === correctionForm.value.old_scan_date)
+  if (!scan) return
+  correctionForm.value.scan_date = toDatetimeLocal(scan.scan_date)
+  correctionForm.value.inoutmode = String(scan.inoutmode)
+  correctionForm.value.sn = scan.sn
+  correctionForm.value.pin = scan.pin
+}
+
+const loadCorrectionApprovers = async (search = '') => {
+  try {
+    const response = await axios.get('/api/attendance/approvers', { params: { search } })
+    if (response.data.success) {
+      correctionApproverResults.value = response.data.users
+      showCorrectionApproverDropdown.value = true
+    }
+  } catch (error) {
+    correctionApproverResults.value = []
+  }
+}
+
+const onCorrectionApproverSearchInput = () => {
+  if (correctionApproverSearch.value.length >= 2) {
+    loadCorrectionApprovers(correctionApproverSearch.value)
+  } else {
+    showCorrectionApproverDropdown.value = false
+    correctionApproverResults.value = []
+  }
+}
+
+const addCorrectionApprover = (user) => {
+  if (!correctionSelectedApprovers.value.find(a => a.id === user.id)) {
+    correctionSelectedApprovers.value.push(user)
+  }
+  correctionApproverSearch.value = ''
+  showCorrectionApproverDropdown.value = false
+}
+
+const removeCorrectionApprover = (index) => {
+  correctionSelectedApprovers.value.splice(index, 1)
+}
+
+const submitCorrectionRequest = async () => {
+  if (!correctionForm.value.reason || !correctionForm.value.reason.trim()) {
+    await Swal.fire({ icon: 'warning', title: 'Catatan wajib', text: 'Notes / alasan harus diisi' })
+    return
+  }
+  if (correctionSelectedApprovers.value.length === 0) {
+    await Swal.fire({ icon: 'warning', title: 'Atasan wajib', text: 'Pilih minimal 1 atasan' })
+    return
+  }
+
+  const payload = {
+    type: correctionForm.value.type,
+    tanggal: correctionForm.value.tanggal,
+    reason: correctionForm.value.reason.trim(),
+    approvers: correctionSelectedApprovers.value.map(a => a.id),
+    outlet_id: correctionFormMeta.value.outlet_id
+  }
+
+  if (payload.type === 'schedule') {
+    payload.shift_id = correctionForm.value.shift_id || null
+  } else if (payload.type === 'attendance') {
+    if (!correctionForm.value.old_scan_date || !correctionForm.value.scan_date) {
+      await Swal.fire({ icon: 'warning', title: 'Data belum lengkap', text: 'Pilih scan dan isi waktu baru' })
+      return
+    }
+    payload.sn = correctionForm.value.sn
+    payload.pin = correctionForm.value.pin
+    payload.old_scan_date = correctionForm.value.old_scan_date
+    payload.scan_date = fromDatetimeLocal(correctionForm.value.scan_date)
+    payload.inoutmode = correctionForm.value.inoutmode
+  } else {
+    if (!correctionForm.value.scan_date) {
+      await Swal.fire({ icon: 'warning', title: 'Waktu wajib', text: 'Isi waktu absen manual' })
+      return
+    }
+    payload.scan_date = fromDatetimeLocal(correctionForm.value.scan_date)
+    payload.inoutmode = correctionForm.value.inoutmode
+  }
+
+  submittingCorrection.value = true
+  try {
+    const response = await axios.post('/api/attendance/correction-request', payload)
+    if (response.data.success) {
+      closeCorrectionModal()
+      await Swal.fire({ icon: 'success', title: 'Terkirim', text: response.data.message })
+      fetchData()
+    } else {
+      await Swal.fire({ icon: 'error', title: 'Gagal', text: response.data.message })
+    }
+  } catch (error) {
+    await Swal.fire({
+      icon: 'error',
+      title: 'Gagal mengirim',
+      text: error.response?.data?.message || error.message
+    })
+  } finally {
+    submittingCorrection.value = false
+  }
+}
+
 // Cancel leave methods
 const canCancelRequest = (request) => {
   // Can cancel if status is pending, supervisor_approved, or approved (HRD approved)
@@ -2464,7 +2856,8 @@ const getStatusText = (status) => {
   
   // Correction request status
   const correctionStatusMap = {
-    'pending': 'Menunggu Persetujuan',
+    'pending': 'Menunggu Atasan',
+    'supervisor_approved': 'Disetujui Atasan (Menunggu HRD)',
     'approved': 'Disetujui',
     'rejected': 'Ditolak'
   }

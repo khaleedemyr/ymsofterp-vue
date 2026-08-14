@@ -1809,6 +1809,14 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
 
             // Clean data to prevent JSON parsing errors
             $corrections = $corrections->map(function ($item) {
+                $statusText = match ($item->status) {
+                    'pending' => 'Menunggu Atasan',
+                    'supervisor_approved' => 'Disetujui Atasan (Menunggu HRD)',
+                    'approved' => 'Disetujui',
+                    'rejected' => 'Ditolak',
+                    default => $item->status,
+                };
+
                 return [
                     'id' => $item->id,
                     'type' => $item->type,
@@ -1817,6 +1825,7 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
                     'new_value' => $item->new_value ?: '',
                     'reason' => $item->reason ?: '',
                     'status' => $item->status,
+                    'status_text' => $statusText,
                     'created_at' => $item->created_at,
                     'approved_at' => $item->approved_at,
                     'rejection_reason' => $item->rejection_reason ?: '',

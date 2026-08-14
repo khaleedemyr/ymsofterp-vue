@@ -3490,6 +3490,8 @@ Route::middleware(['auth', 'verified'])->prefix('jabatan-training')->name('jabat
     Route::post('/api/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.attendance.absent-request');
     Route::get('/api/attendance/approvers', [\App\Http\Controllers\AttendanceController::class, 'getApprovers'])->name('api.attendance.approvers');
     Route::post('/api/attendance/cancel-leave/{id}', [\App\Http\Controllers\AttendanceController::class, 'cancelLeaveRequest'])->name('api.attendance.cancel-leave');
+    Route::get('/api/attendance/correction-form', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getMyAttendanceCorrectionForm'])->name('api.attendance.correction-form');
+    Route::post('/api/attendance/correction-request', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'submitMyAttendanceCorrection'])->name('api.attendance.correction-request');
     
     // Absent Report Routes
     Route::get('/attendance/report', [\App\Http\Controllers\AttendanceController::class, 'report'])->name('attendance.report');

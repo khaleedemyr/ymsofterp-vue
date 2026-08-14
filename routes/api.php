@@ -1373,6 +1373,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/attendance/absent-request', [\App\Http\Controllers\AttendanceController::class, 'submitAbsentRequest'])->name('api.approval-app.attendance.absent-request');
         Route::get('/attendance/approvers', [\App\Http\Controllers\AttendanceController::class, 'getApprovers'])->name('api.approval-app.attendance.approvers');
         Route::post('/attendance/cancel-leave/{id}', [\App\Http\Controllers\AttendanceController::class, 'cancelLeaveRequest'])->name('api.approval-app.attendance.cancel-leave');
+        Route::get('/attendance/correction-form', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'getMyAttendanceCorrectionForm'])->name('api.approval-app.attendance.correction-form');
+        Route::post('/attendance/correction-request', [\App\Http\Controllers\ScheduleAttendanceCorrectionController::class, 'submitMyAttendanceCorrection'])->name('api.approval-app.attendance.correction-request');
         Route::get('/attendance-report', [\App\Http\Controllers\AttendanceReportController::class, 'index'])->name('api.approval-app.attendance-report');
         Route::get('/attendance-report/filters', [\App\Http\Controllers\AttendanceReportController::class, 'filters'])->name('api.approval-app.attendance-report.filters');
         Route::get('/attendance-report/employees', [\App\Http\Controllers\AttendanceReportController::class, 'getEmployees'])->name('api.approval-app.attendance-report.employees');

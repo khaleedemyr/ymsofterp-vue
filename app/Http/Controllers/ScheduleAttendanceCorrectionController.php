@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Models\User;
 use App\Models\Shift;
@@ -526,7 +527,9 @@ class ScheduleAttendanceCorrectionController extends Controller
     }
     
     /**
-     * Get pending correction approvals for HRD
+     * Get pending correction approvals for the current user.
+     * Atasan: item whose current flow is waiting on them.
+     * HRD: supervisor_approved (employee self-submit) + legacy pending without flows.
      */
     public function getPendingApprovals(Request $request)
     {
@@ -537,51 +540,74 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'message' => 'Unauthorized: User not authenticated'
             ], 401);
         }
-        
-        // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
-        $isSuperadmin = $user->id_role === '5af56935b011a';
-        
-        \Log::info('Correction Approvals check', [
-            'user_id' => $user->id,
-            'id_role' => $user->id_role,
-            'division_id' => $user->division_id,
-            'isSuperadmin' => $isSuperadmin
-        ]);
-        
-        // Only HR approvers (id_jabatan=309) or superadmin can see pending approvals
-        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
-            \Log::warning('Correction Approvals: Access denied', [
-                'user_id' => $user->id,
-                'id_role' => $user->id_role,
-                'division_id' => $user->division_id,
-                'isSuperadmin' => $isSuperadmin
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access'
-            ], 403);
-        }
-        
+
         $period = AttendancePayrollPeriod::forHrdApprovalQueue();
-        $approvals = DB::table('schedule_attendance_correction_approvals as saca')
-            ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
-            ->leftJoin('users as employee', 'saca.user_id', '=', 'employee.id')
-            ->leftJoin('tbl_data_outlet', 'saca.outlet_id', '=', 'tbl_data_outlet.id_outlet')
-            ->where('saca.status', 'pending')
-            ->whereBetween('saca.tanggal', [$period['start'], $period['end']])
-            ->select([
-                'saca.*',
-                'requester.nama_lengkap as requested_by_name',
-                'employee.nama_lengkap as employee_name',
-                'tbl_data_outlet.nama_outlet'
-            ])
-            ->orderBy('saca.created_at', 'desc')
-            ->get()
-            ->map(function($approval) {
+        $approvals = collect();
+
+        $baseSelect = function () {
+            return DB::table('schedule_attendance_correction_approvals as saca')
+                ->leftJoin('users as requester', 'saca.requested_by', '=', 'requester.id')
+                ->leftJoin('users as employee', 'saca.user_id', '=', 'employee.id')
+                ->leftJoin('tbl_data_outlet', 'saca.outlet_id', '=', 'tbl_data_outlet.id_outlet')
+                ->select([
+                    'saca.*',
+                    'requester.nama_lengkap as requested_by_name',
+                    'employee.nama_lengkap as employee_name',
+                    'tbl_data_outlet.nama_outlet'
+                ]);
+        };
+
+        $supervisorIds = $this->pendingSupervisorApprovalIdsForUser($user);
+        if (!empty($supervisorIds)) {
+            $supervisorItems = $baseSelect()
+                ->whereIn('saca.id', $supervisorIds)
+                ->where('saca.status', 'pending')
+                ->whereBetween('saca.tanggal', [$period['start'], $period['end']])
+                ->orderBy('saca.created_at', 'desc')
+                ->get()
+                ->map(function ($approval) use ($user) {
+                    $approval->approval_stage = 'supervisor';
+                    $approval->approval_stage_label = 'Menunggu Atasan';
+                    $approval->approver_name = $user->nama_lengkap;
+                    return $approval;
+                });
+            $approvals = $approvals->concat($supervisorItems);
+        }
+
+        if (HrdApprovalAccess::canAccessHrdApprovals($user)) {
+            $flowIds = $this->approvalIdsWithSupervisorFlows();
+            $hrdQuery = $baseSelect()
+                ->whereBetween('saca.tanggal', [$period['start'], $period['end']])
+                ->where(function ($q) use ($flowIds) {
+                    $q->where('saca.status', 'supervisor_approved');
+                    if (empty($flowIds)) {
+                        $q->orWhere('saca.status', 'pending');
+                    } else {
+                        $q->orWhere(function ($qq) use ($flowIds) {
+                            $qq->where('saca.status', 'pending')
+                                ->whereNotIn('saca.id', $flowIds);
+                        });
+                    }
+                })
+                ->orderBy('saca.created_at', 'desc');
+
+            $hrdItems = $hrdQuery->get()->map(function ($approval) {
+                $approval->approval_stage = 'hrd';
+                $approval->approval_stage_label = 'Menunggu HRD';
                 $approval->approver_name = HrdApprovalAccess::hrdApproverDisplayName();
                 return $approval;
             });
-            
+
+            $seen = $approvals->pluck('id')->all();
+            foreach ($hrdItems as $item) {
+                if (!in_array($item->id, $seen, true)) {
+                    $approvals->push($item);
+                }
+            }
+        }
+
+        $approvals = $approvals->sortByDesc('created_at')->values();
+
         return response()->json([
             'success' => true,
             'approvals' => $approvals,
@@ -641,10 +667,18 @@ class ScheduleAttendanceCorrectionController extends Controller
                     ->leftJoin('users', 'sacaf.approver_id', '=', 'users.id')
                     ->where('sacaf.approval_id', $id)
                     ->select([
-                        'sacaf.*',
+                        'sacaf.id',
+                        'sacaf.approval_id',
+                        'sacaf.approver_id',
+                        'sacaf.approval_level',
+                        'sacaf.status',
+                        'sacaf.approved_by',
+                        'sacaf.approved_at',
+                        'sacaf.rejected_at',
+                        'sacaf.notes',
                         'users.nama_lengkap as approver_name',
                     ])
-                    ->orderBy('sacaf.sequence')
+                    ->orderBy('sacaf.approval_level')
                     ->get();
             } catch (\Exception $e) {
                 // Table might not exist, use simple approval info instead
@@ -652,10 +686,10 @@ class ScheduleAttendanceCorrectionController extends Controller
                     $approvalFlows = collect([
                         (object)[
                             'id' => null,
-                            'sequence' => 1,
+                            'approval_level' => 1,
                             'status' => $approval->status,
                             'approved_at' => $approval->approved_at,
-                            'comments' => $approval->rejection_reason ?? null,
+                            'notes' => $approval->rejection_reason ?? null,
                             'approver_id' => $approval->approved_by,
                             'approver_name' => $approval->approver_name,
                         ]
@@ -694,10 +728,11 @@ class ScheduleAttendanceCorrectionController extends Controller
                 'approval_flows' => $approvalFlows->map(function($flow) {
                     return [
                         'id' => $flow->id,
-                        'sequence' => $flow->sequence,
+                        'sequence' => $flow->approval_level ?? $flow->sequence ?? 1,
+                        'approval_level' => $flow->approval_level ?? $flow->sequence ?? 1,
                         'status' => $flow->status,
                         'approved_at' => $flow->approved_at,
-                        'comments' => $flow->comments,
+                        'comments' => $flow->notes ?? $flow->comments ?? null,
                         'approver' => [
                             'id' => $flow->approver_id,
                             'nama_lengkap' => $flow->approver_name,
@@ -724,7 +759,7 @@ class ScheduleAttendanceCorrectionController extends Controller
     }
     
     /**
-     * Approve correction
+     * Approve correction (atasan sequential, then HRD applies data)
      */
     public function approveCorrection(Request $request, $id)
     {
@@ -737,25 +772,89 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 403);
         }
         
-        // Only HR approvers (id_jabatan=309) or superadmin can approve
-        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access'
-            ], 403);
-        }
-        
         try {
             DB::beginTransaction();
             
-            // Get approval data
             $approval = DB::table('schedule_attendance_correction_approvals')
                 ->where('id', $id)
-                ->where('status', 'pending')
                 ->first();
                 
-            if (!$approval) {
+            if (!$approval || !in_array($approval->status, ['pending', 'supervisor_approved'], true)) {
                 throw new \Exception('Approval tidak ditemukan atau sudah diproses');
+            }
+
+            $currentFlow = $this->getCurrentSupervisorFlow($id);
+
+            if ($currentFlow && $approval->status === 'pending') {
+                $isCurrentApprover = (int) $currentFlow->approver_id === (int) $user->id;
+                if (!$isCurrentApprover && !HrdApprovalAccess::isSuperadmin($user)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Hanya atasan yang sedang menunggu dapat menyetujui pengajuan ini'
+                    ], 403);
+                }
+
+                DB::table('schedule_attendance_correction_approval_flows')
+                    ->where('id', $currentFlow->id)
+                    ->update([
+                        'status' => 'APPROVED',
+                        'approved_by' => $user->id,
+                        'approved_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                $nextFlow = $this->getCurrentSupervisorFlow($id);
+                if ($nextFlow) {
+                    $nextApprover = DB::table('users')->where('id', $nextFlow->approver_id)->first();
+                    if ($nextApprover) {
+                        NotificationService::insert([
+                            'user_id' => $nextApprover->id,
+                            'type' => 'schedule_correction_approval',
+                            'message' => "Permohonan koreksi {$approval->type} membutuhkan persetujuan Anda (Level {$nextFlow->approval_level}).",
+                            'url' => '/home',
+                            'is_read' => 0,
+                        ]);
+                    }
+
+                    DB::commit();
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Disetujui dan diteruskan ke atasan berikutnya'
+                    ]);
+                }
+
+                DB::table('schedule_attendance_correction_approvals')
+                    ->where('id', $id)
+                    ->update([
+                        'status' => 'supervisor_approved',
+                        'updated_at' => now(),
+                    ]);
+
+                HrdApprovalAccess::notifyHrdApprovers([
+                    'type' => 'schedule_correction_approval',
+                    'message' => "Permohonan koreksi {$approval->type} telah disetujui atasan dan membutuhkan persetujuan HRD.",
+                    'url' => '/home',
+                    'is_read' => 0,
+                ]);
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Disetujui atasan, menunggu persetujuan HRD'
+                ]);
+            }
+
+            if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized access'
+                ], 403);
+            }
+
+            if ($this->hasSupervisorFlows($id) && $approval->status !== 'supervisor_approved') {
+                throw new \Exception('Masih menunggu persetujuan atasan');
             }
             
             // Update approval status
@@ -1077,7 +1176,7 @@ class ScheduleAttendanceCorrectionController extends Controller
     }
     
     /**
-     * Reject correction
+     * Reject correction (atasan or HRD)
      */
     public function rejectCorrection(Request $request, $id)
     {
@@ -1090,15 +1189,6 @@ class ScheduleAttendanceCorrectionController extends Controller
             ], 403);
         }
         
-        // Only HR approvers (id_jabatan=309) or superadmin can reject
-        if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized access'
-            ], 403);
-        }
-        
-        // Get rejection reason from request (support both 'reason' and 'rejection_reason')
         $rejectionReason = $request->input('reason') ?? $request->input('rejection_reason');
         
         if (!$rejectionReason || trim($rejectionReason) === '') {
@@ -1111,17 +1201,48 @@ class ScheduleAttendanceCorrectionController extends Controller
         try {
             DB::beginTransaction();
             
-            // Get approval data
             $approval = DB::table('schedule_attendance_correction_approvals')
                 ->where('id', $id)
-                ->where('status', 'pending')
                 ->first();
                 
-            if (!$approval) {
+            if (!$approval || !in_array($approval->status, ['pending', 'supervisor_approved'], true)) {
                 throw new \Exception('Approval tidak ditemukan atau sudah diproses');
             }
+
+            $currentFlow = $this->getCurrentSupervisorFlow($id);
+            $rejectedByLabel = 'HRD';
+
+            if ($currentFlow && $approval->status === 'pending') {
+                $isCurrentApprover = (int) $currentFlow->approver_id === (int) $user->id;
+                if (!$isCurrentApprover && !HrdApprovalAccess::isSuperadmin($user)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Hanya atasan yang sedang menunggu dapat menolak pengajuan ini'
+                    ], 403);
+                }
+
+                DB::table('schedule_attendance_correction_approval_flows')
+                    ->where('id', $currentFlow->id)
+                    ->update([
+                        'status' => 'REJECTED',
+                        'approved_by' => $user->id,
+                        'rejected_at' => now(),
+                        'notes' => $rejectionReason,
+                        'updated_at' => now(),
+                    ]);
+
+                $rejectedByLabel = 'atasan';
+            } else {
+                if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized access'
+                    ], 403);
+                }
+            }
             
-            // Update approval status
             DB::table('schedule_attendance_correction_approvals')
                 ->where('id', $id)
                 ->update([
@@ -1132,12 +1253,11 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'updated_at' => now(),
                 ]);
             
-            // Send notification to requester
             NotificationService::insert([
                 'user_id' => $approval->requested_by,
                 'type' => 'correction_rejected',
-                'message' => "Permohonan koreksi {$approval->type} Anda ditolak oleh HRD. Alasan: " . $rejectionReason,
-                'url' => '/schedule-attendance-correction',
+                'message' => "Permohonan koreksi {$approval->type} Anda ditolak oleh {$rejectedByLabel}. Alasan: " . $rejectionReason,
+                'url' => '/attendance',
                 'is_read' => 0,
             ]);
             
@@ -1481,7 +1601,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     $row->old_value,
                     $row->new_value,
                     $row->reason,
-                    $row->status === 'pending' ? 'Pending' : ($row->status === 'approved' ? 'Disetujui' : 'Ditolak'),
+                    $row->status === 'pending' ? 'Menunggu Atasan' : ($row->status === 'supervisor_approved' ? 'Disetujui Atasan (Menunggu HRD)' : ($row->status === 'approved' ? 'Disetujui' : 'Ditolak')),
                     $row->requested_by_name,
                     $row->approved_by_name,
                     date('d/m/Y H:i', strtotime($row->created_at)),
@@ -1490,6 +1610,513 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ];
             }
         }, $filename);
+    }
+
+    /**
+     * Form data for employee self-correction from My Attendance.
+     */
+    public function getMyAttendanceCorrectionForm(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $request->validate([
+            'tanggal' => 'required|date',
+        ]);
+
+        $tanggal = Carbon::parse($request->tanggal)->toDateString();
+        $window = $this->correctionWindowInfo($tanggal);
+
+        $schedule = DB::table('user_shifts')
+            ->leftJoin('shifts', 'user_shifts.shift_id', '=', 'shifts.id')
+            ->where('user_shifts.user_id', $user->id)
+            ->whereDate('user_shifts.tanggal', $tanggal)
+            ->select(
+                'user_shifts.id',
+                'user_shifts.shift_id',
+                'user_shifts.outlet_id',
+                'user_shifts.tanggal',
+                'shifts.shift_name',
+                'shifts.time_start',
+                'shifts.time_end'
+            )
+            ->first();
+
+        $shifts = Shift::select('id', 'shift_name', 'time_start', 'time_end', 'division_id')
+            ->when($user->division_id, fn ($q) => $q->where('division_id', $user->division_id))
+            ->orderBy('shift_name')
+            ->get();
+
+        $outletId = $schedule->outlet_id ?? $user->id_outlet;
+        $outlet = $outletId
+            ? DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first()
+            : null;
+
+        $userPin = $outletId
+            ? DB::table('user_pins')
+                ->where('user_id', $user->id)
+                ->where('outlet_id', $outletId)
+                ->where('is_active', 1)
+                ->first()
+            : null;
+
+        $scans = collect();
+        if ($outlet && $userPin) {
+            $scans = DB::table('att_log')
+                ->where('sn', $outlet->sn)
+                ->where('pin', $userPin->pin)
+                ->where('scan_date', '>=', $tanggal . ' 00:00:00')
+                ->where('scan_date', '<', Carbon::parse($tanggal)->addDay()->format('Y-m-d') . ' 00:00:00')
+                ->orderBy('scan_date')
+                ->get()
+                ->map(function ($row) {
+                    $mode = (int) $row->inoutmode;
+                    return [
+                        'sn' => $row->sn,
+                        'pin' => $row->pin,
+                        'scan_date' => $row->scan_date,
+                        'inoutmode' => $mode,
+                        'inoutmode_label' => $this->formatInoutModeLabel($mode),
+                        'verifymode' => $row->verifymode,
+                        'device_ip' => $row->device_ip,
+                    ];
+                });
+        }
+
+        $period = $this->calculatePayrollPeriod($tanggal);
+        $manualUsed = DB::table('schedule_attendance_correction_approvals')
+            ->where('user_id', $user->id)
+            ->where('type', 'manual_attendance')
+            ->where('status', '!=', 'rejected')
+            ->whereBetween('tanggal', [$period['start'], $period['end']])
+            ->count();
+
+        $pendingTypes = DB::table('schedule_attendance_correction_approvals')
+            ->where('user_id', $user->id)
+            ->whereDate('tanggal', $tanggal)
+            ->whereIn('status', ['pending', 'supervisor_approved'])
+            ->pluck('type');
+
+        return response()->json([
+            'success' => true,
+            'can_correct' => $window['can_correct'],
+            'hours_elapsed' => $window['hours_elapsed'],
+            'remaining_hours' => $window['remaining_hours'],
+            'message' => $window['message'],
+            'tanggal' => $tanggal,
+            'schedule' => $schedule,
+            'shifts' => $shifts,
+            'scans' => $scans,
+            'outlet_id' => $outletId,
+            'outlet_name' => $outlet->nama_outlet ?? null,
+            'sn' => $outlet->sn ?? null,
+            'pin' => $userPin->pin ?? null,
+            'manual_remaining' => max(0, 5 - $manualUsed),
+            'pending_types' => $pendingTypes,
+        ]);
+    }
+
+    /**
+     * Employee self-submit from My Attendance (atasan then HRD).
+     */
+    public function submitMyAttendanceCorrection(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $request->validate([
+            'type' => 'required|in:schedule,attendance,manual_attendance',
+            'tanggal' => 'required|date',
+            'reason' => 'required|string|max:500',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|exists:users,id',
+            'shift_id' => 'nullable|integer',
+            'sn' => 'nullable|string',
+            'pin' => 'nullable|string',
+            'old_scan_date' => 'nullable|date',
+            'scan_date' => 'nullable|date',
+            'inoutmode' => 'nullable|in:1,2,4,"1","2","4"',
+        ]);
+
+        $tanggal = Carbon::parse($request->tanggal)->toDateString();
+        $window = $this->correctionWindowInfo($tanggal);
+        if (!$window['can_correct']) {
+            return response()->json([
+                'success' => false,
+                'message' => $window['message'],
+            ], 422);
+        }
+
+        $approvers = array_values(array_unique($request->approvers));
+        $validApprovers = DB::table('users')
+            ->whereIn('id', $approvers)
+            ->where('status', 'A')
+            ->select('id', 'nama_lengkap')
+            ->get();
+
+        if ($validApprovers->count() !== count($approvers)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Salah satu atau lebih atasan tidak valid atau tidak aktif'
+            ], 400);
+        }
+
+        $duplicate = DB::table('schedule_attendance_correction_approvals')
+            ->where('user_id', $user->id)
+            ->whereDate('tanggal', $tanggal)
+            ->where('type', $request->type)
+            ->whereIn('status', ['pending', 'supervisor_approved'])
+            ->exists();
+
+        if ($duplicate) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda masih memiliki pengajuan koreksi jenis ini yang menunggu persetujuan untuk tanggal tersebut'
+            ], 400);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $approvalId = null;
+            $type = $request->type;
+
+            if ($type === 'schedule') {
+                $schedule = DB::table('user_shifts')
+                    ->where('user_id', $user->id)
+                    ->whereDate('tanggal', $tanggal)
+                    ->first();
+
+                if (!$schedule) {
+                    $scheduleId = DB::table('user_shifts')->insertGetId([
+                        'user_id' => $user->id,
+                        'shift_id' => null,
+                        'outlet_id' => $user->id_outlet,
+                        'division_id' => $user->division_id,
+                        'tanggal' => $tanggal,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $schedule = DB::table('user_shifts')->where('id', $scheduleId)->first();
+                }
+
+                $oldShift = $schedule->shift_id
+                    ? DB::table('shifts')->where('id', $schedule->shift_id)->first()
+                    : null;
+                $newShift = $request->filled('shift_id')
+                    ? DB::table('shifts')->where('id', $request->shift_id)->first()
+                    : null;
+
+                $approvalId = $this->insertCorrectionApproval([
+                    'type' => 'schedule',
+                    'source' => 'my_attendance',
+                    'record_id' => $schedule->id,
+                    'user_id' => $user->id,
+                    'outlet_id' => $schedule->outlet_id ?? $user->id_outlet,
+                    'division_id' => $user->division_id,
+                    'tanggal' => $tanggal,
+                    'old_value' => $oldShift ? $oldShift->shift_name : 'OFF',
+                    'new_value' => $newShift ? $newShift->shift_name : 'OFF',
+                    'reason' => $request->reason,
+                    'status' => 'pending',
+                    'requested_by' => $user->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } elseif ($type === 'attendance') {
+                $request->validate([
+                    'sn' => 'required|string',
+                    'pin' => 'required|string',
+                    'old_scan_date' => 'required|date',
+                    'scan_date' => 'required|date',
+                    'inoutmode' => 'required|in:1,2,4,"1","2","4"',
+                ]);
+
+                $oldRecord = DB::table('att_log')
+                    ->leftJoin('tbl_data_outlet', 'att_log.sn', '=', 'tbl_data_outlet.sn')
+                    ->leftJoin('user_pins', function ($join) {
+                        $join->on('att_log.pin', '=', 'user_pins.pin')
+                            ->on('tbl_data_outlet.id_outlet', '=', 'user_pins.outlet_id');
+                    })
+                    ->where('att_log.sn', $request->sn)
+                    ->where('att_log.pin', $request->pin)
+                    ->where('att_log.scan_date', $request->old_scan_date)
+                    ->where('user_pins.user_id', $user->id)
+                    ->select('att_log.*', 'tbl_data_outlet.id_outlet')
+                    ->first();
+
+                if (!$oldRecord) {
+                    throw new \Exception('Record absensi tidak ditemukan atau bukan milik Anda');
+                }
+
+                $newInoutmode = (int) $request->inoutmode;
+                $oldInoutmode = (int) $oldRecord->inoutmode;
+
+                $approvalId = $this->insertCorrectionApproval([
+                    'type' => 'attendance',
+                    'source' => 'my_attendance',
+                    'record_id' => 0,
+                    'user_id' => $user->id,
+                    'outlet_id' => $oldRecord->id_outlet,
+                    'division_id' => $user->division_id,
+                    'tanggal' => $tanggal,
+                    'old_value' => json_encode([
+                        'sn' => $request->sn,
+                        'pin' => $request->pin,
+                        'scan_date' => $request->old_scan_date,
+                        'inoutmode' => $oldInoutmode,
+                        'verifymode' => $oldRecord->verifymode,
+                        'device_ip' => $oldRecord->device_ip,
+                    ]),
+                    'new_value' => json_encode([
+                        'sn' => $request->sn,
+                        'pin' => $request->pin,
+                        'scan_date' => $request->scan_date,
+                        'inoutmode' => $newInoutmode,
+                        'verifymode' => $oldRecord->verifymode,
+                        'device_ip' => $oldRecord->device_ip,
+                    ]),
+                    'reason' => $request->reason,
+                    'status' => 'pending',
+                    'requested_by' => $user->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                $request->validate([
+                    'scan_date' => 'required|date',
+                    'inoutmode' => 'required|in:1,2,4,"1","2","4"',
+                    'outlet_id' => 'nullable|integer',
+                ]);
+
+                $period = $this->calculatePayrollPeriod($tanggal);
+                $existingCount = DB::table('schedule_attendance_correction_approvals')
+                    ->where('user_id', $user->id)
+                    ->where('type', 'manual_attendance')
+                    ->where('status', '!=', 'rejected')
+                    ->whereBetween('tanggal', [$period['start'], $period['end']])
+                    ->count();
+
+                if ($existingCount >= 5) {
+                    throw new \Exception('Batas maksimal 5x input absen manual dalam periode ini sudah tercapai.');
+                }
+
+                $outletId = $request->outlet_id ?: $user->id_outlet;
+                $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first();
+                if (!$outlet) {
+                    throw new \Exception('Outlet tidak ditemukan');
+                }
+
+                $userPin = DB::table('user_pins')
+                    ->where('user_id', $user->id)
+                    ->where('outlet_id', $outletId)
+                    ->where('is_active', 1)
+                    ->first();
+
+                if (!$userPin) {
+                    throw new \Exception('PIN Anda tidak ditemukan untuk outlet ini');
+                }
+
+                $manualAttendanceData = [
+                    'sn' => $outlet->sn,
+                    'pin' => $userPin->pin,
+                    'scan_date' => $request->scan_date,
+                    'inoutmode' => (int) $request->inoutmode,
+                    'verifymode' => 1,
+                    'device_ip' => '127.0.0.1',
+                ];
+
+                $approvalId = $this->insertCorrectionApproval([
+                    'type' => 'manual_attendance',
+                    'source' => 'my_attendance',
+                    'record_id' => 0,
+                    'user_id' => $user->id,
+                    'outlet_id' => $outletId,
+                    'division_id' => $user->division_id,
+                    'tanggal' => $tanggal,
+                    'old_value' => null,
+                    'new_value' => json_encode($manualAttendanceData),
+                    'reason' => $request->reason,
+                    'status' => 'pending',
+                    'requested_by' => $user->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            $this->createSupervisorFlows($approvalId, $approvers);
+
+            $firstApproverId = $approvers[0];
+            $ordered = $validApprovers->keyBy('id');
+            $firstApprover = $ordered->get($firstApproverId) ?? $validApprovers->first();
+            NotificationService::insert([
+                'user_id' => $firstApprover->id,
+                'type' => 'schedule_correction_approval',
+                'message' => "Permohonan koreksi {$type} dari {$user->nama_lengkap} tanggal " . date('d/m/Y', strtotime($tanggal)) . " membutuhkan persetujuan Anda (Level 1/" . count($approvers) . ").",
+                'url' => '/home',
+                'is_read' => 0,
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Pengajuan koreksi berhasil dikirim ke atasan. Setelah atasan menyetujui, pengajuan akan diteruskan ke HRD.',
+                'id' => $approvalId,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Data tidak valid',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengirim pengajuan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function correctionWindowInfo(string $tanggal): array
+    {
+        $day = Carbon::parse($tanggal)->startOfDay();
+        $now = Carbon::now();
+
+        if ($day->gt($now->copy()->startOfDay())) {
+            return [
+                'can_correct' => false,
+                'hours_elapsed' => 0,
+                'remaining_hours' => 0,
+                'message' => 'Tanggal di masa depan tidak dapat dikoreksi',
+            ];
+        }
+
+        $hoursElapsed = $day->diffInHours($now);
+        $remaining = max(0, 48 - $hoursElapsed);
+
+        if ($hoursElapsed > 48) {
+            return [
+                'can_correct' => false,
+                'hours_elapsed' => $hoursElapsed,
+                'remaining_hours' => 0,
+                'message' => 'Koreksi hanya dapat diajukan dalam 2×24 jam sejak tanggal absensi',
+            ];
+        }
+
+        return [
+            'can_correct' => true,
+            'hours_elapsed' => $hoursElapsed,
+            'remaining_hours' => $remaining,
+            'message' => null,
+        ];
+    }
+
+    private function insertCorrectionApproval(array $data): int
+    {
+        if (!Schema::hasColumn('schedule_attendance_correction_approvals', 'source')) {
+            unset($data['source']);
+        }
+
+        return DB::table('schedule_attendance_correction_approvals')->insertGetId($data);
+    }
+
+    private function createSupervisorFlows(int $approvalId, array $approvers): void
+    {
+        if (!Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            throw new \Exception('Tabel alur approval belum tersedia. Jalankan migrasi database.');
+        }
+
+        foreach ($approvers as $index => $approverId) {
+            DB::table('schedule_attendance_correction_approval_flows')->insert([
+                'approval_id' => $approvalId,
+                'approver_id' => $approverId,
+                'approval_level' => $index + 1,
+                'status' => 'PENDING',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function getSupervisorFlows($approvalId)
+    {
+        if (!Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            return collect();
+        }
+
+        try {
+            return DB::table('schedule_attendance_correction_approval_flows')
+                ->where('approval_id', $approvalId)
+                ->orderBy('approval_level')
+                ->get();
+        } catch (\Exception $e) {
+            return collect();
+        }
+    }
+
+    private function hasSupervisorFlows($approvalId): bool
+    {
+        return $this->getSupervisorFlows($approvalId)->isNotEmpty();
+    }
+
+    private function getCurrentSupervisorFlow($approvalId)
+    {
+        return $this->getSupervisorFlows($approvalId)->firstWhere('status', 'PENDING');
+    }
+
+    private function approvalIdsWithSupervisorFlows(): array
+    {
+        if (!Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            return [];
+        }
+
+        try {
+            return DB::table('schedule_attendance_correction_approval_flows')
+                ->distinct()
+                ->pluck('approval_id')
+                ->all();
+        } catch (\Exception $e) {
+            return [];
+        }
+    }
+
+    private function pendingSupervisorApprovalIdsForUser($user): array
+    {
+        if (!Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            return [];
+        }
+
+        try {
+            $query = DB::table('schedule_attendance_correction_approval_flows')
+                ->where('status', 'PENDING');
+
+            if (!HrdApprovalAccess::isSuperadmin($user)) {
+                $query->where('approver_id', $user->id);
+            }
+
+            $candidateIds = $query->pluck('approval_id')->unique()->all();
+            $ids = [];
+            foreach ($candidateIds as $approvalId) {
+                $current = $this->getCurrentSupervisorFlow($approvalId);
+                if (!$current) {
+                    continue;
+                }
+                if (HrdApprovalAccess::isSuperadmin($user) || (int) $current->approver_id === (int) $user->id) {
+                    $ids[] = $approvalId;
+                }
+            }
+
+            return $ids;
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 
     private function formatInoutModeLabel(int $mode): string

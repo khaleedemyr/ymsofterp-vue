@@ -4095,7 +4095,8 @@ async function loadAllApprovals() {
             allApprovalsData.push({
                 ...approval,
                 type: 'correction',
-                typeLabel: approval.type === 'schedule' ? 'Koreksi Schedule' : 'Koreksi Attendance'
+                typeLabel: (approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'manual_attendance' ? 'Input Absen Manual' : 'Koreksi Attendance')
+                    + (approval.approval_stage_label ? ' · ' + approval.approval_stage_label : '')
             });
         });
 
@@ -7134,7 +7135,10 @@ watch(locale, () => {
                                                 </div>
                                             </div>
                                             <div class="text-xs text-orange-500 font-medium flex-shrink-0">
-                                                <i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}
+                                                <div><i class="fa fa-user-check mr-1"></i>{{ approval.approver_name || 'HRD' }}</div>
+                                                <div class="mt-1 text-[10px] uppercase tracking-wide" :class="approval.approval_stage === 'supervisor' ? 'text-blue-500' : 'text-purple-500'">
+                                                    {{ approval.approval_stage_label || (approval.approval_stage === 'supervisor' ? 'Menunggu Atasan' : 'Menunggu HRD') }}
+                                                </div>
                                             </div>
                                         </div>
                                         <div class="flex gap-2">

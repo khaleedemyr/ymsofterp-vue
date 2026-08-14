@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class HrdApprovalAccess
 {
@@ -144,9 +145,29 @@ class HrdApprovalAccess
             ->selectRaw('COUNT(*) as cnt, MIN(COALESCE(approved_at, created_at)) as oldest_at')
             ->first();
 
-        $correction = DB::table('schedule_attendance_correction_approvals')
-            ->where('status', 'pending')
-            ->whereBetween('tanggal', [$start, $end])
+        $correctionQuery = DB::table('schedule_attendance_correction_approvals')
+            ->whereBetween('tanggal', [$start, $end]);
+
+        if (Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            $flowIds = DB::table('schedule_attendance_correction_approval_flows')
+                ->distinct()
+                ->pluck('approval_id');
+            $correctionQuery->where(function ($q) use ($flowIds) {
+                $q->where('status', 'supervisor_approved');
+                if ($flowIds->isEmpty()) {
+                    $q->orWhere('status', 'pending');
+                } else {
+                    $q->orWhere(function ($qq) use ($flowIds) {
+                        $qq->where('status', 'pending')
+                            ->whereNotIn('id', $flowIds);
+                    });
+                }
+            });
+        } else {
+            $correctionQuery->where('status', 'pending');
+        }
+
+        $correction = $correctionQuery
             ->selectRaw('COUNT(*) as cnt, MIN(created_at) as oldest_at')
             ->first();
 
