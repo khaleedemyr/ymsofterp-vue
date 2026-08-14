@@ -3810,9 +3810,6 @@ class PayrollReportController extends Controller
         // Extract approved absents for this user (since we filtered by userId, it should be in the array)
         $approvedAbsents = $approvedAbsentsGrouped[$userId] ?? [];
         
-        // Get today's date (without time) for comparison
-        $today = date('Y-m-d');
-        
         // Get all dates in period
         $period = [];
         $dt = new \DateTime($startDate);
@@ -3885,12 +3882,14 @@ class PayrollReportController extends Controller
             return (object) $item;
         });
 
-        // Get shift data and calculate telat/lembur - SAMA PERSIS dengan Employee Summary
-        // Batch query untuk shift data untuk mencegah N+1 query problem
+        // Load shifts for the full period — not only dates that already have a scan.
+        // Cross-day OUT (e.g. checkout 00:00 on the 9th belonging to the 8th) leaves the
+        // next calendar day with 0 IN/0 OUT. If that day still has a real shift it is ALPHA,
+        // not OFF. Restricting to $dataRows dates made those days look like OFF.
         $allShiftData = DB::table('user_shifts as us')
             ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
             ->where('us.user_id', $userId)
-            ->whereIn('us.tanggal', $dataRows->pluck('tanggal')->unique()->values())
+            ->whereBetween('us.tanggal', [$startDate, $endDate])
             ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
             ->get()
             ->groupBy(function($item) {
@@ -3940,9 +3939,7 @@ class PayrollReportController extends Controller
                     
                     if ($shiftData) {
                         $shift_name = $shiftData->shift_name;
-                        if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
-                            $is_off = true;
-                        }
+                        $is_off = $this->attendanceReportHelper()->isShiftOff($shiftData);
                     }
                     
                     if (!$is_off) {
@@ -3983,13 +3980,15 @@ class PayrollReportController extends Controller
                         $approved_absent_name = $approvedAbsent['leave_type_name'];
                     }
                     
-                    // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, dan tanggal sudah terlewati
-                    $is_alpha = false;
-                    if (!$is_off && $shiftData && !$row->jam_masuk && !$row->jam_keluar && !$is_approved_absent) {
-                        if ($row->tanggal < $today) {
-                            $is_alpha = true;
-                        }
-                    }
+                    $is_alpha = $this->attendanceReportHelper()->isAlphaAbsence(
+                        $shiftData,
+                        $is_off,
+                        $holidays->has($row->tanggal),
+                        $is_approved_absent,
+                        false,
+                        $row->jam_masuk,
+                        $row->tanggal
+                    );
                     
                     $attendanceDetail[] = [
                         'tanggal' => $row->tanggal,
@@ -4020,15 +4019,11 @@ class PayrollReportController extends Controller
                 $shiftData = $allShiftData->get($shiftKey, collect())->first();
                 
                 $shift_name = $shiftData ? $shiftData->shift_name : null;
-                $is_off = false;
-                
-                if ($shiftData) {
-                    if (is_null($shiftData->shift_id) || (strtolower($shiftData->shift_name ?? '') === 'off')) {
-                        $is_off = true;
-                    }
-                } else {
-                    $is_off = true;
-                }
+                // OFF hanya jika memang jadwal OFF / tidak ada baris user_shifts.
+                // Ada shift kerja tanpa absensi = ALPHA (selaras Report Attendance).
+                $is_off = $shiftData
+                    ? $this->attendanceReportHelper()->isShiftOff($shiftData)
+                    : true;
                 
                 // Check if user has approved absent for this date
                 $approvedAbsent = null;
@@ -4047,12 +4042,17 @@ class PayrollReportController extends Controller
                 $overtimeSubmissionReason = $attendanceInfo['overtime_submission_reason'] ?? null;
                 $totalLembur = $attendanceInfo['total_lembur'] ?? $extraOffOvertime;
                 
-                // Deteksi alpha: ada shift (bukan OFF), tidak ada scan, bukan approved absent, tidak ada Extra Off overtime, dan tanggal sudah terlewati
-                $is_alpha = false;
-                if (!$is_off && $shiftData && $extraOffOvertime == 0 && !$is_approved_absent) {
-                    if ($tanggal < $today) {
-                        $is_alpha = true;
-                    }
+                $is_alpha = $this->attendanceReportHelper()->isAlphaAbsence(
+                    $shiftData,
+                    $is_off,
+                    $holidays->has($tanggal),
+                    $is_approved_absent,
+                    false,
+                    null,
+                    $tanggal
+                );
+                if ($extraOffOvertime > 0) {
+                    $is_alpha = false;
                 }
                 
                 $attendanceDetail[] = [

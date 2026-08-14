@@ -146,6 +146,8 @@ class AttendanceController extends Controller
         
         // Get correction requests for this user
         $correctionRequests = $this->getCorrectionRequests($user->id, $startDate, $endDate);
+
+        $calendar = $this->decorateCalendarAlphaFlags($calendar, $holidays, $approvedAbsents, $approvedWfhs);
         
         return Inertia::render('Attendance/Index', [
             'workSchedules' => $workSchedules,
@@ -1262,6 +1264,91 @@ class AttendanceController extends Controller
     /**
      * Get approved absent requests for the user in the date range
      */
+    private function decorateCalendarAlphaFlags($calendar, $holidays, $approvedAbsents, $approvedWfhs): array
+    {
+        $holidayDates = [];
+        foreach ($holidays as $holiday) {
+            $date = is_object($holiday) ? ($holiday->date ?? null) : ($holiday['date'] ?? null);
+            if ($date) {
+                $holidayDates[(string) $date] = true;
+            }
+        }
+
+        $absentDates = [];
+        foreach ($approvedAbsents as $absent) {
+            $from = is_object($absent) ? $absent->date_from : ($absent['date_from'] ?? null);
+            $to = is_object($absent) ? $absent->date_to : ($absent['date_to'] ?? null);
+            if (! $from || ! $to) {
+                continue;
+            }
+            $dt = new \DateTime((string) $from);
+            $end = new \DateTime((string) $to);
+            while ($dt <= $end) {
+                $absentDates[$dt->format('Y-m-d')] = true;
+                $dt->modify('+1 day');
+            }
+        }
+
+        $wfhDates = [];
+        foreach ($approvedWfhs as $wfh) {
+            $date = is_object($wfh) ? ($wfh->wfh_date ?? null) : ($wfh['wfh_date'] ?? null);
+            if ($date) {
+                $wfhDates[(string) $date] = true;
+            }
+        }
+
+        $report = app(AttendanceReportController::class);
+
+        foreach ($calendar as $date => $entries) {
+            if (! is_array($entries)) {
+                continue;
+            }
+
+            foreach ($entries as $key => $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+                $calendar[$date][$key] = $this->withCalendarAlphaFlag(
+                    $entry,
+                    (string) $date,
+                    isset($holidayDates[$date]),
+                    isset($absentDates[$date]),
+                    isset($wfhDates[$date]),
+                    $report
+                );
+            }
+        }
+
+        return $calendar;
+    }
+
+    private function withCalendarAlphaFlag(
+        array $entry,
+        string $date,
+        bool $isHoliday,
+        bool $isApprovedAbsent,
+        bool $isWfh,
+        AttendanceReportController $report
+    ): array {
+        $shiftId = $entry['shift_id'] ?? null;
+        $shiftName = $entry['shift_name'] ?? null;
+        $isOff = is_null($shiftId) || strtolower((string) $shiftName) === 'off';
+        $jamMasuk = $entry['first_in'] ?? null;
+
+        $entry['is_off'] = $isOff;
+        $entry['is_alpha'] = $report->isAlphaAbsence(
+            (object) ['shift_id' => $shiftId, 'shift_name' => $shiftName],
+            $isOff,
+            $isHoliday,
+            $isApprovedAbsent,
+            $isWfh,
+            $jamMasuk,
+            $date
+        );
+
+        return $entry;
+    }
+
     private function getApprovedAbsentRequests($userId, $startDate, $endDate)
     {
         $approvedAbsents = DB::table('absent_requests')
@@ -1835,6 +1922,8 @@ private function getCorrectionRequests($userId, $startDate, $endDate)
         
         // Get correction requests
         $correctionRequests = $this->getCorrectionRequests($user->id, $startDate, $endDate);
+
+        $calendar = $this->decorateCalendarAlphaFlags($calendar, $holidays, $approvedAbsents, $approvedWfhs);
         
         return response()->json([
             'success' => true,
