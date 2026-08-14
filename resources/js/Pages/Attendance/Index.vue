@@ -211,6 +211,9 @@
                       :class="getScheduleClass(schedule)"
                     >
                       <div class="font-medium">{{ schedule.shift_name || 'OFF' }}</div>
+                      <div v-if="schedule.is_alpha" class="mt-0.5">
+                        <span class="px-1 py-0.5 text-[10px] bg-red-500 text-white rounded-full font-bold">⚠ ALPHA</span>
+                      </div>
                       <div v-if="schedule.time_start && schedule.time_end" class="hidden sm:block text-xs opacity-75">{{ schedule.time_start }} - {{ schedule.time_end }}</div>
                       
                       <!-- Attendance info -->
@@ -2525,6 +2528,10 @@ const calculateWorkDuration = (jamIn, jamOut) => {
 const getScheduleClass = (schedule) => {
   // Use similar color scheme as UserShift/Calendar.vue
   const shiftName = schedule.shift_name?.toLowerCase() || ''
+
+  if (schedule.is_alpha) {
+    return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+  }
   
   if (!shiftName || shiftName === '-' || shiftName === 'off') {
     return 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
