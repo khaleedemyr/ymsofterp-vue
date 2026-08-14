@@ -615,17 +615,13 @@ class EmployeeMovementController extends Controller
             }
             
             // Transform movement data
-            $movementData = [
+            $movementData = array_merge([
                 'id' => $movement->id,
                 'employee_id' => $movement->employee_id,
                 'employee_name' => $movement->employee_name,
                 'employment_type' => $movement->employment_type,
                 'status' => $movement->status,
                 'employment_effective_date' => $movement->employment_effective_date,
-                'gaji_pokok_from' => $movement->gaji_pokok_from,
-                'gaji_pokok_to' => $movement->gaji_pokok_to,
-                'tunjangan_from' => $movement->tunjangan_from,
-                'tunjangan_to' => $movement->tunjangan_to,
                 'jabatan_from' => $movement->jabatan_from,
                 'jabatan_to' => $movement->jabatan_to,
                 'outlet_from' => $movement->outlet_from,
@@ -641,7 +637,7 @@ class EmployeeMovementController extends Controller
                 ],
                 'approval_flows' => $approvalFlows->toArray(),
                 'current_approval_flow_id' => $currentApprover ? $currentApprover->id : null,
-            ];
+            ], $this->payrollSalaryPayload($movement->employee, $movement));
             
             return response()->json([
                 'success' => true,
@@ -975,6 +971,7 @@ class EmployeeMovementController extends Controller
         ] : null;
 
         $this->sortMovementApprovalFlows($movementData);
+        $movementData = array_merge($movementData, $this->payrollSalaryPayload($employee, $movement));
 
         return response()->json(['success' => true, 'data' => $movementData]);
     }
@@ -1003,6 +1000,147 @@ class EmployeeMovementController extends Controller
         $movement->created_by_division_name = $creator?->divisi?->nama_divisi;
 
         return $movement;
+    }
+
+    private function getPayrollMasterRow(?User $employee): ?object
+    {
+        if (!$employee) {
+            return null;
+        }
+
+        $scoped = DB::table('payroll_master')
+            ->where('user_id', $employee->id)
+            ->where('outlet_id', $employee->id_outlet)
+            ->where('division_id', $employee->division_id)
+            ->first();
+
+        if ($scoped) {
+            return $scoped;
+        }
+
+        return DB::table('payroll_master')
+            ->where('user_id', $employee->id)
+            ->orderByDesc('updated_at')
+            ->first();
+    }
+
+    private function payrollSalaryPayload(?User $employee, ?EmployeeMovement $movement = null): array
+    {
+        $row = $this->getPayrollMasterRow($employee);
+        $gaji = (int) ($row->gaji ?? 0);
+        $tunjangan = (int) ($row->tunjangan ?? 0);
+
+        $gajiTo = ($movement && $movement->gaji_pokok_to !== null)
+            ? (int) $movement->gaji_pokok_to
+            : $gaji;
+        $tunjanganTo = ($movement && $movement->tunjangan_to !== null)
+            ? (int) $movement->tunjangan_to
+            : $tunjangan;
+
+        return [
+            'payroll_gaji_pokok' => $gaji,
+            'payroll_tunjangan' => $tunjangan,
+            'gaji_pokok_from' => $gaji,
+            'tunjangan_from' => $tunjangan,
+            'gaji_pokok_to' => $gajiTo,
+            'tunjangan_to' => $tunjanganTo,
+            'salary_from' => $gaji + $tunjangan,
+            'salary_to' => $gajiTo + $tunjanganTo,
+        ];
+    }
+
+    private function parseSalaryAmount($value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        if (is_numeric($value)) {
+            return (int) round((float) $value);
+        }
+
+        $clean = preg_replace('/[^\d]/', '', (string) $value);
+
+        return $clean === '' ? 0 : (int) $clean;
+    }
+
+    private function applySalaryFromRequest(Request $request, EmployeeMovement $movement): void
+    {
+        if (
+            !$request->exists('gaji_pokok')
+            && !$request->exists('tunjangan')
+            && !$request->exists('gaji_pokok_to')
+            && !$request->exists('tunjangan_to')
+        ) {
+            return;
+        }
+
+        $gaji = $this->parseSalaryAmount($request->input('gaji_pokok', $request->input('gaji_pokok_to')));
+        $tunjangan = $this->parseSalaryAmount($request->input('tunjangan', $request->input('tunjangan_to')));
+        $employee = $movement->employee ?: User::find($movement->employee_id);
+        $current = $this->getPayrollMasterRow($employee);
+        $salaryFrom = $movement->salary_from !== null
+            ? (int) $movement->salary_from
+            : ((int) ($current->gaji ?? 0) + (int) ($current->tunjangan ?? 0));
+
+        $movement->update([
+            'gaji_pokok_to' => $gaji,
+            'tunjangan_to' => $tunjangan,
+            'salary_from' => $salaryFrom,
+            'salary_to' => $gaji + $tunjangan,
+            'salary_change' => true,
+        ]);
+    }
+
+    private function saveSalaryToPayrollMaster(EmployeeMovement $movement): void
+    {
+        if ($movement->gaji_pokok_to === null && $movement->tunjangan_to === null) {
+            return;
+        }
+
+        $employee = User::find($movement->employee_id);
+        if (!$employee) {
+            return;
+        }
+
+        $gaji = (int) ($movement->gaji_pokok_to ?? 0);
+        $tunjangan = (int) ($movement->tunjangan_to ?? 0);
+        $now = now();
+
+        $updated = DB::table('payroll_master')
+            ->where('user_id', $employee->id)
+            ->update([
+                'gaji' => $gaji,
+                'tunjangan' => $tunjangan,
+                'updated_at' => $now,
+            ]);
+
+        if ($updated === 0) {
+            DB::table('payroll_master')->insert([
+                'user_id' => $employee->id,
+                'outlet_id' => $employee->id_outlet,
+                'division_id' => $employee->division_id,
+                'gaji' => $gaji,
+                'tunjangan' => $tunjangan,
+                'ot' => 0,
+                'um' => 0,
+                'ph' => 0,
+                'sc' => 0,
+                'bpjs_jkn' => 0,
+                'bpjs_tk' => 0,
+                'lb' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'salary_change',
+            'model' => 'PayrollMaster',
+            'model_id' => $employee->id,
+            'description' => "Salary updated from employee movement {$movement->employee_name}: gaji {$gaji}, tunjangan {$tunjangan}",
+        ]);
     }
 
     public function update(Request $request, EmployeeMovement $employeeMovement)
@@ -1435,10 +1573,14 @@ class EmployeeMovementController extends Controller
             'approval_flow_id' => 'nullable|exists:employee_movement_approval_flows,id', // New system
             'approval_level' => 'nullable|in:hod,gm,gm_hr,bod', // Legacy system
             'status' => 'required|in:approved,rejected',
-            'notes' => 'nullable|string|max:500'
+            'notes' => 'nullable|string|max:500',
+            'gaji_pokok' => 'nullable',
+            'tunjangan' => 'nullable',
+            'gaji_pokok_to' => 'nullable',
+            'tunjangan_to' => 'nullable',
         ]);
 
-        $movement = EmployeeMovement::with('approvalFlows')->findOrFail($id);
+        $movement = EmployeeMovement::with(['approvalFlows', 'employee'])->findOrFail($id);
         $user = Auth::user();
         $isSuperadmin = $user->id_role === '5af56935b011a' && $user->status === 'A';
 
@@ -1486,6 +1628,7 @@ class EmployeeMovementController extends Controller
 
                 // Update approval flow
                 if ($request->status === 'approved') {
+                    $this->applySalaryFromRequest($request, $movement);
                     $approvalFlow->approve($request->notes);
                 } else {
                     $approvalFlow->reject($request->notes);
@@ -1513,6 +1656,8 @@ class EmployeeMovementController extends Controller
                 } else {
                     // All approvers have approved, update status to approved
                     $movement->update(['status' => 'approved']);
+                    $movement->refresh();
+                    $this->saveSalaryToPayrollMaster($movement);
                     
                     // Send notification to creator that movement is fully approved
                     $this->sendNotificationToCreator($movement, 'approved');
@@ -1568,6 +1713,10 @@ class EmployeeMovementController extends Controller
             // Update approval status
             $approvalField = $request->approval_level . '_approval';
             $approvalDateField = $request->approval_level . '_approval_date';
+
+            if ($request->status === 'approved') {
+                $this->applySalaryFromRequest($request, $movement);
+            }
             
             $movement->update([
                 $approvalField => $request->status,
@@ -1578,6 +1727,8 @@ class EmployeeMovementController extends Controller
             // Jika semua approval selesai dan approved, set status jadi approved
             if ($request->status === 'approved' && $this->isAllApprovalsCompleted($movement)) {
                 $movement->update(['status' => 'approved']);
+                $movement->refresh();
+                $this->saveSalaryToPayrollMaster($movement);
                 
                 // Send notification to creator that movement is fully approved
                 $this->sendNotificationToCreator($movement, 'approved');
@@ -1847,49 +1998,8 @@ class EmployeeMovementController extends Controller
             }
 
             // 3. Jika salary diubah, ubah gaji dan tunjangan di payroll_master
-            if ($movement->salary_change && $movement->salary_to) {
-                // Cek apakah sudah ada data di payroll_master
-                $payrollData = DB::table('payroll_master')
-                    ->where('user_id', $employee->id)
-                    ->first();
-
-                if ($payrollData) {
-                    // Update existing payroll data
-                    DB::table('payroll_master')
-                        ->where('user_id', $employee->id)
-                        ->update([
-                            'gaji' => $movement->gaji_pokok_to,
-                            'tunjangan' => $movement->tunjangan_to,
-                            'updated_at' => $now
-                        ]);
-                } else {
-                    // Create new payroll data
-                    DB::table('payroll_master')->insert([
-                        'user_id' => $employee->id,
-                        'outlet_id' => $employee->id_outlet,
-                        'division_id' => $employee->division_id,
-                        'gaji' => $movement->gaji_pokok_to,
-                        'tunjangan' => $movement->tunjangan_to,
-                        'ot' => 0,
-                        'um' => 0,
-                        'ph' => 0,
-                        'sc' => 0,
-                        'bpjs_jkn' => 0,
-                        'bpjs_tk' => 0,
-                        'lb' => 0,
-                        'created_at' => $now,
-                        'updated_at' => $now
-                    ]);
-                }
-                
-                // Log activity
-                ActivityLog::create([
-                    'user_id' => auth()->id(),
-                    'action' => 'salary_change',
-                    'model' => 'PayrollMaster',
-                    'model_id' => $employee->id,
-                    'description' => "Salary changed from {$movement->salary_from} to {$movement->salary_to} for {$employee->nama_lengkap}",
-                ]);
+            if ($movement->salary_change || $movement->gaji_pokok_to !== null || $movement->tunjangan_to !== null) {
+                $this->saveSalaryToPayrollMaster($movement);
             }
 
             // 4. Jika division diubah, ubah division_id di users

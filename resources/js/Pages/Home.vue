@@ -414,6 +414,8 @@ const loadingMovementApprovals = ref(false);
 const showMovementDetailModal = ref(false);
 const selectedMovement = ref(null);
 const loadingMovementDetail = ref(false);
+const movementGajiPokokInput = ref('');
+const movementTunjanganInput = ref('');
 
 function getMovementCurrentLevel(mv) {
     if (!mv) return null;
@@ -460,6 +462,35 @@ const sortedMovementApprovalFlows = computed(() => {
     return [...flows].sort((a, b) => Number(a.approval_level ?? 0) - Number(b.approval_level ?? 0));
 });
 
+function formatMovementSalaryInput(value) {
+    const n = parseRupiahInput(value);
+    if (!Number.isFinite(n) || n < 0) return '0';
+    return new Intl.NumberFormat('id-ID').format(n);
+}
+
+function initMovementSalaryInputs(mv) {
+    const gaji = mv?.gaji_pokok_to ?? mv?.payroll_gaji_pokok ?? 0;
+    const tunjangan = mv?.tunjangan_to ?? mv?.payroll_tunjangan ?? 0;
+    movementGajiPokokInput.value = formatMovementSalaryInput(gaji);
+    movementTunjanganInput.value = formatMovementSalaryInput(tunjangan);
+}
+
+function getMovementSalaryPayload() {
+    const gaji = parseRupiahInput(movementGajiPokokInput.value);
+    const tunjangan = parseRupiahInput(movementTunjanganInput.value);
+    return {
+        gaji_pokok: Number.isFinite(gaji) && gaji >= 0 ? gaji : 0,
+        tunjangan: Number.isFinite(tunjangan) && tunjangan >= 0 ? tunjangan : 0,
+    };
+}
+
+const movementSalaryTotalDisplay = computed(() => {
+    const gaji = parseRupiahInput(movementGajiPokokInput.value);
+    const tunjangan = parseRupiahInput(movementTunjanganInput.value);
+    const total = (Number.isFinite(gaji) ? gaji : 0) + (Number.isFinite(tunjangan) ? tunjangan : 0);
+    return new Intl.NumberFormat('id-ID').format(total);
+});
+
 async function approveSelectedMovement() {
     const mv = selectedMovement.value;
     const level = getMovementCurrentLevel(mv);
@@ -489,7 +520,8 @@ async function approveSelectedMovement() {
                 const resp = await axios.post(`/employee-movements/${mv.id}/approve`, {
                     approval_flow_id: pendingFlow.id,
                     status: 'approved',
-                    notes: ''
+                    notes: '',
+                    ...getMovementSalaryPayload(),
                 });
                 if (resp.data?.success) {
                     await Swal.fire('Berhasil', 'Persetujuan berhasil diproses', 'success');
@@ -506,7 +538,8 @@ async function approveSelectedMovement() {
         const resp = await axios.post(`/employee-movements/${mv.id}/approve`, {
             approval_level: level,
             status: 'approved',
-            notes: ''
+            notes: '',
+            ...getMovementSalaryPayload(),
         });
         if (resp.data?.success) {
             await Swal.fire('Berhasil', 'Persetujuan berhasil diproses', 'success');
@@ -651,6 +684,7 @@ async function openMovementApproval(movement) {
         const resp = await axios.get(`/employee-movements/${movement.id}/debug`);
         if (resp.data?.success) {
             selectedMovement.value = resp.data.data;
+            initMovementSalaryInputs(resp.data.data);
             showMovementDetailModal.value = true;
         }
     } catch (e) {
@@ -12026,14 +12060,58 @@ watch(locale, () => {
                                 <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Outlet/Unit</div>
                                 <div class="text-sm text-gray-900 dark:text-white">{{ displayMovement(selectedMovement.unit_property_from) }} ➝ <span class="font-semibold">{{ displayMovement(selectedMovement.unit_property_to) }}</span></div>
                             </div>
-                            <div v-if="selectedMovement.salary_change">
-                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Gaji</div>
-                                <div class="text-sm text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.salary_from || 0) }} ➝ <span class="font-semibold">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.salary_to || 0) }}</span></div>
-                            </div>
                         </div>
                         <div v-if="selectedMovement.employment_effective_date" class="mt-4 text-xs text-gray-600 dark:text-gray-300">
                             <span class="font-medium">Efektif:</span> {{ new Date(selectedMovement.employment_effective_date).toLocaleDateString('id-ID') }}
                         </div>
+                    </div>
+
+                    <!-- Gaji dari Master Payroll -->
+                    <div class="bg-emerald-50 dark:bg-emerald-900/20 p-4 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">
+                            <i class="fa fa-money-bill-wave mr-2 text-emerald-600"></i>
+                            Gaji (Master Payroll)
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Gaji Pokok saat ini</div>
+                                <div class="text-sm font-semibold text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.payroll_gaji_pokok || 0) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 dark:text-gray-300 mb-1">Tunjangan saat ini</div>
+                                <div class="text-sm font-semibold text-gray-900 dark:text-white">Rp {{ new Intl.NumberFormat('id-ID').format(selectedMovement.payroll_tunjangan || 0) }}</div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">Gaji Pokok diajukan</label>
+                                <input
+                                    v-model="movementGajiPokokInput"
+                                    type="text"
+                                    inputmode="numeric"
+                                    :disabled="!canApproveSelectedMovement"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm disabled:bg-gray-100 dark:disabled:bg-gray-700"
+                                    @blur="movementGajiPokokInput = formatMovementSalaryInput(movementGajiPokokInput)"
+                                />
+                            </div>
+                            <div>
+                                <label class="text-xs font-medium text-gray-600 dark:text-gray-300 mb-1 block">Tunjangan diajukan</label>
+                                <input
+                                    v-model="movementTunjanganInput"
+                                    type="text"
+                                    inputmode="numeric"
+                                    :disabled="!canApproveSelectedMovement"
+                                    class="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-2 text-sm disabled:bg-gray-100 dark:disabled:bg-gray-700"
+                                    @blur="movementTunjanganInput = formatMovementSalaryInput(movementTunjanganInput)"
+                                />
+                            </div>
+                        </div>
+                        <div class="mt-3 text-sm text-gray-700 dark:text-gray-200">
+                            Total: <span class="font-semibold">Rp {{ movementSalaryTotalDisplay }}</span>
+                        </div>
+                        <p v-if="canApproveSelectedMovement" class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+                            Jika diubah lalu di-approve sampai selesai, nilai ini langsung tersimpan ke Master Payroll.
+                        </p>
                     </div>
 
                     <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
