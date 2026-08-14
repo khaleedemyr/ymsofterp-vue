@@ -66,6 +66,15 @@ class AttendanceWorkTimelineService
     }
 
     /**
+     * Hari kalender ini punya absensi sendiri (ada IN / KEMBALI).
+     * Scan OUT sisa shift semalam (tanpa masuk hari ini) bukan hari kerja.
+     */
+    public static function hasOwnCheckIn(array $result): bool
+    {
+        return ! empty($result['jam_masuk']);
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $scans
      */
     public function calculateWorkMinutes(array $scans): int

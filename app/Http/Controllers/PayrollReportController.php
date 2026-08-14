@@ -814,9 +814,12 @@ class PayrollReportController extends Controller
 
             // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
             $finalData = [];
-            foreach ($processedData as $key => $data) {
-                // Gunakan smart cross-day processing yang sama dengan Employee Summary
+            foreach (array_keys($processedData) as $key) {
+                $data = $processedData[$key];
                 $result = $this->processSmartCrossDayAttendance($data, $processedData);
+                if (empty($result['jam_masuk'])) {
+                    continue;
+                }
                 $result['division_id'] = $data['division_id'];
                 $finalData[] = $result;
             }
@@ -2860,9 +2863,12 @@ class PayrollReportController extends Controller
 
         // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
         $finalData = [];
-        foreach ($processedData as $key => $data) {
-            // Gunakan smart cross-day processing yang sama dengan Employee Summary
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (empty($result['jam_masuk'])) {
+                continue;
+            }
             $result['division_id'] = $data['division_id'];
             $finalData[] = $result;
         }
@@ -3865,9 +3871,12 @@ class PayrollReportController extends Controller
 
         // Step 2: Proses setiap kelompok dengan smart cross-day processing - SAMA PERSIS dengan Employee Summary
         $finalData = [];
-        foreach ($processedData as $key => $data) {
-            // Gunakan smart cross-day processing yang sama dengan Employee Summary
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (empty($result['jam_masuk'])) {
+                continue;
+            }
             $finalData[] = $result;
         }
         
@@ -3943,8 +3952,8 @@ class PayrollReportController extends Controller
                             $telat = $this->calculateLateness($jam_masuk, $shiftData->time_start, $row->is_cross_day ?? false);
                         }
                         
-                        // Tambahkan telat jika checkout lebih awal dari shift end - SAMA PERSIS dengan Employee Summary
-                        if (!($row->is_cross_day ?? false)) {
+                        // Sisa OUT tanpa IN = checkout shift kemarin, bukan pulang cepat hari ini
+                        if ($jam_masuk && !($row->is_cross_day ?? false)) {
                             if ($shiftData && $shiftData->time_end && $jam_keluar) {
                                 $earlyCheckoutTelat = $this->calculateEarlyCheckoutLateness($jam_keluar, $shiftData->time_end, $row->is_cross_day ?? false);
                                 $telat += $earlyCheckoutTelat;
@@ -6437,7 +6446,8 @@ class PayrollReportController extends Controller
      * Process smart cross-day attendance - SAMA PERSIS dengan AttendanceReportController
      * Digunakan untuk mendapatkan data attendance detail yang sama dengan Employee Summary
      */
-    private function processSmartCrossDayAttendance($data, $allProcessedData) {
+    private function processSmartCrossDayAttendance($data, array &$allProcessedData)
+    {
         return app(\App\Services\AttendanceWorkTimelineService::class)->processDay($data, $allProcessedData);
     }
 

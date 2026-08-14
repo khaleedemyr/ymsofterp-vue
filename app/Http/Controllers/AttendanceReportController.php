@@ -78,8 +78,12 @@ class AttendanceReportController extends Controller
             
             // Step 2: Proses setiap kelompok dengan logika cross-day yang lebih cerdas
             $finalData = [];
-            foreach ($processedData as $key => $data) {
+            foreach (array_keys($processedData) as $key) {
+                $data = $processedData[$key];
                 $result = $this->processSmartCrossDayAttendance($data, $processedData);
+                if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                    continue;
+                }
                 $finalData[] = $result;
             }
             
@@ -235,8 +239,8 @@ class AttendanceReportController extends Controller
                                     $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
                                 }
                                 
-                                // Untuk cross-day, tidak ada telat tambahan karena ini kelanjutan shift malam sebelumnya
-                                if (!($row->is_cross_day ?? false)) {
+                                // Sisa OUT tanpa IN = checkout shift kemarin, bukan pulang cepat hari ini
+                                if ($jam_masuk && !($row->is_cross_day ?? false)) {
                                     if ($shift && $shift->time_end && $row->jam_keluar) {
                                         $telat += $this->calculateEarlyCheckoutLateness(
                                             $row->jam_keluar,
@@ -537,7 +541,11 @@ class AttendanceReportController extends Controller
         $result = [];
         foreach ($processedData as $key => $data) {
             if ($data['tanggal'] == $tanggal) {
-                $result[] = $this->buildOutletAttendanceDetailRow($data, $processedData, $tanggal, $nextDay);
+                $row = $this->buildOutletAttendanceDetailRow($data, $processedData, $tanggal, $nextDay);
+                if (empty($row['jam_in']) && empty($row['jam_kembali']) && empty($row['jam_mulai'])) {
+                    continue;
+                }
+                $result[] = $row;
             }
         }
         
@@ -734,9 +742,12 @@ class AttendanceReportController extends Controller
             
             // Step 2: Proses setiap kelompok dengan smart cross-day processing
             $finalData = [];
-            foreach ($processedData as $key => $data) {
+            foreach (array_keys($processedData) as $key) {
+                $data = $processedData[$key];
                 $result = $this->processSmartCrossDayAttendance($data, $processedData);
-                // Tambahkan outlet info untuk exportExcel
+                if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                    continue;
+                }
                 $result['id_outlet'] = $outletId ?? 1;
                 $finalData[] = $result;
             }
@@ -897,8 +908,8 @@ class AttendanceReportController extends Controller
                                     $telat = $this->calculateLateness($jam_masuk, $shift->time_start, $row->is_cross_day ?? false);
                                 }
                                 
-                                // Untuk cross-day, tidak ada telat tambahan karena ini kelanjutan shift malam sebelumnya
-                                if (!($row->is_cross_day ?? false)) {
+                                // Sisa OUT tanpa IN = checkout shift kemarin, bukan pulang cepat hari ini
+                                if ($jam_masuk && !($row->is_cross_day ?? false)) {
                                     if ($shift && $shift->time_end && $row->jam_keluar) {
                                         $telat += $this->calculateEarlyCheckoutLateness(
                                             $row->jam_keluar,
@@ -1197,8 +1208,12 @@ class AttendanceReportController extends Controller
         }
 
         $dataRows = collect();
-        foreach ($processedData as $key => $data) {
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                continue;
+            }
             $result['outlet_id'] = $data['outlet_id'];
             $result['nama_outlet'] = $data['nama_outlet'];
             $result['user_id'] = $data['user_id'];
@@ -1984,7 +1999,8 @@ class AttendanceReportController extends Controller
                 $totalGroups = count($processedData);
                 $groupIndex = 0;
                 
-                foreach ($processedData as $key => $data) {
+                foreach (array_keys($processedData) as $key) {
+                    $data = $processedData[$key];
                     $groupIndex++;
                     if ($groupIndex % 100 == 0) {
                         \Log::info('Processing group ' . $groupIndex . ' of ' . $totalGroups);
@@ -1994,9 +2010,10 @@ class AttendanceReportController extends Controller
                         }
                     }
                     
-                    // Gunakan smart cross-day processing yang sama dengan report utama
                     $result = $this->processSmartCrossDayAttendance($data, $processedData);
-                    // Tambahkan division_id untuk employee summary
+                    if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                        continue;
+                    }
                     $result['division_id'] = $data['division_id'];
                     $finalData[] = $result;
                 }
@@ -2536,9 +2553,12 @@ class AttendanceReportController extends Controller
                 }
 
                 $finalData = [];
-                foreach ($processedData as $key => $data) {
+                foreach (array_keys($processedData) as $key) {
+                    $data = $processedData[$key];
                     $result = $this->processSmartCrossDayAttendance($data, $processedData);
-                    // Tambahkan division_id untuk export employee summary
+                    if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                        continue;
+                    }
                     $result['division_id'] = $data['division_id'];
                     $finalData[] = $result;
                 }
@@ -3202,7 +3222,7 @@ class AttendanceReportController extends Controller
      */
     public function shouldIncludeAttendanceSummaryRow(object $row): bool
     {
-        if (! empty($row->jam_masuk) || ! empty($row->jam_keluar)) {
+        if (! empty($row->jam_masuk)) {
             return true;
         }
 
@@ -3258,6 +3278,11 @@ class AttendanceReportController extends Controller
         $isCrossDay = ! empty($processedRow->is_cross_day);
         $telat = 0;
         $lembur = 0;
+
+        // Tanpa IN hari ini (sisa OUT cross-day) bukan pulang cepat.
+        if (! $jamMasuk) {
+            return ['telat' => 0, 'lembur' => 0];
+        }
 
         if ($shift && $shift->time_start && $jamMasuk) {
             $telat = $this->calculateLateness($jamMasuk, $shift->time_start, $isCrossDay);
@@ -3337,7 +3362,8 @@ class AttendanceReportController extends Controller
     /**
      * Smart cross-day attendance processing untuk multi-outlet scenarios
      */
-    private function processSmartCrossDayAttendance($data, $allProcessedData) {
+    private function processSmartCrossDayAttendance($data, array &$allProcessedData)
+    {
         return $this->workTimelineService()->processDay($data, $allProcessedData);
     }
 
@@ -3623,8 +3649,12 @@ class AttendanceReportController extends Controller
             ->whereBetween('tgl_libur', [$startDate, $endDate])
             ->pluck('keterangan', 'tgl_libur');
 
-        foreach ($processedData as $data) {
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                continue;
+            }
             $row = (object) [
                 'tanggal' => $result['tanggal'],
                 'user_id' => $result['user_id'],

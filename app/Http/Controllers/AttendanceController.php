@@ -523,8 +523,12 @@ class AttendanceController extends Controller
         
         // Step 2: Process each group using smart cross-day processing - SAME AS AttendanceReportController
         $attendanceData = [];
-        foreach ($processedData as $key => $data) {
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
             $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (! \App\Services\AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                continue;
+            }
             
             $firstIn = $result['jam_masuk'];
             $lastOut = $result['jam_keluar'];
@@ -775,7 +779,8 @@ class AttendanceController extends Controller
      * Smart cross-day attendance processing untuk multi-outlet scenarios
      * SAME LOGIC AS AttendanceReportController
      */
-    private function processSmartCrossDayAttendance($data, $allProcessedData) {
+    private function processSmartCrossDayAttendance($data, array &$allProcessedData)
+    {
         return app(\App\Services\AttendanceWorkTimelineService::class)->processDay($data, $allProcessedData);
     }
     

@@ -72,5 +72,59 @@ class AttendanceWorkTimelineServiceTest extends TestCase
         $this->assertSame(480, $result['work_minutes']);
         $this->assertSame(3, $result['last_outlet_id']);
         $this->assertEmpty($all['10_2026-07-02']['scans']);
+
+        $nextDay = $this->service->processDay($all['10_2026-07-02'], $all);
+        $this->assertFalse(AttendanceWorkTimelineService::hasOwnCheckIn($nextDay));
+        $this->assertNull($nextDay['jam_masuk']);
+        $this->assertNull($nextDay['jam_keluar']);
+        $this->assertSame(0, $nextDay['work_minutes']);
+    }
+
+    public function test_grouped_days_use_live_array_so_leftover_out_is_dropped(): void
+    {
+        $all = [
+            '10_2026-08-08' => [
+                'tanggal' => '2026-08-08',
+                'user_id' => 10,
+                'nama_lengkap' => 'Yayan Triana',
+                'scans' => [
+                    ['scan_date' => '2026-08-08 11:52:30', 'inoutmode' => 1, 'outlet_id' => 7],
+                ],
+            ],
+            '10_2026-08-09' => [
+                'tanggal' => '2026-08-09',
+                'user_id' => 10,
+                'nama_lengkap' => 'Yayan Triana',
+                'scans' => [
+                    ['scan_date' => '2026-08-09 00:00:29', 'inoutmode' => 2, 'outlet_id' => 7],
+                ],
+            ],
+        ];
+
+        $kept = [];
+        foreach (array_keys($all) as $key) {
+            $result = $this->service->processDay($all[$key], $all);
+            if (AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                $kept[] = $result;
+            }
+        }
+
+        $this->assertCount(1, $kept);
+        $this->assertSame('2026-08-08', $kept[0]['tanggal']);
+        $this->assertTrue($kept[0]['is_cross_day']);
+        $this->assertSame('2026-08-09 00:00:29', $kept[0]['jam_keluar']);
+        $this->assertEmpty($all['10_2026-08-09']['scans']);
+    }
+
+    public function test_leftover_morning_out_is_not_own_check_in(): void
+    {
+        $this->assertFalse(AttendanceWorkTimelineService::hasOwnCheckIn([
+            'jam_masuk' => null,
+            'jam_keluar' => '2026-08-09 00:00:29',
+        ]));
+        $this->assertTrue(AttendanceWorkTimelineService::hasOwnCheckIn([
+            'jam_masuk' => '2026-08-08 11:52:30',
+            'jam_keluar' => '2026-08-09 00:00:29',
+        ]));
     }
 }
