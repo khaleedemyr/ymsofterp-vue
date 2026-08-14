@@ -220,6 +220,7 @@ class AttendanceReportController extends Controller
                         $shift_name = null;
                         $is_holiday = false;
                         $holiday_name = null;
+                        $shift = null;
                         
                         if ($rowUserId && $rowNama) {
                             $shift = DB::table('user_shifts as us')
@@ -301,6 +302,16 @@ class AttendanceReportController extends Controller
                         if (!$is_off && !$is_holiday && !$is_approved_absent && !$is_wfh && $jam_masuk && !$jam_keluar) {
                             $has_no_checkout = true;
                         }
+
+                        $is_alpha = $this->isAlphaAbsence(
+                            $shift,
+                            $is_off,
+                            $is_holiday,
+                            $is_approved_absent,
+                            $is_wfh,
+                            $jam_masuk,
+                            $tanggal
+                        );
                         
                         $rows->push((object)[
                             'tanggal' => $tanggal,
@@ -327,6 +338,7 @@ class AttendanceReportController extends Controller
                             'wfh_number' => $wfhInfo['number'] ?? null,
                             'wfh_reason' => $wfhInfo['reason'] ?? null,
                             'has_no_checkout' => $has_no_checkout,
+                            'is_alpha' => $is_alpha,
                         ]);
                     }
                 } else {
@@ -339,6 +351,7 @@ class AttendanceReportController extends Controller
                     $shift_name = null;
                     $is_holiday = false;
                     $holiday_name = null;
+                    $shift = null;
                     
                     if ($rowUserId && $rowNama) {
                         $shift = DB::table('user_shifts as us')
@@ -384,6 +397,16 @@ class AttendanceReportController extends Controller
                     }
                     
                     $summary['total_lembur'] += $totalLembur;
+
+                    $is_alpha = $this->isAlphaAbsence(
+                        $shift,
+                        $is_off,
+                        $is_holiday,
+                        $is_approved_absent,
+                        $is_wfh,
+                        null,
+                        $tanggal
+                    );
                     
                     $rows->push((object)[
                         'tanggal' => $tanggal,
@@ -412,6 +435,7 @@ class AttendanceReportController extends Controller
                         'wfh_number' => $wfhInfo['number'] ?? null,
                         'wfh_reason' => $wfhInfo['reason'] ?? null,
                         'has_no_checkout' => false, // Tidak ada data attendance sama sekali
+                        'is_alpha' => $is_alpha,
                     ]);
                 }
             }
@@ -886,6 +910,7 @@ class AttendanceReportController extends Controller
                         $is_holiday = false;
                         $holiday_name = null;
                         $detail = '';
+                        $shift = null;
                         
                         if ($rowUserId && $rowNama) {
                             // Ambil shift
@@ -948,6 +973,18 @@ class AttendanceReportController extends Controller
                         if (!$is_off && !$is_holiday && $jam_masuk && !$jam_keluar) {
                             $has_no_checkout = true;
                         }
+
+                        $is_approved_absent = isset($approvedAbsents[$rowUserId][$tanggal]);
+                        $is_wfh = isset($approvedWfhs[$rowUserId][$tanggal]);
+                        $is_alpha = $this->isAlphaAbsence(
+                            $shift,
+                            $is_off,
+                            $is_holiday,
+                            $is_approved_absent,
+                            $is_wfh,
+                            $jam_masuk,
+                            $tanggal
+                        );
                         
                     $rows->push((object)[
                         'tanggal' => $tanggal,
@@ -970,6 +1007,7 @@ class AttendanceReportController extends Controller
                         'detail' => $detail,
                         'is_cross_day' => $row->is_cross_day ?? false,
                         'has_no_checkout' => $has_no_checkout,
+                        'is_alpha' => $is_alpha,
                     ]);
                     }
                 } else {
@@ -985,6 +1023,8 @@ class AttendanceReportController extends Controller
                     $is_holiday = false;
                     $holiday_name = null;
                     $detail = '';
+                    $shift = null;
+                    $isApprovedAbsent = false;
                     
                     if ($rowUserId && $rowNama) {
                         // Ambil shift
@@ -1023,6 +1063,16 @@ class AttendanceReportController extends Controller
                         $is_holiday = true;
                         $holiday_name = $holidays[$tanggal];
                     }
+                    $is_wfh = isset($approvedWfhs[$rowUserId][$tanggal]);
+                    $is_alpha = $this->isAlphaAbsence(
+                        $shift,
+                        $is_off,
+                        $is_holiday,
+                        $isApprovedAbsent,
+                        $is_wfh,
+                        null,
+                        $tanggal
+                    );
                     $rows->push((object)[
                         'tanggal' => $tanggal,
                         'user_id' => $rowUserId,
@@ -1044,6 +1094,7 @@ class AttendanceReportController extends Controller
                         'detail' => $detail,
                         'is_cross_day' => false,
                         'has_no_checkout' => false, // Tidak ada data attendance sama sekali
+                        'is_alpha' => $is_alpha,
                     ]);
                 }
             }
@@ -3157,6 +3208,29 @@ class AttendanceReportController extends Controller
         }
 
         return is_null($shift->shift_id) || strtolower((string) ($shift->shift_name ?? '')) === 'off';
+    }
+
+    /**
+     * Ada jadwal shift (bukan OFF), tidak ada IN, bukan izin/WFH/libur, dan tanggal sudah lewat.
+     */
+    public function isAlphaAbsence(
+        ?object $shift,
+        bool $isOff,
+        bool $isHoliday,
+        bool $isApprovedAbsent,
+        bool $isWfh,
+        ?string $jamMasuk,
+        string $tanggal
+    ): bool {
+        if ($isOff || $isHoliday || $isApprovedAbsent || $isWfh || $jamMasuk) {
+            return false;
+        }
+
+        if (! $shift || empty($shift->shift_id) || $this->isShiftOff($shift)) {
+            return false;
+        }
+
+        return $tanggal < date('Y-m-d');
     }
 
     /**

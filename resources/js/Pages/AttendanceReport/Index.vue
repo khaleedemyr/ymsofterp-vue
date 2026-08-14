@@ -155,6 +155,9 @@ const getRowTooltip = (row) => {
   if (row.is_approved_absent) {
     return row.approved_absent_name;
   }
+  if (row.is_alpha) {
+    return 'Ada jadwal shift tetapi tidak ada absensi (ALPHA)';
+  }
   if (row.has_no_checkout) {
     return 'Karyawan tidak melakukan checkout pada hari ini';
   }
@@ -266,14 +269,16 @@ const getRowTooltip = (row) => {
                 !row.is_holiday && row.is_wfh ? 'bg-teal-100 text-teal-800 font-semibold' : '',
                 !row.is_holiday && !row.is_wfh && row.is_approved_absent ? 'bg-green-100 text-green-700 font-bold' : '',
                 !row.is_holiday && !row.is_wfh && !row.is_approved_absent && row.is_off ? 'bg-gray-200 text-gray-500 font-bold italic' : '',
-                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && row.has_no_checkout ? 'bg-red-200 text-red-800 font-semibold' : '',
-                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && !row.has_no_checkout && idx % 2 === 1 ? 'bg-blue-50' : ''
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && row.is_alpha ? 'bg-red-100 text-red-800 font-semibold' : '',
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && !row.is_alpha && row.has_no_checkout ? 'bg-red-200 text-red-800 font-semibold' : '',
+                !row.is_holiday && !row.is_wfh && !row.is_approved_absent && !row.is_off && !row.is_alpha && !row.has_no_checkout && idx % 2 === 1 ? 'bg-blue-50' : ''
               ]">
               <td class="px-4 py-2 whitespace-nowrap font-mono" :title="getRowTooltip(row)">
                 {{ row.tanggal }}
                 <span v-if="row.is_holiday && row.holiday_name" class="ml-1 text-xs font-semibold">({{ row.holiday_name }})</span>
                 <span v-if="!row.is_holiday && row.is_wfh" class="ml-1 text-xs font-semibold">(WFH)</span>
                 <span v-if="!row.is_holiday && !row.is_wfh && row.is_approved_absent && row.approved_absent_name" class="ml-1 text-xs font-semibold">({{ row.approved_absent_name }})</span>
+                <span v-if="row.is_alpha" class="ml-1 px-2 py-0.5 text-xs bg-red-500 text-white rounded-full font-bold">⚠ ALPHA</span>
                 <span v-if="row.has_no_checkout" class="ml-1 text-xs font-semibold text-red-600">(TIDAK CHECKOUT)</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap">
@@ -289,6 +294,7 @@ const getRowTooltip = (row) => {
                 <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
                   <i class="fa-solid fa-check-circle mr-1"></i>{{ row.approved_absent.leave_type_name }}
                 </span>
+                <span v-else-if="row.is_alpha" class="px-2 py-1 text-xs bg-red-500 text-white rounded-full font-bold">⚠ ALPHA</span>
                 <span v-else>{{ row.jam_masuk || '-' }}</span>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center font-mono">
@@ -296,6 +302,7 @@ const getRowTooltip = (row) => {
                 <span v-else-if="row.approved_absent" class="text-green-600 font-semibold">
                   <i class="fa-solid fa-check-circle mr-1"></i>{{ row.approved_absent.leave_type_name }}
                 </span>
+                <span v-else-if="row.is_alpha" class="px-2 py-1 text-xs bg-red-500 text-white rounded-full font-bold">⚠ ALPHA</span>
                 <span v-else-if="row.has_no_checkout" class="text-red-600 font-bold">
                   <i class="fa-solid fa-exclamation-triangle mr-1"></i>TIDAK CHECKOUT
                 </span>
@@ -337,7 +344,7 @@ const getRowTooltip = (row) => {
                 </template>
               </td>
               <td class="px-4 py-2 whitespace-nowrap text-center">
-                <button v-if="!row.is_off" @click="openDetail(row)" class="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold">
+                <button v-if="!row.is_off && !row.is_alpha" @click="openDetail(row)" class="px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition text-xs font-semibold">
                   <i class="fa fa-list mr-1"></i> Detail
                 </button>
               </td>
