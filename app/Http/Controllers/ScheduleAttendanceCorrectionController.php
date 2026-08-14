@@ -2002,7 +2002,7 @@ class ScheduleAttendanceCorrectionController extends Controller
             ];
         }
 
-        $hoursElapsed = $day->diffInHours($now);
+        $hoursElapsed = (int) round($day->diffInHours($now));
         $remaining = max(0, 48 - $hoursElapsed);
 
         if ($hoursElapsed > 48) {
@@ -2017,7 +2017,7 @@ class ScheduleAttendanceCorrectionController extends Controller
         return [
             'can_correct' => true,
             'hours_elapsed' => $hoursElapsed,
-            'remaining_hours' => $remaining,
+            'remaining_hours' => (int) $remaining,
             'message' => null,
         ];
     }

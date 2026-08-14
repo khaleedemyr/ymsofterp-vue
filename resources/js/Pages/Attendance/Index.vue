@@ -1312,7 +1312,7 @@
           </div>
           <template v-else>
             <p v-if="correctionFormMeta.remaining_hours != null" class="text-xs text-orange-600">
-              Sisa waktu pengajuan: {{ correctionFormMeta.remaining_hours }} jam (maks. 2×24 jam).
+              Sisa waktu pengajuan: {{ Math.round(Number(correctionFormMeta.remaining_hours) || 0) }} jam (maks. 2×24 jam).
             </p>
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Jenis Koreksi <span class="text-red-500">*</span></label>
