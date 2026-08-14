@@ -1317,9 +1317,9 @@
             <div>
               <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Jenis Koreksi <span class="text-red-500">*</span></label>
               <select v-model="correctionForm.type" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100">
-                <option value="schedule">Koreksi Jadwal</option>
-                <option value="attendance">Koreksi Kehadiran</option>
-                <option value="manual_attendance">Tambah Absen Manual</option>
+                <option value="schedule">Working schedule correction</option>
+                <option value="attendance">Working time correction</option>
+                <option value="manual_attendance">No fingerprint in/out correction</option>
               </select>
             </div>
 
@@ -1336,7 +1336,7 @@
 
             <div v-else-if="correctionForm.type === 'attendance'" class="space-y-3">
               <div v-if="!correctionFormMeta.scans?.length" class="text-sm text-red-600">
-                Tidak ada scan absensi pada tanggal ini. Gunakan Tambah Absen Manual.
+                Tidak ada scan absensi pada tanggal ini. Gunakan No fingerprint in/out correction.
               </div>
               <template v-else>
                 <div>
@@ -1364,7 +1364,24 @@
             </div>
 
             <div v-else class="space-y-3">
-              <p class="text-xs text-gray-500">Sisa kuota absen manual periode ini: {{ correctionFormMeta.manual_remaining }}x</p>
+              <div
+                class="p-3 rounded-lg border"
+                :class="(correctionFormMeta.manual_remaining ?? 0) > 0
+                  ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-700'
+                  : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700'"
+              >
+                <div class="text-sm font-medium" :class="(correctionFormMeta.manual_remaining ?? 0) > 0 ? 'text-blue-800 dark:text-blue-200' : 'text-red-800 dark:text-red-200'">
+                  <i class="fa-solid fa-info-circle mr-1"></i>
+                  Limit No fingerprint in/out correction
+                </div>
+                <div class="text-xs mt-1" :class="(correctionFormMeta.manual_remaining ?? 0) > 0 ? 'text-blue-600 dark:text-blue-300' : 'text-red-600 dark:text-red-300'">
+                  Periode: {{ correctionFormMeta.period?.start_formatted || '-' }} - {{ correctionFormMeta.period?.end_formatted || '-' }}
+                </div>
+                <div class="text-sm mt-1 font-semibold" :class="(correctionFormMeta.manual_remaining ?? 0) > 0 ? 'text-blue-800 dark:text-blue-200' : 'text-red-800 dark:text-red-200'">
+                  Digunakan: {{ correctionFormMeta.manual_used ?? 0 }}/{{ correctionFormMeta.manual_limit || 5 }}
+                  • Sisa: {{ correctionFormMeta.manual_remaining ?? 0 }}
+                </div>
+              </div>
               <div>
                 <label class="block text-sm font-medium mb-1">Waktu absen</label>
                 <input v-model="correctionForm.scan_date" type="datetime-local" class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-gray-100" />
@@ -1440,7 +1457,7 @@
           <button
             type="button"
             @click="submitCorrectionRequest"
-            :disabled="submittingCorrection || loadingCorrectionForm || correctionSelectedApprovers.length === 0"
+            :disabled="submittingCorrection || loadingCorrectionForm || correctionSelectedApprovers.length === 0 || (correctionForm.type === 'manual_attendance' && (correctionFormMeta.manual_remaining ?? 0) <= 0)"
             class="px-4 py-2 text-sm text-white bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 rounded-md"
           >
             <i v-if="submittingCorrection" class="fa-solid fa-spinner fa-spin mr-1"></i>
@@ -2482,6 +2499,9 @@ const correctionFormMeta = ref({
   shifts: [],
   scans: [],
   manual_remaining: 0,
+  manual_used: 0,
+  manual_limit: 5,
+  period: null,
   sn: null,
   pin: null,
   outlet_id: null
@@ -2520,6 +2540,9 @@ const resetCorrectionForm = () => {
     shifts: [],
     scans: [],
     manual_remaining: 0,
+    manual_used: 0,
+    manual_limit: 5,
+    period: null,
     sn: null,
     pin: null,
     outlet_id: null
@@ -2643,6 +2666,14 @@ const submitCorrectionRequest = async () => {
     payload.scan_date = fromDatetimeLocal(correctionForm.value.scan_date)
     payload.inoutmode = correctionForm.value.inoutmode
   } else {
+    if ((correctionFormMeta.value.manual_remaining ?? 0) <= 0) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Limit habis',
+        text: 'Batas maksimal 5x No fingerprint in/out correction dalam periode ini sudah tercapai.'
+      })
+      return
+    }
     if (!correctionForm.value.scan_date) {
       await Swal.fire({ icon: 'warning', title: 'Waktu wajib', text: 'Isi waktu absen manual' })
       return
@@ -2973,9 +3004,9 @@ watch(filters, () => {
 
 const getTypeText = (type) => {
   const typeMap = {
-    'schedule': 'Koreksi Jadwal',
-    'attendance': 'Koreksi Kehadiran',
-    'manual_attendance': 'Tambah Kehadiran Manual'
+    'schedule': 'Working schedule correction',
+    'attendance': 'Working time correction',
+    'manual_attendance': 'No fingerprint in/out correction'
   }
   return typeMap[type] || type
 }

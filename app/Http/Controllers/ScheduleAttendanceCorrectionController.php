@@ -1713,7 +1713,11 @@ class ScheduleAttendanceCorrectionController extends Controller
             'outlet_name' => $outlet->nama_outlet ?? null,
             'sn' => $outlet->sn ?? null,
             'pin' => $userPin->pin ?? null,
+            'manual_used' => $manualUsed,
             'manual_remaining' => max(0, 5 - $manualUsed),
+            'manual_limit' => 5,
+            'manual_can_submit' => $manualUsed < 5,
+            'period' => $period,
             'pending_types' => $pendingTypes,
         ]);
     }

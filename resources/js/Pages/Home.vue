@@ -4095,7 +4095,7 @@ async function loadAllApprovals() {
             allApprovalsData.push({
                 ...approval,
                 type: 'correction',
-                typeLabel: (approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'manual_attendance' ? 'Input Absen Manual' : 'Koreksi Attendance')
+                typeLabel: (approval.type === 'schedule' ? 'Working schedule correction' : approval.type === 'manual_attendance' ? 'No fingerprint in/out correction' : 'Working time correction')
                     + (approval.approval_stage_label ? ' · ' + approval.approval_stage_label : '')
             });
         });
@@ -7124,7 +7124,7 @@ watch(locale, () => {
                                                     {{ approval.employee_name }}
                                                 </div>
                                                 <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
-                                                    {{ approval.type === 'schedule' ? 'Koreksi Schedule' : approval.type === 'attendance' ? 'Koreksi Attendance' : 'Input Absen Manual' }} • {{ approval.nama_outlet }}
+                                                    {{ approval.type === 'schedule' ? 'Working schedule correction' : approval.type === 'attendance' ? 'Working time correction' : 'No fingerprint in/out correction' }} • {{ approval.nama_outlet }}
                                                 </div>
                                                 <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
                                                     {{ new Date(approval.tanggal).toLocaleDateString('id-ID') }} • {{ formatCorrectionValue(approval) }}
