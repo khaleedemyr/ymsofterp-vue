@@ -214,7 +214,8 @@
                   v-model.number="item.fb_cost"
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.01"
+                  lang="id"
                   class="w-full rounded-lg border-gray-300 focus:border-amber-500 focus:ring-amber-500 text-sm"
                 />
               </div>
@@ -546,6 +547,12 @@ function removeApprover(index) {
   selectedApprovers.value.splice(index, 1);
 }
 
+function parseDecimal(value) {
+  if (value === null || value === undefined || value === '') return 0;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  return Number(String(value).replace(',', '.')) || 0;
+}
+
 function buildPayload() {
   return {
     report_month: form.report_month,
@@ -560,7 +567,7 @@ function buildPayload() {
       proposed_launch_date: item.proposed_launch_date || null,
       proposed_launch_outlet_ids: (item.launch_outlets || []).map((o) => o.id_outlet),
       pic_user_ids: (item.pics || []).map((pic) => pic.id),
-      fb_cost: item.fb_cost,
+      fb_cost: parseDecimal(item.fb_cost),
       selling_price: item.selling_price,
     })),
   };

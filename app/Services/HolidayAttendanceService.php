@@ -165,8 +165,10 @@ class HolidayAttendanceService
         }
 
         $nilaiPublicHoliday = (int) $jabatan->level->nilai_public_holiday;
-        // Master level > 0: pakai nilai tersebut (hari PH). Master = 0: minimal 1 hari PH per kejadian kerja libur.
-        $amount = $nilaiPublicHoliday > 0 ? $nilaiPublicHoliday : 1;
+        // Nilai master = jumlah hari saldo PH. Angka besar (lama: rupiah) dianggap 1 hari.
+        $amount = ($nilaiPublicHoliday > 0 && $nilaiPublicHoliday < 1000)
+            ? $nilaiPublicHoliday
+            : 1;
 
         return [
             'type' => 'bonus',

@@ -6045,73 +6045,11 @@ class PayrollReportController extends Controller
     }
 
     /**
-     * Calculate PH Bonus (Public Holiday bonus only, not extra_off)
+     * Kerja tanggal merah tidak lagi dibayar uang — kompensasi hanya saldo PH (hari).
      */
     private function calculatePHBonus($userId, $startDate, $endDate)
     {
-        // Debug: Log masuk ke method
-        \Log::info('calculatePHBonus - Method called', [
-            'user_id' => $userId,
-            'start_date' => $startDate,
-            'end_date' => $endDate,
-            'start_type' => gettype($startDate),
-            'end_type' => gettype($endDate)
-        ]);
-        
-        // Get holiday attendance compensations for this user in the period
-        // Only count bonus type, not extra_off
-        // PERBAIKAN: Convert Carbon to string format 'Y-m-d' untuk whereBetween (sama seperti calculatePHData di AttendanceReportController)
-        $startDateStr = $startDate instanceof \Carbon\Carbon ? $startDate->format('Y-m-d') : $startDate;
-        $endDateStr = $endDate instanceof \Carbon\Carbon ? $endDate->format('Y-m-d') : $endDate;
-        
-        // Pastikan format tanggal benar (Y-m-d) - handle jika sudah string
-        if (is_string($startDateStr) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDateStr)) {
-            $startDateStr = date('Y-m-d', strtotime($startDateStr));
-        }
-        if (is_string($endDateStr) && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDateStr)) {
-            $endDateStr = date('Y-m-d', strtotime($endDateStr));
-        }
-        
-        // Debug: Log query parameters
-        \Log::info('calculatePHBonus - Query parameters', [
-            'user_id' => $userId,
-            'start_date_str' => $startDateStr,
-            'end_date_str' => $endDateStr,
-            'start_date_original' => $startDate,
-            'end_date_original' => $endDate
-        ]);
-        
-        $compensations = DB::table('holiday_attendance_compensations')
-            ->where('user_id', $userId)
-            ->whereBetween('holiday_date', [$startDateStr, $endDateStr])
-            ->where('compensation_type', 'bonus') // Only bonus, not extra_off
-            ->whereIn('status', ['approved', 'used']) // Only count approved or used compensations
-            ->get();
-        
-        // Sum all bonus amounts
-        $phBonus = 0;
-        foreach ($compensations as $compensation) {
-            $phBonus += $compensation->compensation_amount ?? 0;
-        }
-        
-        // Debug logging untuk memastikan query benar (log semua, termasuk yang 0)
-        \Log::info('calculatePHBonus - Query result', [
-            'user_id' => $userId,
-            'start_date' => $startDateStr,
-            'end_date' => $endDateStr,
-            'ph_bonus' => $phBonus,
-            'compensations_count' => $compensations->count(),
-            'compensations' => $compensations->map(function($c) {
-                return [
-                    'id' => $c->id,
-                    'holiday_date' => $c->holiday_date,
-                    'compensation_amount' => $c->compensation_amount,
-                    'status' => $c->status
-                ];
-            })->toArray()
-        ]);
-        
-        return $phBonus;
+        return 0;
     }
 
     /**

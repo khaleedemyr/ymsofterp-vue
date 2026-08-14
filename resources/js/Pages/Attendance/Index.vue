@@ -597,10 +597,10 @@
                           'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200': compensation.compensation_type === 'bonus'
                         }"
                       >
-                        {{ compensation.compensation_type === 'extra_off' ? 'Extra Off' : 'Bonus' }}
+                        {{ compensation.compensation_type === 'extra_off' ? 'Extra Off' : 'Saldo PH' }}
                       </span>
                       <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {{ compensation.compensation_type === 'bonus' ? 'Rp ' + compensation.compensation_amount.toLocaleString('id-ID') : compensation.compensation_amount + ' hari' }}
+                        {{ compensation.compensation_amount }} hari
                       </div>
                     </div>
                   </div>

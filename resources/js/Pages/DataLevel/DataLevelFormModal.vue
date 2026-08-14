@@ -110,8 +110,9 @@ function closeModal() {
             </motion.div>
           </motion.div>
           <motion.div>
-            <label class="block text-sm font-medium text-gray-700">Nilai Public Holiday</label>
+            <label class="block text-sm font-medium text-gray-700">Nilai Public Holiday (hari saldo PH)</label>
             <input v-model="form.nilai_public_holiday" type="number" min="0" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" required />
+            <p class="text-xs text-gray-500 mt-1">Jumlah hari saldo PH jika kerja di tanggal merah. Bukan rupiah.</p>
             <motion.div v-if="form.errors.nilai_public_holiday" class="text-xs text-red-500 mt-1">{{ form.errors.nilai_public_holiday }}</motion.div>
           </motion.div>
           <motion.div class="grid grid-cols-1 md:grid-cols-2 gap-4">

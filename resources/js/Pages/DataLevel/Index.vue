@@ -125,7 +125,7 @@ function toggleStatus(dataLevel) {
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nama Level</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Nilai Level</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Public Holiday</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">PH (hari)</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar BPJS Kes.</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Dasar BPJS TK</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider">Kategori BPJS</th>
