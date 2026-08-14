@@ -3678,22 +3678,19 @@ class AttendanceReportController extends Controller
     /**
      * Perhitungan telat yang menangani cross-day
      */
-    private function calculateLateness($jamMasuk, $shiftStart, $isCrossDay) {
+    private function calculateLateness($jamMasuk, $shiftStart, $isCrossDay = false) {
         if (!$jamMasuk || !$shiftStart) {
             return 0;
         }
-        
-        // Untuk cross-day, tidak ada telat karena ini kelanjutan shift malam sebelumnya
-        if ($isCrossDay) {
-            return 0;
-        }
-        
-        // Perhitungan telat normal
+
+        // $isCrossDay = checkout lewat tengah malam. Telat MASUK tetap dihitung.
+        // Contoh: shift 11:00, IN 11:52, OUT 00:00 → telat ~52 menit, bukan 0.
+
         $start = strtotime($shiftStart);
         $masuk = strtotime($jamMasuk);
         $diff = $masuk - $start;
-        
-        return $diff > 0 ? round($diff/60) : 0;
+
+        return $diff > 0 ? (int) round($diff / 60) : 0;
     }
 
     /**
