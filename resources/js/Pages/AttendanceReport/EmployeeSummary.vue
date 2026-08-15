@@ -131,6 +131,7 @@ const totalSummary = computed(() => {
     total_sakit_days: props.rows.reduce((sum, row) => sum + (row.sakit_days || 0), 0),
     total_alpa_days: props.rows.reduce((sum, row) => sum + (row.alpa_days || 0), 0),
     total_ot_full_days: props.rows.reduce((sum, row) => sum + (row.ot_full_days || 0), 0),
+    total_ot_full_amount: props.rows.reduce((sum, row) => sum + (row.ot_full_amount || 0), 0),
     total_telat: props.rows.reduce((sum, row) => sum + (row.total_telat || 0), 0),
     total_days: props.rows.reduce((sum, row) => sum + (row.total_days || 0), 0),
   }
@@ -337,8 +338,9 @@ function getLeaveDays(row, leaveTypeName) {
                   <td class="px-4 py-3 text-sm text-center font-mono text-rose-600">
                     {{ formatNumber(row.total_one_plus_one || 0) }}
                   </td>
-                  <td class="px-4 py-3 text-sm text-center font-mono text-green-600">
-                    {{ formatNumber(row.ot_full_days || 0) }}
+                  <td class="px-4 py-3 text-sm text-center">
+                    <div class="font-mono text-green-600 font-semibold">{{ formatNumber(row.ot_full_days || 0) }} jam</div>
+                    <div class="font-mono text-green-700 font-semibold text-xs">{{ formatCurrency(row.ot_full_amount || 0) }}</div>
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono">
                     <span :class="row.total_telat > 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
@@ -497,6 +499,11 @@ function getLeaveDays(row, leaveTypeName) {
             <div>
               <span class="font-medium">Total Alpa:</span> 
               <span class="font-bold text-red-700">{{ formatNumber(totalSummary.total_alpa_days || 0) }} hari</span>
+            </div>
+            <div>
+              <span class="font-medium">Total OT Full:</span>
+              <span class="font-bold text-green-600">{{ formatNumber(totalSummary.total_ot_full_days || 0) }} jam</span>
+              <span class="font-bold text-green-700 ml-2">{{ formatCurrency(totalSummary.total_ot_full_amount || 0) }}</span>
             </div>
             <div>
               <span class="font-medium">Total Telat:</span> 

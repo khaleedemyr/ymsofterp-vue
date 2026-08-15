@@ -78,7 +78,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
             $row->unpaid_leave_days ?? 0,
             $row->wife_maternity_leave_days ?? 0,
             $row->alpa_days ?? 0,
-            $row->ot_full_days ?? 0,
+            ($row->ot_full_days ?? 0).' jam (Rp '.number_format((int) ($row->ot_full_amount ?? 0), 0, ',', '.').')',
             $row->total_telat ?? 0,
             $row->total_days ?? 0,
         ];

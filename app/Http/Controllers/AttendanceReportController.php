@@ -1734,6 +1734,18 @@ class AttendanceReportController extends Controller
     }
 
     /**
+     * Nilai lembur (Rp) = jam OT × nominal_lembur divisi (sama seperti payroll).
+     */
+    private function overtimeAmountFromHours(int $hours, $divisionId, $divisiNominalLembur): int
+    {
+        if ($hours <= 0) {
+            return 0;
+        }
+
+        return $hours * (int) ($divisiNominalLembur[$divisionId] ?? 0);
+    }
+
+    /**
      * Calculate leave data (cuti, extra off, sakit) for a user in a period
      */
     private function calculateLeaveData($userId, $startDate, $endDate)
@@ -2337,6 +2349,7 @@ class AttendanceReportController extends Controller
                 $overtimeRequestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
                 $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
                 $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
+                $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
 
                 $allUserData = DB::table('users as u')
                     ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
@@ -2453,6 +2466,11 @@ class AttendanceReportController extends Controller
                             'extra_off_days' => $leaveData['extra_off_days'] ?? 0, // Jumlah hari extra off
                             'alpa_days' => $alpaDays, // Jumlah hari alpa
                             'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
+                            'ot_full_amount' => $this->overtimeAmountFromHours(
+                                $totalLemburWithExtraOff,
+                                $firstRow->division_id,
+                                $divisiNominalLembur
+                            ),
                             'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                             'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                             'total_one_plus_one' => $totalOnePlusOne,
@@ -2500,6 +2518,7 @@ class AttendanceReportController extends Controller
                             'extra_off_days' => isset($start) && isset($end) ? $this->calculateLeaveData($employeeRows->first()->user_id ?? 0, $start, $end)['extra_off_days'] : 0,
                             'alpa_days' => isset($start) && isset($end) ? $this->calculateAlpaDays($employeeRows->first()->user_id ?? 0, null, $start, $end) : 0,
                             'ot_full_days' => 0,
+                            'ot_full_amount' => 0,
                             'total_telat' => 0,
                             'total_lembur' => 0,
                             'total_days' => isset($start) && isset($end) ? $this->calculateTotalDaysInPeriod($start, $end) : 0,
@@ -2801,6 +2820,7 @@ class AttendanceReportController extends Controller
                 $overtimeRequestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
                 $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
                 $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
+                $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
                 $allUserData = DB::table('users as u')
                     ->leftJoin('tbl_data_jabatan as j', 'u.id_jabatan', '=', 'j.id_jabatan')
                     ->select('u.id', 'u.nik', 'j.nama_jabatan as jabatan')
@@ -2877,6 +2897,11 @@ class AttendanceReportController extends Controller
                         'sakit_days' => $leaveData['sick_leave_days'] ?? 0, // Jumlah hari sakit (Sick Leave)
                         'alpa_days' => $alpaDays, // Jumlah hari alpa
                         'ot_full_days' => $totalLemburWithExtraOff, // Total lembur (OT Full) + Extra Off Overtime (rounded down)
+                        'ot_full_amount' => $this->overtimeAmountFromHours(
+                            $totalLemburWithExtraOff,
+                            $firstRow->division_id,
+                            $divisiNominalLembur
+                        ),
                         'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                         'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                         'total_one_plus_one' => $totalOnePlusOne,
