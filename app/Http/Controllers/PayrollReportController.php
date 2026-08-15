@@ -162,6 +162,7 @@ class PayrollReportController extends Controller
         }
 
         $payrollData = collect();
+        $users = collect();
         $leaveTypes = collect(); // Initialize leaveTypes
         $totalMP = 0;
         $totalMPAktif = 0;
@@ -7251,7 +7252,7 @@ class PayrollReportController extends Controller
             return $payrollData;
         }
 
-        $jabatanByUserId = $users->pluck('id_jabatan', 'id');
+        $jabatanByUserId = collect($users ?? [])->pluck('id_jabatan', 'id');
         $levelValues = DB::table('tbl_data_jabatan as j')
             ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
             ->pluck('l.nilai_level', 'j.id_jabatan');
