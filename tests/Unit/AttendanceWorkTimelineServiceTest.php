@@ -163,4 +163,36 @@ class AttendanceWorkTimelineServiceTest extends TestCase
             'jam_keluar' => '2026-08-09 00:00:29',
         ]));
     }
+
+    public function test_leftover_second_out_is_not_used_as_checkout_for_new_shift(): void
+    {
+        $all = [
+            '10_2026-08-08' => [
+                'tanggal' => '2026-08-08',
+                'user_id' => 10,
+                'scans' => [
+                    ['scan_date' => '2026-08-08 13:45:00', 'inoutmode' => 1, 'outlet_id' => 23],
+                ],
+            ],
+            '10_2026-08-09' => [
+                'tanggal' => '2026-08-09',
+                'user_id' => 10,
+                'scans' => [
+                    ['scan_date' => '2026-08-09 00:02:51', 'inoutmode' => 2, 'outlet_id' => 23],
+                    ['scan_date' => '2026-08-09 00:28:00', 'inoutmode' => 2, 'outlet_id' => 23],
+                    ['scan_date' => '2026-08-09 12:55:25', 'inoutmode' => 1, 'outlet_id' => 23],
+                ],
+            ],
+        ];
+
+        $day8 = $this->service->processDay($all['10_2026-08-08'], $all);
+        $this->assertTrue($day8['is_cross_day']);
+        $this->assertSame('2026-08-09 00:02:51', $day8['jam_keluar']);
+
+        $day9 = $this->service->processDay($all['10_2026-08-09'], $all);
+        $this->assertSame('2026-08-09 12:55:25', $day9['jam_masuk']);
+        $this->assertNull($day9['jam_keluar']);
+        $this->assertFalse($day9['is_cross_day']);
+        $this->assertTrue($day9['has_no_checkout']);
+    }
 }

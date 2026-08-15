@@ -249,12 +249,21 @@ class AttendanceWorkTimelineService
             $i = $j + 1;
         }
 
+        $jamMasukTs = $jamMasuk ? strtotime($jamMasuk) : false;
         for ($k = $n - 1; $k >= 0; $k--) {
-            if ((int) $scans[$k]['inoutmode'] === self::MODE_OUT) {
-                $jamKeluar = $scans[$k]['scan_date'];
-                $lastOutletId = $scans[$k]['outlet_id'] ?? $lastOutletId;
-                break;
+            if ((int) $scans[$k]['inoutmode'] !== self::MODE_OUT) {
+                continue;
             }
+
+            $outTs = strtotime($scans[$k]['scan_date']);
+            // OUT sisa shift semalam (sebelum IN hari ini) bukan jam keluar hari ini.
+            if ($jamMasukTs !== false && $outTs !== false && $outTs < $jamMasukTs) {
+                continue;
+            }
+
+            $jamKeluar = $scans[$k]['scan_date'];
+            $lastOutletId = $scans[$k]['outlet_id'] ?? $lastOutletId;
+            break;
         }
 
         return [
