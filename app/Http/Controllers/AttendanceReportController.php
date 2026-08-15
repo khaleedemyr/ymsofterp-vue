@@ -1347,6 +1347,11 @@ class AttendanceReportController extends Controller
         $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
         $requestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
         $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
+        $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
+        $usersMeta = DB::table('users')
+            ->whereIn('id', $userIds)
+            ->get(['id', 'division_id'])
+            ->keyBy('id');
 
         $rows = collect();
         foreach ($dataRows as $row) {
@@ -1380,7 +1385,7 @@ class AttendanceReportController extends Controller
             ]);
         }
 
-        $byOutlet = $rows->groupBy('outlet_id')->map(function ($g) {
+        $byOutlet = $rows->groupBy('outlet_id')->map(function ($g) use ($requestedByUserDate, $usersMeta, $divisiNominalLembur) {
             $first = $g->first();
             $nonOffDays = $g->where('is_off', false);
 
@@ -1390,6 +1395,20 @@ class AttendanceReportController extends Controller
             $totalLembur = (int) floor($nonOffDays->sum('lembur'));
             $totalTelat = (int) $nonOffDays->sum('telat');
 
+            $otHours = 0.0;
+            $otAmount = 0;
+            foreach ($uniqueUserIds as $uid) {
+                $divisionId = $usersMeta->get($uid)?->division_id;
+                $ot = $this->overtimeSubmissionTotalsForUser(
+                    (int) $uid,
+                    $requestedByUserDate,
+                    $divisionId,
+                    $divisiNominalLembur
+                );
+                $otHours += $ot['hours'];
+                $otAmount += $ot['amount'];
+            }
+
             return (object) [
                 'outlet_id' => $first->outlet_id ?? null,
                 'nama_outlet' => $first->nama_outlet ?? '-',
@@ -1398,6 +1417,8 @@ class AttendanceReportController extends Controller
                 'average_telat_per_person' => $uniqueEmployees > 0 ? round($totalTelat / $uniqueEmployees, 2) : 0,
                 'total_lembur' => $totalLembur,
                 'average_lembur_per_person' => $uniqueEmployees > 0 ? round($totalLembur / $uniqueEmployees, 2) : 0,
+                'overtime_submission_hours' => $otHours,
+                'overtime_submission_amount' => $otAmount,
             ];
         })->values()->sortBy('nama_outlet')->values();
 

@@ -37,14 +37,26 @@ const totals = computed(() => {
   const totalTelat = list.reduce((s, r) => s + (r.total_telat || 0), 0)
   const totalLembur = list.reduce((s, r) => s + (r.total_lembur || 0), 0)
   const totalEmployees = list.reduce((s, r) => s + (r.employee_count || 0), 0)
+  const totalOtSubmissionHours = list.reduce((s, r) => s + (r.overtime_submission_hours || 0), 0)
+  const totalOtSubmissionAmount = list.reduce((s, r) => s + (r.overtime_submission_amount || 0), 0)
   return {
     employee_count: totalEmployees,
     total_telat: totalTelat,
     average_telat_per_person: totalEmployees > 0 ? (totalTelat / totalEmployees).toFixed(2) : '0',
     total_lembur: totalLembur,
     average_lembur_per_person: totalEmployees > 0 ? (totalLembur / totalEmployees).toFixed(2) : '0',
+    overtime_submission_hours: totalOtSubmissionHours,
+    overtime_submission_amount: totalOtSubmissionAmount,
   }
 })
+
+function formatNumber(num) {
+  return num ? Number(num).toLocaleString('id-ID') : '0'
+}
+
+function formatCurrency(num) {
+  return num ? 'Rp ' + Number(num).toLocaleString('id-ID') : 'Rp 0'
+}
 
 function applyFilter() {
   isLoading.value = true
@@ -199,7 +211,7 @@ function openEmployeeSummary(outletIdParam) {
           </div>
         </div>
 
-        <table class="w-full min-w-[900px]">
+        <table class="w-full min-w-[1100px]">
           <thead class="bg-blue-600 text-white">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider">Outlet</th>
@@ -208,6 +220,7 @@ function openEmployeeSummary(outletIdParam) {
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Avg Telat / Orang</th>
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Total Lembur (jam)</th>
               <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">Avg Lembur / Orang</th>
+              <th class="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider">OT Submission</th>
               <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Aksi</th>
             </tr>
           </thead>
@@ -219,6 +232,10 @@ function openEmployeeSummary(outletIdParam) {
               <td class="px-4 py-2 text-right font-mono">{{ r.average_telat_per_person || 0 }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ r.total_lembur }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ r.average_lembur_per_person || 0 }}</td>
+              <td class="px-4 py-2 text-right">
+                <div class="font-mono text-teal-700 font-semibold">{{ formatNumber(r.overtime_submission_hours || 0) }} jam</div>
+                <div class="font-mono text-teal-800 text-xs font-semibold">{{ formatCurrency(r.overtime_submission_amount || 0) }}</div>
+              </td>
               <td class="px-4 py-2 text-center">
                 <button
                   @click="openEmployeeSummary(r.outlet_id)"
@@ -231,7 +248,7 @@ function openEmployeeSummary(outletIdParam) {
               </td>
             </tr>
             <tr v-if="!rows || rows.length === 0">
-              <td colspan="7" class="text-center py-8 text-gray-400">
+              <td colspan="8" class="text-center py-8 text-gray-400">
                 <div v-if="!period" class="text-lg">
                   <i class="fa fa-filter text-4xl mb-2 text-gray-300"></i>
                   <div>Pilih filter dan klik "Tampilkan" untuk melihat data</div>
@@ -248,6 +265,10 @@ function openEmployeeSummary(outletIdParam) {
               <td class="px-4 py-2 text-right font-mono">{{ totals.average_telat_per_person }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ totals.total_lembur }}</td>
               <td class="px-4 py-2 text-right font-mono">{{ totals.average_lembur_per_person }}</td>
+              <td class="px-4 py-2 text-right">
+                <div class="font-mono">{{ formatNumber(totals.overtime_submission_hours || 0) }} jam</div>
+                <div class="font-mono text-xs">{{ formatCurrency(totals.overtime_submission_amount || 0) }}</div>
+              </td>
               <td class="px-4 py-2"></td>
             </tr>
           </tfoot>

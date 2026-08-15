@@ -40,6 +40,8 @@ class OutletSummaryExport implements FromCollection, WithHeadings, WithMapping, 
             'Avg Telat / Orang (menit)',
             'Total Lembur (jam)',
             'Avg Lembur / Orang (jam)',
+            'OT Submission (jam)',
+            'OT Submission (Rp)',
         ];
     }
 
@@ -57,12 +59,14 @@ class OutletSummaryExport implements FromCollection, WithHeadings, WithMapping, 
             $row->average_telat_per_person ?? 0,
             $row->total_lembur ?? 0,
             $row->average_lembur_per_person ?? 0,
+            $row->overtime_submission_hours ?? 0,
+            (int) ($row->overtime_submission_amount ?? 0),
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
-        $sheet->getStyle('A1:G1')->applyFromArray([
+        $sheet->getStyle('A1:I1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -81,6 +85,8 @@ class OutletSummaryExport implements FromCollection, WithHeadings, WithMapping, 
             'E' => 22,
             'F' => 18,
             'G' => 22,
+            'H' => 20,
+            'I' => 22,
         ];
     }
 
