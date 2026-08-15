@@ -49,6 +49,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
             'Wife\'s Maternity Leave', 
             'Alpa', 
             'OT Full', 
+            'OT Submission',
             'Telat', 
             'Total Days'
         ];
@@ -79,6 +80,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
             $row->wife_maternity_leave_days ?? 0,
             $row->alpa_days ?? 0,
             ($row->ot_full_days ?? 0).' jam (Rp '.number_format((int) ($row->ot_full_amount ?? 0), 0, ',', '.').')',
+            ($row->overtime_submission_hours ?? 0).' jam (Rp '.number_format((int) ($row->overtime_submission_amount ?? 0), 0, ',', '.').')',
             $row->total_telat ?? 0,
             $row->total_days ?? 0,
         ];
@@ -87,7 +89,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
     public function styles(Worksheet $sheet)
     {
         // Header style
-        $sheet->getStyle('A1:V1')->applyFromArray([
+        $sheet->getStyle('A1:W1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -96,7 +98,7 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
         ]);
         
         // Auto-size columns
-        foreach (range('A', 'V') as $column) {
+        foreach (range('A', 'W') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
     }
@@ -123,9 +125,10 @@ class EmployeeSummaryExport implements FromCollection, WithHeadings, WithMapping
             'Q' => 15,  // Unpaid Leave
             'R' => 20,  // Wife's Maternity Leave
             'S' => 10,  // Alpa
-            'T' => 15,  // OT Full
-            'U' => 15,  // Telat
-            'V' => 15,  // Total Days
+            'T' => 22,  // OT Full
+            'U' => 24,  // OT Submission
+            'V' => 15,  // Telat
+            'W' => 15,  // Total Days
         ];
     }
 

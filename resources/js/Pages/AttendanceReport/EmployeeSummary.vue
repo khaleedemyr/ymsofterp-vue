@@ -132,6 +132,8 @@ const totalSummary = computed(() => {
     total_alpa_days: props.rows.reduce((sum, row) => sum + (row.alpa_days || 0), 0),
     total_ot_full_days: props.rows.reduce((sum, row) => sum + (row.ot_full_days || 0), 0),
     total_ot_full_amount: props.rows.reduce((sum, row) => sum + (row.ot_full_amount || 0), 0),
+    total_overtime_submission_hours: props.rows.reduce((sum, row) => sum + (row.overtime_submission_hours || 0), 0),
+    total_overtime_submission_amount: props.rows.reduce((sum, row) => sum + (row.overtime_submission_amount || 0), 0),
     total_telat: props.rows.reduce((sum, row) => sum + (row.total_telat || 0), 0),
     total_days: props.rows.reduce((sum, row) => sum + (row.total_days || 0), 0),
   }
@@ -300,6 +302,7 @@ function getLeaveDays(row, leaveTypeName) {
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Alpa</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">One Plus One</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">OT Full</th>
+                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">OT Submission</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Telat</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Total Days</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider">Detail</th>
@@ -341,6 +344,10 @@ function getLeaveDays(row, leaveTypeName) {
                   <td class="px-4 py-3 text-sm text-center">
                     <div class="font-mono text-green-600 font-semibold">{{ formatNumber(row.ot_full_days || 0) }} jam</div>
                     <div class="font-mono text-green-700 font-semibold text-xs">{{ formatCurrency(row.ot_full_amount || 0) }}</div>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-center">
+                    <div class="font-mono text-teal-600 font-semibold">{{ formatNumber(row.overtime_submission_hours || 0) }} jam</div>
+                    <div class="font-mono text-teal-700 font-semibold text-xs">{{ formatCurrency(row.overtime_submission_amount || 0) }}</div>
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono">
                     <span :class="row.total_telat > 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
@@ -504,6 +511,11 @@ function getLeaveDays(row, leaveTypeName) {
               <span class="font-medium">Total OT Full:</span>
               <span class="font-bold text-green-600">{{ formatNumber(totalSummary.total_ot_full_days || 0) }} jam</span>
               <span class="font-bold text-green-700 ml-2">{{ formatCurrency(totalSummary.total_ot_full_amount || 0) }}</span>
+            </div>
+            <div>
+              <span class="font-medium">Total OT Submission:</span>
+              <span class="font-bold text-teal-600">{{ formatNumber(totalSummary.total_overtime_submission_hours || 0) }} jam</span>
+              <span class="font-bold text-teal-700 ml-2">{{ formatCurrency(totalSummary.total_overtime_submission_amount || 0) }}</span>
             </div>
             <div>
               <span class="font-medium">Total Telat:</span> 

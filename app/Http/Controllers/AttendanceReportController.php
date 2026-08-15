@@ -1736,13 +1736,36 @@ class AttendanceReportController extends Controller
     /**
      * Nilai lembur (Rp) = jam OT × nominal_lembur divisi (sama seperti payroll).
      */
-    private function overtimeAmountFromHours(int $hours, $divisionId, $divisiNominalLembur): int
+    private function overtimeAmountFromHours(float $hours, $divisionId, $divisiNominalLembur): int
     {
         if ($hours <= 0) {
             return 0;
         }
 
-        return $hours * (int) ($divisiNominalLembur[$divisionId] ?? 0);
+        return (int) round($hours * (int) ($divisiNominalLembur[$divisionId] ?? 0));
+    }
+
+    /**
+     * Total jam + nilai pengajuan lembur APPROVED per karyawan di periode.
+     *
+     * @param  array<string, float>  $overtimeRequestedByUserDate
+     * @return array{hours: float, amount: int}
+     */
+    private function overtimeSubmissionTotalsForUser(int $userId, array $overtimeRequestedByUserDate, $divisionId, $divisiNominalLembur): array
+    {
+        $hours = 0.0;
+        $prefix = $userId.'_';
+
+        foreach ($overtimeRequestedByUserDate as $key => $value) {
+            if (str_starts_with((string) $key, $prefix)) {
+                $hours += (float) $value;
+            }
+        }
+
+        return [
+            'hours' => $hours,
+            'amount' => $this->overtimeAmountFromHours($hours, $divisionId, $divisiNominalLembur),
+        ];
     }
 
     /**
@@ -2451,6 +2474,12 @@ class AttendanceReportController extends Controller
 
                         $totalLemburWithExtraOff = (int) $dailyAttendance->sum('total_lembur');
                         $totalOnePlusOne = (int) floor($dailyAttendance->sum('one_plus_one_hours'));
+                        $otSubmission = $this->overtimeSubmissionTotalsForUser(
+                            (int) $firstRow->user_id,
+                            $overtimeRequestedByUserDate,
+                            $firstRow->division_id,
+                            $divisiNominalLembur
+                        );
                         
                         $result = [
                             'user_id' => $firstRow->user_id,
@@ -2471,6 +2500,8 @@ class AttendanceReportController extends Controller
                                 $firstRow->division_id,
                                 $divisiNominalLembur
                             ),
+                            'overtime_submission_hours' => $otSubmission['hours'],
+                            'overtime_submission_amount' => $otSubmission['amount'],
                             'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                             'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                             'total_one_plus_one' => $totalOnePlusOne,
@@ -2519,6 +2550,8 @@ class AttendanceReportController extends Controller
                             'alpa_days' => isset($start) && isset($end) ? $this->calculateAlpaDays($employeeRows->first()->user_id ?? 0, null, $start, $end) : 0,
                             'ot_full_days' => 0,
                             'ot_full_amount' => 0,
+                            'overtime_submission_hours' => 0,
+                            'overtime_submission_amount' => 0,
                             'total_telat' => 0,
                             'total_lembur' => 0,
                             'total_days' => isset($start) && isset($end) ? $this->calculateTotalDaysInPeriod($start, $end) : 0,
@@ -2880,6 +2913,12 @@ class AttendanceReportController extends Controller
 
                     $totalLemburWithExtraOff = (int) $dailyAttendance->sum('total_lembur');
                     $totalOnePlusOne = (int) floor($dailyAttendance->sum('one_plus_one_hours'));
+                    $otSubmission = $this->overtimeSubmissionTotalsForUser(
+                        (int) $firstRow->user_id,
+                        $overtimeRequestedByUserDate,
+                        $firstRow->division_id,
+                        $divisiNominalLembur
+                    );
                     
                     $result = (object)[
                         'user_id' => $firstRow->user_id,
@@ -2902,6 +2941,8 @@ class AttendanceReportController extends Controller
                             $firstRow->division_id,
                             $divisiNominalLembur
                         ),
+                        'overtime_submission_hours' => $otSubmission['hours'],
+                        'overtime_submission_amount' => $otSubmission['amount'],
                         'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                         'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                         'total_one_plus_one' => $totalOnePlusOne,
