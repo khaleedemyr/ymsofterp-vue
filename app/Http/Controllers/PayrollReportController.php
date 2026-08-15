@@ -7223,8 +7223,31 @@ class PayrollReportController extends Controller
     }
 
     /**
-     * Level tertinggi (nilai_level lebih besar) di atas, lalu nama A-Z.
+     * Level tertinggi (nilai_level lebih kecil) di atas, lalu nama A-Z.
+     * Nilai 0 / kosong ditaruh paling bawah.
      */
+    private function parseNilaiLevel($value): int
+    {
+        $digits = preg_replace('/\D+/', '', (string) ($value ?? ''));
+
+        return $digits === '' ? 0 : (int) $digits;
+    }
+
+    private function compareLevelHighestFirst(int $levelA, int $levelB): int
+    {
+        if ($levelA === $levelB) {
+            return 0;
+        }
+        if ($levelA === 0) {
+            return 1;
+        }
+        if ($levelB === 0) {
+            return -1;
+        }
+
+        return $levelA <=> $levelB;
+    }
+
     private function sortUsersByLevelDesc($users)
     {
         if (!$users || $users->isEmpty()) {
@@ -7236,10 +7259,11 @@ class PayrollReportController extends Controller
             ->pluck('l.nilai_level', 'j.id_jabatan');
 
         return $users->sort(function ($a, $b) use ($levelValues) {
-            $levelA = (int) ($levelValues[$a->id_jabatan] ?? 0);
-            $levelB = (int) ($levelValues[$b->id_jabatan] ?? 0);
-            if ($levelA !== $levelB) {
-                return $levelB <=> $levelA;
+            $levelA = $this->parseNilaiLevel($levelValues[$a->id_jabatan] ?? 0);
+            $levelB = $this->parseNilaiLevel($levelValues[$b->id_jabatan] ?? 0);
+            $levelCmp = $this->compareLevelHighestFirst($levelA, $levelB);
+            if ($levelCmp !== 0) {
+                return $levelCmp;
             }
 
             return strcasecmp((string) ($a->nama_lengkap ?? ''), (string) ($b->nama_lengkap ?? ''));
@@ -7262,10 +7286,11 @@ class PayrollReportController extends Controller
             $userIdB = is_array($b) ? ($b['user_id'] ?? 0) : ($b->user_id ?? 0);
             $nameA = is_array($a) ? ($a['nama_lengkap'] ?? '') : ($a->nama_lengkap ?? '');
             $nameB = is_array($b) ? ($b['nama_lengkap'] ?? '') : ($b->nama_lengkap ?? '');
-            $levelA = (int) ($levelValues[$jabatanByUserId[$userIdA] ?? null] ?? 0);
-            $levelB = (int) ($levelValues[$jabatanByUserId[$userIdB] ?? null] ?? 0);
-            if ($levelA !== $levelB) {
-                return $levelB <=> $levelA;
+            $levelA = $this->parseNilaiLevel($levelValues[$jabatanByUserId[$userIdA] ?? null] ?? 0);
+            $levelB = $this->parseNilaiLevel($levelValues[$jabatanByUserId[$userIdB] ?? null] ?? 0);
+            $levelCmp = $this->compareLevelHighestFirst($levelA, $levelB);
+            if ($levelCmp !== 0) {
+                return $levelCmp;
             }
 
             return strcasecmp((string) $nameA, (string) $nameB);

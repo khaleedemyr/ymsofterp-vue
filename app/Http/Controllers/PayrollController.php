@@ -487,8 +487,31 @@ class PayrollController extends Controller
     }
 
     /**
-     * Level tertinggi (nilai_level lebih besar) di atas, lalu nama A-Z.
+     * Level tertinggi (nilai_level lebih kecil) di atas, lalu nama A-Z.
+     * Nilai 0 / kosong ditaruh paling bawah.
      */
+    private function parseNilaiLevel($value): int
+    {
+        $digits = preg_replace('/\D+/', '', (string) ($value ?? ''));
+
+        return $digits === '' ? 0 : (int) $digits;
+    }
+
+    private function compareLevelHighestFirst(int $levelA, int $levelB): int
+    {
+        if ($levelA === $levelB) {
+            return 0;
+        }
+        if ($levelA === 0) {
+            return 1;
+        }
+        if ($levelB === 0) {
+            return -1;
+        }
+
+        return $levelA <=> $levelB;
+    }
+
     private function sortUsersByLevelDesc($users)
     {
         if (!$users || $users->isEmpty()) {
@@ -500,10 +523,11 @@ class PayrollController extends Controller
             ->pluck('l.nilai_level', 'j.id_jabatan');
 
         return $users->sort(function ($a, $b) use ($levelValues) {
-            $levelA = (int) ($levelValues[$a->id_jabatan] ?? 0);
-            $levelB = (int) ($levelValues[$b->id_jabatan] ?? 0);
-            if ($levelA !== $levelB) {
-                return $levelB <=> $levelA;
+            $levelA = $this->parseNilaiLevel($levelValues[$a->id_jabatan] ?? 0);
+            $levelB = $this->parseNilaiLevel($levelValues[$b->id_jabatan] ?? 0);
+            $levelCmp = $this->compareLevelHighestFirst($levelA, $levelB);
+            if ($levelCmp !== 0) {
+                return $levelCmp;
             }
 
             return strcasecmp((string) ($a->nama_lengkap ?? ''), (string) ($b->nama_lengkap ?? ''));
