@@ -31,8 +31,12 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule) {
-        // Holiday attendance: definisi jadwal ada di App\Console\Kernel (dengan --force).
-        // Hindari duplikat di sini — duplikat tanpa --force + $this->confirm() membuat proses batal saat cron.
+        // Laravel 12 hanya menjalankan jadwal di sini (App\Console\Kernel tidak dipakai).
+        // Lookback 14 hari termasuk hari ini, supaya scan terlambat tetap tercatat tanpa klik Proses.
+        $schedule->command('attendance:process-holiday --force --days=14')
+            ->hourly()
+            ->withoutOverlapping(50)
+            ->appendOutputTo(storage_path('logs/holiday-attendance.log'));
 
         // Weekly cleanup of old logs (optional)
         $schedule->command('attendance:cleanup-logs')

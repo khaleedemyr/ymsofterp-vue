@@ -70,7 +70,51 @@ class HolidayAttendanceService
      */
     public function isHoliday($date)
     {
-        return KalenderPerusahaan::where('tgl_libur', $date)->exists();
+        return KalenderPerusahaan::whereDate('tgl_libur', $date)->exists();
+    }
+
+    /**
+     * Tanggal libur (Y-m-d) di rentang, inclusive.
+     *
+     * @return array<int, string>
+     */
+    public function getHolidayDatesBetween($from, $to): array
+    {
+        return KalenderPerusahaan::whereDate('tgl_libur', '>=', $from)
+            ->whereDate('tgl_libur', '<=', $to)
+            ->orderBy('tgl_libur')
+            ->pluck('tgl_libur')
+            ->map(function ($date) {
+                return Carbon::parse($date)->format('Y-m-d');
+            })
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Proses semua hari libur dalam rentang (skip otomatis jika sudah dicatat).
+     */
+    public function processHolidayAttendanceRange($from, $to): array
+    {
+        $summary = [
+            'processed' => 0,
+            'extra_off_given' => 0,
+            'bonus_paid' => 0,
+            'errors' => [],
+            'dates' => [],
+        ];
+
+        foreach ($this->getHolidayDatesBetween($from, $to) as $date) {
+            $result = $this->processHolidayAttendance($date);
+            $summary['processed'] += $result['processed'];
+            $summary['extra_off_given'] += $result['extra_off_given'] ?? 0;
+            $summary['bonus_paid'] += $result['bonus_paid'];
+            $summary['errors'] = array_merge($summary['errors'], $result['errors']);
+            $summary['dates'][] = $date;
+        }
+
+        return $summary;
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\HolidayAttendanceCompensation;
 use App\Models\User;
 use App\Exports\HolidayAttendanceExport;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 
 class HolidayAttendanceController extends Controller
@@ -32,6 +33,8 @@ class HolidayAttendanceController extends Controller
             'status' => $request->get('status'),
             'user_id' => $request->get('user_id')
         ];
+
+        $this->autoProcessHolidaysInRange($filters['start_date'], $filters['end_date']);
 
         $compensations = $this->holidayAttendanceService->getAllHolidayCompensations($filters);
 
@@ -297,6 +300,8 @@ class HolidayAttendanceController extends Controller
             'user_id' => $request->get('user_id')
         ];
 
+        $this->autoProcessHolidaysInRange($filters['start_date'], $filters['end_date']);
+
         $compensations = $this->holidayAttendanceService->getAllHolidayCompensations($filters);
 
         // Create filename
@@ -337,5 +342,32 @@ class HolidayAttendanceController extends Controller
         return response($csvContent)
             ->header('Content-Type', 'text/csv')
             ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
+    }
+
+    private function autoProcessHolidaysInRange(string $startDate, string $endDate): void
+    {
+        $to = min($endDate, Carbon::today()->format('Y-m-d'));
+        if ($startDate > $to) {
+            return;
+        }
+
+        try {
+            $results = $this->holidayAttendanceService->processHolidayAttendanceRange($startDate, $to);
+            if (($results['processed'] ?? 0) > 0) {
+                Log::info('Holiday attendance auto-processed on page load', [
+                    'from' => $startDate,
+                    'to' => $to,
+                    'dates' => $results['dates'] ?? [],
+                    'processed' => $results['processed'],
+                    'bonus_paid' => $results['bonus_paid'] ?? 0,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Holiday attendance auto-process on page load failed', [
+                'from' => $startDate,
+                'to' => $to,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

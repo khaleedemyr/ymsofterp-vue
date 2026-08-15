@@ -12,19 +12,8 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // Process holiday attendance automatically every day at 6:00 AM
-        $schedule->command('attendance:process-holiday --force')
-            ->dailyAt('06:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/holiday-attendance.log'));
-
-        // Process holiday attendance for yesterday at 11:00 PM (in case of late scans)
-        $schedule->command('attendance:process-holiday --force')
-            ->dailyAt('23:00')
-            ->withoutOverlapping()
-            ->runInBackground()
-            ->appendOutputTo(storage_path('logs/holiday-attendance.log'));
+        // Laravel 12: jadwal aktif ada di bootstrap/app.php withSchedule().
+        // Method ini tidak dijalankan oleh `php artisan schedule:run`.
 
         // Weekly cleanup of old logs (optional)
         $schedule->command('attendance:cleanup-logs')

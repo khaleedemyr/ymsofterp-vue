@@ -13,14 +13,19 @@ class ProcessHolidayAttendance extends Command
      *
      * @var string
      */
-    protected $signature = 'attendance:process-holiday {date?} {--force}';
+    protected $signature = 'attendance:process-holiday
+                            {date? : Single date Y-m-d}
+                            {--from= : Start date Y-m-d (inclusive)}
+                            {--to= : End date Y-m-d (inclusive)}
+                            {--days=14 : Lookback days from today when no date/from given}
+                            {--force : Skip confirmation}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Process holiday attendance for a specific date or yesterday';
+    protected $description = 'Process holiday attendance for a date or recent holiday dates';
 
     protected $holidayAttendanceService;
 
@@ -38,73 +43,38 @@ class ProcessHolidayAttendance extends Command
      */
     public function handle()
     {
-        $date = $this->argument('date');
         $force = $this->option('force');
 
-        // If no date provided, use yesterday
-        if (!$date) {
-            $date = Carbon::yesterday()->format('Y-m-d');
-        }
-
-        // Validate date format
         try {
-            $date = Carbon::createFromFormat('Y-m-d', $date)->format('Y-m-d');
+            [$from, $to] = $this->resolveDateRange();
         } catch (\Exception $e) {
-            $this->error('Invalid date format. Please use Y-m-d format (e.g., 2024-01-15)');
+            $this->error($e->getMessage());
             return 1;
         }
 
-        $this->info("Processing holiday attendance for date: {$date}");
+        $holidayDates = $this->holidayAttendanceService->getHolidayDatesBetween($from, $to);
 
-        // Check if it's a holiday
-        if (!$this->holidayAttendanceService->isHoliday($date)) {
-            $this->warn("Date {$date} is not a holiday. Skipping...");
+        if (empty($holidayDates)) {
+            $this->info("No holidays between {$from} and {$to}. Skipping...");
             return 0;
         }
 
-        $this->info("Date {$date} is a holiday. Processing attendance...");
+        $this->info('Holidays to process: '.implode(', ', $holidayDates));
 
-        // Get employees who worked on this holiday
-        $employees = $this->holidayAttendanceService->getEmployeesWhoWorkedOnHoliday($date);
-
-        if ($employees->isEmpty()) {
-            $this->info("No employees worked on holiday {$date}");
-            return 0;
-        }
-
-        $this->info("Found {$employees->count()} employees who worked on holiday {$date}");
-
-        // Show employees who will be processed
-        $this->table(
-            ['Name', 'Position', 'Level', 'Saldo', 'Besaran'],
-            $employees->map(function ($employee) {
-                $compensation = $this->holidayAttendanceService->getEmployeeCompensation($employee->id_jabatan);
-                return [
-                    $employee->nama_lengkap,
-                    $employee->nama_jabatan,
-                    $employee->nama_level,
-                    'Saldo PH',
-                    $compensation['amount'].' hari',
-                ];
-            })
-        );
-
-        // Scheduler / cron are non-interactive: confirm() defaults to "no" → proses selalu batal tanpa --force
-        if (!$force && $this->input->isInteractive() && ! $this->confirm('Do you want to process these compensations?')) {
+        if (!$force && $this->input->isInteractive() && ! $this->confirm('Process holiday attendance for these dates?')) {
             $this->info('Processing cancelled.');
             return 0;
         }
 
-        // Process holiday attendance
-        $results = $this->holidayAttendanceService->processHolidayAttendance($date);
+        $results = $this->holidayAttendanceService->processHolidayAttendanceRange($from, $to);
 
-        // Display results
-        $this->info("Processing completed!");
+        $this->info('Processing completed!');
+        $this->info('Dates: '.implode(', ', $results['dates']));
         $this->info("Total processed: {$results['processed']}");
         $this->info("Saldo PH dicatat (kredit hari): {$results['bonus_paid']}");
 
         if (!empty($results['errors'])) {
-            $this->error("Errors encountered:");
+            $this->error('Errors encountered:');
             foreach ($results['errors'] as $error) {
                 if (isset($error['general_error'])) {
                     $this->error("- {$error['general_error']}");
@@ -115,5 +85,41 @@ class ProcessHolidayAttendance extends Command
         }
 
         return 0;
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function resolveDateRange(): array
+    {
+        $single = $this->argument('date');
+        $from = $this->option('from');
+        $to = $this->option('to');
+        $days = max(0, (int) $this->option('days'));
+
+        if ($single) {
+            $date = $this->parseDate($single, 'date');
+            return [$date, $date];
+        }
+
+        if ($from || $to) {
+            $fromDate = $this->parseDate($from ?: Carbon::today()->subDays($days)->format('Y-m-d'), 'from');
+            $toDate = $this->parseDate($to ?: Carbon::today()->format('Y-m-d'), 'to');
+            return [$fromDate, $toDate];
+        }
+
+        return [
+            Carbon::today()->subDays($days)->format('Y-m-d'),
+            Carbon::today()->format('Y-m-d'),
+        ];
+    }
+
+    private function parseDate($value, string $label): string
+    {
+        try {
+            return Carbon::createFromFormat('Y-m-d', $value)->format('Y-m-d');
+        } catch (\Exception $e) {
+            throw new \InvalidArgumentException("Invalid {$label} format. Please use Y-m-d (e.g., 2024-01-15)");
+        }
     }
 }

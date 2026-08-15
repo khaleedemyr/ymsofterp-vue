@@ -1,8 +1,11 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Services\HolidayAttendanceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class KalenderPerusahaanController extends Controller
@@ -42,6 +45,7 @@ class KalenderPerusahaanController extends Controller
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->autoProcessHolidayAttendanceIfDue($data['tgl_libur']);
         return redirect()->back()->with('success', 'Libur nasional berhasil ditambahkan!');
     }
 
@@ -56,6 +60,7 @@ class KalenderPerusahaanController extends Controller
             'keterangan' => $data['keterangan'],
             'updated_at' => now(),
         ]);
+        $this->autoProcessHolidayAttendanceIfDue($data['tgl_libur']);
         return redirect()->back()->with('success', 'Libur nasional berhasil diupdate!');
     }
 
@@ -63,5 +68,27 @@ class KalenderPerusahaanController extends Controller
     {
         DB::table('tbl_kalender_perusahaan')->where('id', $id)->delete();
         return redirect()->back()->with('success', 'Libur nasional berhasil dihapus!');
+    }
+
+    private function autoProcessHolidayAttendanceIfDue(string $holidayDate): void
+    {
+        if (Carbon::parse($holidayDate)->gt(Carbon::today())) {
+            return;
+        }
+
+        try {
+            $results = app(HolidayAttendanceService::class)->processHolidayAttendance($holidayDate);
+            Log::info('Holiday attendance auto-processed after calendar save', [
+                'holiday_date' => $holidayDate,
+                'processed' => $results['processed'] ?? 0,
+                'bonus_paid' => $results['bonus_paid'] ?? 0,
+                'errors' => $results['errors'] ?? [],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Holiday attendance auto-process after calendar save failed', [
+                'holiday_date' => $holidayDate,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 } 
