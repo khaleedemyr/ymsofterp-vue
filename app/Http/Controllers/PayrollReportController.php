@@ -184,7 +184,6 @@ class PayrollReportController extends Controller
             // Ambil data karyawan di outlet tersebut (HANYA yang aktif) - KEMBALIKAN KE LOGIKA SEMULA
             $users = User::where('status', 'A')
                 ->where('id_outlet', $outletId)
-                ->orderBy('nama_lengkap')
                 ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
 
             // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
@@ -345,7 +344,6 @@ class PayrollReportController extends Controller
                 // Ambil data karyawan untuk mapping (include status untuk perhitungan statistik)
                 $users = User::whereIn('id', $payrollGeneratedDetailsFull->pluck('user_id'))
                     ->where('id_outlet', $outletId)
-                    ->orderBy('nama_lengkap')
                     ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
                 
                 // PENTING: Tambahkan juga karyawan yang mutasi dari outlet ini (employee_movements)
@@ -428,6 +426,7 @@ class PayrollReportController extends Controller
                 
                 // Format data dari payroll_generated_details ke format yang dibutuhkan frontend
                 // PERBAIKAN: Loop berdasarkan $users untuk memastikan semua user (termasuk yang resign) diproses
+                $users = $this->sortUsersByLevelDesc($users);
                 foreach ($users as $user) {
                     $userId = $user->id;
                     $detail = $payrollGeneratedDetailsFull->get($userId);
@@ -693,11 +692,11 @@ class PayrollReportController extends Controller
                 \Log::info('Payroll - Returning generated payroll data to frontend', [
                     'payroll_data_count' => $payrollData->count()
                 ]);
-                return Inertia::render('Payroll/Report', [
+        return Inertia::render('Payroll/Report', [
                     'outlets' => $outlets,
                     'months' => $months,
                     'years' => $years,
-                    'payrollData' => $payrollData,
+                    'payrollData' => $this->sortPayrollDataByLevelDesc($payrollData, $users),
                     'leaveTypes' => $leaveTypes,
                     'statistics' => [
                         'total_mp' => $totalMP ?? 0,
@@ -917,6 +916,7 @@ class PayrollReportController extends Controller
             // Step 1: Hitung semua data dasar untuk semua user - GUNAKAN DATA DARI EMPLOYEE GROUPS
             // PERBAIKAN: Loop berdasarkan $users untuk memastikan semua user (termasuk yang resign tanpa absensi) diproses
             $userData = [];
+            $users = $this->sortUsersByLevelDesc($users);
             foreach ($users as $user) {
                 $userId = $user->id;
                 
@@ -2046,7 +2046,7 @@ class PayrollReportController extends Controller
             'outlets' => $outlets,
             'months' => $months,
             'years' => $years,
-            'payrollData' => $payrollData,
+            'payrollData' => $this->sortPayrollDataByLevelDesc($payrollData, $users),
             'leaveTypes' => $leaveTypes,
             'statistics' => [
                 'total_mp' => $totalMP ?? 0,
@@ -2112,7 +2112,6 @@ class PayrollReportController extends Controller
         // Ambil data karyawan di outlet tersebut (HANYA yang aktif)
         $users = User::where('status', 'A')
             ->where('id_outlet', $outletId)
-            ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
 
         // Ambil data resignation untuk periode tersebut
@@ -2710,7 +2709,6 @@ class PayrollReportController extends Controller
         // Ambil data seperti di index() - SAMA PERSIS
         $users = User::where('status', 'A')
             ->where('id_outlet', $outletId)
-            ->orderBy('nama_lengkap')
             ->get(['id', 'nama_lengkap', 'nik', 'id_jabatan', 'division_id', 'id_outlet', 'no_rekening', 'tanggal_masuk', 'status']);
 
         // Ambil data resignation untuk periode tersebut (status approved dan resignation_date dalam periode)
@@ -2949,6 +2947,7 @@ class PayrollReportController extends Controller
         // Step 1: Hitung semua data dasar untuk semua user - PERBAIKAN: Loop berdasarkan $users, bukan $employeeGroups
         // Ini memastikan semua user (termasuk yang tidak punya data attendance) masuk ke export
         $userData = [];
+        $users = $this->sortUsersByLevelDesc($users);
         foreach ($users as $user) {
             $userId = $user->id;
             $allEmployeeRows = $employeeGroups->get($userId, collect());
@@ -7220,5 +7219,55 @@ class PayrollReportController extends Controller
             $kategori,
             (int) ($user->id_outlet ?? 0)
         );
+    }
+
+    /**
+     * Level tertinggi (nilai_level lebih besar) di atas, lalu nama A-Z.
+     */
+    private function sortUsersByLevelDesc($users)
+    {
+        if (!$users || $users->isEmpty()) {
+            return $users;
+        }
+
+        $levelValues = DB::table('tbl_data_jabatan as j')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->pluck('l.nilai_level', 'j.id_jabatan');
+
+        return $users->sort(function ($a, $b) use ($levelValues) {
+            $levelA = (int) ($levelValues[$a->id_jabatan] ?? 0);
+            $levelB = (int) ($levelValues[$b->id_jabatan] ?? 0);
+            if ($levelA !== $levelB) {
+                return $levelB <=> $levelA;
+            }
+
+            return strcasecmp((string) ($a->nama_lengkap ?? ''), (string) ($b->nama_lengkap ?? ''));
+        })->values();
+    }
+
+    private function sortPayrollDataByLevelDesc($payrollData, $users)
+    {
+        if (!$payrollData || $payrollData->isEmpty()) {
+            return $payrollData;
+        }
+
+        $jabatanByUserId = $users->pluck('id_jabatan', 'id');
+        $levelValues = DB::table('tbl_data_jabatan as j')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->pluck('l.nilai_level', 'j.id_jabatan');
+
+        return $payrollData->sort(function ($a, $b) use ($jabatanByUserId, $levelValues) {
+            $userIdA = is_array($a) ? ($a['user_id'] ?? 0) : ($a->user_id ?? 0);
+            $userIdB = is_array($b) ? ($b['user_id'] ?? 0) : ($b->user_id ?? 0);
+            $nameA = is_array($a) ? ($a['nama_lengkap'] ?? '') : ($a->nama_lengkap ?? '');
+            $nameB = is_array($b) ? ($b['nama_lengkap'] ?? '') : ($b->nama_lengkap ?? '');
+            $levelA = (int) ($levelValues[$jabatanByUserId[$userIdA] ?? null] ?? 0);
+            $levelB = (int) ($levelValues[$jabatanByUserId[$userIdB] ?? null] ?? 0);
+            if ($levelA !== $levelB) {
+                return $levelB <=> $levelA;
+            }
+
+            return strcasecmp((string) $nameA, (string) $nameB);
+        })->values();
     }
 }

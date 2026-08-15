@@ -80,6 +80,7 @@ class PayrollController extends Controller
                 $userLevel = $jabatanLevels[$u->id_jabatan] ?? null;
                 $u->point = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
             }
+            $users = $this->sortUsersByLevelDesc($users);
             // Ambil payroll master untuk user2 tsb
             $userIds = $users->pluck('id');
             $payrollRows = DB::table('payroll_master')
@@ -263,7 +264,7 @@ class PayrollController extends Controller
             $u->point = $userLevel ? ($levelPoints[$userLevel] ?? 0) : 0;
         }
 
-        return $users;
+        return $this->sortUsersByLevelDesc($users);
     }
 
     public function downloadTemplate(Request $request)
@@ -483,5 +484,29 @@ class PayrollController extends Controller
         }
 
         return response()->json(['success' => $failed === 0, 'message' => $msg]);
+    }
+
+    /**
+     * Level tertinggi (nilai_level lebih besar) di atas, lalu nama A-Z.
+     */
+    private function sortUsersByLevelDesc($users)
+    {
+        if (!$users || $users->isEmpty()) {
+            return $users;
+        }
+
+        $levelValues = DB::table('tbl_data_jabatan as j')
+            ->leftJoin('tbl_data_level as l', 'j.id_level', '=', 'l.id')
+            ->pluck('l.nilai_level', 'j.id_jabatan');
+
+        return $users->sort(function ($a, $b) use ($levelValues) {
+            $levelA = (int) ($levelValues[$a->id_jabatan] ?? 0);
+            $levelB = (int) ($levelValues[$b->id_jabatan] ?? 0);
+            if ($levelA !== $levelB) {
+                return $levelB <=> $levelA;
+            }
+
+            return strcasecmp((string) ($a->nama_lengkap ?? ''), (string) ($b->nama_lengkap ?? ''));
+        })->values();
     }
 } 
