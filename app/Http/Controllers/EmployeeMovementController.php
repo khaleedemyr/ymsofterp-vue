@@ -667,9 +667,19 @@ class EmployeeMovementController extends Controller
 
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
+
+        // Antrian Home: sembunyikan PM lama (created sebelum awal 2 bulan lalu),
+        // kecuali employment_effective_date masih hari ini / ke depan.
+        $queueCreatedFrom = now()->subMonths(2)->startOfMonth()->toDateTimeString();
+        $today = now()->toDateString();
+        $recentQueue = function ($q) use ($queueCreatedFrom, $today) {
+            $q->where('created_at', '>=', $queueCreatedFrom)
+                ->orWhereDate('employment_effective_date', '>=', $today);
+        };
         
         // First, get movements with pending approval flows (new system)
         $queryWithFlows = EmployeeMovement::where('status', 'pending')
+            ->where($recentQueue)
             ->whereHas('approvalFlows', function($q) {
                 $q->where('status', 'PENDING');
             })
@@ -732,6 +742,7 @@ class EmployeeMovementController extends Controller
                 'created_at', 'updated_at'
             ])
             ->whereDoesntHave('approvalFlows') // Only get movements without approval flows
+            ->where($recentQueue)
             ->where(function ($q) use ($user, $isSuperadmin) {
                 if ($isSuperadmin) {
                     // Superadmin can see all pending movements (any pending approval)

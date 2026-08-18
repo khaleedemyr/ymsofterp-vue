@@ -1311,7 +1311,7 @@ class ApprovalController extends Controller
         )));
 
         foreach ($ids as $id) {
-            Cache::forget('all_pending_approvals_v7_' . $id);
+            Cache::forget('all_pending_approvals_v8_' . $id);
         }
     }
 
