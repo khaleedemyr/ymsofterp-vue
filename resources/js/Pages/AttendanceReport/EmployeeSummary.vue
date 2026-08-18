@@ -21,9 +21,11 @@ const props = defineProps({
   user: Object,
 })
 
+const isHeadOffice = computed(() => Number(props.user?.id_outlet) === 1)
+
 // Auto-select outlet if user is not from outlet 1
 const initialOutletId = () => {
-  if (props.user?.id_outlet && props.user.id_outlet !== 1) {
+  if (props.user?.id_outlet && Number(props.user.id_outlet) !== 1) {
     return props.user.id_outlet.toString()
   }
   return props.filter?.outlet_id || ''
@@ -42,14 +44,16 @@ const tahun = ref(props.filter?.tahun || new Date().getFullYear())
 const monthNames = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 const tahunOptions = Array.from({length: 5}, (_,i) => new Date().getFullYear() - i)
 
-// Filter outlets based on user's outlet access
 const availableOutlets = computed(() => {
-  if (props.user?.id_outlet && props.user.id_outlet !== 1) {
-    // If user is not from outlet 1 (head office), only show their outlet
-    return props.outlets?.filter(outlet => outlet.id == props.user.id_outlet) || []
+  if (! isHeadOffice.value) {
+    return props.outlets?.filter(outlet => Number(outlet.id) === Number(props.user.id_outlet)) || []
   }
-  // If user is from outlet 1 (head office), show all outlets
   return props.outlets || []
+})
+
+const lockedOutletName = computed(() => {
+  const match = availableOutlets.value.find(o => Number(o.id) === Number(outletId.value))
+  return match?.name || '-'
 })
 
 function applyFilter() {
@@ -66,7 +70,7 @@ function applyFilter() {
   })
   
   router.get('/attendance-report/employee-summary', {
-    outlet_id: outletId.value || '',
+    outlet_id: isHeadOffice.value ? (outletId.value || '') : (props.user?.id_outlet || ''),
     division_id: divisionId.value || '',
     jabatan_ids: selectedJabatan.value.map((j) => j.id),
     bulan: bulan.value,
@@ -96,7 +100,7 @@ function exportExcel() {
   
   // Buat URL dengan parameter yang sama seperti filter
   const params = new URLSearchParams({
-    outlet_id: outletId.value || '',
+    outlet_id: isHeadOffice.value ? (outletId.value || '') : (props.user?.id_outlet || ''),
     division_id: divisionId.value || '',
     bulan: bulan.value,
     tahun: tahun.value,
@@ -222,10 +226,21 @@ function getLeaveDays(row, leaveTypeName) {
         <div class="flex flex-col md:flex-row md:items-end gap-4">
           <div class="flex-1 min-w-[180px]">
             <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
-            <select v-model="outletId" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" :disabled="availableOutlets.length === 1">
+            <select
+              v-if="isHeadOffice"
+              v-model="outletId"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
               <option value="">Semua Outlet</option>
               <option v-for="o in availableOutlets" :key="o.id" :value="o.id">{{ o.name }}</option>
             </select>
+            <input
+              v-else
+              type="text"
+              :value="lockedOutletName"
+              disabled
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700 cursor-not-allowed"
+            >
           </div>
           <div class="flex-1 min-w-[180px]">
             <label class="block text-sm font-medium text-gray-700 mb-1">Divisi</label>

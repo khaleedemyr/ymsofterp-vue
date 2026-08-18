@@ -264,6 +264,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.report_absent'), icon: 'fa-solid fa-file-lines', route: '/attendance/report', code: 'absent-report' },
             { name: () => t('sidebar.menus.libur_nasional'), icon: 'fa-solid fa-calendar-day', route: '/kalender-perusahaan', code: 'libur_nasional' },
             { name: () => t('sidebar.menus.report_attendance'), icon: 'fa-solid fa-fingerprint', route: '/attendance-report', code: 'attendance_report' },
+            { name: () => t('sidebar.menus.employee_summary'), icon: 'fa-solid fa-users', route: '/attendance-report/employee-summary', code: 'attendance_employee_summary' },
             { name: () => t('sidebar.menus.attendance_tracking'), icon: 'fa-solid fa-chart-pie', route: '/attendance-tracking', code: 'attendance_tracking' },
             { name: () => t('sidebar.menus.attendance_per_outlet'), icon: 'fa-solid fa-fingerprint', route: '/attendance-report/outlet-summary', code: 'attendance_outlet_summary' },
             { name: () => t('sidebar.menus.holiday_attendance'), icon: 'fa-solid fa-calendar-day', route: '/holiday-attendance', code: 'holiday_attendance' },
