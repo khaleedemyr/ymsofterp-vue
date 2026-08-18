@@ -195,4 +195,67 @@ class AttendanceWorkTimelineServiceTest extends TestCase
         $this->assertFalse($day9['is_cross_day']);
         $this->assertTrue($day9['has_no_checkout']);
     }
+
+    public function test_day_shift_forgot_checkout_does_not_steal_next_day_in_out(): void
+    {
+        $all = [
+            '451_2026-07-27' => [
+                'tanggal' => '2026-07-27',
+                'user_id' => 451,
+                'scans' => [
+                    ['scan_date' => '2026-07-27 08:09:23', 'inoutmode' => 1, 'outlet_id' => 1],
+                ],
+            ],
+            '451_2026-07-28' => [
+                'tanggal' => '2026-07-28',
+                'user_id' => 451,
+                'scans' => [
+                    ['scan_date' => '2026-07-28 08:02:59', 'inoutmode' => 1, 'outlet_id' => 1],
+                    ['scan_date' => '2026-07-28 17:19:29', 'inoutmode' => 2, 'outlet_id' => 1],
+                ],
+            ],
+        ];
+
+        $day27 = $this->service->processDay($all['451_2026-07-27'], $all);
+        $this->assertSame('2026-07-27 08:09:23', $day27['jam_masuk']);
+        $this->assertNull($day27['jam_keluar']);
+        $this->assertFalse($day27['is_cross_day']);
+        $this->assertTrue($day27['has_no_checkout']);
+
+        $day28 = $this->service->processDay($all['451_2026-07-28'], $all);
+        $this->assertSame('2026-07-28 08:02:59', $day28['jam_masuk']);
+        $this->assertSame('2026-07-28 17:19:29', $day28['jam_keluar']);
+        $this->assertFalse($day28['is_cross_day']);
+        $this->assertTrue(AttendanceWorkTimelineService::hasOwnCheckIn($day28));
+    }
+
+    public function test_open_in_does_not_consume_next_day_in_and_kembali(): void
+    {
+        $all = [
+            '451_2026-07-31' => [
+                'tanggal' => '2026-07-31',
+                'user_id' => 451,
+                'scans' => [
+                    ['scan_date' => '2026-07-31 07:55:01', 'inoutmode' => 1, 'outlet_id' => 1],
+                ],
+            ],
+            '451_2026-08-01' => [
+                'tanggal' => '2026-08-01',
+                'user_id' => 451,
+                'scans' => [
+                    ['scan_date' => '2026-08-01 10:45:43', 'inoutmode' => 1, 'outlet_id' => 2],
+                    ['scan_date' => '2026-08-01 18:29:40', 'inoutmode' => 4, 'outlet_id' => 1],
+                ],
+            ],
+        ];
+
+        $day31 = $this->service->processDay($all['451_2026-07-31'], $all);
+        $this->assertSame('2026-07-31 07:55:01', $day31['jam_masuk']);
+        $this->assertNull($day31['jam_keluar']);
+        $this->assertTrue($day31['has_no_checkout']);
+
+        $day1 = $this->service->processDay($all['451_2026-08-01'], $all);
+        $this->assertSame('2026-08-01 10:45:43', $day1['jam_masuk']);
+        $this->assertTrue(AttendanceWorkTimelineService::hasOwnCheckIn($day1));
+    }
 }

@@ -299,15 +299,11 @@ class AttendanceWorkTimelineService
         foreach ($nextDayScans as $scan) {
             $mode = (int) $scan['inoutmode'];
 
-            if ($hasOpenBlock) {
-                $merged[] = $scan;
-                $consumed[] = $scan['scan_date'];
-
-                if ($mode === self::MODE_OUT) {
-                    break;
-                }
-
-                continue;
+            // Shift malam: IN tanpa OUT, lalu OUT pagi hari berikutnya (jam 0–12).
+            // Jangan sedot IN/KEMBALI hari berikutnya — itu absensi hari baru
+            // (lupa checkout shift siang, lalu masuk lagi esoknya).
+            if ($hasOpenBlock && in_array($mode, [self::MODE_IN, self::MODE_KEMBALI], true)) {
+                break;
             }
 
             if ($mode !== self::MODE_OUT) {
@@ -318,6 +314,11 @@ class AttendanceWorkTimelineService
             if ($outHour >= 0 && $outHour <= 12) {
                 $merged[] = $scan;
                 $consumed[] = $scan['scan_date'];
+                break;
+            }
+
+            // OUT siang/sore milik hari berikutnya, bukan checkout semalam.
+            if ($hasOpenBlock) {
                 break;
             }
         }
