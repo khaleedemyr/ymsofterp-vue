@@ -65,7 +65,16 @@
             <label class="block text-sm font-medium text-gray-700 mb-1">Sampai</label>
             <input v-model="filters.date_to" type="date" class="w-full px-3 py-2 border rounded-lg text-sm" />
           </div>
-          <div class="flex items-end gap-2 sm:col-span-2 xl:col-span-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Per Page</label>
+            <select v-model="filters.per_page" class="w-full px-3 py-2 border rounded-lg text-sm" @change="applyFilters">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
             <button type="submit" class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold">Filter</button>
             <button type="button" @click="resetFilters" class="px-4 py-2 border rounded-lg text-sm">Reset</button>
           </div>
@@ -142,6 +151,25 @@
             </tbody>
           </table>
         </div>
+        <div v-if="data?.total" class="px-6 py-4 border-t border-gray-200">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="text-sm text-gray-700">
+              Showing {{ data.from || 0 }} to {{ data.to || 0 }} of {{ data.total || 0 }}
+              <span v-if="selectedIds.length" class="text-orange-700 font-medium"> · {{ selectedIds.length }} dipilih</span>
+            </div>
+            <div v-if="data.links?.length > 3" class="flex items-center space-x-2 flex-wrap">
+              <Link
+                v-for="link in data.links"
+                :key="link.label"
+                :href="link.url || '#'"
+                :preserve-scroll="true"
+                :preserve-state="true"
+                :class="['px-3 py-2 text-sm rounded-md transition', link.active ? 'bg-orange-500 text-white font-semibold' : link.url ? 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 cursor-not-allowed']"
+                v-html="link.label"
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -150,7 +178,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
 import { ref, computed, h } from 'vue'
-import { router } from '@inertiajs/vue3'
+import { router, Link } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
 
@@ -209,7 +237,7 @@ function pipelineDocs(row, key) {
 }
 
 const props = defineProps({
-  rows: { type: Array, default: () => [] },
+  data: { type: Object, default: () => ({}) },
   filters: { type: Object, default: () => ({}) },
   outlets: { type: Array, default: () => [] },
   locationOutlets: { type: Array, default: () => [] },
@@ -217,15 +245,28 @@ const props = defineProps({
   prIntegrationReady: Boolean,
 })
 
+const data = computed(() => props.data || {})
+const rows = computed(() => data.value.data || [])
+
 const locationOutletOptions = computed(() =>
   (props.locationOutlets?.length ? props.locationOutlets : props.outlets) || []
 )
 
-const filters = ref({ ...props.filters })
+const filters = ref({
+  search: props.filters?.search || '',
+  owner_outlet_id: props.filters?.owner_outlet_id || '',
+  outlet_id: props.filters?.outlet_id || '',
+  type: props.filters?.type || '',
+  date_from: props.filters?.date_from || '',
+  date_to: props.filters?.date_to || '',
+  per_page: String(props.filters?.per_page || 25),
+})
 const selectedIds = ref([])
 const preparing = ref(false)
 
-const allSelected = computed(() => props.rows.length > 0 && selectedIds.value.length === props.rows.length)
+const allSelected = computed(() =>
+  rows.value.length > 0 && rows.value.every((r) => selectedIds.value.includes(r.detail_id))
+)
 
 function formatNum(n) {
   const x = Number(n)
@@ -234,19 +275,20 @@ function formatNum(n) {
 }
 
 function toggleAll(e) {
+  const pageIds = rows.value.map((r) => r.detail_id)
   if (e.target.checked) {
-    selectedIds.value = props.rows.map((r) => r.detail_id)
+    selectedIds.value = [...new Set([...selectedIds.value, ...pageIds])]
   } else {
-    selectedIds.value = []
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.includes(id))
   }
 }
 
 function applyFilters() {
-  router.get('/lost-breakage/replacement-backlog', filters.value, { preserveState: true })
+  router.get('/lost-breakage/replacement-backlog', { ...filters.value, page: 1 }, { preserveState: true, preserveScroll: true })
 }
 
 function resetFilters() {
-  filters.value = { search: '', owner_outlet_id: '', outlet_id: '', type: '', date_from: '', date_to: '' }
+  filters.value = { search: '', owner_outlet_id: '', outlet_id: '', type: '', date_from: '', date_to: '', per_page: 25 }
   applyFilters()
 }
 

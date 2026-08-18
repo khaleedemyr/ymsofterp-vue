@@ -1434,15 +1434,17 @@ class LostBreakageController extends Controller
         $user = auth()->user();
         $service = app(LostBreakageReplacementService::class);
 
-        $filters = $request->only(['search', 'owner_outlet_id', 'outlet_id', 'type', 'date_from', 'date_to']);
-        $rows = $service->pendingDetailRows($filters, $user);
+        $filters = $request->only(['search', 'owner_outlet_id', 'outlet_id', 'type', 'date_from', 'date_to', 'per_page']);
+        $perPage = (int) ($filters['per_page'] ?? 25);
+        $data = $service->pendingDetailPaginator($filters, $user, $perPage);
+        $filters['per_page'] = $data->perPage();
 
         $outlets = AssetOwnership::options()
             ->map(fn ($o) => (object) ['id' => $o->id_outlet, 'name' => $o->nama_outlet])
             ->values();
 
         return inertia('LostBreakage/ReplacementBacklog', [
-            'rows' => $rows,
+            'data' => $data,
             'filters' => $filters,
             'outlets' => $outlets,
             'locationOutlets' => AssetOwnership::locationOptions()

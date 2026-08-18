@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\AssetOwnership;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -28,6 +29,41 @@ class LostBreakageReplacementService
             return [];
         }
 
+        $rows = $this->pendingDetailQuery($filters, $user)
+            ->orderByDesc('h.date')
+            ->orderByDesc('d.id')
+            ->limit(500)
+            ->get()
+            ->all();
+
+        return $this->attachProcurementPipeline($rows);
+    }
+
+    public function pendingDetailPaginator(array $filters, $user, int $perPage = 25): LengthAwarePaginator
+    {
+        $perPage = in_array($perPage, [10, 25, 50, 100], true) ? $perPage : 25;
+
+        if (!$this->replacementsTableExists()) {
+            return new LengthAwarePaginator([], 0, $perPage, 1, [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]);
+        }
+
+        $paginator = $this->pendingDetailQuery($filters, $user)
+            ->orderByDesc('h.date')
+            ->orderByDesc('d.id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $hydrated = $this->attachProcurementPipeline($paginator->getCollection()->all());
+        $paginator->setCollection(collect($hydrated));
+
+        return $paginator;
+    }
+
+    private function pendingDetailQuery(array $filters, $user)
+    {
         $repSub = DB::table('lost_breakage_replacements')
             ->select('detail_id', DB::raw('COALESCE(SUM(qty_replaced), 0) AS rep_sum'))
             ->groupBy('detail_id');
@@ -93,14 +129,7 @@ class LostBreakageReplacementService
             $query->whereDate('h.date', '<=', $filters['date_to']);
         }
 
-        $rows = $query
-            ->orderByDesc('h.date')
-            ->orderByDesc('d.id')
-            ->limit(500)
-            ->get()
-            ->all();
-
-        return $this->attachProcurementPipeline($rows);
+        return $query;
     }
 
     /**
