@@ -51,10 +51,8 @@ if (props.filter) {
 
 // Watch for changes in outlet and division to refetch employees
 watch([outletId, divisionId], async (newValues, oldValues) => {
-  // Only fetch if this is not the initial load (oldValues will be undefined on first load)
   if (oldValues && (oldValues[0] !== newValues[0] || oldValues[1] !== newValues[1])) {
     await fetchEmployees();
-    // Reset selected employee when filters change
     selectedEmployee.value = null;
   }
 });

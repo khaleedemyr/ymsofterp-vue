@@ -8,6 +8,7 @@ use App\Exports\AttendanceReportExport;
 use App\Exports\EmployeeSummaryExport;
 use App\Exports\OutletSummaryExport;
 use App\Services\AttendanceWorkTimelineService;
+use App\Services\OutletPeriodEmployeeScopeService;
 use App\Services\OvertimeSubmissionFilterService;
 use App\Models\OnePlusOneSubmissionItem;
 
@@ -713,19 +714,16 @@ class AttendanceReportController extends Controller
 
         $query = DB::table('users as u')
             ->select('u.id', 'u.nama_lengkap as name')
-            ->where('u.status', 'A'); // Hanya karyawan aktif
+            ->where('u.status', 'A');
 
-        // Filter berdasarkan outlet
         if (!empty($outletId)) {
             $query->where('u.id_outlet', $outletId);
         }
 
-        // Filter berdasarkan divisi
         if (!empty($divisionId)) {
             $query->where('u.division_id', $divisionId);
         }
 
-        // Filter berdasarkan search
         if (!empty($search)) {
             $query->where('u.nama_lengkap', 'like', "%$search%");
         }
@@ -1265,6 +1263,7 @@ class AttendanceReportController extends Controller
         $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
         $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
         $period = ['start' => $start, 'end' => $end];
+        $employmentScope = $this->resolveOutletEmploymentScope($outletId, $start, $end, $bulan, $tahun);
 
         $sub = DB::table('att_log as a')
             ->join('tbl_data_outlet as scan_outlet', 'a.sn', '=', 'scan_outlet.sn')
@@ -1273,7 +1272,6 @@ class AttendanceReportController extends Controller
             })
             ->join('users as u', 'up.user_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
-            ->where('u.status', 'A')
             ->select(
                 'a.scan_date',
                 'a.inoutmode',
@@ -1286,7 +1284,14 @@ class AttendanceReportController extends Controller
             ->where('a.scan_date', '<', date('Y-m-d', strtotime($end.' +1 day')).' 00:00:00');
 
         if (! empty($outletId)) {
-            $sub->where('u.id_outlet', $outletId);
+            $this->outletEmploymentScope()->applyAttendanceUserFilter(
+                $sub,
+                (int) $outletId,
+                $employmentScope,
+                true
+            );
+        } else {
+            $sub->where('u.status', 'A');
         }
         if (! empty($divisionIds)) {
             $sub->whereIn('u.division_id', $divisionIds);
@@ -1327,6 +1332,20 @@ class AttendanceReportController extends Controller
             $result['nama_outlet'] = $data['nama_outlet'];
             $result['user_id'] = $data['user_id'];
             $dataRows->push((object) $result);
+        }
+
+        $dataRows = $this->filterRowsByEmploymentScope($dataRows, $employmentScope, $start, $end);
+        if (! empty($outletId)) {
+            $filteredOutletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
+            $dataRows = $dataRows->map(function ($row) use ($outletId, $filteredOutletName, $employmentScope) {
+                $uid = (int) $row->user_id;
+                if (isset($employmentScope['mutation_map'][$uid]) || isset($employmentScope['resignations'][$uid])) {
+                    $row->outlet_id = (int) $outletId;
+                    $row->nama_outlet = $filteredOutletName;
+                }
+
+                return $row;
+            });
         }
 
         if ($dataRows->isEmpty()) {
@@ -2074,6 +2093,7 @@ class AttendanceReportController extends Controller
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+            $employmentScope = $this->resolveOutletEmploymentScope($outletId, $start, $end, $bulan, $tahun);
 
 
             // Query data absensi dengan optimasi
@@ -2090,14 +2110,13 @@ class AttendanceReportController extends Controller
                 $chunkSize = 5000;
                 $rawData = collect();
                 
-                // ✅ FIX: Query data absensi - SAMA PERSIS dengan report attendance (logika absensi sama)
+                // Query absensi: karyawan aktif di outlet + mutasi/resign periode (seperti payroll)
                 $sub = DB::table('att_log as a')
                     ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
                     ->join('user_pins as up', function($q) {
                         $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                     })
                     ->join('users as u', 'up.user_id', '=', 'u.id')
-                    ->where('u.status', 'A')
                     ->select(
                         'a.scan_date',
                         'a.inoutmode',
@@ -2110,7 +2129,14 @@ class AttendanceReportController extends Controller
 
                 // Apply filters - Filter outlet dan divisi untuk memfilter karyawan
                 if (!empty($outletId)) {
-                    $sub->where('u.id_outlet', $outletId);
+                    $this->outletEmploymentScope()->applyAttendanceUserFilter(
+                        $sub,
+                        (int) $outletId,
+                        $employmentScope,
+                        true
+                    );
+                } else {
+                    $sub->where('u.status', 'A');
                 }
                 
                 if (!empty($divisionIds)) {
@@ -2370,6 +2396,8 @@ class AttendanceReportController extends Controller
 
                     $rows->push($dayRow);
                 }
+
+                $rows = $this->filterRowsByEmploymentScope($rows, $employmentScope, $start, $end);
                 
                 $totalRowBuildingTime = microtime(true) - $startRowBuildingTime;
                 \Log::info('Rows with shift data: ' . $rowsWithShift);
@@ -2440,17 +2468,24 @@ class AttendanceReportController extends Controller
                             'jabatan' => $userData->jabatan ?? 'null'
                         ]);
                         
+                        $segment = $this->employmentSegmentForUser((int) $firstRow->user_id, $start, $end, $employmentScope);
+                        if ($segment === null) {
+                            continue;
+                        }
+                        $metricStart = $segment['start'];
+                        $metricEnd = $segment['end'];
+
                         // Calculate off days (days without shift)
-                        $offDays = $this->calculateOffDays($firstRow->user_id, null, $start, $end);
+                        $offDays = $this->calculateOffDays($firstRow->user_id, null, $metricStart, $metricEnd);
                         
                         // Calculate PH days (Public Holiday compensations)
-                        $phData = $this->calculatePHData($firstRow->user_id, $start, $end);
+                        $phData = $this->calculatePHData($firstRow->user_id, $metricStart, $metricEnd);
                         
                         // Calculate leave data (cuti, extra off, sakit)
-                        $leaveData = $this->calculateLeaveData($firstRow->user_id, $start, $end);
+                        $leaveData = $this->calculateLeaveData($firstRow->user_id, $metricStart, $metricEnd);
                         
                         // Calculate alpa days (days with shift but no attendance and no absent request)
-                        $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
+                        $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $metricStart, $metricEnd);
                         
                         // SAFETY: Reset lembur values that are too large
                         $employeeRows->transform(function($row) {
@@ -2526,10 +2561,11 @@ class AttendanceReportController extends Controller
                             'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                             'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                             'total_one_plus_one' => $totalOnePlusOne,
-                            'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
+                            'total_days' => $this->calculateTotalDaysInPeriod($metricStart, $metricEnd),
                             // Data detail untuk expandable table
                             'daily_attendance' => $dailyAttendance,
                         ];
+                        $result = array_merge($result, $this->employmentFlagsForUser((int) $firstRow->user_id, $employmentScope));
                         
                         // Add dynamic leave data
                         foreach ($leaveData as $key => $value) {
@@ -2688,6 +2724,7 @@ class AttendanceReportController extends Controller
             $tahun = $tahun ?: date('Y');
             $start = date('Y-m-d', strtotime("$tahun-$bulan-26 -1 month"));
             $end = date('Y-m-d', strtotime("$tahun-$bulan-25"));
+            $employmentScope = $this->resolveOutletEmploymentScope($outletId, $start, $end, $bulan, $tahun);
 
 
             try {
@@ -2702,7 +2739,6 @@ class AttendanceReportController extends Controller
                         $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
                     })
                     ->join('users as u', 'up.user_id', '=', 'u.id')
-                    ->where('u.status', 'A')
                     ->select(
                         'a.scan_date',
                         'a.inoutmode',
@@ -2715,7 +2751,14 @@ class AttendanceReportController extends Controller
 
                 // Apply filters - SAMA PERSIS DENGAN METHOD employeeSummary
                 if (!empty($outletId)) {
-                    $sub->where('u.id_outlet', $outletId);
+                    $this->outletEmploymentScope()->applyAttendanceUserFilter(
+                        $sub,
+                        (int) $outletId,
+                        $employmentScope,
+                        true
+                    );
+                } else {
+                    $sub->where('u.status', 'A');
                 }
                 
                 if (!empty($divisionId)) {
@@ -2865,6 +2908,8 @@ class AttendanceReportController extends Controller
                     $rows->push($dayRow);
                 }
 
+                $rows = $this->filterRowsByEmploymentScope($rows, $employmentScope, $start, $end);
+
                 // Group by employee dan hitung summary
                 $employeeSummary = collect();
                 $employeeGroups = $rows->groupBy('user_id');
@@ -2887,18 +2932,25 @@ class AttendanceReportController extends Controller
                     
                     // Get NIK and jabatan from pre-fetched data
                     $userData = $allUserData->get($firstRow->user_id);
+
+                    $segment = $this->employmentSegmentForUser((int) $firstRow->user_id, $start, $end, $employmentScope);
+                    if ($segment === null) {
+                        continue;
+                    }
+                    $metricStart = $segment['start'];
+                    $metricEnd = $segment['end'];
                     
                     // Calculate off days (days without shift)
-                    $offDays = $this->calculateOffDays($firstRow->user_id, null, $start, $end);
+                    $offDays = $this->calculateOffDays($firstRow->user_id, null, $metricStart, $metricEnd);
                     
                     // Calculate PH days (Public Holiday compensations)
-                    $phData = $this->calculatePHData($firstRow->user_id, $start, $end);
+                    $phData = $this->calculatePHData($firstRow->user_id, $metricStart, $metricEnd);
                     
                     // Calculate leave data (cuti, extra off, sakit)
-                    $leaveData = $this->calculateLeaveData($firstRow->user_id, $start, $end);
+                    $leaveData = $this->calculateLeaveData($firstRow->user_id, $metricStart, $metricEnd);
                     
                     // Calculate alpa days (days with shift but no attendance and no absent request)
-                    $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $start, $end);
+                    $alpaDays = $this->calculateAlpaDays($firstRow->user_id, null, $metricStart, $metricEnd);
                     
                     // Siapkan data detail absensi harian untuk expandable table
                     $dailyAttendance = $employeeRows->map(function($row) use ($firstRow, $overtimeRequestedByUserDate, $extraOffByUserDate, $onePlusOneByUserDate) {
@@ -2967,10 +3019,13 @@ class AttendanceReportController extends Controller
                         'total_telat' => $this->sumTelatFromAttendanceRows($employeeRows),
                         'total_lembur' => $totalLemburWithExtraOff, // Total lembur termasuk extra off overtime (rounded down)
                         'total_one_plus_one' => $totalOnePlusOne,
-                        'total_days' => $this->calculateTotalDaysInPeriod($start, $end), // Total hari dalam periode
+                        'total_days' => $this->calculateTotalDaysInPeriod($metricStart, $metricEnd),
                         // Data detail untuk expandable table
                         'daily_attendance' => $dailyAttendance,
                     ];
+                    foreach ($this->employmentFlagsForUser((int) $firstRow->user_id, $employmentScope) as $flagKey => $flagValue) {
+                        $result->$flagKey = $flagValue;
+                    }
                     
                     // Add dynamic leave data - SAMA PERSIS DENGAN METHOD employeeSummary
                     foreach ($leaveData as $key => $value) {
@@ -4057,6 +4112,73 @@ class AttendanceReportController extends Controller
         }
 
         return $breakdown;
+    }
+
+    private function outletEmploymentScope(): OutletPeriodEmployeeScopeService
+    {
+        return app(OutletPeriodEmployeeScopeService::class);
+    }
+
+    /**
+     * @return array{include_user_ids: list<int>, mutation_map: array<int, array<string, mixed>>, resignations: array<int, string>}
+     */
+    private function resolveOutletEmploymentScope($outletId, string $start, string $end, $bulan, $tahun): array
+    {
+        return $this->outletEmploymentScope()->resolve(
+            ! empty($outletId) ? (int) $outletId : null,
+            $start,
+            $end,
+            (int) $tahun,
+            (int) $bulan
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $scope
+     * @return array{start: string, end: string}|null
+     */
+    private function employmentSegmentForUser(int $userId, string $start, string $end, array $scope): ?array
+    {
+        return $this->outletEmploymentScope()->segmentForUser($userId, $start, $end, $scope);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, mixed>  $rows
+     * @param  array<string, mixed>  $scope
+     * @return \Illuminate\Support\Collection<int, mixed>
+     */
+    private function filterRowsByEmploymentScope($rows, array $scope, string $start, string $end)
+    {
+        if (empty($scope['mutation_map']) && empty($scope['resignations'])) {
+            return $rows;
+        }
+
+        return $rows->filter(function ($row) use ($scope, $start, $end) {
+            $userId = (int) (is_array($row) ? ($row['user_id'] ?? 0) : ($row->user_id ?? 0));
+            $tanggal = is_array($row) ? ($row['tanggal'] ?? '') : ($row->tanggal ?? '');
+            if (! $userId || $tanggal === '') {
+                return true;
+            }
+
+            return $this->outletEmploymentScope()->dateInScope($userId, $tanggal, $start, $end, $scope);
+        })->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $scope
+     * @return array<string, mixed>
+     */
+    private function employmentFlagsForUser(int $userId, array $scope): array
+    {
+        $mut = $scope['mutation_map'][$userId] ?? null;
+
+        return [
+            'is_mutated_employee' => (bool) $mut,
+            'mutation_effective_date' => $mut['effective_date'] ?? null,
+            'mutation_outlet_from' => $mut['outlet_from_name'] ?? null,
+            'mutation_outlet_to' => $mut['outlet_to_name'] ?? null,
+            'resignation_date' => $scope['resignations'][$userId] ?? null,
+        ];
     }
 }
 

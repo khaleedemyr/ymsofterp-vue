@@ -315,8 +315,22 @@ function getLeaveDays(row, leaveTypeName) {
                   <td class="px-4 py-3 text-sm text-gray-900 font-medium">{{ index + 1 }}</td>
                   <td class="px-4 py-3 text-sm text-gray-600 font-mono">{{ row.nik || '-' }}</td>
                   <td class="px-4 py-3 text-sm">
-                    <div class="text-gray-900 font-semibold">{{ row.nama_lengkap }}</div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-gray-900 font-semibold">{{ row.nama_lengkap }}</span>
+                      <span v-if="row.is_mutated_employee" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                        Mutasi
+                      </span>
+                      <span v-if="row.resignation_date" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                        Resign
+                      </span>
+                    </div>
                     <div class="text-gray-500 text-xs mt-1">{{ row.jabatan || '-' }}</div>
+                    <div v-if="row.is_mutated_employee && row.mutation_effective_date" class="text-xs text-purple-600 mt-1 font-medium">
+                      Mutasi: {{ formatDate(row.mutation_effective_date) }} dari {{ row.mutation_outlet_from || '-' }} → {{ row.mutation_outlet_to || '-' }}
+                    </div>
+                    <div v-if="row.resignation_date" class="text-xs text-red-600 mt-1 font-medium">
+                      Resign: {{ formatDate(row.resignation_date) }}
+                    </div>
                   </td>
                   <td class="px-4 py-3 text-sm text-center font-mono text-blue-600 font-semibold">
                     {{ formatNumber(row.hari_kerja || 0) }}
