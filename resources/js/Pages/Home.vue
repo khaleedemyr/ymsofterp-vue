@@ -4000,28 +4000,20 @@ function closePendingSupervisorModal() {
 }
 
 async function loadPendingHrdApprovals() {
-    // Superadmin (id_role = '5af56935b011a') can see all approvals
-    const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!canAccessHrdApprovals()) return; // HRD approver (jabatan 309/153) atau superadmin
-    
+    if (!canAccessHrdApprovals()) return;
+
     loadingHrdApprovals.value = true;
     try {
         const response = await axios.get('/api/approval/pending-hrd?limit=100');
         if (response.data.success) {
             const approvals = response.data.approvals || [];
-            if (isSuperadmin) {
-                // Superadmin sees all approvals that are not completed
-                pendingHrdApprovals.value = approvals.filter(a => {
-                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
-                    return !['approved', 'rejected', 'completed', 'cancelled'].includes(status);
-                });
-            } else {
-                pendingHrdApprovals.value = approvals.filter(a => {
-                    const status = (a.status || a.approval_status || '').toString().toLowerCase();
-                    if (!status) return true;
-                    return status === 'pending' || status === 'awaiting' || status === 'waiting';
-                });
-            }
+            // API pending-hrd sudah filter hrd_status=pending. Jangan filter pakai
+            // `status` (itu tahap atasan, nilainya 'approved' saat masuk HRD).
+            pendingHrdApprovals.value = approvals.filter((a) => {
+                const hrdStatus = (a.hrd_status || '').toString().toLowerCase();
+                if (!hrdStatus) return true;
+                return hrdStatus === 'pending';
+            });
         }
     } catch (error) {
         console.error('Error loading pending HRD approvals:', error);
@@ -4118,10 +4110,10 @@ async function loadAllApprovals() {
     }
 }
 
-function showAllApprovals() {
+async function showAllApprovals() {
     bulkSelectedModalKeys.value = new Set();
     showAllApprovalsModal.value = true;
-    loadAllApprovals();
+    await reloadUnifiedApprovalSources();
 }
 
 // Handle approval actions from modal

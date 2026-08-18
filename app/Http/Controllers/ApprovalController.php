@@ -13,6 +13,7 @@ use App\Services\HolidayAttendanceService;
 use App\Services\NotificationService;
 use App\Support\HrdApprovalAccess;
 use App\Support\AttendancePayrollPeriod;
+use Illuminate\Support\Facades\Cache;
 
 class ApprovalController extends Controller
 {
@@ -45,11 +46,11 @@ class ApprovalController extends Controller
             ->join('leave_types', 'apr.leave_type_id', '=', 'leave_types.id')
             ->where('arf.status', 'PENDING')
             ->where('apr.status', '!=', 'rejected') // Exclude rejected approvals
-            ->where(function($query) {
-                // Exclude approvals that are waiting for HRD (all supervisors approved)
-                // If hrd_status is 'pending', it means all supervisors approved and it should go to HRD
+            ->where(function ($query) {
+                // Hanya tahap atasan: hrd_status masih kosong.
+                // pending = sudah masuk antrian HRD; approved/rejected = selesai — jangan muncul lagi di antrian atasan.
                 $query->whereNull('apr.hrd_status')
-                      ->orWhere('apr.hrd_status', '!=', 'pending');
+                      ->orWhere('apr.hrd_status', '=', '');
             });
 
         if ($hrdQueuePeriod) {
@@ -799,7 +800,9 @@ class ApprovalController extends Controller
                     'name' => $approval->leave_type_name
                 ],
                 'duration_text' => $this->calculateDuration($approval->date_from, $approval->date_to),
-                'approver_name' => $approverName
+                'approver_name' => $approverName,
+                'status' => 'approved',
+                'hrd_status' => 'pending',
             ];
         });
             
@@ -937,7 +940,10 @@ class ApprovalController extends Controller
             ]);
 
             DB::commit();
-            
+
+            $this->forgetLeaveApprovalCaches();
+            $this->markLeaveHrdNotificationsRead($approvalRequest);
+
             // After commit: deduct balance based on leave type
             try {
                 $leaveTypeName = $approvalRequest->leave_type_name ? trim($approvalRequest->leave_type_name) : '';
@@ -1112,6 +1118,9 @@ class ApprovalController extends Controller
             ]);
 
             DB::commit();
+
+            $this->forgetLeaveApprovalCaches();
+            $this->markLeaveHrdNotificationsRead($approvalRequest);
             
             return response()->json([
                 'success' => true,
@@ -1292,5 +1301,33 @@ class ApprovalController extends Controller
                 'message' => 'Failed to mark notification as read: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function forgetLeaveApprovalCaches(): void
+    {
+        $ids = array_unique(array_filter(array_merge(
+            [auth()->id()],
+            HrdApprovalAccess::hrdApproverUserIds()
+        )));
+
+        foreach ($ids as $id) {
+            Cache::forget('all_pending_approvals_v7_' . $id);
+        }
+    }
+
+    private function markLeaveHrdNotificationsRead(object $approvalRequest): void
+    {
+        $name = $approvalRequest->user_name ?? '';
+        $from = $approvalRequest->date_from ?? '';
+        if ($name === '' || $from === '') {
+            return;
+        }
+
+        DB::table('notifications')
+            ->where('type', 'leave_hrd_approval_request')
+            ->where('is_read', 0)
+            ->where('message', 'like', '%' . $name . '%')
+            ->where('message', 'like', '%' . $from . '%')
+            ->update(['is_read' => 1]);
     }
 }
