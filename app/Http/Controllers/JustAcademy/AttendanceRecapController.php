@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\JustAcademy;
 
+use App\Exports\JustAcademy\AttendanceRecapExport;
 use App\Http\Controllers\Controller;
 use App\Models\Divisi;
 use App\Services\JustAcademy\JustAcademyService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class AttendanceRecapController extends Controller
 {
@@ -15,6 +18,44 @@ class AttendanceRecapController extends Controller
     ) {}
 
     public function index(Request $request)
+    {
+        $context = $this->recapContext($request);
+
+        return Inertia::render('JustAcademy/AttendanceRecap/Index', [
+            'sections' => $context['sections'],
+            'scheduleOptions' => $context['scheduleOptions'],
+            'divisions' => $context['divisions'],
+            'filters' => $context['filters'],
+            'reportMeta' => $context['reportMeta'],
+        ]);
+    }
+
+    public function export(Request $request): BinaryFileResponse
+    {
+        $context = $this->recapContext($request);
+        $filters = $context['filters'];
+        $fileName = sprintf(
+            'rekap_kehadiran_training_%02d_%04d.xlsx',
+            $filters['month'],
+            $filters['year']
+        );
+
+        return Excel::download(
+            new AttendanceRecapExport($context['sections'], $context['reportMeta']),
+            $fileName
+        );
+    }
+
+    /**
+     * @return array{
+     *     sections: \Illuminate\Support\Collection,
+     *     scheduleOptions: \Illuminate\Support\Collection,
+     *     divisions: \Illuminate\Support\Collection,
+     *     filters: array{year: int, month: int, division_id: int|null, schedule_id: int|null},
+     *     reportMeta: array{month_label: string, department_label: string, schedule_label: string}
+     * }
+     */
+    private function recapContext(Request $request): array
     {
         $year = (int) $request->input('year', now()->year);
         $month = (int) $request->input('month', now()->month);
@@ -40,7 +81,7 @@ class AttendanceRecapController extends Controller
             ? $scheduleOptions->firstWhere('id', $scheduleId)
             : null;
 
-        return Inertia::render('JustAcademy/AttendanceRecap/Index', [
+        return [
             'sections' => $sections,
             'scheduleOptions' => $scheduleOptions,
             'divisions' => $divisions,
@@ -55,6 +96,6 @@ class AttendanceRecapController extends Controller
                 'department_label' => $selectedDivision?->nama_divisi ?? 'Semua Departemen',
                 'schedule_label' => $selectedSchedule['title'] ?? 'Semua Training Plan',
             ],
-        ]);
+        ];
     }
 }

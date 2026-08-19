@@ -1070,6 +1070,8 @@ Route::delete('/api/master-moq/{id}', [\App\Http\Controllers\MasterMoqController
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/upselling-sales-achievement/search-items', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'searchItems'])
         ->name('upselling-sales-achievement.search-items');
+    Route::post('/upselling-sales-achievement/{upselling_sales_achievement}/duplicate', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'duplicate'])
+        ->name('upselling-sales-achievement.duplicate');
     Route::resource('upselling-sales-achievement', \App\Http\Controllers\UpsellingSalesAchievementController::class);
 
     Route::get('/api/employee-coaching/search-employees', [\App\Http\Controllers\EmployeeCoachingController::class, 'searchEmployees'])
@@ -3925,6 +3927,7 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
 
     Route::get('/reports', [\App\Http\Controllers\JustAcademy\ReportController::class, 'index'])->name('reports.index');
     Route::get('/attendance-recap', [\App\Http\Controllers\JustAcademy\AttendanceRecapController::class, 'index'])->name('attendance-recap.index');
+    Route::get('/attendance-recap/export', [\App\Http\Controllers\JustAcademy\AttendanceRecapController::class, 'export'])->name('attendance-recap.export');
 
     Route::prefix('api')->name('api.')->group(function () {
         Route::get('/users/search', [\App\Http\Controllers\JustAcademy\LookupController::class, 'searchUsers'])->name('users.search');

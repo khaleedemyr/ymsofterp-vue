@@ -70,6 +70,7 @@ class UpsellingSalesAchievementController extends Controller
                 'year' => $year,
             ],
             'monthOptions' => $this->monthOptions(),
+            'yearOptions' => $this->yearOptions(),
         ]);
     }
 
@@ -228,6 +229,15 @@ class UpsellingSalesAchievementController extends Controller
             ->with('success', 'Upselling Sales Achievement berhasil dihapus.');
     }
 
+    public function duplicate(Request $request, UpsellingSalesAchievement $upsellingSalesAchievement)
+    {
+        $copy = $this->duplicateAchievement($request, $upsellingSalesAchievement);
+
+        return redirect()
+            ->route('upselling-sales-achievement.edit', $copy)
+            ->with('success', 'Data berhasil disalin. Silakan cek dan edit isinya.');
+    }
+
     public function searchItems(Request $request)
     {
         $validated = $request->validate([
@@ -289,6 +299,7 @@ class UpsellingSalesAchievementController extends Controller
             ],
             'outlets' => Outlet::where('status', 'A')->orderBy('nama_outlet')->get(['id_outlet', 'nama_outlet']),
             'month_options' => $this->monthOptions(),
+            'year_options' => $this->yearOptions(),
         ]);
     }
 
@@ -386,6 +397,27 @@ class UpsellingSalesAchievementController extends Controller
         ]);
     }
 
+    public function apiDuplicate(Request $request, int $id)
+    {
+        $record = UpsellingSalesAchievement::findOrFail($id);
+
+        try {
+            $copy = $this->duplicateAchievement($request, $record);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Data berhasil disalin. Silakan cek dan edit isinya.',
+                'id' => $copy->id,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Validasi gagal.',
+                'errors' => $e->errors(),
+            ], 422);
+        }
+    }
+
     public function apiSearchItems(Request $request)
     {
         return $this->searchItems($request);
@@ -463,6 +495,71 @@ class UpsellingSalesAchievementController extends Controller
             );
 
             return $achievement;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    private function duplicateAchievement(Request $request, UpsellingSalesAchievement $source): UpsellingSalesAchievement
+    {
+        $currentYear = (int) date('Y');
+        $validated = $request->validate([
+            'month' => 'required|integer|min:1|max:12',
+            'year' => "required|integer|min:{$currentYear}|max:2100",
+        ]);
+
+        $exists = UpsellingSalesAchievement::where('outlet_id', $source->outlet_id)
+            ->where('month', $validated['month'])
+            ->where('year', $validated['year'])
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'month' => 'Data upselling untuk outlet, bulan, dan tahun ini sudah ada.',
+            ]);
+        }
+
+        $source->load(['outlet', 'items']);
+        if ($source->items->isEmpty()) {
+            throw ValidationException::withMessages([
+                'month' => 'Data sumber tidak punya item, tidak bisa disalin.',
+            ]);
+        }
+
+        DB::beginTransaction();
+        try {
+            $copy = UpsellingSalesAchievement::create([
+                'outlet_id' => $source->outlet_id,
+                'month' => $validated['month'],
+                'year' => $validated['year'],
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+
+            $this->syncItems($copy, $source->items->map(fn ($item) => [
+                'item_id' => $item->item_id,
+                'item_name' => $item->item_name,
+                'category_label' => $item->category_label,
+                'average_check' => $item->average_check,
+                'cover' => $item->cover,
+                'fb_revenue' => $item->fb_revenue,
+            ])->all());
+
+            DB::commit();
+
+            $copy->load(['outlet', 'items']);
+            $this->writeActivityLog(
+                $request,
+                'upselling_sales_achievement',
+                'create',
+                $this->activityDescription('Menyalin', $copy).' dari '
+                    .UpsellingSalesAchievementService::monthLabel((int) $source->month).' '.$source->year,
+                null,
+                $this->achievementSnapshot($copy)
+            );
+
+            return $copy;
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;

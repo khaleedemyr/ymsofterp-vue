@@ -175,7 +175,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, onMounted, ref } from 'vue';
 import Swal from 'sweetalert2';
@@ -350,5 +350,10 @@ function submit() {
   } else {
     form.transform(() => payload).post(route('upselling-sales-achievement.store'), options);
   }
+}
+
+const page = usePage();
+if (page.props.flash?.success) {
+  Swal.fire({ icon: 'success', title: 'Berhasil', text: page.props.flash.success, timer: 2500, showConfirmButton: false });
 }
 </script>

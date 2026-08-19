@@ -838,6 +838,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/upselling-sales-achievement/create-data/{id?}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiCreateData'])->where('id', '[0-9]+');
         Route::get('/upselling-sales-achievement/search-items', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiSearchItems']);
         Route::post('/upselling-sales-achievement', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiStore']);
+        Route::post('/upselling-sales-achievement/{id}/duplicate', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiDuplicate'])->where('id', '[0-9]+');
         Route::get('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiShow'])->where('id', '[0-9]+');
         Route::put('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiUpdate'])->where('id', '[0-9]+');
         Route::delete('/upselling-sales-achievement/{id}', [\App\Http\Controllers\UpsellingSalesAchievementController::class, 'apiDestroy'])->where('id', '[0-9]+');

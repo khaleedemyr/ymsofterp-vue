@@ -113,6 +113,14 @@
                   </Link>
                   <button
                     type="button"
+                    @click="confirmCopy(row)"
+                    class="px-3 py-1.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                    title="Salin ke bulan/tahun lain"
+                  >
+                    <i class="fa-solid fa-copy"></i>
+                  </button>
+                  <button
+                    type="button"
                     @click="confirmDelete(row)"
                     class="px-3 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200"
                     title="Delete"
@@ -151,6 +159,7 @@ const props = defineProps({
   outlets: { type: Array, default: () => [] },
   filters: { type: Object, default: () => ({}) },
   monthOptions: { type: Array, default: () => [] },
+  yearOptions: { type: Array, default: () => [] },
 });
 
 const filterForm = reactive({
@@ -214,6 +223,77 @@ function confirmDelete(row) {
     if (result.isConfirmed) {
       router.delete(route('upselling-sales-achievement.destroy', row.id));
     }
+  });
+}
+
+function nextPeriod(month, year) {
+  const m = Number(month) || 1;
+  const y = Number(year) || new Date().getFullYear();
+  if (m === 12) {
+    return { month: 1, year: y + 1 };
+  }
+  return { month: m + 1, year: y };
+}
+
+function confirmCopy(row) {
+  const next = nextPeriod(row.month, row.year);
+  const yearList = [...props.yearOptions];
+  if (next.year && !yearList.some((y) => Number(y.value) === Number(next.year))) {
+    yearList.push({ value: next.year, label: String(next.year) });
+  }
+
+  const monthHtml = props.monthOptions
+    .map((m) => `<option value="${m.value}" ${Number(m.value) === Number(next.month) ? 'selected' : ''}>${m.label}</option>`)
+    .join('');
+  const yearHtml = yearList
+    .map((y) => `<option value="${y.value}" ${Number(y.value) === Number(next.year) ? 'selected' : ''}>${y.label}</option>`)
+    .join('');
+  const outletName = row.outlet?.nama_outlet || 'outlet ini';
+
+  Swal.fire({
+    title: 'Salin data',
+    html: `
+      <p class="text-sm text-gray-600 mb-3 text-left">
+        Salin item dari <strong>${outletName}</strong> (${monthLabel(row.month)} ${row.year}) ke periode baru.
+        Setelah itu Anda bisa langsung edit isinya.
+      </p>
+      <div class="text-left space-y-3">
+        <div>
+          <label for="usa-copy-month" class="block text-xs font-semibold text-gray-600 mb-1">Bulan tujuan</label>
+          <select id="usa-copy-month" class="w-full rounded-lg border-gray-300">${monthHtml}</select>
+        </div>
+        <div>
+          <label for="usa-copy-year" class="block text-xs font-semibold text-gray-600 mb-1">Tahun tujuan</label>
+          <select id="usa-copy-year" class="w-full rounded-lg border-gray-300">${yearHtml}</select>
+        </div>
+      </div>
+    `,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#059669',
+    confirmButtonText: 'Salin',
+    cancelButtonText: 'Batal',
+    focusConfirm: false,
+    preConfirm: () => {
+      const month = Number(document.getElementById('usa-copy-month')?.value);
+      const year = Number(document.getElementById('usa-copy-year')?.value);
+      if (!month || !year) {
+        Swal.showValidationMessage('Pilih bulan dan tahun tujuan.');
+        return false;
+      }
+      return { month, year };
+    },
+  }).then((result) => {
+    if (!result.isConfirmed || !result.value) return;
+    router.post(route('upselling-sales-achievement.duplicate', row.id), result.value, {
+      onError: (errors) => {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal menyalin',
+          text: errors.month || errors.year || 'Tidak bisa menyalin data.',
+        });
+      },
+    });
   });
 }
 

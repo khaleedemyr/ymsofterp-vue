@@ -79,6 +79,20 @@ function printReport() {
   window.print();
 }
 
+function exportExcel() {
+  const params = {
+    year: year.value,
+    month: month.value,
+  };
+  if (selectedDivision.value?.id) {
+    params.division_id = selectedDivision.value.id;
+  }
+  if (selectedSchedule.value?.id) {
+    params.schedule_id = selectedSchedule.value.id;
+  }
+  window.location.href = route('just-academy.attendance-recap.export', params);
+}
+
 function formatRate(value) {
   if (value === null || value === undefined || value === '') return '—';
   return `${value}%`;
@@ -158,6 +172,9 @@ function quizResultClass(result) {
       <button type="button" :class="jaUi.btnPrimary" @click="applyFilters">Tampilkan</button>
       <button type="button" :class="jaUi.btnSecondary" @click="printReport">
         <i class="fa-solid fa-print mr-1" /> Cetak
+      </button>
+      <button type="button" :class="[jaUi.btnSuccess, 'gap-2 px-4 py-2.5']" @click="exportExcel">
+        <i class="fa-solid fa-file-excel" /> Export Excel
       </button>
     </div>
 
