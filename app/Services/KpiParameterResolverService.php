@@ -1319,7 +1319,9 @@ class KpiParameterResolverService
     }
 
     /**
-     * Training plan yang overlap bulan data s/d bulan evaluasi: dibuat oleh atau trainer = user + bawahan.
+     * Training plan yang overlap bulan data s/d bulan evaluasi.
+     * trainerOnly: hanya jadwal di mana user adalah trainer internal (bukan created_by / bawahan).
+     * Selain itu: dibuat oleh atau trainer = user + bawahan langsung.
      *
      * @return list<int>
      */
@@ -1328,6 +1330,7 @@ class KpiParameterResolverService
         string $periodMonth,
         ?string $categoryName = null,
         ?string $evaluationMonth = null,
+        bool $trainerOnly = false,
     ): array {
         if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return [];
@@ -1337,7 +1340,7 @@ class KpiParameterResolverService
             return [];
         }
 
-        $scopeUserIds = $this->resolveTrainingScopeUserIds($userId);
+        $scopeUserIds = $trainerOnly ? [$userId] : $this->resolveTrainingScopeUserIds($userId);
         if ($scopeUserIds === []) {
             return [];
         }
@@ -1354,8 +1357,25 @@ class KpiParameterResolverService
         $query = DB::table('ja_schedules as s')
             ->whereIn('s.status', ['published', 'ongoing', 'completed'])
             ->where('s.start_at', '<=', $rangeEnd)
-            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart])
-            ->where(function ($q) use ($scopeUserIds) {
+            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart]);
+
+        if ($trainerOnly) {
+            if (! DB::getSchemaBuilder()->hasTable('ja_schedule_trainers')) {
+                return [];
+            }
+
+            $query->whereIn('s.id', function ($sub) use ($scopeUserIds) {
+                $sub->from('ja_schedule_trainers')
+                    ->whereIn('user_id', $scopeUserIds)
+                    ->where(function ($trainer) {
+                        $trainer->where('trainer_type', 'internal')
+                            ->orWhereNull('trainer_type')
+                            ->orWhere('trainer_type', '');
+                    })
+                    ->select('schedule_id');
+            });
+        } else {
+            $query->where(function ($q) use ($scopeUserIds) {
                 $q->whereIn('s.created_by', $scopeUserIds);
 
                 if (DB::getSchemaBuilder()->hasTable('ja_schedule_trainers')) {
@@ -1371,6 +1391,7 @@ class KpiParameterResolverService
                     });
                 }
             });
+        }
 
         if (
             $categoryName !== null
@@ -1395,6 +1416,7 @@ class KpiParameterResolverService
             ->pluck('s.id')
             ->map(fn ($id) => (int) $id)
             ->filter(fn ($id) => $id > 0)
+            ->unique()
             ->values()
             ->all();
     }
@@ -1402,64 +1424,11 @@ class KpiParameterResolverService
     /**
      * % modul selesai oleh semua peserta pada satu jadwal training.
      * Pakai item wajib; jika tidak ada yang ditandai wajib, seluruh curriculum dihitung.
+     * Tidak ada peserta = 0% (training sudah dijadwalkan, belum ada completion).
      */
     private function calculateJustAcademyScheduleModuleCompletionPercent(int $scheduleId): ?float
     {
-        $participantIds = DB::table('ja_schedule_participants')
-            ->where('schedule_id', $scheduleId)
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->all();
-
-        if ($participantIds === []) {
-            return null;
-        }
-
-        $itemsQuery = DB::table('ja_program_items as pi')
-            ->join('ja_schedules as s', 's.program_id', '=', 'pi.program_id')
-            ->where('s.id', $scheduleId)
-            ->select('pi.item_type', 'pi.material_id', 'pi.quiz_id', 'pi.is_required');
-
-        $requiredItems = (clone $itemsQuery)->where('pi.is_required', 1)->get();
-        $items = $requiredItems->isNotEmpty() ? $requiredItems : $itemsQuery->get();
-
-        if ($items->isEmpty()) {
-            return null;
-        }
-
-        $total = 0;
-        $completed = 0;
-
-        foreach ($participantIds as $participantId) {
-            foreach ($items as $item) {
-                $total++;
-
-                if ($item->item_type === 'material' && $item->material_id) {
-                    if (DB::table('ja_material_progress')
-                        ->where('schedule_id', $scheduleId)
-                        ->where('user_id', $participantId)
-                        ->where('material_id', $item->material_id)
-                        ->exists()) {
-                        $completed++;
-                    }
-
-                    continue;
-                }
-
-                if ($item->item_type === 'quiz' && $item->quiz_id) {
-                    if (DB::table('ja_quiz_attempts')
-                        ->where('schedule_id', $scheduleId)
-                        ->where('user_id', $participantId)
-                        ->where('quiz_id', $item->quiz_id)
-                        ->whereNotNull('submitted_at')
-                        ->exists()) {
-                        $completed++;
-                    }
-                }
-            }
-        }
-
+        [$completed, $total] = $this->countJustAcademyScheduleModuleCompletion($scheduleId);
         if ($total === 0) {
             return null;
         }
@@ -1468,8 +1437,88 @@ class KpiParameterResolverService
     }
 
     /**
-     * Just Academy — rata-rata % modul selesai pada training plan
-     * yang dibuat / ditrainer oleh user + bawahan langsung.
+     * @return array{0: int, 1: int}
+     */
+    private function countJustAcademyScheduleModuleCompletion(int $scheduleId): array
+    {
+        $itemsQuery = DB::table('ja_program_items as pi')
+            ->join('ja_schedules as s', 's.program_id', '=', 'pi.program_id')
+            ->where('s.id', $scheduleId)
+            ->select('pi.item_type', 'pi.material_id', 'pi.quiz_id', 'pi.is_required');
+
+        $requiredItems = (clone $itemsQuery)->where('pi.is_required', 1)->get();
+        $items = $requiredItems->isNotEmpty() ? $requiredItems : $itemsQuery->get();
+        if ($items->isEmpty()) {
+            return [0, 0];
+        }
+
+        $participantIds = DB::table('ja_schedule_participants')
+            ->where('schedule_id', $scheduleId)
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $itemCount = $items->count();
+        if ($participantIds === []) {
+            return [0, $itemCount];
+        }
+
+        $materialIds = $items->where('item_type', 'material')->pluck('material_id')->filter()->map(fn ($id) => (int) $id)->unique()->all();
+        $quizIds = $items->where('item_type', 'quiz')->pluck('quiz_id')->filter()->map(fn ($id) => (int) $id)->unique()->all();
+
+        $materialDone = [];
+        if ($materialIds !== [] && DB::getSchemaBuilder()->hasTable('ja_material_progress')) {
+            $rows = DB::table('ja_material_progress')
+                ->where('schedule_id', $scheduleId)
+                ->whereIn('user_id', $participantIds)
+                ->whereIn('material_id', $materialIds)
+                ->get(['user_id', 'material_id']);
+            foreach ($rows as $row) {
+                $materialDone[(int) $row->user_id . ':' . (int) $row->material_id] = true;
+            }
+        }
+
+        $quizDone = [];
+        if ($quizIds !== [] && DB::getSchemaBuilder()->hasTable('ja_quiz_attempts')) {
+            $rows = DB::table('ja_quiz_attempts')
+                ->where('schedule_id', $scheduleId)
+                ->whereIn('user_id', $participantIds)
+                ->whereIn('quiz_id', $quizIds)
+                ->whereNotNull('submitted_at')
+                ->get(['user_id', 'quiz_id']);
+            foreach ($rows as $row) {
+                $quizDone[(int) $row->user_id . ':' . (int) $row->quiz_id] = true;
+            }
+        }
+
+        $completed = 0;
+        $total = 0;
+        foreach ($participantIds as $participantId) {
+            foreach ($items as $item) {
+                $total++;
+                if ($item->item_type === 'material' && $item->material_id) {
+                    if (! empty($materialDone[$participantId . ':' . (int) $item->material_id])) {
+                        $completed++;
+                    }
+                    continue;
+                }
+
+                if ($item->item_type === 'quiz' && $item->quiz_id && ! empty($quizDone[$participantId . ':' . (int) $item->quiz_id])) {
+                    $completed++;
+                }
+            }
+        }
+
+        return [$completed, $total];
+    }
+
+    /**
+     * Just Academy — rata-rata completion training yang sudah dijadwalkan.
+     * D018 (method null): semua jadwal di mana user evaluasi adalah trainer.
+     * D019: method Competency Assessment, created/trainer user + bawahan.
      */
     private function resolveJustAcademyTrainingCompletion(
         int $userId,
@@ -1481,21 +1530,26 @@ class KpiParameterResolverService
             return null;
         }
 
-        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth, $methodName, $evaluationMonth);
+        $trainerOnly = $methodName === null;
+        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds(
+            $userId,
+            $periodMonth,
+            $methodName,
+            $evaluationMonth,
+            $trainerOnly,
+        );
         if ($scheduleIds === []) {
-            return null;
+            return $trainerOnly ? 0.0 : null;
         }
 
         $percents = [];
         foreach ($scheduleIds as $scheduleId) {
             $percent = $this->calculateJustAcademyScheduleModuleCompletionPercent($scheduleId);
-            if ($percent !== null) {
-                $percents[] = $percent;
-            }
+            $percents[] = $percent ?? 0.0;
         }
 
         if ($percents === []) {
-            return null;
+            return $trainerOnly ? 0.0 : null;
         }
 
         return round(array_sum($percents) / count($percents), 2);

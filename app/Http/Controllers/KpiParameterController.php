@@ -221,7 +221,7 @@ class KpiParameterController extends Controller
                 ['value' => 'outlet_internal_use_waste', 'label' => 'Outlet Internal Use & Waste'],
                 ['value' => 'cost_report_cogs', 'label' => 'Cost Report - COGS'],
                 ['value' => 'training_compliance', 'label' => 'Training Compliance (legacy)'],
-                ['value' => 'just_academy_training_completion', 'label' => 'Just Academy — Training Plan Module Completion %'],
+                ['value' => 'just_academy_training_completion', 'label' => 'Just Academy — % completion semua training plan (user sebagai trainer)'],
                 ['value' => 'just_academy_competency_assessment_score', 'label' => 'Just Academy — Competency Assessment training completion % (method Competency Assessment)'],
                 ['value' => 'qa2_audit1_score', 'label' => 'QA2 Audits — Compliance Score % (avg per outlet, semua parameter)'],
                 ['value' => 'qa2_recipe_compliance_score', 'label' => 'QA2 Audits — Recipe Compliance % (BRA-1.5.3 & BRA-1.4.6, C/(C+NC))'],
