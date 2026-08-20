@@ -171,6 +171,11 @@ class KpiEvaluationService
         return (bool) preg_match('/\bD031\b/', $formula);
     }
 
+    private function usesSopDevelopmentPeriod(string $formula): bool
+    {
+        return (bool) preg_match('/\bD033\b/', $formula);
+    }
+
     /**
      * Just Academy dihitung dari bulan data sampai bulan evaluasi (training yang di-conduct bulan ini ikut).
      *
@@ -268,6 +273,7 @@ class KpiEvaluationService
             $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
             if ($this->usesJustAcademyConductedPeriod((string) ($row['formula'] ?? ''))
                 || $this->usesInductionOutletPeriod((string) ($row['formula'] ?? ''))
+                || $this->usesSopDevelopmentPeriod((string) ($row['formula'] ?? ''))
             ) {
                 $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
             }
@@ -437,7 +443,7 @@ class KpiEvaluationService
             $row['frequency'] = $frequency;
             if ($evaluationPeriodMonth !== null) {
                 $window = $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth);
-                if (in_array((string) $pv->parameter_code, ['D018', 'D019', 'D031'], true)) {
+                if (in_array((string) $pv->parameter_code, ['D018', 'D019', 'D031', 'D033'], true)) {
                     $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
                 }
                 $row = array_merge($row, $window);
@@ -597,6 +603,8 @@ class KpiEvaluationService
                 => 'Isi persentase minggu induction onboarding yang selesai tepat waktu (0–100, tanpa simbol %).',
             $code === 'D032' || str_contains($lowerName, 'coaching visit')
                 => 'Isi jumlah karyawan unik yang di-coaching (bilangan bulat).',
+            $code === 'D033' || str_contains($lowerName, 'sop development')
+                => 'Persentase SOP Development yang dibuat user ini dan sudah di-upload/approved (0–100, tanpa simbol %).',
             $code === 'D043' || str_contains($lowerName, 'new products developed')
                 => 'Jumlah produk NPD approved dari menu NPD Plan & Report (PIC / creator) — otomatis dari ERP bila hybrid.',
             $code === 'D046' || str_contains($lowerName, 'benchmark reports')
@@ -677,6 +685,7 @@ class KpiEvaluationService
             'outlet_avg_check_prev_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan sebelumnya.',
             'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu terbuka yang submit tepat waktu di outlet scope KPI (bukan induction user evaluasi).',
             'employee_coaching_person_count' => 'Sumber ERP: Employee Coaching — jumlah karyawan unik di-coaching.',
+            'sop_development_completion_percent' => 'Sumber ERP: SOP Development Completion — % SOP yang dibuat user dan sudah di-upload/approved.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_beverage_complaint_count' => 'Sumber ERP: CVCC — komplain beverage/bar (negative + CAPA).',
             'cvcc_food_complaint_count' => 'Sumber ERP: CVCC — komplain food/kitchen (negative + CAPA).',

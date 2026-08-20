@@ -30,7 +30,7 @@ INSERT INTO `kpi_parameters` (
 ('D030', 'Previous Period Average Check',       'erp',    'outlet',   'decimal', 'Average check previous period',          NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D031', 'Employee Induction Completion %',     'hybrid', 'outlet',   'percent', 'Onboarding week on-time % at KPI outlets', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D032', 'Coaching Visit Person Count',         'hybrid', 'employee', 'integer', 'Distinct employees coached in period',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D033', 'SOP Development Completion %',        'manual', 'employee', 'percent', 'SOP development project completion',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D033', 'SOP Development Completion %',        'hybrid', 'employee', 'percent', 'SOP Development menu — % dibuat user yang sudah upload/approved', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D034', 'Monthly Dev Program Implementation %','manual', 'employee', 'percent', 'Monthly development program execution',  NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D035', 'Beverage Avg Serving Time (minutes)', 'hybrid', 'outlet',   'decimal', 'Avg beverage serving time per order',    NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D036', 'Taste Calibration Completion %',      'manual', 'outlet',   'percent', 'Product taste calibration completion',   NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
@@ -104,7 +104,8 @@ JOIN (
     SELECT 'D029', 'outlet_avg_check_data_month', 'avg' UNION ALL
     SELECT 'D030', 'outlet_avg_check_prev_month', 'avg' UNION ALL
     SELECT 'D031', 'employee_induction_on_time_percent', 'avg' UNION ALL
-    SELECT 'D032', 'employee_coaching_person_count', 'count'
+    SELECT 'D032', 'employee_coaching_person_count', 'count' UNION ALL
+    SELECT 'D033', 'sop_development_completion_percent', 'avg'
 ) v ON v.code = p.code
 ON DUPLICATE KEY UPDATE `resolver_key` = VALUES(`resolver_key`), `aggregation` = VALUES(`aggregation`), `updated_at` = NOW();
 

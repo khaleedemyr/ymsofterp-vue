@@ -701,6 +701,11 @@ class KpiParameterResolverService
                 $outletIds,
                 $periodMonth,
             ),
+            'sop_development_completion_percent' => $this->resolveSopDevelopmentCompletionPercent(
+                (int) ($context['user_id'] ?? 0),
+                $periodMonth,
+                (string) ($context['evaluation_period_month'] ?? ''),
+            ),
             'npd_approved_product_count' => $this->resolveNpdApprovedProductCount(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
@@ -786,6 +791,7 @@ class KpiParameterResolverService
             'outlet_avg_check_prev_month',
             'employee_induction_on_time_percent',
             'employee_coaching_person_count',
+            'sop_development_completion_percent',
             'npd_approved_product_count',
             'competitor_benchmark_execution_count',
             'fb_product_calibration_completion_percent',
@@ -2799,6 +2805,54 @@ class KpiParameterResolverService
         $count = (int) $query->distinct()->count('employee_id');
 
         return (float) $count;
+    }
+
+    /**
+     * % SOP Development yang dibuat user evaluasi dan sudah di-upload / selesai.
+     * Approved atau pending (sudah ada file) = complete. Draft tanpa file = belum.
+     */
+    private function resolveSopDevelopmentCompletionPercent(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+    ): ?float {
+        if (
+            $userId <= 0
+            || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)
+            || ! DB::getSchemaBuilder()->hasTable('sop_development_completions')
+        ) {
+            return null;
+        }
+
+        $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth()->startOfDay();
+        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
+            ? $evaluationMonth
+            : $periodMonth;
+        if ($endMonth < $periodMonth) {
+            $endMonth = $periodMonth;
+        }
+        $periodEnd = Carbon::createFromFormat('Y-m', $endMonth)->endOfMonth()->endOfDay();
+
+        $rows = DB::table('sop_development_completions')
+            ->where('user_id', $userId)
+            ->where(function ($q) use ($periodStart, $periodEnd) {
+                $q->whereBetween('created_at', [$periodStart, $periodEnd])
+                    ->orWhereBetween('submitted_at', [$periodStart, $periodEnd]);
+            })
+            ->get(['id', 'status', 'file_path']);
+
+        if ($rows->isEmpty()) {
+            return 0.0;
+        }
+
+        $completed = $rows->filter(function ($row) {
+            $status = (string) ($row->status ?? '');
+            $hasFile = trim((string) ($row->file_path ?? '')) !== '';
+
+            return $status === 'approved' || ($status === 'pending' && $hasFile);
+        })->count();
+
+        return round(($completed / $rows->count()) * 100, 2);
     }
 
     private function resolveNpdApprovedProductCount(int $userId, string $periodMonth): ?float
