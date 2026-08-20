@@ -609,10 +609,13 @@ class KpiParameterResolverService
             'just_academy_training_completion' => $this->resolveJustAcademyTrainingCompletion(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
+                null,
+                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'just_academy_competency_assessment_score' => $this->resolveJustAcademyCompetencyAssessmentScore(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
+                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'qa2_audit1_score' => $this->resolveQa2Audit1Score(
                 $outletIds,
@@ -1314,12 +1317,16 @@ class KpiParameterResolverService
     }
 
     /**
-     * Training plan bulan data: dibuat oleh atau trainer internal = user + bawahan.
+     * Training plan yang overlap bulan data s/d bulan evaluasi: dibuat oleh atau trainer = user + bawahan.
      *
      * @return list<int>
      */
-    private function resolveJustAcademyScopedScheduleIds(int $userId, string $periodMonth, ?string $categoryName = null): array
-    {
+    private function resolveJustAcademyScopedScheduleIds(
+        int $userId,
+        string $periodMonth,
+        ?string $categoryName = null,
+        ?string $evaluationMonth = null,
+    ): array {
         if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return [];
         }
@@ -1334,12 +1341,18 @@ class KpiParameterResolverService
         }
 
         $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
-        $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
+            ? $evaluationMonth
+            : $periodMonth;
+        if ($endMonth < $periodMonth) {
+            $endMonth = $periodMonth;
+        }
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
 
         $query = DB::table('ja_schedules as s')
             ->whereIn('s.status', ['published', 'ongoing', 'completed'])
-            ->where('s.start_at', '>=', $rangeStart)
             ->where('s.start_at', '<=', $rangeEnd)
+            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart])
             ->where(function ($q) use ($scopeUserIds) {
                 $q->whereIn('s.created_by', $scopeUserIds);
 
@@ -1347,7 +1360,11 @@ class KpiParameterResolverService
                     $q->orWhereIn('s.id', function ($sub) use ($scopeUserIds) {
                         $sub->from('ja_schedule_trainers')
                             ->whereIn('user_id', $scopeUserIds)
-                            ->where('trainer_type', 'internal')
+                            ->where(function ($trainer) {
+                                $trainer->where('trainer_type', 'internal')
+                                    ->orWhereNull('trainer_type')
+                                    ->orWhere('trainer_type', '');
+                            })
                             ->select('schedule_id');
                     });
                 }
@@ -1429,17 +1446,12 @@ class KpiParameterResolverService
                 }
 
                 if ($item->item_type === 'quiz' && $item->quiz_id) {
-                    $quizQuery = DB::table('ja_quiz_attempts')
+                    if (DB::table('ja_quiz_attempts')
                         ->where('schedule_id', $scheduleId)
                         ->where('user_id', $participantId)
                         ->where('quiz_id', $item->quiz_id)
-                        ->whereNotNull('submitted_at');
-
-                    if ((int) ($item->is_required ?? 0) === 1) {
-                        $quizQuery->where('passed', 1);
-                    }
-
-                    if ($quizQuery->exists()) {
+                        ->whereNotNull('submitted_at')
+                        ->exists()) {
                         $completed++;
                     }
                 }
@@ -1457,13 +1469,17 @@ class KpiParameterResolverService
      * Just Academy — rata-rata % modul selesai pada training plan
      * yang dibuat / ditrainer oleh user + bawahan langsung.
      */
-    private function resolveJustAcademyTrainingCompletion(int $userId, string $periodMonth, ?string $methodName = null): ?float
-    {
+    private function resolveJustAcademyTrainingCompletion(
+        int $userId,
+        string $periodMonth,
+        ?string $methodName = null,
+        ?string $evaluationMonth = null,
+    ): ?float {
         if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return null;
         }
 
-        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth, $methodName);
+        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth, $methodName, $evaluationMonth);
         if ($scheduleIds === []) {
             return null;
         }
@@ -1487,9 +1503,17 @@ class KpiParameterResolverService
      * Just Academy — % training completion untuk method/program Competency Assessment
      * yang di-conduct (dibuat / ditrainer) oleh user + bawahan.
      */
-    private function resolveJustAcademyCompetencyAssessmentScore(int $userId, string $periodMonth): ?float
-    {
-        return $this->resolveJustAcademyTrainingCompletion($userId, $periodMonth, 'Competency Assessment');
+    private function resolveJustAcademyCompetencyAssessmentScore(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+    ): ?float {
+        return $this->resolveJustAcademyTrainingCompletion(
+            $userId,
+            $periodMonth,
+            'Competency Assessment',
+            $evaluationMonth,
+        );
     }
 
     /**

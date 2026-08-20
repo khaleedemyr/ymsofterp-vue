@@ -161,6 +161,45 @@ class KpiEvaluationService
         ];
     }
 
+    private function usesJustAcademyConductedPeriod(string $formula): bool
+    {
+        return (bool) preg_match('/\b(D018|D019)\b/', $formula);
+    }
+
+    /**
+     * Just Academy dihitung dari bulan data sampai bulan evaluasi (training yang di-conduct bulan ini ikut).
+     *
+     * @param  array{frequency: string, frequency_label: string, data_period_months: list<string>, data_window_label: string, data_window_month_count: int}  $window
+     * @return array{frequency: string, frequency_label: string, data_period_months: list<string>, data_window_label: string, data_window_month_count: int}
+     */
+    private function extendWindowThroughEvaluationMonth(array $window, string $evaluationPeriodMonth): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $evaluationPeriodMonth)) {
+            return $window;
+        }
+
+        $months = array_values(array_unique(array_merge(
+            $window['data_period_months'] ?? [],
+            [$evaluationPeriodMonth],
+        )));
+        sort($months);
+
+        $outletAnalyzer = app(OutletAnalyzerService::class);
+        if (count($months) === 1) {
+            $windowLabel = $outletAnalyzer->calendarPeriod($months[0])['label'];
+        } else {
+            $first = Carbon::createFromFormat('Y-m', $months[0]);
+            $last = Carbon::createFromFormat('Y-m', $months[array_key_last($months)]);
+            $windowLabel = $first->locale('id')->translatedFormat('F').' – '.$last->locale('id')->translatedFormat('F Y');
+        }
+
+        $window['data_period_months'] = $months;
+        $window['data_window_label'] = $windowLabel;
+        $window['data_window_month_count'] = count($months);
+
+        return $window;
+    }
+
     /**
      * Skor key strategy = rata-rata tertimbang skor KPI dalam strategy (skala 0–100).
      */
@@ -222,6 +261,9 @@ class KpiEvaluationService
         return $items->map(function (KpiEvaluationItem $item) use ($evaluationPeriodMonth) {
             $row = $item->toArray();
             $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
+            if ($this->usesJustAcademyConductedPeriod((string) ($row['formula'] ?? ''))) {
+                $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
+            }
 
             return array_merge($row, $window, $this->resolveAchievementDisplayMeta($item));
         })->values()->all();
@@ -387,7 +429,11 @@ class KpiEvaluationService
             );
             $row['frequency'] = $frequency;
             if ($evaluationPeriodMonth !== null) {
-                $row = array_merge($row, $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth));
+                $window = $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth);
+                if (in_array((string) $pv->parameter_code, ['D018', 'D019'], true)) {
+                    $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
+                }
+                $row = array_merge($row, $window);
             }
 
             return $row;
