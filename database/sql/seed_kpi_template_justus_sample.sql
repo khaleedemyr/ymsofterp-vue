@@ -45,7 +45,7 @@ INSERT INTO `kpi_parameters` (
 ('D016', 'QA Audit Passing Score',         'hybrid', 'outlet',   'percent', 'QA audit passing score',       NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D017', 'SOP Compliance Score',           'hybrid', 'outlet',   'percent', 'SOP / mystery guest score',    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D018', 'Training Completion %',          'erp',    'employee', 'percent', 'Training completion %',        NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D019', 'Competency Assessment Score',    'hybrid', 'employee', 'percent', 'Assessment test avg score',    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D019', 'Competency Assessment Completion %', 'hybrid', 'employee', 'percent', 'Just Academy method Competency Assessment completion', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D020', 'INC Program Completion',         'manual', 'employee', 'percent', 'INC program completion',       NULL, 'higher_better', 'monthly', NULL, 0, 'A', NOW(), NOW()),
 ('D021', 'Outlet Visit Count',             'erp',    'outlet',   'integer', 'Regional/ops visit count',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D022', 'Target Outlet Visits',           'hybrid', 'employee', 'integer', 'Target visit count (Regional Management)', NULL, 'higher_better', 'monthly', NULL, 0, 'A', NOW(), NOW()),

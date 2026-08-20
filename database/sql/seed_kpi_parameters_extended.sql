@@ -36,8 +36,9 @@ INSERT INTO `kpi_parameters` (
 ('D036', 'Taste Calibration Completion %',      'manual', 'outlet',   'percent', 'Product taste calibration completion',   NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D037', 'Menu Items Available Count',          'hybrid', 'outlet',   'integer', 'Menu items available',                   NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D038', 'Total Menu Items Count',              'hybrid', 'outlet',   'integer', 'Total active menu items',                NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D040', 'Beverage Complaint Count',            'erp',    'outlet',   'integer', 'Beverage-related complaints',            NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D042', 'Food / Kitchen Complaint Count',      'erp',    'outlet',   'integer', 'Food/kitchen complaints',                NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D040', 'Beverage Complaint Count',            'erp',    'outlet',   'integer', 'CVCC beverage/bar negative + CAPA filled', NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D041', 'Service Complaint Count',             'erp',    'outlet',   'integer', 'CVCC service negative + CAPA filled',     NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D042', 'Food / Kitchen Complaint Count',      'erp',    'outlet',   'integer', 'CVCC kitchen negative + CAPA filled',     NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D043', 'New Products Developed Count',        'manual', 'employee', 'integer', 'Approved trial-ready new products',      NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D044', 'Successful Innovations Count',        'manual', 'employee', 'integer', 'Successful product innovations',         NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D045', 'Total Innovations Launched Count',    'manual', 'employee', 'integer', 'Total innovations launched',             NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
@@ -95,8 +96,9 @@ SELECT p.id, v.resolver_key, NULL, '{"outlet_id":"context.outlet_id","month":"co
 FROM `kpi_parameters` p
 JOIN (
     -- D013 tetap pakai mapping sample (guest_comment_gsi count) untuk KPI10 — jangan diubah
-    SELECT 'D040' AS code, 'ticket_complaint_count' AS resolver_key, 'count' AS aggregation UNION ALL
-    SELECT 'D042', 'ticket_complaint_count', 'count' UNION ALL
+    SELECT 'D040' AS code, 'cvcc_beverage_complaint_count' AS resolver_key, 'count' AS aggregation UNION ALL
+    SELECT 'D041', 'cvcc_service_complaint_count', 'count' UNION ALL
+    SELECT 'D042', 'cvcc_food_complaint_count', 'count' UNION ALL
     SELECT 'D027', 'upselling_actual_fb_revenue', 'sum' UNION ALL
     SELECT 'D028', 'upselling_target_fb_revenue', 'sum' UNION ALL
     SELECT 'D029', 'outlet_avg_check_data_month', 'avg' UNION ALL

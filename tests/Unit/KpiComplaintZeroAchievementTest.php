@@ -64,6 +64,39 @@ class KpiComplaintZeroAchievementTest extends TestCase
         $this->assertSame(100.0, $scoring['score']);
     }
 
+    public function test_zero_beverage_complaints_over_zero_orders_is_zero_percent(): void
+    {
+        $result = $this->invoke('evaluateFormula', ['D040 / D011 * 100', [
+            'D040' => 0.0,
+            'D011' => 0.0,
+        ]]);
+
+        $this->assertSame(0.0, $result);
+    }
+
+    public function test_zero_food_complaints_over_zero_orders_is_zero_percent(): void
+    {
+        $result = $this->invoke('evaluateFormula', ['D042 / D011 * 100', [
+            'D042' => 0.0,
+            'D011' => 0.0,
+        ]]);
+
+        $this->assertSame(0.0, $result);
+    }
+
+    public function test_zero_service_complaint_count_meets_lower_better_target(): void
+    {
+        $scoring = $this->invoke('scoreItem', [
+            0.0,
+            'lower_better',
+            ['meeting_min' => 85, 'exceeding_min' => 100],
+            '<= 0.50%',
+        ]);
+
+        $this->assertSame('exceeding', $scoring['level']);
+        $this->assertSame(100.0, $scoring['score']);
+    }
+
     /**
      * @param  list<mixed>  $args
      */

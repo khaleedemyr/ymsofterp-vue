@@ -5,7 +5,7 @@
 UPDATE `kpi_parameters`
 SET
     `name` = 'Just Academy Competency Assessment Score',
-    `description` = 'Avg quiz score — training method Competency Assessment (plan by user + bawahan)',
+    `description` = 'Training completion % — Just Academy method Competency Assessment (plan di-conduct user + bawahan)',
     `source_type` = 'hybrid',
     `scope_type` = 'employee',
     `data_type` = 'percent',
@@ -23,7 +23,7 @@ SELECT
     'hybrid',
     'employee',
     'percent',
-    'Avg quiz score — training method Competency Assessment (plan by user + bawahan)',
+    'Training completion % — Just Academy method Competency Assessment (plan di-conduct user + bawahan)',
     '>= 90%',
     'higher_better',
     'monthly',
@@ -38,7 +38,7 @@ UPDATE `kpi_parameters`
 SET
     `source_type` = 'hybrid',
     `formula` = 'D019',
-    `description` = 'Competency Assessment dari Just Academy (method Competency Assessment)',
+    `description` = 'Training completion % method Competency Assessment di Just Academy (conducted by user)',
     `updated_at` = NOW()
 WHERE `code` = 'KPI12';
 

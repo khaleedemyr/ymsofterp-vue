@@ -515,12 +515,13 @@ class KpiParameterResolverService
                 }
             }
 
-            $usesCvcc = $usesParameter('D053') || $usesParameter('D054') || $usesParameter('D055');
+            $usesCvcc = $usesParameter('D040') || $usesParameter('D041') || $usesParameter('D042')
+                || $usesParameter('D053') || $usesParameter('D054') || $usesParameter('D055');
             if ($usesCvcc) {
                 $userId = (int) ($context['user_id'] ?? 0);
                 $cvccScope = $userId > 0 ? $this->resolveCvccRegionalScope($userId) : null;
                 if ($cvccScope === null) {
-                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC (D053/D054/D055) tidak bisa dihitung.';
+                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC complaint (D040/D041/D042, D053/D054/D055) tidak bisa dihitung.';
                 }
             }
         }
@@ -585,10 +586,6 @@ class KpiParameterResolverService
             return null;
         }
 
-        if ($parameter->scope_type !== 'employee' && empty($outletIds)) {
-            return null;
-        }
-
         $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
         $year = (int) substr($periodMonth, 0, 4);
         $month = (int) substr($periodMonth, 5, 2);
@@ -597,6 +594,11 @@ class KpiParameterResolverService
         $attendanceEnd = (string) ($context['attendance_end'] ?? $this->outletAnalyzer->payrollPeriod($periodMonth)['end_date']);
 
         $aggregation = strtolower(trim((string) ($mapping->aggregation ?? 'sum')));
+        $isCvccResolver = str_starts_with((string) $mapping->resolver_key, 'cvcc_');
+
+        if ($parameter->scope_type !== 'employee' && empty($outletIds) && ! $isCvccResolver) {
+            return null;
+        }
 
         $standalone = match ($mapping->resolver_key) {
             'daily_revenue_forecast' => $this->resolveOrderPosMetric($outletIds, $periodMonth, $aggregation, $useFullCalendarMonth),
@@ -714,10 +716,32 @@ class KpiParameterResolverService
                 $period['end_date'],
                 $this->singleOutletIdFromContext($context),
             ),
-            'cvcc_service_negative_complaint_count' => $this->resolveCvccServiceNegativeComplaintCount(
+            'cvcc_service_negative_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
+                'service',
+                $this->singleOutletIdFromContext($context),
+            ),
+            'cvcc_service_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
+                (int) ($context['user_id'] ?? 0),
+                $period['start_date'],
+                $period['end_date'],
+                'service',
+                $this->singleOutletIdFromContext($context),
+            ),
+            'cvcc_beverage_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
+                (int) ($context['user_id'] ?? 0),
+                $period['start_date'],
+                $period['end_date'],
+                'bar',
+                $this->singleOutletIdFromContext($context),
+            ),
+            'cvcc_food_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
+                (int) ($context['user_id'] ?? 0),
+                $period['start_date'],
+                $period['end_date'],
+                'kitchen',
                 $this->singleOutletIdFromContext($context),
             ),
             'cvcc_total_review_count' => $this->resolveCvccTotalReviewCount(
@@ -762,6 +786,9 @@ class KpiParameterResolverService
             'fb_product_calibration_completion_percent',
             'cvcc_avg_resolution_hours',
             'cvcc_service_negative_complaint_count',
+            'cvcc_service_complaint_count',
+            'cvcc_beverage_complaint_count',
+            'cvcc_food_complaint_count',
             'cvcc_total_review_count',
         ], true)) {
             return $standalone;
@@ -1332,10 +1359,15 @@ class KpiParameterResolverService
             && DB::getSchemaBuilder()->hasTable('ja_categories')
         ) {
             $needle = strtolower(trim($categoryName));
-            $query->whereIn('s.program_id', function ($sub) use ($needle) {
+            $like = '%' . $needle . '%';
+            $query->whereIn('s.program_id', function ($sub) use ($needle, $like) {
                 $sub->from('ja_programs as p')
-                    ->join('ja_categories as c', 'c.id', '=', 'p.category_id')
-                    ->whereRaw('LOWER(TRIM(c.name)) = ?', [$needle])
+                    ->leftJoin('ja_categories as c', 'c.id', '=', 'p.category_id')
+                    ->where(function ($w) use ($needle, $like) {
+                        $w->whereRaw('LOWER(TRIM(c.name)) = ?', [$needle])
+                            ->orWhereRaw('LOWER(c.name) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(p.title) LIKE ?', [$like]);
+                    })
                     ->select('p.id');
             });
         }
@@ -1349,7 +1381,8 @@ class KpiParameterResolverService
     }
 
     /**
-     * % modul wajib selesai oleh semua peserta pada satu jadwal training.
+     * % modul selesai oleh semua peserta pada satu jadwal training.
+     * Pakai item wajib; jika tidak ada yang ditandai wajib, seluruh curriculum dihitung.
      */
     private function calculateJustAcademyScheduleModuleCompletionPercent(int $scheduleId): ?float
     {
@@ -1364,14 +1397,15 @@ class KpiParameterResolverService
             return null;
         }
 
-        $requiredItems = DB::table('ja_program_items as pi')
+        $itemsQuery = DB::table('ja_program_items as pi')
             ->join('ja_schedules as s', 's.program_id', '=', 'pi.program_id')
             ->where('s.id', $scheduleId)
-            ->where('pi.is_required', 1)
-            ->select('pi.item_type', 'pi.material_id', 'pi.quiz_id')
-            ->get();
+            ->select('pi.item_type', 'pi.material_id', 'pi.quiz_id', 'pi.is_required');
 
-        if ($requiredItems->isEmpty()) {
+        $requiredItems = (clone $itemsQuery)->where('pi.is_required', 1)->get();
+        $items = $requiredItems->isNotEmpty() ? $requiredItems : $itemsQuery->get();
+
+        if ($items->isEmpty()) {
             return null;
         }
 
@@ -1379,7 +1413,7 @@ class KpiParameterResolverService
         $completed = 0;
 
         foreach ($participantIds as $participantId) {
-            foreach ($requiredItems as $item) {
+            foreach ($items as $item) {
                 $total++;
 
                 if ($item->item_type === 'material' && $item->material_id) {
@@ -1395,13 +1429,17 @@ class KpiParameterResolverService
                 }
 
                 if ($item->item_type === 'quiz' && $item->quiz_id) {
-                    if (DB::table('ja_quiz_attempts')
+                    $quizQuery = DB::table('ja_quiz_attempts')
                         ->where('schedule_id', $scheduleId)
                         ->where('user_id', $participantId)
                         ->where('quiz_id', $item->quiz_id)
-                        ->whereNotNull('submitted_at')
-                        ->where('passed', 1)
-                        ->exists()) {
+                        ->whereNotNull('submitted_at');
+
+                    if ((int) ($item->is_required ?? 0) === 1) {
+                        $quizQuery->where('passed', 1);
+                    }
+
+                    if ($quizQuery->exists()) {
                         $completed++;
                     }
                 }
@@ -1416,16 +1454,16 @@ class KpiParameterResolverService
     }
 
     /**
-     * Just Academy — rata-rata % modul wajib selesai pada training plan
+     * Just Academy — rata-rata % modul selesai pada training plan
      * yang dibuat / ditrainer oleh user + bawahan langsung.
      */
-    private function resolveJustAcademyTrainingCompletion(int $userId, string $periodMonth): ?float
+    private function resolveJustAcademyTrainingCompletion(int $userId, string $periodMonth, ?string $methodName = null): ?float
     {
         if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
             return null;
         }
 
-        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth);
+        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth, $methodName);
         if ($scheduleIds === []) {
             return null;
         }
@@ -1446,72 +1484,12 @@ class KpiParameterResolverService
     }
 
     /**
-     * Just Academy — rata-rata skor assessment pada training method Competency Assessment
-     * (training plan dibuat / ditrainer oleh user + bawahan).
+     * Just Academy — % training completion untuk method/program Competency Assessment
+     * yang di-conduct (dibuat / ditrainer) oleh user + bawahan.
      */
     private function resolveJustAcademyCompetencyAssessmentScore(int $userId, string $periodMonth): ?float
     {
-        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
-            return null;
-        }
-
-        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds($userId, $periodMonth, 'Competency Assessment');
-        if ($scheduleIds === []) {
-            return null;
-        }
-
-        $scores = [];
-        foreach ($scheduleIds as $scheduleId) {
-            $participantIds = DB::table('ja_schedule_participants')
-                ->where('schedule_id', $scheduleId)
-                ->pluck('user_id')
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->all();
-
-            if ($participantIds === []) {
-                continue;
-            }
-
-            $programId = (int) (DB::table('ja_schedules')->where('id', $scheduleId)->value('program_id') ?? 0);
-            if ($programId <= 0) {
-                continue;
-            }
-
-            $quizIds = DB::table('ja_program_items')
-                ->where('program_id', $programId)
-                ->where('item_type', 'quiz')
-                ->whereNotNull('quiz_id')
-                ->orderBy('sort_order')
-                ->pluck('quiz_id')
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->values();
-
-            if ($quizIds->isEmpty()) {
-                continue;
-            }
-
-            $assessmentQuizId = (int) $quizIds->last();
-            foreach ($participantIds as $participantId) {
-                $bestScore = DB::table('ja_quiz_attempts')
-                    ->where('schedule_id', $scheduleId)
-                    ->where('user_id', $participantId)
-                    ->where('quiz_id', $assessmentQuizId)
-                    ->whereNotNull('submitted_at')
-                    ->max('score');
-
-                if ($bestScore !== null) {
-                    $scores[] = (float) $bestScore;
-                }
-            }
-        }
-
-        if ($scores === []) {
-            return null;
-        }
-
-        return round(array_sum($scores) / count($scores), 2);
+        return $this->resolveJustAcademyTrainingCompletion($userId, $periodMonth, 'Competency Assessment');
     }
 
     /**
@@ -2400,14 +2378,28 @@ class KpiParameterResolverService
     }
 
     /**
-     * Negative comment CVCC dengan CAPA division area user yang sudah diisi.
+     * Negative comment CVCC dengan CAPA division (bar / kitchen / service) yang sudah diisi.
+     * Tidak ada komplain = 0 (memenuhi target lower-is-better).
      */
-    private function resolveCvccServiceNegativeComplaintCount(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
-    {
+    private function resolveCvccDivisionNegativeComplaintCount(
+        int $userId,
+        string $startDate,
+        string $endDate,
+        string $division,
+        ?int $outletId = null,
+    ): ?float {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
             return null;
         }
+
+        $division = strtolower(trim($division));
+        if (! in_array($division, ['bar', 'kitchen', 'service'], true)) {
+            return null;
+        }
+
+        $scope['capa_divisions'] = [$division];
+        $scope['capa_division'] = $division;
 
         $count = 0;
         foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
@@ -2422,7 +2414,6 @@ class KpiParameterResolverService
             $count++;
         }
 
-        // 0 komplain negatif = rasio 0% (memenuhi target <= 0.50%).
         return (float) $count;
     }
 
