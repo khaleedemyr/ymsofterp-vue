@@ -28,7 +28,7 @@ INSERT INTO `kpi_parameters` (
 ('D028', 'Target Upselling Sales',              'hybrid', 'outlet',   'decimal', 'Target F&B revenue upselling (Upselling menu)', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D029', 'Current Period Average Check',        'erp',    'outlet',   'decimal', 'Average check current period',           NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D030', 'Previous Period Average Check',       'erp',    'outlet',   'decimal', 'Average check previous period',          NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D031', 'Employee Induction Completion %',     'hybrid', 'employee', 'percent', 'Onboarding week approved on time %',       NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
+('D031', 'Employee Induction Completion %',     'hybrid', 'outlet',   'percent', 'Onboarding week on-time % at KPI outlets', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D032', 'Coaching Visit Person Count',         'hybrid', 'employee', 'integer', 'Distinct employees coached in period',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D033', 'SOP Development Completion %',        'manual', 'employee', 'percent', 'SOP development project completion',     NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D034', 'Monthly Dev Program Implementation %','manual', 'employee', 'percent', 'Monthly development program execution',  NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW()),

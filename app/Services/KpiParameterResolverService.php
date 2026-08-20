@@ -693,6 +693,8 @@ class KpiParameterResolverService
             'employee_induction_on_time_percent' => $this->resolveEmployeeInductionOnTimePercent(
                 $outletIds,
                 $periodMonth,
+                (int) ($context['user_id'] ?? 0),
+                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'employee_coaching_person_count' => $this->resolveEmployeeCoachingPersonCount(
                 (int) ($context['user_id'] ?? 0),
@@ -2573,26 +2575,51 @@ class KpiParameterResolverService
     }
 
     /**
-     * Persentase minggu onboarding yang selesai tepat waktu (approved ≤ deadline minggu).
-     * Deadline minggu N = start_date + (N×7 − 1 hari). Hanya minggu yang jatuh tempo di bulan data KPI.
+     * % minggu induction tepat waktu di outlet scope KPI user.
+     * Bukan induction milik user evaluasi — milik karyawan yang di-induction di outlet perhitungan.
+     * Minggu N due = start_date + (N×7 − 1 hari). Hanya minggu yang sudah jatuh tempo di jendela data–evaluasi.
+     * Tepat waktu = submit (atau approve jika submit kosong) ≤ due date minggu itu.
      *
      * @param  list<int>  $outletIds
      */
-    private function resolveEmployeeInductionOnTimePercent(array $outletIds, string $periodMonth): ?float
-    {
-        if (! preg_match('/^\d{4}-\d{2}$/', $periodMonth) || ! DB::getSchemaBuilder()->hasTable('employee_onboardings')) {
+    private function resolveEmployeeInductionOnTimePercent(
+        array $outletIds,
+        string $periodMonth,
+        int $kpiUserId = 0,
+        ?string $evaluationMonth = null,
+    ): ?float {
+        $outletIds = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
+        if (
+            $outletIds === []
+            || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)
+            || ! DB::getSchemaBuilder()->hasTable('employee_onboardings')
+        ) {
             return null;
         }
 
-        $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth();
-        $periodEnd = Carbon::createFromFormat('Y-m', $periodMonth)->endOfMonth();
+        $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth()->startOfDay();
+        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
+            ? $evaluationMonth
+            : $periodMonth;
+        if ($endMonth < $periodMonth) {
+            $endMonth = $periodMonth;
+        }
+        $periodEnd = Carbon::createFromFormat('Y-m', $endMonth)->endOfMonth()->endOfDay();
+        $now = now();
 
         $query = EmployeeOnboarding::query()
-            ->with('weekSubmissions')
-            ->whereIn('status', ['in_progress', 'completed']);
+            ->with(['weekSubmissions', 'employee:id,id_outlet'])
+            ->whereIn('status', ['in_progress', 'completed'])
+            ->where(function ($q) use ($outletIds) {
+                $q->whereIn('outlet_id', $outletIds)
+                    ->orWhereHas('employee', fn ($emp) => $emp->whereIn('id_outlet', $outletIds));
+            });
 
-        if ($outletIds !== []) {
-            $query->whereIn('outlet_id', array_map('intval', $outletIds));
+        if ($kpiUserId > 0) {
+            $query->where(function ($q) use ($kpiUserId) {
+                $q->whereNull('employee_user_id')
+                    ->orWhere('employee_user_id', '!=', $kpiUserId);
+            });
         }
 
         $onTime = 0;
@@ -2608,18 +2635,19 @@ class KpiParameterResolverService
 
             for ($week = 1; $week <= $totalWeeks; $week++) {
                 $dueAt = $start->copy()->addDays($week * 7 - 1)->endOfDay();
-                if ($dueAt->lt($periodStart) || $dueAt->gt($periodEnd)) {
+                if ($dueAt->gt($now) || $dueAt->lt($periodStart) || $dueAt->gt($periodEnd)) {
                     continue;
                 }
 
                 $total++;
                 $submission = $onboarding->weekSubmissions->firstWhere('week_number', $week);
+                $completedAt = $submission?->submitted_at ?? $submission?->approved_at;
 
                 if (
                     $submission
-                    && $submission->status === 'approved'
-                    && $submission->approved_at !== null
-                    && Carbon::parse($submission->approved_at)->lte($dueAt)
+                    && in_array((string) $submission->status, ['submitted', 'approved'], true)
+                    && $completedAt !== null
+                    && Carbon::parse($completedAt)->lte($dueAt)
                 ) {
                     $onTime++;
                 }

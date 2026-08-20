@@ -166,6 +166,11 @@ class KpiEvaluationService
         return (bool) preg_match('/\b(D018|D019)\b/', $formula);
     }
 
+    private function usesInductionOutletPeriod(string $formula): bool
+    {
+        return (bool) preg_match('/\bD031\b/', $formula);
+    }
+
     /**
      * Just Academy dihitung dari bulan data sampai bulan evaluasi (training yang di-conduct bulan ini ikut).
      *
@@ -261,7 +266,9 @@ class KpiEvaluationService
         return $items->map(function (KpiEvaluationItem $item) use ($evaluationPeriodMonth) {
             $row = $item->toArray();
             $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
-            if ($this->usesJustAcademyConductedPeriod((string) ($row['formula'] ?? ''))) {
+            if ($this->usesJustAcademyConductedPeriod((string) ($row['formula'] ?? ''))
+                || $this->usesInductionOutletPeriod((string) ($row['formula'] ?? ''))
+            ) {
                 $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
             }
 
@@ -430,7 +437,7 @@ class KpiEvaluationService
             $row['frequency'] = $frequency;
             if ($evaluationPeriodMonth !== null) {
                 $window = $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth);
-                if (in_array((string) $pv->parameter_code, ['D018', 'D019'], true)) {
+                if (in_array((string) $pv->parameter_code, ['D018', 'D019', 'D031'], true)) {
                     $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
                 }
                 $row = array_merge($row, $window);
@@ -668,7 +675,7 @@ class KpiEvaluationService
             'upselling_target_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — target F&B revenue.',
             'outlet_avg_check_data_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan data.',
             'outlet_avg_check_prev_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan sebelumnya.',
-            'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu induction tepat waktu.',
+            'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu tepat waktu di outlet scope KPI.',
             'employee_coaching_person_count' => 'Sumber ERP: Employee Coaching — jumlah karyawan unik di-coaching.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_beverage_complaint_count' => 'Sumber ERP: CVCC — komplain beverage/bar (negative + CAPA).',

@@ -6,7 +6,8 @@ START TRANSACTION;
 UPDATE `kpi_parameters`
 SET
     `source_type` = 'hybrid',
-    `description` = 'Persentase minggu induction onboarding yang approved tepat waktu',
+    `scope_type` = 'outlet',
+    `description` = 'Persentase minggu induction onboarding yang selesai tepat waktu di outlet scope KPI (bukan induction user evaluasi)',
     `updated_at` = NOW()
 WHERE `code` = 'D031';
 

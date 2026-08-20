@@ -239,7 +239,7 @@ class KpiParameterController extends Controller
                 ['value' => 'upselling_target_fb_revenue', 'label' => 'Upselling Sales Achievement — target F&B revenue'],
                 ['value' => 'outlet_avg_check_data_month', 'label' => 'Outlet Sales Report — avg check/pax (bulan data KPI)'],
                 ['value' => 'outlet_avg_check_prev_month', 'label' => 'Outlet Sales Report — avg check/pax (bulan sebelum bulan data)'],
-                ['value' => 'employee_induction_on_time_percent', 'label' => 'Employee Onboarding — % minggu induction tepat waktu'],
+                ['value' => 'employee_induction_on_time_percent', 'label' => 'Employee Onboarding — % minggu tepat waktu (outlet scope KPI, bukan induction user)'],
                 ['value' => 'employee_coaching_person_count', 'label' => 'Employee Coaching — jumlah karyawan unik di-coaching'],
                 ['value' => 'npd_approved_product_count', 'label' => 'NPD Plan & Report — jumlah produk NPD approved'],
                 ['value' => 'competitor_benchmark_execution_count', 'label' => 'Competitor Benchmark Report — jumlah benchmark visit'],
