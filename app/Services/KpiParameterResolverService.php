@@ -2577,8 +2577,12 @@ class KpiParameterResolverService
     /**
      * % minggu induction tepat waktu di outlet scope KPI user.
      * Bukan induction milik user evaluasi — milik karyawan yang di-induction di outlet perhitungan.
-     * Minggu N due = start_date + (N×7 − 1 hari). Hanya minggu yang sudah jatuh tempo di jendela data–evaluasi.
+     *
+     * Hanya minggu yang sudah terbuka (1..unlocked_week) dan jatuh tempo di jendela data–evaluasi.
+     * Jam minggu 1 = max(start_date, created_at) supaya start yang di-backdate tidak langsung overdue.
+     * Minggu berikutnya: 7 hari sejak minggu sebelumnya di-approve.
      * Tepat waktu = submit (atau approve jika submit kosong) ≤ due date minggu itu.
+     * Tidak ada minggu jatuh tempo = 100% (tidak ada yang telat).
      *
      * @param  list<int>  $outletIds
      */
@@ -2626,39 +2630,94 @@ class KpiParameterResolverService
         $total = 0;
 
         foreach ($query->get() as $onboarding) {
-            if ($onboarding->start_date === null) {
-                continue;
-            }
-
-            $start = Carbon::parse($onboarding->start_date)->startOfDay();
-            $totalWeeks = max(1, (int) $onboarding->total_weeks);
-
-            for ($week = 1; $week <= $totalWeeks; $week++) {
-                $dueAt = $start->copy()->addDays($week * 7 - 1)->endOfDay();
-                if ($dueAt->gt($now) || $dueAt->lt($periodStart) || $dueAt->gt($periodEnd)) {
-                    continue;
-                }
-
-                $total++;
-                $submission = $onboarding->weekSubmissions->firstWhere('week_number', $week);
-                $completedAt = $submission?->submitted_at ?? $submission?->approved_at;
-
-                if (
-                    $submission
-                    && in_array((string) $submission->status, ['submitted', 'approved'], true)
-                    && $completedAt !== null
-                    && Carbon::parse($completedAt)->lte($dueAt)
-                ) {
-                    $onTime++;
-                }
-            }
+            [$weekOnTime, $weekTotal] = self::scoreInductionWeeksOnTime(
+                $this->inductionClockStart($onboarding),
+                max((int) $onboarding->unlocked_week, (int) $onboarding->current_week, 1),
+                max(1, (int) $onboarding->total_weeks),
+                $onboarding->weekSubmissions,
+                $periodStart,
+                $periodEnd,
+                $now,
+            );
+            $onTime += $weekOnTime;
+            $total += $weekTotal;
         }
 
         if ($total === 0) {
-            return null;
+            return 100.0;
         }
 
         return round(($onTime / $total) * 100, 2);
+    }
+
+    private function inductionClockStart(EmployeeOnboarding $onboarding): ?Carbon
+    {
+        $start = $onboarding->start_date
+            ? Carbon::parse($onboarding->start_date)->startOfDay()
+            : null;
+        $created = $onboarding->created_at
+            ? Carbon::parse($onboarding->created_at)->startOfDay()
+            : null;
+
+        if ($start && $created) {
+            return $created->gt($start) ? $created : $start;
+        }
+
+        return $start ?? $created;
+    }
+
+    /**
+     * @param  iterable<int, object>  $submissions
+     * @return array{0: int, 1: int}
+     */
+    private static function scoreInductionWeeksOnTime(
+        ?Carbon $clockStart,
+        int $unlockedWeek,
+        int $totalWeeks,
+        iterable $submissions,
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        Carbon $now,
+    ): array {
+        if ($clockStart === null) {
+            return [0, 0];
+        }
+
+        $byWeek = collect($submissions)->keyBy(fn ($row) => (int) ($row->week_number ?? 0));
+        $maxWeek = min($totalWeeks, max(1, $unlockedWeek));
+        $onTime = 0;
+        $total = 0;
+        $weekAvailableAt = $clockStart->copy()->startOfDay();
+
+        for ($week = 1; $week <= $maxWeek; $week++) {
+            if ($week > 1) {
+                $previous = $byWeek->get($week - 1);
+                $previousApproved = $previous?->approved_at ?? null;
+                $weekAvailableAt = $previousApproved
+                    ? Carbon::parse($previousApproved)->startOfDay()
+                    : $clockStart->copy()->addDays(($week - 1) * 7);
+            }
+
+            $dueAt = $weekAvailableAt->copy()->addDays(6)->endOfDay();
+            if ($dueAt->gt($now) || $dueAt->lt($periodStart) || $dueAt->gt($periodEnd)) {
+                continue;
+            }
+
+            $total++;
+            $submission = $byWeek->get($week);
+            $completedAt = $submission?->submitted_at ?? $submission?->approved_at;
+
+            if (
+                $submission
+                && in_array((string) $submission->status, ['submitted', 'approved'], true)
+                && $completedAt !== null
+                && Carbon::parse($completedAt)->lte($dueAt)
+            ) {
+                $onTime++;
+            }
+        }
+
+        return [$onTime, $total];
     }
 
     /**

@@ -675,7 +675,7 @@ class KpiEvaluationService
             'upselling_target_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — target F&B revenue.',
             'outlet_avg_check_data_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan data.',
             'outlet_avg_check_prev_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan sebelumnya.',
-            'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu tepat waktu di outlet scope KPI.',
+            'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu terbuka yang submit tepat waktu di outlet scope KPI (bukan induction user evaluasi).',
             'employee_coaching_person_count' => 'Sumber ERP: Employee Coaching — jumlah karyawan unik di-coaching.',
             'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
             'cvcc_beverage_complaint_count' => 'Sumber ERP: CVCC — komplain beverage/bar (negative + CAPA).',
