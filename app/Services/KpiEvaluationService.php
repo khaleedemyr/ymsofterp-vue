@@ -580,7 +580,7 @@ class KpiEvaluationService
             $code === 'D017' || str_contains($lowerName, 'recipe compliance') || str_contains($lowerName, 'sop compliance')
                 => 'Skor % kepatuhan recipe dari QA2 Audits (BRA-1.5.3 & BRA-1.4.6): C / (C+NC) × 100 per outlet.',
             $code === 'D018' || str_contains($lowerName, 'just academy')
-                => 'Isi persentase completion training Just Academy yang user ini jadi trainer (0–100, tanpa simbol %).',
+                => 'Isi persentase modul Just Academy yang diselesaikan user ini sebagai peserta (0–100, tanpa simbol %).',
             $code === 'D021' || str_contains($lowerName, 'visit count')
                 => 'Isi jumlah hari kunjungan outlet dari absensi (bilangan bulat).',
             $code === 'D022' || str_contains($lowerName, 'target outlet visit')
@@ -694,7 +694,7 @@ class KpiEvaluationService
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
-            'just_academy_training_completion' => 'Sumber ERP: Just Academy — rata-rata completion modul di semua training plan di mana user evaluasi adalah trainer.',
+            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % modul selesai oleh user evaluasi sebagai peserta (training yang dijadwalkan kepadanya).',
             'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — completion % method Competency Assessment.',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',

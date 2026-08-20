@@ -1443,9 +1443,9 @@ class KpiParameterResolverService
     }
 
     /**
-     * @return array{0: int, 1: int}
+     * @return \Illuminate\Support\Collection<int, object>
      */
-    private function countJustAcademyScheduleModuleCompletion(int $scheduleId): array
+    private function getJustAcademyScheduleCurriculumItems(int $scheduleId)
     {
         $itemsQuery = DB::table('ja_program_items as pi')
             ->join('ja_schedules as s', 's.program_id', '=', 'pi.program_id')
@@ -1453,7 +1453,107 @@ class KpiParameterResolverService
             ->select('pi.item_type', 'pi.material_id', 'pi.quiz_id', 'pi.is_required');
 
         $requiredItems = (clone $itemsQuery)->where('pi.is_required', 1)->get();
-        $items = $requiredItems->isNotEmpty() ? $requiredItems : $itemsQuery->get();
+
+        return $requiredItems->isNotEmpty() ? $requiredItems : $itemsQuery->get();
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function countJustAcademyUserModuleCompletion(int $scheduleId, int $userId): array
+    {
+        $items = $this->getJustAcademyScheduleCurriculumItems($scheduleId);
+        if ($items->isEmpty() || $userId <= 0) {
+            return [0, 0];
+        }
+
+        $completed = 0;
+        $total = 0;
+        foreach ($items as $item) {
+            $total++;
+            if ($item->item_type === 'material' && $item->material_id) {
+                if (
+                    DB::getSchemaBuilder()->hasTable('ja_material_progress')
+                    && DB::table('ja_material_progress')
+                        ->where('schedule_id', $scheduleId)
+                        ->where('user_id', $userId)
+                        ->where('material_id', (int) $item->material_id)
+                        ->exists()
+                ) {
+                    $completed++;
+                }
+                continue;
+            }
+
+            if (
+                $item->item_type === 'quiz'
+                && $item->quiz_id
+                && DB::getSchemaBuilder()->hasTable('ja_quiz_attempts')
+                && DB::table('ja_quiz_attempts')
+                    ->where('schedule_id', $scheduleId)
+                    ->where('user_id', $userId)
+                    ->where('quiz_id', (int) $item->quiz_id)
+                    ->whereNotNull('submitted_at')
+                    ->exists()
+            ) {
+                $completed++;
+            }
+        }
+
+        return [$completed, $total];
+    }
+
+    /**
+     * Jadwal Just Academy di mana user adalah peserta (bukan declined) pada window data s/d evaluasi.
+     *
+     * @return list<int>
+     */
+    private function resolveJustAcademyParticipantScheduleIds(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+    ): array {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth) || ! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
+            return [];
+        }
+
+        if (! DB::getSchemaBuilder()->hasTable('ja_schedule_participants')) {
+            return [];
+        }
+
+        $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
+        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
+            ? $evaluationMonth
+            : $periodMonth;
+        if ($endMonth < $periodMonth) {
+            $endMonth = $periodMonth;
+        }
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
+
+        return DB::table('ja_schedules as s')
+            ->join('ja_schedule_participants as sp', 'sp.schedule_id', '=', 's.id')
+            ->where('sp.user_id', $userId)
+            ->where(function ($q) {
+                $q->whereNull('sp.status')
+                    ->orWhere('sp.status', '!=', 'declined');
+            })
+            ->whereIn('s.status', ['published', 'ongoing', 'completed'])
+            ->where('s.start_at', '<=', $rangeEnd)
+            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart])
+            ->pluck('s.id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function countJustAcademyScheduleModuleCompletion(int $scheduleId): array
+    {
+        $items = $this->getJustAcademyScheduleCurriculumItems($scheduleId);
         if ($items->isEmpty()) {
             return [0, 0];
         }
@@ -1522,9 +1622,9 @@ class KpiParameterResolverService
     }
 
     /**
-     * Just Academy — rata-rata completion training yang sudah dijadwalkan.
-     * D018 (method null): semua jadwal di mana user evaluasi adalah trainer.
-     * D019: method Competency Assessment, created/trainer user + bawahan.
+     * Just Academy — completion training.
+     * D018 (method null): modul milik user evaluasi sebagai peserta (training yang dijadwalkan kepadanya).
+     * D019: method Competency Assessment, created/trainer user + bawahan (rata-rata peserta).
      */
     private function resolveJustAcademyTrainingCompletion(
         int $userId,
@@ -1536,16 +1636,19 @@ class KpiParameterResolverService
             return null;
         }
 
-        $trainerOnly = $methodName === null;
+        if ($methodName === null) {
+            return $this->resolveJustAcademyParticipantModuleCompletion($userId, $periodMonth, $evaluationMonth);
+        }
+
         $scheduleIds = $this->resolveJustAcademyScopedScheduleIds(
             $userId,
             $periodMonth,
             $methodName,
             $evaluationMonth,
-            $trainerOnly,
+            false,
         );
         if ($scheduleIds === []) {
-            return $trainerOnly ? 0.0 : null;
+            return null;
         }
 
         $percents = [];
@@ -1555,10 +1658,39 @@ class KpiParameterResolverService
         }
 
         if ($percents === []) {
-            return $trainerOnly ? 0.0 : null;
+            return null;
         }
 
         return round(array_sum($percents) / count($percents), 2);
+    }
+
+    /**
+     * D018 — % modul (wajib, atau seluruh curriculum) yang diselesaikan user sendiri
+     * pada jadwal Just Academy di mana dia peserta. Tidak ada jadwal assigned = 100%.
+     */
+    private function resolveJustAcademyParticipantModuleCompletion(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+    ): ?float {
+        $scheduleIds = $this->resolveJustAcademyParticipantScheduleIds($userId, $periodMonth, $evaluationMonth);
+        if ($scheduleIds === []) {
+            return 100.0;
+        }
+
+        $completed = 0;
+        $total = 0;
+        foreach ($scheduleIds as $scheduleId) {
+            [$done, $count] = $this->countJustAcademyUserModuleCompletion($scheduleId, $userId);
+            $completed += $done;
+            $total += $count;
+        }
+
+        if ($total === 0) {
+            return 100.0;
+        }
+
+        return round(($completed / $total) * 100, 2);
     }
 
     /**

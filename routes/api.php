@@ -1483,6 +1483,7 @@ Route::prefix('approval-app')->group(function () {
         
         // Admin routes for Support
         Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.approval-app.support.admin.get-conversations');
+        Route::get('/support/admin/mention-users', [\App\Http\Controllers\LiveSupportController::class, 'searchMentionUsers'])->name('api.approval-app.support.admin.mention-users');
         Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.approval-app.support.admin.reply');
         Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.approval-app.support.admin.update-status');
 
@@ -2082,6 +2083,7 @@ Route::middleware(['auth'])->group(function () {
     
     // Admin routes
     Route::get('/support/admin/conversations', [\App\Http\Controllers\LiveSupportController::class, 'getAllConversations'])->name('api.support.admin.get-conversations');
+    Route::get('/support/admin/mention-users', [\App\Http\Controllers\LiveSupportController::class, 'searchMentionUsers'])->name('api.support.admin.mention-users');
     Route::post('/support/admin/conversations/{id}/reply', [\App\Http\Controllers\LiveSupportController::class, 'adminReply'])->name('api.support.admin.reply');
     Route::put('/support/admin/conversations/{id}/status', [\App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus'])->name('api.support.admin.update-status');
 });
