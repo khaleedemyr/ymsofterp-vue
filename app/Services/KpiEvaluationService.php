@@ -1777,6 +1777,29 @@ class KpiEvaluationService
     }
 
     /**
+     * @param  list<string>  $codes
+     * @param  array<string, float|null>  $valueMap
+     */
+    protected function formulaValuesAreAllZero(array $codes, array $valueMap): bool
+    {
+        if ($codes === []) {
+            return false;
+        }
+
+        foreach ($codes as $code) {
+            if (! array_key_exists($code, $valueMap) || $valueMap[$code] === null) {
+                return false;
+            }
+
+            if ((float) $valueMap[$code] != 0.0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * @param  array<string, float|null>  $valueMap
      */
     protected function evaluateFormula(?string $formula, array $valueMap): ?float
@@ -1804,6 +1827,10 @@ class KpiEvaluationService
             }
         }
 
+        if (str_contains($trimmed, '/') && $this->formulaValuesAreAllZero($codesNeeded, $valueMap)) {
+            return 0.0;
+        }
+
         $expr = $trimmed;
         usort($codesNeeded, fn ($a, $b) => strlen($b) <=> strlen($a));
 
@@ -1828,11 +1855,19 @@ class KpiEvaluationService
             $result = eval('return ' . $expr . ';');
 
             if (!is_numeric($result) || !is_finite((float) $result)) {
+                if ($this->formulaValuesAreAllZero($codesNeeded, $valueMap)) {
+                    return 0.0;
+                }
+
                 return null;
             }
 
             return round((float) $result, 4);
         } catch (\Throwable) {
+            if ($this->formulaValuesAreAllZero($codesNeeded, $valueMap)) {
+                return 0.0;
+            }
+
             return null;
         }
     }

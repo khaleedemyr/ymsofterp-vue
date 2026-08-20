@@ -520,7 +520,7 @@ class KpiParameterResolverService
                 $userId = (int) ($context['user_id'] ?? 0);
                 $cvccScope = $userId > 0 ? $this->resolveCvccRegionalScope($userId) : null;
                 if ($cvccScope === null) {
-                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC (D053/D054/D055) akan kosong.';
+                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC (D053/D054/D055) tidak bisa dihitung.';
                 }
             }
         }
@@ -2391,8 +2391,9 @@ class KpiParameterResolverService
             $hours[] = ($periodEndTs - $assignedAt) / 3600;
         }
 
+        // Tidak ada komplain di periode = 0 jam resolusi (lebih baik dari target <= 24 jam).
         if ($hours === []) {
-            return null;
+            return 0.0;
         }
 
         return round(array_sum($hours) / count($hours), 2);
@@ -2409,7 +2410,6 @@ class KpiParameterResolverService
         }
 
         $count = 0;
-        $matchedCases = 0;
         foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
             if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
                 continue;
@@ -2419,18 +2419,10 @@ class KpiParameterResolverService
                 continue;
             }
 
-            $matchedCases++;
             $count++;
         }
 
-        if ($outletId !== null && $outletId > 0) {
-            return (float) $count;
-        }
-
-        if ($matchedCases === 0) {
-            return null;
-        }
-
+        // 0 komplain negatif = rasio 0% (memenuhi target <= 0.50%).
         return (float) $count;
     }
 
@@ -2448,11 +2440,7 @@ class KpiParameterResolverService
             }
         }
 
-        if ($outletId !== null && $outletId > 0) {
-            return (float) $count;
-        }
-
-        return $count > 0 ? (float) $count : null;
+        return (float) $count;
     }
 
     /**
