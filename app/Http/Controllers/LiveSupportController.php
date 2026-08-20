@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Services\NotificationService;
@@ -59,30 +60,40 @@ class LiveSupportController extends Controller
                 return response()->json(['error' => 'Percakapan tidak ditemukan'], 404);
             }
 
+            $userId = auth()->id();
+            if (! $this->canViewSupportConversation($userId, $conversation)) {
+                return response()->json(['error' => 'Tidak memiliki izin'], 403);
+            }
+
+            $select = [
+                'sm.id',
+                'sm.message',
+                'sm.message_type',
+                'sm.file_path',
+                'sm.file_name',
+                'sm.file_size',
+                'sm.sender_type',
+                'sm.created_at',
+                'u.nama_lengkap as sender_name',
+                'u.avatar as sender_avatar',
+            ];
+            if (Schema::hasColumn('support_messages', 'mentioned_user_ids')) {
+                $select[] = 'sm.mentioned_user_ids';
+            }
+
             $messages = DB::table('support_messages as sm')
                 ->leftJoin('users as u', 'sm.sender_id', '=', 'u.id')
                 ->where('sm.conversation_id', $conversationId)
-                ->select(
-                    'sm.id',
-                    'sm.message',
-                    'sm.message_type',
-                    'sm.file_path',
-                    'sm.file_name',
-                    'sm.file_size',
-                    'sm.sender_type',
-                    'sm.created_at',
-                    'u.nama_lengkap as sender_name',
-                    'u.avatar as sender_avatar'
-                )
+                ->select($select)
                 ->orderBy('sm.created_at', 'asc')
                 ->get();
 
-            // Mark admin messages as read
-            $markedRead = DB::table('support_messages')
-                ->where('conversation_id', $conversationId)
-                ->where('sender_type', 'admin')
-                ->update(['is_read' => true]);
-
+            if ((int) $conversation->user_id === (int) $userId) {
+                DB::table('support_messages')
+                    ->where('conversation_id', $conversationId)
+                    ->where('sender_type', 'admin')
+                    ->update(['is_read' => true]);
+            }
 
             return response()->json($messages);
         } catch (\Exception $e) {
@@ -367,6 +378,52 @@ class LiveSupportController extends Controller
         }
     }
 
+    public function searchMentionUsers(Request $request)
+    {
+        $userId = auth()->id();
+        $hasPermission = DB::table('users as u')
+            ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+            ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+            ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+            ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+            ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+            ->where('u.id', $userId)
+            ->where('m.code', 'support_admin_panel')
+            ->where('p.action', 'view')
+            ->exists();
+
+        if (! $hasPermission) {
+            return response()->json(['error' => 'Tidak memiliki izin'], 403);
+        }
+
+        $search = trim((string) $request->get('q', $request->get('search', '')));
+
+        $users = DB::table('users')
+            ->leftJoin('tbl_data_jabatan as j', 'users.id_jabatan', '=', 'j.id_jabatan')
+            ->leftJoin('tbl_data_outlet as o', 'users.id_outlet', '=', 'o.id_outlet')
+            ->where('users.status', 'A')
+            ->where('users.id', '!=', $userId)
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('users.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('users.email', 'like', "%{$search}%")
+                        ->orWhere('j.nama_jabatan', 'like', "%{$search}%");
+                });
+            })
+            ->orderBy('users.nama_lengkap')
+            ->limit(12)
+            ->get([
+                'users.id',
+                'users.nama_lengkap as name',
+                'users.email',
+                'users.avatar',
+                DB::raw('j.nama_jabatan as jabatan'),
+                DB::raw('o.nama_outlet as outlet'),
+            ]);
+
+        return response()->json(['users' => $users]);
+    }
+
     // Admin: Get all conversations
     public function getAllConversations(Request $request)
     {
@@ -384,17 +441,20 @@ class LiveSupportController extends Controller
                 ->where('p.action', 'view')
                 ->exists();
 
-            if (!$hasPermission) {
-                return response()->json(['error' => 'Tidak memiliki izin'], 403);
-            }
-
             $status = $request->get('status', 'all');
             $priority = $request->get('priority', 'all');
             $search = $request->get('search', '');
-            $dateFrom = $request->get('date_from', '');
-            $dateTo = $request->get('date_to', '');
-            $perPage = $request->get('per_page', 15);
+            $dateFrom = $request->get('date_from', $request->get('dateFrom', ''));
+            $dateTo = $request->get('date_to', $request->get('dateTo', ''));
+            $perPage = $request->get('per_page', $request->get('perPage', 15));
             $page = $request->get('page', 1);
+            $conversationIdFilter = (int) $request->get('conversation', 0);
+
+            if (! $hasPermission) {
+                if (! $conversationIdFilter || ! $this->userWasMentionedInConversation($userId, $conversationIdFilter)) {
+                    return response()->json(['error' => 'Tidak memiliki izin'], 403);
+                }
+            }
 
             $query = DB::table('support_conversations as sc')
                 ->leftJoin('support_messages as sm', function($join) {
@@ -424,6 +484,10 @@ class LiveSupportController extends Controller
                     'j.nama_jabatan as customer_jabatan',
                     DB::raw('(SELECT COUNT(*) FROM support_messages WHERE conversation_id = sc.id AND sender_type = "user" AND is_read = FALSE) as unread_count')
                 );
+
+            if ($conversationIdFilter) {
+                $query->where('sc.id', $conversationIdFilter);
+            }
 
             // Status filter
             if ($status !== 'all') {
@@ -505,7 +569,9 @@ class LiveSupportController extends Controller
 
             $request->validate([
                 'message' => 'required|string',
-                'files.*' => 'nullable|file|max:10240'
+                'files.*' => 'nullable|file|max:10240',
+                'mentioned_user_ids' => 'nullable|array',
+                'mentioned_user_ids.*' => 'integer',
             ]);
 
             $userId = auth()->id();
@@ -553,6 +619,11 @@ class LiveSupportController extends Controller
                 $messageData['message_type'] = 'file';
             }
 
+            $mentionedIds = $this->normalizeMentionedUserIds($request->input('mentioned_user_ids', []), $userId);
+            if ($mentionedIds !== [] && Schema::hasColumn('support_messages', 'mentioned_user_ids')) {
+                $messageData['mentioned_user_ids'] = json_encode(array_values($mentionedIds));
+            }
+
             $messageId = DB::table('support_messages')->insertGetId($messageData);
 
             // Update conversation timestamp and status
@@ -580,6 +651,7 @@ class LiveSupportController extends Controller
 
             // Send notification to support team for new chat message
             $this->sendChatMessageNotifications($conversationId, $messageData['message'], $userId);
+            $this->sendMentionNotifications($conversation, $mentionedIds, $userId, $messageData['message']);
 
             // Get the created message
             $message = DB::table('support_messages as sm')
@@ -733,7 +805,7 @@ class LiveSupportController extends Controller
                     'task_id' => $conversationId, // Using task_id field to store conversation_id
                     'type' => 'live_support_conversation',
                     'message' => $message,
-                    'url' => config('app.url') . '/support/admin',
+                    'url' => url('/support/admin?conversation=' . $conversationId),
                     'is_read' => 0,
                 ]);
             }
@@ -817,7 +889,7 @@ class LiveSupportController extends Controller
                     'task_id' => $conversationId, // Using task_id field to store conversation_id
                     'type' => 'live_support_chat',
                     'message' => $notificationMessage,
-                    'url' => config('app.url') . '/support/admin',
+                    'url' => url('/support/admin?conversation=' . $conversationId),
                     'is_read' => 0,
                 ]);
             }
@@ -834,6 +906,123 @@ class LiveSupportController extends Controller
                 'conversation_id' => $conversationId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    private function hasSupportAdminPermission($userId, $action = 'view'): bool
+    {
+        return DB::table('users as u')
+            ->join('erp_user_role as ur', 'ur.user_id', '=', 'u.id')
+            ->join('erp_role as r', 'ur.role_id', '=', 'r.id')
+            ->join('erp_role_permission as rp', 'rp.role_id', '=', 'r.id')
+            ->join('erp_permission as p', 'p.id', '=', 'rp.permission_id')
+            ->join('erp_menu as m', 'm.id', '=', 'p.menu_id')
+            ->where('u.id', $userId)
+            ->where('m.code', 'support_admin_panel')
+            ->where('p.action', $action)
+            ->exists();
+    }
+
+    private function canViewSupportConversation($userId, $conversation): bool
+    {
+        if (! $userId || ! $conversation) {
+            return false;
+        }
+
+        if ((int) $conversation->user_id === (int) $userId) {
+            return true;
+        }
+
+        if ($this->hasSupportAdminPermission($userId, 'view')) {
+            return true;
+        }
+
+        return $this->userWasMentionedInConversation($userId, $conversation->id);
+    }
+
+    private function userWasMentionedInConversation($userId, $conversationId): bool
+    {
+        $userId = (int) $userId;
+        $conversationId = (int) $conversationId;
+        if ($userId <= 0 || $conversationId <= 0) {
+            return false;
+        }
+
+        if (Schema::hasColumn('support_messages', 'mentioned_user_ids')) {
+            $rows = DB::table('support_messages')
+                ->where('conversation_id', $conversationId)
+                ->whereNotNull('mentioned_user_ids')
+                ->pluck('mentioned_user_ids');
+
+            foreach ($rows as $raw) {
+                $ids = is_array($raw) ? $raw : json_decode((string) $raw, true);
+                if (! is_array($ids)) {
+                    continue;
+                }
+                if (in_array($userId, array_map('intval', $ids), true)) {
+                    return true;
+                }
+            }
+        }
+
+        return DB::table('notifications')
+            ->where('user_id', $userId)
+            ->where('type', 'live_support_mention')
+            ->where('task_id', $conversationId)
+            ->exists();
+    }
+
+    private function normalizeMentionedUserIds($rawIds, $senderId): array
+    {
+        $ids = collect(is_array($rawIds) ? $rawIds : [])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== (int) $senderId)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return DB::table('users')
+            ->where('status', 'A')
+            ->whereIn('id', $ids->all())
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    private function sendMentionNotifications($conversation, array $mentionedIds, $senderId, $message): void
+    {
+        if ($mentionedIds === [] || ! $conversation) {
+            return;
+        }
+
+        try {
+            $sender = DB::table('users')->where('id', $senderId)->value('nama_lengkap') ?: 'Admin';
+            $subject = $conversation->subject ?? 'Live Support';
+            $preview = strlen((string) $message) > 120 ? substr((string) $message, 0, 120) . '...' : (string) $message;
+            $url = url('/support/admin?conversation=' . $conversation->id);
+
+            foreach ($mentionedIds as $mentionedId) {
+                if ((int) $mentionedId === (int) $senderId) {
+                    continue;
+                }
+
+                NotificationService::insert([
+                    'user_id' => $mentionedId,
+                    'task_id' => $conversation->id,
+                    'type' => 'live_support_mention',
+                    'message' => "Anda di-mention di Live Support\n\nPercakapan: {$subject}\nOleh: {$sender}\n\nPesan: {$preview}\n\nKlik untuk membuka percakapan.",
+                    'url' => $url,
+                    'is_read' => 0,
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error sending Live Support mention notifications', [
+                'conversation_id' => $conversation->id ?? null,
+                'error' => $e->getMessage(),
             ]);
         }
     }

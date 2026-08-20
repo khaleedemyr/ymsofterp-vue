@@ -3628,6 +3628,7 @@ Route::middleware(['auth'])->group(function () {
     
     // Admin routes
     Route::get('/api/support/admin/conversations', [App\Http\Controllers\LiveSupportController::class, 'getAllConversations']);
+    Route::get('/api/support/admin/mention-users', [App\Http\Controllers\LiveSupportController::class, 'searchMentionUsers']);
     Route::post('/api/support/admin/conversations/{id}/reply', [App\Http\Controllers\LiveSupportController::class, 'adminReply']);
     Route::put('/api/support/admin/conversations/{id}/status', [App\Http\Controllers\LiveSupportController::class, 'updateConversationStatus']);
 });

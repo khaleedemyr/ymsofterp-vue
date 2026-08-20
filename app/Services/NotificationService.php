@@ -186,6 +186,7 @@ class NotificationService
                 'daily_report_comment' => 'Daily Report Comment',
                 'live_support_conversation' => 'Live Support Conversation',
                 'live_support_chat' => 'Live Support Chat',
+                'live_support_mention' => 'Live Support Mention',
                 'enroll_test' => 'Enroll Test',
                 'retail_created' => 'Retail Created',
             ];
