@@ -10,6 +10,7 @@ use App\Models\LeaveType;
 use App\Services\NotificationService;
 use App\Services\HolidayAttendanceService;
 use App\Services\OvertimeSubmissionFilterService;
+use App\Services\AttendanceWorkTimelineService;
 use App\Support\HrdApprovalAccess;
 
 class AttendanceController extends Controller
@@ -805,7 +806,7 @@ class AttendanceController extends Controller
      */
     private function processSmartCrossDayAttendance($data, array &$allProcessedData)
     {
-        return app(\App\Services\AttendanceWorkTimelineService::class)->processDay($data, $allProcessedData);
+        return app(AttendanceWorkTimelineService::class)->processDay($data, $allProcessedData);
     }
     
     public function submitAbsentRequest(Request $request)
@@ -838,18 +839,20 @@ class AttendanceController extends Controller
                 ], 422);
             }
             
-            // Check if user already has attendance data for any date in the range
-            $hasAttendance = DB::table('att_log as a')
-                ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
-                ->join('user_pins as up', function($q) {
-                    $q->on('a.pin', '=', 'up.pin')->on('o.id_outlet', '=', 'up.outlet_id');
-                })
-                ->where('up.user_id', $user->id)
-                ->where('a.scan_date', '>=', $request->date_from . ' 00:00:00')
-                ->where('a.scan_date', '<', date('Y-m-d', strtotime($request->date_to . ' +1 day')) . ' 00:00:00')
-                ->exists();
-            
-            if ($hasAttendance) {
+            // Check if user already checked in on any date in the range.
+            // Leftover OUT from the previous night's cross-day shift is not attendance
+            // for that calendar day (same rule as My Attendance calendar / first_in).
+            $attendanceInRange = $this->getAttendanceDataWithFirstInLastOut(
+                $user->id,
+                $request->date_from,
+                $request->date_to
+            );
+
+            if (AttendanceWorkTimelineService::dateRangeHasOwnCheckIn(
+                $attendanceInRange,
+                $request->date_from,
+                $request->date_to
+            )) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Anda sudah memiliki data kehadiran untuk salah satu tanggal dalam rentang ini'

@@ -164,6 +164,37 @@ class AttendanceWorkTimelineServiceTest extends TestCase
         ]));
     }
 
+    public function test_leave_range_ignores_leftover_cross_day_out(): void
+    {
+        $this->assertFalse(AttendanceWorkTimelineService::dateRangeHasOwnCheckIn(
+            [],
+            '2026-08-13',
+            '2026-08-13'
+        ));
+
+        $this->assertFalse(AttendanceWorkTimelineService::dateRangeHasOwnCheckIn(
+            [
+                '2026-08-13' => [
+                    'first_in' => null,
+                    'last_out' => '01:00',
+                ],
+            ],
+            '2026-08-13',
+            '2026-08-13'
+        ));
+
+        $this->assertTrue(AttendanceWorkTimelineService::dateRangeHasOwnCheckIn(
+            [
+                '2026-08-13' => [
+                    'first_in' => '08:00',
+                    'last_out' => '17:00',
+                ],
+            ],
+            '2026-08-13',
+            '2026-08-13'
+        ));
+    }
+
     public function test_leftover_second_out_is_not_used_as_checkout_for_new_shift(): void
     {
         $all = [

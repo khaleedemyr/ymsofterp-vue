@@ -1593,11 +1593,7 @@ class AttendanceReportController extends Controller
 
     private function resolveEffectiveOvertimeHours(float $actualOvertimeHours, ?float $requestedOvertimeHours): float
     {
-        if ($requestedOvertimeHours === null || $requestedOvertimeHours <= 0) {
-            return $actualOvertimeHours;
-        }
-
-        return min($actualOvertimeHours, $requestedOvertimeHours);
+        return $this->overtimeFilter()->capHours($actualOvertimeHours, $requestedOvertimeHours);
     }
 
     private function resolveFinalOvertimeHours(

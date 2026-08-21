@@ -6,6 +6,12 @@ use App\Models\OvertimeSubmissionItem;
 
 class OvertimeSubmissionFilterService
 {
+    /**
+     * Sementara: jam OT di report/payroll memakai absensi, tidak di-cap pengajuan lembur.
+     * Set true jika OT Submission dipakai lagi sebagai batas jam OT.
+     */
+    public const CAP_BY_SUBMISSION = false;
+
     public function mapKey(int $userId, string $date): string
     {
         return $userId.'_'.$date;
@@ -66,6 +72,10 @@ class OvertimeSubmissionFilterService
 
     public function capHours(float $actualOvertimeHours, ?float $requestedOvertimeHours): float
     {
+        if (! self::CAP_BY_SUBMISSION) {
+            return $actualOvertimeHours;
+        }
+
         if ($requestedOvertimeHours === null || $requestedOvertimeHours <= 0) {
             return $actualOvertimeHours;
         }

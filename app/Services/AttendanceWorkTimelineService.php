@@ -75,6 +75,27 @@ class AttendanceWorkTimelineService
     }
 
     /**
+     * True jika salah satu tanggal di rentang punya check-in sendiri.
+     * Sisa scan OUT cross-day (tanpa first_in / jam_masuk) tidak dihitung hadir.
+     *
+     * @param  array<string, array<string, mixed>>  $attendanceByDate  keyed by Y-m-d
+     */
+    public static function dateRangeHasOwnCheckIn(array $attendanceByDate, string $dateFrom, string $dateTo): bool
+    {
+        $from = new \DateTime($dateFrom);
+        $to = new \DateTime($dateTo);
+
+        for ($day = clone $from; $day <= $to; $day->modify('+1 day')) {
+            $row = $attendanceByDate[$day->format('Y-m-d')] ?? [];
+            if (! empty($row['first_in']) || ! empty($row['jam_masuk'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $scans
      */
     public function calculateWorkMinutes(array $scans): int
