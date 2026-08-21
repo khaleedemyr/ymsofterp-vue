@@ -111,6 +111,8 @@ export default {
     "employee_onboarding": "Employee Onboarding",
     "fb_product_calibration": "F&B Product Calibration",
     "fb_product_calibration_report": "F&B Product Calibration Report",
+    "npd_service_calibration": "NPD Service Calibration",
+    "npd_service_calibration_report": "NPD Service Calibration Report",
     "npd_plan_report": "NPD Plan & Report",
     "sop_development_completion": "SOP Development Completion",
     "competitor_benchmark_report": "Competitor Benchmark Report",

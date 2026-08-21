@@ -1118,6 +1118,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('fb-product-calibration.conduct.store');
     Route::resource('fb-product-calibration', \App\Http\Controllers\FbProductCalibrationController::class);
 
+    Route::get('/api/npd-service-calibration/search-conductors', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'searchConductors'])
+        ->name('npd-service-calibration.search-conductors');
+    Route::get('/api/npd-service-calibration/search-participants', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'searchParticipants'])
+        ->name('npd-service-calibration.search-participants');
+    Route::get('/api/npd-service-calibration/search-products', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'searchProducts'])
+        ->name('npd-service-calibration.search-products');
+    Route::get('/npd-service-calibration/{npd_service_calibration}/conduct', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'conduct'])
+        ->name('npd-service-calibration.conduct');
+    Route::post('/npd-service-calibration/{npd_service_calibration}/conduct', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'storeConduct'])
+        ->name('npd-service-calibration.conduct.store');
+    Route::resource('npd-service-calibration', \App\Http\Controllers\NpdServiceCalibrationController::class);
+
     Route::get('/it-work-reports/export', [\App\Http\Controllers\ItWorkReportController::class, 'export'])->name('it-work-reports.export');
     Route::get('/it-work-reports/search-tickets', [\App\Http\Controllers\ItWorkReportController::class, 'searchTickets'])->name('it-work-reports.search-tickets');
     Route::get('/it-work-reports/reverse-geocode', [\App\Http\Controllers\ItWorkReportController::class, 'reverseGeocode'])->name('it-work-reports.reverse-geocode');
@@ -2528,6 +2540,12 @@ Route::get('/report/fb-product-calibration/export', [\App\Http\Controllers\Repor
     ->middleware(['auth'])
     ->name('report.fb-product-calibration.export');
 Route::get('/report/fb-product-calibration', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'index'])->middleware(['auth']);
+
+Route::get('/api/report/npd-service-calibration', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'report']);
+Route::get('/report/npd-service-calibration/export', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'export'])
+    ->middleware(['auth'])
+    ->name('report.npd-service-calibration.export');
+Route::get('/report/npd-service-calibration', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'index'])->middleware(['auth']);
 
 Route::get('/api/report/npd-plan-report', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'report']);
 Route::get('/report/npd-plan-report/export', [\App\Http\Controllers\Report\NpdPlanReportReportController::class, 'export'])

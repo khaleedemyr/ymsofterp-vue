@@ -870,6 +870,24 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/fb-product-calibration-report', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiReport']);
         Route::get('/fb-product-calibration-report/export', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'apiExport']);
 
+        // NPD Service Calibration (mobile app)
+        Route::get('/npd-service-calibration', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiIndex']);
+        Route::get('/npd-service-calibration/create-data/{id?}', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiCreateData'])->where('id', '[0-9]+');
+        Route::get('/npd-service-calibration/search-conductors', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiSearchConductors']);
+        Route::get('/npd-service-calibration/search-participants', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiSearchParticipants']);
+        Route::get('/npd-service-calibration/search-products', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiSearchProducts']);
+        Route::post('/npd-service-calibration', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiStore']);
+        Route::get('/npd-service-calibration/{id}/conduct-data', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiConductData'])->where('id', '[0-9]+');
+        Route::post('/npd-service-calibration/{id}/conduct', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiStoreConduct'])->where('id', '[0-9]+');
+        Route::get('/npd-service-calibration/{id}', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiShow'])->where('id', '[0-9]+');
+        Route::put('/npd-service-calibration/{id}', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiUpdate'])->where('id', '[0-9]+');
+        Route::delete('/npd-service-calibration/{id}', [\App\Http\Controllers\NpdServiceCalibrationController::class, 'apiDestroy'])->where('id', '[0-9]+');
+
+        // NPD Service Calibration Report (mobile app)
+        Route::get('/npd-service-calibration-report/filters', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'apiFilters']);
+        Route::get('/npd-service-calibration-report', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'apiReport']);
+        Route::get('/npd-service-calibration-report/export', [\App\Http\Controllers\Report\NpdServiceCalibrationReportController::class, 'apiExport']);
+
         // NPD Plan & Report (mobile app)
         Route::get('/npd-plan-report', [\App\Http\Controllers\NpdPlanReportController::class, 'apiIndex']);
         Route::get('/npd-plan-report/pending-approvals', [\App\Http\Controllers\NpdPlanReportController::class, 'apiPendingApprovals']);
