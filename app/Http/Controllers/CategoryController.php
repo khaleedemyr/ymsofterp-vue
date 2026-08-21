@@ -51,20 +51,20 @@ class CategoryController extends Controller
     {
         \Log::info('CategoryController@store - request', $request->all());
         \Log::info('CategoryController@store - outlet_ids', ['outlet_ids' => $request->outlet_ids]);
+        $request->merge(['is_asset' => $this->normalizeIsAsset($request->input('is_asset'))]);
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:categories,code',
             'name' => 'required|string|max:100',
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
-            'is_asset' => 'nullable|boolean',
+            'is_asset' => 'required|in:0,1',
             'outlet_ids' => 'array',
             'outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
         ]);
         $categoryData = $validated;
         unset($categoryData['outlet_ids']);
-        // Default is_asset ke 0 jika null
-        $categoryData['is_asset'] = $request->input('is_asset', 0) ? 1 : 0;
+        $categoryData['is_asset'] = $this->normalizeIsAsset($validated['is_asset'] ?? 0);
         $category = \App\Models\Category::create($categoryData);
 
         // Simpan relasi ke tabel pivot
@@ -103,12 +103,14 @@ class CategoryController extends Controller
     public function update(Request $request, $id)
     {
         \Log::info('CategoryController@update - request', $request->all());
+        $request->merge(['is_asset' => $this->normalizeIsAsset($request->input('is_asset'))]);
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:categories,code,' . $id,
             'name' => 'required|string|max:100',
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
+            'is_asset' => 'required|in:0,1',
             'outlet_ids' => 'array',
             'outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
         ]);
@@ -118,8 +120,7 @@ class CategoryController extends Controller
 
         $categoryData = $validated;
         unset($categoryData['outlet_ids']);
-        // Default is_asset ke 0 jika null
-        $categoryData['is_asset'] = $request->input('is_asset', 0) ? 1 : 0;
+        $categoryData['is_asset'] = $this->normalizeIsAsset($validated['is_asset'] ?? 0);
 
         $cat->update($categoryData);
 
@@ -234,16 +235,19 @@ class CategoryController extends Controller
 
     public function apiStore(Request $request)
     {
+        $request->merge(['is_asset' => $this->normalizeIsAsset($request->input('is_asset'))]);
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:categories,code',
             'name' => 'required|string|max:100',
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
+            'is_asset' => 'required|in:0,1',
             'outlet_ids' => 'array',
             'outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
         ]);
         $categoryData = collect($validated)->except('outlet_ids')->all();
+        $categoryData['is_asset'] = $this->normalizeIsAsset($validated['is_asset'] ?? 0);
         $category = Category::create($categoryData);
         if (!empty($request->outlet_ids)) {
             $insertData = array_map(function ($outletId) use ($category) {
@@ -266,17 +270,20 @@ class CategoryController extends Controller
 
     public function apiUpdate(Request $request, $id)
     {
+        $request->merge(['is_asset' => $this->normalizeIsAsset($request->input('is_asset'))]);
         $validated = $request->validate([
             'code' => 'required|string|max:50|unique:categories,code,' . $id,
             'name' => 'required|string|max:100',
             'description' => 'nullable|string',
             'status' => 'required|in:active,inactive',
             'show_pos' => 'required|in:0,1',
+            'is_asset' => 'required|in:0,1',
             'outlet_ids' => 'array',
             'outlet_ids.*' => 'integer|exists:tbl_data_outlet,id_outlet',
         ]);
         $cat = Category::findOrFail($id);
         $categoryData = collect($validated)->except('outlet_ids')->all();
+        $categoryData['is_asset'] = $this->normalizeIsAsset($validated['is_asset'] ?? 0);
         $cat->update($categoryData);
         DB::table('category_outlet')->where('category_id', $id)->delete();
         if (!empty($request->outlet_ids)) {
@@ -325,5 +332,14 @@ class CategoryController extends Controller
             'new_data' => $cat->fresh()->toArray(),
         ]);
         return response()->json(['success' => true]);
+    }
+
+    private function normalizeIsAsset(mixed $value): string
+    {
+        if (in_array($value, [true, 1, '1', 'true', 'on', 'yes'], true)) {
+            return '1';
+        }
+
+        return '0';
     }
 }

@@ -154,8 +154,8 @@ function toggleStatus(cat) {
                 </span>
               </td>
               <td class="px-6 py-3">
-                <span :class="cat.is_asset ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
-                  {{ cat.is_asset ? 'Asset' : 'Bukan Asset' }}
+                <span :class="cat.is_asset == 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded-full text-xs font-semibold shadow">
+                  {{ cat.is_asset == 1 ? 'Asset' : 'Bukan Asset' }}
                 </span>
               </td>
               <td class="px-6 py-3">
