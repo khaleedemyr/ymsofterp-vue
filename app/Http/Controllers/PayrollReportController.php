@@ -845,10 +845,13 @@ class PayrollReportController extends Controller
                 
                 if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
                     // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
-                    $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHours(
+                    $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHoursForDay(
                         (int) ($row->work_minutes ?? 0),
                         $shiftData->time_start,
-                        $shiftData->time_end
+                        $shiftData->time_end,
+                        $row->jam_masuk ?? null,
+                        $row->jam_keluar ?? null,
+                        $row->tanggal ?? null
                     ));
                 } else {
                     $row->lembur = 0;
@@ -2893,10 +2896,13 @@ class PayrollReportController extends Controller
             
             if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
                 // Gunakan smart overtime calculation - SAMA PERSIS dengan Employee Summary
-                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHours(
+                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHoursForDay(
                     (int) ($row->work_minutes ?? 0),
                     $shiftData->time_start,
-                    $shiftData->time_end
+                    $shiftData->time_end,
+                    $row->jam_masuk ?? null,
+                    $row->jam_keluar ?? null,
+                    $row->tanggal ?? null
                 ));
             } else {
                 $row->lembur = 0;
@@ -3902,13 +3908,14 @@ class PayrollReportController extends Controller
             $shiftData = $allShiftData->get($shiftKey, collect())->first();
             
             if ($row->jam_masuk && $row->jam_keluar && $shiftData) {
-                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHoursFromShiftOut(
-                    $row->jam_keluar,
+                $row->lembur = floor(app(\App\Services\AttendanceWorkTimelineService::class)->calculateOvertimeHoursForDay(
+                    (int) ($row->work_minutes ?? 0),
                     $shiftData->time_start,
                     $shiftData->time_end,
-                    $row->tanggal
+                    $row->jam_masuk ?? null,
+                    $row->jam_keluar ?? null,
+                    $row->tanggal ?? null
                 ));
-                $row->lembur = floor($row->lembur);
             } else {
                 $row->lembur = 0;
             }

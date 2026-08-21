@@ -27,6 +27,50 @@ class AttendanceWorkTimelineServiceTest extends TestCase
         $this->assertSame(390, $minutes); // 4h + 2.5h
     }
 
+    public function test_syaeful_pulang_kembali_excludes_gap_from_work_and_overtime(): void
+    {
+        $scans = [
+            ['scan_date' => '2026-08-13 07:47:34', 'inoutmode' => 1, 'outlet_id' => 1],
+            ['scan_date' => '2026-08-13 17:16:07', 'inoutmode' => 2, 'outlet_id' => 1],
+            ['scan_date' => '2026-08-13 21:34:33', 'inoutmode' => 4, 'outlet_id' => 2],
+            ['scan_date' => '2026-08-14 01:11:34', 'inoutmode' => 2, 'outlet_id' => 2],
+        ];
+
+        $minutes = $this->service->calculateWorkMinutes($scans);
+        $this->assertSame(785, $minutes); // 9h28m + 3h37m, tanpa jeda 17:16–21:34
+
+        $fromLastOut = $this->service->calculateOvertimeHoursFromShiftOut(
+            '2026-08-14 01:11:34',
+            '08:00:00',
+            '17:00:00',
+            '2026-08-13'
+        );
+        $this->assertSame(8, $fromLastOut); // salah jika dipakai: 17:00 → 01:11
+
+        $hours = $this->service->calculateOvertimeHoursForDay(
+            $minutes,
+            '08:00:00',
+            '17:00:00',
+            '2026-08-13 07:47:34',
+            '2026-08-14 01:11:34',
+            '2026-08-13'
+        );
+        $this->assertSame(3, $hours);
+    }
+
+    public function test_after_out_then_in_still_counts_transfer_gap(): void
+    {
+        $minutes = $this->service->calculateWorkMinutes([
+            ['scan_date' => '2026-08-13 08:00:00', 'inoutmode' => 1, 'outlet_id' => 1],
+            ['scan_date' => '2026-08-13 17:00:00', 'inoutmode' => 2, 'outlet_id' => 1],
+            ['scan_date' => '2026-08-13 18:00:00', 'inoutmode' => 1, 'outlet_id' => 2],
+            ['scan_date' => '2026-08-13 20:00:00', 'inoutmode' => 2, 'outlet_id' => 2],
+        ]);
+
+        $this->assertSame(720, $minutes); // 9h + 1h gap + 2h
+        $this->assertSame(3, $this->service->calculateOvertimeHours($minutes, '08:00:00', '17:00:00'));
+    }
+
     public function test_outlet_transfer_includes_travel_gap(): void
     {
         $minutes = $this->service->calculateWorkMinutes([

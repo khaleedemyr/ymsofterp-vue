@@ -157,17 +157,24 @@ class AttendanceWorkTimelineService
     }
 
     /**
-     * Lembur (jam, dibulatkan ke bawah) = selisih jam kerja efektif vs durasi shift.
-     * Lebih aman pakai calculateOvertimeHoursFromShiftOut: datang awal tidak dihitung lembur.
+     * Lembur (jam, dibulatkan ke bawah) = jam kerja efektif vs durasi shift.
+     * Jeda OUT → Kembali tidak masuk jam kerja, jadi tidak jadi OT.
+     * Datang lebih awal dari shift in tidak dihitung lembur.
      */
-    public function calculateOvertimeHours(int $workMinutes, ?string $shiftStart, ?string $shiftEnd): int
-    {
+    public function calculateOvertimeHours(
+        int $workMinutes,
+        ?string $shiftStart,
+        ?string $shiftEnd,
+        ?string $jamMasuk = null,
+        ?string $workDate = null
+    ): int {
         if ($workMinutes <= 0 || ! $shiftStart || ! $shiftEnd) {
             return 0;
         }
 
         $shiftMinutes = $this->getShiftDurationMinutes($shiftStart, $shiftEnd);
-        $excessMinutes = $workMinutes - $shiftMinutes;
+        $countedMinutes = max(0, $workMinutes - $this->earlyCheckInMinutes($jamMasuk, $shiftStart, $workDate));
+        $excessMinutes = $countedMinutes - $shiftMinutes;
 
         if ($excessMinutes <= 0) {
             return 0;
@@ -176,6 +183,28 @@ class AttendanceWorkTimelineService
         $hours = (int) floor($excessMinutes / 60);
 
         return min($hours, 12);
+    }
+
+    /**
+     * OT harian: utamakan jam kerja efektif (IN/OUT/Kembali). Fallback last-out vs shift end.
+     */
+    public function calculateOvertimeHoursForDay(
+        int $workMinutes,
+        ?string $shiftStart,
+        ?string $shiftEnd,
+        ?string $jamMasuk = null,
+        ?string $jamKeluar = null,
+        ?string $workDate = null
+    ): int {
+        if ($workMinutes > 0 && $shiftStart && $shiftEnd) {
+            return $this->calculateOvertimeHours($workMinutes, $shiftStart, $shiftEnd, $jamMasuk, $workDate);
+        }
+
+        if ($jamKeluar && $shiftEnd) {
+            return $this->calculateOvertimeHoursFromShiftOut($jamKeluar, $shiftStart, $shiftEnd, $workDate);
+        }
+
+        return 0;
     }
 
     public function getShiftDurationMinutes(string $shiftStart, string $shiftEnd): int
@@ -192,6 +221,38 @@ class AttendanceWorkTimelineService
         }
 
         return (int) round(($endTs - $startTs) / 60);
+    }
+
+    private function earlyCheckInMinutes(?string $jamMasuk, ?string $shiftStart, ?string $workDate): int
+    {
+        if (! $jamMasuk || ! $shiftStart) {
+            return 0;
+        }
+
+        $inTs = strtotime($jamMasuk);
+        if ($inTs === false) {
+            return 0;
+        }
+
+        $hasDate = (bool) preg_match('/\d{4}-\d{2}-\d{2}/', $jamMasuk);
+        if ($hasDate) {
+            $datePrefix = date('Y-m-d', $inTs).' ';
+        } elseif ($workDate) {
+            $datePrefix = $workDate.' ';
+            $inTs = strtotime($workDate.' '.date('H:i:s', $inTs));
+            if ($inTs === false) {
+                return 0;
+            }
+        } else {
+            $datePrefix = '';
+        }
+
+        $shiftStartTs = strtotime($datePrefix.$shiftStart);
+        if ($shiftStartTs === false || $inTs >= $shiftStartTs) {
+            return 0;
+        }
+
+        return (int) floor(($shiftStartTs - $inTs) / 60);
     }
 
     /**

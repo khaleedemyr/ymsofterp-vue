@@ -187,7 +187,10 @@ class AttendanceReportController extends Controller
                     $row->lembur = $this->calculateWorkBasedOvertime(
                         (int) ($row->work_minutes ?? 0),
                         $shiftStart,
-                        $shiftEnd
+                        $shiftEnd,
+                        $row->jam_keluar ?? null,
+                        $row->tanggal ?? null,
+                        $row->jam_masuk ?? null
                     );
                 } else {
                     $row->lembur = 0;
@@ -258,13 +261,15 @@ class AttendanceReportController extends Controller
                                         );
                                     }
                                 }
-                                if ($shift && $shift->time_end && $row->jam_keluar) {
-                                    $lembur = floor($this->workTimelineService()->calculateOvertimeHoursFromShiftOut(
-                                        $row->jam_keluar,
+                                if ($shift && $shift->time_end && ($row->jam_keluar || ! empty($row->work_minutes))) {
+                                    $lembur = $this->workTimelineService()->calculateOvertimeHoursForDay(
+                                        (int) ($row->work_minutes ?? 0),
                                         $shift->time_start ?? null,
                                         $shift->time_end,
+                                        $row->jam_masuk ?? null,
+                                        $row->jam_keluar ?? null,
                                         $tanggal
-                                    ));
+                                    );
                                 }
                             } else {
                                 $jam_masuk = null;
@@ -904,7 +909,10 @@ class AttendanceReportController extends Controller
                     $row->lembur = $this->calculateWorkBasedOvertime(
                         (int) ($row->work_minutes ?? 0),
                         $shiftStart,
-                        $shiftEnd
+                        $shiftEnd,
+                        $row->jam_keluar ?? null,
+                        $row->tanggal ?? null,
+                        $row->jam_masuk ?? null
                     );
                 } else {
                     $row->lembur = 0;
@@ -986,7 +994,8 @@ class AttendanceReportController extends Controller
                                         $shift->time_start,
                                         $shift->time_end,
                                         $row->jam_keluar,
-                                        $tanggal
+                                        $tanggal,
+                                        $row->jam_masuk ?? null
                                     );
                                 }
                             } else {
@@ -2272,13 +2281,14 @@ class AttendanceReportController extends Controller
                         $scanOutTime = strtotime($scanOutDateTime);
                         
                         
-                        // Gunakan smart overtime calculation
+                        // Gunakan jam kerja efektif (OUT→Kembali tidak dihitung), bukan last-out vs shift end
                         $row->lembur = $this->calculateWorkBasedOvertime(
                             (int) ($row->work_minutes ?? 0),
                             $shiftStart,
                             $shiftEnd,
                             $row->jam_keluar ?? null,
-                            $row->tanggal ?? null
+                            $row->tanggal ?? null,
+                            $row->jam_masuk ?? null
                         );
                         if ($row->lembur > 0) {
                             $overtimeCount++;
@@ -2835,13 +2845,14 @@ class AttendanceReportController extends Controller
                         $shiftEndTime = strtotime($shiftEndDateTime);
                         $scanOutTime = strtotime($scanOutDateTime);
                         
-                        // Gunakan smart overtime calculation
+                        // Gunakan jam kerja efektif (OUT→Kembali tidak dihitung), bukan last-out vs shift end
                         $row->lembur = $this->calculateWorkBasedOvertime(
                             (int) ($row->work_minutes ?? 0),
                             $shiftStart,
                             $shiftEnd,
                             $row->jam_keluar ?? null,
-                            $row->tanggal ?? null
+                            $row->tanggal ?? null,
+                            $row->jam_masuk ?? null
                         );
                     } else {
                         $row->lembur = 0;
@@ -3593,13 +3604,15 @@ class AttendanceReportController extends Controller
             );
         }
 
-        if ($shift && $processedRow->jam_keluar && $shift->time_end) {
-            $lembur = floor(app(AttendanceWorkTimelineService::class)->calculateOvertimeHoursFromShiftOut(
-                $processedRow->jam_keluar,
+        if ($shift && $shift->time_end && ($processedRow->jam_keluar || ! empty($processedRow->work_minutes))) {
+            $lembur = $this->workTimelineService()->calculateOvertimeHoursForDay(
+                (int) ($processedRow->work_minutes ?? 0),
                 $shift->time_start ?? null,
                 $shift->time_end,
+                $processedRow->jam_masuk ?? null,
+                $processedRow->jam_keluar ?? null,
                 $tanggal
-            ));
+            );
         }
 
         return ['telat' => $telat, 'lembur' => $lembur];
@@ -3648,22 +3661,17 @@ class AttendanceReportController extends Controller
         ?string $shiftStart,
         ?string $shiftEnd,
         $jamKeluar = null,
-        ?string $tanggal = null
+        ?string $tanggal = null,
+        $jamMasuk = null
     ): int {
-        if ($jamKeluar && $shiftEnd) {
-            return (int) floor($this->workTimelineService()->calculateOvertimeHoursFromShiftOut(
-                $jamKeluar,
-                $shiftStart,
-                $shiftEnd,
-                $tanggal
-            ));
-        }
-
-        if (! $workMinutes || ! $shiftStart || ! $shiftEnd) {
-            return 0;
-        }
-
-        return (int) floor($this->workTimelineService()->calculateOvertimeHours($workMinutes, $shiftStart, $shiftEnd));
+        return $this->workTimelineService()->calculateOvertimeHoursForDay(
+            (int) ($workMinutes ?? 0),
+            $shiftStart,
+            $shiftEnd,
+            $jamMasuk,
+            $jamKeluar,
+            $tanggal
+        );
     }
 
     /**
