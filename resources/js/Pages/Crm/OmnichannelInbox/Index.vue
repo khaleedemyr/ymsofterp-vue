@@ -41,64 +41,92 @@
       </div>
       <!-- Kolom 1: filter inbox & lifecycle -->
       <nav
-        class="w-full shrink-0 flex-col border-r border-slate-200 bg-slate-50 lg:flex lg:w-52"
-        :class="mobilePanel === 'filters' ? 'flex' : 'hidden'"
+        class="w-full shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50 transition-all duration-300 lg:flex"
+        :class="[
+          mobilePanel === 'filters' ? 'flex' : 'hidden',
+          filtersCollapsed ? 'lg:w-14' : 'lg:w-52',
+        ]"
       >
-        <div class="border-b border-slate-200 p-3">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Inbox</p>
-          <div class="mt-2 space-y-1">
+        <div class="hidden items-center border-b border-slate-200 px-1 py-1.5 lg:flex" :class="filtersCollapsed ? 'justify-center' : 'justify-end px-2'">
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-emerald-700"
+            :title="filtersCollapsed ? 'Perbesar filter' : 'Perkecil filter'"
+            @click="toggleFiltersPanel"
+          >
+            <i :class="filtersCollapsed ? 'fa-solid fa-angle-double-right' : 'fa-solid fa-angle-double-left'" />
+          </button>
+        </div>
+        <div class="border-b border-slate-200 p-3" :class="{ 'lg:px-1': filtersCollapsed }">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500" :class="{ 'lg:hidden': filtersCollapsed }">Inbox</p>
+          <div class="mt-2 space-y-1" :class="{ 'lg:mt-0': filtersCollapsed }">
             <button
               v-for="opt in inboxMenuOptions"
               :key="opt.value"
               type="button"
               class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm"
-              :class="inbox === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80'"
-              :title="opt.hint || undefined"
+              :class="[
+                inbox === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80',
+                filtersCollapsed ? 'lg:justify-center lg:px-0' : '',
+              ]"
+              :title="opt.hint || opt.label"
               @click="setInbox(opt.value)"
             >
               <i :class="opt.icon" class="w-4 text-center text-slate-400" />
-              {{ opt.label }}
+              <span :class="{ 'lg:hidden': filtersCollapsed }">{{ opt.label }}</span>
             </button>
           </div>
         </div>
-        <div class="border-b border-slate-200 p-3">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Kanal</p>
-          <div class="mt-2 space-y-1">
+        <div class="border-b border-slate-200 p-3" :class="{ 'lg:px-1': filtersCollapsed }">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500" :class="{ 'lg:hidden': filtersCollapsed }">Kanal</p>
+          <div class="mt-2 space-y-1" :class="{ 'lg:mt-0': filtersCollapsed }">
             <button
               v-for="opt in channelMenuOptions"
               :key="opt.value ?? 'all'"
               type="button"
               class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm"
-              :class="channelFilter === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80'"
+              :class="[
+                channelFilter === opt.value ? 'bg-white font-medium text-emerald-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/80',
+                filtersCollapsed ? 'lg:justify-center lg:px-0' : '',
+              ]"
+              :title="opt.label"
               @click="setChannelFilter(opt.value)"
             >
               <i :class="[opt.icon, 'w-4 text-center', opt.iconColor || 'text-slate-400']" />
-              {{ opt.label }}
+              <span :class="{ 'lg:hidden': filtersCollapsed }">{{ opt.label }}</span>
             </button>
           </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-3">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Tahap lead</p>
-          <div class="mt-2 space-y-0.5">
+        <div class="flex-1 overflow-y-auto p-3" :class="{ 'lg:px-1': filtersCollapsed }">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500" :class="{ 'lg:hidden': filtersCollapsed }">Tahap lead</p>
+          <div class="mt-2 space-y-0.5" :class="{ 'lg:mt-0': filtersCollapsed }">
             <button
               type="button"
               class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
-              :class="!leadStageFilter ? 'bg-emerald-50 font-medium text-emerald-900' : 'text-slate-600 hover:bg-white'"
+              :class="[
+                !leadStageFilter ? 'bg-emerald-50 font-medium text-emerald-900' : 'text-slate-600 hover:bg-white',
+                filtersCollapsed ? 'lg:justify-center lg:px-0' : '',
+              ]"
+              title="Semua tahap"
               @click="setLeadStage(null)"
             >
               <span class="h-2 w-2 shrink-0 rounded-full bg-slate-300" />
-              Semua tahap
+              <span :class="{ 'lg:hidden': filtersCollapsed }">Semua tahap</span>
             </button>
             <button
               v-for="st in leadStages"
               :key="st.value"
               type="button"
               class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs"
-              :class="leadStageFilter === st.value ? 'bg-emerald-50 font-medium text-emerald-900' : 'text-slate-600 hover:bg-white'"
+              :class="[
+                leadStageFilter === st.value ? 'bg-emerald-50 font-medium text-emerald-900' : 'text-slate-600 hover:bg-white',
+                filtersCollapsed ? 'lg:justify-center lg:px-0' : '',
+              ]"
+              :title="st.label"
               @click="setLeadStage(st.value)"
             >
               <span class="h-2 w-2 shrink-0 rounded-full" :class="stageDotClass(st.color)" />
-              {{ st.label }}
+              <span :class="{ 'lg:hidden': filtersCollapsed }">{{ st.label }}</span>
             </button>
           </div>
         </div>
@@ -369,6 +397,15 @@
               @click="pauseAutomation"
             >
               {{ pausingAutomation ? '...' : 'Hentikan otomasi' }}
+            </button>
+            <button
+              v-if="detailCollapsed"
+              type="button"
+              class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-emerald-700 lg:inline-flex"
+              title="Perbesar detail kontak"
+              @click="toggleDetailPanel"
+            >
+              <i class="fa-solid fa-address-card" />
             </button>
           </div>
 
@@ -918,11 +955,45 @@
       <!-- Kolom 4: informasi detail kontak + CRM -->
       <aside
         v-if="selectedConversation"
-        class="w-full shrink-0 flex-col border-l border-slate-200 bg-slate-50 lg:flex lg:w-80"
-        :class="mobilePanel === 'detail' ? 'flex' : 'hidden'"
+        class="w-full shrink-0 flex-col overflow-hidden border-l border-slate-200 bg-slate-50 transition-all duration-300 lg:flex"
+        :class="[
+          mobilePanel === 'detail' ? 'flex' : 'hidden',
+          detailCollapsed ? 'lg:w-12' : 'lg:w-80',
+        ]"
       >
-        <div class="border-b border-slate-200 px-3 py-2">
-          <p class="text-xs font-semibold text-slate-800">Informasi detail kontak</p>
+        <div
+          v-if="detailCollapsed"
+          class="hidden h-full flex-col items-center gap-2 py-2 lg:flex"
+        >
+          <button
+            type="button"
+            class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-emerald-700"
+            title="Perbesar detail kontak"
+            @click="toggleDetailPanel"
+          >
+            <i class="fa-solid fa-angle-double-left" />
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-emerald-700"
+            title="Informasi detail kontak"
+            @click="toggleDetailPanel"
+          >
+            <i class="fa-solid fa-address-card" />
+          </button>
+        </div>
+        <div class="border-b border-slate-200 px-3 py-2" :class="{ 'lg:hidden': detailCollapsed }">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-xs font-semibold text-slate-800">Informasi detail kontak</p>
+            <button
+              type="button"
+              class="hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-emerald-700 lg:inline-flex"
+              title="Perkecil detail kontak"
+              @click="toggleDetailPanel"
+            >
+              <i class="fa-solid fa-angle-double-right" />
+            </button>
+          </div>
           <div class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
             <Link
               v-if="canManageOmnichannelTeams"
@@ -940,7 +1011,7 @@
             </Link>
           </div>
         </div>
-        <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm">
+        <div class="flex-1 space-y-3 overflow-y-auto p-3 text-sm" :class="{ 'lg:hidden': detailCollapsed }">
           <div class="rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-sm">
             <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ channelLabel(selectedConversation.channel) }}</p>
             <p class="mt-1 font-medium text-slate-900">{{ selectedConversation.contact_name || '—' }}</p>
@@ -1264,6 +1335,40 @@ const inboxMenuOptions = computed(() => {
     { value: 'unassigned', label: 'Belum ditugaskan', icon: 'fa-solid fa-user-slash', hint: '' },
   ]
 })
+
+const LS_FILTERS_COLLAPSED = 'omni_inbox_filters_collapsed'
+const LS_DETAIL_COLLAPSED = 'omni_inbox_detail_collapsed'
+
+function readLsFlag(key, fallback = false) {
+  try {
+    const stored = localStorage.getItem(key)
+    if (stored === null) return fallback
+    return stored === '1'
+  } catch {
+    return fallback
+  }
+}
+
+function persistLsFlag(key, value) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+const filtersCollapsed = ref(readLsFlag(LS_FILTERS_COLLAPSED, false))
+const detailCollapsed = ref(readLsFlag(LS_DETAIL_COLLAPSED, false))
+
+function toggleFiltersPanel() {
+  filtersCollapsed.value = !filtersCollapsed.value
+  persistLsFlag(LS_FILTERS_COLLAPSED, filtersCollapsed.value)
+}
+
+function toggleDetailPanel() {
+  detailCollapsed.value = !detailCollapsed.value
+  persistLsFlag(LS_DETAIL_COLLAPSED, detailCollapsed.value)
+}
 
 const search = ref('')
 const mobilePanel = ref(props.selectedConversation?.id ? 'chat' : 'list')
