@@ -4086,6 +4086,7 @@ async function loadAllApprovals() {
             correctionSeen.add(key);
             allApprovalsData.push({
                 ...approval,
+                correction_type: approval.type,
                 type: 'correction',
                 typeLabel: (approval.type === 'schedule' ? 'Working schedule correction' : approval.type === 'manual_attendance' ? 'No fingerprint in/out correction' : 'Working time correction')
                     + (approval.approval_stage_label ? ' · ' + approval.approval_stage_label : '')
@@ -6007,7 +6008,8 @@ function closeAllApprovalsModal() {
 
 // Format correction value for display
 function formatCorrectionValue(approval) {
-    return formatAnyCorrectionValue(approval.old_value, approval.new_value, approval.type);
+    const corrType = approval.correction_type || approval.type;
+    return formatAnyCorrectionValue(approval.old_value, approval.new_value, corrType);
 }
 
 // Format correction time for detailed display
@@ -14299,7 +14301,7 @@ watch(locale, () => {
                                 </div>
                                 
                                 <!-- Detailed Correction Info -->
-                                <div v-if="approval.type === 'attendance'" class="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                <div v-if="(approval.correction_type || approval.type) === 'attendance'" class="mt-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                                     <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Detail Koreksi:</div>
                                     <div class="space-y-2">
                                         <div class="flex justify-between items-center">
