@@ -6,60 +6,41 @@
         Rekap Revenue Outlet
       </h1>
 
-      <div class="bg-white rounded-xl shadow p-6 mb-6">
-        <div class="flex flex-wrap items-center gap-4 mb-4">
+      <div class="bg-white rounded-xl shadow p-6 mb-6 space-y-4">
+        <div class="flex flex-wrap items-center gap-4">
           <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer select-none">
             <input
               v-model="compareEnabled"
               type="checkbox"
               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              @change="onCompareToggle"
             />
             Bandingkan periode
           </label>
+          <span v-if="compareEnabled" class="text-xs text-gray-500">
+            Bisa 2–{{ maxPeriods }} periode. Selisih/% dihitung vs Periode 1.
+          </span>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+        <!-- Single period -->
+        <div v-if="!compareEnabled" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
-              {{ compareEnabled ? 'Periode A — From' : 'Tanggal From' }}
-            </label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal From</label>
             <input
-              v-model="filters.date_from"
+              v-model="periods[0].from"
               type="date"
               class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">
-              {{ compareEnabled ? 'Periode A — To' : 'Tanggal To' }}
-            </label>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal To</label>
             <input
-              v-model="filters.date_to"
+              v-model="periods[0].to"
               type="date"
               class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
             />
           </div>
-
-          <template v-if="compareEnabled">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Periode B — From</label>
-              <input
-                v-model="filters.compare_from"
-                type="date"
-                class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Periode B — To</label>
-              <input
-                v-model="filters.compare_to"
-                type="date"
-                class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-          </template>
-
-          <div :class="compareEnabled ? 'lg:col-span-4' : 'md:col-span-2'" class="flex justify-end gap-2">
+          <div class="md:col-span-2 flex justify-end gap-2">
             <button
               type="button"
               @click="fetchReport"
@@ -78,6 +59,83 @@
             </button>
           </div>
         </div>
+
+        <!-- Multi period -->
+        <div v-else class="space-y-3">
+          <div
+            v-for="(period, index) in periods"
+            :key="index"
+            class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end p-3 rounded-lg bg-gray-50 border border-gray-100"
+          >
+            <div class="md:col-span-2 flex items-center gap-2 pb-2 md:pb-0">
+              <span
+                class="inline-flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold text-white"
+                :class="periodColor(index)"
+              >
+                P{{ index + 1 }}
+              </span>
+              <span class="text-sm font-medium text-gray-700">Periode {{ index + 1 }}</span>
+            </div>
+            <div class="md:col-span-4">
+              <label class="block text-sm font-medium text-gray-700 mb-1">From</label>
+              <input
+                v-model="period.from"
+                type="date"
+                class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div class="md:col-span-4">
+              <label class="block text-sm font-medium text-gray-700 mb-1">To</label>
+              <input
+                v-model="period.to"
+                type="date"
+                class="w-full rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+            <div class="md:col-span-2 flex justify-end">
+              <button
+                v-if="periods.length > 2"
+                type="button"
+                @click="removePeriod(index)"
+                class="px-3 py-2 rounded-lg border border-rose-200 text-rose-600 text-sm hover:bg-rose-50"
+                title="Hapus periode"
+              >
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              @click="addPeriod"
+              :disabled="periods.length >= maxPeriods"
+              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-blue-300 text-blue-700 text-sm hover:bg-blue-50 disabled:opacity-40"
+            >
+              <i class="fa-solid fa-plus"></i>
+              Tambah periode
+              <span class="text-xs text-gray-400">({{ periods.length }}/{{ maxPeriods }})</span>
+            </button>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                @click="fetchReport"
+                :disabled="loading"
+                class="px-6 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {{ loading ? 'Memuat...' : 'Tampilkan' }}
+              </button>
+              <button
+                type="button"
+                @click="exportExcel"
+                :disabled="loading || !canSubmit"
+                class="px-6 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                Export Excel
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div v-if="loading" class="text-center py-16 text-gray-500">Memuat data...</div>
@@ -87,7 +145,6 @@
       </div>
 
       <template v-else>
-        <!-- Column visibility + region controls -->
         <div class="bg-white rounded-xl shadow px-4 py-3 mb-4 flex flex-wrap items-center gap-3 justify-between">
           <div ref="columnMenuRef" class="relative">
             <button
@@ -192,7 +249,7 @@
                       class="px-4 py-2.5 text-right"
                       :class="metric.key === 'grand_total' || metric.key === 'avg_check' ? 'font-semibold' : ''"
                     >
-                      {{ formatMetric(row[metric.key], metric.key) }}
+                      {{ formatMetric(scalarVal(row, metric.key), metric.key) }}
                     </td>
                   </tr>
                   <tr class="bg-gray-100 font-semibold border-b-2 border-gray-300">
@@ -202,7 +259,7 @@
                       :key="metric.key"
                       class="px-4 py-2.5 text-right"
                     >
-                      {{ formatMetric(group.subtotal[metric.key], metric.key) }}
+                      {{ formatMetric(scalarVal(group.subtotal, metric.key), metric.key) }}
                     </td>
                   </tr>
                 </template>
@@ -215,7 +272,7 @@
                     :key="metric.key"
                     class="px-4 py-2 text-right text-xs text-gray-600 font-medium"
                   >
-                    {{ formatMetric(group.subtotal[metric.key], metric.key) }}
+                    {{ formatMetric(scalarVal(group.subtotal, metric.key), metric.key) }}
                   </td>
                 </tr>
               </template>
@@ -228,25 +285,27 @@
                   :key="metric.key"
                   class="px-4 py-3 text-right"
                 >
-                  {{ formatMetric(report.totals[metric.key], metric.key) }}
+                  {{ formatMetric(scalarVal(report.totals, metric.key), metric.key) }}
                 </td>
               </tr>
             </tfoot>
           </table>
         </div>
 
-        <!-- Compare table -->
+        <!-- Compare multi-period table -->
         <div v-else class="bg-white rounded-xl shadow overflow-x-auto">
           <div class="px-4 py-3 border-b border-gray-200 text-xs text-gray-600 flex flex-wrap gap-4">
-            <span>
-              <span class="inline-block w-2 h-2 rounded-full bg-blue-600 mr-1"></span>
-              A: {{ report.date_from }} s/d {{ report.date_to }}
+            <span
+              v-for="(p, i) in report.periods"
+              :key="i"
+              class="inline-flex items-center gap-1.5"
+            >
+              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold text-white" :class="periodColor(i)">
+                {{ p.label }}
+              </span>
+              {{ p.from }} s/d {{ p.to }}
             </span>
-            <span>
-              <span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1"></span>
-              B: {{ report.compare_from }} s/d {{ report.compare_to }}
-            </span>
-            <span class="text-gray-400">Selisih = A − B</span>
+            <span class="text-gray-400">Selisih/% = vs Periode 1</span>
           </div>
           <table class="min-w-full text-sm border-collapse">
             <thead>
@@ -260,7 +319,7 @@
                 <th
                   v-for="metric in visibleMetrics"
                   :key="metric.key"
-                  colspan="4"
+                  :colspan="compareColspan"
                   class="px-2 py-2 text-center whitespace-nowrap border-l border-gray-700"
                 >
                   {{ metric.label }}
@@ -268,10 +327,19 @@
               </tr>
               <tr class="bg-gray-800 text-white text-xs">
                 <template v-for="metric in visibleMetrics" :key="metric.key + '-sub'">
-                  <th class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-700 font-normal">A</th>
-                  <th class="px-2 py-2 text-right whitespace-nowrap font-normal">B</th>
-                  <th class="px-2 py-2 text-right whitespace-nowrap font-normal">Selisih</th>
-                  <th class="px-2 py-2 text-right whitespace-nowrap font-normal">%</th>
+                  <th
+                    v-for="(p, i) in report.periods"
+                    :key="metric.key + '-p' + i"
+                    class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-700 font-normal"
+                  >
+                    {{ p.label }}
+                  </th>
+                  <template v-for="(p, i) in report.periods" :key="metric.key + '-d' + i">
+                    <template v-if="i > 0">
+                      <th class="px-2 py-2 text-right whitespace-nowrap font-normal text-gray-300">Δ{{ p.label }}</th>
+                      <th class="px-2 py-2 text-right whitespace-nowrap font-normal text-gray-300">%{{ p.label }}</th>
+                    </template>
+                  </template>
                 </template>
               </tr>
             </thead>
@@ -281,7 +349,10 @@
                   class="bg-indigo-50 border-t-2 border-indigo-200 cursor-pointer hover:bg-indigo-100 select-none"
                   @click="toggleRegion(group)"
                 >
-                  <td :colspan="1 + visibleMetrics.length * 4" class="px-4 py-2 font-bold text-indigo-900 uppercase tracking-wide text-xs">
+                  <td
+                    :colspan="1 + visibleMetrics.length * compareColspan"
+                    class="px-4 py-2 font-bold text-indigo-900 uppercase tracking-wide text-xs"
+                  >
                     <i
                       class="fa-solid mr-2 w-3 text-center"
                       :class="isRegionExpanded(group) ? 'fa-chevron-down' : 'fa-chevron-right'"
@@ -302,18 +373,23 @@
                       {{ row.outlet_name }}
                     </td>
                     <template v-for="metric in visibleMetrics" :key="metric.key">
-                      <td class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-50">
-                        {{ formatMetric(row[metric.key], metric.key) }}
+                      <td
+                        v-for="(p, i) in report.periods"
+                        :key="metric.key + '-v' + i"
+                        class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-50"
+                      >
+                        {{ formatMetric(periodVal(row, metric.key, i), metric.key) }}
                       </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap text-gray-600">
-                        {{ formatMetric(row[metric.key + '_b'], metric.key) }}
-                      </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(row[metric.key + '_diff'])">
-                        {{ formatDiff(row[metric.key + '_diff'], metric.key) }}
-                      </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(row[metric.key + '_pct'])">
-                        {{ formatPct(row[metric.key + '_pct']) }}
-                      </td>
+                      <template v-for="(p, i) in report.periods" :key="metric.key + '-diff' + i">
+                        <template v-if="i > 0">
+                          <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(periodDiff(row, metric.key, i))">
+                            {{ formatDiff(periodDiff(row, metric.key, i), metric.key) }}
+                          </td>
+                          <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(periodPct(row, metric.key, i))">
+                            {{ formatPct(periodPct(row, metric.key, i)) }}
+                          </td>
+                        </template>
+                      </template>
                     </template>
                   </tr>
                   <tr class="bg-gray-100 font-semibold border-b-2 border-gray-300">
@@ -321,18 +397,23 @@
                       Subtotal {{ group.region_name }}
                     </td>
                     <template v-for="metric in visibleMetrics" :key="metric.key">
-                      <td class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-200">
-                        {{ formatMetric(group.subtotal[metric.key], metric.key) }}
+                      <td
+                        v-for="(p, i) in report.periods"
+                        :key="metric.key + '-sv' + i"
+                        class="px-2 py-2 text-right whitespace-nowrap border-l border-gray-200"
+                      >
+                        {{ formatMetric(periodVal(group.subtotal, metric.key, i), metric.key) }}
                       </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap">
-                        {{ formatMetric(group.subtotal[metric.key + '_b'], metric.key) }}
-                      </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(group.subtotal[metric.key + '_diff'])">
-                        {{ formatDiff(group.subtotal[metric.key + '_diff'], metric.key) }}
-                      </td>
-                      <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(group.subtotal[metric.key + '_pct'])">
-                        {{ formatPct(group.subtotal[metric.key + '_pct']) }}
-                      </td>
+                      <template v-for="(p, i) in report.periods" :key="metric.key + '-sd' + i">
+                        <template v-if="i > 0">
+                          <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(periodDiff(group.subtotal, metric.key, i))">
+                            {{ formatDiff(periodDiff(group.subtotal, metric.key, i), metric.key) }}
+                          </td>
+                          <td class="px-2 py-2 text-right whitespace-nowrap" :class="diffClass(periodPct(group.subtotal, metric.key, i))">
+                            {{ formatPct(periodPct(group.subtotal, metric.key, i)) }}
+                          </td>
+                        </template>
+                      </template>
                     </template>
                   </tr>
                 </template>
@@ -341,18 +422,23 @@
                     Subtotal {{ group.region_name }}
                   </td>
                   <template v-for="metric in visibleMetrics" :key="metric.key">
-                    <td class="px-2 py-2 text-right text-xs text-gray-600 font-medium whitespace-nowrap border-l border-gray-100">
-                      {{ formatMetric(group.subtotal[metric.key], metric.key) }}
+                    <td
+                      v-for="(p, i) in report.periods"
+                      :key="metric.key + '-csv' + i"
+                      class="px-2 py-2 text-right text-xs text-gray-600 font-medium whitespace-nowrap border-l border-gray-100"
+                    >
+                      {{ formatMetric(periodVal(group.subtotal, metric.key, i), metric.key) }}
                     </td>
-                    <td class="px-2 py-2 text-right text-xs text-gray-500 whitespace-nowrap">
-                      {{ formatMetric(group.subtotal[metric.key + '_b'], metric.key) }}
-                    </td>
-                    <td class="px-2 py-2 text-right text-xs whitespace-nowrap" :class="diffClass(group.subtotal[metric.key + '_diff'])">
-                      {{ formatDiff(group.subtotal[metric.key + '_diff'], metric.key) }}
-                    </td>
-                    <td class="px-2 py-2 text-right text-xs whitespace-nowrap" :class="diffClass(group.subtotal[metric.key + '_pct'])">
-                      {{ formatPct(group.subtotal[metric.key + '_pct']) }}
-                    </td>
+                    <template v-for="(p, i) in report.periods" :key="metric.key + '-csd' + i">
+                      <template v-if="i > 0">
+                        <td class="px-2 py-2 text-right text-xs whitespace-nowrap" :class="diffClass(periodDiff(group.subtotal, metric.key, i))">
+                          {{ formatDiff(periodDiff(group.subtotal, metric.key, i), metric.key) }}
+                        </td>
+                        <td class="px-2 py-2 text-right text-xs whitespace-nowrap" :class="diffClass(periodPct(group.subtotal, metric.key, i))">
+                          {{ formatPct(periodPct(group.subtotal, metric.key, i)) }}
+                        </td>
+                      </template>
+                    </template>
                   </template>
                 </tr>
               </template>
@@ -361,18 +447,23 @@
               <tr class="bg-blue-900 text-white font-bold">
                 <td class="px-4 py-3 sticky left-0 bg-blue-900 border-r border-blue-800">GRAND TOTAL</td>
                 <template v-for="metric in visibleMetrics" :key="metric.key">
-                  <td class="px-2 py-3 text-right whitespace-nowrap border-l border-blue-800">
-                    {{ formatMetric(report.totals[metric.key], metric.key) }}
+                  <td
+                    v-for="(p, i) in report.periods"
+                    :key="metric.key + '-tv' + i"
+                    class="px-2 py-3 text-right whitespace-nowrap border-l border-blue-800"
+                  >
+                    {{ formatMetric(periodVal(report.totals, metric.key, i), metric.key) }}
                   </td>
-                  <td class="px-2 py-3 text-right whitespace-nowrap">
-                    {{ formatMetric(report.totals[metric.key + '_b'], metric.key) }}
-                  </td>
-                  <td class="px-2 py-3 text-right whitespace-nowrap" :class="diffClass(report.totals[metric.key + '_diff'], true)">
-                    {{ formatDiff(report.totals[metric.key + '_diff'], metric.key) }}
-                  </td>
-                  <td class="px-2 py-3 text-right whitespace-nowrap" :class="diffClass(report.totals[metric.key + '_pct'], true)">
-                    {{ formatPct(report.totals[metric.key + '_pct']) }}
-                  </td>
+                  <template v-for="(p, i) in report.periods" :key="metric.key + '-td' + i">
+                    <template v-if="i > 0">
+                      <td class="px-2 py-3 text-right whitespace-nowrap" :class="diffClass(periodDiff(report.totals, metric.key, i), true)">
+                        {{ formatDiff(periodDiff(report.totals, metric.key, i), metric.key) }}
+                      </td>
+                      <td class="px-2 py-3 text-right whitespace-nowrap" :class="diffClass(periodPct(report.totals, metric.key, i), true)">
+                        {{ formatPct(periodPct(report.totals, metric.key, i)) }}
+                      </td>
+                    </template>
+                  </template>
                 </template>
               </tr>
             </tfoot>
@@ -389,6 +480,8 @@ import axios from 'axios';
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import Swal from 'sweetalert2';
 
+const maxPeriods = 6;
+
 const metrics = [
   { key: 'total_sales', label: 'Total Sales' },
   { key: 'discount', label: 'Discount' },
@@ -400,6 +493,15 @@ const metrics = [
   { key: 'avg_check', label: 'Average Check' },
 ];
 
+const periodColors = [
+  'bg-blue-600',
+  'bg-amber-500',
+  'bg-emerald-600',
+  'bg-violet-600',
+  'bg-rose-500',
+  'bg-cyan-600',
+];
+
 const compareEnabled = ref(false);
 const showColumnMenu = ref(false);
 const columnMenuRef = ref(null);
@@ -408,16 +510,13 @@ const visibleColumns = reactive(
   Object.fromEntries(metrics.map((m) => [m.key, true]))
 );
 
-const filters = reactive({
-  date_from: '',
-  date_to: '',
-  compare_from: '',
-  compare_to: '',
-});
+const periods = ref([
+  { from: '', to: '' },
+]);
 
 const loading = ref(false);
 const showReport = ref(false);
-const report = ref({ groups: [], totals: {}, compare: false });
+const report = ref({ groups: [], totals: {}, compare: false, periods: [] });
 
 const isCompareMode = computed(() => !!report.value.compare);
 
@@ -425,11 +524,40 @@ const visibleMetrics = computed(() =>
   metrics.filter((m) => visibleColumns[m.key])
 );
 
-const canSubmit = computed(() => {
-  if (!filters.date_from || !filters.date_to) return false;
-  if (compareEnabled.value && (!filters.compare_from || !filters.compare_to)) return false;
-  return true;
+const compareColspan = computed(() => {
+  const n = report.value.period_count || report.value.periods?.length || 2;
+  // P1..Pn values + for each i>0: Δ and %
+  return n + (n - 1) * 2;
 });
+
+const canSubmit = computed(() => {
+  if (!periods.value.length) return false;
+  return periods.value.every((p) => p.from && p.to);
+});
+
+function periodColor(index) {
+  return periodColors[index % periodColors.length];
+}
+
+function onCompareToggle() {
+  if (compareEnabled.value) {
+    while (periods.value.length < 2) {
+      periods.value.push({ from: '', to: '' });
+    }
+  } else {
+    periods.value = [{ from: periods.value[0]?.from || '', to: periods.value[0]?.to || '' }];
+  }
+}
+
+function addPeriod() {
+  if (periods.value.length >= maxPeriods) return;
+  periods.value.push({ from: '', to: '' });
+}
+
+function removePeriod(index) {
+  if (periods.value.length <= 2) return;
+  periods.value.splice(index, 1);
+}
 
 function groupKey(group) {
   return String(group.region_id ?? group.region_name ?? '0');
@@ -483,6 +611,30 @@ function onDocumentClick(e) {
 onMounted(() => document.addEventListener('click', onDocumentClick));
 onUnmounted(() => document.removeEventListener('click', onDocumentClick));
 
+function scalarVal(row, key) {
+  const v = row?.[key];
+  if (Array.isArray(v)) return v[0] ?? 0;
+  return v ?? 0;
+}
+
+function periodVal(row, key, index) {
+  const v = row?.[key];
+  if (Array.isArray(v)) return v[index] ?? 0;
+  return index === 0 ? (v ?? 0) : 0;
+}
+
+function periodDiff(row, key, index) {
+  const v = row?.[key + '_diff'];
+  if (Array.isArray(v)) return v[index] ?? null;
+  return null;
+}
+
+function periodPct(row, key, index) {
+  const v = row?.[key + '_pct'];
+  if (Array.isArray(v)) return v[index] ?? null;
+  return null;
+}
+
 function formatCurrency(val) {
   const n = Number(val) || 0;
   return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
@@ -522,30 +674,38 @@ function diffClass(val, onDark = false) {
 }
 
 function buildParams() {
-  const params = {
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+  const list = compareEnabled.value
+    ? periods.value
+    : [periods.value[0]];
+
+  return {
+    periods: list.map((p) => ({ from: p.from, to: p.to })),
   };
-  if (compareEnabled.value) {
-    params.compare_from = filters.compare_from;
-    params.compare_to = filters.compare_to;
-  }
-  return params;
 }
 
 function validateFilters() {
-  if (!filters.date_from || !filters.date_to) {
-    Swal.fire({ icon: 'warning', title: 'Tanggal wajib diisi', text: 'Pilih Tanggal From dan Tanggal To.' });
-    return false;
+  const list = compareEnabled.value ? periods.value : [periods.value[0]];
+
+  for (let i = 0; i < list.length; i++) {
+    if (!list[i].from || !list[i].to) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Tanggal wajib diisi',
+        text: `Lengkapi From/To untuk Periode ${i + 1}.`,
+      });
+      return false;
+    }
   }
-  if (compareEnabled.value && (!filters.compare_from || !filters.compare_to)) {
+
+  if (compareEnabled.value && list.length < 2) {
     Swal.fire({
       icon: 'warning',
-      title: 'Periode banding wajib diisi',
-      text: 'Isi Periode B From dan To, atau matikan Bandingkan periode.',
+      title: 'Minimal 2 periode',
+      text: 'Mode banding membutuhkan minimal 2 periode.',
     });
     return false;
   }
+
   return true;
 }
 
@@ -555,12 +715,20 @@ async function fetchReport() {
   loading.value = true;
   showReport.value = false;
   try {
-    const res = await axios.get('/api/report/outlet-revenue-recap', { params: buildParams() });
+    const params = buildParams();
+    const qs = new URLSearchParams();
+    params.periods.forEach((p, i) => {
+      qs.append(`periods[${i}][from]`, p.from);
+      qs.append(`periods[${i}][to]`, p.to);
+    });
+    const res = await axios.get(`/api/report/outlet-revenue-recap?${qs.toString()}`);
     report.value = res.data;
     collapsedRegions.value = {};
     showReport.value = true;
   } catch (e) {
-    const msg = e?.response?.data?.message || 'Gagal memuat rekap revenue outlet.';
+    const msg = e?.response?.data?.message
+      || Object.values(e?.response?.data?.errors || {})?.[0]?.[0]
+      || 'Gagal memuat rekap revenue outlet.';
     Swal.fire({ icon: 'error', title: 'Gagal', text: msg });
   } finally {
     loading.value = false;
@@ -570,7 +738,12 @@ async function fetchReport() {
 function exportExcel() {
   if (!validateFilters()) return;
 
-  const query = new URLSearchParams(buildParams()).toString();
-  window.open(`/report/outlet-revenue-recap/export?${query}`, '_blank');
+  const params = buildParams();
+  const qs = new URLSearchParams();
+  params.periods.forEach((p, i) => {
+    qs.append(`periods[${i}][from]`, p.from);
+    qs.append(`periods[${i}][to]`, p.to);
+  });
+  window.open(`/report/outlet-revenue-recap/export?${qs.toString()}`, '_blank');
 }
 </script>

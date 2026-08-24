@@ -40,6 +40,11 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
     private bool $compare;
 
+    private int $periodCount;
+
+    /** @var list<array<string, mixed>> */
+    private array $periods;
+
     private string $lastCol;
 
     /**
@@ -49,8 +54,12 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
     {
         $this->payload = $payload;
         $this->compare = ! empty($payload['compare']);
-        // Region + Outlet + metrics (normal: 8, compare: 32)
-        $metricCols = $this->compare ? count(self::METRICS) * 4 : count(self::METRICS);
+        $this->periods = $payload['periods'] ?? [];
+        $this->periodCount = (int) ($payload['period_count'] ?? count($this->periods) ?: 1);
+
+        $metricCols = $this->compare
+            ? count(self::METRICS) * ($this->periodCount + ($this->periodCount - 1) * 2)
+            : count(self::METRICS);
         $this->lastCol = $this->columnLetter(2 + $metricCols);
     }
 
@@ -74,10 +83,15 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
         $heads = ['Region', 'Outlet'];
         foreach (self::METRICS as $metric) {
             $label = $metric['label'];
-            $heads[] = $label.' (A)';
-            $heads[] = $label.' (B)';
-            $heads[] = $label.' (Selisih)';
-            $heads[] = $label.' (%)';
+            for ($i = 0; $i < $this->periodCount; $i++) {
+                $pLabel = $this->periods[$i]['label'] ?? ('P'.($i + 1));
+                $heads[] = $label.' ('.$pLabel.')';
+            }
+            for ($i = 1; $i < $this->periodCount; $i++) {
+                $pLabel = $this->periods[$i]['label'] ?? ('P'.($i + 1));
+                $heads[] = $label.' (Δ'.$pLabel.')';
+                $heads[] = $label.' (%'.$pLabel.')';
+            }
         }
 
         return $heads;
@@ -124,13 +138,26 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
 
         foreach (self::METRICS as $metric) {
             $key = $metric['key'];
-            $line[] = (float) ($metrics[$key] ?? 0);
 
-            if ($this->compare) {
-                $line[] = (float) ($metrics[$key.'_b'] ?? 0);
-                $line[] = (float) ($metrics[$key.'_diff'] ?? 0);
-                $pct = $metrics[$key.'_pct'] ?? null;
-                $line[] = $pct !== null ? (float) $pct : null;
+            if (! $this->compare) {
+                $line[] = (float) ($metrics[$key] ?? 0);
+                continue;
+            }
+
+            $values = $metrics[$key] ?? [];
+            $diffs = $metrics[$key.'_diff'] ?? [];
+            $pcts = $metrics[$key.'_pct'] ?? [];
+
+            if (! is_array($values)) {
+                $values = [$values];
+            }
+
+            for ($i = 0; $i < $this->periodCount; $i++) {
+                $line[] = (float) ($values[$i] ?? 0);
+            }
+            for ($i = 1; $i < $this->periodCount; $i++) {
+                $line[] = isset($diffs[$i]) ? (float) $diffs[$i] : null;
+                $line[] = isset($pcts[$i]) && $pcts[$i] !== null ? (float) $pcts[$i] : null;
             }
         }
 
@@ -152,13 +179,22 @@ class OutletRevenueRecapExport implements FromCollection, WithHeadings, WithStyl
                 $lastCol = $this->lastCol;
 
                 $sheet->insertNewRowBefore(1, $offset);
-                $sheet->setCellValue('A1', 'Rekap Revenue Outlet'.($this->compare ? ' (Pembanding)' : ''));
+                $sheet->setCellValue(
+                    'A1',
+                    'Rekap Revenue Outlet'.($this->compare ? ' (Pembanding '.$this->periodCount.' Periode)' : '')
+                );
 
-                $periodeA = 'Periode A: '.($this->payload['date_from'] ?? '').' s/d '.($this->payload['date_to'] ?? '');
                 if ($this->compare) {
-                    $periodeA .= '  |  Periode B: '.($this->payload['compare_from'] ?? '').' s/d '.($this->payload['compare_to'] ?? '');
+                    $parts = [];
+                    foreach ($this->periods as $p) {
+                        $parts[] = ($p['label'] ?? '').': '.($p['from'] ?? '').' s/d '.($p['to'] ?? '');
+                    }
+                    $periodeLine = implode('  |  ', $parts).'  |  Selisih/% vs Periode 1';
+                } else {
+                    $periodeLine = 'Periode: '.($this->payload['date_from'] ?? '').' s/d '.($this->payload['date_to'] ?? '');
                 }
-                $sheet->setCellValue('A2', $periodeA);
+
+                $sheet->setCellValue('A2', $periodeLine);
                 $sheet->mergeCells('A1:'.$lastCol.'1');
                 $sheet->mergeCells('A2:'.$lastCol.'2');
                 $sheet->getStyle('A1:'.$lastCol.'2')->applyFromArray([

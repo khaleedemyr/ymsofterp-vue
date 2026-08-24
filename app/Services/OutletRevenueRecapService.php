@@ -18,19 +18,43 @@ class OutletRevenueRecapService
         'avg_check',
     ];
 
-    public function buildRecap(
-        string $dateFrom,
-        string $dateTo,
-        ?string $compareFrom = null,
-        ?string $compareTo = null
-    ): array {
-        $compare = $compareFrom !== null && $compareTo !== null
-            && $compareFrom !== '' && $compareTo !== '';
+    public const MAX_PERIODS = 6;
 
-        $salesA = $this->aggregateSalesByOutlet($dateFrom, $dateTo);
-        $salesB = $compare
-            ? $this->aggregateSalesByOutlet($compareFrom, $compareTo)
-            : [];
+    /**
+     * @param  list<array{from: string, to: string}>  $periods
+     */
+    public function buildRecap(array $periods): array
+    {
+        $periods = array_values(array_filter(
+            $periods,
+            fn ($p) => ! empty($p['from']) && ! empty($p['to'])
+        ));
+
+        if (count($periods) < 1) {
+            throw new \InvalidArgumentException('Minimal 1 periode diperlukan.');
+        }
+
+        if (count($periods) > self::MAX_PERIODS) {
+            throw new \InvalidArgumentException('Maksimal '.self::MAX_PERIODS.' periode.');
+        }
+
+        $compare = count($periods) >= 2;
+        $periodCount = count($periods);
+
+        $salesByPeriod = [];
+        foreach ($periods as $period) {
+            $salesByPeriod[] = $this->aggregateSalesByOutlet($period['from'], $period['to']);
+        }
+
+        $periodsMeta = [];
+        foreach ($periods as $i => $period) {
+            $periodsMeta[] = [
+                'index' => $i,
+                'from' => $period['from'],
+                'to' => $period['to'],
+                'label' => 'P'.($i + 1),
+            ];
+        }
 
         $outlets = DB::table('tbl_data_outlet as o')
             ->leftJoin('regions as r', 'r.id', '=', 'o.region_id')
@@ -55,20 +79,26 @@ class OutletRevenueRecapService
                     'region_id' => $outlet->region_id ? (int) $outlet->region_id : null,
                     'region_name' => (string) $outlet->region_name,
                     'rows' => [],
-                    'subtotal' => $compare ? $this->emptyCompareMetrics() : $this->emptyMetrics(),
+                    'subtotal' => $compare
+                        ? $this->emptyMultiMetrics($periodCount)
+                        : $this->emptyMetrics(),
                 ];
             }
 
-            $metricsA = $salesA[$outlet->qr_code] ?? $this->emptyMetrics();
+            $periodMetrics = [];
+            foreach ($salesByPeriod as $salesMap) {
+                $periodMetrics[] = $salesMap[$outlet->qr_code] ?? $this->emptyMetrics();
+            }
+
             if ($compare) {
-                $metricsB = $salesB[$outlet->qr_code] ?? $this->emptyMetrics();
-                $metrics = $this->mergeCompareMetrics($metricsA, $metricsB);
-                $grouped[$regionKey]['subtotal'] = $this->sumCompareMetrics(
+                $metrics = $this->mergeMultiMetrics($periodMetrics);
+                $grouped[$regionKey]['subtotal'] = $this->sumMultiMetrics(
                     $grouped[$regionKey]['subtotal'],
-                    $metrics
+                    $metrics,
+                    $periodCount
                 );
             } else {
-                $metrics = $metricsA;
+                $metrics = $periodMetrics[0];
                 $grouped[$regionKey]['subtotal'] = $this->sumMetrics(
                     $grouped[$regionKey]['subtotal'],
                     $metrics
@@ -83,24 +113,29 @@ class OutletRevenueRecapService
         }
 
         $groups = array_values($grouped);
-        $grandTotals = $compare ? $this->emptyCompareMetrics() : $this->emptyMetrics();
+        $grandTotals = $compare
+            ? $this->emptyMultiMetrics($periodCount)
+            : $this->emptyMetrics();
         foreach ($groups as $group) {
             $grandTotals = $compare
-                ? $this->sumCompareMetrics($grandTotals, $group['subtotal'])
+                ? $this->sumMultiMetrics($grandTotals, $group['subtotal'], $periodCount)
                 : $this->sumMetrics($grandTotals, $group['subtotal']);
         }
 
         $result = [
-            'date_from' => $dateFrom,
-            'date_to' => $dateTo,
+            'date_from' => $periods[0]['from'],
+            'date_to' => $periods[0]['to'],
             'compare' => $compare,
+            'period_count' => $periodCount,
+            'periods' => $periodsMeta,
             'groups' => $groups,
             'totals' => $grandTotals,
         ];
 
-        if ($compare) {
-            $result['compare_from'] = $compareFrom;
-            $result['compare_to'] = $compareTo;
+        // Backward-compatible aliases when exactly 2 periods
+        if ($periodCount === 2) {
+            $result['compare_from'] = $periods[1]['from'];
+            $result['compare_to'] = $periods[1]['to'];
         }
 
         return $result;
@@ -166,27 +201,60 @@ class OutletRevenueRecapService
         ];
     }
 
-    private function emptyCompareMetrics(): array
+    private function emptyMultiMetrics(int $periodCount): array
     {
-        return $this->mergeCompareMetrics($this->emptyMetrics(), $this->emptyMetrics());
+        $zeros = array_fill(0, $periodCount, $this->emptyMetrics());
+
+        return $this->mergeMultiMetrics($zeros);
     }
 
     /**
-     * @param  array<string, float>  $a
-     * @param  array<string, float>  $b
-     * @return array<string, float|null>
+     * Merge N period metric maps into arrays + diff/pct vs period 0.
+     *
+     * Shape per metric key:
+     *   key => [v0, v1, ...]
+     *   key_diff => [null, d1, d2, ...]  where di = v0 - vi
+     *   key_pct  => [null, p1, p2, ...]
+     *
+     * @param  list<array<string, float>>  $periodMetrics
+     * @return array<string, mixed>
      */
-    private function mergeCompareMetrics(array $a, array $b): array
+    private function mergeMultiMetrics(array $periodMetrics): array
     {
         $merged = [];
+        $baseline = $periodMetrics[0] ?? $this->emptyMetrics();
+
         foreach (self::METRIC_KEYS as $key) {
-            $valA = (float) ($a[$key] ?? 0);
-            $valB = (float) ($b[$key] ?? 0);
-            $diff = $valA - $valB;
-            $merged[$key] = $valA;
-            $merged[$key.'_b'] = $valB;
-            $merged[$key.'_diff'] = $diff;
-            $merged[$key.'_pct'] = $valB != 0.0 ? round(($diff / $valB) * 100, 2) : null;
+            $values = [];
+            $diffs = [];
+            $pcts = [];
+
+            foreach ($periodMetrics as $i => $metrics) {
+                $val = (float) ($metrics[$key] ?? 0);
+                $values[] = $val;
+
+                if ($i === 0) {
+                    $diffs[] = null;
+                    $pcts[] = null;
+                    continue;
+                }
+
+                $base = (float) ($baseline[$key] ?? 0);
+                $diff = $base - $val;
+                $diffs[] = $diff;
+                $pcts[] = $val != 0.0 ? round(($diff / $val) * 100, 2) : null;
+            }
+
+            $merged[$key] = $values;
+            $merged[$key.'_diff'] = $diffs;
+            $merged[$key.'_pct'] = $pcts;
+
+            // Legacy 2-period flat keys for export/UI convenience
+            if (count($periodMetrics) === 2) {
+                $merged[$key.'_b'] = $values[1];
+                // Keep scalar primary for simple access when needed
+                $merged[$key.'_0'] = $values[0];
+            }
         }
 
         return $merged;
@@ -210,32 +278,34 @@ class OutletRevenueRecapService
     }
 
     /**
-     * Sum compare metrics by accumulating period A and B raw values, then recompute avg/diff/pct.
-     *
-     * @param  array<string, float|null>  $acc
-     * @param  array<string, float|null>  $row
-     * @return array<string, float|null>
+     * @param  array<string, mixed>  $acc
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
      */
-    private function sumCompareMetrics(array $acc, array $row): array
+    private function sumMultiMetrics(array $acc, array $row, int $periodCount): array
     {
-        $sumA = $this->emptyMetrics();
-        $sumB = $this->emptyMetrics();
+        $sums = [];
+        for ($i = 0; $i < $periodCount; $i++) {
+            $sums[$i] = $this->emptyMetrics();
+        }
 
         foreach (self::METRIC_KEYS as $key) {
             if ($key === 'avg_check') {
                 continue;
             }
-            $sumA[$key] = (float) ($acc[$key] ?? 0) + (float) ($row[$key] ?? 0);
-            $sumB[$key] = (float) ($acc[$key.'_b'] ?? 0) + (float) ($row[$key.'_b'] ?? 0);
+            $accVals = $acc[$key] ?? array_fill(0, $periodCount, 0);
+            $rowVals = $row[$key] ?? array_fill(0, $periodCount, 0);
+            for ($i = 0; $i < $periodCount; $i++) {
+                $sums[$i][$key] = (float) ($accVals[$i] ?? 0) + (float) ($rowVals[$i] ?? 0);
+            }
         }
 
-        $sumA['avg_check'] = $sumA['total_pax'] > 0
-            ? (float) round($sumA['grand_total'] / $sumA['total_pax'])
-            : 0.0;
-        $sumB['avg_check'] = $sumB['total_pax'] > 0
-            ? (float) round($sumB['grand_total'] / $sumB['total_pax'])
-            : 0.0;
+        for ($i = 0; $i < $periodCount; $i++) {
+            $sums[$i]['avg_check'] = $sums[$i]['total_pax'] > 0
+                ? (float) round($sums[$i]['grand_total'] / $sums[$i]['total_pax'])
+                : 0.0;
+        }
 
-        return $this->mergeCompareMetrics($sumA, $sumB);
+        return $this->mergeMultiMetrics($sums);
     }
 }
