@@ -80,31 +80,30 @@ const filteredShifts = computed(() => {
   return props.shifts || [];
 });
 
-// Get shifts for the user being corrected
+// Get shifts for the user being corrected.
+// user_shifts.division_id can differ per date, so only using schedule_division_id
+// hides shifts from the employee's own division (e.g. M11 missing on 14 Aug).
 const userShifts = computed(() => {
   if (!correctionData.value.userInfo) {
-    console.log('No user info found, returning all shifts');
     return props.shifts || [];
   }
-  
-  // Use schedule_division_id if available, otherwise use user_division_id
-  const divisionId = correctionData.value.userInfo.schedule_division_id || correctionData.value.userInfo.user_division_id;
-  
-  if (!divisionId) {
-    console.log('No division ID found, returning all shifts');
+
+  const scheduleDivisionId = correctionData.value.userInfo.schedule_division_id;
+  const userDivisionId = correctionData.value.userInfo.user_division_id;
+  const currentShiftId = correctionData.value.userInfo.shift_id;
+  const divisionIds = [scheduleDivisionId, userDivisionId].filter((id) => id != null && id !== '');
+
+  if (divisionIds.length === 0) {
     return props.shifts || [];
   }
-  
-  console.log('Division ID:', divisionId);
-  console.log('All shifts:', props.shifts);
-  
-  // Filter shifts by division
-  const filteredShifts = (props.shifts || []).filter(shift => 
-    shift.division_id == divisionId
-  );
-  
-  console.log('Filtered shifts:', filteredShifts);
-  return filteredShifts;
+
+  const allowed = new Set(divisionIds.map((id) => String(id)));
+  return (props.shifts || []).filter((shift) => {
+    if (currentShiftId != null && String(shift.id) === String(currentShiftId)) {
+      return true;
+    }
+    return allowed.has(String(shift.division_id));
+  });
 });
 
 const filteredScheduleData = computed(() => {
