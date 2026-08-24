@@ -6,9 +6,31 @@ use Illuminate\Support\Facades\DB;
 
 class OutletRevenueRecapService
 {
-    public function buildRecap(string $dateFrom, string $dateTo): array
-    {
-        $salesByOutlet = $this->aggregateSalesByOutlet($dateFrom, $dateTo);
+    /** @var list<string> */
+    private const METRIC_KEYS = [
+        'total_sales',
+        'discount',
+        'service_charge',
+        'pb1',
+        'commfee',
+        'grand_total',
+        'total_pax',
+        'avg_check',
+    ];
+
+    public function buildRecap(
+        string $dateFrom,
+        string $dateTo,
+        ?string $compareFrom = null,
+        ?string $compareTo = null
+    ): array {
+        $compare = $compareFrom !== null && $compareTo !== null
+            && $compareFrom !== '' && $compareTo !== '';
+
+        $salesA = $this->aggregateSalesByOutlet($dateFrom, $dateTo);
+        $salesB = $compare
+            ? $this->aggregateSalesByOutlet($compareFrom, $compareTo)
+            : [];
 
         $outlets = DB::table('tbl_data_outlet as o')
             ->leftJoin('regions as r', 'r.id', '=', 'o.region_id')
@@ -33,36 +55,55 @@ class OutletRevenueRecapService
                     'region_id' => $outlet->region_id ? (int) $outlet->region_id : null,
                     'region_name' => (string) $outlet->region_name,
                     'rows' => [],
-                    'subtotal' => $this->emptyMetrics(),
+                    'subtotal' => $compare ? $this->emptyCompareMetrics() : $this->emptyMetrics(),
                 ];
             }
 
-            $metrics = $salesByOutlet[$outlet->qr_code] ?? $this->emptyMetrics();
-            $row = [
+            $metricsA = $salesA[$outlet->qr_code] ?? $this->emptyMetrics();
+            if ($compare) {
+                $metricsB = $salesB[$outlet->qr_code] ?? $this->emptyMetrics();
+                $metrics = $this->mergeCompareMetrics($metricsA, $metricsB);
+                $grouped[$regionKey]['subtotal'] = $this->sumCompareMetrics(
+                    $grouped[$regionKey]['subtotal'],
+                    $metrics
+                );
+            } else {
+                $metrics = $metricsA;
+                $grouped[$regionKey]['subtotal'] = $this->sumMetrics(
+                    $grouped[$regionKey]['subtotal'],
+                    $metrics
+                );
+            }
+
+            $grouped[$regionKey]['rows'][] = [
                 'outlet_id' => (int) $outlet->outlet_id,
                 'outlet_name' => (string) $outlet->outlet_name,
                 ...$metrics,
             ];
-
-            $grouped[$regionKey]['rows'][] = $row;
-            $grouped[$regionKey]['subtotal'] = $this->sumMetrics(
-                $grouped[$regionKey]['subtotal'],
-                $metrics
-            );
         }
 
         $groups = array_values($grouped);
-        $grandTotals = $this->emptyMetrics();
+        $grandTotals = $compare ? $this->emptyCompareMetrics() : $this->emptyMetrics();
         foreach ($groups as $group) {
-            $grandTotals = $this->sumMetrics($grandTotals, $group['subtotal']);
+            $grandTotals = $compare
+                ? $this->sumCompareMetrics($grandTotals, $group['subtotal'])
+                : $this->sumMetrics($grandTotals, $group['subtotal']);
         }
 
-        return [
+        $result = [
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
+            'compare' => $compare,
             'groups' => $groups,
             'totals' => $grandTotals,
         ];
+
+        if ($compare) {
+            $result['compare_from'] = $compareFrom;
+            $result['compare_to'] = $compareTo;
+        }
+
+        return $result;
     }
 
     private function aggregateSalesByOutlet(string $dateFrom, string $dateTo): array
@@ -125,6 +166,32 @@ class OutletRevenueRecapService
         ];
     }
 
+    private function emptyCompareMetrics(): array
+    {
+        return $this->mergeCompareMetrics($this->emptyMetrics(), $this->emptyMetrics());
+    }
+
+    /**
+     * @param  array<string, float>  $a
+     * @param  array<string, float>  $b
+     * @return array<string, float|null>
+     */
+    private function mergeCompareMetrics(array $a, array $b): array
+    {
+        $merged = [];
+        foreach (self::METRIC_KEYS as $key) {
+            $valA = (float) ($a[$key] ?? 0);
+            $valB = (float) ($b[$key] ?? 0);
+            $diff = $valA - $valB;
+            $merged[$key] = $valA;
+            $merged[$key.'_b'] = $valB;
+            $merged[$key.'_diff'] = $diff;
+            $merged[$key.'_pct'] = $valB != 0.0 ? round(($diff / $valB) * 100, 2) : null;
+        }
+
+        return $merged;
+    }
+
     private function sumMetrics(array $a, array $b): array
     {
         $totalPax = (float) $a['total_pax'] + (float) $b['total_pax'];
@@ -140,5 +207,35 @@ class OutletRevenueRecapService
             'grand_total' => $grandTotal,
             'avg_check' => $totalPax > 0 ? (float) round($grandTotal / $totalPax) : 0.0,
         ];
+    }
+
+    /**
+     * Sum compare metrics by accumulating period A and B raw values, then recompute avg/diff/pct.
+     *
+     * @param  array<string, float|null>  $acc
+     * @param  array<string, float|null>  $row
+     * @return array<string, float|null>
+     */
+    private function sumCompareMetrics(array $acc, array $row): array
+    {
+        $sumA = $this->emptyMetrics();
+        $sumB = $this->emptyMetrics();
+
+        foreach (self::METRIC_KEYS as $key) {
+            if ($key === 'avg_check') {
+                continue;
+            }
+            $sumA[$key] = (float) ($acc[$key] ?? 0) + (float) ($row[$key] ?? 0);
+            $sumB[$key] = (float) ($acc[$key.'_b'] ?? 0) + (float) ($row[$key.'_b'] ?? 0);
+        }
+
+        $sumA['avg_check'] = $sumA['total_pax'] > 0
+            ? (float) round($sumA['grand_total'] / $sumA['total_pax'])
+            : 0.0;
+        $sumB['avg_check'] = $sumB['total_pax'] > 0
+            ? (float) round($sumB['grand_total'] / $sumB['total_pax'])
+            : 0.0;
+
+        return $this->mergeCompareMetrics($sumA, $sumB);
     }
 }

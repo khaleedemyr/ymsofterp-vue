@@ -23,14 +23,13 @@ class OutletRevenueRecapController extends Controller
 
     public function report(Request $request)
     {
-        $validated = $request->validate([
-            'date_from' => 'required|date',
-            'date_to' => 'required|date|after_or_equal:date_from',
-        ]);
+        $validated = $this->validateRecapRequest($request);
 
         $data = $this->service->buildRecap(
             $validated['date_from'],
-            $validated['date_to']
+            $validated['date_to'],
+            $validated['compare_from'] ?? null,
+            $validated['compare_to'] ?? null
         );
 
         return response()->json($data);
@@ -38,14 +37,13 @@ class OutletRevenueRecapController extends Controller
 
     public function export(Request $request)
     {
-        $validated = $request->validate([
-            'date_from' => 'required|date',
-            'date_to' => 'required|date|after_or_equal:date_from',
-        ]);
+        $validated = $this->validateRecapRequest($request);
 
         $data = $this->service->buildRecap(
             $validated['date_from'],
-            $validated['date_to']
+            $validated['date_to'],
+            $validated['compare_from'] ?? null,
+            $validated['compare_to'] ?? null
         );
 
         $filename = sprintf(
@@ -56,5 +54,18 @@ class OutletRevenueRecapController extends Controller
         );
 
         return Excel::download(new OutletRevenueRecapExport($data), $filename);
+    }
+
+    /**
+     * @return array{date_from: string, date_to: string, compare_from?: string, compare_to?: string}
+     */
+    private function validateRecapRequest(Request $request): array
+    {
+        return $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+            'compare_from' => 'nullable|required_with:compare_to|date',
+            'compare_to' => 'nullable|required_with:compare_from|date|after_or_equal:compare_from',
+        ]);
     }
 }
