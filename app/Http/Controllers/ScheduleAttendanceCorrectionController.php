@@ -982,149 +982,133 @@ class ScheduleAttendanceCorrectionController extends Controller
                     'new_data' => $newData
                 ]);
                 
-                // Find record by sn and pin only (as suggested by user)
-                $oldDate = date('Y-m-d', strtotime($oldData['scan_date']));
+                // Prefer exact match dulu (att_log PK = sn + pin + scan_date, tanpa kolom id)
                 $existingRecord = DB::table('att_log')
                     ->where('sn', $oldData['sn'])
                     ->where('pin', $oldData['pin'])
-                    ->where('inoutmode', $oldData['inoutmode'])
-                    ->where('scan_date', '>=', $oldDate . ' 00:00:00')
-                    ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate . ' +1 day')) . ' 00:00:00')
-                    ->select('*')
+                    ->where('scan_date', $oldData['scan_date'])
                     ->first();
-                
+
+                // Fallback: sn+pin+inoutmode di hari yang sama
+                if (!$existingRecord) {
+                    $oldDate = date('Y-m-d', strtotime($oldData['scan_date']));
+                    $existingRecord = DB::table('att_log')
+                        ->where('sn', $oldData['sn'])
+                        ->where('pin', $oldData['pin'])
+                        ->where('inoutmode', $oldData['inoutmode'])
+                        ->where('scan_date', '>=', $oldDate.' 00:00:00')
+                        ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate.' +1 day')).' 00:00:00')
+                        ->orderBy('scan_date')
+                        ->first();
+                }
+
                 \Log::info('Existing record check (simplified):', [
                     'found' => $existingRecord ? true : false,
                     'sn' => $oldData['sn'],
                     'pin' => $oldData['pin'],
                     'inoutmode' => $oldData['inoutmode'],
                     'date' => date('Y-m-d', strtotime($oldData['scan_date'])),
-                    'record_data' => $existingRecord
+                    'record_data' => $existingRecord,
                 ]);
-                
+
                 // If still not found, try to find any record with same sn and pin on the same day
                 if (!$existingRecord) {
                     $oldDate = date('Y-m-d', strtotime($oldData['scan_date']));
                     $existingRecord = DB::table('att_log')
                         ->where('sn', $oldData['sn'])
                         ->where('pin', $oldData['pin'])
-                        ->where('scan_date', '>=', $oldDate . ' 00:00:00')
-                        ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate . ' +1 day')) . ' 00:00:00')
-                        ->select('*')
+                        ->where('scan_date', '>=', $oldDate.' 00:00:00')
+                        ->where('scan_date', '<', date('Y-m-d', strtotime($oldDate.' +1 day')).' 00:00:00')
+                        ->orderBy('scan_date')
                         ->first();
-                    
+
                     \Log::info('Fallback record search:', [
                         'found' => $existingRecord ? true : false,
-                        'record_data' => $existingRecord
+                        'record_data' => $existingRecord,
                     ]);
                 }
-                
-                // Check if the new scan_date already exists for this sn and pin
-                $conflictingRecord = DB::table('att_log')
-                    ->where('sn', $newData['sn'])
-                    ->where('pin', $newData['pin'])
-                    ->where('scan_date', $newData['scan_date'])
-                    ->where('inoutmode', $newData['inoutmode'])
-                    ->first();
-                
+
+                // Conflict = target scan_date sudah dipakai record lain (bukan source yang akan diupdate)
+                $conflictingRecord = null;
+                if (!$existingRecord || $existingRecord->scan_date !== $newData['scan_date']) {
+                    $conflictingRecord = DB::table('att_log')
+                        ->where('sn', $newData['sn'])
+                        ->where('pin', $newData['pin'])
+                        ->where('scan_date', $newData['scan_date'])
+                        ->first();
+                }
+
                 if ($conflictingRecord) {
                     \Log::warning('Conflicting record found with new scan_date:', [
                         'conflicting_record' => $conflictingRecord,
                         'new_scan_date' => $newData['scan_date'],
                         'sn' => $newData['sn'],
-                        'pin' => $newData['pin']
+                        'pin' => $newData['pin'],
                     ]);
                     
-                    // Delete the conflicting record first
-                    DB::table('att_log')->where('id', $conflictingRecord->id)->delete();
-                    \Log::info('Deleted conflicting record:', ['id' => $conflictingRecord->id]);
+                    // att_log tidak punya kolom id — hapus by composite key (sn, pin, scan_date)
+                    DB::table('att_log')
+                        ->where('sn', $conflictingRecord->sn)
+                        ->where('pin', $conflictingRecord->pin)
+                        ->where('scan_date', $conflictingRecord->scan_date)
+                        ->delete();
+                    \Log::info('Deleted conflicting record by composite key:', [
+                        'sn' => $conflictingRecord->sn,
+                        'pin' => $conflictingRecord->pin,
+                        'scan_date' => $conflictingRecord->scan_date,
+                    ]);
                 }
-                
-                if ($existingRecord && isset($existingRecord->id)) {
-                    // Update the found record using the original conditions
-                    $updated = DB::table('att_log')
-                        ->where('sn', $oldData['sn'])
-                        ->where('pin', $oldData['pin'])
-                        ->where('scan_date', $oldData['scan_date'])
-                        ->where('inoutmode', $oldData['inoutmode'])
-                        ->update([
-                            'scan_date' => $newData['scan_date'],
-                            'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
-                            'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
-                            'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
-                        ]);
-                    
-                    \Log::info('Attendance update result:', [
-                        'updated_rows' => $updated,
-                        'old_conditions' => [
-                            'sn' => $oldData['sn'],
-                            'pin' => $oldData['pin'],
-                            'scan_date' => $oldData['scan_date'],
-                            'inoutmode' => $oldData['inoutmode']
-                        ]
-                    ]);
-                } else {
-                    \Log::warning('No existing record found with original conditions:', [
-                        'old_conditions' => [
-                            'sn' => $oldData['sn'],
-                            'pin' => $oldData['pin'],
-                            'scan_date' => $oldData['scan_date'],
-                            'inoutmode' => $oldData['inoutmode']
-                        ]
-                    ]);
-                    
-                    // Try alternative approach - find by record_id if available
-                    if (isset($approval->record_id) && $approval->record_id > 0) {
-                        $updated = DB::table('att_log')
-                            ->where('id', $approval->record_id)
-                            ->update([
-                                'scan_date' => $newData['scan_date'],
-                                'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
-                                'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
-                                'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
-                            ]);
-                        
-                        \Log::info('Updated by record_id:', [
-                            'updated_rows' => $updated,
-                            'record_id' => $approval->record_id
-                        ]);
-                    } else {
-                        $updated = 0;
-                    }
+
+                if (!$existingRecord) {
+                    throw new \Exception(
+                        'Gagal mengupdate data attendance: Record dengan SN '.$oldData['sn']
+                        .' dan PIN '.$oldData['pin'].' tidak ditemukan'
+                    );
                 }
-                
+
+                // Update by composite key dari record yang ditemukan (bukan kolom id)
+                $sourceScanDate = $existingRecord->scan_date;
+                $updated = DB::table('att_log')
+                    ->where('sn', $existingRecord->sn)
+                    ->where('pin', $existingRecord->pin)
+                    ->where('scan_date', $sourceScanDate)
+                    ->update([
+                        'scan_date' => $newData['scan_date'],
+                        'inoutmode' => $newData['inoutmode'] ?? $existingRecord->inoutmode,
+                        'verifymode' => $newData['verifymode'] ?? $existingRecord->verifymode,
+                        'device_ip' => $newData['device_ip'] ?? $existingRecord->device_ip,
+                        'updated_at' => now(),
+                    ]);
+
+                \Log::info('Attendance update result:', [
+                    'updated_rows' => $updated,
+                    'source_scan_date' => $sourceScanDate,
+                    'new_scan_date' => $newData['scan_date'],
+                    'sn' => $existingRecord->sn,
+                    'pin' => $existingRecord->pin,
+                ]);
+
                 if ($updated === 0) {
-                    \Log::error('Failed to update attendance record', [
-                        'approval_id' => $id,
-                        'sn' => $oldData['sn'],
-                        'pin' => $oldData['pin'],
-                        'inoutmode' => $oldData['inoutmode'],
-                        'old_scan_date' => $oldData['scan_date'],
-                        'new_scan_date' => $newData['scan_date'],
-                        'existing_record' => $existingRecord,
-                        'approval_record_id' => $approval->record_id ?? 'not_provided'
-                    ]);
-                    
-                    // Try one more time with original conditions
+                    // Fallback: coba exact old_value scan_date
                     $finalAttempt = DB::table('att_log')
                         ->where('sn', $oldData['sn'])
                         ->where('pin', $oldData['pin'])
                         ->where('scan_date', $oldData['scan_date'])
-                        ->where('inoutmode', $oldData['inoutmode'])
                         ->update([
                             'scan_date' => $newData['scan_date'],
                             'inoutmode' => $newData['inoutmode'] ?? $oldData['inoutmode'],
                             'verifymode' => $newData['verifymode'] ?? $oldData['verifymode'],
-                            'device_ip' => $newData['device_ip'] ?? $oldData['device_ip']
+                            'device_ip' => $newData['device_ip'] ?? $oldData['device_ip'],
+                            'updated_at' => now(),
                         ]);
-                    
+
                     if ($finalAttempt > 0) {
-                        \Log::info('Successfully updated with final attempt:', [
-                            'updated_rows' => $finalAttempt
-                        ]);
                         $updated = $finalAttempt;
                     } else {
-                        throw new \Exception('Gagal mengupdate data attendance: Record dengan SN ' . $oldData['sn'] . ' dan PIN ' . $oldData['pin'] . ' tidak ditemukan');
+                        throw new \Exception(
+                            'Gagal mengupdate data attendance: Record dengan SN '.$oldData['sn']
+                            .' dan PIN '.$oldData['pin'].' tidak ditemukan'
+                        );
                     }
                 }
                 
