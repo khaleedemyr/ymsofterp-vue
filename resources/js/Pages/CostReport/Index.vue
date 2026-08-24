@@ -61,7 +61,7 @@
             :class="activeTab === 'cost_inventory' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
-            Cost Inventory
+            Official Cost
           </button>
           <button
             type="button"
@@ -69,7 +69,7 @@
             :class="activeTab === 'cogs' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
-            COGS
+            Actual Cost
           </button>
           <button
             type="button"
@@ -108,6 +108,8 @@
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales After Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% Discount vs Sales</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Before</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS After</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -125,9 +127,11 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.sales_after_discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_discount != null ? (Number(row.pct_discount).toFixed(2) + '%') : '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_before != null ? (Number(row.cogs_before).toFixed(2) + '%') : '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_after != null ? (Number(row.cogs_after).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!reportRowsData || reportRowsData.length === 0">
-              <td colspan="13" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
+              <td colspan="15" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>

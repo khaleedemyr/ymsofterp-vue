@@ -38,6 +38,8 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'Discount',
             'Sales After Discount',
             '% Discount vs Sales',
+            'COGS Before',
+            'COGS After',
         ];
     }
 
@@ -47,6 +49,12 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
         $no++;
         $pct = isset($row['pct_discount']) && $row['pct_discount'] !== null
             ? number_format((float) $row['pct_discount'], 2, '.', '') . '%'
+            : '-';
+        $cogsBefore = isset($row['cogs_before']) && $row['cogs_before'] !== null
+            ? number_format((float) $row['cogs_before'], 2, '.', '') . '%'
+            : '-';
+        $cogsAfter = isset($row['cogs_after']) && $row['cogs_after'] !== null
+            ? number_format((float) $row['cogs_after'], 2, '.', '') . '%'
             : '-';
         return [
             $no,
@@ -62,12 +70,14 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             (float) ($row['discount'] ?? 0),
             (float) ($row['sales_after_discount'] ?? 0),
             $pct,
+            $cogsBefore,
+            $cogsAfter,
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
-        $lastCol = 'M';
+        $lastCol = 'O';
         $lastRow = count($this->reportRows) + 1;
         return [
             1 => [
@@ -103,6 +113,8 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'K' => 12,
             'L' => 20,
             'M' => 18,
+            'N' => 14,
+            'O' => 14,
         ];
     }
 }

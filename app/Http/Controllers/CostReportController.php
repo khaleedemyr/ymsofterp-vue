@@ -254,6 +254,11 @@ class CostReportController extends Controller
                 2
             );
             $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory'] ?? 0), 2);
+
+            $cogsAktual = (float) ($row['cogs_aktual'] ?? 0);
+            $salesAfter = (float) ($row['sales_after_discount'] ?? 0);
+            $row['cogs_before'] = $salesBefore > 0 ? round(($cogsAktual / $salesBefore) * 100, 2) : null;
+            $row['cogs_after'] = $salesAfter > 0 ? round(($cogsAktual / $salesAfter) * 100, 2) : null;
         }
         unset($row);
 
