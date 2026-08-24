@@ -4,16 +4,30 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use App\Models\PurchaseOrderFoodItem;
 use App\Models\Item;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 
 class CostControlController extends Controller
 {
-    public function poPriceChangeReport()
+    public function poPriceChangeReport(Request $request)
     {
-        // Ambil histori harga PO per item (2 PO terakhir per item)
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $shouldLoad = $request->boolean('load') || $request->filled('date_from') || $request->filled('date_to');
+
+        if (!$shouldLoad) {
+            return Inertia::render('CostControl/PoPriceChangeReport', [
+                'priceChanges' => [],
+                'filters' => [
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                ],
+                'loaded' => false,
+            ]);
+        }
+
+        // Ambil histori harga PO per item (urut terbaru dulu)
         $sub = DB::table('purchase_order_food_items as poi')
             ->join('purchase_order_foods as po', 'poi.purchase_order_food_id', '=', 'po.id')
             ->select(
@@ -30,7 +44,13 @@ class CostControlController extends Controller
 
         $rows = DB::table(DB::raw('(' . $sub->toSql() . ') as t'))
             ->mergeBindings($sub)
-            ->select('item_id', DB::raw('GROUP_CONCAT(supplier_id ORDER BY date DESC) as supplier_ids'), DB::raw('GROUP_CONCAT(price ORDER BY date DESC) as prices'), DB::raw('GROUP_CONCAT(unit_id ORDER BY date DESC) as unit_ids'))
+            ->select(
+                'item_id',
+                DB::raw('GROUP_CONCAT(supplier_id ORDER BY date DESC) as supplier_ids'),
+                DB::raw('GROUP_CONCAT(price ORDER BY date DESC) as prices'),
+                DB::raw('GROUP_CONCAT(unit_id ORDER BY date DESC) as unit_ids'),
+                DB::raw('GROUP_CONCAT(date ORDER BY date DESC) as dates')
+            )
             ->groupBy('item_id')
             ->get();
 
@@ -53,15 +73,34 @@ class CostControlController extends Controller
             $supplierIds = explode(',', $row->supplier_ids);
             $prices = explode(',', $row->prices);
             $unitIds = explode(',', $row->unit_ids);
-            if (count($prices) < 2 || count($supplierIds) < 2 || count($unitIds) < 2) continue;
+            $dates = explode(',', $row->dates ?? '');
+
+            if (count($prices) < 2 || count($supplierIds) < 2 || count($unitIds) < 2) {
+                continue;
+            }
+
+            $latestDate = $dates[0] ?? null;
+
+            // Opsi 1: tampilkan jika PO terbaru masuk rentang tanggal
+            if ($dateFrom && $latestDate && $latestDate < $dateFrom) {
+                continue;
+            }
+            if ($dateTo && $latestDate && $latestDate > $dateTo) {
+                continue;
+            }
+
             $item = Item::find($row->item_id);
-            if (!$item) continue;
+            if (!$item) {
+                continue;
+            }
+
             $supplierAwal = isset($supplierIds[1]) ? Supplier::find($supplierIds[1]) : null;
             $supplierBaru = isset($supplierIds[0]) ? Supplier::find($supplierIds[0]) : null;
-            $hargaAwal = isset($prices[1]) ? (float)$prices[1] : 0;
-            $hargaBaru = isset($prices[0]) ? (float)$prices[0] : 0;
-            $unitAwal = isset($unitIds[1]) ? (int)$unitIds[1] : null;
-            $unitBaru = isset($unitIds[0]) ? (int)$unitIds[0] : null;
+            $hargaAwal = isset($prices[1]) ? (float) $prices[1] : 0;
+            $hargaBaru = isset($prices[0]) ? (float) $prices[0] : 0;
+            $unitAwal = isset($unitIds[1]) ? (int) $unitIds[1] : null;
+            $unitBaru = isset($unitIds[0]) ? (int) $unitIds[0] : null;
+
             // Konversi harga ke satuan large
             $hargaAwalLarge = $hargaAwal;
             $hargaBaruLarge = $hargaBaru;
@@ -79,24 +118,42 @@ class CostControlController extends Controller
                     $hargaBaruLarge = $hargaBaru * $item->small_conversion_qty * $item->medium_conversion_qty;
                 }
             }
-            if ($hargaAwalLarge == 0) continue;
+
+            if ($hargaAwalLarge == 0) {
+                continue;
+            }
+
             $persen = round((($hargaBaruLarge - $hargaAwalLarge) / $hargaAwalLarge) * 100, 2);
             if ($hargaAwalLarge != $hargaBaruLarge) {
-                $largeUnitName = ($item && $item->large_unit_id && isset($unitNames[$item->large_unit_id])) ? $unitNames[$item->large_unit_id] : null;
+                $largeUnitName = ($item->large_unit_id && isset($unitNames[$item->large_unit_id]))
+                    ? $unitNames[$item->large_unit_id]
+                    : null;
+
                 $result[] = [
-                    'item_name' => $item ? $item->name : '-',
+                    'item_name' => $item->name ?: '-',
                     'large_unit_name' => $largeUnitName,
                     'supplier_awal' => $supplierAwal ? $supplierAwal->name : '-',
                     'harga_awal' => $hargaAwalLarge,
                     'supplier_baru' => $supplierBaru ? $supplierBaru->name : '-',
                     'harga_baru' => $hargaBaruLarge,
                     'persen' => $persen,
+                    'po_date_baru' => $latestDate,
+                    'po_date_awal' => $dates[1] ?? null,
                 ];
             }
         }
-        usort($result, function($a, $b) { return $b['persen'] <=> $a['persen']; });
+
+        usort($result, function ($a, $b) {
+            return $b['persen'] <=> $a['persen'];
+        });
+
         return Inertia::render('CostControl/PoPriceChangeReport', [
-            'priceChanges' => $result
+            'priceChanges' => $result,
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+            ],
+            'loaded' => true,
         ]);
     }
-} 
+}
