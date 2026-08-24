@@ -12,9 +12,9 @@ class CostControlController extends Controller
 {
     public function poPriceChangeReport(Request $request)
     {
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
-        $shouldLoad = $request->boolean('load') || $request->filled('date_from') || $request->filled('date_to');
+        $dateFrom = $request->input('date_from', now()->startOfMonth()->toDateString());
+        $dateTo = $request->input('date_to', now()->toDateString());
+        $shouldLoad = $request->boolean('load') || $request->has('date_from') || $request->has('date_to');
 
         if (!$shouldLoad) {
             return Inertia::render('CostControl/PoPriceChangeReport', [

@@ -9,9 +9,21 @@ const props = defineProps({
   loaded: { type: Boolean, default: false },
 });
 
+function defaultMonthRange() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return {
+    from: `${y}-${m}-01`,
+    to: `${y}-${m}-${d}`,
+  };
+}
+
+const defaults = defaultMonthRange();
 const search = ref('');
-const dateFrom = ref(props.filters?.date_from || '');
-const dateTo = ref(props.filters?.date_to || '');
+const dateFrom = ref(props.filters?.date_from || defaults.from);
+const dateTo = ref(props.filters?.date_to || defaults.to);
 
 const filteredData = computed(() => {
   if (!search.value) return props.priceChanges || [];
