@@ -154,6 +154,11 @@ function deleteTransfer(id) {
                                         class="text-teal-600 hover:text-teal-800 text-sm font-medium">
                                         <i class="fa-solid fa-eye"></i> Lihat
                                     </Link>
+                                    <a :href="`/asset-inventory-transfers/${t.id}/export-pdf`"
+                                        target="_blank"
+                                        class="text-red-600 hover:text-red-800 text-sm font-medium">
+                                        <i class="fa-solid fa-file-pdf"></i> PDF
+                                    </a>
                                     <button v-if="t.status === 'draft'" @click="deleteTransfer(t.id)"
                                         class="text-red-500 hover:text-red-700 text-sm font-medium">
                                         <i class="fa-solid fa-trash"></i>

@@ -182,7 +182,12 @@ function deleteTransfer() {
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="flex gap-3 mt-5 pt-4 border-t">
+                <div class="flex flex-wrap gap-3 mt-5 pt-4 border-t">
+                    <a :href="`/asset-inventory-transfers/${transfer.id}/export-pdf`"
+                        target="_blank"
+                        class="px-5 py-2 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-sm border border-red-200 transition inline-flex items-center">
+                        <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
+                    </a>
                     <button v-if="transfer.status === 'draft'" @click="submitForApproval" :disabled="isSubmitting"
                         class="px-5 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm shadow transition disabled:opacity-50">
                         <i class="fa-solid fa-paper-plane mr-1"></i> Submit Approval

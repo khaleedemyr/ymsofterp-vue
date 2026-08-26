@@ -13,6 +13,7 @@ use App\Models\AssetInventoryTransferItem;
 use App\Models\AssetInventoryTransferApprovalFlow;
 use App\Services\NotificationService;
 use App\Services\AssetInventoryStockService;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AssetInventoryTransferController extends Controller
 {
@@ -283,6 +284,69 @@ class AssetInventoryTransferController extends Controller
             'canApprove' => $canApprove,
             'user' => $user,
         ]);
+    }
+
+    public function exportPdf($id)
+    {
+        $user = auth()->user();
+        $transfer = AssetInventoryTransfer::with([
+            'items.item', 'items.unit',
+            'warehouseOutletFrom', 'warehouseOutletTo',
+            'creator', 'approver',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        $this->assertUserCanView($user, $transfer);
+
+        $outletFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletFrom->outlet_id ?? null)->first();
+        $outletTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletTo->outlet_id ?? null)->first();
+
+        $data = [
+            'transfer_number' => $transfer->transfer_number,
+            'transfer_date' => optional($transfer->transfer_date)->format('d/m/Y'),
+            'status' => strtoupper((string) $transfer->status),
+            'notes' => $transfer->notes,
+            'owner_outlet_name' => AssetOwnership::name((int) $transfer->owner_outlet_id) ?? '-',
+            'warehouse_outlet_from_name' => optional($transfer->warehouseOutletFrom)->name ?? '-',
+            'warehouse_outlet_to_name' => optional($transfer->warehouseOutletTo)->name ?? '-',
+            'outlet_from_name' => $outletFrom->nama_outlet ?? '-',
+            'outlet_to_name' => $outletTo->nama_outlet ?? '-',
+            'creator_name' => optional($transfer->creator)->nama_lengkap ?? '-',
+            'approval_by_name' => optional($transfer->approver)->nama_lengkap,
+            'approval_at' => $transfer->approval_at
+                ? $transfer->approval_at->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i')
+                : null,
+            'items' => $transfer->items->map(function ($item) {
+                return [
+                    'item_name' => optional($item->item)->name ?? '-',
+                    'unit_name' => optional($item->unit)->name ?? '-',
+                    'qty' => $item->qty,
+                    'qty_small' => $item->qty_small,
+                    'qty_medium' => $item->qty_medium,
+                    'qty_large' => $item->qty_large,
+                    'note' => $item->note,
+                ];
+            }),
+            'approval_flows' => $transfer->approvalFlows->map(function ($flow) {
+                return [
+                    'level' => $flow->approval_level,
+                    'approver_name' => optional($flow->approver)->nama_lengkap ?? '-',
+                    'status' => $flow->status,
+                    'approved_at' => $flow->approved_at,
+                    'rejected_at' => $flow->rejected_at,
+                    'comments' => $flow->comments,
+                ];
+            }),
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+            'generated_by' => $user->nama_lengkap ?? $user->name ?? '-',
+        ];
+
+        $pdf = Pdf::loadView('exports.asset_inventory_transfer_pdf', $data)
+            ->setPaper('a4', 'portrait');
+
+        $filename = preg_replace('/[^A-Za-z0-9\-_]/', '_', $transfer->transfer_number) . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function destroy($id)

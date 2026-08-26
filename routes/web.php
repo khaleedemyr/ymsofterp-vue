@@ -709,6 +709,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/asset-inventory-transfers/create', [\App\Http\Controllers\AssetInventoryTransferController::class, 'create'])->name('asset-inventory-transfers.create');
     Route::post('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'store'])->name('asset-inventory-transfers.store');
     Route::get('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'show'])->name('asset-inventory-transfers.show');
+    Route::get('/asset-inventory-transfers/{id}/export-pdf', [\App\Http\Controllers\AssetInventoryTransferController::class, 'exportPdf'])->name('asset-inventory-transfers.export-pdf');
     Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'destroy'])->name('asset-inventory-transfers.destroy');
     Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit'])->name('asset-inventory-transfers.submit');
     Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve'])->name('asset-inventory-transfers.approve');
