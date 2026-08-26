@@ -1599,12 +1599,13 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-                // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+                // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $potonganAlpha = 0;
                 if ($totalAlpha > 0) {
                     $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                    $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+                    $gajiPerHari = $gajiPokokTunjangan / 26;
+                    $potonganAlpha = $gajiPerHari * $totalAlpha;
                     
                     // Debug logging untuk perhitungan potongan alpha
                     \Log::info('Potongan alpha calculation', [
@@ -1613,9 +1614,10 @@ class PayrollReportController extends Controller
                         'gaji_pokok' => $masterData->gaji,
                         'tunjangan' => $masterData->tunjangan,
                         'gaji_pokok_tunjangan' => $gajiPokokTunjangan,
+                        'gaji_per_hari' => $gajiPerHari,
                         'total_alpha' => $totalAlpha,
                         'potongan_alpha' => $potonganAlpha,
-                        'calculation_formula' => "({$gajiPokokTunjangan} × 20%) × {$totalAlpha} hari = {$potonganAlpha}"
+                        'calculation_formula' => "({$gajiPokokTunjangan} / 26) × {$totalAlpha} hari = {$potonganAlpha}"
                     ]);
                 }
 
@@ -3557,12 +3559,12 @@ class PayrollReportController extends Controller
                 ]);
             }
 
-            // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
             // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
             }
 
             // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
@@ -4392,11 +4394,11 @@ class PayrollReportController extends Controller
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $startDate, $endDate);
             $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
             
-            // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
             }
             
             // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
@@ -4790,11 +4792,11 @@ class PayrollReportController extends Controller
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $startDate, $endDate);
             $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
             
-            // Hitung potongan alpha: 20% dari (gaji pokok + tunjangan) × total hari alpha
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $potonganAlpha = ($gajiPokokTunjangan * 0.20) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
             }
             
             // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
