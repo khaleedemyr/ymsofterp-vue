@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use App\Models\Item;
 use Illuminate\Support\Facades\Log;
 use App\Support\InventorySerialEffectiveQty;
+use App\Support\InventorySerialInUse;
 
 class DeliveryOrderController extends Controller
 {
@@ -2314,6 +2315,7 @@ class DeliveryOrderController extends Controller
 
     /**
      * Process scanned serial numbers: flag as out, insert movements, store on DO items.
+     * Claim serial secara atomik (lock + WHERE is_out=0) agar 1 SN tidak bisa keluar di 2 DO.
      */
     private function processSerialScans($doId, $doNumber, array $scannedSerials, $outletId, $warehouseOutletId)
     {
@@ -2321,17 +2323,47 @@ class DeliveryOrderController extends Controller
         $userId = auth()->id();
         $movements = [];
 
+        // Kumpulkan semua SN dulu, lalu lock sekaligus sebelum claim
+        $allSerialNumbers = [];
+        foreach ($scannedSerials as $scan) {
+            foreach ($scan['serial_numbers'] ?? [] as $serialNumber) {
+                $allSerialNumbers[] = $serialNumber;
+            }
+        }
+        $allSerialNumbers = array_values(array_unique(array_filter($allSerialNumbers)));
+
+        if (! empty($allSerialNumbers)) {
+            $lockedRows = DB::table('inventory_item_serials')
+                ->whereIn('serial_number', $allSerialNumbers)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('serial_number');
+
+            foreach ($allSerialNumbers as $serialNumber) {
+                $row = $lockedRows->get($serialNumber);
+                if (! $row) {
+                    throw new \Exception("Nomor seri {$serialNumber} tidak ditemukan.");
+                }
+                if ((int) $row->is_out === 1 || $row->out_delivery_order_id !== null || (int) ($row->is_received ?? 0) === 1) {
+                    $existingDo = $row->out_delivery_order_id
+                        ? DB::table('delivery_orders')->where('id', $row->out_delivery_order_id)->value('number')
+                        : null;
+                    $hint = $existingDo ? " (sudah di {$existingDo})" : '';
+                    throw new \Exception("Nomor seri {$serialNumber} sudah keluar DO lain{$hint}. Simpan dibatalkan.");
+                }
+            }
+        }
+
         foreach ($scannedSerials as $scan) {
             $itemId = $scan['item_id'];
             $serialNumbers = $scan['serial_numbers'] ?? [];
 
-            if (empty($serialNumbers)) continue;
+            if (empty($serialNumbers)) {
+                continue;
+            }
 
-            // Update delivery_order_items with serial_numbers JSON
-            DB::table('delivery_order_items')
-                ->where('delivery_order_id', $doId)
-                ->where('item_id', $itemId)
-                ->update(['serial_numbers' => json_encode($serialNumbers)]);
+            $claimedSerials = [];
 
             foreach ($serialNumbers as $serialNumber) {
                 $serial = DB::table('inventory_item_serials')
@@ -2339,10 +2371,14 @@ class DeliveryOrderController extends Controller
                     ->where('item_id', $itemId)
                     ->first();
 
-                if (!$serial) continue;
+                if (! $serial) {
+                    throw new \Exception("Nomor seri {$serialNumber} tidak cocok dengan item ID {$itemId}.");
+                }
 
-                DB::table('inventory_item_serials')
+                $updated = DB::table('inventory_item_serials')
                     ->where('id', $serial->id)
+                    ->where('is_out', 0)
+                    ->whereNull('out_delivery_order_id')
                     ->update([
                         'is_out' => 1,
                         'out_at' => $now,
@@ -2351,6 +2387,17 @@ class DeliveryOrderController extends Controller
                         'out_warehouse_outlet_id' => $warehouseOutletId,
                         'updated_at' => $now,
                     ]);
+
+                if ($updated !== 1) {
+                    $existingDo = DB::table('inventory_item_serials as s')
+                        ->leftJoin('delivery_orders as d', 'd.id', '=', 's.out_delivery_order_id')
+                        ->where('s.id', $serial->id)
+                        ->value('d.number');
+                    $hint = $existingDo ? " (sudah di {$existingDo})" : '';
+                    throw new \Exception("Nomor seri {$serialNumber} sudah keluar DO lain{$hint}. Simpan dibatalkan.");
+                }
+
+                $claimedSerials[] = $serialNumber;
 
                 $effectiveQty = InventorySerialEffectiveQty::resolve($serial);
 
@@ -2371,9 +2418,15 @@ class DeliveryOrderController extends Controller
                     'updated_at' => $now,
                 ];
             }
+
+            // Baru tulis JSON setelah semua SN item ini berhasil di-claim
+            DB::table('delivery_order_items')
+                ->where('delivery_order_id', $doId)
+                ->where('item_id', $itemId)
+                ->update(['serial_numbers' => json_encode($claimedSerials)]);
         }
 
-        if (!empty($movements)) {
+        if (! empty($movements)) {
             DB::table('inventory_serial_movements')->insert($movements);
         }
     }
@@ -2585,6 +2638,7 @@ class DeliveryOrderController extends Controller
                 's.warehouse_id',
                 's.unit_id',
                 's.is_out',
+                's.out_delivery_order_id',
                 's.inventory_item_id',
                 's.source_type',
                 's.source_qty',
@@ -2614,9 +2668,23 @@ class DeliveryOrderController extends Controller
         }
 
         if ($serial->is_out) {
+            $existingDo = $serial->out_delivery_order_id
+                ? DB::table('delivery_orders')->where('id', $serial->out_delivery_order_id)->value('number')
+                : null;
+            $hint = $existingDo ? " ({$existingDo})" : '';
+
             return [
                 'valid' => false,
-                'message' => 'Nomor seri sudah keluar (sudah digunakan di DO lain).',
+                'message' => "Nomor seri sudah keluar (sudah digunakan di DO lain{$hint}).",
+            ];
+        }
+
+        if (InventorySerialInUse::existsInUseFor(function ($q) use ($serial) {
+            $q->where('id', $serial->id);
+        })) {
+            return [
+                'valid' => false,
+                'message' => 'Nomor seri sudah digunakan (transfer/diterima/keluar DO).',
             ];
         }
 
