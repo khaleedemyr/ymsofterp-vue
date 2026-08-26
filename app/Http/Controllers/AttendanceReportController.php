@@ -11,6 +11,7 @@ use App\Services\AttendanceWorkTimelineService;
 use App\Services\OutletPeriodEmployeeScopeService;
 use App\Services\OvertimeSubmissionFilterService;
 use App\Models\OnePlusOneSubmissionItem;
+use App\Support\AttendancePayrollPeriod;
 
 class AttendanceReportController extends Controller
 {
@@ -59,7 +60,7 @@ class AttendanceReportController extends Controller
                     'o.id_outlet as outlet_id'
                 )
                 ->where('a.scan_date', '>=', $start . ' 00:00:00')
-                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+                ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
             // Apply filters
             if (!empty($outletId)) {
                 $sub->where('u.id_outlet', $outletId);
@@ -784,7 +785,7 @@ class AttendanceReportController extends Controller
                     'o.id_outlet as outlet_id'
                 )
                 ->where('a.scan_date', '>=', $start . ' 00:00:00')
-                ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+                ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
             if (!empty($outletId)) {
                 $sub->where('u.id_outlet', $outletId);
             }
@@ -1290,7 +1291,7 @@ class AttendanceReportController extends Controller
                 'o.nama_outlet'
             )
             ->where('a.scan_date', '>=', $start.' 00:00:00')
-            ->where('a.scan_date', '<', date('Y-m-d', strtotime($end.' +1 day')).' 00:00:00');
+            ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
 
         if (! empty($outletId)) {
             $this->outletEmploymentScope()->applyAttendanceUserFilter(
@@ -1917,7 +1918,7 @@ class AttendanceReportController extends Controller
             })
             ->where('up.user_id', $userId)
             ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
-            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
+            ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($endDate))
             ->select('a.scan_date', 'a.inoutmode')
             ->orderBy('a.scan_date')
             ->get();
@@ -2130,7 +2131,7 @@ class AttendanceReportController extends Controller
                         'u.division_id'
                     )
                     ->where('a.scan_date', '>=', $start . ' 00:00:00')
-                    ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+                    ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
 
                 // Apply filters - Filter outlet dan divisi untuk memfilter karyawan
                 if (!empty($outletId)) {
@@ -2753,7 +2754,7 @@ class AttendanceReportController extends Controller
                         'u.division_id'
                     )
                     ->where('a.scan_date', '>=', $start . ' 00:00:00')
-                    ->where('a.scan_date', '<', date('Y-m-d', strtotime($end . ' +1 day')) . ' 00:00:00');
+                    ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
 
                 // Apply filters - SAMA PERSIS DENGAN METHOD employeeSummary
                 if (!empty($outletId)) {
@@ -3921,7 +3922,7 @@ class AttendanceReportController extends Controller
             )
             ->where('u.id', $userId)
             ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
-            ->where('a.scan_date', '<', date('Y-m-d', strtotime($endDate . ' +1 day')) . ' 00:00:00')
+            ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($endDate))
             ->orderBy('a.scan_date')
             ->get();
 

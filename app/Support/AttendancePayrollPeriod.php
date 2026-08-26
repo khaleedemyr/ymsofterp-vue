@@ -31,6 +31,15 @@ class AttendancePayrollPeriod
     }
 
     /**
+     * Batas atas (exclusive) query att_log: sertakan 1 hari penuh setelah akhir periode
+     * agar OUT cross-day shift malam (mis. checkout pagi tgl 26 untuk masuk tgl 25) ikut ter-load.
+     */
+    public static function scanQueryEndExclusive(string $periodEnd): string
+    {
+        return date('Y-m-d', strtotime($periodEnd.' +2 day')).' 00:00:00';
+    }
+
+    /**
      * Periode berjalan (label = bulan kalender hari ini), sama default report attendance.
      *
      * @return array{bulan: int, tahun: int, start: string, end: string, label: string}
