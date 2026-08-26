@@ -10,12 +10,14 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 use App\Models\AssetServiceOrder;
 use App\Models\AssetServiceOrderItem;
 use App\Models\AssetServiceOrderApprovalFlow;
 use App\Services\NotificationService;
 use App\Services\AssetInventoryStockService;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AssetServiceOrderController extends Controller
 {
@@ -282,6 +284,99 @@ class AssetServiceOrderController extends Controller
             'canReceiveReturn' => $canReceiveReturn,
             'user' => $user,
         ]);
+    }
+
+    public function generateShareLink($id)
+    {
+        $user = auth()->user();
+        $order = AssetServiceOrder::findOrFail($id);
+        $this->assertUserCanView($user, $order);
+
+        $url = URL::temporarySignedRoute(
+            'asset-service-orders.shared-pdf',
+            now()->addDays(7),
+            ['id' => $order->id]
+        );
+
+        $message = 'Asset Repair & Maintenance '.$order->number
+            ."\nStatus: ".strtoupper((string) $order->status)
+            ."\nTanggal: ".(optional($order->date)->format('d/m/Y') ?: '-')
+            ."\n".$url;
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $message,
+        ]);
+    }
+
+    public function exportPdfShared($id)
+    {
+        return $this->renderExportPdf($id, false);
+    }
+
+    public function exportPdf($id)
+    {
+        return $this->renderExportPdf($id, true);
+    }
+
+    protected function renderExportPdf($id, bool $requireAuth)
+    {
+        $user = auth()->user();
+        $order = AssetServiceOrder::with([
+            'items.item',
+            'outlet',
+            'warehouseOutlet',
+            'supplier',
+            'creator',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        if ($requireAuth) {
+            $this->assertUserCanView($user, $order);
+        }
+
+        $data = [
+            'number' => $order->number,
+            'date' => optional($order->date)->format('d/m/Y'),
+            'status' => strtoupper((string) $order->status),
+            'service_type' => strtoupper((string) (Schema::hasColumn('asset_service_orders', 'service_type')
+                ? ($order->service_type ?? 'external')
+                : 'external')),
+            'description' => $order->description,
+            'estimated_cost' => (float) ($order->estimated_cost ?? 0),
+            'actual_cost' => (float) ($order->actual_cost ?? 0),
+            'sent_date' => $order->sent_date ? $order->sent_date->format('d/m/Y') : null,
+            'return_date' => $order->return_date ? $order->return_date->format('d/m/Y') : null,
+            'owner_outlet_name' => AssetOwnership::name((int) $order->owner_outlet_id) ?? '-',
+            'outlet_name' => optional($order->outlet)->nama_outlet ?? '-',
+            'warehouse_outlet_name' => optional($order->warehouseOutlet)->name ?? '-',
+            'supplier_name' => optional($order->supplier)->name ?? '-',
+            'creator_name' => optional($order->creator)->nama_lengkap ?? '-',
+            'items' => $order->items->map(fn ($item) => [
+                'item_name' => optional($item->item)->name ?? '-',
+                'unit' => $item->unit,
+                'qty_out' => (float) $item->qty_out,
+                'qty_returned' => (float) $item->qty_returned,
+                'note' => $item->note,
+                'return_note' => $item->return_note,
+            ]),
+            'approval_flows' => $order->approvalFlows->map(fn ($flow) => [
+                'level' => $flow->approval_level,
+                'approver_name' => optional($flow->approver)->nama_lengkap ?? '-',
+                'status' => $flow->status,
+                'comments' => $flow->comments,
+            ]),
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+            'generated_by' => $requireAuth
+                ? ($user->nama_lengkap ?? $user->name ?? '-')
+                : 'Shared Link',
+        ];
+
+        $pdf = Pdf::loadView('exports.asset_service_order_pdf', $data)->setPaper('a4', 'portrait');
+        $filename = preg_replace('/[^A-Za-z0-9\-_]/', '_', $order->number) . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function uploadVendorInvoice(Request $request, $id)

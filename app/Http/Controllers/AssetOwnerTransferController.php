@@ -13,6 +13,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AssetOwnerTransferController extends Controller
 {
@@ -231,6 +233,94 @@ class AssetOwnerTransferController extends Controller
             'canApprove' => $canApprove,
             'user' => $user,
         ]);
+    }
+
+    public function generateShareLink($id)
+    {
+        $user = auth()->user();
+        $transfer = AssetOwnerTransfer::findOrFail($id);
+        $this->assertUserCanView($user, $transfer);
+
+        $url = URL::temporarySignedRoute(
+            'asset-owner-transfers.shared-pdf',
+            now()->addDays(7),
+            ['id' => $transfer->id]
+        );
+
+        $message = 'Asset Ownership Transfer '.$transfer->transfer_number
+            ."\nStatus: ".strtoupper((string) $transfer->status)
+            ."\nTanggal: ".(optional($transfer->transfer_date)->format('d/m/Y') ?: '-')
+            ."\n".$url;
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $message,
+        ]);
+    }
+
+    public function exportPdfShared($id)
+    {
+        return $this->renderExportPdf($id, false);
+    }
+
+    public function exportPdf($id)
+    {
+        return $this->renderExportPdf($id, true);
+    }
+
+    protected function renderExportPdf($id, bool $requireAuth)
+    {
+        $user = auth()->user();
+        $transfer = AssetOwnerTransfer::with([
+            'items.item', 'items.unit',
+            'warehouseOutlet',
+            'creator', 'approver',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        if ($requireAuth) {
+            $this->assertUserCanView($user, $transfer);
+        }
+
+        $location = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->outlet_id)->first();
+
+        $data = [
+            'transfer_number' => $transfer->transfer_number,
+            'transfer_date' => optional($transfer->transfer_date)->format('d/m/Y'),
+            'status' => strtoupper((string) $transfer->status),
+            'notes' => $transfer->notes,
+            'owner_from_name' => AssetOwnership::name((int) $transfer->owner_outlet_from_id) ?? '-',
+            'owner_to_name' => AssetOwnership::name((int) $transfer->owner_outlet_to_id) ?? '-',
+            'location_outlet_name' => $location->nama_outlet ?? '-',
+            'warehouse_outlet_name' => optional($transfer->warehouseOutlet)->name ?? '-',
+            'creator_name' => optional($transfer->creator)->nama_lengkap ?? '-',
+            'approval_by_name' => optional($transfer->approver)->nama_lengkap,
+            'approval_at' => $transfer->approval_at
+                ? $transfer->approval_at->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i')
+                : null,
+            'items' => $transfer->items->map(fn ($item) => [
+                'item_name' => optional($item->item)->name ?? '-',
+                'unit_name' => optional($item->unit)->name ?? '-',
+                'qty' => $item->qty,
+                'note' => $item->note,
+            ]),
+            'approval_flows' => $transfer->approvalFlows->map(fn ($flow) => [
+                'level' => $flow->approval_level,
+                'approver_name' => optional($flow->approver)->nama_lengkap ?? '-',
+                'status' => $flow->status,
+                'comments' => $flow->comments,
+            ]),
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+            'generated_by' => $requireAuth
+                ? ($user->nama_lengkap ?? $user->name ?? '-')
+                : 'Shared Link',
+        ];
+
+        $pdf = Pdf::loadView('exports.asset_owner_transfer_pdf', $data)->setPaper('a4', 'portrait');
+        $filename = preg_replace('/[^A-Za-z0-9\-_]/', '_', $transfer->transfer_number) . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function destroy($id)

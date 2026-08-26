@@ -128,6 +128,21 @@ async function handleApproval(action) {
     } catch (e) { Swal.fire('Error', e.response?.data?.message || e.message, 'error'); }
     finally { busy.value = false; }
 }
+
+const sharing = ref(false);
+async function shareToWhatsApp() {
+    if (sharing.value) return;
+    try {
+        sharing.value = true;
+        const { data } = await axios.post(`/asset-owner-transfers/${props.transfer.id}/share-link`);
+        if (!data?.url) throw new Error('Link tidak tersedia');
+        window.open(`https://wa.me/?text=${encodeURIComponent(data.message || data.url)}`, '_blank');
+    } catch (e) {
+        Swal.fire('Error', e.response?.data?.message || e.message || 'Gagal membuat link share', 'error');
+    } finally {
+        sharing.value = false;
+    }
+}
 </script>
 
 <template>
@@ -176,6 +191,16 @@ async function handleApproval(action) {
                 </div>
             </div>
 
+            <div class="flex flex-wrap gap-2 mb-4">
+                <a :href="`/asset-owner-transfers/${transfer.id}/export-pdf`" target="_blank"
+                    class="px-4 py-2 bg-red-50 text-red-700 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-100">
+                    <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
+                </a>
+                <button type="button" @click="shareToWhatsApp" :disabled="sharing"
+                    class="px-4 py-2 bg-[#25D366] hover:bg-[#128C7E] text-white rounded-lg text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2">
+                    <i :class="sharing ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i> Share WA
+                </button>
+            </div>
             <div v-if="transfer.status === 'draft'" class="flex gap-2">
                 <button @click="handleSubmitClick" :disabled="busy" class="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm disabled:opacity-50">
                     <i v-if="busy" class="fa fa-spinner fa-spin mr-1"></i>

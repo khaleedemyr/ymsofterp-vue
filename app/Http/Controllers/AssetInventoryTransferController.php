@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\URL;
 use App\Models\AssetInventoryTransfer;
 use App\Models\AssetInventoryTransferItem;
 use App\Models\AssetInventoryTransferApprovalFlow;
@@ -286,7 +287,41 @@ class AssetInventoryTransferController extends Controller
         ]);
     }
 
+    public function generateShareLink($id)
+    {
+        $user = auth()->user();
+        $transfer = AssetInventoryTransfer::findOrFail($id);
+        $this->assertUserCanView($user, $transfer);
+
+        $url = URL::temporarySignedRoute(
+            'asset-inventory-transfers.shared-pdf',
+            now()->addDays(7),
+            ['id' => $transfer->id]
+        );
+
+        $message = 'Asset Inventory Transfer '.$transfer->transfer_number
+            ."\nStatus: ".strtoupper((string) $transfer->status)
+            ."\nTanggal: ".(optional($transfer->transfer_date)->format('d/m/Y') ?: '-')
+            ."\n".$url;
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $message,
+        ]);
+    }
+
+    public function exportPdfShared($id)
+    {
+        return $this->renderExportPdf($id, false);
+    }
+
     public function exportPdf($id)
+    {
+        return $this->renderExportPdf($id, true);
+    }
+
+    protected function renderExportPdf($id, bool $requireAuth)
     {
         $user = auth()->user();
         $transfer = AssetInventoryTransfer::with([
@@ -296,7 +331,9 @@ class AssetInventoryTransferController extends Controller
             'approvalFlows.approver',
         ])->findOrFail($id);
 
-        $this->assertUserCanView($user, $transfer);
+        if ($requireAuth) {
+            $this->assertUserCanView($user, $transfer);
+        }
 
         $outletFrom = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletFrom->outlet_id ?? null)->first();
         $outletTo = DB::table('tbl_data_outlet')->where('id_outlet', $transfer->warehouseOutletTo->outlet_id ?? null)->first();
@@ -338,7 +375,9 @@ class AssetInventoryTransferController extends Controller
                 ];
             }),
             'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
-            'generated_by' => $user->nama_lengkap ?? $user->name ?? '-',
+            'generated_by' => $requireAuth
+                ? ($user->nama_lengkap ?? $user->name ?? '-')
+                : 'Shared Link',
         ];
 
         $pdf = Pdf::loadView('exports.asset_inventory_transfer_pdf', $data)

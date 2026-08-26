@@ -213,6 +213,21 @@ function deleteOrder() {
         }
     });
 }
+
+const sharing = ref(false);
+async function shareToWhatsApp() {
+    if (sharing.value) return;
+    try {
+        sharing.value = true;
+        const { data } = await axios.post(`/asset-service-orders/${so.id}/share-link`);
+        if (!data?.url) throw new Error('Link tidak tersedia');
+        window.open(`https://wa.me/?text=${encodeURIComponent(data.message || data.url)}`, '_blank');
+    } catch (e) {
+        Swal.fire('Error', e.response?.data?.message || e.message || 'Gagal membuat link share', 'error');
+    } finally {
+        sharing.value = false;
+    }
+}
 </script>
 
 <template>
@@ -405,6 +420,14 @@ function deleteOrder() {
 
             <!-- Actions -->
             <div class="flex flex-wrap gap-3 mb-6">
+                <a :href="`/asset-service-orders/${so.id}/export-pdf`" target="_blank"
+                    class="px-5 py-2.5 rounded-lg bg-red-50 text-red-700 hover:bg-red-100 font-semibold text-sm border border-red-200 transition inline-flex items-center">
+                    <i class="fa-solid fa-file-pdf mr-1"></i> Export PDF
+                </a>
+                <button type="button" @click="shareToWhatsApp" :disabled="sharing"
+                    class="px-5 py-2.5 rounded-lg bg-[#25D366] hover:bg-[#128C7E] text-white font-semibold text-sm shadow transition inline-flex items-center gap-2 disabled:opacity-50">
+                    <i :class="sharing ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i> Share WA
+                </button>
                 <template v-if="canApprove">
                     <button @click="doApprove"
                         class="px-5 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-sm shadow transition">

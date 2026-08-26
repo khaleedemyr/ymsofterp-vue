@@ -9,12 +9,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use App\Models\AssetDisposal;
 use App\Models\AssetDisposalItem;
 use App\Models\AssetDisposalPhoto;
 use App\Models\AssetDisposalApprovalFlow;
 use App\Services\NotificationService;
 use App\Services\AssetInventoryStockService;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AssetDisposalController extends Controller
 {
@@ -297,6 +299,93 @@ class AssetDisposalController extends Controller
             'canApprove' => $canApprove,
             'user' => $user,
         ]);
+    }
+
+    public function generateShareLink($id)
+    {
+        $user = auth()->user();
+        $disposal = AssetDisposal::findOrFail($id);
+        $this->assertUserCanView($user, $disposal);
+
+        $url = URL::temporarySignedRoute(
+            'asset-disposals.shared-pdf',
+            now()->addDays(7),
+            ['id' => $disposal->id]
+        );
+
+        $message = 'Asset Disposal '.$disposal->number
+            ."\nStatus: ".strtoupper((string) $disposal->status)
+            ."\nTanggal: ".(optional($disposal->date)->format('d/m/Y') ?: '-')
+            ."\n".$url;
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => $message,
+        ]);
+    }
+
+    public function exportPdfShared($id)
+    {
+        return $this->renderExportPdf($id, false);
+    }
+
+    public function exportPdf($id)
+    {
+        return $this->renderExportPdf($id, true);
+    }
+
+    protected function renderExportPdf($id, bool $requireAuth)
+    {
+        $user = auth()->user();
+        $disposal = AssetDisposal::with([
+            'items.item',
+            'outlet',
+            'warehouseOutlet',
+            'creator',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        if ($requireAuth) {
+            $this->assertUserCanView($user, $disposal);
+        }
+
+        $data = [
+            'number' => $disposal->number,
+            'date' => optional($disposal->date)->format('d/m/Y'),
+            'type' => strtoupper((string) $disposal->type),
+            'status' => strtoupper((string) $disposal->status),
+            'description' => $disposal->description,
+            'buyer_name' => $disposal->buyer_name,
+            'buyer_contact' => $disposal->buyer_contact,
+            'total_sale_price' => (float) $disposal->total_sale_price,
+            'owner_outlet_name' => AssetOwnership::name((int) $disposal->owner_outlet_id) ?? '-',
+            'outlet_name' => optional($disposal->outlet)->nama_outlet ?? '-',
+            'warehouse_outlet_name' => optional($disposal->warehouseOutlet)->name ?? '-',
+            'creator_name' => optional($disposal->creator)->nama_lengkap ?? '-',
+            'items' => $disposal->items->map(fn ($item) => [
+                'item_name' => optional($item->item)->name ?? '-',
+                'unit' => $item->unit,
+                'qty' => $item->qty,
+                'sale_price' => (float) $item->sale_price,
+                'note' => $item->note,
+            ]),
+            'approval_flows' => $disposal->approvalFlows->map(fn ($flow) => [
+                'level' => $flow->approval_level,
+                'approver_name' => optional($flow->approver)->nama_lengkap ?? '-',
+                'status' => $flow->status,
+                'comments' => $flow->comments,
+            ]),
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+            'generated_by' => $requireAuth
+                ? ($user->nama_lengkap ?? $user->name ?? '-')
+                : 'Shared Link',
+        ];
+
+        $pdf = Pdf::loadView('exports.asset_disposal_pdf', $data)->setPaper('a4', 'portrait');
+        $filename = preg_replace('/[^A-Za-z0-9\-_]/', '_', $disposal->number) . '.pdf';
+
+        return $pdf->download($filename);
     }
 
     public function destroy($id)

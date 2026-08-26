@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
 
@@ -32,6 +33,21 @@ function deleteTransfer(id) {
     Swal.fire({ title: 'Hapus?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33' }).then((r) => {
         if (r.isConfirmed) router.delete(`/asset-owner-transfers/${id}`);
     });
+}
+
+const sharingId = ref(null);
+async function shareToWhatsApp(id) {
+    if (sharingId.value) return;
+    try {
+        sharingId.value = id;
+        const { data } = await axios.post(`/asset-owner-transfers/${id}/share-link`);
+        if (!data?.url) throw new Error('Link tidak tersedia');
+        window.open(`https://wa.me/?text=${encodeURIComponent(data.message || data.url)}`, '_blank');
+    } catch (e) {
+        Swal.fire('Error', e.response?.data?.message || e.message || 'Gagal membuat link share', 'error');
+    } finally {
+        sharingId.value = null;
+    }
 }
 </script>
 
@@ -90,6 +106,13 @@ function deleteTransfer(id) {
                             <td class="px-4 py-3"><span :class="statusBadge(t.status)" class="px-2 py-1 rounded-full text-xs capitalize">{{ t.status }}</span></td>
                             <td class="px-4 py-3 text-center">
                                 <Link :href="`/asset-owner-transfers/${t.id}`" class="text-violet-600 text-sm font-medium mr-2">Lihat</Link>
+                                <a :href="`/asset-owner-transfers/${t.id}/export-pdf`" target="_blank" class="text-red-600 text-sm font-medium mr-2">
+                                    <i class="fa-solid fa-file-pdf"></i> PDF
+                                </a>
+                                <button type="button" @click="shareToWhatsApp(t.id)" :disabled="sharingId === t.id"
+                                    class="text-emerald-600 text-sm font-medium mr-2 disabled:opacity-50">
+                                    <i :class="sharingId === t.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i> WA
+                                </button>
                                 <button v-if="t.status === 'draft'" @click="deleteTransfer(t.id)" class="text-red-500 text-sm">Hapus</button>
                             </td>
                         </tr>

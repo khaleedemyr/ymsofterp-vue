@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
+import axios from 'axios';
 import Swal from 'sweetalert2';
 import debounce from 'lodash/debounce';
 
@@ -68,6 +69,21 @@ function deleteDisposal(id) {
             });
         }
     });
+}
+
+const sharingId = ref(null);
+async function shareToWhatsApp(id) {
+    if (sharingId.value) return;
+    try {
+        sharingId.value = id;
+        const { data } = await axios.post(`/asset-disposals/${id}/share-link`);
+        if (!data?.url) throw new Error('Link tidak tersedia');
+        window.open(`https://wa.me/?text=${encodeURIComponent(data.message || data.url)}`, '_blank');
+    } catch (e) {
+        Swal.fire('Error', e.response?.data?.message || e.message || 'Gagal membuat link share', 'error');
+    } finally {
+        sharingId.value = null;
+    }
 }
 </script>
 
@@ -164,6 +180,13 @@ function deleteDisposal(id) {
                                     <Link :href="`/asset-disposals/${d.id}`" class="text-teal-600 hover:text-teal-800 text-sm font-medium">
                                         <i class="fa-solid fa-eye"></i> Lihat
                                     </Link>
+                                    <a :href="`/asset-disposals/${d.id}/export-pdf`" target="_blank" class="text-red-600 hover:text-red-800 text-sm font-medium">
+                                        <i class="fa-solid fa-file-pdf"></i> PDF
+                                    </a>
+                                    <button type="button" @click="shareToWhatsApp(d.id)" :disabled="sharingId === d.id"
+                                        class="text-emerald-600 hover:text-emerald-800 text-sm font-medium disabled:opacity-50">
+                                        <i :class="sharingId === d.id ? 'fas fa-spinner fa-spin' : 'fab fa-whatsapp'"></i> WA
+                                    </button>
                                     <button v-if="d.status === 'waiting_approval'" @click="deleteDisposal(d.id)" class="text-red-500 hover:text-red-700 text-sm font-medium">
                                         <i class="fa-solid fa-trash"></i>
                                     </button>

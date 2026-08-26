@@ -161,6 +161,20 @@ Route::get('/customer-voice/share/{token}', [CustomerVoiceCommandCenterControlle
 Route::get('/qa2-audits/share/{token}', [\App\Http\Controllers\Qa2AuditController::class, 'publicShow'])
     ->name('qa2-audits.public.show');
 
+// Asset PDF share — temporary signed URL (tanpa login)
+Route::get('/shared/asset-inventory-transfers/{id}/pdf', [\App\Http\Controllers\AssetInventoryTransferController::class, 'exportPdfShared'])
+    ->middleware('signed')
+    ->name('asset-inventory-transfers.shared-pdf');
+Route::get('/shared/asset-owner-transfers/{id}/pdf', [\App\Http\Controllers\AssetOwnerTransferController::class, 'exportPdfShared'])
+    ->middleware('signed')
+    ->name('asset-owner-transfers.shared-pdf');
+Route::get('/shared/asset-service-orders/{id}/pdf', [\App\Http\Controllers\AssetServiceOrderController::class, 'exportPdfShared'])
+    ->middleware('signed')
+    ->name('asset-service-orders.shared-pdf');
+Route::get('/shared/asset-disposals/{id}/pdf', [\App\Http\Controllers\AssetDisposalController::class, 'exportPdfShared'])
+    ->middleware('signed')
+    ->name('asset-disposals.shared-pdf');
+
 Route::get('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'showLogin'])
     ->name('external.login');
 Route::post('/external/login', [\App\Http\Controllers\ExternalAuthController::class, 'login'])
@@ -710,6 +724,7 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-inventory-transfers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'store'])->name('asset-inventory-transfers.store');
     Route::get('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'show'])->name('asset-inventory-transfers.show');
     Route::get('/asset-inventory-transfers/{id}/export-pdf', [\App\Http\Controllers\AssetInventoryTransferController::class, 'exportPdf'])->name('asset-inventory-transfers.export-pdf');
+    Route::post('/asset-inventory-transfers/{id}/share-link', [\App\Http\Controllers\AssetInventoryTransferController::class, 'generateShareLink'])->name('asset-inventory-transfers.share-link');
     Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'destroy'])->name('asset-inventory-transfers.destroy');
     Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit'])->name('asset-inventory-transfers.submit');
     Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve'])->name('asset-inventory-transfers.approve');
@@ -720,6 +735,8 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/asset-owner-transfers/create', [\App\Http\Controllers\AssetOwnerTransferController::class, 'create'])->name('asset-owner-transfers.create');
     Route::post('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'store'])->name('asset-owner-transfers.store');
     Route::get('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'show'])->name('asset-owner-transfers.show');
+    Route::get('/asset-owner-transfers/{id}/export-pdf', [\App\Http\Controllers\AssetOwnerTransferController::class, 'exportPdf'])->name('asset-owner-transfers.export-pdf');
+    Route::post('/asset-owner-transfers/{id}/share-link', [\App\Http\Controllers\AssetOwnerTransferController::class, 'generateShareLink'])->name('asset-owner-transfers.share-link');
     Route::delete('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'destroy'])->name('asset-owner-transfers.destroy');
     Route::post('/asset-owner-transfers/{id}/submit', [\App\Http\Controllers\AssetOwnerTransferController::class, 'submit'])->name('asset-owner-transfers.submit');
     Route::post('/asset-owner-transfers/{id}/approve', [\App\Http\Controllers\AssetOwnerTransferController::class, 'approve'])->name('asset-owner-transfers.approve');
@@ -739,6 +756,8 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::get('/asset-service-orders/create', [\App\Http\Controllers\AssetServiceOrderController::class, 'create'])->name('asset-service-orders.create');
     Route::post('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'store'])->name('asset-service-orders.store');
     Route::get('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'show'])->name('asset-service-orders.show');
+    Route::get('/asset-service-orders/{id}/export-pdf', [\App\Http\Controllers\AssetServiceOrderController::class, 'exportPdf'])->name('asset-service-orders.export-pdf');
+    Route::post('/asset-service-orders/{id}/share-link', [\App\Http\Controllers\AssetServiceOrderController::class, 'generateShareLink'])->name('asset-service-orders.share-link');
     Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'destroy'])->name('asset-service-orders.destroy');
     Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve'])->name('asset-service-orders.approve');
     Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn'])->name('asset-service-orders.receive-return');
@@ -751,6 +770,8 @@ Route::get('/api/purchase-requisitions/payment-tracker', [\App\Http\Controllers\
     Route::post('/asset-disposals', [\App\Http\Controllers\AssetDisposalController::class, 'store'])->name('asset-disposals.store');
     Route::post('/asset-disposals/upload-photo', [\App\Http\Controllers\AssetDisposalController::class, 'uploadPhoto'])->name('asset-disposals.upload-photo');
     Route::get('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'show'])->name('asset-disposals.show');
+    Route::get('/asset-disposals/{id}/export-pdf', [\App\Http\Controllers\AssetDisposalController::class, 'exportPdf'])->name('asset-disposals.export-pdf');
+    Route::post('/asset-disposals/{id}/share-link', [\App\Http\Controllers\AssetDisposalController::class, 'generateShareLink'])->name('asset-disposals.share-link');
     Route::delete('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'destroy'])->name('asset-disposals.destroy');
     Route::delete('/asset-disposals/photo/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'deletePhoto'])->name('asset-disposals.delete-photo');
     Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve'])->name('asset-disposals.approve');

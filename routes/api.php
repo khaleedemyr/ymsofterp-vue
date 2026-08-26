@@ -1606,6 +1606,8 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/asset-inventory-transfers/stock', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getStock']);
         Route::get('/asset-inventory-transfer/approvers', [\App\Http\Controllers\AssetInventoryTransferController::class, 'getApprovers']);
         Route::get('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiShow']);
+        Route::get('/asset-inventory-transfers/{id}/export-pdf', [\App\Http\Controllers\AssetInventoryTransferController::class, 'exportPdf']);
+        Route::post('/asset-inventory-transfers/{id}/share-link', [\App\Http\Controllers\AssetInventoryTransferController::class, 'generateShareLink']);
         Route::delete('/asset-inventory-transfers/{id}', [\App\Http\Controllers\AssetInventoryTransferController::class, 'apiDestroy']);
         Route::post('/asset-inventory-transfers/{id}/submit', [\App\Http\Controllers\AssetInventoryTransferController::class, 'submit']);
         Route::post('/asset-inventory-transfers/{id}/approve', [\App\Http\Controllers\AssetInventoryTransferController::class, 'approve']);
@@ -1616,6 +1618,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-owner-transfers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiStore']);
         Route::get('/asset-owner-transfer/approvers', [\App\Http\Controllers\AssetOwnerTransferController::class, 'getApprovers']);
         Route::get('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiShow']);
+        Route::get('/asset-owner-transfers/{id}/export-pdf', [\App\Http\Controllers\AssetOwnerTransferController::class, 'exportPdf']);
+        Route::post('/asset-owner-transfers/{id}/share-link', [\App\Http\Controllers\AssetOwnerTransferController::class, 'generateShareLink']);
         Route::delete('/asset-owner-transfers/{id}', [\App\Http\Controllers\AssetOwnerTransferController::class, 'apiDestroy']);
         Route::post('/asset-owner-transfers/{id}/submit', [\App\Http\Controllers\AssetOwnerTransferController::class, 'submit']);
         Route::post('/asset-owner-transfers/{id}/approve', [\App\Http\Controllers\AssetOwnerTransferController::class, 'approve']);
@@ -1635,6 +1639,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-service-orders', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiStore']);
         Route::get('/asset-service-order/approvers', [\App\Http\Controllers\AssetServiceOrderController::class, 'getApprovers']);
         Route::get('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiShow']);
+        Route::get('/asset-service-orders/{id}/export-pdf', [\App\Http\Controllers\AssetServiceOrderController::class, 'exportPdf']);
+        Route::post('/asset-service-orders/{id}/share-link', [\App\Http\Controllers\AssetServiceOrderController::class, 'generateShareLink']);
         Route::delete('/asset-service-orders/{id}', [\App\Http\Controllers\AssetServiceOrderController::class, 'apiDestroy']);
         Route::post('/asset-service-orders/{id}/approve', [\App\Http\Controllers\AssetServiceOrderController::class, 'approve']);
         Route::post('/asset-service-orders/{id}/receive-return', [\App\Http\Controllers\AssetServiceOrderController::class, 'receiveReturn']);
@@ -1647,6 +1653,8 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/asset-disposals/upload-photo', [\App\Http\Controllers\AssetDisposalController::class, 'uploadPhoto']);
         Route::get('/asset-disposal/approvers', [\App\Http\Controllers\AssetDisposalController::class, 'getApprovers']);
         Route::get('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'apiShow']);
+        Route::get('/asset-disposals/{id}/export-pdf', [\App\Http\Controllers\AssetDisposalController::class, 'exportPdf']);
+        Route::post('/asset-disposals/{id}/share-link', [\App\Http\Controllers\AssetDisposalController::class, 'generateShareLink']);
         Route::delete('/asset-disposals/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'apiDestroy']);
         Route::delete('/asset-disposals/photo/{id}', [\App\Http\Controllers\AssetDisposalController::class, 'deletePhoto']);
         Route::post('/asset-disposals/{id}/approve', [\App\Http\Controllers\AssetDisposalController::class, 'approve']);
