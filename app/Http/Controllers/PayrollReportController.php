@@ -1599,12 +1599,12 @@ class PayrollReportController extends Controller
                     ]);
                 }
 
-                // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
+                // Hitung potongan alpha: (gaji pokok + tunjangan) / 31 × total hari alpha (sama seperti unpaid leave)
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $potonganAlpha = 0;
                 if ($totalAlpha > 0) {
                     $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                    $gajiPerHari = $gajiPokokTunjangan / 26;
+                    $gajiPerHari = $gajiPokokTunjangan / 31;
                     $potonganAlpha = $gajiPerHari * $totalAlpha;
                     
                     // Debug logging untuk perhitungan potongan alpha
@@ -1617,17 +1617,17 @@ class PayrollReportController extends Controller
                         'gaji_per_hari' => $gajiPerHari,
                         'total_alpha' => $totalAlpha,
                         'potongan_alpha' => $potonganAlpha,
-                        'calculation_formula' => "({$gajiPokokTunjangan} / 26) × {$totalAlpha} hari = {$potonganAlpha}"
+                        'calculation_formula' => "({$gajiPokokTunjangan} / 31) × {$totalAlpha} hari = {$potonganAlpha}"
                     ]);
                 }
 
-                // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+                // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 31 × jumlah unpaid leave
                 // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
                 $potonganUnpaidLeave = 0;
                 $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
                 if ($unpaidLeaveDays > 0) {
                     $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                    $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                    $gajiPerHari = $gajiPokokTunjangan / 31; // Pro rate per hari kalender (31)
                     $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
                     
                     // Debug logging untuk perhitungan potongan unpaid leave
@@ -1640,7 +1640,7 @@ class PayrollReportController extends Controller
                         'gaji_per_hari' => $gajiPerHari,
                         'unpaid_leave_days' => $unpaidLeaveDays,
                         'potongan_unpaid_leave' => $potonganUnpaidLeave,
-                        'calculation_formula' => "({$gajiPokokTunjangan} / 26) × {$unpaidLeaveDays} hari = {$potonganUnpaidLeave}"
+                        'calculation_formula' => "({$gajiPokokTunjangan} / 31) × {$unpaidLeaveDays} hari = {$potonganUnpaidLeave}"
                     ]);
                 }
 
@@ -3559,21 +3559,21 @@ class PayrollReportController extends Controller
                 ]);
             }
 
-            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 31 × total hari alpha (sama seperti unpaid leave)
             // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 31) * $totalAlpha;
             }
 
-            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 31 × jumlah unpaid leave
             // Gunakan gaji pokok dan tunjangan yang sudah di-pro rate untuk karyawan baru
             $potonganUnpaidLeave = 0;
             $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
             if ($unpaidLeaveDays > 0) {
                 $gajiPokokTunjangan = $gajiPokokFinal + $tunjanganFinal;
-                $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                $gajiPerHari = $gajiPokokTunjangan / 31; // Pro rate per hari kalender (31)
                 $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
             }
 
@@ -4394,19 +4394,19 @@ class PayrollReportController extends Controller
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $startDate, $endDate);
             $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
             
-            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 31 × total hari alpha (sama seperti unpaid leave)
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 31) * $totalAlpha;
             }
             
-            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 31 × jumlah unpaid leave
             $potonganUnpaidLeave = 0;
             $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
             if ($unpaidLeaveDays > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                $gajiPerHari = $gajiPokokTunjangan / 31; // Pro rate per hari kalender (31)
                 $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
             }
 
@@ -4792,19 +4792,19 @@ class PayrollReportController extends Controller
             $totalAlpha = $this->calculateAlpaDays($userId, $outletId, $startDate, $endDate);
             $leaveData = $this->calculateLeaveData($userId, $startDate, $endDate);
             
-            // Hitung potongan alpha: (gaji pokok + tunjangan) / 26 × total hari alpha (sama seperti unpaid leave)
+            // Hitung potongan alpha: (gaji pokok + tunjangan) / 31 × total hari alpha (sama seperti unpaid leave)
             $potonganAlpha = 0;
             if ($totalAlpha > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $potonganAlpha = ($gajiPokokTunjangan / 26) * $totalAlpha;
+                $potonganAlpha = ($gajiPokokTunjangan / 31) * $totalAlpha;
             }
             
-            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 26 × jumlah unpaid leave
+            // Hitung potongan unpaid leave: (gaji pokok + tunjangan) / 31 × jumlah unpaid leave
             $potonganUnpaidLeave = 0;
             $unpaidLeaveDays = isset($leaveData['unpaid_leave_days']) ? $leaveData['unpaid_leave_days'] : 0;
             if ($unpaidLeaveDays > 0) {
                 $gajiPokokTunjangan = $masterData->gaji + $masterData->tunjangan;
-                $gajiPerHari = $gajiPokokTunjangan / 26; // Pro rate per hari kerja
+                $gajiPerHari = $gajiPokokTunjangan / 31; // Pro rate per hari kalender (31)
                 $potonganUnpaidLeave = $gajiPerHari * $unpaidLeaveDays;
             }
 
