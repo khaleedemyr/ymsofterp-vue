@@ -7,7 +7,7 @@
       </h1>
 
       <div class="bg-white rounded-xl shadow p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4 items-end">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal From</label>
             <input
@@ -46,6 +46,15 @@
             />
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Conducted By</label>
+            <input
+              v-model="filters.conductor_search"
+              type="text"
+              placeholder="Cari nama conductor..."
+              class="w-full rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500"
+            />
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Mode</label>
             <select
               v-model="filters.mode"
@@ -56,7 +65,7 @@
               </option>
             </select>
           </div>
-          <div class="flex justify-end gap-2 md:col-span-2">
+          <div class="flex justify-end gap-2 xl:col-span-1 md:col-span-1">
             <button
               type="button"
               @click="fetchReport"
@@ -168,6 +177,7 @@ const filters = reactive({
   date_to: '',
   outlet_id: '',
   employee_search: '',
+  conductor_search: '',
   mode: '',
 });
 
@@ -204,6 +214,7 @@ async function fetchReport() {
     };
     if (filters.outlet_id) params.outlet_id = filters.outlet_id;
     if (filters.employee_search.trim()) params.employee_search = filters.employee_search.trim();
+    if (filters.conductor_search.trim()) params.conductor_search = filters.conductor_search.trim();
     if (filters.mode) params.mode = filters.mode;
 
     const res = await axios.get('/api/report/fb-product-calibration', { params });
@@ -229,6 +240,7 @@ function exportExcel() {
   });
   if (filters.outlet_id) query.set('outlet_id', filters.outlet_id);
   if (filters.employee_search.trim()) query.set('employee_search', filters.employee_search.trim());
+  if (filters.conductor_search.trim()) query.set('conductor_search', filters.conductor_search.trim());
   if (filters.mode) query.set('mode', filters.mode);
 
   window.open(`/report/fb-product-calibration/export?${query.toString()}`, '_blank');

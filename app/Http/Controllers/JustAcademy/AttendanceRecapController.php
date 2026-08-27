@@ -5,6 +5,7 @@ namespace App\Http\Controllers\JustAcademy;
 use App\Exports\JustAcademy\AttendanceRecapExport;
 use App\Http\Controllers\Controller;
 use App\Models\Divisi;
+use App\Models\JustAcademy\JaCategory;
 use App\Services\JustAcademy\JustAcademyService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -25,6 +26,7 @@ class AttendanceRecapController extends Controller
             'sections' => $context['sections'],
             'scheduleOptions' => $context['scheduleOptions'],
             'divisions' => $context['divisions'],
+            'categories' => $context['categories'],
             'filters' => $context['filters'],
             'reportMeta' => $context['reportMeta'],
         ]);
@@ -51,8 +53,9 @@ class AttendanceRecapController extends Controller
      *     sections: \Illuminate\Support\Collection,
      *     scheduleOptions: \Illuminate\Support\Collection,
      *     divisions: \Illuminate\Support\Collection,
-     *     filters: array{year: int, month: int, division_id: int|null, schedule_id: int|null},
-     *     reportMeta: array{month_label: string, department_label: string, schedule_label: string}
+     *     categories: \Illuminate\Support\Collection,
+     *     filters: array{year: int, month: int, division_id: int|null, schedule_id: int|null, category_id: int|null},
+     *     reportMeta: array{month_label: string, department_label: string, schedule_label: string, method_label: string}
      * }
      */
     private function recapContext(Request $request): array
@@ -65,18 +68,30 @@ class AttendanceRecapController extends Controller
 
         $divisionId = $request->filled('division_id') ? (int) $request->input('division_id') : null;
         $scheduleId = $request->filled('schedule_id') ? (int) $request->input('schedule_id') : null;
+        $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
 
         $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
         $selectedDivision = $divisionId
             ? $divisions->firstWhere('id', $divisionId)
             : null;
 
-        $scheduleOptions = $this->service->attendanceRecapScheduleOptions($year, $month);
+        $categories = JaCategory::query()
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+        $selectedCategory = $categoryId
+            ? $categories->firstWhere('id', $categoryId)
+            : null;
+        if ($categoryId && ! $selectedCategory) {
+            $categoryId = null;
+        }
+
+        $scheduleOptions = $this->service->attendanceRecapScheduleOptions($year, $month, $categoryId);
         if ($scheduleId && ! $scheduleOptions->contains(fn ($opt) => (int) $opt['id'] === $scheduleId)) {
             $scheduleId = null;
         }
 
-        $sections = $this->service->buildAttendanceRecap($year, $month, $divisionId, $scheduleId);
+        $sections = $this->service->buildAttendanceRecap($year, $month, $divisionId, $scheduleId, $categoryId);
         $selectedSchedule = $scheduleId
             ? $scheduleOptions->firstWhere('id', $scheduleId)
             : null;
@@ -85,16 +100,19 @@ class AttendanceRecapController extends Controller
             'sections' => $sections,
             'scheduleOptions' => $scheduleOptions,
             'divisions' => $divisions,
+            'categories' => $categories,
             'filters' => [
                 'year' => $year,
                 'month' => $month,
                 'division_id' => $divisionId,
                 'schedule_id' => $scheduleId,
+                'category_id' => $categoryId,
             ],
             'reportMeta' => [
                 'month_label' => sprintf('%02d/%04d', $month, $year),
                 'department_label' => $selectedDivision?->nama_divisi ?? 'Semua Departemen',
                 'schedule_label' => $selectedSchedule['title'] ?? 'Semua Training Plan',
+                'method_label' => $selectedCategory?->name ?? 'Semua Method',
             ],
         ];
     }

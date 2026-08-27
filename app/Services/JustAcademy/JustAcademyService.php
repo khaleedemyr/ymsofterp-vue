@@ -1455,8 +1455,13 @@ class JustAcademyService
      *   participants: array<int, array>
      * }>
      */
-    public function buildAttendanceRecap(int $year, int $month, ?int $divisionId = null, ?int $scheduleId = null): Collection
-    {
+    public function buildAttendanceRecap(
+        int $year,
+        int $month,
+        ?int $divisionId = null,
+        ?int $scheduleId = null,
+        ?int $categoryId = null
+    ): Collection {
         $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
         $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
 
@@ -1472,6 +1477,7 @@ class JustAcademyService
             ->whereIn('status', ['published', 'ongoing', 'completed'])
             ->where('start_at', '>=', $rangeStart)
             ->where('start_at', '<=', $rangeEnd)
+            ->when($categoryId, fn ($q) => $q->whereHas('program', fn ($program) => $program->where('category_id', $categoryId)))
             ->orderBy('start_at');
 
         if ($scheduleId) {
@@ -1609,7 +1615,7 @@ class JustAcademyService
      *
      * @return Collection<int, array{id: int, title: string, start_at: string|null}>
      */
-    public function attendanceRecapScheduleOptions(int $year, int $month): Collection
+    public function attendanceRecapScheduleOptions(int $year, int $month, ?int $categoryId = null): Collection
     {
         $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
         $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
@@ -1618,6 +1624,7 @@ class JustAcademyService
             ->whereIn('status', ['published', 'ongoing', 'completed'])
             ->where('start_at', '>=', $rangeStart)
             ->where('start_at', '<=', $rangeEnd)
+            ->when($categoryId, fn ($q) => $q->whereHas('program', fn ($program) => $program->where('category_id', $categoryId)))
             ->orderBy('start_at')
             ->get(['id', 'title', 'start_at'])
             ->map(fn (JaSchedule $schedule) => [

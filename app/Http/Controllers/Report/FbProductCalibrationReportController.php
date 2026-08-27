@@ -44,7 +44,8 @@ class FbProductCalibrationReportController extends Controller
             $validated['date_to'],
             isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
             $validated['employee_search'] ?? null,
-            $validated['mode'] ?? null
+            $validated['mode'] ?? null,
+            $validated['conductor_search'] ?? null
         ));
     }
 
@@ -74,7 +75,8 @@ class FbProductCalibrationReportController extends Controller
                 $validated['date_to'],
                 isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
                 $validated['employee_search'] ?? null,
-                $validated['mode'] ?? null
+                $validated['mode'] ?? null,
+                $validated['conductor_search'] ?? null
             );
 
             return response()->json([
@@ -100,7 +102,8 @@ class FbProductCalibrationReportController extends Controller
                 $validated['date_to'],
                 isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
                 $validated['employee_search'] ?? null,
-                $validated['mode'] ?? null
+                $validated['mode'] ?? null,
+                $validated['conductor_search'] ?? null
             );
 
             $filename = sprintf(
@@ -129,7 +132,8 @@ class FbProductCalibrationReportController extends Controller
             $validated['date_to'],
             isset($validated['outlet_id']) ? (int) $validated['outlet_id'] : null,
             $validated['employee_search'] ?? null,
-            $validated['mode'] ?? null
+            $validated['mode'] ?? null,
+            $validated['conductor_search'] ?? null
         );
 
         $filename = sprintf(
@@ -152,6 +156,7 @@ class FbProductCalibrationReportController extends Controller
             'date_to' => 'required|date|after_or_equal:date_from',
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'employee_search' => 'nullable|string|max:120',
+            'conductor_search' => 'nullable|string|max:120',
             'mode' => ['nullable', Rule::in(['', FbProductCalibrationService::MODE_KITCHEN, FbProductCalibrationService::MODE_BAR])],
         ]);
     }

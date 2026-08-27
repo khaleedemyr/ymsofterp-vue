@@ -10,6 +10,7 @@ const props = defineProps({
   sections: { type: Array, default: () => [] },
   scheduleOptions: { type: Array, default: () => [] },
   divisions: { type: Array, default: () => [] },
+  categories: { type: Array, default: () => [] },
   filters: { type: Object, default: () => ({}) },
   reportMeta: { type: Object, default: () => ({}) },
 });
@@ -18,6 +19,7 @@ const year = ref(props.filters?.year || new Date().getFullYear());
 const month = ref(props.filters?.month || new Date().getMonth() + 1);
 
 const allDivisionOption = { id: '', label: 'Semua departemen' };
+const allCategoryOption = { id: '', label: 'Semua method' };
 const allScheduleOption = { id: '', label: 'Semua training plan' };
 
 const divisionOptions = computed(() => [
@@ -28,11 +30,19 @@ const divisionOptions = computed(() => [
   })),
 ]);
 
+const categoryOptions = computed(() => [
+  allCategoryOption,
+  ...props.categories.map((c) => ({
+    id: c.id,
+    label: c.name,
+  })),
+]);
+
 const scheduleSelectOptions = computed(() => [
   allScheduleOption,
   ...props.scheduleOptions.map((s) => ({
     id: s.id,
-    label: s.start_at ? `${s.start_at} — ${s.title}` : s.title,
+    label: s.title,
   })),
 ]);
 
@@ -41,18 +51,31 @@ function resolveDivisionSelection() {
   return divisionOptions.value.find((d) => d.id === currentId || d.id === Number(currentId)) || allDivisionOption;
 }
 
+function resolveCategorySelection() {
+  const currentId = props.filters?.category_id ?? '';
+  return categoryOptions.value.find((c) => c.id === currentId || c.id === Number(currentId)) || allCategoryOption;
+}
+
 function resolveScheduleSelection() {
   const currentId = props.filters?.schedule_id ?? '';
   return scheduleSelectOptions.value.find((s) => s.id === currentId || s.id === Number(currentId)) || allScheduleOption;
 }
 
 const selectedDivision = ref(resolveDivisionSelection());
+const selectedCategory = ref(resolveCategorySelection());
 const selectedSchedule = ref(resolveScheduleSelection());
 
 watch(
   () => [props.filters?.division_id, props.divisions],
   () => {
     selectedDivision.value = resolveDivisionSelection();
+  },
+);
+
+watch(
+  () => [props.filters?.category_id, props.categories],
+  () => {
+    selectedCategory.value = resolveCategorySelection();
   },
 );
 
@@ -71,6 +94,7 @@ function applyFilters() {
     year: year.value,
     month: month.value,
     division_id: selectedDivision.value?.id || undefined,
+    category_id: selectedCategory.value?.id || undefined,
     schedule_id: selectedSchedule.value?.id || undefined,
   }, { preserveState: true });
 }
@@ -86,6 +110,9 @@ function exportExcel() {
   };
   if (selectedDivision.value?.id) {
     params.division_id = selectedDivision.value.id;
+  }
+  if (selectedCategory.value?.id) {
+    params.category_id = selectedCategory.value.id;
   }
   if (selectedSchedule.value?.id) {
     params.schedule_id = selectedSchedule.value.id;
@@ -155,6 +182,20 @@ function quizResultClass(result) {
           :options-limit="300"
         />
       </div>
+      <div class="min-w-[16rem] w-full sm:w-64">
+        <label class="mb-1 block text-xs font-medium text-slate-500">Method Training</label>
+        <Multiselect
+          v-model="selectedCategory"
+          :options="categoryOptions"
+          label="label"
+          track-by="id"
+          placeholder="Cari method..."
+          :searchable="true"
+          :allow-empty="false"
+          :show-labels="false"
+          :options-limit="300"
+        />
+      </div>
       <div class="min-w-[20rem] flex-1">
         <label class="mb-1 block text-xs font-medium text-slate-500">Training Plan</label>
         <Multiselect
@@ -189,6 +230,7 @@ function quizResultClass(result) {
         <div class="mt-3 flex flex-wrap justify-center gap-6 text-sm text-slate-700">
           <p><span class="font-semibold">Month :</span> {{ reportMeta.month_label }}</p>
           <p><span class="font-semibold">Department :</span> {{ reportMeta.department_label }}</p>
+          <p><span class="font-semibold">Method Training :</span> {{ reportMeta.method_label }}</p>
           <p><span class="font-semibold">Training Plan :</span> {{ reportMeta.schedule_label }}</p>
         </div>
         <p v-if="sections.length" class="mt-2 text-xs text-slate-500">

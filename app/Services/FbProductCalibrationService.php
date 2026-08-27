@@ -457,9 +457,11 @@ class FbProductCalibrationService
         string $dateTo,
         ?int $outletId = null,
         ?string $employeeSearch = null,
-        ?string $mode = null
+        ?string $mode = null,
+        ?string $conductorSearch = null
     ): array {
         $employeeSearch = trim((string) $employeeSearch);
+        $conductorSearch = trim((string) $conductorSearch);
         $modeFilter = $mode !== null && $mode !== '' ? $this->resolveMode($mode) : null;
 
         $calibrations = FbProductCalibration::query()
@@ -467,6 +469,9 @@ class FbProductCalibrationService
             ->whereBetween('scheduled_date', [$dateFrom, $dateTo])
             ->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))
             ->when($modeFilter, fn ($q) => $q->where('mode', $modeFilter))
+            ->when($conductorSearch !== '', function ($q) use ($conductorSearch) {
+                $q->where('conductor_name', 'like', '%'.addcslashes($conductorSearch, '%_\\').'%');
+            })
             ->orderBy('scheduled_date')
             ->orderBy('outlet_name')
             ->with(['products', 'participants', 'results'])
@@ -540,6 +545,7 @@ class FbProductCalibrationService
                 'date_to' => $dateTo,
                 'outlet_id' => $outletId,
                 'employee_search' => $employeeSearch !== '' ? $employeeSearch : null,
+                'conductor_search' => $conductorSearch !== '' ? $conductorSearch : null,
                 'mode' => $modeFilter,
             ],
             'parameter_options' => $modeFilter

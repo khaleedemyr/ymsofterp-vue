@@ -19,6 +19,9 @@ class Qa2AuditController extends Controller
 {
     private const HO_OUTLET_ID = 1;
 
+    /** @var list<string> */
+    private const QA2_WAREHOUSES = ['MK', 'MS'];
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -73,6 +76,7 @@ class Qa2AuditController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('a.audit_number', 'like', "%{$search}%")
                     ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('a.warehouse', 'like', "%{$search}%")
                     ->orWhere('qa2_wd.name', 'like', "%{$search}%")
                     ->orWhere('t.name', 'like', "%{$search}%")
                     ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
@@ -682,6 +686,7 @@ class Qa2AuditController extends Controller
                 'a.id',
                 'a.outlet_id',
                 'a.warehouse_division_id',
+                'a.warehouse',
                 'a.template_id',
                 't.name as template_name',
             ])
@@ -697,7 +702,7 @@ class Qa2AuditController extends Controller
 
         $rows = $query->get()
             ->groupBy(function ($row) {
-                return ((int) ($row->outlet_id ?? 0)) . ':' . ((int) ($row->warehouse_division_id ?? 0));
+                return ((int) ($row->outlet_id ?? 0)) . ':' . $this->warehouseGroupKey($row);
             })
             ->map(function ($group) {
                 $avgScore = $group->avg(function ($r) {
@@ -831,10 +836,11 @@ class Qa2AuditController extends Controller
             ->selectRaw("DATE_FORMAT(a.audit_datetime, '%Y-%m') as month_key")
             ->selectRaw('a.outlet_id as outlet_id')
             ->selectRaw('a.warehouse_division_id as warehouse_division_id')
+            ->selectRaw('a.warehouse as warehouse')
             ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw('COUNT(i.id) as nc_count')
             ->selectRaw('COUNT(DISTINCT a.id) as audit_count')
-            ->groupBy('month_key', 'a.outlet_id', 'a.warehouse_division_id', 'o.nama_outlet', 'qa2_wd.name');
+            ->groupBy('month_key', 'a.outlet_id', 'a.warehouse_division_id', 'a.warehouse', 'o.nama_outlet', 'qa2_wd.name');
 
         if (! $isHo) {
             $query->where('a.outlet_id', $userOutletId);
@@ -1086,7 +1092,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
+            'warehouse' => 'nullable|string|max:20',
             'template_id' => 'required|exists:qa2_templates,id',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
@@ -1096,9 +1102,9 @@ class Qa2AuditController extends Controller
         ]);
 
         $user = auth()->user();
-        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+        $warehouse = $this->resolveWarehouse(
             (int) $validated['outlet_id'],
-            $validated['warehouse_division_id'] ?? null
+            $validated['warehouse'] ?? null
         );
 
         // Tarik dulu data template dan pastikan ada item sebelum membuat draft audit.
@@ -1109,12 +1115,13 @@ class Qa2AuditController extends Controller
             ]);
         }
 
-        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouseDivisionId) {
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouse) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
                 'outlet_id' => (int) $validated['outlet_id'],
-                'warehouse_division_id' => $warehouseDivisionId,
+                'warehouse' => $warehouse,
+                'warehouse_division_id' => null,
                 'template_id' => (int) $validated['template_id'],
                 'created_by' => (int) $user->id,
                 'audit_time_start' => now(),
@@ -1159,7 +1166,7 @@ class Qa2AuditController extends Controller
             'mode' => 'edit',
             'audit' => $this->auditPayload($id, !$canManage),
             'outlets' => $this->allowedOutlets($isHo, (int) $user->id_outlet),
-            'warehouseDivisions' => $this->warehouseDivisions((int) ($audit->warehouse_division_id ?? 0) ?: null),
+            'warehouseDivisions' => $this->warehouseDivisions($this->auditWarehouseCode($audit)),
             'users' => $this->usersForSelector(),
             'templates' => DB::table('qa2_templates')
                 ->where('status', 'A')
@@ -1245,7 +1252,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
+            'warehouse' => 'nullable|string|max:20',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
             'auditee_ids' => 'nullable|array',
@@ -1258,15 +1265,17 @@ class Qa2AuditController extends Controller
             'items.*.due_date' => 'nullable|date',
         ]);
 
-        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+        $warehouse = $this->resolveWarehouse(
             (int) $validated['outlet_id'],
-            $validated['warehouse_division_id'] ?? null
+            $request->exists('warehouse') ? ($validated['warehouse'] ?? null) : $this->auditWarehouseCode($audit),
+            $this->auditWarehouseCode($audit)
         );
 
-        DB::transaction(function () use ($id, $validated, $warehouseDivisionId) {
+        DB::transaction(function () use ($id, $validated, $warehouse) {
             DB::table('qa2_audits')->where('id', $id)->update([
                 'outlet_id' => (int) $validated['outlet_id'],
-                'warehouse_division_id' => $warehouseDivisionId,
+                'warehouse' => $warehouse,
+                'warehouse_division_id' => null,
                 'notes' => $validated['notes'] ?? null,
                 'updated_at' => now(),
             ]);
@@ -1583,12 +1592,7 @@ class Qa2AuditController extends Controller
         $outletName = (string) DB::table('tbl_data_outlet')
             ->where('id_outlet', (int) ($audit->outlet_id ?? 0))
             ->value('nama_outlet');
-        $warehouseName = null;
-        if (!empty($audit->warehouse_division_id)) {
-            $warehouseName = DB::table('warehouse_division')
-                ->where('id', (int) $audit->warehouse_division_id)
-                ->value('name');
-        }
+        $warehouseName = $this->auditWarehouseCode($audit);
         $outletName = $this->formatOutletLabel($outletName, $warehouseName);
 
         $templateName = (string) DB::table('qa2_templates')
@@ -1612,18 +1616,22 @@ class Qa2AuditController extends Controller
         abort_if(!$isHo, 403);
     }
 
-    private function warehouseDivisions(?int $includeId = null)
+    private function warehouseDivisions(?string $includeCode = null)
     {
-        return DB::table('warehouse_division')
-            ->select('id', 'name')
-            ->where(function ($q) use ($includeId) {
-                $q->where('status', 'active');
-                if ($includeId) {
-                    $q->orWhere('id', $includeId);
-                }
-            })
-            ->orderBy('name')
-            ->get();
+        $options = collect(self::QA2_WAREHOUSES)->map(fn (string $code) => [
+            'id' => $code,
+            'name' => $code,
+        ]);
+
+        $include = strtoupper(trim((string) $includeCode));
+        if ($include !== '' && ! in_array($include, self::QA2_WAREHOUSES, true)) {
+            $options->push([
+                'id' => $include,
+                'name' => $include,
+            ]);
+        }
+
+        return $options->values();
     }
 
     private function joinWarehouseDivision($query)
@@ -1631,9 +1639,16 @@ class Qa2AuditController extends Controller
         return $query->leftJoin('warehouse_division as qa2_wd', 'qa2_wd.id', '=', 'a.warehouse_division_id');
     }
 
+    private function warehouseLabelSql(): string
+    {
+        return "COALESCE(NULLIF(TRIM(a.warehouse), ''), NULLIF(TRIM(qa2_wd.name), ''))";
+    }
+
     private function formattedOutletNameSql(): string
     {
-        return "CASE WHEN qa2_wd.name IS NOT NULL AND TRIM(qa2_wd.name) <> '' THEN CONCAT(o.nama_outlet, '-', qa2_wd.name) ELSE o.nama_outlet END";
+        $label = $this->warehouseLabelSql();
+
+        return "CASE WHEN {$label} IS NOT NULL THEN CONCAT(o.nama_outlet, '-', {$label}) ELSE o.nama_outlet END";
     }
 
     private function formatOutletLabel(?string $outletName, ?string $warehouseName): string
@@ -1650,27 +1665,65 @@ class Qa2AuditController extends Controller
         return $outlet . '-' . $warehouse;
     }
 
-    private function resolveWarehouseDivisionId(int $outletId, $rawId): ?int
+    private function warehouseGroupKey(object $row): string
+    {
+        $code = strtoupper(trim((string) ($row->warehouse ?? '')));
+        if ($code !== '') {
+            return $code;
+        }
+
+        return (string) ((int) ($row->warehouse_division_id ?? 0));
+    }
+
+    private function auditWarehouseCode(?object $audit): ?string
+    {
+        if (! $audit) {
+            return null;
+        }
+
+        $code = strtoupper(trim((string) ($audit->warehouse ?? '')));
+        if ($code !== '') {
+            return $code;
+        }
+
+        if (! empty($audit->warehouse_division_id)) {
+            $name = DB::table('warehouse_division')
+                ->where('id', (int) $audit->warehouse_division_id)
+                ->value('name');
+            $name = strtoupper(trim((string) $name));
+
+            return $name !== '' ? $name : null;
+        }
+
+        return null;
+    }
+
+    private function resolveWarehouse(int $outletId, $rawCode, ?string $currentCode = null): ?string
     {
         if ($outletId !== self::HO_OUTLET_ID) {
             return null;
         }
 
-        $id = (int) $rawId;
-        if ($id <= 0) {
+        $code = strtoupper(trim((string) $rawCode));
+        if ($code === '') {
             throw ValidationException::withMessages([
-                'warehouse_division_id' => 'Warehouse wajib dipilih untuk outlet ini.',
+                'warehouse' => 'Warehouse wajib dipilih untuk outlet ini.',
             ]);
         }
 
-        $exists = DB::table('warehouse_division')->where('id', $id)->exists();
-        if (!$exists) {
+        $allowed = self::QA2_WAREHOUSES;
+        $current = strtoupper(trim((string) $currentCode));
+        if ($current !== '' && ! in_array($current, $allowed, true)) {
+            $allowed[] = $current;
+        }
+
+        if (! in_array($code, $allowed, true)) {
             throw ValidationException::withMessages([
-                'warehouse_division_id' => 'Warehouse tidak valid.',
+                'warehouse' => 'Warehouse tidak valid.',
             ]);
         }
 
-        return $id;
+        return $code;
     }
 
     /**
@@ -1918,6 +1971,7 @@ class Qa2AuditController extends Controller
                 'a.cap_submitted_by',
                 'a.outlet_id',
                 'a.warehouse_division_id',
+                'a.warehouse',
                 'a.template_id',
                 'a.notes',
                 't.name as template_name',
@@ -2090,6 +2144,7 @@ class Qa2AuditController extends Controller
             'cap_submitted_by' => $audit->cap_submitted_by ? (int) $audit->cap_submitted_by : null,
             'cap_approval_flows' => $this->capApprovalFlowsForAudit($id),
             'outlet_id' => (int) $audit->outlet_id,
+            'warehouse' => $this->auditWarehouseCode($audit),
             'warehouse_division_id' => $audit->warehouse_division_id ? (int) $audit->warehouse_division_id : null,
             'template_id' => (int) $audit->template_id,
             'notes' => $audit->notes,
@@ -2220,6 +2275,7 @@ class Qa2AuditController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('a.audit_number', 'like', "%{$search}%")
                     ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                    ->orWhere('a.warehouse', 'like', "%{$search}%")
                     ->orWhere('qa2_wd.name', 'like', "%{$search}%")
                     ->orWhere('t.name', 'like', "%{$search}%")
                     ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
@@ -2367,7 +2423,7 @@ class Qa2AuditController extends Controller
 
         $validated = $request->validate([
             'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
-            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
+            'warehouse' => 'nullable|string|max:20',
             'template_id' => 'required|exists:qa2_templates,id',
             'auditor_ids' => 'nullable|array',
             'auditor_ids.*' => 'integer|exists:users,id',
@@ -2377,9 +2433,9 @@ class Qa2AuditController extends Controller
         ]);
 
         $user = auth()->user();
-        $warehouseDivisionId = $this->resolveWarehouseDivisionId(
+        $warehouse = $this->resolveWarehouse(
             (int) $validated['outlet_id'],
-            $validated['warehouse_division_id'] ?? null
+            $validated['warehouse'] ?? null
         );
         $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
         if (empty($templateRows)) {
@@ -2389,12 +2445,13 @@ class Qa2AuditController extends Controller
             ], 422);
         }
 
-        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouseDivisionId) {
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouse) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
                 'outlet_id' => (int) $validated['outlet_id'],
-                'warehouse_division_id' => $warehouseDivisionId,
+                'warehouse' => $warehouse,
+                'warehouse_division_id' => null,
                 'template_id' => (int) $validated['template_id'],
                 'created_by' => (int) $user->id,
                 'audit_time_start' => now(),

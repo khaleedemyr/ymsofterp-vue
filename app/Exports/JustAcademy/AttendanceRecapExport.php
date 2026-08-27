@@ -55,6 +55,8 @@ class AttendanceRecapExport implements FromArray, ShouldAutoSize, WithStyles, Wi
                 $this->meta['month_label'] ?? '',
                 'Department',
                 $this->meta['department_label'] ?? 'Semua Departemen',
+                'Method Training',
+                $this->meta['method_label'] ?? 'Semua Method',
                 'Training Plan',
                 $this->meta['schedule_label'] ?? 'Semua Training Plan',
             ],

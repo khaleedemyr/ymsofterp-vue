@@ -78,7 +78,7 @@ function hydrateFromAudit() {
 
   selectedOutlet.value = props.outlets.find((x) => Number(x.id_outlet) === Number(props.audit.outlet_id)) || null;
   selectedWarehouse.value = (props.warehouseDivisions || []).find(
-    (x) => Number(x.id) === Number(props.audit.warehouse_division_id)
+    (x) => String(x.id) === String(props.audit.warehouse)
   ) || null;
   selectedTemplate.value = props.templates.find((x) => Number(x.id) === Number(props.audit.template_id)) || null;
   selectedAuditors.value = props.users.filter((u) => (props.audit.auditor_ids || []).includes(u.id));
@@ -305,7 +305,7 @@ const overallAuditResult = computed(() => resolveAuditResult(summaryTotal.value.
 
 const draftPayload = computed(() => ({
   outlet_id: selectedOutlet.value?.id_outlet || null,
-  warehouse_division_id: isHoOutletSelected.value ? (selectedWarehouse.value?.id || null) : null,
+  warehouse: isHoOutletSelected.value ? (selectedWarehouse.value?.id || null) : null,
   auditor_ids: selectedAuditors.value.map((u) => u.id),
   auditee_ids: selectedAuditees.value.map((u) => u.id),
   notes: notes.value,
@@ -562,7 +562,7 @@ async function createDraft() {
 
   router.post(route('qa2-audits.store'), {
     outlet_id: selectedOutlet.value.id_outlet,
-    warehouse_division_id: selectedWarehouse.value?.id || null,
+    warehouse: selectedWarehouse.value?.id || null,
     template_id: selectedTemplate.value.id,
     auditor_ids: selectedAuditors.value.map((x) => x.id),
     auditee_ids: selectedAuditees.value.map((x) => x.id),
