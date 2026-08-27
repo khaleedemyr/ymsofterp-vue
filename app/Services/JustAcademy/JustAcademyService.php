@@ -1459,11 +1459,12 @@ class JustAcademyService
         int $year,
         int $month,
         ?int $divisionId = null,
-        ?int $scheduleId = null,
+        ?string $scheduleTitle = null,
         ?int $categoryId = null
     ): Collection {
         $rangeStart = sprintf('%04d-%02d-01 00:00:00', $year, $month);
         $rangeEnd = date('Y-m-t 23:59:59', strtotime($rangeStart));
+        $scheduleTitle = trim((string) $scheduleTitle);
 
         $query = JaSchedule::query()
             ->with([
@@ -1478,11 +1479,10 @@ class JustAcademyService
             ->where('start_at', '>=', $rangeStart)
             ->where('start_at', '<=', $rangeEnd)
             ->when($categoryId, fn ($q) => $q->whereHas('program', fn ($program) => $program->where('category_id', $categoryId)))
+            ->when($scheduleTitle !== '', function ($q) use ($scheduleTitle) {
+                $q->whereRaw('LOWER(TRIM(title)) = ?', [mb_strtolower($scheduleTitle)]);
+            })
             ->orderBy('start_at');
-
-        if ($scheduleId) {
-            $query->where('id', $scheduleId);
-        }
 
         $schedules = $query->get();
         if ($schedules->isEmpty()) {
@@ -1611,9 +1611,9 @@ class JustAcademyService
     }
 
     /**
-     * Daftar jadwal untuk filter dropdown rekap kehadiran.
+     * Daftar training plan unik untuk filter dropdown rekap kehadiran.
      *
-     * @return Collection<int, array{id: int, title: string, start_at: string|null}>
+     * @return Collection<int, array{id: string, title: string}>
      */
     public function attendanceRecapScheduleOptions(int $year, int $month, ?int $categoryId = null): Collection
     {
@@ -1625,14 +1625,14 @@ class JustAcademyService
             ->where('start_at', '>=', $rangeStart)
             ->where('start_at', '<=', $rangeEnd)
             ->when($categoryId, fn ($q) => $q->whereHas('program', fn ($program) => $program->where('category_id', $categoryId)))
-            ->orderBy('start_at')
-            ->get(['id', 'title', 'start_at'])
+            ->whereNotNull('title')
+            ->where('title', '!=', '')
+            ->orderBy('title')
+            ->get(['title'])
+            ->unique(fn (JaSchedule $schedule) => mb_strtolower(trim($schedule->title)))
             ->map(fn (JaSchedule $schedule) => [
-                'id' => $schedule->id,
+                'id' => $schedule->title,
                 'title' => $schedule->title,
-                'start_at' => $schedule->start_at
-                    ? $schedule->start_at->timezone(config('app.timezone'))->format('d/m/Y')
-                    : null,
             ])
             ->values();
     }

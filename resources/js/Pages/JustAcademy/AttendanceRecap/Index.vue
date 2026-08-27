@@ -41,7 +41,7 @@ const categoryOptions = computed(() => [
 const scheduleSelectOptions = computed(() => [
   allScheduleOption,
   ...props.scheduleOptions.map((s) => ({
-    id: s.id,
+    id: s.title,
     label: s.title,
   })),
 ]);
@@ -57,8 +57,8 @@ function resolveCategorySelection() {
 }
 
 function resolveScheduleSelection() {
-  const currentId = props.filters?.schedule_id ?? '';
-  return scheduleSelectOptions.value.find((s) => s.id === currentId || s.id === Number(currentId)) || allScheduleOption;
+  const currentTitle = props.filters?.schedule_title ?? '';
+  return scheduleSelectOptions.value.find((s) => s.id === currentTitle) || allScheduleOption;
 }
 
 const selectedDivision = ref(resolveDivisionSelection());
@@ -80,7 +80,7 @@ watch(
 );
 
 watch(
-  () => [props.filters?.schedule_id, props.scheduleOptions],
+  () => [props.filters?.schedule_title, props.scheduleOptions],
   () => {
     selectedSchedule.value = resolveScheduleSelection();
   },
@@ -95,7 +95,7 @@ function applyFilters() {
     month: month.value,
     division_id: selectedDivision.value?.id || undefined,
     category_id: selectedCategory.value?.id || undefined,
-    schedule_id: selectedSchedule.value?.id || undefined,
+    schedule_title: selectedSchedule.value?.id || undefined,
   }, { preserveState: true });
 }
 
@@ -115,7 +115,7 @@ function exportExcel() {
     params.category_id = selectedCategory.value.id;
   }
   if (selectedSchedule.value?.id) {
-    params.schedule_id = selectedSchedule.value.id;
+    params.schedule_title = selectedSchedule.value.id;
   }
   window.location.href = route('just-academy.attendance-recap.export', params);
 }

@@ -54,7 +54,7 @@ class AttendanceRecapController extends Controller
      *     scheduleOptions: \Illuminate\Support\Collection,
      *     divisions: \Illuminate\Support\Collection,
      *     categories: \Illuminate\Support\Collection,
-     *     filters: array{year: int, month: int, division_id: int|null, schedule_id: int|null, category_id: int|null},
+     *     filters: array{year: int, month: int, division_id: int|null, schedule_title: string|null, category_id: int|null},
      *     reportMeta: array{month_label: string, department_label: string, schedule_label: string, method_label: string}
      * }
      */
@@ -67,7 +67,7 @@ class AttendanceRecapController extends Controller
         }
 
         $divisionId = $request->filled('division_id') ? (int) $request->input('division_id') : null;
-        $scheduleId = $request->filled('schedule_id') ? (int) $request->input('schedule_id') : null;
+        $scheduleTitle = $request->filled('schedule_title') ? trim((string) $request->input('schedule_title')) : null;
         $categoryId = $request->filled('category_id') ? (int) $request->input('category_id') : null;
 
         $divisions = Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']);
@@ -87,13 +87,14 @@ class AttendanceRecapController extends Controller
         }
 
         $scheduleOptions = $this->service->attendanceRecapScheduleOptions($year, $month, $categoryId);
-        if ($scheduleId && ! $scheduleOptions->contains(fn ($opt) => (int) $opt['id'] === $scheduleId)) {
-            $scheduleId = null;
+        if ($scheduleTitle && ! $scheduleOptions->contains(fn ($opt) => (string) $opt['title'] === $scheduleTitle)) {
+            $matched = $scheduleOptions->first(fn ($opt) => mb_strtolower((string) $opt['title']) === mb_strtolower($scheduleTitle));
+            $scheduleTitle = $matched['title'] ?? null;
         }
 
-        $sections = $this->service->buildAttendanceRecap($year, $month, $divisionId, $scheduleId, $categoryId);
-        $selectedSchedule = $scheduleId
-            ? $scheduleOptions->firstWhere('id', $scheduleId)
+        $sections = $this->service->buildAttendanceRecap($year, $month, $divisionId, $scheduleTitle, $categoryId);
+        $selectedSchedule = $scheduleTitle
+            ? $scheduleOptions->firstWhere('title', $scheduleTitle)
             : null;
 
         return [
@@ -105,7 +106,7 @@ class AttendanceRecapController extends Controller
                 'year' => $year,
                 'month' => $month,
                 'division_id' => $divisionId,
-                'schedule_id' => $scheduleId,
+                'schedule_title' => $scheduleTitle,
                 'category_id' => $categoryId,
             ],
             'reportMeta' => [
