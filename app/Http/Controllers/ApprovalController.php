@@ -30,7 +30,8 @@ class ApprovalController extends Controller
         // Superadmin: user dengan id_role = '5af56935b011a' bisa melihat semua approval
         $isSuperadmin = $user && $user->id_role === '5af56935b011a';
         // Period filter hanya untuk superadmin (company-wide).
-        // HRD sebagai atasan personal harus tetap melihat semua cuti yang ditugaskan ke mereka.
+        // Cuti yang giliran user ini (termasuk superadmin sebagai atasan personal)
+        // tetap ditampilkan meski tanggalnya di luar jendela periode.
         $restrictToHrdQueuePeriod = $isSuperadmin;
         $hrdQueuePeriod = $restrictToHrdQueuePeriod
             ? AttendancePayrollPeriod::forHrdApprovalQueue()
@@ -54,12 +55,17 @@ class ApprovalController extends Controller
             });
 
         if ($hrdQueuePeriod) {
-            HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
-                $approvalFlowsQuery,
-                $hrdQueuePeriod['start'],
-                $hrdQueuePeriod['end'],
-                'apr'
-            );
+            $approvalFlowsQuery->where(function ($q) use ($hrdQueuePeriod, $userId) {
+                $q->where('arf.approver_id', $userId)
+                    ->orWhere(function ($qq) use ($hrdQueuePeriod) {
+                        HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
+                            $qq,
+                            $hrdQueuePeriod['start'],
+                            $hrdQueuePeriod['end'],
+                            'apr'
+                        );
+                    });
+            });
         }
         
         // Superadmin can see all, regular users only their own
@@ -124,11 +130,16 @@ class ApprovalController extends Controller
             ->whereNull('absent_request_approval_flows.id'); // Only old flow (no approval flows)
 
         if ($hrdQueuePeriod) {
-            HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
-                $oldApprovalsQuery,
-                $hrdQueuePeriod['start'],
-                $hrdQueuePeriod['end']
-            );
+            $oldApprovalsQuery->where(function ($q) use ($hrdQueuePeriod, $userId) {
+                $q->where('approval_requests.approver_id', $userId)
+                    ->orWhere(function ($qq) use ($hrdQueuePeriod) {
+                        HrdApprovalAccess::applyLeaveDateOverlapsPeriod(
+                            $qq,
+                            $hrdQueuePeriod['start'],
+                            $hrdQueuePeriod['end']
+                        );
+                    });
+            });
         }
         
         // Superadmin can see all, regular users only their own

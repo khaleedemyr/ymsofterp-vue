@@ -50,6 +50,28 @@ class AttendancePayrollPeriod
     }
 
     /**
+     * Siklus payroll yang sedang berjalan berdasarkan tanggal (26 s.d. 25).
+     * Mulai tgl 26, siklus berikutnya sudah aktif (bukan menunggu bulan kalender berganti).
+     *
+     * @return array{bulan: int, tahun: int, start: string, end: string, label: string}
+     */
+    public static function running(?\DateTimeInterface $at = null): array
+    {
+        $at = $at ? Carbon::parse($at) : Carbon::now();
+        $bulan = (int) $at->format('n');
+        $tahun = (int) $at->format('Y');
+        if ((int) $at->format('j') >= 26) {
+            $bulan++;
+            if ($bulan > 12) {
+                $bulan = 1;
+                $tahun++;
+            }
+        }
+
+        return self::forMonth($bulan, $tahun);
+    }
+
+    /**
      * Periode sebelumnya (1 siklus payroll sebelum periode berjalan).
      *
      * @return array{bulan: int, tahun: int, start: string, end: string, label: string}
@@ -67,8 +89,26 @@ class AttendancePayrollPeriod
     }
 
     /**
-     * Jendela antrian HRD: periode berjalan + (sementara) 1 periode sebelumnya.
-     * Contoh Agustus 2026: 26 Jun–25 Jul dan 26 Jul–25 Agu.
+     * 1 siklus sebelum {@see running()}.
+     *
+     * @return array{bulan: int, tahun: int, start: string, end: string, label: string}
+     */
+    public static function previousRunning(?\DateTimeInterface $at = null): array
+    {
+        $running = self::running($at);
+        $bulan = $running['bulan'] - 1;
+        $tahun = $running['tahun'];
+        if ($bulan < 1) {
+            $bulan = 12;
+            $tahun--;
+        }
+
+        return self::forMonth($bulan, $tahun);
+    }
+
+    /**
+     * Jendela antrian HRD: siklus payroll berjalan + (sementara) 1 siklus sebelumnya.
+     * Contoh 27 Agustus 2026: 26 Jul–25 Agu dan 26 Agu–25 Sep.
      *
      * @return array{
      *     start: string,
@@ -79,11 +119,11 @@ class AttendancePayrollPeriod
      *     previous: ?array{bulan: int, tahun: int, start: string, end: string, label: string}
      * }
      */
-    public static function forHrdApprovalQueue(): array
+    public static function forHrdApprovalQueue(?\DateTimeInterface $at = null): array
     {
-        $current = self::current();
+        $current = self::running($at);
 
-        // Sementara bulan ini: tampilkan juga backlog periode sebelumnya (26 Jun–25 Jul).
+        // Sementara: tampilkan juga backlog 1 siklus sebelumnya.
         $includePrevious = true;
         if (! $includePrevious) {
             return [
@@ -96,7 +136,7 @@ class AttendancePayrollPeriod
             ];
         }
 
-        $previous = self::previous();
+        $previous = self::previousRunning($at);
 
         return [
             'start' => $previous['start'],
