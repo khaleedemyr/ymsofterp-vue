@@ -188,8 +188,8 @@
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Large
                   </th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">MAC</th>
-                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Subtotal<br/>(Qty × MAC)</th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-32">Last Cost</th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">Subtotal<br/>(Qty × Last Cost)</th>
                   <th class="px-3 py-3 text-center text-xs font-bold text-gray-700 uppercase w-48">Selisih</th>
                   <th class="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Alasan</th>
                 </tr>

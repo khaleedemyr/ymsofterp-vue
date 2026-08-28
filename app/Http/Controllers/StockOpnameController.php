@@ -20,8 +20,6 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Support\OutletFoodInventorySaldo;
-use App\Support\OutletInventoryCostGuard;
-use App\Support\OutletInventoryCostResolver;
 
 class StockOpnameController extends Controller
 {
@@ -232,26 +230,7 @@ class StockOpnameController extends Controller
             ->orderBy('c.name')
             ->orderBy('i.name');
 
-        $result = $query->get();
-
-        $anchors = $this->outletOpnameLatestPurchaseCostMap(
-            (int) $outletId,
-            (int) $warehouseOutletId,
-            $result->pluck('inventory_item_id')->unique()->filter()->values()->all()
-        );
-
-        foreach ($result as $row) {
-            $iid = (int) $row->inventory_item_id;
-            $row->mac = $this->resolveStockOpnameMac(
-                $anchors[$iid] ?? null,
-                (int) $outletId,
-                (int) $warehouseOutletId,
-                $iid,
-                (float) ($row->mac ?? 0)
-            );
-        }
-
-        return $result;
+        return $query->get();
     }
 
     /**
@@ -335,12 +314,6 @@ class StockOpnameController extends Controller
                 }
             }
 
-            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
-                (int) $validated['outlet_id'],
-                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                $inventoryItemIds
-            );
-            
             // Prepare items for batch insert
             $itemsToInsert = [];
             
@@ -357,13 +330,7 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $this->resolveStockOpnameMac(
-                    $purchaseAnchors[$inventoryItemId] ?? null,
-                    (int) $validated['outlet_id'],
-                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                    $inventoryItemId,
-                    (float) ($stock->last_cost_small ?? 0)
-                );
+                $mac = (float) ($stock->last_cost_small ?? 0);
 
                 // Get physical qty from request
                 // Check if value is explicitly provided (not null and not empty string)
@@ -770,12 +737,6 @@ class StockOpnameController extends Controller
                 }
             }
 
-            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
-                (int) $validated['outlet_id'],
-                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                $inventoryItemIds
-            );
-            
             // Prepare items for batch operations
             $itemsToInsert = [];
             $itemsToUpdate = [];
@@ -793,13 +754,7 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $this->resolveStockOpnameMac(
-                    $purchaseAnchors[$inventoryItemId] ?? null,
-                    (int) $validated['outlet_id'],
-                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                    $inventoryItemId,
-                    (float) ($stock->last_cost_small ?? 0)
-                );
+                $mac = (float) ($stock->last_cost_small ?? 0);
 
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
                     ? (float)$itemData['qty_physical_small'] 
@@ -1208,11 +1163,6 @@ class StockOpnameController extends Controller
 
         $oldData = $stockOpname->toArray();
 
-        $macGuardError = $this->validateStockOpnameMacBeforeProcess($stockOpname);
-        if ($macGuardError !== null) {
-            return back()->withErrors(['error' => $macGuardError]);
-        }
-
         try {
             DB::beginTransaction();
 
@@ -1503,12 +1453,6 @@ class StockOpnameController extends Controller
                 }
             }
 
-            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
-                (int) $validated['outlet_id'],
-                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                $inventoryItemIds
-            );
-
             $itemsToInsert = [];
             foreach ($items as $itemData) {
                 $inventoryItemId = $itemData['inventory_item_id'];
@@ -1518,13 +1462,7 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $this->resolveStockOpnameMac(
-                    $purchaseAnchors[$inventoryItemId] ?? null,
-                    (int) $validated['outlet_id'],
-                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                    $inventoryItemId,
-                    (float) ($stock->last_cost_small ?? 0)
-                );
+                $mac = (float) ($stock->last_cost_small ?? 0);
 
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
                 $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
@@ -1635,12 +1573,6 @@ class StockOpnameController extends Controller
                 }
             }
 
-            $purchaseAnchors = $this->outletOpnameLatestPurchaseCostMap(
-                (int) $validated['outlet_id'],
-                isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                $inventoryItemIds
-            );
-
             $itemsToInsert = [];
             $inventoryItemIdsToKeep = [];
             foreach ($items as $itemData) {
@@ -1652,13 +1584,7 @@ class StockOpnameController extends Controller
                 $qtySystemSmall = $stock->qty_small ?? 0;
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
-                $mac = $this->resolveStockOpnameMac(
-                    $purchaseAnchors[$inventoryItemId] ?? null,
-                    (int) $validated['outlet_id'],
-                    isset($validated['warehouse_outlet_id']) ? (int) $validated['warehouse_outlet_id'] : null,
-                    $inventoryItemId,
-                    (float) ($stock->last_cost_small ?? 0)
-                );
+                $mac = (float) ($stock->last_cost_small ?? 0);
                 $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
                 $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
                 $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
@@ -1813,11 +1739,6 @@ class StockOpnameController extends Controller
             return response()->json(['success' => false, 'message' => 'Process hanya untuk tanggal opname akhir bulan atau tanggal 1'], 422);
         }
 
-        $macGuardError = $this->validateStockOpnameMacBeforeProcess($stockOpname);
-        if ($macGuardError !== null) {
-            return response()->json(['success' => false, 'message' => $macGuardError], 422);
-        }
-
         try {
             DB::beginTransaction();
             foreach ($stockOpname->items as $item) {
@@ -1850,89 +1771,6 @@ class StockOpnameController extends Controller
         }
 
         return 'SO-' . $date . '-' . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * MAC untuk opname: nilai batch dari outletOpnameLatestPurchaseCostMap jika > 0,
-     * selain itu OutletInventoryCostResolver (new_cost histori lalu last_cost_small stok),
-     * atau hanya last_cost_small jika warehouse tidak diisi.
-     */
-    private function resolveStockOpnameMac(?float $anchorFromBatch, int $outletId, ?int $warehouseOutletId, int $inventoryItemId, float $stockLastCostSmall): float
-    {
-        $trustedAnchor = ($warehouseOutletId !== null && $warehouseOutletId > 0)
-            ? OutletInventoryCostResolver::latestTrustedNewCostPerSmallUnit($outletId, $warehouseOutletId, $inventoryItemId)
-            : null;
-
-        if ($anchorFromBatch !== null && $anchorFromBatch > 0) {
-            return OutletInventoryCostResolver::sanitizeResolvedMac($anchorFromBatch, null, $trustedAnchor);
-        }
-
-        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
-            $mac = $trustedAnchor
-                ?? OutletInventoryCostResolver::latestNewCostPerSmallUnitOrStockFallback($outletId, $warehouseOutletId, $inventoryItemId);
-
-            return OutletInventoryCostResolver::sanitizeResolvedMac($mac, null, $trustedAnchor);
-        }
-
-        return OutletInventoryCostResolver::sanitizeResolvedMac($stockLastCostSmall, null, $trustedAnchor);
-    }
-
-    /**
-     * Harga referensi per unit kecil dari baris histori terbaru per item (kolom new_cost), tanpa filter jenis transaksi.
-     * Hanya dibatasi outlet/warehouse/item dan new_cost > 0.
-     *
-     * @param  array<int>  $inventoryItemIds
-     * @return array<int, float> inventory_item_id => new_cost
-     */
-    private function outletOpnameLatestPurchaseCostMap(int $outletId, ?int $warehouseOutletId, array $inventoryItemIds): array
-    {
-        $ids = array_values(array_unique(array_filter(array_map('intval', $inventoryItemIds))));
-        if ($ids === []) {
-            return [];
-        }
-
-        $q = DB::table('outlet_food_inventory_cost_histories')
-            ->where('id_outlet', $outletId)
-            ->whereIn('inventory_item_id', $ids)
-            ->whereNotNull('new_cost')
-            ->where('new_cost', '>', 0);
-
-        if ($warehouseOutletId !== null && $warehouseOutletId > 0) {
-            $q->where('warehouse_outlet_id', $warehouseOutletId);
-        }
-
-        $trustedRefs = [
-            'serial_receive',
-            'good_receive_outlet',
-            'outlet_food_good_receive',
-            'initial_balance',
-            'mac_correction',
-        ];
-
-        $trustedQ = clone $q;
-        $trustedRows = $trustedQ
-            ->whereIn('reference_type', $trustedRefs)
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->get(['inventory_item_id', 'new_cost']);
-
-        $map = [];
-        foreach ($trustedRows as $row) {
-            $iid = (int) $row->inventory_item_id;
-            if (! isset($map[$iid])) {
-                $map[$iid] = (float) $row->new_cost;
-            }
-        }
-
-        $rows = $q->orderByDesc('date')->orderByDesc('id')->get(['inventory_item_id', 'new_cost']);
-        foreach ($rows as $row) {
-            $iid = (int) $row->inventory_item_id;
-            if (! isset($map[$iid])) {
-                $map[$iid] = (float) $row->new_cost;
-            }
-        }
-
-        return $map;
     }
 
     /**
@@ -2077,7 +1915,7 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Import Stock Opname dari Excel. MAC dari new_cost histori terbaru (batch + resolver), fallback last_cost_small stok.
+     * Import Stock Opname dari Excel. Harga dari last_cost_small pada kartu stok.
      */
     public function import(Request $request)
     {
@@ -2190,7 +2028,7 @@ class StockOpnameController extends Controller
     }
 
     /**
-     * Parse Excel Stock Opname (Info + Items). MAC: new_cost histori terbaru (batch + resolver), fallback last_cost_small stok.
+     * Parse Excel Stock Opname (Info + Items). Harga dari last_cost_small pada kartu stok.
      * Returns: info_errors, outlet_id, warehouse_outlet_id, outlet_name, warehouse_outlet_name, opname_date, notes, item_rows[]
      */
     private function parseStockOpnameFile($file): array
@@ -2378,29 +2216,6 @@ class StockOpnameController extends Controller
             ];
         }
 
-        $idsForAnchors = [];
-        foreach ($out['item_rows'] as $row) {
-            if (! empty($row['error']) || empty($row['inventory_item_id'])) {
-                continue;
-            }
-            $idsForAnchors[] = (int) $row['inventory_item_id'];
-        }
-        $anchors = $this->outletOpnameLatestPurchaseCostMap($outletId, $warehouseOutletId, $idsForAnchors);
-        foreach ($out['item_rows'] as &$row) {
-            if (! empty($row['error']) || empty($row['inventory_item_id'])) {
-                continue;
-            }
-            $iid = (int) $row['inventory_item_id'];
-            $row['mac'] = $this->resolveStockOpnameMac(
-                $anchors[$iid] ?? null,
-                $outletId,
-                $warehouseOutletId,
-                $iid,
-                (float) ($row['mac'] ?? 0)
-            );
-        }
-        unset($row);
-
         return $out;
     }
 
@@ -2526,37 +2341,7 @@ class StockOpnameController extends Controller
             return;
         }
 
-        $anchorMap = $this->outletOpnameLatestPurchaseCostMap(
-            (int) $stockOpname->outlet_id,
-            $warehouseOutletId,
-            [$inventoryItemId]
-        );
-        $mac = $this->resolveStockOpnameMac(
-            $anchorMap[$inventoryItemId] ?? null,
-            $outletId,
-            $warehouseOutletId,
-            $inventoryItemId,
-            OutletInventoryCostResolver::resolveMacFromStockRow($stock)
-        );
-
-        $anchor = OutletInventoryCostGuard::resolveAnchorMacPerSmall(
-            $outletId,
-            $warehouseOutletId,
-            $inventoryItemId,
-            $stock
-        );
-        if ($anchor !== null && OutletInventoryCostResolver::macLooksAnomalousVsAnchor($mac, $anchor)) {
-            $itemName = DB::table('outlet_food_inventory_items as oi')
-                ->join('items as i', 'oi.item_id', '=', 'i.id')
-                ->where('oi.id', $inventoryItemId)
-                ->value('i.name') ?? ('item #' . $inventoryItemId);
-            throw new \Exception(
-                'MAC tidak wajar untuk item "' . $itemName . '" saat proses opname. '
-                . 'MAC terpakai: Rp ' . OutletInventoryCostGuard::formatRupiah($mac)
-                . ', referensi: Rp ' . OutletInventoryCostGuard::formatRupiah($anchor)
-                . '. Hubungi admin untuk koreksi MAC sebelum proses opname.'
-            );
-        }
+        $mac = (float) ($stock->last_cost_small ?? 0);
 
         $liveQtySmall = (float) $stock->qty_small;
         $liveQtyMedium = (float) $stock->qty_medium;
@@ -2659,57 +2444,6 @@ class StockOpnameController extends Controller
             'processed_at' => now(),
             'processed_by' => $userId,
         ]);
-    }
-
-    /**
-     * Cegah proses opname jika MAC yang akan dipakai masih menyimpang dari anchor pembelian.
-     */
-    private function validateStockOpnameMacBeforeProcess(StockOpname $stockOpname): ?string
-    {
-        $outletId = (int) $stockOpname->outlet_id;
-        $warehouseOutletId = (int) $stockOpname->warehouse_outlet_id;
-
-        $issues = [];
-        foreach ($stockOpname->items as $item) {
-            $inventoryItemId = (int) $item->inventory_item_id;
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItemId)
-                ->where('id_outlet', $outletId)
-                ->where('warehouse_outlet_id', $warehouseOutletId)
-                ->first();
-
-            if (! $stock) {
-                continue;
-            }
-
-            $rawMac = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
-            $anchor = OutletInventoryCostGuard::resolveAnchorMacPerSmall(
-                $outletId,
-                $warehouseOutletId,
-                $inventoryItemId,
-                $stock
-            );
-
-            if ($anchor === null || $anchor <= 0 || ! OutletInventoryCostResolver::macLooksAnomalousVsAnchor($rawMac, $anchor)) {
-                continue;
-            }
-
-            $itemName = DB::table('outlet_food_inventory_items as oi')
-                ->join('items as i', 'oi.item_id', '=', 'i.id')
-                ->where('oi.id', $inventoryItemId)
-                ->value('i.name') ?? ('item #' . $inventoryItemId);
-
-            $issues[] = '• ' . $itemName . ': MAC stok Rp ' . OutletInventoryCostGuard::formatRupiah($rawMac)
-                . ' vs referensi Rp ' . OutletInventoryCostGuard::formatRupiah($anchor);
-        }
-
-        if ($issues === []) {
-            return null;
-        }
-
-        return "Proses stock opname ditahan karena ada MAC yang tidak wajar:\n\n"
-            . implode("\n", $issues)
-            . "\n\nLakukan koreksi MAC atau perbaiki data pembelian terlebih dahulu.";
     }
 }
 

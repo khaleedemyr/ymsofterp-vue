@@ -41,7 +41,7 @@ class StockOpnameResultExport implements FromCollection, WithHeadings, WithMappi
             'Selisih (S)',
             'Selisih (M)',
             'Selisih (L)',
-            'MAC',
+            'Last Cost',
             'Value Adjustment',
             'Alasan',
         ];

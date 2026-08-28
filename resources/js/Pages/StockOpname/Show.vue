@@ -173,7 +173,7 @@
                 <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty System</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Qty Physical</th>
                 <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Selisih</th>
-                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">MAC</th>
+                <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Last Cost</th>
                 <th v-if="showDifferences" class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase">Value Adjustment</th>
                 <th v-if="showDifferences" class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase">Alasan</th>
               </tr>
