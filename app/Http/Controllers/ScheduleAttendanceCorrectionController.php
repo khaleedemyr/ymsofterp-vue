@@ -12,6 +12,7 @@ use App\Models\Shift;
 use App\Services\NotificationService;
 use App\Support\HrdApprovalAccess;
 use App\Support\AttendancePayrollPeriod;
+use App\Support\PendingApprovalCache;
 use Maatwebsite\Excel\Facades\Excel;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -818,6 +819,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                     }
 
                     DB::commit();
+                    $this->forgetCorrectionApprovalCaches($approval, (int) $user->id);
                     return response()->json([
                         'success' => true,
                         'message' => 'Disetujui dan diteruskan ke atasan berikutnya'
@@ -839,6 +841,7 @@ class ScheduleAttendanceCorrectionController extends Controller
                 ]);
 
                 DB::commit();
+                $this->forgetCorrectionApprovalCaches($approval, (int) $user->id);
                 return response()->json([
                     'success' => true,
                     'message' => 'Disetujui atasan, menunggu persetujuan HRD'
@@ -847,6 +850,21 @@ class ScheduleAttendanceCorrectionController extends Controller
 
             if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
                 DB::rollBack();
+
+                if ($approval->status === 'supervisor_approved') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Pengajuan ini sudah disetujui atasan dan menunggu persetujuan HRD. Hanya tim HRD yang dapat menyetujui tahap ini.',
+                    ], 403);
+                }
+
+                if ($this->userAlreadyApprovedSupervisorFlow($id, (int) $user->id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Anda sudah menyetujui pengajuan ini sebagai atasan. Menunggu persetujuan HRD.',
+                    ], 403);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized access'
@@ -1136,7 +1154,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             ]);
             
             DB::commit();
-            
+            $this->forgetCorrectionApprovalCaches($approval, (int) $user->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Koreksi berhasil disetujui dan diterapkan!'
@@ -1220,6 +1239,21 @@ class ScheduleAttendanceCorrectionController extends Controller
             } else {
                 if (!HrdApprovalAccess::canAccessHrdApprovals($user)) {
                     DB::rollBack();
+
+                    if ($approval->status === 'supervisor_approved') {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Pengajuan ini sudah disetujui atasan dan menunggu persetujuan HRD. Hanya tim HRD yang dapat menolak tahap ini.',
+                        ], 403);
+                    }
+
+                    if ($this->userAlreadyApprovedSupervisorFlow($id, (int) $user->id)) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Anda sudah menyetujui pengajuan ini sebagai atasan. Menunggu persetujuan HRD.',
+                        ], 403);
+                    }
+
                     return response()->json([
                         'success' => false,
                         'message' => 'Unauthorized access'
@@ -1246,7 +1280,8 @@ class ScheduleAttendanceCorrectionController extends Controller
             ]);
             
             DB::commit();
-            
+            $this->forgetCorrectionApprovalCaches($approval, (int) $user->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Koreksi berhasil ditolak!'
@@ -2105,6 +2140,47 @@ class ScheduleAttendanceCorrectionController extends Controller
         } catch (\Exception $e) {
             return [];
         }
+    }
+
+    private function userAlreadyApprovedSupervisorFlow($approvalId, int $userId): bool
+    {
+        if (!Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            return false;
+        }
+
+        try {
+            return DB::table('schedule_attendance_correction_approval_flows')
+                ->where('approval_id', $approvalId)
+                ->where('approver_id', $userId)
+                ->where('status', 'APPROVED')
+                ->exists();
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    private function forgetCorrectionApprovalCaches(object $approval, int $actorUserId): void
+    {
+        $userIds = [
+            $actorUserId,
+            $approval->requested_by ?? null,
+            $approval->user_id ?? null,
+            ...HrdApprovalAccess::hrdApproverUserIds(),
+        ];
+
+        if (Schema::hasTable('schedule_attendance_correction_approval_flows')) {
+            try {
+                $approverIds = DB::table('schedule_attendance_correction_approval_flows')
+                    ->where('approval_id', $approval->id)
+                    ->pluck('approver_id')
+                    ->all();
+                $userIds = array_merge($userIds, $approverIds);
+            } catch (\Exception $e) {
+                // ignore
+            }
+        }
+
+        PendingApprovalCache::forgetForUsers($userIds);
     }
 
     private function formatInoutModeLabel(int $mode): string

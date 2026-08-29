@@ -13,6 +13,7 @@ use App\Services\HolidayAttendanceService;
 use App\Services\NotificationService;
 use App\Support\HrdApprovalAccess;
 use App\Support\AttendancePayrollPeriod;
+use App\Support\PendingApprovalCache;
 use Illuminate\Support\Facades\Cache;
 
 class ApprovalController extends Controller
@@ -1321,9 +1322,7 @@ class ApprovalController extends Controller
             HrdApprovalAccess::hrdApproverUserIds()
         )));
 
-        foreach ($ids as $id) {
-            Cache::forget('all_pending_approvals_v8_' . $id);
-        }
+        PendingApprovalCache::forgetForUsers($ids);
     }
 
     private function markLeaveHrdNotificationsRead(object $approvalRequest): void

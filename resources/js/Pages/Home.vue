@@ -4024,10 +4024,6 @@ async function loadPendingHrdApprovals() {
 
 // Correction approval functions
 async function loadPendingCorrectionApprovals() {
-    // Superadmin (id_role = '5af56935b011a') can see all approvals
-    const isSuperadmin = user.id_role === '5af56935b011a';
-    if (!canAccessHrdApprovals()) return; // HRD approver (jabatan 309/153) atau superadmin
-    
     loadingCorrectionApprovals.value = true;
     try {
         const response = await axios.get('/api/schedule-attendance-correction/pending-approvals');
@@ -5664,14 +5660,15 @@ async function approveCorrection(approvalId) {
                     confirmButtonText: 'OK',
                     confirmButtonColor: '#10B981'
                 });
-                await loadPendingCorrectionApprovals();
+                await reloadUnifiedApprovalSources();
             }
         } catch (error) {
             console.error('Error approving correction:', error);
+            const message = error.response?.data?.message || 'Gagal menyetujui koreksi';
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menyetujui koreksi',
+                text: message,
                 confirmButtonText: 'OK',
                 confirmButtonColor: '#EF4444'
             });
@@ -5710,14 +5707,15 @@ async function rejectCorrection(approvalId) {
                     confirmButtonText: 'OK',
                     confirmButtonColor: '#10B981'
                 });
-                await loadPendingCorrectionApprovals();
+                await reloadUnifiedApprovalSources();
             }
         } catch (error) {
             console.error('Error rejecting correction:', error);
+            const message = error.response?.data?.message || 'Gagal menolak koreksi';
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
-                text: 'Gagal menolak koreksi',
+                text: message,
                 confirmButtonText: 'OK',
                 confirmButtonColor: '#EF4444'
             });
@@ -5811,6 +5809,7 @@ function resolveBulkUnifiedItems(keysSet) {
 
 async function reloadUnifiedApprovalSources() {
     const reloadTasks = [
+        loadAllPendingApprovalsOptimized(),
         loadPendingApprovals(),
         loadPendingHrdApprovals(),
         loadPendingCorrectionApprovals(),
