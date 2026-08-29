@@ -50,10 +50,19 @@
             <div
               v-for="(payment, idx) in order.payments"
               :key="idx"
-              class="flex justify-between items-center text-sm bg-white/60 rounded-lg px-3 py-2"
+              class="bg-white/60 rounded-lg px-3 py-2 space-y-1"
             >
-              <span class="font-medium text-slate-700">{{ payment.payment_code || payment.payment_type || 'Payment' }}</span>
-              <span class="font-semibold text-violet-800">{{ formatCurrency(paymentAmount(payment)) }}</span>
+              <div class="flex justify-between items-center text-sm">
+                <span class="font-medium text-slate-700">{{ payment.payment_code || payment.payment_type || 'Payment' }}</span>
+                <span class="font-semibold text-violet-800">{{ formatCurrency(paymentAmount(payment)) }}</span>
+              </div>
+              <div
+                v-if="paymentChange(payment) > 0"
+                class="flex justify-between items-center text-xs text-slate-500"
+              >
+                <span>Kembalian</span>
+                <span>{{ formatCurrency(paymentChange(payment)) }}</span>
+              </div>
             </div>
           </div>
         </section>
@@ -243,10 +252,21 @@ function formatCurrency(val) {
   return String(val);
 }
 
+function paymentChange(payment) {
+  return Number(payment.change) || 0;
+}
+
 function paymentAmount(payment) {
   const amount = Number(payment.amount) || 0;
-  const change = Number(payment.change) || 0;
-  return amount - change;
+  const change = paymentChange(payment);
+  const grandTotal = Number(props.order?.grand_total) || 0;
+  const net = amount - change;
+  // Data lama: amount = uang diterima, change = kembalian → tagihan = amount - change.
+  // Data POS sekarang: amount sudah = tagihan, change hanya info kembalian.
+  if (change > 0 && grandTotal > 0 && Math.abs(amount - grandTotal) > 1 && Math.abs(net - grandTotal) <= 1) {
+    return net;
+  }
+  return amount;
 }
 
 function normalizedNotes(item) {

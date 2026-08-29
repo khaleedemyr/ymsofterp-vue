@@ -1,0 +1,2 @@
+category,order_id,created_at,paid_number,status,mode,grand_total,sum_amount,sum_net,diff_gt_pay,total,discount,manual_discount,cashback,dpp,pb1,service,commfee,rounding,sum_parts,diff_gt_parts,item_sum,payments
+duplicate_lines,JTFCL-mtcskk3q29pd,"2026-08-28 17:11:20",JTFCL26081187,paid,"Dine In",78999,157998,115996,-78999,71818,0,0,0,71818,7181,0,0.00,0.00,78999,0,71818,"#mtcsl3d5p7j59 CASH/cash:78999.00 | #mtcsl3e561ywg CASH/cash:78999.00"
