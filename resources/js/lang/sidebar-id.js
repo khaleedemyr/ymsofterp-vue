@@ -200,6 +200,7 @@ export default {
     "monthly_fb_revenue_performance": "Kinerja Pendapatan FB Bulanan",
     "receiving_sheet": "Lembar Penerimaan",
     "item_engineering": "Item Engineering",
+    "product_sales_pivot": "Product Sales by Outlet",
     "jurnal": "Jurnal",
     "buku_besar": "Buku Besar",
     "neraca_saldo": "Neraca Saldo",

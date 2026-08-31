@@ -338,6 +338,7 @@ const menuGroups = [
          
             { name: () => t('sidebar.menus.receiving_sheet'), icon: 'fa-solid fa-receipt', route: '/report-receiving-sheet', code: 'receiving_sheet' },
             { name: () => t('sidebar.menus.item_engineering'), icon: 'fa-solid fa-cogs', route: '/item-engineering', code: 'item_engineering' },
+            { name: () => t('sidebar.menus.product_sales_pivot'), icon: 'fa-solid fa-table-columns', route: '/report/product-sales-pivot', code: 'product_sales_pivot' },
         ],
     },
     {

@@ -2592,6 +2592,19 @@ Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
 })->middleware(['auth']);
 
+Route::get('/report/product-sales-pivot', [\App\Http\Controllers\Report\ProductSalesPivotReportController::class, 'index'])
+    ->middleware(['auth'])
+    ->name('report.product-sales-pivot.index');
+Route::get('/api/report/product-sales-pivot', [\App\Http\Controllers\Report\ProductSalesPivotReportController::class, 'report'])
+    ->middleware(['auth'])
+    ->name('report.product-sales-pivot.data');
+Route::get('/api/report/product-sales-pivot/products', [\App\Http\Controllers\Report\ProductSalesPivotReportController::class, 'productOptions'])
+    ->middleware(['auth'])
+    ->name('report.product-sales-pivot.products');
+Route::get('/report/product-sales-pivot/export', [\App\Http\Controllers\Report\ProductSalesPivotReportController::class, 'export'])
+    ->middleware(['auth'])
+    ->name('report.product-sales-pivot.export');
+
     // Attendance Report per Outlet (summary)
     Route::get('/attendance-report/outlet-summary', [AttendanceReportController::class, 'outletSummary'])->name('attendance-report.outlet-summary');
     Route::get('/attendance-report/outlet-summary/export', [AttendanceReportController::class, 'exportOutletSummary'])->name('attendance-report.outlet-summary.export');
