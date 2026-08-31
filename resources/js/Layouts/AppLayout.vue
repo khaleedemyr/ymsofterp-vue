@@ -338,7 +338,6 @@ const menuGroups = [
          
             { name: () => t('sidebar.menus.receiving_sheet'), icon: 'fa-solid fa-receipt', route: '/report-receiving-sheet', code: 'receiving_sheet' },
             { name: () => t('sidebar.menus.item_engineering'), icon: 'fa-solid fa-cogs', route: '/item-engineering', code: 'item_engineering' },
-            { name: () => t('sidebar.menus.product_sales_pivot'), icon: 'fa-solid fa-table-columns', route: '/report/product-sales-pivot', code: 'product_sales_pivot' },
         ],
     },
     {
@@ -633,6 +632,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.web_profile'), icon: 'fa-solid fa-globe', route: '/web-profile', code: 'web_profile' },
             { name: () => t('sidebar.menus.rekap_transaksi_bank'), icon: 'fa-solid fa-university', route: '/report-bank-transaction', code: 'report_bank_transaction' },
             { name: () => t('sidebar.menus.revenue_targets'), icon: 'fa-solid fa-bullseye', route: '/outlet-revenue-targets', code: 'outlet_revenue_targets' },
+            { name: () => t('sidebar.menus.product_sales_pivot'), icon: 'fa-solid fa-table-columns', route: '/report/product-sales-pivot', code: 'product_sales_pivot' },
         ],
     },
     {

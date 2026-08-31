@@ -1,7 +1,8 @@
 -- =====================================================
 -- Product Sales by Outlet (Custom Pivot Report)
--- Parent Main: parent_id = 1
+-- Parent Sales & Marketing: parent_id = 8
 -- Route: /report/product-sales-pivot
+-- Jika menu sudah ada dengan parent_id lama: UPDATE erp_menu SET parent_id = 8 WHERE code = 'product_sales_pivot';
 -- =====================================================
 
 START TRANSACTION;
@@ -17,7 +18,7 @@ INSERT INTO `erp_menu` (
 ) VALUES (
     'Product Sales by Outlet',
     'product_sales_pivot',
-    1,
+    8,
     '/report/product-sales-pivot',
     'fa-solid fa-table-columns',
     NOW(),
