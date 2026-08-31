@@ -126,7 +126,9 @@
                   {{ formatNumber(row.total_begin_mac) }}
                 </button>
               </td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.official_cost) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
+                <button type="button" class="font-medium text-blue-700 hover:text-blue-900 hover:underline" title="Lihat detail official cost" @click="openOfficialCostDetail(row)">{{ formatNumber(row.official_cost) }}</button>
+              </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cost_rnd) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.outlet_transfer || 0) < 0 ? 'text-red-600' : 'text-gray-900'">{{ formatNumber(row.outlet_transfer) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.total_barang_tersedia) }}</td>
@@ -236,8 +238,8 @@
         <section class="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="begin-inventory-detail-title">
           <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
             <div>
-              <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">Detail Begin Inventory</h2>
-              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">{{ beginDetailTitle }}</h2>
+              <p class="mt-1 text-sm text-gray-500">{{ beginDetailTitle }} · {{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
             </div>
             <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeBeginInventoryDetail">
               <i class="fa-solid fa-xmark text-xl"></i>
@@ -247,13 +249,14 @@
           <div class="grid grid-cols-1 gap-3 border-b border-gray-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_11rem_8rem_8rem]">
             <input v-model="beginDetailFilters.search" type="search" placeholder="Cari item, SKU, kategori, gudang..." class="w-full border border-gray-300 rounded-md px-3 py-2" @input="queueBeginInventorySearch" />
             <select v-model="beginDetailFilters.sort_by" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
-              <option value="begin_value">Urutkan: Nilai</option>
+              <option :value="beginDetailMode === 'official_cost' ? 'amount' : 'begin_value'">Urutkan: Nilai</option>
               <option value="item_name">Urutkan: Nama item</option>
               <option value="item_sku">Urutkan: SKU</option>
               <option value="category_name">Urutkan: Kategori</option>
-              <option value="warehouse_name">Urutkan: Gudang</option>
-              <option value="begin_qty_small">Urutkan: Qty</option>
-              <option value="mac">Urutkan: MAC</option>
+              <option :value="beginDetailMode === 'official_cost' ? 'transaction_date' : 'warehouse_name'">Urutkan: {{ beginDetailMode === 'official_cost' ? 'Tanggal' : 'Gudang' }}</option>
+              <option v-if="beginDetailMode === 'official_cost'" value="source">Urutkan: Sumber</option>
+              <option :value="beginDetailMode === 'official_cost' ? 'qty' : 'begin_qty_small'">Urutkan: Qty</option>
+              <option :value="beginDetailMode === 'official_cost' ? 'unit_cost' : 'mac'">Urutkan: {{ beginDetailMode === 'official_cost' ? 'Harga' : 'MAC' }}</option>
             </select>
             <select v-model="beginDetailFilters.sort_direction" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
               <option value="desc">Terbesar dahulu</option>
@@ -280,10 +283,10 @@
                 <div v-show="isBeginDetailCategoryOpen(group.name)" class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead class="bg-white text-xs uppercase text-gray-500">
-                      <tr><th class="px-4 py-2 text-left">Item</th><th class="px-4 py-2 text-left">SKU</th><th class="px-4 py-2 text-left">Gudang</th><th class="px-4 py-2 text-right">Qty Small</th><th class="px-4 py-2 text-right">MAC</th><th class="px-4 py-2 text-right">Nilai Begin</th></tr>
+                      <tr><th class="px-4 py-2 text-left">Item</th><th class="px-4 py-2 text-left">SKU</th><th class="px-4 py-2 text-left">{{ beginDetailMode === 'official_cost' ? 'Referensi' : 'Gudang' }}</th><th class="px-4 py-2 text-right">Qty</th><th class="px-4 py-2 text-right">{{ beginDetailMode === 'official_cost' ? 'Harga' : 'MAC' }}</th><th class="px-4 py-2 text-right">Nilai</th></tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                      <tr v-for="item in group.items" :key="`${item.item_sku}-${item.warehouse_name}`"><td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td><td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td><td class="px-4 py-2 text-gray-600">{{ item.warehouse_name }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.begin_qty_small) }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.mac) }}</td><td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.begin_value) }}</td></tr>
+                      <tr v-for="item in group.items" :key="`${item.item_sku}-${item.reference_number || item.warehouse_name}`"><td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td><td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td><td class="px-4 py-2 text-gray-600">{{ item.reference_number || item.warehouse_name }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.qty ?? item.begin_qty_small) }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.unit_cost ?? item.mac) }}</td><td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.amount ?? item.begin_value) }}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -334,6 +337,7 @@ const beginDetailItems = ref([]);
 const beginDetailOpenCategories = ref({});
 const beginDetailPagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const beginDetailFilters = ref({ search: '', sort_by: 'begin_value', sort_direction: 'desc', per_page: 25 });
+const beginDetailMode = ref('begin_inventory');
 let beginDetailSearchTimer;
 
 watch(() => props.filters, (v) => {
@@ -364,10 +368,12 @@ const beginDetailGroups = computed(() => {
     if (!groups.has(name)) groups.set(name, { name, items: [], total: 0 });
     const group = groups.get(name);
     group.items.push(item);
-    group.total += Number(item.begin_value || 0);
+    group.total += Number(item.amount ?? item.begin_value ?? 0);
   }
   return Array.from(groups.values());
 });
+
+const beginDetailTitle = computed(() => beginDetailMode.value === 'official_cost' ? 'Detail Official Cost' : 'Detail Begin Inventory');
 
 function formatNumber(value) {
   if (value == null || value === '') return '0';
@@ -446,9 +452,24 @@ async function clearCacheAndReload() {
 }
 
 function openBeginInventoryDetail(row) {
+  beginDetailMode.value = 'begin_inventory';
   selectedOutlet.value = row;
   beginDetailFilters.value.search = '';
   beginDetailFilters.value.sort_by = 'begin_value';
+  beginDetailFilters.value.sort_direction = 'desc';
+  beginDetailFilters.value.per_page = 25;
+  beginDetailItems.value = [];
+  beginDetailOpenCategories.value = {};
+  beginDetailError.value = '';
+  showBeginDetail.value = true;
+  loadBeginInventoryDetail(1);
+}
+
+function openOfficialCostDetail(row) {
+  beginDetailMode.value = 'official_cost';
+  selectedOutlet.value = row;
+  beginDetailFilters.value.search = '';
+  beginDetailFilters.value.sort_by = 'amount';
   beginDetailFilters.value.sort_direction = 'desc';
   beginDetailFilters.value.per_page = 25;
   beginDetailItems.value = [];
@@ -473,7 +494,8 @@ async function loadBeginInventoryDetail(page) {
   beginDetailLoading.value = true;
   beginDetailError.value = '';
   try {
-    const response = await axios.get('/cost-report/begin-inventory-detail', {
+    const isOfficialCost = beginDetailMode.value === 'official_cost';
+    const response = await axios.get(isOfficialCost ? '/cost-report/official-cost-detail' : '/cost-report/begin-inventory-detail', {
       params: {
         bulan: filters.value.bulan,
         outlet_id: selectedOutlet.value.outlet_id,

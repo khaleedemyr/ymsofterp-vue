@@ -273,6 +273,95 @@ class CostReportController extends Controller
         ]);
     }
 
+    /**
+     * Detail lazy-loaded Official Cost: Good Receive dan Retail Food per item.
+     */
+    public function officialCostDetail(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:category_name,item_name,item_sku,transaction_date,source,qty,unit_cost,amount'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $month = Carbon::parse($validated['bulan'] . '-01');
+        $dateFrom = $month->copy()->startOfMonth()->toDateString();
+        $dateTo = $month->copy()->endOfMonth()->toDateString();
+        $outletId = (int) $validated['outlet_id'];
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'amount';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+
+        $excludedSubCategories = [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')];
+
+        $goodReceive = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as gri', 'gr.id', '=', 'gri.outlet_food_good_receive_id')
+            ->join('items as i', 'gri.item_id', '=', 'i.id')
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('gri.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->where('gr.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(gr.receive_date)'), [$dateFrom, $dateTo])
+            ->whereNull('gr.deleted_at')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, DATE(gr.receive_date) as transaction_date, 'Good Receive' as source, CONCAT('GR #', gr.id) as reference_number, COALESCE(gri.received_qty, 0) as qty, COALESCE(fo.price, 0) as unit_cost, COALESCE(gri.received_qty, 0) * COALESCE(fo.price, 0) as amount");
+
+        $itemNameMap = DB::table('items as im')
+            ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
+            ->groupBy(DB::raw('TRIM(im.name)'));
+
+        $retailFood = DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->joinSub($itemNameMap, 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->join('items as i', 'map_item.item_id', '=', 'i.id')
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->where('rf.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$dateFrom, $dateTo])
+            ->where('rf.status', 'approved')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, DATE(rf.transaction_date) as transaction_date, 'Retail Food' as source, CONCAT('Retail #', rf.id) as reference_number, COALESCE(rfi.qty, 0) as qty, CASE WHEN COALESCE(rfi.qty, 0) <> 0 THEN COALESCE(rfi.subtotal, 0) / rfi.qty ELSE 0 END as unit_cost, COALESCE(rfi.subtotal, 0) as amount");
+
+        $query = DB::query()->fromSub($goodReceive->unionAll($retailFood), 'official_cost_lines');
+        if ($search !== '') {
+            $query->where(function ($query) use ($search) {
+                $query->where('item_name', 'like', '%' . $search . '%')
+                    ->orWhere('item_sku', 'like', '%' . $search . '%')
+                    ->orWhere('category_name', 'like', '%' . $search . '%')
+                    ->orWhere('source', 'like', '%' . $search . '%')
+                    ->orWhere('reference_number', 'like', '%' . $search . '%');
+            });
+        }
+
+        $items = $query
+            ->orderBy($sortBy, $sortDirection)
+            ->orderBy('item_name')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items->items(),
+            'pagination' => [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ],
+        ]);
+    }
+
     private function getReportRowsCacheKey(string $bulan): string
     {
         return 'cost_report:report_rows:' . $bulan;
