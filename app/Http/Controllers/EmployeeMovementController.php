@@ -1118,15 +1118,19 @@ class EmployeeMovementController extends Controller
         $tunjangan = (int) ($movement->tunjangan_to ?? 0);
         $now = now();
 
-        $updated = DB::table('payroll_master')
-            ->where('user_id', $employee->id)
-            ->update([
-                'gaji' => $gaji,
-                'tunjangan' => $tunjangan,
-                'updated_at' => $now,
-            ]);
+        $existing = $this->getPayrollMasterRow($employee);
 
-        if ($updated === 0) {
+        if ($existing) {
+            DB::table('payroll_master')
+                ->where('user_id', $employee->id)
+                ->where('outlet_id', $existing->outlet_id)
+                ->where('division_id', $existing->division_id)
+                ->update([
+                    'gaji' => $gaji,
+                    'tunjangan' => $tunjangan,
+                    'updated_at' => $now,
+                ]);
+        } else {
             DB::table('payroll_master')->insert([
                 'user_id' => $employee->id,
                 'outlet_id' => $employee->id_outlet,
