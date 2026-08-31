@@ -116,7 +116,16 @@
             <tr v-for="(row, index) in (reportRowsData || [])" :key="row.outlet_id">
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ index + 1 }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.total_begin_mac) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
+                <button
+                  type="button"
+                  class="font-medium text-blue-700 hover:text-blue-900 hover:underline"
+                  title="Lihat detail begin inventory"
+                  @click="openBeginInventoryDetail(row)"
+                >
+                  {{ formatNumber(row.total_begin_mac) }}
+                </button>
+              </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.official_cost) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cost_rnd) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.outlet_transfer || 0) < 0 ? 'text-red-600' : 'text-gray-900'">{{ formatNumber(row.outlet_transfer) }}</td>
@@ -222,6 +231,75 @@
           </tbody>
         </table>
       </div>
+
+      <div v-if="showBeginDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" @click.self="closeBeginInventoryDetail">
+        <section class="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="begin-inventory-detail-title">
+          <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+            <div>
+              <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">Detail Begin Inventory</h2>
+              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+            </div>
+            <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeBeginInventoryDetail">
+              <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </header>
+
+          <div class="grid grid-cols-1 gap-3 border-b border-gray-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_11rem_8rem_8rem]">
+            <input v-model="beginDetailFilters.search" type="search" placeholder="Cari item, SKU, kategori, gudang..." class="w-full border border-gray-300 rounded-md px-3 py-2" @input="queueBeginInventorySearch" />
+            <select v-model="beginDetailFilters.sort_by" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
+              <option value="begin_value">Urutkan: Nilai</option>
+              <option value="item_name">Urutkan: Nama item</option>
+              <option value="item_sku">Urutkan: SKU</option>
+              <option value="category_name">Urutkan: Kategori</option>
+              <option value="warehouse_name">Urutkan: Gudang</option>
+              <option value="begin_qty_small">Urutkan: Qty</option>
+              <option value="mac">Urutkan: MAC</option>
+            </select>
+            <select v-model="beginDetailFilters.sort_direction" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
+              <option value="desc">Terbesar dahulu</option>
+              <option value="asc">Terkecil dahulu</option>
+            </select>
+            <select v-model.number="beginDetailFilters.per_page" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
+              <option :value="10">10 / halaman</option>
+              <option :value="25">25 / halaman</option>
+              <option :value="50">50 / halaman</option>
+              <option :value="100">100 / halaman</option>
+            </select>
+          </div>
+
+          <div class="min-h-48 overflow-y-auto px-5 py-4">
+            <div v-if="beginDetailLoading" class="py-12 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat detail...</div>
+            <div v-else-if="beginDetailError" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ beginDetailError }}</div>
+            <div v-else-if="beginDetailItems.length === 0" class="py-12 text-center text-gray-500">Tidak ada item pada data begin inventory.</div>
+            <div v-else class="space-y-3">
+              <section v-for="group in beginDetailGroups" :key="group.name" class="overflow-hidden rounded-md border border-gray-200">
+                <button type="button" class="flex w-full items-center justify-between bg-gray-50 px-4 py-3 text-left hover:bg-gray-100" @click="toggleBeginDetailCategory(group.name)">
+                  <span class="font-semibold text-gray-800"><i :class="isBeginDetailCategoryOpen(group.name) ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right'" class="mr-2 text-xs"></i>{{ group.name }}</span>
+                  <span class="text-sm text-gray-500">{{ group.items.length }} item · {{ formatNumber(group.total) }}</span>
+                </button>
+                <div v-show="isBeginDetailCategoryOpen(group.name)" class="overflow-x-auto">
+                  <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-white text-xs uppercase text-gray-500">
+                      <tr><th class="px-4 py-2 text-left">Item</th><th class="px-4 py-2 text-left">SKU</th><th class="px-4 py-2 text-left">Gudang</th><th class="px-4 py-2 text-right">Qty Small</th><th class="px-4 py-2 text-right">MAC</th><th class="px-4 py-2 text-right">Nilai Begin</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                      <tr v-for="item in group.items" :key="`${item.item_sku}-${item.warehouse_name}`"><td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td><td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td><td class="px-4 py-2 text-gray-600">{{ item.warehouse_name }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.begin_qty_small) }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.mac) }}</td><td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.begin_value) }}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-3 text-sm text-gray-600">
+            <span>{{ beginDetailPagination.total }} item · Halaman {{ beginDetailPagination.current_page }} / {{ beginDetailPagination.last_page }}</span>
+            <div class="flex gap-2">
+              <button type="button" :disabled="beginDetailLoading || beginDetailPagination.current_page <= 1" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="loadBeginInventoryDetail(beginDetailPagination.current_page - 1)">Sebelumnya</button>
+              <button type="button" :disabled="beginDetailLoading || beginDetailPagination.current_page >= beginDetailPagination.last_page" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="loadBeginInventoryDetail(beginDetailPagination.current_page + 1)">Berikutnya</button>
+            </div>
+          </footer>
+        </section>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -248,6 +326,15 @@ const reportRowsData = ref(props.reportRows || []);
 const cogsRowsData = ref(props.cogsRows || []);
 const categoryCostRowsData = ref(props.categoryCostRows || []);
 const loadedTabs = ref({});
+const showBeginDetail = ref(false);
+const selectedOutlet = ref(null);
+const beginDetailLoading = ref(false);
+const beginDetailError = ref('');
+const beginDetailItems = ref([]);
+const beginDetailOpenCategories = ref({});
+const beginDetailPagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
+const beginDetailFilters = ref({ search: '', sort_by: 'begin_value', sort_direction: 'desc', per_page: 25 });
+let beginDetailSearchTimer;
 
 watch(() => props.filters, (v) => {
   filters.value = { ...v };
@@ -268,6 +355,18 @@ watch(() => props.categoryCostRows, (v) => {
 const exportUrl = computed(() => {
   const bulan = filters.value.bulan || '';
   return `/cost-report/export?bulan=${encodeURIComponent(bulan)}`;
+});
+
+const beginDetailGroups = computed(() => {
+  const groups = new Map();
+  for (const item of beginDetailItems.value) {
+    const name = item.category_name || 'Tanpa Kategori';
+    if (!groups.has(name)) groups.set(name, { name, items: [], total: 0 });
+    const group = groups.get(name);
+    group.items.push(item);
+    group.total += Number(item.begin_value || 0);
+  }
+  return Array.from(groups.values());
 });
 
 function formatNumber(value) {
@@ -344,5 +443,64 @@ async function clearCacheAndReload() {
   } finally {
     clearingCache.value = false;
   }
+}
+
+function openBeginInventoryDetail(row) {
+  selectedOutlet.value = row;
+  beginDetailFilters.value.search = '';
+  beginDetailFilters.value.sort_by = 'begin_value';
+  beginDetailFilters.value.sort_direction = 'desc';
+  beginDetailFilters.value.per_page = 25;
+  beginDetailItems.value = [];
+  beginDetailOpenCategories.value = {};
+  beginDetailError.value = '';
+  showBeginDetail.value = true;
+  loadBeginInventoryDetail(1);
+}
+
+function closeBeginInventoryDetail() {
+  showBeginDetail.value = false;
+  window.clearTimeout(beginDetailSearchTimer);
+}
+
+function queueBeginInventorySearch() {
+  window.clearTimeout(beginDetailSearchTimer);
+  beginDetailSearchTimer = window.setTimeout(() => loadBeginInventoryDetail(1), 300);
+}
+
+async function loadBeginInventoryDetail(page) {
+  if (!selectedOutlet.value || !filters.value.bulan) return;
+  beginDetailLoading.value = true;
+  beginDetailError.value = '';
+  try {
+    const response = await axios.get('/cost-report/begin-inventory-detail', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+        search: beginDetailFilters.value.search || undefined,
+        sort_by: beginDetailFilters.value.sort_by,
+        sort_direction: beginDetailFilters.value.sort_direction,
+        per_page: beginDetailFilters.value.per_page,
+        page,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat detail begin inventory.');
+    beginDetailItems.value = response.data.items || [];
+    beginDetailPagination.value = response.data.pagination || beginDetailPagination.value;
+    beginDetailOpenCategories.value = Object.fromEntries(beginDetailGroups.value.map((group) => [group.name, true]));
+  } catch (error) {
+    beginDetailItems.value = [];
+    beginDetailError.value = error?.response?.data?.message || error.message || 'Gagal memuat detail begin inventory.';
+  } finally {
+    beginDetailLoading.value = false;
+  }
+}
+
+function isBeginDetailCategoryOpen(category) {
+  return beginDetailOpenCategories.value[category] !== false;
+}
+
+function toggleBeginDetailCategory(category) {
+  beginDetailOpenCategories.value[category] = !isBeginDetailCategoryOpen(category);
 }
 </script>

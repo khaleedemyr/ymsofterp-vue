@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\MacAnomalyDetectionService;
+use App\Support\MacAnomalyHistoryCutoff;
 use App\Support\MacAnomalyReferenceRegistry;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ class MacAnomalyTrackingController extends Controller
     {
         return Inertia::render('MacAnomalyTracking/Index', [
             'referenceModules' => MacAnomalyReferenceRegistry::moduleCatalog(),
+            'historyCutoffDate' => MacAnomalyHistoryCutoff::DATE,
         ]);
     }
 
@@ -174,6 +176,7 @@ class MacAnomalyTrackingController extends Controller
             ->where('id_outlet', $idOutlet)
             ->where('warehouse_outlet_id', $warehouseOutletId)
             ->where('inventory_item_id', $inventoryItemId)
+            ->where('date', '>=', MacAnomalyHistoryCutoff::DATE)
             ->orderByDesc('date')
             ->orderByDesc('id');
 

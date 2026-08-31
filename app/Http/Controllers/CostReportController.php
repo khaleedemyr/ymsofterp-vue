@@ -168,6 +168,111 @@ class CostReportController extends Controller
         ]);
     }
 
+    /**
+     * Detail lazy-loaded untuk Begin Inventory sebuah outlet.
+     * Formula nilai mengikuti kolom Total MAC di Cost Report.
+     */
+    public function beginInventoryDetail(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:category_name,item_name,item_sku,warehouse_name,begin_qty_small,mac,begin_value'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $bulan = $validated['bulan'];
+        $outletId = (int) $validated['outlet_id'];
+        $reportMonth = Carbon::parse($bulan . '-01');
+        $initialBalanceDate = $reportMonth->format('Y-m-01');
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'begin_value';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+
+        $stockBase = DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->where('s.id_outlet', $outletId)
+            ->where('wo.status', 'active');
+
+        $hasInitialBalance = (clone $stockBase)
+            ->join('outlet_food_inventory_cards as card', function ($join) use ($initialBalanceDate) {
+                $join->on('card.inventory_item_id', '=', 's.inventory_item_id')
+                    ->on('card.id_outlet', '=', 's.id_outlet')
+                    ->on('card.warehouse_outlet_id', '=', 's.warehouse_outlet_id')
+                    ->where('card.reference_type', '=', 'initial_balance')
+                    ->whereDate('card.date', '=', $initialBalanceDate);
+            })
+            ->exists();
+
+        if ($hasInitialBalance) {
+            $latestInitialBalance = DB::table('outlet_food_inventory_cards as card')
+                ->where('card.id_outlet', $outletId)
+                ->where('card.reference_type', 'initial_balance')
+                ->whereDate('card.date', $initialBalanceDate)
+                ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
+                ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
+
+            $query = $stockBase
+                ->joinSub($latestInitialBalance, 'latest_card', function ($join) {
+                    $join->on('latest_card.inventory_item_id', '=', 's.inventory_item_id')
+                        ->on('latest_card.warehouse_outlet_id', '=', 's.warehouse_outlet_id');
+                })
+                ->join('outlet_food_inventory_cards as card', function ($join) {
+                    $join->on('card.inventory_item_id', '=', 'latest_card.inventory_item_id')
+                        ->on('card.warehouse_outlet_id', '=', 'latest_card.warehouse_outlet_id')
+                        ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key");
+                })
+                ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, wo.name as warehouse_name, COALESCE(card.saldo_qty_small, 0) as begin_qty_small, COALESCE(card.cost_per_small, 0) as mac, COALESCE(card.saldo_value, 0) as begin_value");
+        } else {
+            $query = $stockBase->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, wo.name as warehouse_name, COALESCE(s.qty_small, 0) as begin_qty_small, COALESCE(s.last_cost_small, 0) as mac, COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0) as begin_value");
+        }
+
+        if ($search !== '') {
+            $query->where(function ($query) use ($search) {
+                $query->where('i.name', 'like', '%' . $search . '%')
+                    ->orWhere('i.sku', 'like', '%' . $search . '%')
+                    ->orWhere('c.name', 'like', '%' . $search . '%')
+                    ->orWhere('wo.name', 'like', '%' . $search . '%');
+            });
+        }
+
+        $sortColumns = [
+            'category_name' => 'category_name',
+            'item_name' => 'item_name',
+            'item_sku' => 'item_sku',
+            'warehouse_name' => 'warehouse_name',
+            'begin_qty_small' => 'begin_qty_small',
+            'mac' => 'mac',
+            'begin_value' => 'begin_value',
+        ];
+
+        $items = $query
+            ->orderBy($sortColumns[$sortBy], $sortDirection)
+            ->orderBy('item_name')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'source' => $hasInitialBalance ? 'initial_balance' : 'current_stock',
+            'initial_balance_date' => $initialBalanceDate,
+            'items' => $items->items(),
+            'pagination' => [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ],
+        ]);
+    }
+
     private function getReportRowsCacheKey(string $bulan): string
     {
         return 'cost_report:report_rows:' . $bulan;

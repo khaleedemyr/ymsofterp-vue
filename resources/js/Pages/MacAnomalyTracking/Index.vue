@@ -26,6 +26,7 @@
         <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-900">
           <p class="font-semibold mb-2"><i class="fa-solid fa-circle-info mr-1"></i> Cara pakai</p>
           <ul class="list-disc pl-5 space-y-1 text-blue-800">
+            <li>Riwayat MAC sebelum <strong>{{ historyCutoffDate }}</strong> diabaikan (cutoff data lama).</li>
             <li><strong>Scan Anomali</strong> hanya menampilkan MAC yang <em>dicurigai bermasalah</em> (minus, lonjakan besar, dll.) — bukan semua riwayat.</li>
             <li>Kalau mau lihat <strong>semua perubahan MAC</strong> satu barang, pakai tab <button type="button" class="underline font-medium" @click="activeTab = 'detail'">Detail per Barang</button>.</li>
             <li>Mulai dengan <strong>Semua outlet</strong> + rentang tanggal lebih lebar (3–6 bulan). Warehouse boleh dikosongkan.</li>
@@ -51,7 +52,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Dari tanggal</label>
-              <input v-model="scanFilters.date_from" type="date" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <input v-model="scanFilters.date_from" type="date" :min="historyCutoffDate" class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Sampai tanggal</label>
@@ -315,8 +316,13 @@ import axios from 'axios'
 import Swal from 'sweetalert2'
 
 const props = defineProps({
-  referenceModules: { type: Array, default: () => [] }
+  referenceModules: { type: Array, default: () => [] },
+  historyCutoffDate: { type: String, default: '2026-09-01' },
 })
+
+function maxDate(a, b) {
+  return a >= b ? a : b
+}
 
 const tabs = [
   { id: 'scan', label: 'Scan Anomali' },
@@ -334,14 +340,16 @@ const anomalyTypeOptions = [
   { value: 'current_stock', label: 'Stok saat ini abnormal' },
 ]
 
+const historyCutoffDate = props.historyCutoffDate
+
 const today = new Date().toISOString().slice(0, 10)
 const threeMonthsAgo = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)
-const sixMonthsAgo = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10)
+const sixMonthsAgo = maxDate(new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10), historyCutoffDate)
 
 const scanFilters = ref({
   outlet_id: '',
   warehouse_outlet_id: '',
-  date_from: threeMonthsAgo,
+  date_from: maxDate(threeMonthsAgo, historyCutoffDate),
   date_to: today,
   min_spike_percent: 100,
   spike_multiplier: 5,
@@ -413,6 +421,7 @@ function applyPreset(name) {
     scanFilters.value.date_from = sixMonthsAgo
     scanFilters.value.date_to = today
   }
+  scanFilters.value.date_from = maxDate(scanFilters.value.date_from, historyCutoffDate)
 }
 
 onMounted(async () => {
@@ -442,6 +451,7 @@ async function runScan(page = 1) {
   scanLoading.value = true
   scanSearched.value = true
   scanError.value = null
+  scanFilters.value.date_from = maxDate(scanFilters.value.date_from, historyCutoffDate)
   try {
     const res = await axios.get('/api/mac-anomaly-tracking/scan', {
       params: {

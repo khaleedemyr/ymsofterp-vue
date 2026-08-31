@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\MacAnomalyHistoryCutoff;
 use App\Support\MacAnomalyReferenceRegistry;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +34,9 @@ class MacAnomalyDetectionService
         $idOutlet = (int) ($filters['id_outlet'] ?? 0);
         $warehouseOutletId = (int) ($filters['warehouse_outlet_id'] ?? 0);
         $dateTo = (string) ($filters['date_to'] ?? Carbon::now()->format('Y-m-d'));
-        $dateFrom = (string) ($filters['date_from'] ?? Carbon::parse($dateTo)->subDays(30)->format('Y-m-d'));
+        $dateFrom = MacAnomalyHistoryCutoff::effectiveDateFrom(
+            (string) ($filters['date_from'] ?? Carbon::parse($dateTo)->subDays(30)->format('Y-m-d'))
+        );
         $minSpikePercent = max(0, (float) ($filters['min_spike_percent'] ?? 100));
         $spikeMultiplier = max(1.1, (float) ($filters['spike_multiplier'] ?? 5));
         $maxMac = max(0, (float) ($filters['max_mac'] ?? 10_000_000));
@@ -88,6 +91,7 @@ class MacAnomalyDetectionService
                     'max_mac' => $maxMac,
                     'types' => $types,
                 ],
+                'history_cutoff_date' => MacAnomalyHistoryCutoff::DATE,
             ],
             'module_breakdown' => $moduleBreakdown,
             'pagination' => [
@@ -120,6 +124,7 @@ class MacAnomalyDetectionService
         if ($warehouseOutletId > 0) {
             $countQuery->where('h.warehouse_outlet_id', $warehouseOutletId);
         }
+        MacAnomalyHistoryCutoff::applyToQuery($countQuery, 'h.date');
         $rowsTotalScope = (int) (clone $countQuery)->count();
         $rowsInPeriod = (int) (clone $countQuery)
             ->whereBetween('h.date', [$dateFrom, $dateTo])
@@ -133,6 +138,7 @@ class MacAnomalyDetectionService
             ->leftJoin('items as i', 'i.id', '=', 'ofii.item_id')
             ->when($idOutlet > 0, fn ($q) => $q->where('h.id_outlet', $idOutlet))
             ->when($warehouseOutletId > 0, fn ($q) => $q->where('h.warehouse_outlet_id', $warehouseOutletId))
+            ->where('h.date', '>=', MacAnomalyHistoryCutoff::DATE)
             ->orderBy('h.id_outlet')
             ->orderBy('h.warehouse_outlet_id')
             ->orderBy('h.inventory_item_id')

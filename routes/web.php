@@ -1302,6 +1302,7 @@ Route::get('/outlet-stock-report/export', [\App\Http\Controllers\OutletStockRepo
 // Cost Report (outlet + begin inventory total MAC)
 Route::get('/cost-report', [\App\Http\Controllers\CostReportController::class, 'index'])->name('cost-report.index');
 Route::get('/cost-report/tab-data', [\App\Http\Controllers\CostReportController::class, 'tabData'])->name('cost-report.tab-data');
+Route::get('/cost-report/begin-inventory-detail', [\App\Http\Controllers\CostReportController::class, 'beginInventoryDetail'])->name('cost-report.begin-inventory-detail');
 Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
 Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportController::class, 'clearCache'])->name('cost-report.clear-cache');
 
