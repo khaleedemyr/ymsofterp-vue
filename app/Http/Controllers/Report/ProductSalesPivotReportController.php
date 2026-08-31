@@ -32,34 +32,23 @@ class ProductSalesPivotReportController extends Controller
     public function productOptions(Request $request)
     {
         $search = trim((string) $request->input('q', ''));
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
-        $outletIds = $this->normalizeIdArray($request->input('outlet_ids', []));
 
-        $query = DB::table('order_items as oi')
-            ->join('orders as ord', 'oi.order_id', '=', 'ord.id')
-            ->join('tbl_data_outlet as o', 'ord.kode_outlet', '=', 'o.qr_code')
-            ->where('ord.status', '!=', 'cancelled')
-            ->where('ord.grand_total', '>', 0)
-            ->whereNotNull('oi.item_name')
-            ->where('oi.item_name', '!=', '');
-
-        $this->applyOutletScope($query, $outletIds);
-        $this->applyDateScope($query, $dateFrom, $dateTo, 'ord.created_at');
+        $query = DB::table('items as i')
+            ->join('categories as c', 'c.id', '=', 'i.category_id')
+            ->where('c.show_pos', '1')
+            ->where('c.is_asset', '0');
 
         if ($search !== '') {
-            $query->where('oi.item_name', 'like', '%' . $search . '%');
+            $query->where('i.name', 'like', '%' . $search . '%');
         }
 
         $products = $query
             ->select([
-                'oi.item_name as name',
-                DB::raw('MAX(oi.item_id) as item_id'),
-                DB::raw('SUM(oi.qty) as total_qty'),
+                'i.name as name',
+                'i.id as item_id',
             ])
-            ->groupBy('oi.item_name')
-            ->orderBy('oi.item_name')
-            ->limit(200)
+            ->orderBy('i.name')
+            ->limit($search === '' ? 500 : 100)
             ->get();
 
         return response()->json(['products' => $products]);
@@ -143,7 +132,11 @@ class ProductSalesPivotReportController extends Controller
 
         $query = DB::table('order_items as oi')
             ->join('orders as ord', 'oi.order_id', '=', 'ord.id')
+            ->join('items as it', 'oi.item_id', '=', 'it.id')
+            ->join('categories as cat', 'it.category_id', '=', 'cat.id')
             ->join('tbl_data_outlet as o', 'ord.kode_outlet', '=', 'o.qr_code')
+            ->where('cat.show_pos', '1')
+            ->where('cat.is_asset', '0')
             ->where('o.status', 'A')
             ->where('ord.status', '!=', 'cancelled')
             ->where('ord.grand_total', '>', 0)
@@ -253,20 +246,6 @@ class ProductSalesPivotReportController extends Controller
         }
 
         return $query->get(['id_outlet', 'nama_outlet', 'qr_code']);
-    }
-
-    private function applyOutletScope($query, array $outletIds): void
-    {
-        $user = auth()->user();
-
-        if ((int) ($user->id_outlet ?? 0) !== 1) {
-            $query->where('o.id_outlet', (int) $user->id_outlet);
-            return;
-        }
-
-        if (!empty($outletIds)) {
-            $query->whereIn('o.id_outlet', $outletIds);
-        }
     }
 
     private function applyDateScope($query, ?string $dateFrom, ?string $dateTo, string $column): void

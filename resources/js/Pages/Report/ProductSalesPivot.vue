@@ -75,18 +75,21 @@ async function fetchOutlets() {
   }
 }
 
-async function fetchProducts() {
+let productSearchTimer = null
+
+async function fetchProducts(query = '') {
   const { data } = await axios.get('/api/report/product-sales-pivot/products', {
-    params: {
-      date_from: filters.date_from,
-      date_to: filters.date_to,
-      outlet_ids: selectedOutletIds.value,
-    },
+    params: { q: query },
   })
   productOptions.value = (data.products || []).map((p) => ({
     name: p.name,
     item_id: p.item_id,
   }))
+}
+
+function onProductSearch(query) {
+  clearTimeout(productSearchTimer)
+  productSearchTimer = setTimeout(() => fetchProducts(query), 300)
 }
 
 async function loadReport() {
@@ -198,10 +201,12 @@ onMounted(async () => {
             :close-on-select="false"
             :clear-on-select="false"
             :preserve-search="true"
+            :internal-search="false"
             label="name"
             track-by="name"
             placeholder="Semua produk (kosongkan = tampilkan semua)"
-            @open="fetchProducts"
+            @open="fetchProducts('')"
+            @search-change="onProductSearch"
           />
         </div>
       </div>
