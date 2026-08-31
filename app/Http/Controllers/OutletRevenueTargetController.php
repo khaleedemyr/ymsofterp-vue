@@ -94,7 +94,13 @@ class OutletRevenueTargetController extends Controller
                 $existingForecasts = DB::table('outlet_revenue_target_details')
                     ->where('header_id', $header->id)
                     ->orderBy('forecast_date')
-                    ->get(['forecast_date', 'forecast_revenue']);
+                    ->get(['forecast_date', 'forecast_revenue'])
+                    ->map(fn ($row) => [
+                        'forecast_date' => Carbon::parse($row->forecast_date)->toDateString(),
+                        'forecast_revenue' => (float) $row->forecast_revenue,
+                    ])
+                    ->values()
+                    ->all();
             }
         }
 
@@ -119,7 +125,7 @@ class OutletRevenueTargetController extends Controller
             'monthly_target' => 'nullable|numeric|min:0',
             'forecasts' => 'nullable|array',
             'forecasts.*.forecast_date' => 'required|date',
-            'forecasts.*.forecast_revenue' => 'nullable|numeric|min:0',
+            'forecasts.*.forecast_revenue' => 'nullable',
         ]);
 
         $outletId = (int) $validated['outlet_id'];
@@ -128,63 +134,22 @@ class OutletRevenueTargetController extends Controller
         }
 
         $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth()->toDateString();
-        $startOfMonth = Carbon::parse($monthDate)->startOfMonth();
-        $endOfMonth = Carbon::parse($monthDate)->endOfMonth();
+        $forecasts = is_array($request->input('forecasts')) ? $request->input('forecasts') : [];
 
-        DB::transaction(function () use ($validated, $outletId, $monthDate, $user, $startOfMonth, $endOfMonth) {
-            $header = DB::table('outlet_revenue_target_headers')
-                ->where('outlet_id', $outletId)
-                ->where('target_month', $monthDate)
-                ->first();
-
-            if ($header) {
-                DB::table('outlet_revenue_target_headers')
-                    ->where('id', $header->id)
-                    ->update([
-                        'monthly_target' => $validated['monthly_target'] ?? 0,
-                        'updated_by' => $user->id,
-                        'updated_at' => now(),
-                    ]);
-                $headerId = $header->id;
-            } else {
-                $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
-                    'outlet_id' => $outletId,
-                    'target_month' => $monthDate,
-                    'monthly_target' => $validated['monthly_target'] ?? 0,
-                    'created_by' => $user->id,
-                    'updated_by' => $user->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-
-            DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
-
-            $rows = [];
-            foreach (($validated['forecasts'] ?? []) as $item) {
-                $forecastDate = Carbon::parse($item['forecast_date'])->startOfDay();
-                if ($forecastDate->lt($startOfMonth) || $forecastDate->gt($endOfMonth)) {
-                    continue;
-                }
-
-                $rawRevenue = $item['forecast_revenue'] ?? null;
-                if ($rawRevenue === null || $rawRevenue === '') {
-                    continue;
-                }
-
-                $rows[] = [
-                    'header_id' => $headerId,
-                    'forecast_date' => $forecastDate->toDateString(),
-                    'forecast_revenue' => $rawRevenue,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            if (!empty($rows)) {
-                DB::table('outlet_revenue_target_details')->insert($rows);
-            }
-        });
+        try {
+            $this->persistRevenueTarget(
+                $outletId,
+                $monthDate,
+                (float) ($validated['monthly_target'] ?? 0),
+                $forecasts,
+                (int) $user->id
+            );
+        } catch (\InvalidArgumentException $e) {
+            return redirect()
+                ->back()
+                ->withInput()
+                ->withErrors(['forecasts' => $e->getMessage()]);
+        }
 
         return redirect()
             ->route('outlet-revenue-targets.index', [
@@ -208,7 +173,7 @@ class OutletRevenueTargetController extends Controller
             'monthly_target' => 'nullable|numeric|min:0',
             'forecasts' => 'nullable|array',
             'forecasts.*.forecast_date' => 'required|date',
-            'forecasts.*.forecast_revenue' => 'nullable|numeric|min:0',
+            'forecasts.*.forecast_revenue' => 'nullable',
         ]);
 
         $outletId = (int) $validated['outlet_id'];
@@ -217,63 +182,22 @@ class OutletRevenueTargetController extends Controller
         }
 
         $monthDate = Carbon::createFromFormat('Y-m', $validated['month'])->startOfMonth()->toDateString();
-        $startOfMonth = Carbon::parse($monthDate)->startOfMonth();
-        $endOfMonth = Carbon::parse($monthDate)->endOfMonth();
+        $forecasts = is_array($request->input('forecasts')) ? $request->input('forecasts') : [];
 
-        DB::transaction(function () use ($validated, $outletId, $monthDate, $user, $startOfMonth, $endOfMonth) {
-            $header = DB::table('outlet_revenue_target_headers')
-                ->where('outlet_id', $outletId)
-                ->where('target_month', $monthDate)
-                ->first();
-
-            if ($header) {
-                DB::table('outlet_revenue_target_headers')
-                    ->where('id', $header->id)
-                    ->update([
-                        'monthly_target' => $validated['monthly_target'] ?? 0,
-                        'updated_by' => $user->id,
-                        'updated_at' => now(),
-                    ]);
-                $headerId = $header->id;
-            } else {
-                $headerId = DB::table('outlet_revenue_target_headers')->insertGetId([
-                    'outlet_id' => $outletId,
-                    'target_month' => $monthDate,
-                    'monthly_target' => $validated['monthly_target'] ?? 0,
-                    'created_by' => $user->id,
-                    'updated_by' => $user->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            }
-
-            DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
-
-            $rows = [];
-            foreach (($validated['forecasts'] ?? []) as $item) {
-                $forecastDate = Carbon::parse($item['forecast_date'])->startOfDay();
-                if ($forecastDate->lt($startOfMonth) || $forecastDate->gt($endOfMonth)) {
-                    continue;
-                }
-
-                $rawRevenue = $item['forecast_revenue'] ?? null;
-                if ($rawRevenue === null || $rawRevenue === '') {
-                    continue;
-                }
-
-                $rows[] = [
-                    'header_id' => $headerId,
-                    'forecast_date' => $forecastDate->toDateString(),
-                    'forecast_revenue' => $rawRevenue,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            if (!empty($rows)) {
-                DB::table('outlet_revenue_target_details')->insert($rows);
-            }
-        });
+        try {
+            $this->persistRevenueTarget(
+                $outletId,
+                $monthDate,
+                (float) ($validated['monthly_target'] ?? 0),
+                $forecasts,
+                (int) $user->id
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
 
         return response()->json([
             'success' => true,
@@ -1106,6 +1030,157 @@ class OutletRevenueTargetController extends Controller
         }
 
         return array_sum($values) / count($values);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $forecasts
+     */
+    private function persistRevenueTarget(
+        int $outletId,
+        string $monthDate,
+        float $monthlyTarget,
+        array $forecasts,
+        int $userId
+    ): void {
+        $startOfMonth = Carbon::parse($monthDate)->startOfMonth();
+        $endOfMonth = Carbon::parse($monthDate)->endOfMonth();
+        $rows = $this->buildForecastDetailRows($forecasts, $startOfMonth, $endOfMonth);
+
+        if (!empty($forecasts) && empty($rows)) {
+            throw new \InvalidArgumentException(
+                'Daily forecast tidak valid atau kosong. Pastikan nominal forecast terisi dengan benar lalu simpan lagi.'
+            );
+        }
+
+        DB::transaction(function () use ($outletId, $monthDate, $monthlyTarget, $rows, $userId) {
+            $header = DB::table('outlet_revenue_target_headers')
+                ->where('outlet_id', $outletId)
+                ->where('target_month', $monthDate)
+                ->first();
+
+            if ($header) {
+                DB::table('outlet_revenue_target_headers')
+                    ->where('id', $header->id)
+                    ->update([
+                        'monthly_target' => $monthlyTarget,
+                        'updated_by' => $userId,
+                        'updated_at' => now(),
+                    ]);
+                $headerId = (int) $header->id;
+            } else {
+                $headerId = (int) DB::table('outlet_revenue_target_headers')->insertGetId([
+                    'outlet_id' => $outletId,
+                    'target_month' => $monthDate,
+                    'monthly_target' => $monthlyTarget,
+                    'created_by' => $userId,
+                    'updated_by' => $userId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            if (empty($rows)) {
+                return;
+            }
+
+            DB::table('outlet_revenue_target_details')->where('header_id', $headerId)->delete();
+
+            $rowsWithHeader = array_map(
+                fn (array $row) => array_merge($row, ['header_id' => $headerId]),
+                $rows
+            );
+
+            foreach (array_chunk($rowsWithHeader, 100) as $chunk) {
+                DB::table('outlet_revenue_target_details')->insert($chunk);
+            }
+        });
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $forecasts
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildForecastDetailRows(array $forecasts, Carbon $startOfMonth, Carbon $endOfMonth): array
+    {
+        $rows = [];
+
+        foreach ($forecasts as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $forecastDateRaw = $item['forecast_date'] ?? null;
+            if (!$forecastDateRaw) {
+                continue;
+            }
+
+            try {
+                $forecastDate = Carbon::parse($forecastDateRaw)->startOfDay();
+            } catch (\Throwable $e) {
+                continue;
+            }
+
+            if ($forecastDate->lt($startOfMonth) || $forecastDate->gt($endOfMonth)) {
+                continue;
+            }
+
+            $revenue = $this->normalizeForecastRevenue($item['forecast_revenue'] ?? null);
+            if ($revenue === null) {
+                continue;
+            }
+
+            $rows[] = [
+                'forecast_date' => $forecastDate->toDateString(),
+                'forecast_revenue' => $revenue,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        $uniqueRows = [];
+        foreach ($rows as $row) {
+            $uniqueRows[$row['forecast_date']] = $row;
+        }
+
+        return array_values($uniqueRows);
+    }
+
+    private function normalizeForecastRevenue(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_numeric($value)) {
+            return round((float) $value, 2);
+        }
+
+        $raw = strtolower(trim((string) $value));
+        $raw = preg_replace('/\s+/', '', $raw) ?? '';
+        $raw = preg_replace('/(k|rb|jt|juta|m|mil|miliar|t|triliun)$/', '', $raw) ?? '';
+        $raw = preg_replace('/[^\d,.-]/', '', $raw) ?? '';
+
+        if ($raw === '' || $raw === '-' || $raw === '.') {
+            return null;
+        }
+
+        $hasDot = str_contains($raw, '.');
+        $hasComma = str_contains($raw, ',');
+
+        if ($hasDot && $hasComma) {
+            $raw = str_replace('.', '', $raw);
+            $raw = str_replace(',', '.', $raw);
+        } elseif ($hasComma) {
+            $raw = str_replace(',', '.', $raw);
+        } elseif ($hasDot && preg_match('/^-?\d{1,3}(\.\d{3})+$/', $raw)) {
+            $raw = str_replace('.', '', $raw);
+        }
+
+        if (!is_numeric($raw)) {
+            return null;
+        }
+
+        return round((float) $raw, 2);
     }
 }
 

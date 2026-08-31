@@ -182,16 +182,27 @@ function toEditableNumber(value) {
   return String(num)
 }
 
-function buildDaysInMonth(monthStr) {
+function buildDaysInMonth(monthStr, preferSavedOnly = false) {
   if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) return []
   const [year, month] = monthStr.split('-').map(Number)
   const daysCount = new Date(year, month, 0).getDate()
-  const mapped = new Map(
+  const savedMap = new Map(
     (props.existingForecasts || []).map((x) => {
       const key = String(x.forecast_date).slice(0, 10)
       return [key, x.forecast_revenue]
     })
   )
+
+  const localMap = new Map()
+  if (!preferSavedOnly) {
+    for (const row of forecasts.value || []) {
+      if (!String(row.forecast_date || '').startsWith(monthStr)) continue
+      const parsed = parseFormattedNumber(row.forecast_revenue)
+      if (parsed !== null) {
+        localMap.set(row.forecast_date, parsed)
+      }
+    }
+  }
 
   const rows = []
   for (let day = 1; day <= daysCount; day++) {
@@ -199,13 +210,18 @@ function buildDaysInMonth(monthStr) {
     const iso = formatLocalDate(date)
     const dayOfWeek = date.getDay()
     const holiday = holidays.value.find((h) => String(h.tgl_libur).slice(0, 10) === iso)
+    const revenue = localMap.has(iso)
+      ? localMap.get(iso)
+      : (savedMap.has(iso) ? savedMap.get(iso) : null)
     rows.push({
       forecast_date: iso,
       day_name: date.toLocaleDateString('id-ID', { weekday: 'long' }),
       is_weekend: dayOfWeek === 0 || dayOfWeek === 6,
       is_holiday: Boolean(holiday),
       holiday_desc: holiday?.keterangan || '',
-      forecast_revenue: mapped.has(iso) ? formatNumberId(mapped.get(iso)) : '',
+      forecast_revenue: revenue !== null && revenue !== undefined && revenue !== ''
+        ? formatNumberId(revenue)
+        : '',
     })
   }
   return rows
@@ -215,7 +231,7 @@ function resetFormFromProps() {
   selectedOutletId.value = props.selectedOutletId || 0
   selectedMonth.value = props.selectedMonth || new Date().toISOString().slice(0, 7)
   monthlyTarget.value = formatNumberId(props.monthlyTarget ?? '')
-  forecasts.value = buildDaysInMonth(selectedMonth.value)
+  forecasts.value = buildDaysInMonth(selectedMonth.value, true)
   bulkStartDate.value = forecasts.value[0]?.forecast_date || ''
   bulkEndDate.value = forecasts.value[forecasts.value.length - 1]?.forecast_date || ''
 }
@@ -264,13 +280,30 @@ function loadData() {
   )
 }
 
+function buildForecastPayload() {
+  return forecasts.value
+    .map((row) => {
+      const revenue = parseFormattedNumber(row.forecast_revenue)
+      if (revenue === null) return null
+      return {
+        forecast_date: row.forecast_date,
+        forecast_revenue: revenue,
+      }
+    })
+    .filter(Boolean)
+}
+
 function save() {
-  saving.value = true
+  suggestError.value = ''
   const normalizedMonthlyTarget = parseFormattedNumber(monthlyTarget.value)
-  const normalizedForecasts = forecasts.value.map((row) => ({
-    forecast_date: row.forecast_date,
-    forecast_revenue: parseFormattedNumber(row.forecast_revenue),
-  }))
+  const normalizedForecasts = buildForecastPayload()
+
+  if (normalizedForecasts.length === 0 && totalForecast.value > 0) {
+    suggestError.value = 'Daily forecast gagal dibaca. Klik sekali field nominal lalu simpan lagi.'
+    return
+  }
+
+  saving.value = true
   router.post(
     route('outlet-revenue-targets.store'),
     {
@@ -281,6 +314,9 @@ function save() {
     },
     {
       preserveScroll: true,
+      onError: (errors) => {
+        suggestError.value = errors?.forecasts || 'Gagal menyimpan target & forecast.'
+      },
       onFinish: () => {
         saving.value = false
       },
