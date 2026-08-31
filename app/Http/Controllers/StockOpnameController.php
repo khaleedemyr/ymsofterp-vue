@@ -206,11 +206,6 @@ class StockOpnameController extends Controller
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->where('s.id_outlet', $outletId)
             ->where('s.warehouse_outlet_id', $warehouseOutletId)
-            ->where(function($q) {
-                $q->where('s.qty_small', '>', 0)
-                  ->orWhere('s.qty_medium', '>', 0)
-                  ->orWhere('s.qty_large', '>', 0);
-            })
             ->select(
                 'fi.id as inventory_item_id',
                 'i.id as item_id',

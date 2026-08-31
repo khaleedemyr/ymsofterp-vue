@@ -176,8 +176,34 @@
 
         <!-- Items Table -->
         <div v-if="form.items.length > 0" class="mb-6">
-          <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-semibold text-gray-800">Items ({{ form.items.length }})</h3>
+          <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+            <h3 class="text-lg font-semibold text-gray-800">
+              Items ({{ filteredItems.length }}<span v-if="itemSearch.trim()" class="text-gray-500 font-normal"> / {{ form.items.length }}</span>)
+            </h3>
+            <div class="relative w-full sm:max-w-sm">
+              <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+              <input
+                v-model="itemSearch"
+                type="text"
+                placeholder="Cari produk atau kategori..."
+                class="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-9 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                v-if="itemSearch"
+                type="button"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                @click="itemSearch = ''"
+              >
+                <i class="fa-solid fa-times"></i>
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="itemSearch.trim() && filteredItems.length === 0"
+            class="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+          >
+            Tidak ada produk yang cocok dengan "{{ itemSearch }}".
           </div>
 
           <div class="overflow-x-auto">
@@ -321,7 +347,7 @@
         <!-- Empty State -->
         <div v-else-if="form.items.length === 0 && form.outlet_id && form.warehouse_outlet_id" class="text-center py-8 text-gray-500">
           <i class="fa-solid fa-inbox text-4xl mb-4"></i>
-          <p>Tidak ada item dengan stock untuk outlet dan warehouse outlet yang dipilih.</p>
+          <p>Tidak ada item untuk outlet dan warehouse outlet yang dipilih.</p>
         </div>
 
         <!-- Submit Button -->
@@ -431,13 +457,25 @@ const showApproverDropdown = ref(false);
 const autosaveStatus = ref('idle'); // idle, saving, saved, error
 const autosaveTimeout = ref(null);
 const lastSavedAt = ref(null);
+const itemSearch = ref('');
 
 const outletSelectable = computed(() => String(props.user_outlet_id) === '1');
+
+const filteredItems = computed(() => {
+  const q = itemSearch.value.trim().toLowerCase();
+  if (!q) return form.items;
+
+  return form.items.filter((item) => {
+    const name = (item.item_name || '').toLowerCase();
+    const category = (item.category_name || '').toLowerCase();
+    return name.includes(q) || category.includes(q);
+  });
+});
 
 // Group items by category
 const groupedItems = computed(() => {
   const grouped = {};
-  form.items.forEach(item => {
+  filteredItems.value.forEach(item => {
     const categoryName = item.category_name || 'Uncategorized';
     if (!grouped[categoryName]) {
       grouped[categoryName] = [];
@@ -465,6 +503,14 @@ watch(() => form.items, (newItems) => {
     expandedCategories.value = categories;
   }
 }, { immediate: true });
+
+watch(itemSearch, () => {
+  const categories = new Set();
+  filteredItems.value.forEach((item) => {
+    categories.add(item.category_name || 'Uncategorized');
+  });
+  expandedCategories.value = categories;
+});
 
 const filteredWarehouseOutlets = computed(() => {
   let warehouseOutlets = props.warehouseOutlets;
