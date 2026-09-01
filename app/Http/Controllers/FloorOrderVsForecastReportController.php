@@ -549,6 +549,13 @@ class FloorOrderVsForecastReportController extends Controller
                 ->unique()
                 ->values()
                 ->all();
+            $costReportTupleKeys = DB::table('outlet_food_inventory_stocks as s')
+                ->where('s.id_outlet', $selectedOutletId)
+                ->whereIn('s.warehouse_outlet_id', $activeWarehouseIds)
+                ->select('s.warehouse_outlet_id', 's.inventory_item_id')
+                ->get()
+                ->mapWithKeys(fn ($row) => [(int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id => true])
+                ->all();
 
             $hasInitialBalance = !empty($activeWarehouseIds) && !empty($costReportItemIds)
                 && DB::table('outlet_food_inventory_cards')
@@ -578,11 +585,26 @@ class FloorOrderVsForecastReportController extends Controller
                             ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
                             ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
                     })
-                    ->select('c.warehouse_outlet_id', 'c.saldo_value')
+                    ->select('c.warehouse_outlet_id', 'c.inventory_item_id', 'c.saldo_qty_small', 'c.saldo_value')
                     ->get();
+
+                foreach (array_keys($costReportTupleKeys) as $tupleKey) {
+                    if (!isset($tupleStates[$tupleKey])) {
+                        continue;
+                    }
+
+                    $tupleStates[$tupleKey]['qty_small'] = 0.0;
+                    $tupleStates[$tupleKey]['mac'] = 0.0;
+                }
 
                 foreach ($initialBalanceRows as $row) {
                     $value = (float) ($row->saldo_value ?? 0);
+                    $tupleKey = (int) $row->warehouse_outlet_id.'|'.(int) $row->inventory_item_id;
+                    $qtySmall = (float) ($row->saldo_qty_small ?? 0);
+                    if (isset($tupleStates[$tupleKey])) {
+                        $tupleStates[$tupleKey]['qty_small'] = $qtySmall;
+                        $tupleStates[$tupleKey]['mac'] = $qtySmall !== 0.0 ? $value / $qtySmall : 0.0;
+                    }
                     $baselineSohTotal += $value;
                     $bucket = $warehouseBucketById[(int) $row->warehouse_outlet_id] ?? 'other';
                     if ($bucket === 'kitchen_bar') {
@@ -610,6 +632,11 @@ class FloorOrderVsForecastReportController extends Controller
                     $qtyEntries = $state['qty_entries'];
                     $qtyEntriesCount = count($qtyEntries);
                     while ($state['next_qty_index'] < $qtyEntriesCount && $qtyEntries[$state['next_qty_index']]['date'] <= $dayKey) {
+                        if ($hasInitialBalance && $qtyEntries[$state['next_qty_index']]['date'] === $rangeStart) {
+                            $state['next_qty_index']++;
+                            continue;
+                        }
+
                         $state['qty_small'] = (float) $qtyEntries[$state['next_qty_index']]['qty_small'];
                         $state['next_qty_index']++;
                     }
@@ -617,6 +644,11 @@ class FloorOrderVsForecastReportController extends Controller
                     $macEntries = $state['mac_entries'];
                     $macEntriesCount = count($macEntries);
                     while ($state['next_mac_index'] < $macEntriesCount && $macEntries[$state['next_mac_index']]['date'] <= $dayKey) {
+                        if ($hasInitialBalance && $macEntries[$state['next_mac_index']]['date'] === $rangeStart) {
+                            $state['next_mac_index']++;
+                            continue;
+                        }
+
                         $state['mac'] = (float) $macEntries[$state['next_mac_index']]['mac'];
                         $state['next_mac_index']++;
                     }
