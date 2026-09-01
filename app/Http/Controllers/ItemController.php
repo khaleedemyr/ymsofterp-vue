@@ -626,7 +626,7 @@ class ItemController extends Controller
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'sub_category_id' => 'nullable|exists:sub_categories,id',
-            'warehouse_division_id' => 'nullable|string|max:255',
+            'warehouse_division_id' => 'nullable|integer|exists:warehouse_division,id',
             'sku' => 'required|string|max:255|unique:items,sku,' . $item->id,
             'type' => ['nullable', Rule::in($allowedTypes)],
             'name' => 'required|string|max:255',
