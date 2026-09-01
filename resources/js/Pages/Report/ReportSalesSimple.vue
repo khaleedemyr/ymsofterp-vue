@@ -142,6 +142,13 @@
                       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
                         <div class="font-bold text-gray-700">Detail Order ({{ tanggal }})</div>
                         <div class="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto sm:min-w-[280px] sm:max-w-md">
+                          <select
+                            v-model="orderDetailSort[tanggal]"
+                            class="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          >
+                            <option value="time">Urut waktu</option>
+                            <option value="payment">Kelompok metode pembayaran</option>
+                          </select>
                           <div class="relative flex-1">
                             <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none" aria-hidden="true" />
                             <input
@@ -269,6 +276,8 @@ const selectedEodRow = ref({});
 const expanded = reactive({});
 /** Kata kunci pencarian detail order per tanggal (key = YYYY-MM-DD) */
 const orderDetailSearch = reactive({});
+/** Urutan detail order per tanggal (key = YYYY-MM-DD) */
+const orderDetailSort = reactive({});
 const showOrderDetailModal = ref(false);
 const selectedOrderDetail = ref({});
 const user = usePage().props.auth?.user || {};
@@ -303,6 +312,13 @@ function detailSearchQuery(tanggal) {
   return String(orderDetailSearch[tanggal] ?? '').trim();
 }
 
+function paymentMethodLabel(order) {
+  return (order.payments || [])
+    .map((payment) => String(payment.payment_type || payment.payment_code || '-').toLowerCase())
+    .sort()
+    .join(', ');
+}
+
 function orderMatchesDetailSearch(order, qLower) {
   if (!qLower) return true;
   const n = (v) => String(v ?? '').toLowerCase();
@@ -318,6 +334,7 @@ function orderMatchesDetailSearch(order, qLower) {
     n(order.cashier),
     n(order.nama_outlet),
     n(order.kode_outlet),
+    paymentMethodLabel(order),
     String(order.id ?? ''),
     String(order.grand_total ?? ''),
     String(order.total ?? ''),
@@ -328,8 +345,14 @@ function orderMatchesDetailSearch(order, qLower) {
 function ordersByDateFiltered(tanggal) {
   const list = ordersByDate(tanggal);
   const q = detailSearchQuery(tanggal).toLowerCase();
-  if (!q) return list;
-  return list.filter((o) => orderMatchesDetailSearch(o, q));
+  const filtered = q ? list.filter((order) => orderMatchesDetailSearch(order, q)) : list;
+  if (orderDetailSort[tanggal] !== 'payment') return filtered;
+
+  return [...filtered].sort((firstOrder, secondOrder) => {
+    const methodComparison = paymentMethodLabel(firstOrder).localeCompare(paymentMethodLabel(secondOrder));
+    if (methodComparison !== 0) return methodComparison;
+    return String(firstOrder.created_at ?? '').localeCompare(String(secondOrder.created_at ?? ''));
+  });
 }
 
 const fetchOutlets = async () => {
