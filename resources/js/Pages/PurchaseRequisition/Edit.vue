@@ -1303,23 +1303,18 @@
           <div class="mb-6">
             <h3 class="text-lg font-medium text-gray-900 mb-4">Approval Flow</h3>
             <p class="text-sm text-gray-600 mb-4">Add approvers in order from lowest to highest level. The first approver will be the lowest level, and the last approver will be the highest level.</p>
-            
-            <!-- Warning for Kasbon Mode -->
-            <div v-if="form.mode === 'kasbon'" class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+
+            <div class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
               <p class="text-sm font-medium text-yellow-800 mb-2">
                 <i class="fa fa-exclamation-triangle mr-2"></i>
                 Wajib sertakan GM Finance sebagai Approver
               </p>
-              <p class="text-xs text-yellow-700">
-                Untuk pengajuan kasbon, pastikan GM Finance sudah ditambahkan dalam daftar approvers.
-              </p>
             </div>
             
-            <!-- Warning for Payment Application Mode -->
-            <div v-if="form.mode === 'purchase_payment'" class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
-              <p class="text-sm font-medium text-yellow-800 mb-2">
-                <i class="fa fa-exclamation-triangle mr-2"></i>
-                Untuk Payment Application wajib sertakan GM Finance sebagai Approver
+            <!-- Warning for Kasbon Mode -->
+            <div v-if="form.mode === 'kasbon'" class="mb-4 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+              <p class="text-xs text-yellow-700">
+                Untuk pengajuan kasbon, pastikan GM Finance sudah ditambahkan dalam daftar approvers.
               </p>
             </div>
             
@@ -1328,10 +1323,6 @@
               <p class="text-sm font-medium text-yellow-800 mb-2">
                 <i class="fa fa-exclamation-triangle mr-2"></i>
                 Untuk Travel Application wajib menyertakan GA Supervisor sebagai Approver pertama
-              </p>
-              <p class="text-sm font-medium text-yellow-800 mb-2">
-                <i class="fa fa-exclamation-triangle mr-2"></i>
-                Wajib sertakan GM Finance sebagai Approver
               </p>
               <p class="text-xs text-yellow-700 ml-6">
                 Contoh urutan approver: GA Supervisor → GM HR → GM Finance → BOD
