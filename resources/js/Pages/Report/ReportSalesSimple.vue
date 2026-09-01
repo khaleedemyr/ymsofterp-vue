@@ -180,6 +180,7 @@
                               <th class="px-3 py-2">Service</th>
                               <th class="px-3 py-2">PB1</th>
                               <th class="px-3 py-2">Grand Total</th>
+                              <th class="px-3 py-2">Metode Pembayaran</th>
                               <th class="px-3 py-2">Status</th>
                               <th class="px-3 py-2">Detail</th>
                             </tr>
@@ -199,6 +200,12 @@
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.service) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.pb1) }}</td>
                               <td class="px-3 py-2 text-right">{{ formatCurrency(order.grand_total) }}</td>
+                              <td class="px-3 py-2 text-xs whitespace-nowrap">
+                                <div v-for="(payment, paymentIndex) in order.payments || []" :key="paymentIndex">
+                                  {{ payment.payment_type || payment.payment_code || '-' }}<span v-if="payment.payment_type && payment.payment_code"> ({{ payment.payment_code }})</span>
+                                </div>
+                                <span v-if="!(order.payments || []).length">-</span>
+                              </td>
                               <td class="px-3 py-2">{{ order.status }}</td>
                               <td class="px-3 py-2 text-center">
                                 <button @click="openOrderDetail(order)" class="bg-blue-500 text-white px-3 py-1 rounded shadow hover:bg-blue-700 transition text-xs font-bold">
