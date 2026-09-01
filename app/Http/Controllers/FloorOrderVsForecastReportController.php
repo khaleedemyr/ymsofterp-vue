@@ -533,6 +533,65 @@ class FloorOrderVsForecastReportController extends Controller
                     $baselineSohSvc += $bv;
                 }
             }
+
+            $activeWarehouseIds = DB::table('warehouse_outlets')
+                ->where('outlet_id', $selectedOutletId)
+                ->where('status', 'active')
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+            $costReportItemIds = DB::table('outlet_food_inventory_stocks as s')
+                ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+                ->where('s.id_outlet', $selectedOutletId)
+                ->whereIn('s.warehouse_outlet_id', $activeWarehouseIds)
+                ->pluck('fi.id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            $hasInitialBalance = !empty($activeWarehouseIds) && !empty($costReportItemIds)
+                && DB::table('outlet_food_inventory_cards')
+                    ->where('id_outlet', $selectedOutletId)
+                    ->whereIn('warehouse_outlet_id', $activeWarehouseIds)
+                    ->whereIn('inventory_item_id', $costReportItemIds)
+                    ->where('reference_type', 'initial_balance')
+                    ->whereDate('date', $rangeStart)
+                    ->exists();
+
+            if ($hasInitialBalance) {
+                $latestInitialBalanceByTuple = DB::table('outlet_food_inventory_cards as c')
+                    ->where('c.id_outlet', $selectedOutletId)
+                    ->whereIn('c.warehouse_outlet_id', $activeWarehouseIds)
+                    ->whereIn('c.inventory_item_id', $costReportItemIds)
+                    ->where('c.reference_type', 'initial_balance')
+                    ->whereDate('c.date', $rangeStart)
+                    ->groupBy('c.warehouse_outlet_id', 'c.inventory_item_id')
+                    ->selectRaw("c.warehouse_outlet_id, c.inventory_item_id, MAX(CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0'))) as mx");
+
+                $baselineSohKb = 0.0;
+                $baselineSohSvc = 0.0;
+                $baselineSohTotal = 0.0;
+                $initialBalanceRows = DB::table('outlet_food_inventory_cards as c')
+                    ->joinSub($latestInitialBalanceByTuple, 'b', function ($join) {
+                        $join->on('b.warehouse_outlet_id', '=', 'c.warehouse_outlet_id')
+                            ->on('b.inventory_item_id', '=', 'c.inventory_item_id')
+                            ->whereRaw("CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) = b.mx");
+                    })
+                    ->select('c.warehouse_outlet_id', 'c.saldo_value')
+                    ->get();
+
+                foreach ($initialBalanceRows as $row) {
+                    $value = (float) ($row->saldo_value ?? 0);
+                    $baselineSohTotal += $value;
+                    $bucket = $warehouseBucketById[(int) $row->warehouse_outlet_id] ?? 'other';
+                    if ($bucket === 'kitchen_bar') {
+                        $baselineSohKb += $value;
+                    } elseif ($bucket === 'service') {
+                        $baselineSohSvc += $value;
+                    }
+                }
+            }
             $prevSohKb = $baselineSohKb;
             $prevSohSvc = $baselineSohSvc;
             $prevSohTotal = $baselineSohTotal;
