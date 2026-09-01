@@ -205,7 +205,24 @@ class EngineeringReportController extends Controller
             $query->whereDate('orders.created_at', $date);
         }
         $orders = $query->orderBy('orders.created_at')->get();
-        return new OrderDetailExport($orders, $date);
+        $paymentMethodsByOrderId = DB::table('order_payment')
+            ->whereIn('order_id', $orders->pluck('id'))
+            ->select('order_id', 'payment_type', 'payment_code')
+            ->get()
+            ->groupBy('order_id')
+            ->map(fn ($payments) => $payments
+                ->map(function ($payment) {
+                    $type = $payment->payment_type ?: $payment->payment_code;
+
+                    return $payment->payment_type && $payment->payment_code
+                        ? $type.' ('.$payment->payment_code.')'
+                        : $type;
+                })
+                ->filter()
+                ->unique()
+                ->implode(', '));
+
+        return new OrderDetailExport($orders, $date, $paymentMethodsByOrderId);
     }
 
     /**

@@ -14,11 +14,13 @@ use Maatwebsite\Excel\Facades\Excel;
 class OrderDetailExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths, Responsable
 {
     private $orders;
+    private $paymentMethodsByOrderId;
     public $fileName = 'order_detail.xlsx';
 
-    public function __construct($orders, $tanggal = null)
+    public function __construct($orders, $tanggal = null, $paymentMethodsByOrderId = [])
     {
         $this->orders = $orders;
+        $this->paymentMethodsByOrderId = $paymentMethodsByOrderId;
         if ($tanggal) {
             $this->fileName = 'order_detail_' . $tanggal . '.xlsx';
         }
@@ -32,7 +34,7 @@ class OrderDetailExport implements FromCollection, WithHeadings, WithMapping, Wi
     public function headings(): array
     {
         return [
-            'No', 'Nomor Order', 'Table', 'Pax', 'Total', 'Discount', 'Cashback', 'Service', 'PB1', 'Grand Total', 'Status'
+            'No', 'Nomor Order', 'Table', 'Pax', 'Total', 'Discount', 'Cashback', 'Service', 'PB1', 'Grand Total', 'Metode Pembayaran', 'Status'
         ];
     }
 
@@ -51,13 +53,14 @@ class OrderDetailExport implements FromCollection, WithHeadings, WithMapping, Wi
             $order->service,
             $order->pb1,
             $order->grand_total,
+            $this->paymentMethodsByOrderId[$order->id] ?? '-',
             $order->status,
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
-        $sheet->getStyle('A1:K1')->applyFromArray([
+        $sheet->getStyle('A1:L1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
@@ -73,9 +76,10 @@ class OrderDetailExport implements FromCollection, WithHeadings, WithMapping, Wi
     public function columnWidths(): array
     {
         $widths = [];
-        foreach (range('A', 'K') as $col) {
+        foreach (range('A', 'L') as $col) {
             $widths[$col] = 18;
         }
+        $widths['K'] = 32;
         return $widths;
     }
 
