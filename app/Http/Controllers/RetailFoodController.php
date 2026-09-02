@@ -592,6 +592,18 @@ class RetailFoodController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('RETAIL_FOOD_STORE: Gagal menyimpan transaksi', [
+                'message' => $e->getMessage(),
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString(),
+                'outlet_id' => $request->outlet_id,
+                'warehouse_outlet_id' => $request->warehouse_outlet_id,
+                'transaction_date' => $request->transaction_date,
+                'payment_method' => $request->payment_method,
+                'supplier_id' => $request->supplier_id,
+                'items' => $request->items,
+            ]);
+
             return response()->json([
                 'message' => 'Gagal menyimpan transaksi',
                 'error' => $e->getMessage()
