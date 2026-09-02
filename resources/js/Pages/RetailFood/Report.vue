@@ -82,7 +82,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-200">
-            <template v-for="transaction in transactions" :key="transaction.id">
+            <template v-for="transaction in transactionRows" :key="transaction.id">
               <tr class="hover:bg-blue-50 cursor-pointer" @click="toggleTransaction(transaction.id)">
                 <td class="px-4 py-3 text-center text-gray-500">
                   <i class="fa-solid" :class="expandedTransactions[transaction.id] ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
@@ -120,17 +120,35 @@
                 </td>
               </tr>
             </template>
-            <tr v-if="!transactions.length">
+            <tr v-if="!transactionRows.length">
               <td colspan="6" class="py-12 text-center text-gray-500">Tidak ada data ditemukan.</td>
             </tr>
           </tbody>
-          <tfoot v-if="transactions.length" class="bg-gray-100 border-t-2 border-gray-300">
+          <tfoot v-if="transactionRows.length" class="bg-gray-100 border-t-2 border-gray-300">
             <tr>
               <td colspan="5" class="px-4 py-3 text-right font-semibold text-gray-700">Total</td>
               <td class="px-4 py-3 text-right font-bold text-gray-900">Rp {{ formatCurrency(totalAmount) }}</td>
             </tr>
           </tfoot>
         </table>
+      </div>
+
+      <div v-if="transactions.total" class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-gray-500">
+          Menampilkan {{ transactions.from }}-{{ transactions.to }} dari {{ transactions.total }} transaksi
+        </p>
+        <nav class="flex flex-wrap gap-1" aria-label="Pagination">
+          <button
+            v-for="link in transactions.links"
+            :key="link.label"
+            type="button"
+            :disabled="!link.url"
+            @click="goToPage(link.url)"
+            v-html="link.label"
+            class="min-w-9 rounded-md border px-3 py-1.5 text-sm transition disabled:cursor-not-allowed disabled:opacity-40"
+            :class="link.active ? 'border-blue-600 bg-blue-600 font-semibold text-white' : 'border-gray-300 bg-white text-gray-600 hover:border-blue-400 hover:text-blue-600'"
+          />
+        </nav>
       </div>
     </div>
   </AppLayout>
@@ -142,7 +160,7 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 
 const props = defineProps({
-  transactions: { type: Array, default: () => [] },
+  transactions: { type: Object, required: true },
   suppliers: { type: Array, default: () => [] },
   outlets: { type: Array, default: () => [] },
   paymentMethods: { type: Array, default: () => [] },
@@ -154,7 +172,8 @@ const supplierSearch = ref(props.suppliers.find((supplier) => String(supplier.id
 const outletSearch = ref(props.outlets.find((outlet) => String(outlet.id) === String(filters.value.outlet_id))?.name || '');
 const exporting = ref(false);
 const expandedTransactions = ref({});
-const totalAmount = computed(() => props.transactions.reduce((total, transaction) => total + Number(transaction.total_amount || 0), 0));
+const transactionRows = computed(() => props.transactions.data || []);
+const totalAmount = computed(() => transactionRows.value.reduce((total, transaction) => total + Number(transaction.total_amount || 0), 0));
 
 const toggleTransaction = (id) => {
   expandedTransactions.value[id] = !expandedTransactions.value[id];
@@ -172,6 +191,10 @@ const selectOutlet = () => {
 
 const applyFilters = () => {
   router.get(route('retail-food.report'), filters.value, { preserveState: true, preserveScroll: true });
+};
+
+const goToPage = (url) => {
+  if (url) router.get(url, {}, { preserveState: true, preserveScroll: true });
 };
 
 const resetFilters = () => {
