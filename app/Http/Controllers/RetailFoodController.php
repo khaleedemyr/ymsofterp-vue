@@ -7,6 +7,7 @@ use App\Models\RetailFoodItem;
 use App\Models\Outlet;
 use App\Exports\RetailFoodExport;
 use App\Exports\RetailFoodSupplierReportExport;
+use App\Exports\RetailFoodTransactionReportExport;
 use App\Support\ItemUnitCost;
 use App\Support\ItemUnitQtyConverter;
 use App\Support\OutletInventoryCostGuard;
@@ -1038,6 +1039,126 @@ class RetailFoodController extends Controller
                 'error' => 'Gagal export data: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function report(Request $request)
+    {
+        $user = auth()->user()->load('outlet');
+        $report = $this->retailFoodReportData($request, $user->id_outlet);
+
+        return Inertia::render('RetailFood/Report', [
+            'user' => $user,
+            'transactions' => $report['transactions'],
+            'suppliers' => $report['suppliers'],
+            'outlets' => $report['outlets'],
+            'paymentMethods' => $report['payment_methods'],
+            'filters' => $report['filters'],
+        ]);
+    }
+
+    public function exportReport(Request $request)
+    {
+        $user = auth()->user()->load('outlet');
+        $report = $this->retailFoodReportData($request, $user->id_outlet);
+
+        return (new RetailFoodTransactionReportExport(
+            $report['transactions'],
+            $report['filters']
+        ))->download();
+    }
+
+    private function retailFoodReportData(Request $request, int $userOutletId): array
+    {
+        $dateFrom = $request->filled('date_from') ? $request->get('date_from') : now()->startOfMonth()->toDateString();
+        $dateTo = $request->filled('date_to') ? $request->get('date_to') : now()->endOfMonth()->toDateString();
+        $supplierId = $request->get('supplier_id');
+        $outletId = $request->get('outlet_id');
+        $paymentMethod = $request->get('payment_method');
+
+        $query = DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+            ->where('rf.status', 'approved')
+            ->whereNotNull('rf.supplier_id');
+
+        if ($userOutletId != 1) {
+            $query->where('rf.outlet_id', $userOutletId);
+        }
+
+        if ($dateFrom) {
+            $query->whereDate('rf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('rf.transaction_date', '<=', $dateTo);
+        }
+        if ($supplierId) {
+            $query->where('rf.supplier_id', $supplierId);
+        }
+        if ($outletId) {
+            $query->where('rf.outlet_id', $outletId);
+        }
+        if ($paymentMethod) {
+            $query->where('rf.payment_method', $paymentMethod);
+        }
+
+        $transactions = $query->select([
+                'rf.id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.payment_method',
+                'rf.total_amount',
+                's.name as supplier_name',
+                'o.nama_outlet as outlet_name',
+            ])
+            ->orderByDesc('rf.transaction_date')
+            ->orderByDesc('rf.id')
+            ->get();
+
+        $items = DB::table('retail_food_items')
+            ->whereIn('retail_food_id', $transactions->pluck('id'))
+            ->select(['id', 'retail_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
+            ->orderBy('id')
+            ->get()
+            ->groupBy('retail_food_id');
+
+        $transactions->each(function ($transaction) use ($items) {
+            $transaction->items = $items->get($transaction->id, collect())->values();
+        });
+
+        $optionQuery = DB::table('retail_food as rf')
+            ->where('rf.status', 'approved')
+            ->whereNotNull('rf.supplier_id');
+        if ($userOutletId != 1) {
+            $optionQuery->where('rf.outlet_id', $userOutletId);
+        }
+
+        return [
+            'transactions' => $transactions,
+            'suppliers' => (clone $optionQuery)
+                ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+                ->select('s.id', 's.name')
+                ->distinct()
+                ->orderBy('s.name')
+                ->get(),
+            'outlets' => (clone $optionQuery)
+                ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+                ->select('o.id_outlet as id', 'o.nama_outlet as name')
+                ->distinct()
+                ->orderBy('o.nama_outlet')
+                ->get(),
+            'payment_methods' => (clone $optionQuery)
+                ->whereNotNull('rf.payment_method')
+                ->distinct()
+                ->orderBy('rf.payment_method')
+                ->pluck('rf.payment_method'),
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'supplier_id' => $supplierId,
+                'outlet_id' => $outletId,
+                'payment_method' => $paymentMethod,
+            ],
+        ];
     }
 
     /**
