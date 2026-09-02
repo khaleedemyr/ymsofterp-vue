@@ -303,9 +303,8 @@ class RetailFoodController extends Controller
 
             // Hitung total amount
             $totalAmount = collect($request->items)->sum(function ($item) {
-                        $perPage = min(max((int) $request->get('per_page', 15), 1), 50);
-                        $transactions = $paginate
-                            ? $transactions->paginate($perPage)->withQueryString();
+                return $item['subtotal'];
+            });
 
             // Petty cash lock: RF + RNF non-contra bon per outlet (0.8% × 80% monthly_target header).
             if ($request->payment_method !== 'contra_bon') {
@@ -1114,8 +1113,9 @@ class RetailFoodController extends Controller
             ->orderByDesc('rf.transaction_date')
             ->orderByDesc('rf.id');
 
+        $perPage = min(max((int) $request->get('per_page', 15), 1), 50);
         $transactions = $paginate
-            ? $transactions->paginate(15)->withQueryString()
+            ? $transactions->paginate($perPage)->withQueryString()
             : $transactions->get();
 
         $transactionRows = $paginate ? $transactions->getCollection() : $transactions;
