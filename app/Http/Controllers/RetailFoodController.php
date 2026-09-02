@@ -1091,6 +1091,7 @@ class RetailFoodController extends Controller
             ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
             ->join('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
             ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
             ->whereNotNull('rf.supplier_id');
 
         if ($userOutletId != 1) {
@@ -1145,6 +1146,7 @@ class RetailFoodController extends Controller
 
         $optionQuery = DB::table('retail_food as rf')
             ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
             ->whereNotNull('rf.supplier_id');
         if ($userOutletId != 1) {
             $optionQuery->where('rf.outlet_id', $userOutletId);
