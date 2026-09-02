@@ -304,9 +304,11 @@ const resetFilters = () => {
 
 const exportToExcel = () => {
   exporting.value = true;
-  const { per_page, ...exportFilters } = filters.value;
-  const params = new URLSearchParams(exportFilters).toString();
-  window.open(`${route('retail-food.report.export')}?${params}`, '_blank');
+  // Reuse the exact query string that produced the currently displayed data,
+  // so the export always matches what's on screen (avoids stale local filter state).
+  const params = new URLSearchParams(window.location.search);
+  params.delete('per_page');
+  window.open(`${route('retail-food.report.export')}?${params.toString()}`, '_blank');
   window.setTimeout(() => { exporting.value = false; }, 2000);
 };
 
