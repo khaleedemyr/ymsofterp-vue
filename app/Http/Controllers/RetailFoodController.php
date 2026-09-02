@@ -303,7 +303,7 @@ class RetailFoodController extends Controller
 
             // Hitung total amount
             $totalAmount = collect($request->items)->sum(function ($item) {
-                return $item['subtotal'];
+                return (float) $item['qty'] * (float) $item['price'];
             });
 
             // Petty cash lock: RF + RNF non-contra bon per outlet (0.8% × 80% monthly_target header).
