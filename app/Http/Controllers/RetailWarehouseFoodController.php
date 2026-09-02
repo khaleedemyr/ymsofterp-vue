@@ -546,24 +546,44 @@ class RetailWarehouseFoodController extends Controller
 
             DB::beginTransaction();
 
+            $stockCards = DB::table('food_inventory_cards')
+                ->where('reference_type', 'retail_warehouse_food')
+                ->where('reference_id', $retailWarehouseFood->id)
+                ->lockForUpdate()
+                ->get();
+
             DB::table('inventory_item_serials')
                 ->where('source_type', 'retail_warehouse_food')
                 ->where('source_id', $retailWarehouseFood->id)
                 ->delete();
 
-            // Get items to rollback inventory
-            $items = $retailWarehouseFood->items;
-            
-            // Rollback inventory for each item
-            foreach ($items as $item) {
-                $this->rollbackInventory($item, $retailWarehouseFood->warehouse_id);
+            foreach ($stockCards as $stockCard) {
+                $this->rollbackInventoryCard($stockCard);
             }
+
+            DB::table('food_inventory_cards')
+                ->where('reference_type', 'retail_warehouse_food')
+                ->where('reference_id', $retailWarehouseFood->id)
+                ->delete();
+
+            DB::table('food_inventory_cost_histories')
+                ->where('reference_type', 'retail_warehouse_food')
+                ->where('reference_id', $retailWarehouseFood->id)
+                ->delete();
 
             // Delete retail warehouse food items
             $retailWarehouseFood->items()->delete();
             
             // Delete retail warehouse food
             $retailWarehouseFood->delete();
+
+            foreach ($stockCards->pluck('inventory_item_id')->unique() as $inventoryItemId) {
+                $this->recalculateWarehouseCardSaldo(
+                    $inventoryItemId,
+                    $retailWarehouseFood->warehouse_id,
+                    $retailWarehouseFood->transaction_date
+                );
+            }
 
             DB::commit();
 
@@ -579,6 +599,87 @@ class RetailWarehouseFoodController extends Controller
                 'success' => false,
                 'message' => 'Gagal menghapus transaksi: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    private function rollbackInventoryCard(object $stockCard): void
+    {
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $stockCard->inventory_item_id)
+            ->where('warehouse_id', $stockCard->warehouse_id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            return;
+        }
+
+        DB::table('food_inventory_stocks')
+            ->where('id', $stock->id)
+            ->update([
+                'qty_small' => max(0, (float) $stock->qty_small - ((float) $stockCard->in_qty_small - (float) $stockCard->out_qty_small)),
+                'qty_medium' => max(0, (float) $stock->qty_medium - ((float) $stockCard->in_qty_medium - (float) $stockCard->out_qty_medium)),
+                'qty_large' => max(0, (float) $stock->qty_large - ((float) $stockCard->in_qty_large - (float) $stockCard->out_qty_large)),
+                'value' => max(0, (float) $stock->value - ((float) $stockCard->value_in - (float) $stockCard->value_out)),
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function recalculateWarehouseCardSaldo(int $inventoryItemId, int $warehouseId, string $fromDate): void
+    {
+        $previousCard = DB::table('food_inventory_cards')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->whereDate('date', '<', $fromDate)
+            ->orderByDesc('date')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $runningSmall = (float) ($previousCard->saldo_qty_small ?? 0);
+        $runningMedium = (float) ($previousCard->saldo_qty_medium ?? 0);
+        $runningLarge = (float) ($previousCard->saldo_qty_large ?? 0);
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->first();
+        $mac = (float) ($stock->last_cost_small ?? 0);
+
+        $cards = DB::table('food_inventory_cards')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->whereDate('date', '>=', $fromDate)
+            ->orderBy('date')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($cards as $card) {
+            $runningSmall += (float) $card->in_qty_small - (float) $card->out_qty_small;
+            $runningMedium += (float) $card->in_qty_medium - (float) $card->out_qty_medium;
+            $runningLarge += (float) $card->in_qty_large - (float) $card->out_qty_large;
+
+            DB::table('food_inventory_cards')
+                ->where('id', $card->id)
+                ->update([
+                    'saldo_qty_small' => $runningSmall,
+                    'saldo_qty_medium' => $runningMedium,
+                    'saldo_qty_large' => $runningLarge,
+                    'saldo_value' => max(0, $runningSmall * $mac),
+                    'updated_at' => now(),
+                ]);
+        }
+
+        if ($stock && $cards->isNotEmpty()) {
+            DB::table('food_inventory_cards')
+                ->where('id', $cards->last()->id)
+                ->update([
+                    'saldo_qty_small' => $stock->qty_small,
+                    'saldo_qty_medium' => $stock->qty_medium,
+                    'saldo_qty_large' => $stock->qty_large,
+                    'saldo_value' => $stock->value,
+                    'updated_at' => now(),
+                ]);
         }
     }
 
