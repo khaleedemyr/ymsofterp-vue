@@ -28,17 +28,29 @@
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
-          <select v-model="filters.supplier_id" class="w-full select select-bordered">
-            <option value="">Semua Supplier</option>
-            <option v-for="supplier in suppliers" :key="supplier.id" :value="String(supplier.id)">{{ supplier.name }}</option>
-          </select>
+          <input
+            v-model="supplierSearch"
+            list="report-retail-food-suppliers"
+            placeholder="Cari supplier..."
+            class="w-full input input-bordered"
+            @change="selectSupplier"
+          />
+          <datalist id="report-retail-food-suppliers">
+            <option v-for="supplier in suppliers" :key="supplier.id" :value="supplier.name"></option>
+          </datalist>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Outlet</label>
-          <select v-model="filters.outlet_id" class="w-full select select-bordered">
-            <option value="">Semua Outlet</option>
-            <option v-for="outlet in outlets" :key="outlet.id" :value="String(outlet.id)">{{ outlet.name }}</option>
-          </select>
+          <input
+            v-model="outletSearch"
+            list="report-retail-food-outlets"
+            placeholder="Cari outlet..."
+            class="w-full input input-bordered"
+            @change="selectOutlet"
+          />
+          <datalist id="report-retail-food-outlets">
+            <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.name"></option>
+          </datalist>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
@@ -138,6 +150,8 @@ const props = defineProps({
 });
 
 const filters = ref({ ...props.filters });
+const supplierSearch = ref(props.suppliers.find((supplier) => String(supplier.id) === String(filters.value.supplier_id))?.name || '');
+const outletSearch = ref(props.outlets.find((outlet) => String(outlet.id) === String(filters.value.outlet_id))?.name || '');
 const exporting = ref(false);
 const expandedTransactions = ref({});
 const totalAmount = computed(() => props.transactions.reduce((total, transaction) => total + Number(transaction.total_amount || 0), 0));
@@ -146,12 +160,24 @@ const toggleTransaction = (id) => {
   expandedTransactions.value[id] = !expandedTransactions.value[id];
 };
 
+const selectSupplier = () => {
+  const supplier = props.suppliers.find((item) => item.name.toLowerCase() === supplierSearch.value.trim().toLowerCase());
+  filters.value.supplier_id = supplier ? String(supplier.id) : '';
+};
+
+const selectOutlet = () => {
+  const outlet = props.outlets.find((item) => item.name.toLowerCase() === outletSearch.value.trim().toLowerCase());
+  filters.value.outlet_id = outlet ? String(outlet.id) : '';
+};
+
 const applyFilters = () => {
   router.get(route('retail-food.report'), filters.value, { preserveState: true, preserveScroll: true });
 };
 
 const resetFilters = () => {
   filters.value = { date_from: '', date_to: '', supplier_id: '', outlet_id: '', payment_method: '' };
+  supplierSearch.value = '';
+  outletSearch.value = '';
   applyFilters();
 };
 

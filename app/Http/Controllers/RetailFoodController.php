@@ -303,8 +303,9 @@ class RetailFoodController extends Controller
 
             // Hitung total amount
             $totalAmount = collect($request->items)->sum(function ($item) {
-                return $item['qty'] * $item['price'];
-            });
+                        $perPage = min(max((int) $request->get('per_page', 15), 1), 50);
+                        $transactions = $paginate
+                            ? $transactions->paginate($perPage)->withQueryString();
 
             // Petty cash lock: RF + RNF non-contra bon per outlet (0.8% × 80% monthly_target header).
             if ($request->payment_method !== 'contra_bon') {
@@ -1044,7 +1045,7 @@ class RetailFoodController extends Controller
     public function report(Request $request)
     {
         $user = auth()->user()->load('outlet');
-        $report = $this->retailFoodReportData($request, $user->id_outlet);
+        $report = $this->retailFoodReportData($request, $user->id_outlet, true);
 
         return Inertia::render('RetailFood/Report', [
             'user' => $user,
@@ -1067,7 +1068,7 @@ class RetailFoodController extends Controller
         ))->download();
     }
 
-    private function retailFoodReportData(Request $request, int $userOutletId): array
+    private function retailFoodReportData(Request $request, int $userOutletId, bool $paginate = false): array
     {
         $dateFrom = $request->filled('date_from') ? $request->get('date_from') : now()->startOfMonth()->toDateString();
         $dateTo = $request->filled('date_to') ? $request->get('date_to') : now()->endOfMonth()->toDateString();
@@ -1111,17 +1112,22 @@ class RetailFoodController extends Controller
                 'o.nama_outlet as outlet_name',
             ])
             ->orderByDesc('rf.transaction_date')
-            ->orderByDesc('rf.id')
-            ->get();
+            ->orderByDesc('rf.id');
+
+        $transactions = $paginate
+            ? $transactions->paginate(15)->withQueryString()
+            : $transactions->get();
+
+        $transactionRows = $paginate ? $transactions->getCollection() : $transactions;
 
         $items = DB::table('retail_food_items')
-            ->whereIn('retail_food_id', $transactions->pluck('id'))
+            ->whereIn('retail_food_id', $transactionRows->pluck('id'))
             ->select(['id', 'retail_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
             ->orderBy('id')
             ->get()
             ->groupBy('retail_food_id');
 
-        $transactions->each(function ($transaction) use ($items) {
+        $transactionRows->each(function ($transaction) use ($items) {
             $transaction->items = $items->get($transaction->id, collect())->values();
         });
 
