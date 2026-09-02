@@ -562,6 +562,12 @@ const menuGroups = [
                 code: 'retail_food_supplier_report',
             },
             {
+                name: () => 'Report Retail Food',
+                icon: 'fa-solid fa-chart-column',
+                route: '/report-retail-food',
+                code: 'report_retail_food',
+            },
+            {
                 name: () => t('sidebar.menus.stock_opname_adjustment_report'),
                 icon: 'fa-solid fa-chart-bar',
                 route: '/stock-opname-adjustment-report',
