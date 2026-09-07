@@ -150,8 +150,8 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMult
                             'warehouse_outlet_id' => $row['warehouse_outlet_id'],
                         ]);
                     }
-                    // 5. Insert ke outlet_food_inventory_cards
-                    DB::table('outlet_food_inventory_cards')->insert([
+                    // 5. Upsert kartu saldo awal pada tanggal upload
+                    $cardData = [
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $outlet->id_outlet,
                         'date' => now(),
@@ -176,9 +176,21 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMult
                         'created_at' => now(),
                         'updated_at' => now(),
                         'warehouse_outlet_id' => $row['warehouse_outlet_id'],
-                    ]);
-                    // 6. Insert ke outlet_food_inventory_cost_histories
-                    DB::table('outlet_food_inventory_cost_histories')->insert([
+                    ];
+                    $existingCard = DB::table('outlet_food_inventory_cards')
+                        ->where('inventory_item_id', $inventoryItemId)
+                        ->where('id_outlet', $outlet->id_outlet)
+                        ->where('warehouse_outlet_id', $row['warehouse_outlet_id'])
+                        ->where('reference_type', 'initial_balance')
+                        ->whereDate('date', now()->toDateString())
+                        ->first();
+                    if ($existingCard) {
+                        DB::table('outlet_food_inventory_cards')->where('id', $existingCard->id)->update($cardData);
+                    } else {
+                        DB::table('outlet_food_inventory_cards')->insert($cardData);
+                    }
+                    // 6. Upsert histori biaya saldo awal pada tanggal upload
+                    $costHistoryData = [
                         'inventory_item_id' => $inventoryItemId,
                         'id_outlet' => $outlet->id_outlet,
                         'date' => now(),
@@ -190,7 +202,21 @@ class OutletStockBalanceImport implements ToCollection, WithHeadingRow, WithMult
                         'reference_id' => 0,
                         'created_at' => now(),
                         'warehouse_outlet_id' => $row['warehouse_outlet_id'],
-                    ]);
+                    ];
+                    $existingCostHistory = DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $inventoryItemId)
+                        ->where('id_outlet', $outlet->id_outlet)
+                        ->where('warehouse_outlet_id', $row['warehouse_outlet_id'])
+                        ->where('reference_type', 'initial_balance')
+                        ->whereDate('date', now()->toDateString())
+                        ->first();
+                    if ($existingCostHistory) {
+                        DB::table('outlet_food_inventory_cost_histories')
+                            ->where('id', $existingCostHistory->id)
+                            ->update($costHistoryData);
+                    } else {
+                        DB::table('outlet_food_inventory_cost_histories')->insert($costHistoryData);
+                    }
                     $this->successCount++;
                 } catch (\Exception $e) {
                     $this->errors[] = [

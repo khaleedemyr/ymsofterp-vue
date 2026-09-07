@@ -31,6 +31,7 @@ const memberStats = ref({
   balance_formatted: '0'
 });
 const loadingTransactions = ref(false);
+const voidingTransactionId = ref(null);
 const expandedTransactions = ref(new Set()); // Track which transactions are expanded
 
 // Preferences modal state
@@ -523,6 +524,49 @@ function closeTransactionModal() {
     balance_formatted: '0'
   };
   expandedTransactions.value.clear(); // Reset expanded transactions
+}
+
+async function voidTransaction(transaction) {
+  const result = await Swal.fire({
+    title: 'Void point member?',
+    text: `Transaksi ${formatNumber(transaction.point)} point akan dibatalkan dan saldo member disesuaikan.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Void Point',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+    reverseButtons: true
+  });
+
+  if (!result.isConfirmed || !selectedMember.value) return;
+
+  voidingTransactionId.value = transaction.id;
+  try {
+    const response = await axios.post(
+      `/api/members/${selectedMember.value.id}/transactions/${transaction.id}/void`
+    );
+
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Gagal melakukan void point');
+    }
+
+    await Swal.fire({
+      title: 'Berhasil',
+      text: response.data.message,
+      icon: 'success',
+      confirmButtonText: 'OK'
+    });
+    await viewTransactions(selectedMember.value);
+  } catch (error) {
+    await Swal.fire({
+      title: 'Gagal',
+      text: error.response?.data?.message || error.message || 'Gagal melakukan void point',
+      icon: 'error',
+      confirmButtonText: 'OK'
+    });
+  } finally {
+    voidingTransactionId.value = null;
+  }
 }
 
 function toggleTransactionExpansion(transactionId) {
@@ -1169,6 +1213,15 @@ function formatDate(dateString) {
                               {{ transaction.type === '1' ? '+' : '-' }}{{ formatNumber(transaction.point) }}
                             </span>
                             <span class="text-xs text-gray-500">point</span>
+                            <button
+                              type="button"
+                              class="mt-2 inline-flex items-center gap-1 rounded bg-red-100 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+                              :disabled="voidingTransactionId === transaction.id"
+                              @click.stop="voidTransaction(transaction)"
+                            >
+                              <i :class="voidingTransactionId === transaction.id ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-ban'"></i>
+                              Void Point
+                            </button>
                           </div>
                         </div>
                       </div>

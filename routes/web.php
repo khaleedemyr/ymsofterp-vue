@@ -3028,6 +3028,7 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/', [\App\Http\Controllers\WebProfileController::class, 'paymentSettingsDestroy'])->name('destroy');
     });
                 Route::get('api/members/{id}/transactions', [MemberController::class, 'getTransactions'])->name('members.transactions');
+                Route::post('api/members/{memberId}/transactions/{transactionId}/void', [MemberController::class, 'voidTransaction'])->name('members.transactions.void');
                 Route::get('api/members/{id}/preferences', [MemberController::class, 'getPreferences'])->name('members.preferences');
                 Route::get('api/members/{id}/voucher-timeline', [MemberController::class, 'getVoucherTimeline'])->name('members.voucher-timeline');
     

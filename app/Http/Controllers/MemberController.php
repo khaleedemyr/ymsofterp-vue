@@ -3,7 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Exports\MembersExport;
+use App\Http\Traits\WritesActivityLogTrait;
 use App\Models\MemberAppsMember;
+use App\Models\MemberAppsPointEarning;
+use App\Models\MemberAppsPointTransaction;
+use App\Services\PointEarningService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +17,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class MemberController extends Controller
 {
+    use WritesActivityLogTrait;
+
     /**
      * Display a listing of the resource.
      */
@@ -974,6 +980,113 @@ class MemberController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Gagal mengambil data transaksi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Void a single member point transaction and restore its balance impact.
+     */
+    public function voidTransaction(Request $request, $memberId, $transactionId)
+    {
+        try {
+            DB::beginTransaction();
+
+            $member = MemberAppsMember::findOrFail($memberId);
+            $transaction = MemberAppsPointTransaction::where('id', $transactionId)
+                ->where('member_id', $member->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$transaction) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Transaksi point tidak ditemukan atau bukan milik member ini.',
+                ], 404);
+            }
+
+            $oldBalance = (int) ($member->just_points ?? 0);
+            $oldPointRemainder = (float) ($member->point_remainder ?? 0);
+            $transactionSnapshot = $transaction->toArray();
+
+            $isRedemption = $transaction->transaction_type === 'redeem'
+                || (int) $transaction->point_amount < 0;
+
+            if ($isRedemption) {
+                $pointsToReturn = abs((int) $transaction->point_amount);
+
+                try {
+                    (new PointEarningService())->rollbackPointRedemptionFromEarnings($transaction->id);
+                } catch (\Throwable $exception) {
+                    Log::warning('Point earning rollback failed during member transaction void', [
+                        'transaction_id' => $transaction->id,
+                        'error' => $exception->getMessage(),
+                    ]);
+                }
+
+                $member->just_points = ($member->just_points ?? 0) + $pointsToReturn;
+            } elseif ((int) $transaction->point_amount > 0) {
+                $pointsToDeduct = max(0, (int) $transaction->point_amount);
+                $earning = MemberAppsPointEarning::where('point_transaction_id', $transaction->id)->first();
+
+                if ($earning) {
+                    $earning->delete();
+                }
+
+                $member->just_points = max(0, ($member->just_points ?? 0) - $pointsToDeduct);
+
+                $transactionAmount = (float) ($transaction->transaction_amount ?? 0);
+                $earningRate = (float) ($transaction->earning_rate ?? 1);
+                $calculatedPoints = ($transactionAmount / 10000) * $earningRate;
+                $remainderFromTransaction = $calculatedPoints - floor($calculatedPoints);
+                $member->point_remainder = max(
+                    0,
+                    (float) ($member->point_remainder ?? 0) - $remainderFromTransaction
+                );
+            }
+
+            $member->save();
+            $transaction->delete();
+            DB::commit();
+
+            $this->writeActivityLog(
+                $request,
+                'member_point',
+                'void',
+                'Void point member #' . ($member->member_id ?? $member->id) . ', transaksi #' . $transactionId,
+                [
+                    'member_id' => $member->id,
+                    'member_code' => $member->member_id,
+                    'transaction' => $transactionSnapshot,
+                    'balance' => $oldBalance,
+                    'point_remainder' => $oldPointRemainder,
+                ],
+                [
+                    'member_id' => $member->id,
+                    'member_code' => $member->member_id,
+                    'voided_transaction_id' => $transactionId,
+                    'balance' => (int) $member->just_points,
+                    'point_remainder' => (float) ($member->point_remainder ?? 0),
+                ]
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Point berhasil di-void.',
+                'balance' => $member->just_points,
+            ]);
+        } catch (\Throwable $exception) {
+            DB::rollBack();
+            Log::error('Failed to void member point transaction', [
+                'member_id' => $memberId,
+                'transaction_id' => $transactionId,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal melakukan void point: ' . $exception->getMessage(),
             ], 500);
         }
     }
