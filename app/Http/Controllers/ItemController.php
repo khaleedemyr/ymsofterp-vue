@@ -2314,4 +2314,61 @@ class ItemController extends Controller
                             ->from('item_availabilities')
                             ->whereRaw('items.id = item_availabilities.item_id')
                             ->where(function ($q) use ($region_id, $outlet_id) {
-                                $q->where('availabilit
+                                $q->where('availability_type', 'all');
+
+                                if ($region_id) {
+                                    $q->orWhere(function ($q2) use ($region_id) {
+                                        $q2->where('availability_type', 'region')
+                                            ->where('region_id', $region_id);
+                                    });
+                                }
+
+                                if ($outlet_id) {
+                                    $q->orWhere(function ($q2) use ($outlet_id) {
+                                        $q2->where('availability_type', 'outlet')
+                                            ->where('outlet_id', $outlet_id);
+                                    });
+                                }
+                            });
+                    });
+                }
+            }
+
+            $items = $query->get()->map(function ($item) use ($request, $outletId) {
+                $regionId = $request->get('region_id');
+                $roundedPrice = $this->floorOrderPriceForItem(
+                    $item,
+                    $regionId ? (int) $regionId : null,
+                    $outletId ? (string) $outletId : null,
+                );
+
+                return [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'sku' => $item->sku,
+                    'category_id' => $item->category_id,
+                    'category_name' => $item->category?->name,
+                    'price' => $roundedPrice,
+                    'unit' => $item->mediumUnit?->name
+                        ?? $item->smallUnit?->name
+                        ?? $item->largeUnit?->name
+                        ?? '-',
+                    'unit_small' => $item->smallUnit?->name,
+                    'unit_medium' => $item->mediumUnit?->name,
+                    'unit_medium_name' => $item->mediumUnit?->name,
+                    'unit_large' => $item->largeUnit?->name,
+                    'small_unit_id' => $item->small_unit_id,
+                    'medium_unit_id' => $item->medium_unit_id,
+                    'large_unit_id' => $item->large_unit_id,
+                ];
+            });
+
+            return response()->json(['items' => $items]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Gagal mencari item',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+}
