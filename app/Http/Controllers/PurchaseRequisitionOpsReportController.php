@@ -67,9 +67,16 @@ class PurchaseRequisitionOpsReportController extends Controller
             ->get();
         
         // Get outlets for filter
-        $outlets = Outlet::select('id_outlet as id', 'nama_outlet as name')
+        // Map explicitly: Outlet appends `name` from `nama_outlet`, so SQL aliases
+        // like `nama_outlet as name` get overwritten with null on serialization.
+        $outlets = Outlet::query()
             ->orderBy('nama_outlet')
-            ->get();
+            ->get(['id_outlet', 'nama_outlet'])
+            ->map(fn ($o) => [
+                'id' => $o->id_outlet,
+                'name' => $o->nama_outlet,
+            ])
+            ->values();
         
         // Get divisions for filter
         $divisions = Divisi::select('id', 'nama_divisi as name')
