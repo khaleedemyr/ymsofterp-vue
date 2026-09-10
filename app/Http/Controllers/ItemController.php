@@ -2051,6 +2051,41 @@ class ItemController extends Controller
         return response()->json($items);
     }
 
+    public function searchForOutletStockAdjustment(Request $request)
+    {
+        $q = trim((string) $request->input('q', ''));
+
+        if ($q === '') {
+            return response()->json([]);
+        }
+
+        $items = DB::table('items')
+            ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
+            ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
+            ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
+            ->where('items.status', 'active')
+            ->where(function ($query) use ($q) {
+                $query->where('items.name', 'like', "%{$q}%")
+                    ->orWhere('items.sku', 'like', "%{$q}%");
+            })
+            ->select(
+                'items.id',
+                'items.name',
+                'items.sku',
+                'u_small.name as unit_small',
+                'u_medium.name as unit_medium',
+                'u_large.name as unit_large',
+                'items.small_unit_id',
+                'items.medium_unit_id',
+                'items.large_unit_id'
+            )
+            ->orderBy('items.name')
+            ->limit(20)
+            ->get();
+
+        return response()->json($items);
+    }
+
     public function searchForAssetTransfer(Request $request)
     {
         $q = $request->q;
