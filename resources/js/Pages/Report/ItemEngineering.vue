@@ -40,13 +40,45 @@
         <span class="text-gray-500">Loading...</span>
       </div>
       <div v-else>
-        <!-- Category Grouping List -->
-        <div class="mb-8">
+        <!-- View Mode & Sort Controls -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium text-gray-600">Tampilan:</span>
+            <div class="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+              <button @click="viewMode = 'grouped'"
+                      :class="['px-3 py-2 text-sm font-medium flex items-center gap-1 transition', viewMode === 'grouped' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100']">
+                <i class="fa-solid fa-table-cells"></i> Card
+              </button>
+              <button @click="viewMode = 'list'"
+                      :class="['px-3 py-2 text-sm font-medium flex items-center gap-1 transition border-l border-gray-300', viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100']">
+                <i class="fa-solid fa-table-list"></i> List (Excel)
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium text-gray-600">Sort by:</span>
+            <select v-model="sortField" class="rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 text-sm">
+              <option value="item_name">Nama Item</option>
+              <option value="category_name">Kategori</option>
+              <option value="qty_terjual">Qty Terjual</option>
+              <option value="harga_jual">Harga Jual</option>
+              <option value="subtotal">Subtotal</option>
+            </select>
+            <button @click="sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'"
+                    class="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-100 text-sm flex items-center gap-1">
+              <i :class="sortOrder === 'asc' ? 'fa-solid fa-arrow-up-short-wide' : 'fa-solid fa-arrow-down-wide-short'"></i>
+              {{ sortOrder === 'asc' ? 'Asc' : 'Desc' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Category Grouping (Card) View -->
+        <div v-if="viewMode === 'grouped'" class="mb-8">
           <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
             <i class="fa-solid fa-list"></i> Item Engineering by Category
           </h2>
           <div class="space-y-4">
-            <div v-for="(categoryData, categoryName) in itemsByCategory" :key="categoryName" 
+            <div v-for="(categoryData, categoryName) in sortedItemsByCategory" :key="categoryName" 
                  class="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
               <!-- Category Header -->
               <div class="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 cursor-pointer hover:bg-blue-200 transition"
@@ -99,6 +131,50 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Flat List (Excel-like) View -->
+        <div v-else class="mb-8">
+          <h2 class="text-lg font-bold text-blue-800 mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-table-list"></i> Item Engineering (List View)
+          </h2>
+          <div class="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
+            <table class="min-w-full border-collapse">
+              <thead>
+                <tr class="bg-gray-100 border-b">
+                  <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200">No</th>
+                  <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 cursor-pointer select-none" @click="setSort('category_name')">
+                    Kategori <i v-if="sortField==='category_name'" :class="sortOrder==='asc' ? 'fa-solid fa-caret-up' : 'fa-solid fa-caret-down'"></i>
+                  </th>
+                  <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 cursor-pointer select-none" @click="setSort('item_name')">
+                    Nama Item <i v-if="sortField==='item_name'" :class="sortOrder==='asc' ? 'fa-solid fa-caret-up' : 'fa-solid fa-caret-down'"></i>
+                  </th>
+                  <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 cursor-pointer select-none" @click="setSort('qty_terjual')">
+                    Qty Terjual <i v-if="sortField==='qty_terjual'" :class="sortOrder==='asc' ? 'fa-solid fa-caret-up' : 'fa-solid fa-caret-down'"></i>
+                  </th>
+                  <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase border-r border-gray-200 cursor-pointer select-none" @click="setSort('harga_jual')">
+                    Harga Jual <i v-if="sortField==='harga_jual'" :class="sortOrder==='asc' ? 'fa-solid fa-caret-up' : 'fa-solid fa-caret-down'"></i>
+                  </th>
+                  <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 uppercase cursor-pointer select-none" @click="setSort('subtotal')">
+                    Subtotal <i v-if="sortField==='subtotal'" :class="sortOrder==='asc' ? 'fa-solid fa-caret-up' : 'fa-solid fa-caret-down'"></i>
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-100">
+                <tr v-for="(item, idx) in flatSortedItems" :key="item.category_name + '-' + item.item_name" class="hover:bg-blue-50 transition">
+                  <td class="px-4 py-2 text-sm text-gray-700 border-r border-gray-100">{{ idx + 1 }}</td>
+                  <td class="px-4 py-2 text-sm text-gray-700 border-r border-gray-100">{{ item.category_name || 'Uncategorized' }}</td>
+                  <td class="px-4 py-2 text-sm font-medium text-gray-900 border-r border-gray-100">{{ item.item_name }}</td>
+                  <td class="px-4 py-2 text-sm text-gray-700 text-right border-r border-gray-100">{{ item.qty_terjual }}</td>
+                  <td class="px-4 py-2 text-sm text-gray-700 text-right border-r border-gray-100">{{ formatCurrency(item.harga_jual) }}</td>
+                  <td class="px-4 py-2 text-sm text-gray-900 text-right font-semibold">{{ formatCurrency(item.subtotal) }}</td>
+                </tr>
+                <tr v-if="flatSortedItems.length === 0">
+                  <td colspan="6" class="px-4 py-6 text-center text-gray-400">Tidak ada data</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -164,6 +240,55 @@ const userOutletName = ref('');
 const grand_total = ref(0);
 const grandTotal = computed(() => grand_total.value);
 const expandedCategories = ref({});
+
+const viewMode = ref('grouped'); // 'grouped' (card) or 'list' (excel-like)
+const sortField = ref('qty_terjual');
+const sortOrder = ref('desc');
+
+function setSort(field) {
+  if (sortField.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortField.value = field;
+    sortOrder.value = 'desc';
+  }
+}
+
+function compareItems(a, b) {
+  let valA = a[sortField.value];
+  let valB = b[sortField.value];
+  if (typeof valA === 'string' || typeof valB === 'string') {
+    valA = (valA ?? '').toString().toLowerCase();
+    valB = (valB ?? '').toString().toLowerCase();
+    if (valA < valB) return sortOrder.value === 'asc' ? -1 : 1;
+    if (valA > valB) return sortOrder.value === 'asc' ? 1 : -1;
+    return 0;
+  }
+  const numA = Number(valA) || 0;
+  const numB = Number(valB) || 0;
+  return sortOrder.value === 'asc' ? numA - numB : numB - numA;
+}
+
+const sortedItemsByCategory = computed(() => {
+  const result = {};
+  for (const [categoryName, categoryData] of Object.entries(itemsByCategory.value)) {
+    result[categoryName] = {
+      ...categoryData,
+      items: [...categoryData.items].sort(compareItems),
+    };
+  }
+  return result;
+});
+
+const flatSortedItems = computed(() => {
+  const flat = [];
+  for (const [categoryName, categoryData] of Object.entries(itemsByCategory.value)) {
+    for (const item of categoryData.items) {
+      flat.push({ ...item, category_name: categoryName });
+    }
+  }
+  return flat.sort(compareItems);
+});
 
 function formatCurrency(val) {
   if (typeof val === 'number') return val.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
