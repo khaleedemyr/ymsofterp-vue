@@ -35,6 +35,12 @@
               <div class="flex-1 min-w-0">
                 <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
                   {{ item.number }}
+                  <span
+                    v-if="item.edit_changes"
+                    class="ml-1 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-200 text-amber-900"
+                  >
+                    EDIT
+                  </span>
                 </div>
                 <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
                   <i class="fa fa-user mr-1 text-indigo-500"></i>
@@ -107,6 +113,15 @@
                 <p class="text-gray-900 dark:text-white">{{ selectedSubmission.notes }}</p>
               </div>
             </div>
+
+            <OvertimeSubmissionEditChanges
+              v-if="selectedSubmission.edit_changes"
+              :changes="selectedSubmission.edit_changes"
+              :edit-reason="selectedSubmission.edit_reason || ''"
+              :edited-at="selectedSubmission.edited_at"
+              :editor-name="selectedSubmission.editor?.nama_lengkap || ''"
+              compact
+            />
 
             <div class="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
               <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Daftar Karyawan</h4>
@@ -208,6 +223,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import OvertimeSubmissionEditChanges from '@/Components/OvertimeSubmissionEditChanges.vue';
 
 defineProps({
   isNight: { type: Boolean, default: false },

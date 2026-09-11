@@ -22,12 +22,18 @@ class OvertimeSubmission extends Model
         'submission_date',
         'notes',
         'status',
+        'edit_reason',
+        'edit_changes',
+        'edited_at',
+        'edited_by',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
         'submission_date' => 'date:Y-m-d',
+        'edit_changes' => 'array',
+        'edited_at' => 'datetime',
     ];
 
     public function items(): HasMany
@@ -46,8 +52,18 @@ class OvertimeSubmission extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function editor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'edited_by');
+    }
+
     public function isApproved(): bool
     {
         return $this->status === self::STATUS_APPROVED;
+    }
+
+    public function hasPendingEditHighlight(): bool
+    {
+        return is_array($this->edit_changes) && $this->edit_changes !== [];
     }
 }

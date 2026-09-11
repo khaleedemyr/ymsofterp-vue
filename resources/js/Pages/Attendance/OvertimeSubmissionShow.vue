@@ -7,6 +7,13 @@
           <p class="text-sm text-gray-500 mt-1">{{ record.number }}</p>
         </div>
         <div class="flex items-center gap-2">
+          <Link
+            v-if="canEdit"
+            :href="route('overtime-submissions.edit', record.id)"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+          >
+            <i class="fa-solid fa-pen-to-square"></i> Edit
+          </Link>
           <button
             v-if="canDelete"
             type="button"
@@ -29,6 +36,12 @@
           <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" :class="statusClass(record.status)">
             {{ statusLabel(record.status) }}
           </span>
+          <span
+            v-if="hasEditChanges"
+            class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
+          >
+            Ada perubahan edit
+          </span>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -38,7 +51,12 @@
           </div>
           <div>
             <div class="text-xs text-gray-500">Tanggal Pengajuan</div>
-            <div class="font-medium">{{ formatDate(record.submission_date) }}</div>
+            <div
+              class="font-medium"
+              :class="isHeaderChanged('submission_date') ? 'bg-green-50 border-l-2 border-green-400 pl-2 rounded' : ''"
+            >
+              {{ formatDate(record.submission_date) }}
+            </div>
           </div>
           <div>
             <div class="text-xs text-gray-500">Pembuat</div>
@@ -50,10 +68,24 @@
           </div>
           <div class="md:col-span-2">
             <div class="text-xs text-gray-500">Catatan</div>
-            <div class="font-medium whitespace-pre-wrap">{{ record.notes || '-' }}</div>
+            <div
+              class="font-medium whitespace-pre-wrap"
+              :class="isHeaderChanged('notes') ? 'bg-green-50 border-l-2 border-green-400 pl-2 rounded' : ''"
+            >
+              {{ record.notes || '-' }}
+            </div>
           </div>
         </div>
       </div>
+
+      <OvertimeSubmissionEditChanges
+        v-if="hasEditChanges"
+        class="mb-6"
+        :changes="record.edit_changes"
+        :edit-reason="record.edit_reason || ''"
+        :edited-at="record.edited_at"
+        :editor-name="record.editor?.nama_lengkap || ''"
+      />
 
       <div class="bg-white rounded-xl shadow p-6 mb-6">
         <h2 class="text-lg font-semibold text-gray-800 mb-3">Daftar Lembur</h2>
@@ -75,14 +107,23 @@
                 v-for="item in record.items || []"
                 :key="item.id"
                 class="border-b"
+                :class="itemHighlightClass(item)"
               >
                 <td class="px-3 py-2">
                   <div class="font-medium">{{ item.user?.nama_lengkap || '-' }}</div>
                   <div class="text-xs text-gray-500">{{ item.user?.nik || '' }}</div>
                 </td>
                 <td class="px-3 py-2">{{ formatDate(item.overtime_date) }}</td>
-                <td class="px-3 py-2 text-right font-semibold text-indigo-600">{{ item.requested_hours }} jam</td>
-                <td class="px-3 py-2 text-gray-600">{{ item.notes || '-' }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-indigo-600">
+                  <span :class="isItemFieldChanged(item, 'requested_hours') ? 'bg-green-100 px-1.5 py-0.5 rounded' : ''">
+                    {{ item.requested_hours }} jam
+                  </span>
+                </td>
+                <td class="px-3 py-2 text-gray-600">
+                  <span :class="isItemFieldChanged(item, 'notes') ? 'bg-green-100 px-1.5 py-0.5 rounded' : ''">
+                    {{ item.notes || '-' }}
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -143,6 +184,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import OvertimeSubmissionEditChanges from '@/Components/OvertimeSubmissionEditChanges.vue';
 import { Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, ref } from 'vue';
@@ -151,6 +193,7 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   record: { type: Object, required: true },
   canApprove: { type: Boolean, default: false },
+  canEdit: { type: Boolean, default: false },
   canDelete: { type: Boolean, default: false },
 });
 
@@ -170,6 +213,48 @@ const totalHours = computed(() => {
   const sum = (props.record.items || []).reduce((acc, item) => acc + (Number(item.requested_hours) || 0), 0);
   return `${sum} jam`;
 });
+
+const hasEditChanges = computed(() => {
+  const c = props.record.edit_changes;
+  if (!c || typeof c !== 'object') return false;
+  const headerCount = c.header ? Object.keys(c.header).length : 0;
+  const itemCount = Array.isArray(c.items) ? c.items.length : 0;
+  return headerCount > 0 || itemCount > 0 || !!c.approvers_changed;
+});
+
+const changedItemMap = computed(() => {
+  const map = new Map();
+  for (const row of props.record.edit_changes?.items || []) {
+    const date = row.overtime_date || row.fields?.overtime_date?.new || row.fields?.overtime_date?.old || '';
+    const key = `${Number(row.user_id)}|${String(date).slice(0, 10)}`;
+    map.set(key, row);
+  }
+  return map;
+});
+
+function itemChangeKey(item) {
+  const date = typeof item.overtime_date === 'string'
+    ? item.overtime_date.slice(0, 10)
+    : String(item.overtime_date || '').slice(0, 10);
+  return `${Number(item.user_id)}|${date}`;
+}
+
+function itemHighlightClass(item) {
+  const change = changedItemMap.value.get(itemChangeKey(item));
+  if (!change) return '';
+  if (change.action === 'added') return 'bg-green-50';
+  if (change.action === 'changed') return 'bg-amber-50';
+  return '';
+}
+
+function isItemFieldChanged(item, field) {
+  const change = changedItemMap.value.get(itemChangeKey(item));
+  return !!(change?.fields && Object.prototype.hasOwnProperty.call(change.fields, field));
+}
+
+function isHeaderChanged(field) {
+  return !!(props.record.edit_changes?.header && props.record.edit_changes.header[field]);
+}
 
 function formatDate(value) {
   if (!value) return '-';

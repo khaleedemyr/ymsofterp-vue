@@ -3,12 +3,36 @@
     <div class="w-full max-w-none py-6 px-4 sm:px-6 lg:px-8">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 class="text-2xl font-bold text-gray-800">Buat Pengajuan Lembur</h1>
-          <p class="text-sm text-gray-500 mt-1">Wajib pilih approver. Baru berfungsi di laporan setelah fully approved.</p>
+          <h1 class="text-2xl font-bold text-gray-800">
+            {{ isEdit ? 'Edit Pengajuan Lembur' : 'Buat Pengajuan Lembur' }}
+          </h1>
+          <p class="text-sm text-gray-500 mt-1">
+            <template v-if="requiresEditReason">
+              Pengajuan sudah approved. Edit akan memicu approval ulang dan wajib isi alasan.
+            </template>
+            <template v-else-if="isEdit">
+              Update data pengajuan. Approval flow akan direset ke awal.
+            </template>
+            <template v-else>
+              Wajib pilih approver. Baru berfungsi di laporan setelah fully approved.
+            </template>
+          </p>
+          <p v-if="isEdit && record?.number" class="text-sm text-indigo-600 mt-1 font-medium">
+            {{ record.number }}
+          </p>
         </div>
-        <Link :href="route('overtime-submissions.index')" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+        <Link :href="backHref" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
           <i class="fa-solid fa-arrow-left"></i> Kembali
         </Link>
+      </div>
+
+      <div
+        v-if="requiresEditReason"
+        class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      >
+        <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-600"></i>
+        Mengedit data yang sudah approved akan mengembalikan status ke <strong>Waiting Approval</strong>
+        dan nilai yang diubah akan ditandai untuk reviewer.
       </div>
 
       <form @submit.prevent="submit">
@@ -28,6 +52,26 @@
             <label class="block text-xs font-semibold text-gray-600 mb-1">Catatan</label>
             <input v-model="form.notes" class="w-full rounded-lg border-gray-300" />
           </div>
+        </div>
+
+        <div
+          v-if="isEdit"
+          class="bg-white rounded-xl shadow p-6 mb-6"
+          :class="requiresEditReason ? 'ring-2 ring-amber-300' : ''"
+        >
+          <label class="block text-xs font-semibold text-gray-600 mb-1">
+            Alasan Edit
+            <span v-if="requiresEditReason" class="text-red-600">*</span>
+            <span v-else class="text-gray-400 font-normal">(opsional)</span>
+          </label>
+          <textarea
+            v-model="form.edit_reason"
+            rows="3"
+            :required="requiresEditReason"
+            placeholder="Jelaskan kenapa data ini diubah..."
+            class="w-full rounded-lg border-gray-300"
+          />
+          <p v-if="form.errors.edit_reason" class="text-sm text-red-600 mt-2">{{ form.errors.edit_reason }}</p>
         </div>
 
         <div class="bg-white rounded-xl shadow mb-6 overflow-visible">
@@ -54,6 +98,7 @@
                   placeholder="Cari nama / NIK / jabatan..."
                   :allow-empty="false"
                   :search-params="userSearchParams"
+                  :initial-user="item.initial_user"
                 />
               </div>
               <div class="col-span-3">
@@ -130,13 +175,13 @@
         </div>
 
         <div class="flex justify-end gap-3">
-          <Link :href="route('overtime-submissions.index')" class="px-5 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200">Batal</Link>
+          <Link :href="backHref" class="px-5 py-2.5 rounded-lg bg-gray-100 hover:bg-gray-200">Batal</Link>
           <button
             type="submit"
             :disabled="form.processing || form.items.length === 0 || form.approvers.length === 0"
             class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            Simpan
+            {{ isEdit ? (requiresEditReason ? 'Simpan & Ajukan Ulang' : 'Update') : 'Simpan' }}
           </button>
         </div>
       </form>
@@ -155,6 +200,17 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   outlets: { type: Array, default: () => [] },
   today: { type: String, required: true },
+  mode: { type: String, default: 'create' },
+  record: { type: Object, default: null },
+  requiresEditReason: { type: Boolean, default: false },
+});
+
+const isEdit = computed(() => props.mode === 'edit' && !!props.record?.id);
+const backHref = computed(() => {
+  if (isEdit.value) {
+    return route('overtime-submissions.show', props.record.id);
+  }
+  return route('overtime-submissions.index');
 });
 
 const selectedOutletId = ref('');
@@ -167,18 +223,78 @@ const userSearchParams = computed(() => {
   return { outlet_id: selectedOutletId.value };
 });
 
+function formatDateInput(value) {
+  if (!value) return props.today;
+  if (typeof value === 'string') return value.slice(0, 10);
+  return props.today;
+}
+
+function buildInitialItems() {
+  if (!isEdit.value) {
+    return [
+      {
+        user_id: '',
+        overtime_date: props.today,
+        requested_hours: 1,
+        notes: '',
+        initial_user: null,
+      },
+    ];
+  }
+
+  const items = props.record.items || [];
+  if (items.length === 0) {
+    return [
+      {
+        user_id: '',
+        overtime_date: props.today,
+        requested_hours: 1,
+        notes: '',
+        initial_user: null,
+      },
+    ];
+  }
+
+  return items.map((item) => ({
+    user_id: item.user_id,
+    overtime_date: formatDateInput(item.overtime_date),
+    requested_hours: Number(item.requested_hours) || 1,
+    notes: item.notes || '',
+    initial_user: item.user
+      ? {
+          id: item.user.id,
+          nama_lengkap: item.user.nama_lengkap,
+          nik: item.user.nik,
+          email: item.user.email,
+        }
+      : null,
+  }));
+}
+
+function buildInitialApprovers() {
+  if (!isEdit.value) return [];
+  const flows = [...(props.record.approval_flows || [])].sort(
+    (a, b) => (Number(a.approval_level) || 0) - (Number(b.approval_level) || 0)
+  );
+  return flows
+    .map((flow) => {
+      if (!flow.approver) return null;
+      return {
+        id: flow.approver.id,
+        nama_lengkap: flow.approver.nama_lengkap,
+        jabatan_name: flow.approver.jabatan?.nama_jabatan || flow.approver.jabatan_name || '',
+        email: flow.approver.email || '',
+      };
+    })
+    .filter(Boolean);
+}
+
 const form = useForm({
-  submission_date: props.today,
-  notes: '',
-  items: [
-    {
-      user_id: '',
-      overtime_date: props.today,
-      requested_hours: 1,
-      notes: '',
-    },
-  ],
-  approvers: [],
+  submission_date: isEdit.value ? formatDateInput(props.record.submission_date) : props.today,
+  notes: isEdit.value ? (props.record.notes || '') : '',
+  edit_reason: '',
+  items: buildInitialItems(),
+  approvers: buildInitialApprovers(),
 });
 
 function addRow() {
@@ -187,6 +303,7 @@ function addRow() {
     overtime_date: props.today,
     requested_hours: 1,
     notes: '',
+    initial_user: null,
   });
 }
 
@@ -243,14 +360,28 @@ function submit() {
     return;
   }
 
-  form.transform((data) => ({
-    ...data,
-    items: data.items.map((item) => ({
-      ...item,
+  if (props.requiresEditReason && !String(form.edit_reason || '').trim()) {
+    Swal.fire('Alasan edit wajib', 'Pengajuan sudah approved. Isi alasan edit sebelum menyimpan.', 'warning');
+    return;
+  }
+
+  const payload = {
+    ...form.data(),
+    items: form.items.map((item) => ({
       user_id: Number(item.user_id),
+      overtime_date: item.overtime_date,
+      requested_hours: item.requested_hours,
+      notes: item.notes,
     })),
-    approvers: data.approvers.map((a) => Number(a.id)),
-  })).post(route('overtime-submissions.store'));
+    approvers: form.approvers.map((a) => Number(a.id)),
+  };
+
+  if (isEdit.value) {
+    form.transform(() => payload).put(route('overtime-submissions.update', props.record.id));
+    return;
+  }
+
+  form.transform(() => payload).post(route('overtime-submissions.store'));
 }
 </script>
 

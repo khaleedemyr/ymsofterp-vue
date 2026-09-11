@@ -73,6 +73,13 @@
                   <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusClass(row.status)">
                     {{ statusLabel(row.status) }}
                   </span>
+                  <span
+                    v-if="row.edit_changes"
+                    class="ml-1 inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
+                    title="Ada perubahan dari edit"
+                  >
+                    Edited
+                  </span>
                 </td>
                 <td class="px-4 py-3">
                   <div v-if="sortedFlows(row).length === 0" class="text-gray-400">-</div>
@@ -108,6 +115,14 @@
                     title="Detail"
                   >
                     <i class="fa-solid fa-eye"></i>
+                  </Link>
+                  <Link
+                    v-if="canEditRow(row)"
+                    :href="route('overtime-submissions.edit', row.id)"
+                    class="text-amber-600 hover:text-amber-800 mr-3"
+                    title="Edit"
+                  >
+                    <i class="fa-solid fa-pen-to-square"></i>
                   </Link>
                   <button
                     v-if="canDelete"
@@ -179,7 +194,13 @@ const props = defineProps({
 
 const page = usePage();
 const canDelete = computed(() => String(page.props.auth?.user?.id_role || '') === '5af56935b011a');
+const currentUserId = computed(() => Number(page.props.auth?.user?.id || 0));
+const isSuperadmin = computed(() => String(page.props.auth?.user?.id_role || '') === '5af56935b011a');
 
+function canEditRow(row) {
+  if (isSuperadmin.value) return true;
+  return Number(row.created_by) === currentUserId.value;
+}
 const perPageOptions = [10, 15, 25, 50, 100];
 
 const filterForm = reactive({

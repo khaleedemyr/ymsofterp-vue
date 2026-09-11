@@ -58,6 +58,7 @@ class OvertimeSubmissionController extends Controller
         $user = auth()->user();
         $overtimeSubmission->load([
             'creator:id,nama_lengkap',
+            'editor:id,nama_lengkap',
             'items.user:id,nama_lengkap,nik',
             'approvalFlows.approver:id,nama_lengkap',
         ]);
@@ -70,6 +71,7 @@ class OvertimeSubmissionController extends Controller
         return Inertia::render('Attendance/OvertimeSubmissionShow', [
             'record' => $overtimeSubmission,
             'canApprove' => $canApprove,
+            'canEdit' => $this->canEdit($overtimeSubmission, $user),
             'canDelete' => (string) ($user?->id_role ?? '') === '5af56935b011a',
         ]);
     }
@@ -82,6 +84,34 @@ class OvertimeSubmissionController extends Controller
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet']),
             'today' => now()->format('Y-m-d'),
+            'mode' => 'create',
+            'record' => null,
+            'requiresEditReason' => false,
+        ]);
+    }
+
+    public function edit(OvertimeSubmission $overtimeSubmission): Response
+    {
+        $user = auth()->user();
+        if (! $this->canEdit($overtimeSubmission, $user)) {
+            abort(403, 'Anda tidak berhak mengedit pengajuan ini.');
+        }
+
+        $overtimeSubmission->load([
+            'items.user:id,nama_lengkap,nik,email',
+            'approvalFlows.approver:id,nama_lengkap,email,id_jabatan',
+            'approvalFlows.approver.jabatan:id_jabatan,nama_jabatan',
+        ]);
+
+        return Inertia::render('Attendance/OvertimeSubmissionForm', [
+            'outlets' => Outlet::query()
+                ->where('status', 'A')
+                ->orderBy('nama_outlet')
+                ->get(['id_outlet', 'nama_outlet']),
+            'today' => now()->format('Y-m-d'),
+            'mode' => 'edit',
+            'record' => $overtimeSubmission,
+            'requiresEditReason' => $overtimeSubmission->status === OvertimeSubmission::STATUS_APPROVED,
         ]);
     }
 
@@ -171,6 +201,134 @@ class OvertimeSubmissionController extends Controller
 
         return redirect()->route('overtime-submissions.index')
             ->with('success', 'Pengajuan lembur berhasil disimpan dan menunggu approval.');
+    }
+
+    public function update(Request $request, OvertimeSubmission $overtimeSubmission)
+    {
+        $user = auth()->user();
+        if (! $this->canEdit($overtimeSubmission, $user)) {
+            abort(403, 'Anda tidak berhak mengedit pengajuan ini.');
+        }
+
+        $wasApproved = $overtimeSubmission->status === OvertimeSubmission::STATUS_APPROVED;
+
+        $rules = [
+            'submission_date' => 'required|date',
+            'notes' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1',
+            'items.*.user_id' => 'required|integer|exists:users,id',
+            'items.*.overtime_date' => 'required|date',
+            'items.*.requested_hours' => 'required|integer|min:1|max:24',
+            'items.*.notes' => 'nullable|string|max:255',
+            'approvers' => 'required|array|min:1',
+            'approvers.*' => 'required|integer|exists:users,id',
+            'edit_reason' => $wasApproved ? 'required|string|min:5|max:1000' : 'nullable|string|max:1000',
+        ];
+
+        $validated = $request->validate($rules, [
+            'approvers.required' => 'Pilih minimal 1 approver sebelum menyimpan.',
+            'approvers.min' => 'Pilih minimal 1 approver sebelum menyimpan.',
+            'edit_reason.required' => 'Alasan edit wajib diisi karena pengajuan sudah approved.',
+            'edit_reason.min' => 'Alasan edit minimal 5 karakter.',
+        ]);
+
+        $approverIds = collect($validated['approvers'])
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($approverIds === []) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pilih minimal 1 approver sebelum menyimpan.',
+                ], 422);
+            }
+
+            return back()->withErrors(['approvers' => 'Pilih minimal 1 approver sebelum menyimpan.'])->withInput();
+        }
+
+        $overtimeSubmission->load(['items.user:id,nama_lengkap', 'approvalFlows']);
+
+        $editChanges = $this->buildEditChanges(
+            $overtimeSubmission,
+            $validated['submission_date'],
+            $validated['notes'] ?? null,
+            $validated['items'],
+            $approverIds
+        );
+
+        if ($editChanges === null) {
+            if ($request->expectsJson() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada perubahan data.',
+                ], 422);
+            }
+
+            return back()->withErrors(['items' => 'Tidak ada perubahan data.'])->withInput();
+        }
+
+        DB::beginTransaction();
+        try {
+            $overtimeSubmission->items()->delete();
+            foreach ($validated['items'] as $item) {
+                $overtimeSubmission->items()->create([
+                    'user_id' => (int) $item['user_id'],
+                    'overtime_date' => $item['overtime_date'],
+                    'requested_hours' => (float) $item['requested_hours'],
+                    'notes' => $item['notes'] ?? null,
+                ]);
+            }
+
+            $this->replaceApprovalFlows($overtimeSubmission, $approverIds);
+
+            $overtimeSubmission->update([
+                'submission_date' => $validated['submission_date'],
+                'notes' => $validated['notes'] ?? null,
+                'status' => OvertimeSubmission::STATUS_SUBMITTED,
+                'edit_reason' => $wasApproved
+                    ? ($validated['edit_reason'] ?? null)
+                    : ($validated['edit_reason'] ?? $overtimeSubmission->edit_reason),
+                'edit_changes' => $editChanges,
+                'edited_at' => now(),
+                'edited_by' => $user?->id,
+                'updated_by' => $user?->id,
+            ]);
+
+            $this->notifyNextApprover(
+                $overtimeSubmission->fresh('approvalFlows'),
+                $wasApproved
+            );
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        $message = $wasApproved
+            ? 'Pengajuan lembur berhasil diedit dan menunggu approval ulang.'
+            : 'Pengajuan lembur berhasil diupdate.';
+
+        if ($request->expectsJson() || $request->wantsJson()) {
+            $overtimeSubmission->load([
+                'creator:id,nama_lengkap',
+                'editor:id,nama_lengkap',
+                'items.user:id,nama_lengkap,nik',
+                'approvalFlows.approver:id,nama_lengkap',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'submission' => $overtimeSubmission,
+            ]);
+        }
+
+        return redirect()->route('overtime-submissions.show', $overtimeSubmission->id)
+            ->with('success', $message);
     }
 
     public function destroy(OvertimeSubmission $overtimeSubmission)
@@ -324,6 +482,7 @@ class OvertimeSubmissionController extends Controller
             })
             ->with([
                 'creator:id,nama_lengkap',
+                'editor:id,nama_lengkap',
                 'items.user:id,nama_lengkap,nik',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
@@ -360,6 +519,7 @@ class OvertimeSubmissionController extends Controller
         $user = auth()->user();
         $submission = OvertimeSubmission::with([
             'creator:id,nama_lengkap',
+            'editor:id,nama_lengkap',
             'items.user:id,nama_lengkap,nik',
             'approvalFlows.approver:id,nama_lengkap',
         ])->findOrFail($id);
@@ -490,6 +650,19 @@ class OvertimeSubmissionController extends Controller
         }
     }
 
+    private function canEdit(OvertimeSubmission $submission, $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ((string) ($user->id_role ?? '') === '5af56935b011a') {
+            return true;
+        }
+
+        return (int) $submission->created_by === (int) $user->id;
+    }
+
     private function attachOutletNames($paginator): void
     {
         $paginator->getCollection()->transform(function (OvertimeSubmission $row) {
@@ -524,7 +697,163 @@ class OvertimeSubmissionController extends Controller
         return null;
     }
 
-    private function notifyNextApprover(OvertimeSubmission $submission): void
+    private function replaceApprovalFlows(OvertimeSubmission $submission, array $approverIds): void
+    {
+        $submission->approvalFlows()->delete();
+
+        foreach ($approverIds as $index => $approverId) {
+            OvertimeSubmissionApprovalFlow::create([
+                'overtime_submission_id' => $submission->id,
+                'approver_id' => $approverId,
+                'approval_level' => $index + 1,
+                'status' => 'PENDING',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $newItems
+     * @param  array<int, int>  $newApproverIds
+     * @return array<string, mixed>|null
+     */
+    private function buildEditChanges(
+        OvertimeSubmission $submission,
+        string $newSubmissionDate,
+        ?string $newNotes,
+        array $newItems,
+        array $newApproverIds
+    ): ?array {
+        $header = [];
+        $oldDate = optional($submission->submission_date)->format('Y-m-d') ?? (string) $submission->submission_date;
+        $newDate = substr((string) $newSubmissionDate, 0, 10);
+        if ($oldDate !== $newDate) {
+            $header['submission_date'] = ['old' => $oldDate, 'new' => $newDate];
+        }
+
+        $oldNotes = (string) ($submission->notes ?? '');
+        $normalizedNewNotes = (string) ($newNotes ?? '');
+        if ($oldNotes !== $normalizedNewNotes) {
+            $header['notes'] = [
+                'old' => $oldNotes !== '' ? $oldNotes : null,
+                'new' => $normalizedNewNotes !== '' ? $normalizedNewNotes : null,
+            ];
+        }
+
+        $oldItems = $submission->items->map(function ($item) {
+            return [
+                'key' => (int) $item->user_id.'|'.(optional($item->overtime_date)->format('Y-m-d') ?? $item->overtime_date),
+                'user_id' => (int) $item->user_id,
+                'user_name' => $item->user?->nama_lengkap ?? ('User #'.$item->user_id),
+                'overtime_date' => optional($item->overtime_date)->format('Y-m-d') ?? (string) $item->overtime_date,
+                'requested_hours' => (float) $item->requested_hours,
+                'notes' => $item->notes,
+            ];
+        })->keyBy('key');
+
+        $userNames = User::query()
+            ->whereIn('id', collect($newItems)->pluck('user_id')->map(fn ($id) => (int) $id)->unique()->all())
+            ->pluck('nama_lengkap', 'id');
+
+        $normalizedNewItems = collect($newItems)->map(function ($item) use ($userNames) {
+            $userId = (int) $item['user_id'];
+            $date = substr((string) $item['overtime_date'], 0, 10);
+
+            return [
+                'key' => $userId.'|'.$date,
+                'user_id' => $userId,
+                'user_name' => $userNames[$userId] ?? ('User #'.$userId),
+                'overtime_date' => $date,
+                'requested_hours' => (float) $item['requested_hours'],
+                'notes' => $item['notes'] ?? null,
+            ];
+        });
+
+        $newByKey = $normalizedNewItems->keyBy('key');
+        $itemChanges = [];
+
+        foreach ($normalizedNewItems as $item) {
+            $old = $oldItems->get($item['key']);
+            if (! $old) {
+                $itemChanges[] = [
+                    'action' => 'added',
+                    'user_id' => $item['user_id'],
+                    'user_name' => $item['user_name'],
+                    'fields' => [
+                        'overtime_date' => ['old' => null, 'new' => $item['overtime_date']],
+                        'requested_hours' => ['old' => null, 'new' => $item['requested_hours']],
+                        'notes' => ['old' => null, 'new' => $item['notes']],
+                    ],
+                ];
+
+                continue;
+            }
+
+            $fields = [];
+            if ((float) $old['requested_hours'] !== (float) $item['requested_hours']) {
+                $fields['requested_hours'] = [
+                    'old' => $old['requested_hours'],
+                    'new' => $item['requested_hours'],
+                ];
+            }
+            if ((string) ($old['notes'] ?? '') !== (string) ($item['notes'] ?? '')) {
+                $fields['notes'] = [
+                    'old' => $old['notes'],
+                    'new' => $item['notes'],
+                ];
+            }
+
+            if ($fields !== []) {
+                $itemChanges[] = [
+                    'action' => 'changed',
+                    'user_id' => $item['user_id'],
+                    'user_name' => $item['user_name'],
+                    'overtime_date' => $item['overtime_date'],
+                    'fields' => $fields,
+                ];
+            }
+        }
+
+        foreach ($oldItems as $key => $old) {
+            if ($newByKey->has($key)) {
+                continue;
+            }
+
+            $itemChanges[] = [
+                'action' => 'removed',
+                'user_id' => $old['user_id'],
+                'user_name' => $old['user_name'],
+                'fields' => [
+                    'overtime_date' => ['old' => $old['overtime_date'], 'new' => null],
+                    'requested_hours' => ['old' => $old['requested_hours'], 'new' => null],
+                    'notes' => ['old' => $old['notes'], 'new' => null],
+                ],
+            ];
+        }
+
+        $oldApproverIds = $submission->approvalFlows
+            ->sortBy('approval_level')
+            ->pluck('approver_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $approversChanged = $oldApproverIds !== array_values($newApproverIds);
+
+        if ($header === [] && $itemChanges === [] && ! $approversChanged) {
+            return null;
+        }
+
+        return [
+            'header' => $header,
+            'items' => $itemChanges,
+            'approvers_changed' => $approversChanged,
+            'approvers' => $approversChanged
+                ? ['old' => $oldApproverIds, 'new' => array_values($newApproverIds)]
+                : null,
+        ];
+    }
+
+    private function notifyNextApprover(OvertimeSubmission $submission, bool $isReapproval = false): void
     {
         try {
             $next = $submission->approvalFlows()
@@ -537,10 +866,16 @@ class OvertimeSubmissionController extends Controller
             }
 
             $creatorName = User::where('id', $submission->created_by)->value('nama_lengkap') ?? 'User';
-            $message = "Pengajuan lembur menunggu approval Anda:\n\n";
+            $title = $isReapproval
+                ? 'Pengajuan lembur diedit — butuh approval ulang'
+                : 'Pengajuan lembur menunggu approval Anda';
+            $message = "{$title}:\n\n";
             $message .= "No: {$submission->number}\n";
             $message .= "Tanggal: {$submission->submission_date}\n";
             $message .= "Dibuat oleh: {$creatorName}";
+            if ($isReapproval && filled($submission->edit_reason)) {
+                $message .= "\nAlasan edit: {$submission->edit_reason}";
+            }
 
             NotificationService::insert([
                 'user_id' => $next->approver_id,

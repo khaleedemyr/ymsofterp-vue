@@ -1368,6 +1368,7 @@ Route::prefix('approval-app')->group(function () {
         Route::get('/overtime-submissions/search-users', [\App\Http\Controllers\OvertimeSubmissionController::class, 'searchUsers']);
         Route::get('/overtime-submissions/approvers', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovers']);
         Route::post('/overtime-submissions', [\App\Http\Controllers\OvertimeSubmissionController::class, 'store']);
+        Route::put('/overtime-submissions/{overtimeSubmission}', [\App\Http\Controllers\OvertimeSubmissionController::class, 'update']);
         Route::get('/overtime-submissions/pending-approvals', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getPendingApprovals']);
         Route::get('/overtime-submissions/{id}/approval-details', [\App\Http\Controllers\OvertimeSubmissionController::class, 'getApprovalDetails']);
         Route::post('/overtime-submissions/{id}/approve', [\App\Http\Controllers\OvertimeSubmissionController::class, 'approve']);
