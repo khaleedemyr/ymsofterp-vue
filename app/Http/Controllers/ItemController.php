@@ -617,6 +617,12 @@ class ItemController extends Controller
     public function update(Request $request, Item $item)
     {
         $this->sanitizeBomPayload($request);
+        $warehouseDivisionId = $request->input('warehouse_division_id');
+        $request->merge([
+            'warehouse_division_id' => $warehouseDivisionId === '' || $warehouseDivisionId === null
+                ? null
+                : (is_numeric($warehouseDivisionId) ? (int) $warehouseDivisionId : $warehouseDivisionId),
+        ]);
         $allowedTypes = \DB::table('menu_type')->pluck('type')->toArray();
         if ($request->has('modifier_enabled')) {
             $request->merge([

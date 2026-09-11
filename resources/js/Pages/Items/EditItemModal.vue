@@ -629,7 +629,9 @@ watch(() => props.show, (val) => {
     Object.assign(form, {
       category_id: props.item.category_id,
       sub_category_id: props.item.sub_category_id,
-      warehouse_division_id: props.item.warehouse_division_id,
+      warehouse_division_id: props.item.warehouse_division_id == null || props.item.warehouse_division_id === ''
+        ? null
+        : Number(props.item.warehouse_division_id),
       sku: props.item.sku,
       type: props.item.type,
       name: props.item.name,
@@ -749,6 +751,10 @@ const saveItem = () => {
   console.log('DEBUG: Starting saveItem');
   console.log('DEBUG: form.prices before check:', form.prices);
   console.log('DEBUG: form.availabilities before check:', form.availabilities);
+
+  form.warehouse_division_id = form.warehouse_division_id === '' || form.warehouse_division_id == null
+    ? null
+    : Number(form.warehouse_division_id);
 
   // Ensure prices and availabilities are arrays
   if (!Array.isArray(form.prices)) {
