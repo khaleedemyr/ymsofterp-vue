@@ -1826,15 +1826,34 @@ onMounted(() => {
                                   ]">
                                 <td class="px-3 py-2 font-medium">{{ detail.tanggal }}</td>
                                 <td class="px-3 py-2 text-center font-mono">
-                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <template v-if="detail.is_off && detail.jam_masuk">
+                                    <div class="flex flex-col items-center gap-0.5">
+                                      <span class="text-xs text-gray-500">OFF</span>
+                                      <span>{{ detail.jam_masuk }}</span>
+                                    </div>
+                                  </template>
+                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else>{{ detail.jam_masuk || '-' }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-center font-mono">
-                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <template v-if="detail.is_off && (detail.jam_masuk || detail.jam_keluar)">
+                                    <div class="flex flex-col items-center gap-0.5">
+                                      <span class="text-xs text-gray-500">OFF</span>
+                                      <span>{{ detail.jam_keluar || '-' }}</span>
+                                    </div>
+                                  </template>
+                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else>{{ detail.jam_keluar || '-' }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-center">
-                                  <span v-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
+                                  <template v-if="detail.is_off && (detail.total_masuk > 0 || detail.total_keluar > 0)">
+                                    <div class="flex flex-col text-xs">
+                                      <span class="text-xs text-gray-500">OFF</span>
+                                      <span class="text-green-600 font-semibold">{{ detail.total_masuk }} IN</span>
+                                      <span class="text-red-600 font-semibold">{{ detail.total_keluar }} OUT</span>
+                                    </div>
+                                  </template>
+                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <div v-else class="flex flex-col text-xs">
                                     <span class="text-green-600 font-semibold">{{ detail.total_masuk }} IN</span>
                                     <span class="text-red-600 font-semibold">{{ detail.total_keluar }} OUT</span>
@@ -1862,12 +1881,18 @@ onMounted(() => {
                                   <span v-else class="text-gray-400">-</span>
                                 </td>
                                 <td class="px-3 py-2 text-center">
-                                  <span v-if="detail.extra_off_overtime > 0" class="text-purple-600 font-semibold">{{ Math.floor(detail.extra_off_overtime || 0) }}</span>
-                                  <span v-else-if="detail.is_off && !detail.extra_off_overtime" class="text-gray-500 font-semibold">OFF</span>
+                                  <div v-if="(detail.extra_off_earned && detail.extra_off_earned > 0) || detail.extra_off_overtime > 0" class="flex flex-col items-center gap-0.5">
+                                    <span v-if="detail.extra_off_earned && detail.extra_off_earned > 0" class="text-emerald-700 font-semibold text-xs" title="Extra Off hari">
+                                      +{{ detail.extra_off_earned }} EO
+                                    </span>
+                                    <span v-if="detail.extra_off_overtime > 0" class="text-purple-600 font-semibold">{{ Math.floor(detail.extra_off_overtime || 0) }}</span>
+                                  </div>
+                                  <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else class="text-gray-500">0</span>
                                 </td>
                                 <td class="px-3 py-2 text-center">
                                   <span v-if="(detail.total_lembur || detail.lembur || detail.extra_off_overtime) > 0" class="text-blue-600 font-bold">{{ Math.floor(detail.total_lembur || detail.lembur || detail.extra_off_overtime || 0) }}</span>
+                                  <span v-else-if="detail.extra_off_earned && detail.extra_off_earned > 0" class="text-emerald-700 font-semibold text-xs">+{{ detail.extra_off_earned }} EO</span>
                                   <span v-else-if="detail.is_off" class="text-gray-500 font-semibold">OFF</span>
                                   <span v-else class="text-gray-500">0</span>
                                 </td>
@@ -1876,7 +1901,15 @@ onMounted(() => {
                                   <span v-else>{{ detail.shift_name || '-' }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-center" :class="detail.is_alpha ? 'bg-red-200' : (detail.is_approved_absent ? 'bg-green-100' : '')">
-                                  <span v-if="detail.is_off" 
+                                  <span v-if="detail.is_off && detail.extra_off_earned > 0"
+                                        class="px-2 py-1 text-xs bg-emerald-100 text-emerald-800 rounded-full font-semibold">
+                                    EO +{{ detail.extra_off_earned }}
+                                  </span>
+                                  <span v-else-if="detail.is_off && detail.extra_off_overtime > 0"
+                                        class="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded-full font-semibold">
+                                    OT EO {{ Math.floor(detail.extra_off_overtime) }}j
+                                  </span>
+                                  <span v-else-if="detail.is_off" 
                                         class="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
                                     📅 OFF
                                   </span>

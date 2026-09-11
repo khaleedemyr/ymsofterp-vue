@@ -2585,6 +2585,32 @@ class PayrollReportController extends Controller
     }
 
     /**
+     * Extra Off days earned for working without shift on a date (>8 jam → unscheduled_work).
+     */
+    private function getExtraOffEarnedDaysForDate($userId, $date): int
+    {
+        try {
+            $amount = DB::table('extra_off_transactions')
+                ->where('user_id', $userId)
+                ->where('source_type', 'unscheduled_work')
+                ->where('transaction_type', 'earned')
+                ->where('status', 'approved')
+                ->where('source_date', $date)
+                ->sum('amount');
+
+            return (int) $amount;
+        } catch (\Exception $e) {
+            \Log::error('Error calculating Extra Off earned days for date', [
+                'user_id' => $userId,
+                'date' => $date,
+                'error' => $e->getMessage()
+            ]);
+
+            return 0;
+        }
+    }
+
+    /**
      * Get overtime hours from Extra Off system for a specific user in a date range
      * 
      * @param int $userId
@@ -3965,14 +3991,17 @@ class PayrollReportController extends Controller
                             }
                         }
                     } else {
-                        $jam_masuk = null;
-                        $jam_keluar = null;
+                        // OFF: keep punches if ada IN; blank hanya sisa OUT tanpa IN
+                        if (!$jam_masuk) {
+                            $jam_keluar = null;
+                        }
                         $telat = 0;
                         $lembur = 0;
                     }
                     
-                    // Get overtime from Extra Off system for this date (tetap ambil meskipun is_off)
+                    // Get overtime / Extra Off day from Extra Off system for this date (tetap ambil meskipun is_off)
                     $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($row->user_id, $row->tanggal);
+                    $extraOffEarned = $this->getExtraOffEarnedDaysForDate($row->user_id, $row->tanggal);
                     $attendanceInfo = $attendanceDataWithFirstInLastOut[$row->tanggal] ?? [];
                     $lembur = $attendanceInfo['lembur'] ?? $lembur;
                     $totalLembur = $attendanceInfo['total_lembur'] ?? floor($lembur + $extraOffOvertime);
@@ -4008,6 +4037,7 @@ class PayrollReportController extends Controller
                         'telat' => $telat,
                         'lembur' => $lembur,
                         'extra_off_overtime' => $extraOffOvertime,
+                        'extra_off_earned' => $extraOffEarned,
                         'total_lembur' => $totalLembur,
                         'overtime_submission_hours' => $overtimeSubmissionHours,
                         'overtime_submission_reason' => $overtimeSubmissionReason,
@@ -4044,8 +4074,9 @@ class PayrollReportController extends Controller
                     $approved_absent_name = $approvedAbsent['leave_type_name'];
                 }
                 
-                // Check for Extra Off overtime on this date
+                // Check for Extra Off overtime / earned day on this date
                 $extraOffOvertime = $this->getExtraOffOvertimeHoursForDate($userId, $tanggal);
+                $extraOffEarned = $this->getExtraOffEarnedDaysForDate($userId, $tanggal);
                 $attendanceInfo = $attendanceDataWithFirstInLastOut[$tanggal] ?? [];
                 $overtimeSubmissionHours = $attendanceInfo['overtime_submission_hours'] ?? null;
                 $overtimeSubmissionReason = $attendanceInfo['overtime_submission_reason'] ?? null;
@@ -4060,7 +4091,7 @@ class PayrollReportController extends Controller
                     null,
                     $tanggal
                 );
-                if ($extraOffOvertime > 0) {
+                if ($extraOffOvertime > 0 || $extraOffEarned > 0) {
                     $is_alpha = false;
                 }
                 
@@ -4073,6 +4104,7 @@ class PayrollReportController extends Controller
                     'telat' => 0,
                     'lembur' => 0,
                     'extra_off_overtime' => $extraOffOvertime,
+                    'extra_off_earned' => $extraOffEarned,
                     'total_lembur' => $totalLembur,
                     'overtime_submission_hours' => $overtimeSubmissionHours,
                     'overtime_submission_reason' => $overtimeSubmissionReason,

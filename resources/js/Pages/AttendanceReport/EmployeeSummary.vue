@@ -437,12 +437,15 @@ function getLeaveDays(row, leaveTypeName) {
                                 </span>
                               </td>
                               <td class="px-3 py-2 text-sm text-center font-mono">
-                                <div v-if="attendance.extra_off_overtime > 0 || attendance.one_plus_one_hours > 0" class="flex flex-col items-center">
+                                <div v-if="attendance.extra_off_overtime > 0 || attendance.extra_off_earned > 0 || attendance.one_plus_one_hours > 0" class="flex flex-col items-center">
                                   <span :class="attendance.total_lembur > 0 ? 'text-green-600 font-bold' : 'text-gray-500'">
                                     {{ attendance.total_lembur || attendance.lembur || 0 }}
                                   </span>
+                                  <span v-if="attendance.extra_off_earned > 0" class="text-xs text-emerald-700 font-semibold">
+                                    (+{{ attendance.extra_off_earned }} EO)
+                                  </span>
                                   <span v-if="attendance.extra_off_overtime > 0" class="text-xs text-purple-600">
-                                    (+{{ attendance.extra_off_overtime }} EO)
+                                    (+{{ attendance.extra_off_overtime }} jam OT)
                                   </span>
                                   <span v-if="attendance.one_plus_one_hours > 0" class="text-xs text-rose-600">
                                     (-{{ attendance.one_plus_one_hours }} OPO)
@@ -459,7 +462,13 @@ function getLeaveDays(row, leaveTypeName) {
                                 <span v-else class="text-gray-400 text-xs">-</span>
                               </td>
                               <td class="px-3 py-2 text-center">
-                                <span v-if="attendance.is_off" class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Off</span>
+                                <span v-if="attendance.is_off && attendance.extra_off_earned > 0" class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded text-xs font-semibold">
+                                  EO +{{ attendance.extra_off_earned }}
+                                </span>
+                                <span v-else-if="attendance.is_off && attendance.extra_off_overtime > 0" class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-semibold">
+                                  OT EO
+                                </span>
+                                <span v-else-if="attendance.is_off" class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">Off</span>
                                 <span v-else-if="attendance.is_holiday" class="bg-purple-100 text-purple-600 px-2 py-1 rounded text-xs">
                                   <i class="fa fa-calendar mr-1"></i>{{ attendance.holiday_name || 'Holiday' }}
                                 </span>
