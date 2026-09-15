@@ -23,27 +23,84 @@ class OpexOutletDashboardService
     public function buildDashboard(?int $outletId, string $dateFrom, string $dateTo): array
     {
         if (! $outletId) {
-            return [
-                'overview' => null,
-                'trend' => [],
-                'spend_mix' => [],
-                'payment_methods' => [],
-                'ro_forecast' => null,
-                'outlet_name' => null,
-            ];
+            return $this->emptyDashboard();
         }
 
+        $meta = $this->buildSectionMeta($outletId);
+        $overview = $this->buildSectionOverview($outletId, $dateFrom, $dateTo);
+        $member = $this->buildSectionMember($outletId, $dateFrom, $dateTo);
+        $charts = $this->buildSectionCharts($outletId, $dateFrom, $dateTo);
+        $payments = $this->buildSectionPayments($outletId, $dateFrom, $dateTo);
+        $ro = $this->buildSectionRoForecast($outletId, $dateFrom, $dateTo);
+
+        return array_merge($meta, [
+            'overview' => array_merge($overview['overview'] ?? [], $member['overview'] ?? []),
+            'trend' => $charts['trend'] ?? [],
+            'spend_mix' => $charts['spend_mix'] ?? [],
+            'payment_methods' => $payments['payment_methods'] ?? [],
+            'ro_forecast' => $ro['ro_forecast'] ?? null,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function buildSection(string $section, int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return match ($section) {
+            'meta' => $this->buildSectionMeta($outletId),
+            'overview' => $this->buildSectionOverview($outletId, $dateFrom, $dateTo),
+            'member' => $this->buildSectionMember($outletId, $dateFrom, $dateTo),
+            'ro_forecast' => $this->buildSectionRoForecast($outletId, $dateFrom, $dateTo),
+            'payments' => $this->buildSectionPayments($outletId, $dateFrom, $dateTo),
+            'charts' => $this->buildSectionCharts($outletId, $dateFrom, $dateTo),
+            default => ['error' => 'Unknown section'],
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function emptyDashboard(): array
+    {
+        return [
+            'overview' => null,
+            'trend' => [],
+            'spend_mix' => [],
+            'payment_methods' => [],
+            'ro_forecast' => null,
+            'outlet_name' => null,
+        ];
+    }
+
+    /**
+     * @return array{outlet_name: string|null}
+     */
+    public function buildSectionMeta(int $outletId): array
+    {
         $outlet = DB::table('tbl_data_outlet')
             ->where('id_outlet', $outletId)
-            ->first(['id_outlet', 'nama_outlet', 'qr_code']);
+            ->first(['nama_outlet']);
+
+        return ['outlet_name' => $outlet?->nama_outlet];
+    }
+
+    /**
+     * KPI utama tanpa CRM member (lebih cepat).
+     *
+     * @return array{overview: array<string, mixed>}
+     */
+    public function buildSectionOverview(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code', 'nama_outlet']);
 
         $revenue = $this->sumRevenue($outlet?->qr_code, $dateFrom, $dateTo);
         $gsrRo = $this->sumGsrRo($outletId, $dateFrom, $dateTo);
         $rws = $this->sumRws($outletId, $dateFrom, $dateTo);
         $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
         $rnf = $this->sumRetailNonFood($outletId, $dateFrom, $dateTo);
-        $paymentMethods = $this->sumPaymentMethods($outlet?->qr_code, $dateFrom, $dateTo);
-        $member = $this->sumMemberActivity($outlet?->qr_code, $outlet?->nama_outlet, $dateFrom, $dateTo);
 
         $totalSpend = round($gsrRo['total'] + $rws['total'] + $rf['total'] + $rnf['total'], 2);
         $spendRatio = $revenue['total'] > 0 ? round(($totalSpend / $revenue['total']) * 100, 2) : null;
@@ -51,51 +108,114 @@ class OpexOutletDashboardService
             ? round(($revenue['discount'] / $revenue['gross_before_discount']) * 100, 2)
             : null;
 
-        $overview = [
-            'revenue' => $revenue['total'],
-            'revenue_count' => $revenue['count'],
-            'cover' => $revenue['cover'],
-            'avg_pax' => $revenue['avg_pax'],
-            'avg_check' => $revenue['avg_check'],
-            'discount' => $revenue['discount'],
-            'discount_count' => $revenue['discount_count'],
-            'discount_ratio_percent' => $discountRatio,
-            'member_bills' => $member['member_bills'],
-            'member_revenue' => $member['member_revenue'],
-            'member_top_up' => $member['top_up_value'],
-            'member_top_up_count' => $member['top_up_count'],
-            'member_top_up_points' => $member['top_up_points'],
-            'member_redeem' => $member['redeem_value'],
-            'member_redeem_count' => $member['redeem_count'],
-            'member_redeem_points' => $member['redeem_points'],
-            'member_source' => $member['source'],
-            'gsr_ro' => $gsrRo['total'],
-            'gsr_ro_count' => $gsrRo['count'],
-            'gsr_ro_gr' => $gsrRo['gr_total'],
-            'gsr_ro_gsr' => $gsrRo['gsr_total'],
-            'rws' => $rws['total'],
-            'rws_count' => $rws['count'],
-            'retail_food' => $rf['total'],
-            'retail_food_count' => $rf['count'],
-            'retail_non_food' => $rnf['total'],
-            'retail_non_food_count' => $rnf['count'],
-            'total_spend' => $totalSpend,
-            'spend_ratio_percent' => $spendRatio,
-            'net' => round($revenue['total'] - $totalSpend, 2),
+        return [
+            'overview' => [
+                'revenue' => $revenue['total'],
+                'revenue_count' => $revenue['count'],
+                'cover' => $revenue['cover'],
+                'avg_pax' => $revenue['avg_pax'],
+                'avg_check' => $revenue['avg_check'],
+                'discount' => $revenue['discount'],
+                'discount_count' => $revenue['discount_count'],
+                'discount_ratio_percent' => $discountRatio,
+                'gsr_ro' => $gsrRo['total'],
+                'gsr_ro_count' => $gsrRo['count'],
+                'gsr_ro_gr' => $gsrRo['gr_total'],
+                'gsr_ro_gsr' => $gsrRo['gsr_total'],
+                'rws' => $rws['total'],
+                'rws_count' => $rws['count'],
+                'retail_food' => $rf['total'],
+                'retail_food_count' => $rf['count'],
+                'retail_non_food' => $rnf['total'],
+                'retail_non_food_count' => $rnf['count'],
+                'total_spend' => $totalSpend,
+                'spend_ratio_percent' => $spendRatio,
+                'net' => round($revenue['total'] - $totalSpend, 2),
+            ],
         ];
+    }
+
+    /**
+     * @return array{overview: array<string, mixed>}
+     */
+    public function buildSectionMember(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code', 'nama_outlet']);
+
+        $member = $this->sumMemberActivity($outlet?->qr_code, $outlet?->nama_outlet, $dateFrom, $dateTo);
 
         return [
-            'overview' => $overview,
-            'trend' => $this->buildTrend($outletId, $outlet?->qr_code, $dateFrom, $dateTo),
-            'spend_mix' => [
-                ['key' => 'gsr_ro', 'label' => 'GSR / RO', 'amount' => $gsrRo['total']],
-                ['key' => 'rws', 'label' => 'RWS', 'amount' => $rws['total']],
-                ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => $rf['total']],
-                ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => $rnf['total']],
+            'overview' => [
+                'member_bills' => $member['member_bills'],
+                'member_revenue' => $member['member_revenue'],
+                'member_top_up' => $member['top_up_value'],
+                'member_top_up_count' => $member['top_up_count'],
+                'member_top_up_points' => $member['top_up_points'],
+                'member_redeem' => $member['redeem_value'],
+                'member_redeem_count' => $member['redeem_count'],
+                'member_redeem_points' => $member['redeem_points'],
+                'member_source' => $member['source'],
             ],
-            'payment_methods' => $paymentMethods,
+        ];
+    }
+
+    /**
+     * @return array{ro_forecast: array<string, mixed>}
+     */
+    public function buildSectionRoForecast(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return [
             'ro_forecast' => $this->buildRoForecastSummary($outletId, $dateFrom, $dateTo),
-            'outlet_name' => $outlet?->nama_outlet,
+        ];
+    }
+
+    /**
+     * @return array{payment_methods: list<array<string, mixed>>}
+     */
+    public function buildSectionPayments(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $qrCode = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('qr_code');
+
+        return [
+            'payment_methods' => $this->sumPaymentMethods($qrCode, $dateFrom, $dateTo),
+        ];
+    }
+
+    /**
+     * @return array{trend: list<array<string, mixed>>, spend_mix: list<array<string, mixed>>}
+     */
+    public function buildSectionCharts(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code']);
+
+        $trend = $this->buildTrend($outletId, $outlet?->qr_code, $dateFrom, $dateTo);
+
+        // Spend mix dari agregat trend (hindari query GSR/RWS/RF/RNF ulang).
+        $mix = [
+            'gsr_ro' => 0.0,
+            'rws' => 0.0,
+            'retail_food' => 0.0,
+            'retail_non_food' => 0.0,
+        ];
+        foreach ($trend as $row) {
+            $mix['gsr_ro'] += (float) ($row['gsr_ro'] ?? 0);
+            $mix['rws'] += (float) ($row['rws'] ?? 0);
+            $mix['retail_food'] += (float) ($row['retail_food'] ?? 0);
+            $mix['retail_non_food'] += (float) ($row['retail_non_food'] ?? 0);
+        }
+
+        return [
+            'trend' => $trend,
+            'spend_mix' => [
+                ['key' => 'gsr_ro', 'label' => 'GSR / RO', 'amount' => round($mix['gsr_ro'], 2)],
+                ['key' => 'rws', 'label' => 'RWS', 'amount' => round($mix['rws'], 2)],
+                ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => round($mix['retail_food'], 2)],
+                ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => round($mix['retail_non_food'], 2)],
+            ],
         ];
     }
 
@@ -388,8 +508,9 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Member activity: bills di POS + top up/redeem dari CRM point (mysql_second) by cabang.
-     * Redeem value juga diisi dari orders.redeem_amount sebagai cadangan outlet.
+     * Member activity outlet-scoped:
+     * - bills/revenue dari orders.member_id
+     * - Point Earn / Redeem dari member_apps_* (link via orders.id = reference_id)
      *
      * @return array{
      *   member_bills: int,
@@ -414,68 +535,191 @@ class OpexOutletDashboardService
             'redeem_value' => 0.0,
             'redeem_count' => 0,
             'redeem_points' => 0.0,
-            'source' => 'orders',
+            'source' => 'member_apps',
         ];
 
         $qrCode = trim((string) $qrCode);
-        if ($qrCode !== '') {
-            $memberRow = DB::table('orders')
-                ->where('kode_outlet', $qrCode)
-                ->whereDate('created_at', '>=', $dateFrom)
-                ->whereDate('created_at', '<=', $dateTo)
-                ->where('status', '!=', 'cancelled')
-                ->where('grand_total', '>', 0)
-                ->whereNotNull('member_id')
-                ->where('member_id', '!=', '')
-                ->selectRaw('
-                    COUNT(*) as bills,
-                    COALESCE(SUM(grand_total), 0) as revenue,
-                    COALESCE(SUM(COALESCE(redeem_amount, 0)), 0) as redeem_value,
-                    SUM(CASE WHEN COALESCE(redeem_amount, 0) > 0 THEN 1 ELSE 0 END) as redeem_count
-                ')
-                ->first();
-
-            $empty['member_bills'] = (int) ($memberRow->bills ?? 0);
-            $empty['member_revenue'] = round((float) ($memberRow->revenue ?? 0), 2);
-            $empty['redeem_value'] = round((float) ($memberRow->redeem_value ?? 0), 2);
-            $empty['redeem_count'] = (int) ($memberRow->redeem_count ?? 0);
-
-            // Redeem tanpa member_id tetap dihitung dari semua bill outlet
-            $posRedeem = DB::table('orders')
-                ->where('kode_outlet', $qrCode)
-                ->whereDate('created_at', '>=', $dateFrom)
-                ->whereDate('created_at', '<=', $dateTo)
-                ->where('status', '!=', 'cancelled')
-                ->where('grand_total', '>', 0)
-                ->selectRaw('
-                    COALESCE(SUM(COALESCE(redeem_amount, 0)), 0) as redeem_value,
-                    SUM(CASE WHEN COALESCE(redeem_amount, 0) > 0 THEN 1 ELSE 0 END) as redeem_count
-                ')
-                ->first();
-            $empty['redeem_value'] = round((float) ($posRedeem->redeem_value ?? 0), 2);
-            $empty['redeem_count'] = (int) ($posRedeem->redeem_count ?? 0);
+        if ($qrCode === '') {
+            return $empty;
         }
 
-        $crm = $this->sumCrmPointActivity($outletName, $dateFrom, $dateTo);
-        if ($crm['available']) {
-            $empty['top_up_value'] = $crm['top_up_value'];
-            $empty['top_up_count'] = $crm['top_up_count'];
-            $empty['top_up_points'] = $crm['top_up_points'];
-            // Prefer CRM redeem if available; else keep POS redeem_amount
-            if ($crm['redeem_count'] > 0 || $crm['redeem_value'] > 0) {
-                $empty['redeem_value'] = $crm['redeem_value'];
-                $empty['redeem_count'] = $crm['redeem_count'];
-                $empty['redeem_points'] = $crm['redeem_points'];
-                $empty['source'] = 'crm_point+orders';
-            } else {
-                $empty['source'] = 'crm_point+orders';
-            }
-        }
+        $memberRow = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->whereNotNull('member_id')
+            ->where('member_id', '!=', '')
+            ->selectRaw('COUNT(*) as bills, COALESCE(SUM(grand_total), 0) as revenue')
+            ->first();
+
+        $empty['member_bills'] = (int) ($memberRow->bills ?? 0);
+        $empty['member_revenue'] = round((float) ($memberRow->revenue ?? 0), 2);
+
+        $points = $this->sumMemberAppsPointsByOutlet($qrCode, $dateFrom, $dateTo);
+        $empty['top_up_value'] = $points['earn_bill_amount'];
+        $empty['top_up_count'] = $points['earn_count'];
+        $empty['top_up_points'] = $points['earn_points'];
+        $empty['redeem_value'] = $points['redeem_value'];
+        $empty['redeem_count'] = $points['redeem_count'];
+        $empty['redeem_points'] = $points['redeem_points'];
 
         return $empty;
     }
 
     /**
+     * Point earn/redeem member apps, di-scope ke outlet via orders.id.
+     *
+     * @return array{
+     *   earn_count: int,
+     *   earn_points: float,
+     *   earn_bill_amount: float,
+     *   redeem_count: int,
+     *   redeem_points: float,
+     *   redeem_value: float
+     * }
+     */
+    public function sumMemberAppsPointsByOutlet(string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $result = [
+            'earn_count' => 0,
+            'earn_points' => 0.0,
+            'earn_bill_amount' => 0.0,
+            'redeem_count' => 0,
+            'redeem_points' => 0.0,
+            'redeem_value' => 0.0,
+        ];
+
+        if (! Schema::hasTable('member_apps_point_transactions')) {
+            return $result;
+        }
+
+        $orderIds = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        if ($orderIds === []) {
+            return $result;
+        }
+
+        foreach (array_chunk($orderIds, 500) as $chunk) {
+            $earn = DB::table('member_apps_point_transactions')
+                ->whereIn('reference_id', $chunk)
+                ->where('transaction_type', 'earn')
+                ->whereDate('transaction_date', '>=', $dateFrom)
+                ->whereDate('transaction_date', '<=', $dateTo)
+                ->selectRaw('
+                    COUNT(*) as cnt,
+                    COALESCE(SUM(point_amount), 0) as points,
+                    COALESCE(SUM(transaction_amount), 0) as bill_amount
+                ')
+                ->first();
+
+            $result['earn_count'] += (int) ($earn->cnt ?? 0);
+            $result['earn_points'] += (float) ($earn->points ?? 0);
+            $result['earn_bill_amount'] += (float) ($earn->bill_amount ?? 0);
+
+            if (Schema::hasTable('member_apps_point_redemptions')) {
+                $redeem = DB::table('member_apps_point_redemptions')
+                    ->where('status', 'completed')
+                    ->whereDate('redemption_date', '>=', $dateFrom)
+                    ->whereDate('redemption_date', '<=', $dateTo)
+                    ->whereIn(DB::raw("SUBSTRING_INDEX(reference_id, '|', -1)"), $chunk)
+                    ->selectRaw('
+                        COUNT(*) as cnt,
+                        COALESCE(SUM(point_amount), 0) as points,
+                        COALESCE(SUM(COALESCE(product_price, cash_value, 0)), 0) as value
+                    ')
+                    ->first();
+
+                $result['redeem_count'] += (int) ($redeem->cnt ?? 0);
+                $result['redeem_points'] += (float) ($redeem->points ?? 0);
+                $result['redeem_value'] += (float) ($redeem->value ?? 0);
+            }
+        }
+
+        $result['earn_points'] = round($result['earn_points'], 2);
+        $result['earn_bill_amount'] = round($result['earn_bill_amount'], 2);
+        $result['redeem_points'] = round($result['redeem_points'], 2);
+        $result['redeem_value'] = round($result['redeem_value'], 2);
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function memberAppsEarnByDate(string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        return $this->memberAppsMetricByDate($qrCode, $dateFrom, $dateTo, 'earn');
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function memberAppsRedeemByDate(string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        return $this->memberAppsMetricByDate($qrCode, $dateFrom, $dateTo, 'redeem');
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private function memberAppsMetricByDate(string $qrCode, string $dateFrom, string $dateTo, string $kind): array
+    {
+        $orderIds = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        if ($orderIds === []) {
+            return [];
+        }
+
+        $map = [];
+        foreach (array_chunk($orderIds, 500) as $chunk) {
+            if ($kind === 'earn') {
+                $rows = DB::table('member_apps_point_transactions')
+                    ->whereIn('reference_id', $chunk)
+                    ->where('transaction_type', 'earn')
+                    ->whereDate('transaction_date', '>=', $dateFrom)
+                    ->whereDate('transaction_date', '<=', $dateTo)
+                    ->selectRaw('DATE(transaction_date) as d, SUM(COALESCE(transaction_amount, 0)) as total')
+                    ->groupBy(DB::raw('DATE(transaction_date)'))
+                    ->get();
+            } else {
+                $rows = DB::table('member_apps_point_redemptions')
+                    ->where('status', 'completed')
+                    ->whereDate('redemption_date', '>=', $dateFrom)
+                    ->whereDate('redemption_date', '<=', $dateTo)
+                    ->whereIn(DB::raw("SUBSTRING_INDEX(reference_id, '|', -1)"), $chunk)
+                    ->selectRaw('DATE(redemption_date) as d, SUM(COALESCE(product_price, cash_value, 0)) as total')
+                    ->groupBy(DB::raw('DATE(redemption_date)'))
+                    ->get();
+            }
+
+            foreach ($rows as $row) {
+                $d = (string) $row->d;
+                $map[$d] = ($map[$d] ?? 0) + (float) $row->total;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Kept for optional CRM fallback (may be unreachable).
+     *
      * @return array{
      *   available: bool,
      *   top_up_value: float,
@@ -909,8 +1153,12 @@ class OpexOutletDashboardService
         $map = match ($type) {
             'revenue' => $this->revenueByDate($qrCode, $dateFrom, $dateTo),
             'discount' => $this->discountByDate($qrCode, $dateFrom, $dateTo),
-            'member_top_up' => $this->crmPointByDate($outletName, $dateFrom, $dateTo, '1'),
-            'member_redeem' => $this->memberRedeemByDate($qrCode, $outletName, $dateFrom, $dateTo),
+            'member_top_up' => $qrCode
+                ? $this->memberAppsEarnByDate((string) $qrCode, $dateFrom, $dateTo)
+                : [],
+            'member_redeem' => $qrCode
+                ? $this->memberAppsRedeemByDate((string) $qrCode, $dateFrom, $dateTo)
+                : [],
             'gsr_ro' => $this->mergeDateMaps(
                 $this->foodGrByDate($outletId, $dateFrom, $dateTo),
                 $this->gsrByDate($outletId, $dateFrom, $dateTo)

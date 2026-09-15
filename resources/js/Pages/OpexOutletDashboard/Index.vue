@@ -52,6 +52,11 @@
       </div>
 
       <template v-else>
+        <div v-if="bootstrapping" class="rounded-3xl bg-white border border-slate-100 shadow-sm px-5 py-4 mb-6 flex items-center gap-3 text-sm text-slate-500">
+          <i class="fa-solid fa-spinner fa-spin text-sky-500"></i>
+          Memuat data dashboard secara bertahap…
+        </div>
+
         <!-- RO Forecast summary -->
         <div class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 sm:p-6 mb-6">
           <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
@@ -71,7 +76,13 @@
             </a>
           </div>
 
-          <div v-if="!roForecast?.has_forecast && !(roForecast?.forecast > 0)" class="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
+          <div v-if="sectionLoading.ro_forecast" class="py-10 text-center text-slate-400 text-sm">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat RO Forecast…
+          </div>
+          <div v-else-if="sectionError.ro_forecast" class="rounded-2xl bg-rose-50 border border-rose-100 px-4 py-3 text-sm text-rose-700">
+            Gagal memuat RO Forecast.
+          </div>
+          <div v-else-if="!roForecast?.has_forecast && !(roForecast?.forecast > 0)" class="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
             Belum ada Revenue Target / Forecast untuk periode ini.
           </div>
 
@@ -155,6 +166,10 @@
         </div>
 
         <!-- Hero metrics -->
+        <div v-if="sectionLoading.overview" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat KPI…
+        </div>
+        <template v-else>
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
           <button
             type="button"
@@ -246,9 +261,13 @@
             </div>
           </button>
         </div>
+        </template>
 
         <!-- Member Top Up / Redeem -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div v-if="sectionLoading.member" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data member…
+        </div>
+        <div v-else-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Member Bills</p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.member_bills) }}</p>
@@ -263,11 +282,13 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Member Top Up</p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.member_top_up) }}</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Point Earn</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">
+                  {{ formatNumber(ov.member_top_up_points) }}
+                  <span class="text-base font-semibold text-slate-500">pts</span>
+                </p>
                 <p class="mt-1 text-xs text-slate-500">
-                  {{ ov.member_top_up_count || 0 }} trx
-                  <span v-if="ov.member_top_up_points"> · {{ formatNumber(ov.member_top_up_points) }} pts</span>
+                  {{ ov.member_top_up_count || 0 }} trx · dari bill {{ formatCurrency(ov.member_top_up) }}
                 </p>
               </div>
               <span class="text-teal-400 text-xs mt-1">Detail →</span>
@@ -280,7 +301,7 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Member Redeem</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Point Redeem</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.member_redeem) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.member_redeem_count || 0 }} trx
@@ -293,7 +314,7 @@
         </div>
 
         <!-- Source cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <button
             v-for="card in sourceCards"
             :key="card.key"
@@ -317,6 +338,10 @@
         </div>
 
         <!-- Charts -->
+        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat chart…
+        </div>
+        <template v-else>
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
           <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <div class="flex items-center justify-between mb-4">
@@ -335,8 +360,54 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
+            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
+            <apexchart type="bar" height="340" :options="stackOptions" :series="stackSeries" />
+          </div>
+
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Daily Snapshot</h2>
+            <p class="text-xs text-slate-500 mb-4">Revenue & total spend per hari</p>
+            <div class="overflow-auto max-h-[340px] rounded-2xl border border-slate-100">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 sticky top-0">
+                  <tr class="text-left text-slate-500">
+                    <th class="px-4 py-3 font-semibold">Tanggal</th>
+                    <th class="px-4 py-3 font-semibold text-right">Revenue</th>
+                    <th class="px-4 py-3 font-semibold text-right">Spend</th>
+                    <th class="px-4 py-3 font-semibold text-right">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in trendRows"
+                    :key="row.date"
+                    class="border-t border-slate-100 hover:bg-sky-50/40"
+                  >
+                    <td class="px-4 py-2.5 text-slate-700">{{ formatShortDate(row.date) }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-sky-700">{{ formatCurrency(row.revenue) }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-rose-600">{{ formatCurrency(row.total_spend) }}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold" :class="(row.revenue - row.total_spend) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
+                      {{ formatCurrency(row.revenue - row.total_spend) }}
+                    </td>
+                  </tr>
+                  <tr v-if="!trendRows.length">
+                    <td colspan="4" class="px-4 py-10 text-center text-slate-400">Tidak ada data</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        </template>
+
         <!-- Payment methods -->
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+        <div v-if="sectionLoading.payments" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-12 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat metode pembayaran…
+        </div>
+        <div v-else class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
           <div class="xl:col-span-1 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <h2 class="text-lg font-bold text-slate-900 mb-1">Metode Pembayaran</h2>
             <p class="text-xs text-slate-500 mb-4">Share amount per payment code</p>
@@ -380,48 +451,6 @@
                     <td class="px-4 py-2.5 text-right text-slate-600">
                       {{ row.pct != null ? row.pct + '%' : '—' }}
                     </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
-          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
-            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
-            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
-            <apexchart type="bar" height="340" :options="stackOptions" :series="stackSeries" />
-          </div>
-
-          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
-            <h2 class="text-lg font-bold text-slate-900 mb-1">Daily Snapshot</h2>
-            <p class="text-xs text-slate-500 mb-4">Revenue & total spend per hari</p>
-            <div class="overflow-auto max-h-[340px] rounded-2xl border border-slate-100">
-              <table class="min-w-full text-sm">
-                <thead class="bg-slate-50 sticky top-0">
-                  <tr class="text-left text-slate-500">
-                    <th class="px-4 py-3 font-semibold">Tanggal</th>
-                    <th class="px-4 py-3 font-semibold text-right">Revenue</th>
-                    <th class="px-4 py-3 font-semibold text-right">Spend</th>
-                    <th class="px-4 py-3 font-semibold text-right">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="row in trendRows"
-                    :key="row.date"
-                    class="border-t border-slate-100 hover:bg-sky-50/40"
-                  >
-                    <td class="px-4 py-2.5 text-slate-700">{{ formatShortDate(row.date) }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-sky-700">{{ formatCurrency(row.revenue) }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-rose-600">{{ formatCurrency(row.total_spend) }}</td>
-                    <td class="px-4 py-2.5 text-right font-semibold" :class="(row.revenue - row.total_spend) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
-                      {{ formatCurrency(row.revenue - row.total_spend) }}
-                    </td>
-                  </tr>
-                  <tr v-if="!trendRows.length">
-                    <td colspan="4" class="px-4 py-10 text-center text-slate-400">Tidak ada data</td>
                   </tr>
                 </tbody>
               </table>
@@ -481,7 +510,7 @@
                     <th class="px-4 py-3 text-left">Tanggal</th>
                     <th class="px-4 py-3 text-left">Sumber</th>
                     <th class="px-4 py-3 text-left">Nomor</th>
-                    <th class="px-4 py-3 text-left">User / Supplier</th>
+                    <th class="px-4 py-3 text-left">{{ modalPartyColumn }}</th>
                     <th class="px-4 py-3 text-right">Amount</th>
                   </tr>
                 </thead>
@@ -530,7 +559,7 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 
 const props = defineProps({
@@ -539,21 +568,157 @@ const props = defineProps({
   userOutletId: { type: [Number, String], default: null },
   canSelectOutlet: { type: Boolean, default: false },
   filters: { type: Object, default: () => ({}) },
+  lazy: { type: Boolean, default: true },
 })
 
 const page = usePage()
 const outlets = computed(() => props.outlets || [])
 const canSelectOutlet = computed(() => props.canSelectOutlet)
-const dashboardData = computed(() => props.dashboardData || {})
+
+const emptyDashboard = () => ({
+  overview: null,
+  trend: [],
+  spend_mix: [],
+  payment_methods: [],
+  ro_forecast: null,
+  outlet_name: null,
+})
+
+const dashboardData = ref({ ...emptyDashboard(), ...(props.dashboardData || {}) })
 const ov = computed(() => dashboardData.value.overview || {})
 const trendRows = computed(() => dashboardData.value.trend || [])
 const roForecast = computed(() => dashboardData.value.ro_forecast || null)
+
+const sectionLoading = ref({
+  meta: false,
+  overview: false,
+  member: false,
+  ro_forecast: false,
+  payments: false,
+  charts: false,
+})
+const sectionError = ref({
+  meta: false,
+  overview: false,
+  member: false,
+  ro_forecast: false,
+  payments: false,
+  charts: false,
+})
+
+const bootstrapping = computed(() =>
+  Object.values(sectionLoading.value).some(Boolean)
+)
 
 const filters = ref({
   date_from: props.filters?.date_from || '',
   date_to: props.filters?.date_to || '',
   outlet_id: props.filters?.outlet_id || null,
 })
+
+const filterParams = () => ({
+  outlet_id: filters.value.outlet_id,
+  date_from: filters.value.date_from,
+  date_to: filters.value.date_to,
+})
+
+const mergeSectionPayload = (section, data) => {
+  if (!data || typeof data !== 'object') return
+
+  if (section === 'meta' && data.outlet_name !== undefined) {
+    dashboardData.value.outlet_name = data.outlet_name
+  }
+
+  if (data.overview) {
+    dashboardData.value.overview = {
+      ...(dashboardData.value.overview || {}),
+      ...data.overview,
+    }
+  }
+
+  if (data.ro_forecast !== undefined) {
+    dashboardData.value.ro_forecast = data.ro_forecast
+  }
+
+  if (data.payment_methods !== undefined) {
+    dashboardData.value.payment_methods = data.payment_methods
+  }
+
+  if (data.trend !== undefined) {
+    dashboardData.value.trend = data.trend
+  }
+
+  if (data.spend_mix !== undefined) {
+    dashboardData.value.spend_mix = data.spend_mix
+  }
+}
+
+const fetchSection = async (section) => {
+  if (!filters.value.outlet_id) return
+  sectionLoading.value[section] = true
+  sectionError.value[section] = false
+  try {
+    const { data } = await axios.get('/opex-outlet-dashboard/section', {
+      params: { section, ...filterParams() },
+    })
+    mergeSectionPayload(section, data)
+  } catch (e) {
+    console.error(`Failed loading section ${section}`, e)
+    sectionError.value[section] = true
+  } finally {
+    sectionLoading.value[section] = false
+  }
+}
+
+const loadDashboardLazy = async () => {
+  if (!filters.value.outlet_id) {
+    dashboardData.value = emptyDashboard()
+    return
+  }
+
+  dashboardData.value = emptyDashboard()
+
+  // Semua section paralel; halaman shell sudah tampil tanpa menunggu Inertia berat.
+  await Promise.all([
+    fetchSection('meta'),
+    fetchSection('overview'),
+    fetchSection('member'),
+    fetchSection('ro_forecast'),
+    fetchSection('charts'),
+    fetchSection('payments'),
+  ])
+}
+
+const applyFilters = () => {
+  if (!filters.value.outlet_id) {
+    alert('Pilih outlet terlebih dahulu')
+    return
+  }
+  // Update URL tanpa menunggu query berat di server
+  router.get('/opex-outlet-dashboard', filters.value, {
+    preserveState: true,
+    preserveScroll: true,
+    only: ['filters', 'outlets', 'canSelectOutlet', 'userOutletId', 'lazy'],
+    onFinish: () => {
+      loadDashboardLazy()
+    },
+  })
+}
+
+onMounted(() => {
+  if (filters.value.outlet_id) {
+    loadDashboardLazy()
+  }
+})
+
+watch(
+  () => [props.filters?.date_from, props.filters?.date_to, props.filters?.outlet_id],
+  ([df, dt, oid]) => {
+    if (df) filters.value.date_from = df
+    if (dt) filters.value.date_to = dt
+    if (oid !== undefined) filters.value.outlet_id = oid
+  }
+)
 
 const roForecastHref = computed(() => {
   const outlet = filters.value.outlet_id
@@ -625,14 +790,6 @@ const spendShare = (amount) => {
   const total = Number(ov.value.total_spend) || 0
   if (total <= 0) return 0
   return Math.min(100, Math.round((Number(amount) / total) * 100))
-}
-
-const applyFilters = () => {
-  if (!filters.value.outlet_id) {
-    alert('Pilih outlet terlebih dahulu')
-    return
-  }
-  router.get('/opex-outlet-dashboard', filters.value, { preserveState: true, preserveScroll: true })
 }
 
 const categories = computed(() =>
@@ -738,8 +895,8 @@ const modalTitle = computed(() => {
   const map = {
     revenue: 'Revenue',
     discount: 'Diskon',
-    member_top_up: 'Member Top Up',
-    member_redeem: 'Member Redeem',
+    member_top_up: 'Point Earn',
+    member_redeem: 'Point Redeem',
     gsr_ro: 'GSR / RO',
     rws: 'RWS',
     retail_food: 'Retail Food',
@@ -747,6 +904,21 @@ const modalTitle = computed(() => {
     total_spend: 'Total Spend',
   }
   return map[modalType.value] || 'Detail'
+})
+
+const modalPartyColumn = computed(() => {
+  const map = {
+    discount: 'Member / Promo',
+    member_top_up: 'Member',
+    member_redeem: 'Member / Reward',
+    revenue: 'Member',
+    gsr_ro: 'User / Supplier',
+    rws: 'User / Supplier',
+    retail_food: 'User / Supplier',
+    retail_non_food: 'User / Supplier',
+    total_spend: 'User / Supplier',
+  }
+  return map[modalType.value] || 'Keterangan'
 })
 
 const modalTrendSeries = computed(() => [{ name: modalTitle.value, data: modalTrend.value.map((r) => Number(r.amount) || 0) }])

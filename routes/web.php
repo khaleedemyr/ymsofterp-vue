@@ -2108,6 +2108,7 @@ Route::get('/sales-trend-dashboard', [App\Http\Controllers\SalesTrendDashboardCo
 Route::get('/sales-trend-dashboard/outlet-trend', [App\Http\Controllers\SalesTrendDashboardController::class, 'outletTrend'])->name('sales-trend-dashboard.outlet-trend');
 Route::get('/outlet-analyzer', [App\Http\Controllers\OutletAnalyzerController::class, 'index'])->name('outlet-analyzer.index');
 Route::get('/opex-outlet-dashboard', [App\Http\Controllers\OpexOutletDashboardController::class, 'index'])->name('opex-outlet-dashboard.index');
+Route::get('/opex-outlet-dashboard/section', [App\Http\Controllers\OpexOutletDashboardController::class, 'getSection'])->name('opex-outlet-dashboard.section');
 Route::get('/opex-outlet-dashboard/category-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCategoryDetail'])->name('opex-outlet-dashboard.category-detail');
 Route::get('/opex-outlet-dashboard/card-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCardDetail'])->name('opex-outlet-dashboard.card-detail');
 Route::get('/opex-outlet-dashboard/food-by-category', [App\Http\Controllers\OpexOutletDashboardController::class, 'getFoodByCategory'])->name('opex-outlet-dashboard.food-by-category');

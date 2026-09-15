@@ -34,19 +34,9 @@ class OpexOutletDashboardController extends Controller
             ->orderBy('nama_outlet')
             ->get(['id_outlet', 'nama_outlet']);
 
-        $dashboard = $outletId
-            ? $this->opexService->buildDashboard($outletId, $dateFrom, $dateTo)
-            : [
-                'overview' => null,
-                'trend' => [],
-                'spend_mix' => [],
-                'payment_methods' => [],
-                'ro_forecast' => null,
-                'outlet_name' => null,
-            ];
-
+        // Lazy load: halaman awal hanya shell + filter (tanpa query berat).
         return Inertia::render('OpexOutletDashboard/Index', [
-            'dashboardData' => $dashboard,
+            'dashboardData' => $this->opexService->emptyDashboard(),
             'outlets' => $outlets,
             'userOutletId' => $userOutletId,
             'canSelectOutlet' => $isHo,
@@ -55,7 +45,30 @@ class OpexOutletDashboardController extends Controller
                 'date_to' => $dateTo,
                 'outlet_id' => $outletId,
             ],
+            'lazy' => true,
         ]);
+    }
+
+    public function getSection(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = (int) $user->id_outlet;
+        $section = (string) $request->get('section', '');
+        $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+
+        $outletId = $userOutletId === 1
+            ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
+            : $userOutletId;
+
+        $allowed = ['meta', 'overview', 'member', 'ro_forecast', 'payments', 'charts'];
+        if (! $outletId || ! in_array($section, $allowed, true)) {
+            return response()->json(['error' => 'Outlet and valid section required'], 400);
+        }
+
+        return response()->json(
+            $this->opexService->buildSection($section, $outletId, $dateFrom, $dateTo)
+        );
     }
 
     public function getCardDetail(Request $request)
@@ -177,7 +190,15 @@ class OpexOutletDashboardController extends Controller
             ->map(function ($row) {
                 $row->type = 'discount';
                 $row->source = 'Diskon Order';
-                $row->creator_name = $row->member_name ?: ($row->manual_discount_reason ?: '-');
+                $reason = trim((string) ($row->manual_discount_reason ?? ''));
+                $member = trim((string) ($row->member_name ?? ''));
+                if ($reason !== '' && $member !== '') {
+                    $row->creator_name = $member.' · '.$reason;
+                } elseif ($reason !== '') {
+                    $row->creator_name = $reason;
+                } else {
+                    $row->creator_name = $member !== '' ? $member : '-';
+                }
 
                 return $row;
             });
@@ -185,136 +206,107 @@ class OpexOutletDashboardController extends Controller
 
     private function listMemberTopUp(int $outletId, string $dateFrom, string $dateTo)
     {
-        $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
-
-        try {
-            $cabangId = null;
-            $name = trim((string) $outletName);
-            if ($name !== '') {
-                $cabangId = DB::connection('mysql_second')
-                    ->table('cabangs')
-                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
-                    ->value('id');
-                if (! $cabangId) {
-                    $cabangId = DB::connection('mysql_second')
-                        ->table('cabangs')
-                        ->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($name).'%'])
-                        ->value('id');
-                }
-            }
-            if (! $cabangId) {
-                return collect();
-            }
-
-            return DB::connection('mysql_second')
-                ->table('point as p')
-                ->leftJoin('costumers as c', 'p.costumer_id', '=', 'c.id')
-                ->where('p.cabang_id', $cabangId)
-                ->where('p.type', '1')
-                ->whereDate('p.created_at', '>=', $dateFrom)
-                ->whereDate('p.created_at', '<=', $dateTo)
-                ->orderByDesc('p.created_at')
-                ->limit(500)
-                ->get([
-                    'p.id',
-                    DB::raw("COALESCE(NULLIF(p.no_bill, ''), CONCAT('TOPUP-', p.id)) as number"),
-                    'p.jml_trans as amount',
-                    'p.created_at as date',
-                    'p.point',
-                    'c.name as creator_name',
-                    'c.costumers_id',
-                ])
-                ->map(function ($row) {
-                    $row->type = 'member_top_up';
-                    $row->source = 'Member Top Up'.($row->point ? ' · '.$row->point.' pts' : '');
-
-                    return $row;
-                });
-        } catch (\Throwable) {
-            return collect();
-        }
-    }
-
-    private function listMemberRedeem(int $outletId, ?string $qrCode, string $dateFrom, string $dateTo)
-    {
-        $outletName = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('nama_outlet');
-
-        try {
-            $cabangId = null;
-            $name = trim((string) $outletName);
-            if ($name !== '') {
-                $cabangId = DB::connection('mysql_second')
-                    ->table('cabangs')
-                    ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)])
-                    ->value('id');
-                if (! $cabangId) {
-                    $cabangId = DB::connection('mysql_second')
-                        ->table('cabangs')
-                        ->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($name).'%'])
-                        ->value('id');
-                }
-            }
-
-            if ($cabangId) {
-                $crm = DB::connection('mysql_second')
-                    ->table('point as p')
-                    ->leftJoin('costumers as c', 'p.costumer_id', '=', 'c.id')
-                    ->where('p.cabang_id', $cabangId)
-                    ->where('p.type', '2')
-                    ->whereDate('p.created_at', '>=', $dateFrom)
-                    ->whereDate('p.created_at', '<=', $dateTo)
-                    ->orderByDesc('p.created_at')
-                    ->limit(500)
-                    ->get([
-                        'p.id',
-                        DB::raw("COALESCE(NULLIF(p.no_bill_2, ''), NULLIF(p.no_bill, ''), CONCAT('REDEEM-', p.id)) as number"),
-                        'p.jml_trans as amount',
-                        'p.created_at as date',
-                        'p.point',
-                        'c.name as creator_name',
-                    ]);
-
-                if ($crm->isNotEmpty()) {
-                    return $crm->map(function ($row) {
-                        $row->type = 'member_redeem';
-                        $row->source = 'CRM Redeem'.($row->point ? ' · '.$row->point.' pts' : '');
-
-                        return $row;
-                    });
-                }
-            }
-        } catch (\Throwable) {
-            // fall through to POS
-        }
-
-        $qrCode = trim((string) $qrCode);
-        if ($qrCode === '') {
+        $qrCode = (string) (DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('qr_code') ?? '');
+        if ($qrCode === '' || ! Schema::hasTable('member_apps_point_transactions')) {
             return collect();
         }
 
-        return DB::table('orders')
+        $orderIds = DB::table('orders')
             ->where('kode_outlet', $qrCode)
             ->whereDate('created_at', '>=', $dateFrom)
             ->whereDate('created_at', '<=', $dateTo)
             ->where('status', '!=', 'cancelled')
-            ->where('grand_total', '>', 0)
-            ->where('redeem_amount', '>', 0)
-            ->orderByDesc('created_at')
-            ->limit(500)
-            ->get([
-                'id',
-                DB::raw("COALESCE(paid_number, CONCAT('ORD-', id)) as number"),
-                'redeem_amount as amount',
-                'created_at as date',
-                'member_name as creator_name',
-                'member_id',
-            ])
-            ->map(function ($row) {
-                $row->type = 'member_redeem';
-                $row->source = 'POS Redeem';
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
 
-                return $row;
-            });
+        if ($orderIds === []) {
+            return collect();
+        }
+
+        $rows = collect();
+        foreach (array_chunk($orderIds, 500) as $chunk) {
+            $chunkRows = DB::table('member_apps_point_transactions as pt')
+                ->leftJoin('orders as o', function ($join) {
+                    $join->whereRaw('CAST(o.id AS CHAR) = CAST(pt.reference_id AS CHAR)');
+                })
+                ->whereIn('pt.reference_id', $chunk)
+                ->where('pt.transaction_type', 'earn')
+                ->whereDate('pt.transaction_date', '>=', $dateFrom)
+                ->whereDate('pt.transaction_date', '<=', $dateTo)
+                ->orderByDesc('pt.transaction_date')
+                ->limit(500)
+                ->get([
+                    'pt.id',
+                    DB::raw("COALESCE(o.paid_number, pt.reference_id) as number"),
+                    'pt.transaction_amount as amount',
+                    'pt.transaction_date as date',
+                    'pt.point_amount as point',
+                    'o.member_name as creator_name',
+                ]);
+            $rows = $rows->concat($chunkRows);
+        }
+
+        return $rows->take(500)->values()->map(function ($row) {
+            $row->type = 'member_top_up';
+            $row->source = 'Point Earn'.($row->point ? ' · '.$row->point.' pts' : '');
+
+            return $row;
+        });
+    }
+
+    private function listMemberRedeem(int $outletId, ?string $qrCode, string $dateFrom, string $dateTo)
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '' || ! Schema::hasTable('member_apps_point_redemptions')) {
+            return collect();
+        }
+
+        $orderIds = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        if ($orderIds === []) {
+            return collect();
+        }
+
+        $rows = collect();
+        foreach (array_chunk($orderIds, 500) as $chunk) {
+            $chunkRows = DB::table('member_apps_point_redemptions as r')
+                ->leftJoin('orders as o', function ($join) {
+                    $join->whereRaw("CAST(o.id AS CHAR) = CAST(SUBSTRING_INDEX(r.reference_id, '|', -1) AS CHAR)");
+                })
+                ->leftJoin('member_apps_members as m', 'm.id', '=', 'r.member_id')
+                ->where('r.status', 'completed')
+                ->whereDate('r.redemption_date', '>=', $dateFrom)
+                ->whereDate('r.redemption_date', '<=', $dateTo)
+                ->whereIn(DB::raw("SUBSTRING_INDEX(r.reference_id, '|', -1)"), $chunk)
+                ->orderByDesc('r.redemption_date')
+                ->limit(500)
+                ->get([
+                    'r.id',
+                    DB::raw("COALESCE(o.paid_number, r.reference_id) as number"),
+                    DB::raw('COALESCE(r.product_price, r.cash_value, 0) as amount'),
+                    'r.redemption_date as date',
+                    'r.point_amount as point',
+                    'r.product_name',
+                    DB::raw("COALESCE(o.member_name, m.nama_lengkap, '-') as creator_name"),
+                ]);
+            $rows = $rows->concat($chunkRows);
+        }
+
+        return $rows->take(500)->values()->map(function ($row) {
+            $row->type = 'member_redeem';
+            $label = $row->product_name ?: 'Point Redeem';
+            $row->source = $label.($row->point ? ' · '.$row->point.' pts' : '');
+
+            return $row;
+        });
     }
 
     private function listRevenue(?string $qrCode, string $dateFrom, string $dateTo)
