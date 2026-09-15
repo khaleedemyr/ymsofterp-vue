@@ -565,7 +565,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="modalType === 'revenue' ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -644,6 +644,55 @@
                 </table>
               </div>
               <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · Lunch = s/d jam 17, Dinner = setelah jam 17</p>
+            </template>
+
+            <!-- Total Spend: daily seperti Receiving Sheet (tanpa omzet) -->
+            <template v-else-if="modalType === 'total_spend'">
+              <div class="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="font-bold">
+                      <th class="px-4 py-3 text-left bg-slate-600 text-white">No</th>
+                      <th class="px-4 py-3 text-left bg-sky-600 text-white">Tanggal</th>
+                      <th class="px-4 py-3 text-left bg-slate-500 text-white">Hari</th>
+                      <th class="px-4 py-3 text-right bg-amber-600 text-white">GSR / RO</th>
+                      <th class="px-4 py-3 text-right bg-violet-600 text-white">RWS</th>
+                      <th class="px-4 py-3 text-right bg-emerald-600 text-white">Retail Food</th>
+                      <th class="px-4 py-3 text-right bg-teal-600 text-white">Retail Non Food</th>
+                      <th class="px-4 py-3 text-right bg-rose-600 text-white">Total Spend</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, index) in modalTxns"
+                      :key="row.id"
+                      class="border-b last:border-b-0"
+                      :class="row.is_weekend ? 'bg-rose-50/50' : 'hover:bg-slate-50'"
+                    >
+                      <td class="px-4 py-3 bg-slate-50 text-slate-700">{{ index + 1 }}</td>
+                      <td class="px-4 py-3 bg-sky-50 text-sky-900 font-medium">{{ formatShortDate(row.date) }}</td>
+                      <td class="px-4 py-3 text-slate-700">{{ row.day_name }}</td>
+                      <td class="px-4 py-3 text-right text-amber-900 font-medium">{{ formatCurrency(row.gsr_ro) }}</td>
+                      <td class="px-4 py-3 text-right text-violet-900 font-medium">{{ formatCurrency(row.rws) }}</td>
+                      <td class="px-4 py-3 text-right text-emerald-900 font-medium">{{ formatCurrency(row.retail_food) }}</td>
+                      <td class="px-4 py-3 text-right text-teal-900 font-medium">{{ formatCurrency(row.retail_non_food) }}</td>
+                      <td class="px-4 py-3 text-right text-rose-900 font-semibold">{{ formatCurrency(row.total_spend) }}</td>
+                    </tr>
+                    <tr v-if="modalTxns.length" class="border-t-2 border-slate-400 font-bold">
+                      <td class="px-4 py-3 bg-slate-700 text-white" colspan="3">GRAND TOTAL</td>
+                      <td class="px-4 py-3 bg-amber-700 text-white text-right">{{ formatCurrency(spendModalTotals.gsr_ro) }}</td>
+                      <td class="px-4 py-3 bg-violet-700 text-white text-right">{{ formatCurrency(spendModalTotals.rws) }}</td>
+                      <td class="px-4 py-3 bg-emerald-700 text-white text-right">{{ formatCurrency(spendModalTotals.retail_food) }}</td>
+                      <td class="px-4 py-3 bg-teal-700 text-white text-right">{{ formatCurrency(spendModalTotals.retail_non_food) }}</td>
+                      <td class="px-4 py-3 bg-rose-700 text-white text-right">{{ formatCurrency(spendModalTotals.total_spend) }}</td>
+                    </tr>
+                    <tr v-if="!modalTxns.length">
+                      <td colspan="8" class="px-4 py-10 text-center text-slate-400">Tidak ada data spend</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · tanpa omzet (GSR/RO + RWS + RF + RNF)</p>
             </template>
 
             <!-- Modal transaksi biasa -->
@@ -1158,6 +1207,18 @@ const revenueModalTotals = computed(() => {
   }
 })
 
+const spendModalTotals = computed(() => {
+  const rows = modalTxns.value || []
+  const sum = (key) => rows.reduce((acc, r) => acc + (Number(r[key]) || 0), 0)
+  return {
+    gsr_ro: sum('gsr_ro'),
+    rws: sum('rws'),
+    retail_food: sum('retail_food'),
+    retail_non_food: sum('retail_non_food'),
+    total_spend: sum('total_spend'),
+  }
+})
+
 const modalTrendSeries = computed(() => [{ name: modalTitle.value, data: modalTrend.value.map((r) => Number(r.amount) || 0) }])
 const modalTrendOptions = computed(() => ({
   chart: { toolbar: { show: false }, sparkline: { enabled: false } },
@@ -1200,7 +1261,7 @@ const fetchModal = async () => {
         date_to: filters.value.date_to,
         search: modalSearch.value,
         page: modalPage.value,
-        per_page: modalType.value === 'revenue' ? 62 : 20,
+        per_page: ['revenue', 'total_spend'].includes(modalType.value) ? 62 : 20,
       },
     })
     modalTrend.value = data.trend || []

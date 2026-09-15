@@ -79,8 +79,8 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
         $page = max(1, (int) $request->get('page', 1));
-        $defaultPerPage = $type === 'revenue' ? 62 : 20;
-        $maxPerPage = $type === 'revenue' ? 93 : 50;
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend'], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend'], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
 
@@ -162,14 +162,73 @@ class OpexOutletDashboardController extends Controller
             'retail_food' => $this->listRetailFood($outletId, $dateFrom, $dateTo),
             'retail_non_food' => $this->listRetailNonFood($outletId, $dateFrom, $dateTo),
             'petty_cash' => $this->listPettyCash($outletId, $dateFrom, $dateTo),
-            'total_spend' => $this->listGsrRo($outletId, $dateFrom, $dateTo)
-                ->concat($this->listRws($outletId, $dateFrom, $dateTo))
-                ->concat($this->listRetailFood($outletId, $dateFrom, $dateTo))
-                ->concat($this->listRetailNonFood($outletId, $dateFrom, $dateTo))
-                ->sortByDesc(fn ($r) => $r->date ?? '')
-                ->values(),
+            'total_spend' => $this->listTotalSpendDaily($outletId, $dateFrom, $dateTo),
             default => collect(),
         };
+    }
+
+    private function listTotalSpendDaily(int $outletId, string $dateFrom, string $dateTo)
+    {
+        $dayNames = [
+            0 => 'Minggu',
+            1 => 'Senin',
+            2 => 'Selasa',
+            3 => 'Rabu',
+            4 => 'Kamis',
+            5 => 'Jumat',
+            6 => 'Sabtu',
+        ];
+
+        $gr = $this->opexService->foodGrByDate($outletId, $dateFrom, $dateTo);
+        $gsr = $this->opexService->gsrByDate($outletId, $dateFrom, $dateTo);
+        $rws = $this->opexService->rwsByDate($outletId, $dateFrom, $dateTo);
+        $rf = $this->opexService->retailFoodByDate($outletId, $dateFrom, $dateTo);
+        $rnf = $this->opexService->retailNonFoodByDate($outletId, $dateFrom, $dateTo);
+
+        $dates = [];
+        foreach ([$gr, $gsr, $rws, $rf, $rnf] as $map) {
+            foreach (array_keys($map) as $d) {
+                $dates[$d] = true;
+            }
+        }
+        // Include all days in filter range so empty days still appear like receiving sheet
+        $cursor = Carbon::parse($dateFrom)->startOfDay();
+        $end = Carbon::parse($dateTo)->startOfDay();
+        while ($cursor->lte($end)) {
+            $dates[$cursor->format('Y-m-d')] = true;
+            $cursor->addDay();
+        }
+
+        $sorted = array_keys($dates);
+        rsort($sorted);
+
+        return collect($sorted)->map(function (string $date) use ($dayNames, $gr, $gsr, $rws, $rf, $rnf) {
+            $gsrRo = round((float) ($gr[$date] ?? 0) + (float) ($gsr[$date] ?? 0), 2);
+            $rwsAmt = round((float) ($rws[$date] ?? 0), 2);
+            $rfAmt = round((float) ($rf[$date] ?? 0), 2);
+            $rnfAmt = round((float) ($rnf[$date] ?? 0), 2);
+            $total = round($gsrRo + $rwsAmt + $rfAmt + $rnfAmt, 2);
+
+            $carbon = Carbon::parse($date);
+            $dow = (int) $carbon->dayOfWeek;
+
+            return (object) [
+                'id' => $date,
+                'type' => 'total_spend',
+                'source' => 'Daily Spend',
+                'date' => $date,
+                'number' => $date,
+                'day_name' => $dayNames[$dow] ?? $carbon->format('l'),
+                'is_weekend' => in_array($dow, [0, 6], true),
+                'gsr_ro' => $gsrRo,
+                'rws' => $rwsAmt,
+                'retail_food' => $rfAmt,
+                'retail_non_food' => $rnfAmt,
+                'amount' => $total,
+                'total_spend' => $total,
+                'creator_name' => $dayNames[$dow] ?? '',
+            ];
+        })->values();
     }
 
     private function listDiscount(?string $qrCode, string $dateFrom, string $dateTo)
