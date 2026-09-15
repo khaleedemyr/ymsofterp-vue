@@ -40,6 +40,7 @@ class OpexOutletDashboardController extends Controller
                 'overview' => null,
                 'trend' => [],
                 'spend_mix' => [],
+                'ro_forecast' => null,
                 'outlet_name' => null,
             ];
 

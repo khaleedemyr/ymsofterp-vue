@@ -52,6 +52,107 @@
       </div>
 
       <template v-else>
+        <!-- RO Forecast summary -->
+        <div class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 sm:p-6 mb-6">
+          <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">RO Forecast</p>
+              <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
+              <p class="text-xs text-slate-500 mt-1">
+                Forecast periode filter · F&amp;B 40% · Service 5%
+              </p>
+            </div>
+            <a
+              :href="roForecastHref"
+              class="text-sm font-medium text-teal-700 hover:text-teal-900 underline underline-offset-2"
+            >
+              Buka laporan lengkap
+            </a>
+          </div>
+
+          <div v-if="!roForecast?.has_forecast && !(roForecast?.forecast > 0)" class="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
+            Belum ada Revenue Target / Forecast untuk periode ini.
+          </div>
+
+          <div v-else class="grid grid-cols-1 xl:grid-cols-12 gap-4">
+            <div class="xl:col-span-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Forecast</p>
+              <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
+              <p class="mt-1 text-xs text-slate-500">Total forecast revenue periode</p>
+            </div>
+
+            <div class="xl:col-span-4 rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">F &amp; B Purchase</p>
+                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">Budget {{ roForecast.fb?.budget_ratio_pct || 40 }}%</span>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p class="text-slate-500 text-xs">Budget</p>
+                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.budget) }}</p>
+                </div>
+                <div>
+                  <p class="text-slate-500 text-xs">Purchased</p>
+                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.purchased) }}</p>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-teal-100/80 flex items-end justify-between gap-2">
+                <div>
+                  <p class="text-xs text-slate-500">Sisa budget</p>
+                  <p class="text-xl font-bold" :class="remainingClass(roForecast.fb?.remaining)">
+                    {{ formatRemaining(roForecast.fb?.remaining) }}
+                  </p>
+                </div>
+                <p class="text-sm font-semibold text-slate-600">
+                  {{ roForecast.fb?.pct != null ? roForecast.fb.pct + '% terpakai' : '—' }}
+                </p>
+              </div>
+              <div class="mt-3 h-2 rounded-full bg-white overflow-hidden border border-teal-100">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="(roForecast.fb?.pct || 0) > 100 ? 'bg-rose-500' : 'bg-teal-500'"
+                  :style="{ width: Math.min(100, roForecast.fb?.pct || 0) + '%' }"
+                ></div>
+              </div>
+            </div>
+
+            <div class="xl:col-span-5 rounded-2xl border border-cyan-100 bg-cyan-50/40 p-4">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Service Purchase</p>
+                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">Budget {{ roForecast.service?.budget_ratio_pct || 5 }}%</span>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p class="text-slate-500 text-xs">Budget</p>
+                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.budget) }}</p>
+                </div>
+                <div>
+                  <p class="text-slate-500 text-xs">Purchased</p>
+                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.purchased) }}</p>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-cyan-100/80 flex items-end justify-between gap-2">
+                <div>
+                  <p class="text-xs text-slate-500">Sisa budget</p>
+                  <p class="text-xl font-bold" :class="remainingClass(roForecast.service?.remaining)">
+                    {{ formatRemaining(roForecast.service?.remaining) }}
+                  </p>
+                </div>
+                <p class="text-sm font-semibold text-slate-600">
+                  {{ roForecast.service?.pct != null ? roForecast.service.pct + '% terpakai' : '—' }}
+                </p>
+              </div>
+              <div class="mt-3 h-2 rounded-full bg-white overflow-hidden border border-cyan-100">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="(roForecast.service?.pct || 0) > 100 ? 'bg-rose-500' : 'bg-cyan-500'"
+                  :style="{ width: Math.min(100, roForecast.service?.pct || 0) + '%' }"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Hero metrics -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
           <button
@@ -195,6 +296,7 @@
           <a href="/report-daily-outlet-revenue" class="px-4 py-2 rounded-xl bg-white border border-sky-200 text-sky-700 text-sm font-medium hover:bg-sky-50">Daily Revenue</a>
           <a href="/report-receiving-sheet" class="px-4 py-2 rounded-xl bg-white border border-amber-200 text-amber-700 text-sm font-medium hover:bg-amber-50">Receiving Sheet</a>
           <a :href="pettyCashHref" class="px-4 py-2 rounded-xl bg-white border border-emerald-200 text-emerald-700 text-sm font-medium hover:bg-emerald-50">Petty Cash Report</a>
+          <a :href="roForecastHref" class="px-4 py-2 rounded-xl bg-white border border-teal-200 text-teal-700 text-sm font-medium hover:bg-teal-50">RO Forecast</a>
         </div>
       </template>
     </div>
@@ -307,11 +409,22 @@ const canSelectOutlet = computed(() => props.canSelectOutlet)
 const dashboardData = computed(() => props.dashboardData || {})
 const ov = computed(() => dashboardData.value.overview || {})
 const trendRows = computed(() => dashboardData.value.trend || [])
+const roForecast = computed(() => dashboardData.value.ro_forecast || null)
 
 const filters = ref({
   date_from: props.filters?.date_from || '',
   date_to: props.filters?.date_to || '',
   outlet_id: props.filters?.outlet_id || null,
+})
+
+const roForecastHref = computed(() => {
+  const outlet = filters.value.outlet_id
+  const month = (filters.value.date_from || '').slice(0, 7)
+  const p = new URLSearchParams()
+  if (outlet) p.set('outlet_id', String(outlet))
+  if (month) p.set('month', month)
+  const q = p.toString()
+  return q ? `/reports/floor-order-vs-forecast?${q}` : '/reports/floor-order-vs-forecast'
 })
 
 const sourceCards = computed(() => [
@@ -532,6 +645,19 @@ const formatCurrency = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Number(value) || 0)
+
+const formatRemaining = (value) => {
+  const n = Number(value) || 0
+  if (n >= 0) return formatCurrency(n)
+  return 'Over ' + formatCurrency(Math.abs(n))
+}
+
+const remainingClass = (value) => {
+  const n = Number(value) || 0
+  if (n > 0) return 'text-teal-700'
+  if (n < 0) return 'text-rose-600'
+  return 'text-slate-700'
+}
 
 const formatCompact = (value) => {
   const n = Number(value) || 0

@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Schema;
  */
 class OpexOutletDashboardService
 {
+    private const FB_BUDGET_RATIO = 0.40;
+
+    private const SERVICE_BUDGET_RATIO = 0.05;
+
     /**
      * @return array<string, mixed>
      */
@@ -23,6 +27,7 @@ class OpexOutletDashboardService
                 'overview' => null,
                 'trend' => [],
                 'spend_mix' => [],
+                'ro_forecast' => null,
                 'outlet_name' => null,
             ];
         }
@@ -67,8 +72,214 @@ class OpexOutletDashboardService
                 ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => $rf['total']],
                 ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => $rnf['total']],
             ],
+            'ro_forecast' => $this->buildRoForecastSummary($outletId, $dateFrom, $dateTo),
             'outlet_name' => $outlet?->nama_outlet,
         ];
+    }
+
+    /**
+     * Ringkas kolom RO Forecast (Floor Order vs Forecast):
+     * Forecast, F&B Purchase (budget 40%), Service Purchase (budget 5%), sisa budget.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildRoForecastSummary(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $forecastTotal = $this->sumForecastRevenue($outletId, $dateFrom, $dateTo);
+        $purchased = $this->sumRoPurchasedByBucket($outletId, $dateFrom, $dateTo);
+
+        $fbBudget = round($forecastTotal * self::FB_BUDGET_RATIO, 2);
+        $svcBudget = round($forecastTotal * self::SERVICE_BUDGET_RATIO, 2);
+        $fbPurchased = $purchased['kitchen_bar'];
+        $svcPurchased = $purchased['service'];
+
+        $fbRemaining = round($fbBudget - $fbPurchased, 2);
+        $svcRemaining = round($svcBudget - $svcPurchased, 2);
+        $fbPct = $fbBudget > 0 ? round(($fbPurchased / $fbBudget) * 100, 1) : null;
+        $svcPct = $svcBudget > 0 ? round(($svcPurchased / $svcBudget) * 100, 1) : null;
+
+        return [
+            'has_forecast' => $forecastTotal > 0 || $this->hasForecastHeaderForRange($outletId, $dateFrom, $dateTo),
+            'forecast' => $forecastTotal,
+            'fb' => [
+                'budget_ratio_pct' => (int) round(self::FB_BUDGET_RATIO * 100),
+                'budget' => $fbBudget,
+                'purchased' => $fbPurchased,
+                'remaining' => $fbRemaining,
+                'variance' => round($fbPurchased - $fbBudget, 2),
+                'pct' => $fbPct,
+            ],
+            'service' => [
+                'budget_ratio_pct' => (int) round(self::SERVICE_BUDGET_RATIO * 100),
+                'budget' => $svcBudget,
+                'purchased' => $svcPurchased,
+                'remaining' => $svcRemaining,
+                'variance' => round($svcPurchased - $svcBudget, 2),
+                'pct' => $svcPct,
+            ],
+        ];
+    }
+
+    private function hasForecastHeaderForRange(int $outletId, string $dateFrom, string $dateTo): bool
+    {
+        $months = $this->monthsCovered($dateFrom, $dateTo);
+        foreach ($months as $monthStart) {
+            $exists = DB::table('outlet_revenue_target_headers')
+                ->where('outlet_id', $outletId)
+                ->where('target_month', $monthStart)
+                ->exists();
+            if ($exists) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function sumForecastRevenue(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        $months = $this->monthsCovered($dateFrom, $dateTo);
+        if ($months === []) {
+            return 0.0;
+        }
+
+        $headerIds = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->whereIn('target_month', $months)
+            ->pluck('id');
+
+        if ($headerIds->isEmpty()) {
+            return 0.0;
+        }
+
+        return round((float) DB::table('outlet_revenue_target_details')
+            ->whereIn('header_id', $headerIds)
+            ->whereDate('forecast_date', '>=', $dateFrom)
+            ->whereDate('forecast_date', '<=', $dateTo)
+            ->sum('forecast_revenue'), 2);
+    }
+
+    /**
+     * Same buckets as Floor Order vs Forecast: kitchen/bar vs service
+     * from food_floor_orders (+ retail_food by warehouse_outlet).
+     *
+     * @return array{kitchen_bar: float, service: float}
+     */
+    private function sumRoPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $warehouseBucketById = DB::table('warehouse_outlets')
+            ->select('id', 'name')
+            ->get()
+            ->mapWithKeys(function ($w) {
+                $name = strtolower(trim((string) ($w->name ?? '')));
+                $bucket = 'other';
+                if (in_array($name, ['kitchen', 'bar'], true)) {
+                    $bucket = 'kitchen_bar';
+                } elseif ($name === 'service') {
+                    $bucket = 'service';
+                }
+
+                return [(int) $w->id => $bucket];
+            })
+            ->all();
+
+        $bucketExpr = "CASE
+            WHEN LOWER(TRIM(wo.name)) IN ('kitchen', 'bar') THEN 'kitchen_bar'
+            WHEN LOWER(TRIM(wo.name)) = 'service' THEN 'service'
+            ELSE 'other'
+        END";
+
+        $receivedQtyByRoItem = DB::table('outlet_food_good_receive_items as gri')
+            ->join('outlet_food_good_receives as gr', function ($join) {
+                $join->on('gri.outlet_food_good_receive_id', '=', 'gr.id')
+                    ->whereNull('gr.deleted_at')
+                    ->where('gr.status', 'completed');
+            })
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->join('food_floor_orders as ffo_r', 'do.floor_order_id', '=', 'ffo_r.id')
+            ->where('ffo_r.id_outlet', $outletId)
+            ->whereNotNull('ffo_r.arrival_date')
+            ->whereBetween(DB::raw('DATE(ffo_r.arrival_date)'), [$dateFrom, $dateTo])
+            ->whereNotIn('ffo_r.status', ['draft', 'rejected'])
+            ->groupBy('do.floor_order_id', 'gri.item_id')
+            ->select(
+                'do.floor_order_id as floor_order_id',
+                'gri.item_id as item_id',
+                DB::raw('SUM(gri.received_qty) as qty_received')
+            );
+
+        $lineValueSql = '(CASE
+            WHEN recv.qty_received IS NOT NULL AND recv.qty_received > 0
+            THEN recv.qty_received * COALESCE(ffoi.price, 0)
+            ELSE COALESCE(ffoi.subtotal, 0)
+        END)';
+
+        $aggregates = DB::table('food_floor_orders as ffo')
+            ->join('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
+            ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->leftJoinSub($receivedQtyByRoItem, 'recv', function ($join) {
+                $join->on('recv.floor_order_id', '=', 'ffo.id')
+                    ->on('recv.item_id', '=', 'ffoi.item_id');
+            })
+            ->where('ffo.id_outlet', $outletId)
+            ->whereNotNull('ffo.arrival_date')
+            ->whereBetween(DB::raw('DATE(ffo.arrival_date)'), [$dateFrom, $dateTo])
+            ->whereNotIn('ffo.status', ['draft', 'rejected'])
+            ->selectRaw($bucketExpr.' as bucket, SUM('.$lineValueSql.') as total')
+            ->groupBy(DB::raw($bucketExpr))
+            ->get();
+
+        $kitchenBar = 0.0;
+        $service = 0.0;
+        foreach ($aggregates as $row) {
+            $total = (float) $row->total;
+            if ($row->bucket === 'kitchen_bar') {
+                $kitchenBar += $total;
+            } elseif ($row->bucket === 'service') {
+                $service += $total;
+            }
+        }
+
+        $retailFoodRows = DB::table('retail_food as rf')
+            ->join('warehouse_outlets as wo', 'wo.id', '=', 'rf.warehouse_outlet_id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$dateFrom, $dateTo])
+            ->selectRaw('wo.id as warehouse_outlet_id, SUM(rf.total_amount) as total')
+            ->groupBy('wo.id')
+            ->get();
+
+        foreach ($retailFoodRows as $rfRow) {
+            $bucket = $warehouseBucketById[(int) $rfRow->warehouse_outlet_id] ?? 'other';
+            $total = (float) $rfRow->total;
+            if ($bucket === 'kitchen_bar') {
+                $kitchenBar += $total;
+            } elseif ($bucket === 'service') {
+                $service += $total;
+            }
+        }
+
+        return [
+            'kitchen_bar' => round($kitchenBar, 2),
+            'service' => round($service, 2),
+        ];
+    }
+
+    /**
+     * @return list<string> Y-m-01
+     */
+    private function monthsCovered(string $dateFrom, string $dateTo): array
+    {
+        $months = [];
+        $cursor = Carbon::parse($dateFrom)->startOfMonth();
+        $end = Carbon::parse($dateTo)->startOfMonth();
+        while ($cursor->lte($end)) {
+            $months[] = $cursor->format('Y-m-01');
+            $cursor->addMonth();
+        }
+
+        return $months;
     }
 
     /**
