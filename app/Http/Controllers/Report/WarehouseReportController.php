@@ -336,24 +336,23 @@ class WarehouseReportController extends Controller
             ->keyBy('tanggal');
 
         // Query pembelanjaan per warehouse per tanggal
-        // Catatan: gudang sumber RO = warehouse item (warehouse_division), bukan warehouse_outlet_id GR.
+        // Sama pola Invoice Outlet: warehouse dari packing_list.warehouse_division (bukan item / warehouse_outlet).
         $warehouseSpendQuery = DB::table('outlet_food_good_receive_items as ofgri')
             ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
             ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
-            ->join('food_floor_orders as ffo', 'fpl.food_floor_order_id', '=', 'ffo.id')
-            ->join('food_floor_order_items as ffoi', function ($join) {
+            ->leftJoin('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
                 $join->on('ffoi.floor_order_id', '=', 'ffo.id')
                     ->on('ffoi.item_id', '=', 'ofgri.item_id');
             })
-            ->join('items as it', 'ofgri.item_id', '=', 'it.id')
-            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouse_division as wd', 'fpl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->select(
                 'ofgr.receive_date as tanggal',
                 'w.id as warehouse_id',
                 'w.name as warehouse_name',
-                DB::raw('SUM(ofgri.received_qty * ffoi.price) as total')
+                DB::raw('SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
             );
         if ($outlet) {
             $warehouseSpendQuery->where('ofgr.outlet_id', $outlet);
@@ -378,31 +377,138 @@ class WarehouseReportController extends Controller
             ];
         })->unique('id')->values();
 
-        // Index warehouse spend per tanggal per warehouse_id + aggregate MS / MK
+        // Index warehouse spend per tanggal per warehouse_id
         $warehouseSpendByDate = [];
-        $msByDate = [];
-        $mkByDate = [];
         foreach ($warehouseSpendData as $row) {
             $date = $row->tanggal;
             $wid = $row->warehouse_id;
-            $total = (float) $row->total;
             if (! isset($warehouseSpendByDate[$date])) {
                 $warehouseSpendByDate[$date] = [];
             }
-            $warehouseSpendByDate[$date][$wid] = $total;
+            $warehouseSpendByDate[$date][$wid] = (float) $row->total;
+        }
 
-            $whName = strtoupper(trim((string) $row->warehouse_name));
+        // MS / MK: gabungan GR (packing list) + GSR + RWS — sama sumber Invoice Outlet.
+        $msByDate = [];
+        $mkByDate = [];
+        $bucketMsMk = function (array &$msByDate, array &$mkByDate, $date, $warehouseName, $amount): void {
+            $date = (string) $date;
+            $amount = (float) $amount;
+            if ($date === '' || $amount == 0.0) {
+                return;
+            }
+            $whName = strtoupper(trim((string) $warehouseName));
+            if ($whName === '') {
+                return;
+            }
             if ($whName === 'MAIN STORE' || str_contains($whName, 'MAIN STORE')) {
-                $msByDate[$date] = ($msByDate[$date] ?? 0) + $total;
+                $msByDate[$date] = ($msByDate[$date] ?? 0) + $amount;
             }
             if (
                 in_array($whName, ['MK1 HOT KITCHEN', 'MK2 COLD KITCHEN'], true)
                 || str_starts_with($whName, 'MK1')
                 || str_starts_with($whName, 'MK2')
             ) {
-                $mkByDate[$date] = ($mkByDate[$date] ?? 0) + $total;
+                $mkByDate[$date] = ($mkByDate[$date] ?? 0) + $amount;
+            }
+        };
+
+        foreach ($warehouseSpendData as $row) {
+            $bucketMsMk($msByDate, $mkByDate, $row->tanggal, $row->warehouse_name, $row->total);
+        }
+
+        // GSR (GR Nomor Seri) — warehouse dari item.warehouse_division
+        if ($this->rekapFjHasSerialGrTables()) {
+            $gsrPriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+            $gsrSpendQuery = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->whereNotNull('w.id')
+                ->select(
+                    'h.receive_date as tanggal',
+                    'w.id as warehouse_id',
+                    'w.name as warehouse_name',
+                    DB::raw("SUM(si.qty * ({$gsrPriceExpr})) as total")
+                );
+            if ($outlet) {
+                $gsrSpendQuery->where('h.outlet_id', $outlet);
+            }
+            if ($dateFrom) {
+                $gsrSpendQuery->whereDate('h.receive_date', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $gsrSpendQuery->whereDate('h.receive_date', '<=', $dateTo);
+            }
+            $gsrSpendData = $gsrSpendQuery
+                ->groupBy('h.receive_date', 'w.id', 'w.name')
+                ->get();
+
+            foreach ($gsrSpendData as $row) {
+                $bucketMsMk($msByDate, $mkByDate, $row->tanggal, $row->warehouse_name, $row->total);
+                $date = (string) $row->tanggal;
+                $wid = $row->warehouse_id;
+                if (! isset($warehouseSpendByDate[$date])) {
+                    $warehouseSpendByDate[$date] = [];
+                }
+                $warehouseSpendByDate[$date][$wid] = ($warehouseSpendByDate[$date][$wid] ?? 0) + (float) $row->total;
+                if (! $warehouses->contains(fn ($wh) => (int) $wh['id'] === (int) $wid)) {
+                    $warehouses->push([
+                        'id' => $wid,
+                        'name' => $row->warehouse_name,
+                    ]);
+                }
             }
         }
+
+        // RWS (Retail Warehouse Sales) — warehouse dari division, fallback rws.warehouse_id
+        $rwsSpendQuery = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->whereNotNull('w.id')
+            ->select(
+                'rws.sale_date as tanggal',
+                'w.id as warehouse_id',
+                'w.name as warehouse_name',
+                DB::raw('SUM(COALESCE(rws.total_amount, 0)) as total')
+            );
+        if ($outlet) {
+            $rwsSpendQuery->where('c.id_outlet', $outlet);
+        }
+        if ($dateFrom) {
+            $rwsSpendQuery->whereDate('rws.sale_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $rwsSpendQuery->whereDate('rws.sale_date', '<=', $dateTo);
+        }
+        $rwsSpendData = $rwsSpendQuery
+            ->groupBy('rws.sale_date', 'w.id', 'w.name')
+            ->get();
+
+        foreach ($rwsSpendData as $row) {
+            $bucketMsMk($msByDate, $mkByDate, $row->tanggal, $row->warehouse_name, $row->total);
+            $date = (string) $row->tanggal;
+            $wid = $row->warehouse_id;
+            if (! isset($warehouseSpendByDate[$date])) {
+                $warehouseSpendByDate[$date] = [];
+            }
+            $warehouseSpendByDate[$date][$wid] = ($warehouseSpendByDate[$date][$wid] ?? 0) + (float) $row->total;
+            if (! $warehouses->contains(fn ($wh) => (int) $wh['id'] === (int) $wid)) {
+                $warehouses->push([
+                    'id' => $wid,
+                    'name' => $row->warehouse_name,
+                ]);
+            }
+        }
+        $warehouses = $warehouses->unique('id')->values();
 
         // Query pembelanjaan per supplier per tanggal
         $supplierSpendQuery = DB::table('good_receive_outlet_supplier_items as gri')
