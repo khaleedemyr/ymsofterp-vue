@@ -79,7 +79,9 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
         $page = max(1, (int) $request->get('page', 1));
-        $perPage = min(50, max(10, (int) $request->get('per_page', 20)));
+        $defaultPerPage = $type === 'revenue' ? 62 : 20;
+        $maxPerPage = $type === 'revenue' ? 93 : 50;
+        $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
 
         $outletId = $userOutletId === 1
@@ -106,6 +108,8 @@ class OpexOutletDashboardController extends Controller
                     $row->manual_discount_reason ?? null,
                     $row->beneficiary_name ?? null,
                     $row->bill_amount ?? null,
+                    $row->day_name ?? null,
+                    $row->date ?? null,
                 ])));
 
                 return str_contains($hay, strtolower($search));
@@ -411,28 +415,87 @@ class OpexOutletDashboardController extends Controller
             return collect();
         }
 
-        return DB::table('orders')
+        $dayNames = [
+            0 => 'Minggu',
+            1 => 'Senin',
+            2 => 'Selasa',
+            3 => 'Rabu',
+            4 => 'Kamis',
+            5 => 'Jumat',
+            6 => 'Sabtu',
+        ];
+
+        $rows = DB::table('orders')
             ->where('kode_outlet', $qrCode)
             ->whereDate('created_at', '>=', $dateFrom)
             ->whereDate('created_at', '<=', $dateTo)
             ->where('status', '!=', 'cancelled')
             ->where('grand_total', '>', 0)
-            ->orderByDesc('created_at')
-            ->limit(500)
-            ->get([
-                'id',
-                DB::raw("CONCAT('ORD-', id) as number"),
-                'grand_total as amount',
-                'created_at as date',
-                'pax',
-                'status',
-            ])
-            ->map(function ($row) {
-                $row->type = 'revenue';
-                $row->source = 'POS Order';
+            ->selectRaw("
+                DATE(created_at) as order_date,
+                CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END as period,
+                SUM(COALESCE(pax, 0)) as cover,
+                SUM(COALESCE(grand_total, 0)) as revenue,
+                SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as disc
+            ")
+            ->groupByRaw("DATE(created_at), CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END")
+            ->get();
 
-                return $row;
-            });
+        $byDate = [];
+        foreach ($rows as $row) {
+            $date = (string) $row->order_date;
+            if (! isset($byDate[$date])) {
+                $byDate[$date] = [
+                    'lunch' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
+                    'dinner' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
+                ];
+            }
+            $period = $row->period === 'dinner' ? 'dinner' : 'lunch';
+            $byDate[$date][$period]['cover'] += (float) $row->cover;
+            $byDate[$date][$period]['revenue'] += (float) $row->revenue;
+            $byDate[$date][$period]['disc'] += (float) $row->disc;
+        }
+
+        krsort($byDate);
+
+        return collect($byDate)->map(function ($periods, $date) use ($dayNames) {
+            $lunchCover = $periods['lunch']['cover'];
+            $lunchRevenue = $periods['lunch']['revenue'];
+            $lunchDisc = $periods['lunch']['disc'];
+            $dinnerCover = $periods['dinner']['cover'];
+            $dinnerRevenue = $periods['dinner']['revenue'];
+            $dinnerDisc = $periods['dinner']['disc'];
+            $totalCover = $lunchCover + $dinnerCover;
+            $totalRevenue = $lunchRevenue + $dinnerRevenue;
+            $totalDisc = $lunchDisc + $dinnerDisc;
+
+            $carbon = Carbon::parse($date);
+            $dow = (int) $carbon->dayOfWeek;
+
+            return (object) [
+                'id' => $date,
+                'type' => 'revenue',
+                'source' => 'Daily Revenue',
+                'date' => $date,
+                'number' => $date,
+                'day_name' => $dayNames[$dow] ?? $carbon->format('l'),
+                'is_weekend' => in_array($dow, [0, 6], true),
+                'amount' => round($totalRevenue, 2),
+                'lunch_cover' => (int) round($lunchCover),
+                'lunch_revenue' => round($lunchRevenue, 2),
+                'lunch_avg_check' => $lunchCover > 0 ? (float) round($lunchRevenue / $lunchCover) : 0.0,
+                'lunch_disc' => round($lunchDisc, 2),
+                'dinner_cover' => (int) round($dinnerCover),
+                'dinner_revenue' => round($dinnerRevenue, 2),
+                'dinner_avg_check' => $dinnerCover > 0 ? (float) round($dinnerRevenue / $dinnerCover) : 0.0,
+                'dinner_disc' => round($dinnerDisc, 2),
+                'total_cover' => (int) round($totalCover),
+                'total_revenue' => round($totalRevenue, 2),
+                'total_avg_check' => $totalCover > 0 ? (float) round($totalRevenue / $totalCover) : 0.0,
+                'total_disc' => round($totalDisc, 2),
+                'creator_name' => $dayNames[$dow] ?? '',
+            ];
+        })->values();
     }
 
     private function listGsrRo(int $outletId, string $dateFrom, string $dateTo)

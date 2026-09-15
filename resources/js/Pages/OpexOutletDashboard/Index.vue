@@ -563,7 +563,10 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-[2px]"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col">
+      <div
+        class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
+        :class="modalType === 'revenue' ? 'max-w-7xl' : 'max-w-5xl'"
+      >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
             <h3 class="text-xl font-bold text-slate-900">{{ modalTitle }}</h3>
@@ -581,6 +584,70 @@
           <template v-else>
             <apexchart type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
 
+            <!-- Revenue: daily list seperti Daily Outlet Revenue -->
+            <template v-if="modalType === 'revenue'">
+              <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                <table class="min-w-full text-xs">
+                  <thead>
+                    <tr class="bg-slate-900 text-white">
+                      <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Tanggal</th>
+                      <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Hari</th>
+                      <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="4">Lunch</th>
+                      <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="4">Dinner</th>
+                      <th class="px-3 py-2 text-center bg-indigo-800" colspan="4">Total</th>
+                    </tr>
+                    <tr class="bg-slate-800 text-slate-200">
+                      <th v-for="(h, idx) in revenueSubHeaders" :key="'rev-sub-' + idx" class="px-2 py-1.5 text-center border-r border-slate-700 font-medium">{{ h }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="row in modalTxns"
+                      :key="row.id"
+                      class="border-t border-slate-100"
+                      :class="row.is_weekend ? 'bg-rose-50/40' : 'bg-white'"
+                    >
+                      <td class="px-3 py-2.5 text-center font-semibold text-slate-800 border-r border-slate-100">{{ formatShortDate(row.date) }}</td>
+                      <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.lunch_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.dinner_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center font-semibold border-r border-slate-100">{{ formatNumber(row.total_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right font-semibold border-r border-slate-100">{{ formatCurrency(row.total_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right font-semibold border-r border-slate-100">{{ formatCurrency(row.total_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right font-semibold">{{ formatCurrency(row.total_disc) }}</td>
+                    </tr>
+                    <tr v-if="modalTxns.length" class="bg-slate-900 text-white font-semibold border-t border-slate-700">
+                      <td class="px-3 py-2.5 text-center" colspan="2">TOTAL</td>
+                      <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatNumber(revenueModalTotals.lunch_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatNumber(revenueModalTotals.dinner_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-indigo-900/50">{{ formatNumber(revenueModalTotals.total_cover) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_avg_check) }}</td>
+                      <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_disc) }}</td>
+                    </tr>
+                    <tr v-if="!modalTxns.length">
+                      <td colspan="14" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · Lunch = s/d jam 17, Dinner = setelah jam 17</p>
+            </template>
+
+            <!-- Modal transaksi biasa -->
+            <template v-else>
             <div class="flex flex-wrap gap-2 items-end">
               <input
                 v-model="modalSearch"
@@ -640,6 +707,7 @@
                 >Next</button>
               </div>
             </div>
+            </template>
           </template>
         </div>
       </div>
@@ -1058,6 +1126,38 @@ const modalAmountLabel = computed(() => {
   return 'Amount'
 })
 
+const revenueSubHeaders = [
+  'COVER', 'REVENUE', 'A/C', 'DISC',
+  'COVER', 'REVENUE', 'A/C', 'DISC',
+  'COVER', 'REVENUE', 'A/C', 'DISC',
+]
+
+const revenueModalTotals = computed(() => {
+  const rows = modalTxns.value || []
+  const sum = (key) => rows.reduce((acc, r) => acc + (Number(r[key]) || 0), 0)
+  const lunchCover = sum('lunch_cover')
+  const lunchRevenue = sum('lunch_revenue')
+  const dinnerCover = sum('dinner_cover')
+  const dinnerRevenue = sum('dinner_revenue')
+  const totalCover = sum('total_cover')
+  const totalRevenue = sum('total_revenue')
+
+  return {
+    lunch_cover: lunchCover,
+    lunch_revenue: lunchRevenue,
+    lunch_avg_check: lunchCover > 0 ? Math.round(lunchRevenue / lunchCover) : 0,
+    lunch_disc: sum('lunch_disc'),
+    dinner_cover: dinnerCover,
+    dinner_revenue: dinnerRevenue,
+    dinner_avg_check: dinnerCover > 0 ? Math.round(dinnerRevenue / dinnerCover) : 0,
+    dinner_disc: sum('dinner_disc'),
+    total_cover: totalCover,
+    total_revenue: totalRevenue,
+    total_avg_check: totalCover > 0 ? Math.round(totalRevenue / totalCover) : 0,
+    total_disc: sum('total_disc'),
+  }
+})
+
 const modalTrendSeries = computed(() => [{ name: modalTitle.value, data: modalTrend.value.map((r) => Number(r.amount) || 0) }])
 const modalTrendOptions = computed(() => ({
   chart: { toolbar: { show: false }, sparkline: { enabled: false } },
@@ -1100,7 +1200,7 @@ const fetchModal = async () => {
         date_to: filters.value.date_to,
         search: modalSearch.value,
         page: modalPage.value,
-        per_page: 20,
+        per_page: modalType.value === 'revenue' ? 62 : 20,
       },
     })
     modalTrend.value = data.trend || []
