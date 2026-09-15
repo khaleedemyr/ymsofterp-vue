@@ -1941,6 +1941,7 @@ Route::get('/report-rekap-fj/export', [\App\Http\Controllers\Report\SalesReportC
     Route::get('/report-good-receive-outlet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportGoodReceiveOutlet'])->name('report.good-receive-outlet');
     Route::get('/report-good-receive-outlet/export', [\App\Http\Controllers\Report\WarehouseReportController::class, 'exportGoodReceiveOutlet'])->name('report.good-receive-outlet.export');
     Route::get('/report-receiving-sheet', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportReceivingSheet'])->name('report.receiving-sheet');
+    Route::get('/report-receiving-sheet/export', [\App\Http\Controllers\Report\WarehouseReportController::class, 'exportReceivingSheet'])->name('report.receiving-sheet.export');
     Route::get('/api/report/receiving-sheet-detail', [\App\Http\Controllers\Report\WarehouseReportController::class, 'receivingSheetDetail'])->name('report.receiving-sheet-detail');
     Route::post('/report/sales-pivot-outlet-detail', [\App\Http\Controllers\Report\SalesReportController::class, 'salesPivotOutletDetail'])->name('report.sales-pivot-outlet-detail');
     Route::post('/report/retail-sales-detail', [\App\Http\Controllers\Report\RetailReportController::class, 'retailSalesDetail'])->name('report.retail-sales-detail');

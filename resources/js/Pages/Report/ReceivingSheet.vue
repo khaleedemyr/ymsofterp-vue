@@ -7,16 +7,16 @@
 
       <!-- Filters -->
       <div class="bg-gray-50 rounded-xl p-6 mb-8">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
             <select 
               v-model="filters.outlet" 
               :disabled="user.id_outlet != 1"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               @change="loadReport"
             >
-              <option value="">Semua Outlet</option>
+              <option v-if="user.id_outlet == 1" value="">Semua Outlet</option>
               <option v-for="outlet in outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
                 {{ outlet.nama_outlet }}
               </option>
@@ -46,6 +46,14 @@
               class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
               <i class="fa-solid fa-search mr-2"></i> Cari
+            </button>
+          </div>
+          <div class="flex items-end">
+            <button 
+              @click="exportExcel"
+              class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+            >
+              <i class="fa-solid fa-file-excel mr-2"></i> Export Excel
             </button>
           </div>
         </div>
@@ -324,6 +332,14 @@ const loadReport = () => {
     preserveState: true,
     preserveScroll: true
   })
+}
+
+const exportExcel = () => {
+  const params = new URLSearchParams()
+  if (filters.value.outlet) params.set('outlet', filters.value.outlet)
+  if (filters.value.date_from) params.set('date_from', filters.value.date_from)
+  if (filters.value.date_to) params.set('date_to', filters.value.date_to)
+  window.open(`/report-receiving-sheet/export?${params.toString()}`, '_blank')
 }
 
 const openDetail = async (type, key, label, date, amount) => {

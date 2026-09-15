@@ -25,6 +25,7 @@ use Inertia\Inertia;
  * - reportGoodReceiveOutlet: Good receive pivot report per outlet
  * - exportGoodReceiveOutlet: Export to Excel
  * - reportReceivingSheet: Receiving sheet (cost vs sales comparison) - CRITICAL COMPLEX
+ * - exportReceivingSheet: Export receiving sheet to Excel
  * - fjDetail: FJ distribution detail report - CRITICAL COMPLEX
  * - fjDetailPdf: Export FJ detail to PDF
  * - fjDetailExcel: Export FJ detail to Excel
@@ -224,17 +225,77 @@ class WarehouseReportController extends Controller
      */
     public function reportReceivingSheet(Request $request)
     {
+        $payload = $this->buildReceivingSheetPayload($request);
+        $user = auth()->user();
+
+        $outlets = $this->getCachedActiveOutletsIdName();
+        if ($user->id_outlet != 1) {
+            $outlets = collect($outlets)
+                ->where('id_outlet', $user->id_outlet)
+                ->values();
+        }
+
+        return Inertia::render('Report/ReceivingSheet', [
+            'report' => $payload['report'],
+            'outlets' => $outlets,
+            'warehouseColumns' => $payload['warehouseColumns'],
+            'suppliers' => $payload['suppliers'],
+            'filters' => $payload['filters'],
+            'user' => $user,
+        ]);
+    }
+
+    /**
+     * Export Receiving Sheet to Excel (warna kolom sama dengan UI).
+     */
+    public function exportReceivingSheet(Request $request)
+    {
+        $payload = $this->buildReceivingSheetPayload($request);
+        $outletLabel = 'Semua Outlet';
+        if (! empty($payload['filters']['outlet'])) {
+            $outletLabel = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $payload['filters']['outlet'])
+                ->value('nama_outlet') ?: ('Outlet #'.$payload['filters']['outlet']);
+        }
+
+        $filename = 'Receiving_Sheet_'.date('Y-m-d_His').'.xlsx';
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\ReceivingSheetExport(
+                $payload['report']->all(),
+                $payload['warehouseColumns'],
+                $payload['suppliers']->all(),
+                [
+                    'outlet_label' => $outletLabel,
+                    'date_from' => $payload['filters']['date_from'] ?: '-',
+                    'date_to' => $payload['filters']['date_to'] ?: '-',
+                ]
+            ),
+            $filename
+        );
+    }
+
+    /**
+     * Build Receiving Sheet rows + columns (shared by page + Excel export).
+     *
+     * @return array{
+     *   report: \Illuminate\Support\Collection,
+     *   warehouseColumns: list<array{key: string, name: string}>,
+     *   suppliers: \Illuminate\Support\Collection,
+     *   filters: array{outlet: mixed, date_from: mixed, date_to: mixed}
+     * }
+     */
+    private function buildReceivingSheetPayload(Request $request): array
+    {
         $outlet = $request->input('outlet');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
 
-        // Get user's outlet if not HO user
         $user = auth()->user();
         if ($user->id_outlet != 1) {
             $outlet = $user->id_outlet;
         }
 
-        // Get outlet QR code for sales query
         $outletQrCode = null;
         if ($outlet) {
             $outletQrCode = DB::table('tbl_data_outlet')
@@ -242,7 +303,6 @@ class WarehouseReportController extends Controller
                 ->value('qr_code');
         }
 
-        // Omzet harian dari orders
         $salesQuery = DB::table('orders')
             ->select(
                 DB::raw('DATE(created_at) as tanggal'),
@@ -263,7 +323,6 @@ class WarehouseReportController extends Controller
             ->get()
             ->keyBy('tanggal');
 
-        // Pembelanjaan per warehouse (GR packing list + GSR + RWS) — pola Invoice Outlet
         $warehouseSpendByDate = [];
         $addWarehouseSpend = function (array &$warehouseSpendByDate, $date, $warehouseName, $amount): void {
             $date = (string) $date;
@@ -369,7 +428,6 @@ class WarehouseReportController extends Controller
             $addWarehouseSpend($warehouseSpendByDate, $row->tanggal, $row->warehouse_name, $row->total);
         }
 
-        // Supplier dari Retail Food (bukan GR supplier / total Retail agregat)
         $retailSupplierQuery = DB::table('retail_food as rf')
             ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
             ->where('rf.status', 'approved')
@@ -449,12 +507,8 @@ class WarehouseReportController extends Controller
             $report[] = $row;
         }
 
-        $report = collect($report)->sortByDesc('tanggal')->values();
-        $outlets = $this->getCachedActiveOutletsIdName();
-
-        return Inertia::render('Report/ReceivingSheet', [
-            'report' => $report,
-            'outlets' => $outlets,
+        return [
+            'report' => collect($report)->sortByDesc('tanggal')->values(),
             'warehouseColumns' => $warehouseColumns,
             'suppliers' => $suppliers,
             'filters' => [
@@ -462,8 +516,7 @@ class WarehouseReportController extends Controller
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
             ],
-            'user' => $user,
-        ]);
+        ];
     }
 
     /**
